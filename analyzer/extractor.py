@@ -120,7 +120,7 @@ class ZoneExtractor:
         # --- Find terrain file (prefer .ter, fall back to first geometry) ---
         ter_data = arc.get(f"{self.zone_name}.ter")
         if ter_data is None:
-            # Try any .ter file in the archive
+            # RoF2 zones often name the ter file 'ter_<something>.ter' not '<zone>.ter'
             ter_files = arc.get_by_extension("ter")
             if ter_files:
                 ter_data = ter_files[0].data

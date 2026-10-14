@@ -51,18 +51,41 @@ _DIR_SENTINEL_CRC = 0x61580AC9
 # CRC helpers
 # ---------------------------------------------------------------------------
 
+def _build_crc_table() -> list:
+    """Build the CRC table for EQ's big-endian CRC32 (poly 0x04C11DB7)."""
+    poly = 0x04C11DB7
+    table = []
+    for i in range(256):
+        acc = i << 24
+        for _ in range(8):
+            if acc & 0x80000000:
+                acc = ((acc << 1) ^ poly) & 0xFFFFFFFF
+            else:
+                acc = (acc << 1) & 0xFFFFFFFF
+        table.append(acc)
+    return table
+
+
+_CRC_TABLE = _build_crc_table()
+
+
 def _filename_crc32(name: str) -> int:
-    """Compute the EQ-style CRC32 for a filename (uppercase, null-terminated)."""
-    # EQ tools uppercase the name before CRC'ing
-    data = name.upper().encode("ascii") + b"\x00"
+    """
+    Compute the EQ PFS CRC32 for a filename.
+
+    Algorithm: big-endian CRC32 with polynomial 0x04C11DB7, init=0,
+    applied to the raw filename bytes (case-sensitive) plus a null terminator.
+
+    Reference: EQEmu/zone-utilities src/common/pfs_crc.cpp
+    """
+    data = name.encode("ascii") + b"\x00"
     crc = 0
     for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            if crc & 1:
-                crc = (crc >> 1) ^ 0xEDB88320
-            else:
-                crc >>= 1
+        i = ((crc >> 24) ^ byte) & 0xFF
+        crc = ((crc << 8) ^ _CRC_TABLE[i]) & 0xFFFFFFFF
+    # Return as signed int32 to match original (reinterpret as uint32 for dict keys)
+    if crc > 0x7FFFFFFF:
+        crc -= 0x100000000
     return crc & 0xFFFFFFFF
 
 
@@ -90,6 +113,9 @@ def _inflate_chunks(data: bytes, expected_size: int) -> bytes:
     """
     Decompress a stream of [deflated_size][inflated_size][data] blocks
     until *expected_size* bytes have been recovered.
+
+    Reads chunks until the total decompressed output reaches expected_size.
+    Each chunk header is 8 bytes: deflated_size (uint32) + inflated_size (uint32).
     """
     out = bytearray()
     buf = io.BytesIO(data)
@@ -98,7 +124,11 @@ def _inflate_chunks(data: bytes, expected_size: int) -> bytes:
         if len(header) < 8:
             break
         deflated_sz, inflated_sz = struct.unpack("<II", header)
+        if deflated_sz == 0:
+            break
         compressed = buf.read(deflated_sz)
+        if len(compressed) < deflated_sz:
+            break
         out.extend(zlib.decompress(compressed))
     return bytes(out)
 
@@ -172,49 +202,85 @@ class PfsArchive:
             crc, offset, size = struct.unpack("<III", buf.read(12))
             dir_entries.append(_DirEntry(crc, offset, size))
 
-        # Collect raw compressed data for each entry
-        raw_by_crc: Dict[int, bytes] = {}
-        for entry in dir_entries:
-            buf.seek(entry.offset)
-            # Read enough bytes to cover the chunk stream
-            # We read the compressed chunks until we have entry.size decompressed bytes
-            chunk_data = buf.read(dir_offset - entry.offset)
-            raw_by_crc[entry.crc] = (chunk_data, entry.size)
+        # ---------------------------------------------------------------------------
+        # Step 1 — Find and parse the filename block.
+        #
+        # The name block has CRC == _DIR_SENTINEL_CRC (0x61580AC9) in all known EQG
+        # archives.  Its decompressed content is:
+        #   [uint32 name_count] [name_count × (uint32 name_len)(name bytes)]
+        # where name_count == file_count - 1.
+        #
+        # We read each entry's chunks by seeking to entry.offset in the raw data
+        # and inflating until we have entry.size decompressed bytes.
+        # ---------------------------------------------------------------------------
 
-        # One of the entries is the filename block (CRC == _DIR_SENTINEL_CRC or
-        # the entry whose decompressed data starts with a file-count that matches).
-        # We identify it by trying to parse it as the name list.
+        raw_data = data  # keep a reference for seeking
+
+        def _read_entry(entry: _DirEntry) -> bytes:
+            chunk_stream = raw_data[entry.offset :]
+            return _inflate_chunks(chunk_stream, entry.size)
+
         name_by_crc: Dict[int, str] = {}
         file_data_by_crc: Dict[int, bytes] = {}
 
         for entry in dir_entries:
-            compressed_stream, decomp_size = raw_by_crc[entry.crc]
-            decompressed = _inflate_chunks(compressed_stream, decomp_size)
-
-            # Try to interpret as the filename block
-            if len(decompressed) >= 4:
-                (name_count,) = struct.unpack("<I", decompressed[:4])
-                if name_count == file_count - 1:
-                    # This is the name block
-                    pos = 4
-                    for _ in range(name_count):
-                        if pos + 4 > len(decompressed):
-                            break
-                        (name_len,) = struct.unpack("<I", decompressed[pos : pos + 4])
-                        pos += 4
-                        raw_name = decompressed[pos : pos + name_len]
-                        pos += name_len
-                        # Strip null terminator
-                        fname = raw_name.rstrip(b"\x00").decode("ascii", errors="replace")
-                        name_by_crc[_filename_crc32(fname)] = fname
+            if entry.crc == _DIR_SENTINEL_CRC:
+                # This is the filename directory block
+                decompressed = _read_entry(entry)
+                if len(decompressed) < 4:
                     continue
+                (name_count,) = struct.unpack("<I", decompressed[:4])
+                pos = 4
+                for _ in range(name_count):
+                    if pos + 4 > len(decompressed):
+                        break
+                    (name_len,) = struct.unpack("<I", decompressed[pos : pos + 4])
+                    pos += 4
+                    raw_name = decompressed[pos : pos + name_len]
+                    pos += name_len
+                    fname = raw_name.rstrip(b"\x00").decode("ascii", errors="replace")
+                    name_by_crc[_filename_crc32(fname)] = fname
+            else:
+                file_data_by_crc[entry.crc] = _read_entry(entry)
 
-            file_data_by_crc[entry.crc] = decompressed
+        # ---------------------------------------------------------------------------
+        # Step 2 — If the sentinel CRC wasn't found (older archives use a different
+        # scheme), fall back to finding the name block by content: look for the entry
+        # whose decompressed first uint32 equals file_count - 1.
+        # ---------------------------------------------------------------------------
+        if not name_by_crc:
+            for entry in dir_entries:
+                decompressed = file_data_by_crc.get(entry.crc, b"")
+                if len(decompressed) < 4:
+                    continue
+                (name_count,) = struct.unpack("<I", decompressed[:4])
+                if name_count != file_count - 1:
+                    continue
+                pos = 4
+                found_names = {}
+                ok = True
+                for _ in range(name_count):
+                    if pos + 4 > len(decompressed):
+                        ok = False
+                        break
+                    (name_len,) = struct.unpack("<I", decompressed[pos : pos + 4])
+                    pos += 4
+                    if pos + name_len > len(decompressed):
+                        ok = False
+                        break
+                    raw_name = decompressed[pos : pos + name_len]
+                    pos += name_len
+                    fname = raw_name.rstrip(b"\x00").decode("ascii", errors="replace")
+                    found_names[_filename_crc32(fname)] = fname
+                if ok and found_names:
+                    name_by_crc = found_names
+                    del file_data_by_crc[entry.crc]
+                    break
 
-        # Match files to names
-        for crc, data in file_data_by_crc.items():
+        # Step 3 — Match file data to names
+        for crc, fdata in file_data_by_crc.items():
             name = name_by_crc.get(crc, f"unknown_{crc:08x}")
-            arc.files.append(PfsFile(name=name, data=data))
+            arc.files.append(PfsFile(name=name, data=fdata))
 
         return arc
 

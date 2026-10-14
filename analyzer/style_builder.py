@@ -29,19 +29,23 @@ from .extractor import ZoneExtractor, ZoneMetrics
 
 REFERENCE_ZONES: Dict[str, List[str]] = {
     "dungeon": [
-        "gukbottom", "guk", "solb", "sola", "velketor",
-        "sseru", "chardokb", "kaesora", "unrest",
+        # RoF2-era underground / interior dungeons
+        "bertoxtemple", "drachnidhive", "convorteum", "coolingchamber",
+        "chapterhouse", "mansion", "dreadspire", "crystallos",
+        "grelleth", "xorbb",
     ],
     "outdoor": [
-        "qeytoqrg", "eastkarana", "northkarana", "southkarana",
-        "nektulos", "lavastorm", "permafrost",
+        # RoF2-era open outdoor zones
+        "nektulos", "lavastorm", "broodlands", "dragonscale",
+        "delvea", "anguish", "corathus", "discord",
     ],
     "city": [
-        "poknowledge", "qeynos2", "freeportw", "rivervale",
-        "felwithea", "kelethin",
+        # RoF2-era city / social zones
+        "sarithcity", "argath", "bazaar",
     ],
     "cave": [
-        "dranikhollows", "veksar", "cabwest", "crystal",
+        # Organic cave / underground tunnels
+        "corathus", "drachnidhive", "xorbb", "bertoxtemple",
     ],
 }
 

@@ -18,9 +18,14 @@ class TestCrc32:
     def test_deterministic(self):
         assert _filename_crc32("gukbottom.ter") == _filename_crc32("gukbottom.ter")
 
-    def test_case_insensitive(self):
-        # EQ CRCs are computed on uppercase names
-        assert _filename_crc32("MyZone.ter") == _filename_crc32("myzone.ter")
+    def test_case_sensitive(self):
+        # EQ CRC is case-sensitive (no uppercase conversion) — filenames are stored as-is
+        # Different case produces different CRC
+        assert _filename_crc32("MyZone.ter") != _filename_crc32("myzone.ter")
+
+    def test_known_value(self):
+        # Verified against real broodlands.eqg directory entry
+        assert _filename_crc32("ab_caveblack_c.dds") == 0x029F137F
 
 
 class TestPfsRoundTrip:
