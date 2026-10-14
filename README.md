@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Phase 2 complete ✅ — procedural zones generate end-to-end. Phase 3 (AI integration) up next
+> **Status**: Phase 2.5 complete ✅ — procedural zones with elevation (ramps/stairs/multi-level). Phase 3 (AI integration) up next
 
 ---
 
@@ -137,6 +137,7 @@ python -m pytest tests/ -v
 | **1** | Core I/O — PFS reader/writer, TER/ZON binary serialisers | ✅ Done |
 | **1b** | Zone inspector — rich terminal metrics + profile comparison | ✅ Done |
 | **2** | Procedural geometry — rooms, corridors, lighting, regions | ✅ Done |
+| **2.5** | Elevation — multi-level layout, ramp & staircase corridors | ✅ Done |
 | **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | 🔨 Next |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
@@ -226,6 +227,22 @@ The generator turns a `ZoneSpec` (structured, editable JSON) into a complete `.e
 - **`generators/layout.py`** — `LayoutGenerator`: seedable procedural room-graph layout. Walks rooms along a grid, connects them with corridors, opens facing walls, places theme-appropriate lights. Pulls target dimensions from the style profile.
 - **`generators/textures.py`** — placeholder DDS generator (solid colour + noise). Phase 3 swaps this for AI image generation.
 - **`generators/builder.py`** — `ZoneBuilder`: orchestrates geometry + placement + textures into a `.eqg` + `.glb`. Follows RoF2 convention (terrain stored as `ter_<zone>.ter`, referenced as ZON model[0]).
+
+### Phase 2.5 — Elevation ✅
+
+EQG zones are fully 3D — collision is derived per-triangle from the polygon's
+`0x01` flag (confirmed in `EQEmu/zone-utilities azone/map.cpp::CompileEQG`), with
+no BSP tree required. Real zones like Dreadspire are a single TER mesh spanning
+10,560 units of vertical range. So verticality is a generator feature, not a
+format limitation.
+
+- **`CorridorSpec`** now carries `from_z` / `to_z` (with a `floor_z` back-compat alias) and a `steps` count.
+- **`MeshBuilder`** builds **ramp** corridors (smooth slope between two heights) and **staircase** corridors (flat treads + vertical risers).
+- **`LayoutGenerator`** does a 3D walk: rooms are placed at varying floor heights, and connecting corridors ramp or step between them.
+
+```bash
+python main.py generate towers --theme dungeon --rooms 8   # multi-level by default
+```
 
 Generated zones round-trip cleanly through our own reader and match the structural
 layout of real RoF2 zones. The inspector compares them against the style profile:

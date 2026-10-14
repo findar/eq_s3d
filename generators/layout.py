@@ -78,6 +78,13 @@ class LayoutGenerator:
         self.corridor_width = 50.0
         self.corridor_height = max(40.0, self.ceiling * 0.8)
 
+        # Elevation parameters. elevation_chance is the probability that a
+        # connection between two rooms changes height. step_rise is the Z change
+        # per elevated connection.
+        self.elevation_chance = 0.5
+        self.step_rise_min = 20.0
+        self.step_rise_max = 80.0
+
     # ------------------------------------------------------------------
     # Main generation
     # ------------------------------------------------------------------
@@ -85,14 +92,17 @@ class LayoutGenerator:
     def generate(self,
                  name: str,
                  room_count: int = 5,
-                 add_lights: bool = True) -> ZoneSpec:
+                 add_lights: bool = True,
+                 elevation: bool = True) -> ZoneSpec:
         spec = ZoneSpec(name=name, theme=self.theme, style_profile=self.theme)
 
         self._add_default_materials(spec)
 
         # Lay out rooms along a rough grid walk to keep them connected.
+        # Each room tracks its own floor_z; the walk raises/lowers height to
+        # create verticality.
         placed: List[RoomSpec] = []
-        cx, cy = 0.0, 0.0
+        cx, cy, cz = 0.0, 0.0, 0.0
         direction_choices = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
         for i in range(room_count):
@@ -102,7 +112,7 @@ class LayoutGenerator:
 
             room = RoomSpec(
                 id=f"room_{i}",
-                center_x=cx, center_y=cy, floor_z=0.0,
+                center_x=cx, center_y=cy, floor_z=cz,
                 width=w, depth=d, height=h,
             )
             placed.append(room)
@@ -111,23 +121,28 @@ class LayoutGenerator:
             if add_lights:
                 self._add_room_lights(spec, room, i)
 
-            # Walk to next room position
+            # Walk to next room position (and optionally change elevation)
             if i < room_count - 1:
                 dx, dy = self.rng.choice(direction_choices)
                 step = self.rng.uniform(self.room_max, self.room_max * 1.8)
                 cx += dx * step
                 cy += dy * step
+                if elevation and self.rng.random() < self.elevation_chance:
+                    rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
+                    cz += rise * self.rng.choice([1, -1])
 
-        # Connect consecutive rooms with corridors
+        # Connect consecutive rooms with corridors (ramp/stairs if heights differ)
         for i in range(len(placed) - 1):
             a, b = placed[i], placed[i + 1]
+            use_steps = abs(b.floor_z - a.floor_z) > 1.0 and self.rng.random() < 0.5
             spec.corridors.append(CorridorSpec(
                 id=f"corr_{i}",
                 from_x=a.center_x, from_y=a.center_y,
                 to_x=b.center_x, to_y=b.center_y,
-                floor_z=0.0,
+                from_z=a.floor_z, to_z=b.floor_z,
                 width=self.corridor_width,
                 height=self.corridor_height,
+                steps=self.rng.randint(4, 8) if use_steps else 0,
             ))
             # Open the facing walls so the corridor connects into the rooms
             self._open_facing_walls(a, b)

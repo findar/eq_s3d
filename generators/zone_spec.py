@@ -61,20 +61,37 @@ class CorridorSpec:
     A straight corridor connecting two rooms (or arbitrary points).
 
     Defined by two endpoints on the XY plane plus a width and height.
-    The corridor is axis-aligned-ish; it is built as a box between the points.
+    The corridor is axis-aligned: it runs along whichever axis (X or Y) has
+    the larger horizontal delta between the endpoints.
+
+    Elevation: if from_z != to_z the corridor ramps (slopes) between the two
+    heights. The player walks up/down the slope. Set `steps` > 0 to build a
+    stepped staircase instead of a smooth ramp.
     """
     id: str
     from_x: float
     from_y: float
     to_x: float
     to_y: float
-    floor_z: float = 0.0
+    from_z: float = 0.0         # floor height at the `from` end
+    to_z: float = 0.0           # floor height at the `to` end
     width: float = 50.0
-    height: float = 50.0
+    height: float = 50.0        # clearance from floor to ceiling
+    steps: int = 0              # 0 = smooth ramp; >0 = number of stair steps
 
     floor_material: str = "floor"
     wall_material: str = "wall"
     ceiling_material: str = "ceiling"
+
+    # Back-compat: `floor_z` as an alias that sets both ends flat
+    @property
+    def floor_z(self) -> float:
+        return self.from_z
+
+    @floor_z.setter
+    def floor_z(self, value: float) -> None:
+        self.from_z = value
+        self.to_z = value
 
 
 @dataclass

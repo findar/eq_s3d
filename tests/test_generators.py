@@ -154,3 +154,68 @@ class TestBuilder:
         arc = PfsArchive.from_file(result.eqg_path)
         zon = ZonFile.from_bytes(arc.get("lighttest.zon"))
         assert len(zon.lights) == 3
+
+
+class TestElevation:
+    def test_corridor_floor_z_backcompat(self):
+        # The floor_z property sets both from_z and to_z
+        c = CorridorSpec("c", 0, 0, 100, 0)
+        c.floor_z = 50.0
+        assert c.from_z == 50.0
+        assert c.to_z == 50.0
+        assert c.floor_z == 50.0
+
+    def test_ramp_corridor_spans_heights(self):
+        spec = ZoneSpec(name="t")
+        spec.add_material("floor", "floor.dds")
+        spec.add_material("wall", "wall.dds")
+        spec.add_material("ceiling", "ceiling.dds")
+        # A corridor that ramps from z=0 to z=100 along X
+        spec.corridors.append(CorridorSpec(
+            "ramp", from_x=0, from_y=0, to_x=400, to_y=0,
+            from_z=0.0, to_z=100.0, width=50, height=50,
+        ))
+        mb = build_mesh(spec)
+        ter = mb.to_ter("t")
+        zs = [v.z for v in ter.vertices]
+        # Floor should span from 0 up to 100; ceiling adds height on top
+        assert min(zs) == 0.0
+        assert max(zs) >= 100.0
+
+    def test_stepped_corridor_more_geometry(self):
+        spec = ZoneSpec(name="t")
+        spec.add_material("floor", "floor.dds")
+        spec.add_material("wall", "wall.dds")
+        spec.add_material("ceiling", "ceiling.dds")
+        spec.corridors.append(CorridorSpec(
+            "stairs", from_x=0, from_y=0, to_x=400, to_y=0,
+            from_z=0.0, to_z=100.0, width=50, height=50, steps=5,
+        ))
+        mb = build_mesh(spec)
+        # Stepped corridors produce more polygons than a flat tube (treads + risers)
+        assert len(mb.polygons) > 8
+
+    def test_elevation_layout_varies_z(self):
+        gen = LayoutGenerator(theme="dungeon", seed=7)
+        spec = gen.generate("ev", room_count=8, elevation=True)
+        floor_zs = {r.floor_z for r in spec.rooms}
+        # With elevation on and 8 rooms, we expect multiple distinct heights
+        assert len(floor_zs) > 1
+
+    def test_elevation_off_keeps_flat(self):
+        gen = LayoutGenerator(theme="dungeon", seed=7)
+        spec = gen.generate("flat", room_count=8, elevation=False)
+        floor_zs = {r.floor_z for r in spec.rooms}
+        assert floor_zs == {0.0}
+
+    def test_elevated_zone_builds(self, tmp_path):
+        gen = LayoutGenerator(theme="dungeon", seed=7)
+        spec = gen.generate("evbuild", room_count=6, elevation=True)
+        result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+        assert result.eqg_path.exists()
+
+        # Verify Z span is non-trivial
+        arc = PfsArchive.from_file(result.eqg_path)
+        ter = TerFile.from_bytes(arc.get("ter_evbuild.ter"))
+        zs = [v.z for v in ter.vertices]
+        assert max(zs) - min(zs) > 50  # has real verticality
