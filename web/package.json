@@ -4,7 +4,8 @@
   "description": "Browser UI for the eq_s3d zone generator",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node dev.mjs",
+    "dev:web": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },

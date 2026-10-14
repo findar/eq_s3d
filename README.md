@@ -107,20 +107,27 @@ to `styles/`. Pre-built profiles for RoF2 are included in this repo.
 
 ### Web app — generate and walk zones in the browser ⭐
 
-Two processes: the Python API backend and the web front-end.
+**One command** starts everything. The Node launcher spawns the Python backend,
+waits for it to be healthy, then starts Vite — and one Ctrl+C stops both.
 
 ```bash
-# 1. Backend (serves the API; also serves the built web app if present)
-python -m uvicorn server.app:app --port 8000
-
-# 2a. Front-end — development (hot reload, proxies /api to :8000)
-cd web && npm install && npm run dev
+cd web && npm install   # first time only
+npm run dev
 #    → open http://localhost:5173
-
-# 2b. Front-end — production (served by the backend at http://localhost:8000)
-cd web && npm run build
-#    → then just open http://localhost:8000
 ```
+
+Backend logs appear prefixed `[api]`, the front-end `[web]`.
+
+Production build (served entirely by the Python backend, no Node needed to run):
+
+```bash
+cd web && npm run build
+python -m uvicorn server.app:app --port 8000
+#    → open http://localhost:8000
+```
+
+Advanced: `npm run dev:web` runs only Vite (if you prefer to start the backend
+yourself with `python -m uvicorn server.app:app --host 127.0.0.1 --port 8000`).
 
 Pick a theme and room count from the dropdowns and hit **Generate**. Each
 generation uses a fresh random seed, so the same inputs always produce a
