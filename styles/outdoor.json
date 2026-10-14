@@ -1,0 +1,99 @@
+{
+  "theme": "outdoor",
+  "zone_count": 6,
+  "analyzed_zones": [
+    "lavastorm",
+    "broodlands",
+    "delvea",
+    "anguish",
+    "corathus",
+    "discord"
+  ],
+  "geometry": {
+    "width_x": {
+      "min": 2319.36,
+      "max": 8968.23,
+      "mean": 4238.16,
+      "std": 2425.71
+    },
+    "width_y": {
+      "min": 2352.36,
+      "max": 5020.63,
+      "mean": 3535.02,
+      "std": 914.89
+    },
+    "ceiling_height": {
+      "min": 448.81,
+      "max": 1493.71,
+      "mean": 1111.73,
+      "std": 379.32
+    },
+    "poly_density": {
+      "min": 0.0,
+      "max": 0.02,
+      "mean": 0.01,
+      "std": 0.01
+    },
+    "floor_area": {
+      "min": 6490615.98,
+      "max": 45026155.64,
+      "mean": 16563614.59,
+      "std": 14441982.58
+    }
+  },
+  "materials": {
+    "count": {
+      "min": 17,
+      "max": 19320,
+      "mean": 3532.17,
+      "std": 7747.48
+    },
+    "shaders": [
+      "Opaque_MaxLava.fx",
+      "Opaque_MaxCB1.fx",
+      "Opaque_MaxCB1_2UV.fx",
+      "Opaque_MaxWater.fx",
+      "Opaque_MaxTerrain.fx"
+    ]
+  },
+  "uv": {
+    "scale": {
+      "min": 1.38,
+      "max": 58.31,
+      "mean": 17.14,
+      "std": 21.64
+    }
+  },
+  "lighting": {
+    "count": {
+      "min": 0,
+      "max": 452,
+      "mean": 112.67,
+      "std": 188.85
+    },
+    "mean_radius": {
+      "min": 58.58,
+      "max": 64.17,
+      "mean": 61.38,
+      "std": 3.96
+    },
+    "density": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "mean_color": [
+      0.722,
+      0.54,
+      0.312
+    ]
+  },
+  "regions": {
+    "type_counts": {
+      "ALV": 8.17,
+      "ATP": 1.33,
+      "AWT": 2.83
+    }
+  }
+}

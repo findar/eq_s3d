@@ -1,0 +1,99 @@
+{
+  "theme": "dungeon",
+  "zone_count": 10,
+  "analyzed_zones": [
+    "bertoxtemple",
+    "drachnidhive",
+    "convorteum",
+    "coolingchamber",
+    "chapterhouse",
+    "mansion",
+    "dreadspire",
+    "crystallos",
+    "grelleth",
+    "xorbb"
+  ],
+  "geometry": {
+    "width_x": {
+      "min": 1147.47,
+      "max": 9978.73,
+      "mean": 4494.62,
+      "std": 3209.99
+    },
+    "width_y": {
+      "min": 575.08,
+      "max": 10082.28,
+      "mean": 4728.95,
+      "std": 3350.8
+    },
+    "ceiling_height": {
+      "min": 77.15,
+      "max": 10560.19,
+      "mean": 2549.33,
+      "std": 3147.41
+    },
+    "poly_density": {
+      "min": 0.0,
+      "max": 0.17,
+      "mean": 0.03,
+      "std": 0.05
+    },
+    "floor_area": {
+      "min": 659884.57,
+      "max": 95871117.21,
+      "mean": 30473166.26,
+      "std": 35641232.5
+    }
+  },
+  "materials": {
+    "count": {
+      "min": 18,
+      "max": 83,
+      "mean": 51.2,
+      "std": 20.25
+    },
+    "shaders": [
+      "Opaque_MPLBump2UV.fx",
+      "Opaque_MPLBump.fx",
+      "Opaque_MPLGB.fx",
+      "Opaque_MaxWaterFall.fx",
+      "Opaque_MPLBasic.fx"
+    ]
+  },
+  "uv": {
+    "scale": {
+      "min": 1.0,
+      "max": 4.523064890750822e+31,
+      "mean": 4.5230648907508274e+30,
+      "std": 1.4303187059513255e+31
+    }
+  },
+  "lighting": {
+    "count": {
+      "min": 0,
+      "max": 0,
+      "mean": 0,
+      "std": 0.0
+    },
+    "mean_radius": {
+      "min": 0,
+      "max": 0,
+      "mean": 0,
+      "std": 0
+    },
+    "density": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "mean_color": [
+      1.0,
+      0.8,
+      0.5
+    ]
+  },
+  "regions": {
+    "type_counts": {}
+  }
+}

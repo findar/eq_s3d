@@ -1,0 +1,94 @@
+{
+  "theme": "city",
+  "zone_count": 3,
+  "analyzed_zones": [
+    "sarithcity",
+    "argath",
+    "bazaar"
+  ],
+  "geometry": {
+    "width_x": {
+      "min": 2122.04,
+      "max": 7341.79,
+      "mean": 4487.94,
+      "std": 2643.86
+    },
+    "width_y": {
+      "min": 2905.77,
+      "max": 5299.6,
+      "mean": 4072.9,
+      "std": 1198.02
+    },
+    "ceiling_height": {
+      "min": 157.45,
+      "max": 3132.23,
+      "mean": 1447.33,
+      "std": 1526.22
+    },
+    "poly_density": {
+      "min": 0.0,
+      "max": 0.03,
+      "mean": 0.01,
+      "std": 0.01
+    },
+    "floor_area": {
+      "min": 6166167.58,
+      "max": 38908534.89,
+      "mean": 20376005.8,
+      "std": 16793745.75
+    }
+  },
+  "materials": {
+    "count": {
+      "min": 24,
+      "max": 105,
+      "mean": 70.67,
+      "std": 41.88
+    },
+    "shaders": [
+      "Opaque_MaxWater.fx",
+      "Opaque_MPLBump.fx",
+      "Opaque_MPLBasic.fx",
+      "Opaque_MaxWaterFall.fx",
+      "Alpha_MPLBasicAT.fx"
+    ]
+  },
+  "uv": {
+    "scale": {
+      "min": 1.0,
+      "max": 6.44,
+      "mean": 3.15,
+      "std": 2.89
+    }
+  },
+  "lighting": {
+    "count": {
+      "min": 0,
+      "max": 237,
+      "mean": 79,
+      "std": 136.83
+    },
+    "mean_radius": {
+      "min": 120.26,
+      "max": 120.26,
+      "mean": 120.26,
+      "std": 0
+    },
+    "density": {
+      "min": 0.0,
+      "max": 0.0,
+      "mean": 0.0,
+      "std": 0.0
+    },
+    "mean_color": [
+      0.844,
+      0.865,
+      0.872
+    ]
+  },
+  "regions": {
+    "type_counts": {
+      "ATP": 1.33
+    }
+  }
+}
