@@ -1,0 +1,23 @@
+# Core geometry & math
+numpy==2.2.1
+trimesh==4.5.1
+
+# Image handling (DDS encoding via Pillow; DXT compression via imageio plugin)
+Pillow==11.1.0
+imageio==2.36.1
+
+# Web viewer (local preview server)
+flask==3.1.0
+
+# AI / LLM (provider-agnostic; swap in your preferred client)
+openai==1.59.6
+anthropic==0.42.0
+
+# CLI & terminal UI
+rich==13.9.4
+prompt_toolkit==3.0.48
+click==8.1.8
+
+# Utilities
+pydantic==2.10.4
+python-dotenv==1.0.1
