@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>eq_s3d — Zone Generator</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- Control bar -->
+  <header id="controls">
+    <span class="brand">⚔ eq_s3d</span>
+
+    <label>Theme
+      <select id="theme">
+        <option value="dungeon">Dungeon</option>
+        <option value="outdoor">Outdoor</option>
+        <option value="cave">Cave</option>
+        <option value="city">City</option>
+      </select>
+    </label>
+
+    <label>Rooms
+      <select id="rooms">
+        <option>3</option>
+        <option selected>5</option>
+        <option>8</option>
+        <option>12</option>
+        <option>16</option>
+      </select>
+    </label>
+
+    <label class="checkbox">
+      <input type="checkbox" id="elevation" checked /> Elevation
+    </label>
+
+    <button id="generate">Generate</button>
+    <span id="status"></span>
+  </header>
+
+  <!-- 3D viewport -->
+  <canvas id="viewport"></canvas>
+
+  <!-- Metrics / overlay panel -->
+  <aside id="panel">
+    <h3>Zone</h3>
+    <div class="row"><span>Seed</span><span id="m-seed">—</span></div>
+    <div class="row"><span>Vertices</span><span id="m-verts">—</span></div>
+    <div class="row"><span>Polygons</span><span id="m-polys">—</span></div>
+    <div class="row"><span>Materials</span><span id="m-mats">—</span></div>
+    <div class="row"><span>Lights</span><span id="m-lights">—</span></div>
+    <div class="row"><span>Regions</span><span id="m-regions">—</span></div>
+
+    <h3>Bounds (u)</h3>
+    <div class="row"><span>Width X</span><span id="m-wx">—</span></div>
+    <div class="row"><span>Width Y</span><span id="m-wy">—</span></div>
+    <div class="row"><span>Height Z</span><span id="m-wz">—</span></div>
+
+    <h3>Overlays</h3>
+    <label class="toggle"><input type="checkbox" id="t-wire" /> Wireframe</label>
+    <label class="toggle"><input type="checkbox" id="t-lights" checked /> Lights</label>
+    <label class="toggle"><input type="checkbox" id="t-regions" checked /> Regions</label>
+
+    <h3>Controls</h3>
+    <p class="hint">Click viewport to capture mouse.<br>
+      WASD move · mouse look<br>
+      Shift sprint · Q/E down/up<br>
+      R reset · Esc release</p>
+  </aside>
+
+  <div id="hint-overlay">Click to look around · WASD to move</div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

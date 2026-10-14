@@ -51,3 +51,11 @@ coverage.xml
 # Logs
 *.log
 logs/
+
+# Web frontend
+web/node_modules/
+web/dist/
+web/package-lock.json
+
+# Generated web output
+output/web/

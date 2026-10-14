@@ -1,0 +1,18 @@
+{
+  "name": "eq_s3d-web",
+  "version": "0.3.0",
+  "description": "Browser UI for the eq_s3d zone generator",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.165.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  }
+}

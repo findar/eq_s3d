@@ -162,7 +162,63 @@ class EqgZone:
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         mesh.export(str(out_path))
+
+        # Emit a companion .zone.json sidecar carrying lights, regions, and
+        # metadata so the browser viewer can render overlays. Named
+        # <zone>.zone.json next to the GLB.
+        self._write_glb_sidecar(out_path)
+
         return out_path
+
+    def _write_glb_sidecar(self, glb_path: Path) -> None:
+        """Write a <name>.zone.json next to the GLB with lights/regions/metrics."""
+        import json
+
+        ter = self._terrain
+        zs = [v.z for v in ter.vertices] if ter else [0]
+        xs = [v.x for v in ter.vertices] if ter else [0]
+        ys = [v.y for v in ter.vertices] if ter else [0]
+
+        data = {
+            "name": self.zone_name,
+            "bounds": {
+                "min": [min(xs), min(ys), min(zs)],
+                "max": [max(xs), max(ys), max(zs)],
+            },
+            "metrics": {
+                "vertices": len(ter.vertices) if ter else 0,
+                "polygons": len(ter.polygons) if ter else 0,
+                "materials": len(ter.materials) if ter else 0,
+            },
+            "lights": [],
+            "regions": [],
+        }
+
+        if self._placement is not None:
+            for lt in self._placement.lights:
+                data["lights"].append({
+                    "name": lt.name,
+                    "pos": [lt.x, lt.y, lt.z],
+                    "color": [lt.r, lt.g, lt.b],
+                    "radius": lt.radius,
+                })
+            for reg in self._placement.regions:
+                # Classify by name prefix
+                prefix = reg.name.split("_")[0].upper() if "_" in reg.name else ""
+                kind = {
+                    "AWT": "water", "ALV": "lava", "APK": "pvp",
+                    "ATP": "zoneline", "ASL": "ice", "APV": "generic",
+                }.get(prefix, "generic")
+                data["regions"].append({
+                    "name": reg.name,
+                    "kind": kind,
+                    "center": [reg.center_x, reg.center_y, reg.center_z],
+                    "extent": [reg.extend_x, reg.extend_y, reg.extend_z],
+                })
+
+        sidecar = glb_path.with_suffix("")  # strip .glb
+        sidecar = sidecar.with_suffix(".zone.json")
+        sidecar.write_text(json.dumps(data, indent=2))
 
     def __repr__(self) -> str:
         return (

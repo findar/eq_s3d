@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Phase 2.5 complete ✅ — procedural zones with elevation (ramps/stairs/multi-level). Phase 3 (AI integration) up next
+> **Status**: Phase 2.5 + web app ✅ — generate and walk zones in the browser. Phase 3 (AI integration) up next
 
 ---
 
@@ -35,11 +35,18 @@ core/       — Binary I/O: PFS container, TER terrain, ZON placement
 analyzer/   — Extract style metrics from existing EQ zones
   ├─ extractor.py   — per-zone metric extraction
   ├─ style_builder.py — build style profile JSONs from a corpus
-  └─ inspect.py     — rich terminal inspector + zone comparator ✅
-generators/ — Procedural geometry, lighting, region volumes      [Phase 2]
+  └─ inspect.py     — rich terminal inspector + zone comparator
+generators/ — Procedural geometry, lighting, region volumes
+  ├─ zone_spec.py   — serialisable ZoneSpec (the IR)
+  ├─ geometry.py    — MeshBuilder: rooms, corridors, ramps, stairs
+  ├─ layout.py      — LayoutGenerator: seedable 3D room-graph
+  ├─ textures.py    — placeholder DDS (AI textures in Phase 3)
+  └─ builder.py     — ZoneBuilder: spec → .eqg + .glb
+server/     — FastAPI backend wrapping the generators for the web UI
+web/        — Vite + TypeScript browser app (Three.js first-person viewer)
+viewer/     — Legacy standalone Flask GLB preview (superseded by web/)
 ai/         — LLM planner, texture generation, iterative agent   [Phase 3]
-viewer/     — Browser-based Three.js preview (GLB + Flask)
-styles/     — Empirically-derived style profiles per zone theme  ✅
+styles/     — Empirically-derived style profiles per zone theme
 ```
 
 **Generation pipeline**:
@@ -98,23 +105,42 @@ python -m analyzer.style_builder --eq-path "F:/everquest_rof2" --all
 This reads geometry data from reference zones and writes empirical style profiles
 to `styles/`. Pre-built profiles for RoF2 are included in this repo.
 
-### Generate a zone (Phase 2)
+### Web app — generate and walk zones in the browser ⭐
+
+Two processes: the Python API backend and the web front-end.
 
 ```bash
-# Procedurally generate a 5-room dungeon
+# 1. Backend (serves the API; also serves the built web app if present)
+python -m uvicorn server.app:app --port 8000
+
+# 2a. Front-end — development (hot reload, proxies /api to :8000)
+cd web && npm install && npm run dev
+#    → open http://localhost:5173
+
+# 2b. Front-end — production (served by the backend at http://localhost:8000)
+cd web && npm run build
+#    → then just open http://localhost:8000
+```
+
+Pick a theme and room count from the dropdowns and hit **Generate**. Each
+generation uses a fresh random seed, so the same inputs always produce a
+different zone. Click the viewport to capture the mouse, then walk with WASD
+(Shift to sprint, Q/E for down/up, R to reset). Toggle wireframe, light, and
+region overlays in the side panel.
+
+> The text-prompt box is wired for Phase 3; for now generation is driven by the
+> theme/rooms/elevation controls.
+
+### Generate a zone from the CLI
+
+```bash
 python main.py generate myrealm --theme dungeon --rooms 5 --seed 42
-
-# Generate and open the browser preview
-python main.py generate myrealm --theme dungeon --rooms 5 --preview
-
-# Preview a previously generated zone
-python main.py preview myrealm
+python main.py generate myrealm --theme dungeon --rooms 5 --preview   # legacy Flask viewer
 ```
 
 Output lands in `output/`: `myrealm.eqg` (for the client), `myrealm.glb`
-(browser preview), and `myrealm.json` (the editable ZoneSpec).
-
-Then validate it against the style profile:
+(browser preview), `myrealm.zone.json` (lights/regions sidecar), and
+`myrealm.json` (the editable ZoneSpec). Validate against the style profile:
 
 ```bash
 python -m analyzer.inspect output/myrealm.eqg --theme dungeon
@@ -138,6 +164,7 @@ python -m pytest tests/ -v
 | **1b** | Zone inspector — rich terminal metrics + profile comparison | ✅ Done |
 | **2** | Procedural geometry — rooms, corridors, lighting, regions | ✅ Done |
 | **2.5** | Elevation — multi-level layout, ramp & staircase corridors | ✅ Done |
+| **web** | Browser app — dropdown generate + first-person walk + overlays | ✅ Done |
 | **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | 🔨 Next |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 

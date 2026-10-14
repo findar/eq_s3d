@@ -1,0 +1,62 @@
+// api.ts — client for the eq_s3d FastAPI backend
+
+export interface GenerateParams {
+  theme: string;
+  rooms: number;
+  elevation: boolean;
+  seed?: number;
+  prompt?: string;
+}
+
+export interface GenerateResult {
+  id: string;
+  theme: string;
+  rooms: number;
+  seed: number;
+  vertices: number;
+  polygons: number;
+  materials: number;
+  glb_url: string;
+  zone_url: string;
+}
+
+export interface ZoneLight {
+  name: string;
+  pos: [number, number, number];
+  color: [number, number, number];
+  radius: number;
+}
+
+export interface ZoneRegion {
+  name: string;
+  kind: string;
+  center: [number, number, number];
+  extent: [number, number, number];
+}
+
+export interface ZoneSidecar {
+  name: string;
+  bounds: { min: [number, number, number]; max: [number, number, number] };
+  metrics: { vertices: number; polygons: number; materials: number };
+  lights: ZoneLight[];
+  regions: ZoneRegion[];
+}
+
+export async function generateZone(params: GenerateParams): Promise<GenerateResult> {
+  const res = await fetch("/api/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`generate failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+export async function fetchSidecar(url: string): Promise<ZoneSidecar> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`sidecar fetch failed (${res.status})`);
+  return res.json();
+}
