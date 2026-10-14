@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Phase 1 complete ✅ · Zone inspector complete ✅ — Phase 2 (procedural geometry) up next
+> **Status**: Phase 2 complete ✅ — procedural zones generate end-to-end. Phase 3 (AI integration) up next
 
 ---
 
@@ -98,11 +98,33 @@ python -m analyzer.style_builder --eq-path "F:/everquest_rof2" --all
 This reads geometry data from reference zones and writes empirical style profiles
 to `styles/`. Pre-built profiles for RoF2 are included in this repo.
 
+### Generate a zone (Phase 2)
+
+```bash
+# Procedurally generate a 5-room dungeon
+python main.py generate myrealm --theme dungeon --rooms 5 --seed 42
+
+# Generate and open the browser preview
+python main.py generate myrealm --theme dungeon --rooms 5 --preview
+
+# Preview a previously generated zone
+python main.py preview myrealm
+```
+
+Output lands in `output/`: `myrealm.eqg` (for the client), `myrealm.glb`
+(browser preview), and `myrealm.json` (the editable ZoneSpec).
+
+Then validate it against the style profile:
+
+```bash
+python -m analyzer.inspect output/myrealm.eqg --theme dungeon
+```
+
 ### Run the test suite
 
 ```bash
 python -m pytest tests/ -v
-# 31 passed
+# 43 passed
 ```
 
 ---
@@ -114,8 +136,8 @@ python -m pytest tests/ -v
 | **0** | Zone analyzer — extract style profiles from RoF2 install | ✅ Done |
 | **1** | Core I/O — PFS reader/writer, TER/ZON binary serialisers | ✅ Done |
 | **1b** | Zone inspector — rich terminal metrics + profile comparison | ✅ Done |
-| **2** | Procedural geometry — rooms, corridors, lighting, regions | 🔨 Next |
-| **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | ⏳ |
+| **2** | Procedural geometry — rooms, corridors, lighting, regions | ✅ Done |
+| **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | 🔨 Next |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
 ---
@@ -195,22 +217,35 @@ generated zones against reference originals.
 
 ---
 
-## What's Next — Phase 2: Procedural Geometry
+### Phase 2 — Procedural Geometry ✅
 
-Build the zone geometry generator that converts a `ZoneSpec` (structured JSON describing
-rooms, corridors, and features) into TER/ZON binary files ready for the RoF2 client:
+The generator turns a `ZoneSpec` (structured, editable JSON) into a complete `.eqg`:
 
-- `generators/zone_spec.py` — `ZoneSpec` dataclass: rooms, corridors, lights, regions
-- `generators/geometry.py` — box rooms, corridors, arched ceilings, UV mapping
-- `generators/layout.py` — room connectivity graph, door placement, zone bounds
-- `generators/lighting.py` — torch/ambient light placement heuristics
-- `generators/regions.py` — water/lava/zoneline region volume helpers
-- `generators/builder.py` — orchestrates all generators → TER + ZON + EQG
+- **`generators/zone_spec.py`** — `ZoneSpec` dataclass: materials, rooms, corridors, lights, regions. Fully serialisable to/from JSON.
+- **`generators/geometry.py`** — `MeshBuilder`: builds hollow box rooms and corridors with inward-facing walls, planar UV projection, and material resolution. Emits a `TerFile`.
+- **`generators/layout.py`** — `LayoutGenerator`: seedable procedural room-graph layout. Walks rooms along a grid, connects them with corridors, opens facing walls, places theme-appropriate lights. Pulls target dimensions from the style profile.
+- **`generators/textures.py`** — placeholder DDS generator (solid colour + noise). Phase 3 swaps this for AI image generation.
+- **`generators/builder.py`** — `ZoneBuilder`: orchestrates geometry + placement + textures into a `.eqg` + `.glb`. Follows RoF2 convention (terrain stored as `ter_<zone>.ter`, referenced as ZON model[0]).
 
-Target: flat-shaded box zones with solid-colour placeholder materials that load
-correctly in the RoF2 client and are fully walkable. The inspector will then be
-used to compare the generated zone's metrics against the dungeon/outdoor style profile
-as a first validation pass.
+Generated zones round-trip cleanly through our own reader and match the structural
+layout of real RoF2 zones. The inspector compares them against the style profile:
+
+```
+python -m analyzer.inspect output/testdungeon.eqg --theme dungeon
+  Ceiling Z   120 u ✓   (profile: 77–10560)
+  Materials   3 ⚠       (profile: 18–83)   ← placeholder, Phase 3 adds variety
+  Shader      MPLBump2UV ✓                 ← matches real dungeons
+```
+
+## What's Next — Phase 3: AI Integration
+
+- `ai/planner.py` — LLM prompt → `ZoneSpec` JSON (structured output / tool use)
+- `ai/style.py` — load style profiles as generation constraints
+- `generators/textures.py` — replace placeholders with real AI-generated DDS textures
+- `ai/agent.py` — iterative chat loop: refine zones with follow-up prompts
+
+Target: type a natural-language prompt, get a styled, textured, walkable zone, then
+refine it conversationally.
 
 ---
 

@@ -37,6 +37,7 @@ class EqgZone:
     def __init__(self, zone_name: str):
         self.zone_name = zone_name.lower()
         self._terrain:   Optional[TerFile] = None
+        self._pack_terrain: bool = True   # whether set_terrain is also packed
         self._placement: Optional[ZonFile] = None
         self._textures:  Dict[str, bytes]  = {}
         self._models:    Dict[str, bytes]  = {}   # name → raw TER/MOD bytes
@@ -45,8 +46,17 @@ class EqgZone:
     # Setters
     # ------------------------------------------------------------------
 
-    def set_terrain(self, ter: TerFile) -> "EqgZone":
+    def set_terrain(self, ter: TerFile, pack: bool = True) -> "EqgZone":
+        """
+        Set the terrain mesh.
+
+        If *pack* is True, the terrain is written to the archive as
+        `<zone_name>.ter`. Set pack=False when the terrain has already been
+        added via add_model() under a custom filename (e.g. ter_<zone>.ter)
+        and you only want this handle for GLB export.
+        """
         self._terrain = ter
+        self._pack_terrain = pack
         return self
 
     def set_placement(self, zon: ZonFile) -> "EqgZone":
@@ -69,7 +79,7 @@ class EqgZone:
         """Pack everything into a PfsArchive (without writing to disk)."""
         arc = PfsArchive()
 
-        if self._terrain is not None:
+        if self._terrain is not None and self._pack_terrain:
             arc.add(f"{self.zone_name}.ter", self._terrain.to_bytes())
 
         if self._placement is not None:
@@ -132,16 +142,22 @@ class EqgZone:
             process=False,
         )
 
-        # Assign a simple material colour per material index for the preview
-        # (full texture mapping requires UV unwrap, done separately)
+        # Colour each VERTEX by the material of the first polygon that uses it.
+        # Per-vertex colours avoid trimesh's face→vertex conversion (needs scipy)
+        # and render directly in the GLB viewer.
         import colorsys
         n_mats = max(1, len(ter.materials))
-        face_colors = np.zeros((len(faces), 4), dtype=np.uint8)
-        for i, poly in enumerate(ter.polygons):
-            hue = (poly.material % n_mats) / n_mats if poly.material >= 0 else 0
-            r, g, b = colorsys.hsv_to_rgb(hue, 0.4, 0.7)
-            face_colors[i] = [int(r * 255), int(g * 255), int(b * 255), 255]
-        mesh.visual.face_colors = face_colors
+        vertex_colors = np.full((len(verts), 4), 180, dtype=np.uint8)
+        vertex_colors[:, 3] = 255
+        for poly in ter.polygons:
+            mat_idx = poly.material if poly.material >= 0 else 0
+            hue = (mat_idx % n_mats) / n_mats
+            r, g, b = colorsys.hsv_to_rgb(hue, 0.45, 0.75)
+            rgba = [int(r * 255), int(g * 255), int(b * 255), 255]
+            for vi in (poly.v1, poly.v2, poly.v3):
+                if 0 <= vi < len(verts):
+                    vertex_colors[vi] = rgba
+        mesh.visual.vertex_colors = vertex_colors
 
         out_path = Path(path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
