@@ -71,25 +71,30 @@ class ZoneMetrics:
     shader_names: List[str] = field(default_factory=list)
     texture_filenames: List[str] = field(default_factory=list)
 
-    # UV
+    # UV  (median of per-vertex UV magnitude, 99th-pct clipped)
     uv_scale_mean: float = 1.0
     uv_scale_std: float = 0.0
 
-    # Lights
+    # Lights  (from ZON file — 0 if zone has no ZON)
     lights: LightStats = field(default_factory=LightStats)
 
-    # Regions
+    # Regions  (from ZON file — empty if zone has no ZON)
     regions: RegionStats = field(default_factory=RegionStats)
+
+    # Whether a ZON placement file was found
+    has_zon: bool = False
 
     def summary(self) -> str:
         lines = [
             f"Zone: {self.zone_name}",
-            f"  Geometry: {self.vertex_count} verts, {self.polygon_count} polys",
-            f"  Bounds:   {self.width_x:.0f} × {self.width_y:.0f} × {self.ceiling_height:.0f} EQ units",
-            f"  Area:     {self.floor_area:.0f} u²  |  density: {self.poly_density:.4f} polys/u²",
+            f"  Geometry : {self.vertex_count:,} verts, {self.polygon_count:,} polys",
+            f"  Bounds   : {self.width_x:.0f} × {self.width_y:.0f} × {self.ceiling_height:.0f} EQ units",
+            f"  Area     : {self.floor_area:,.0f} u²  |  density: {self.poly_density:.5f} polys/u²",
             f"  Materials: {self.material_count}  |  textures: {len(self.texture_filenames)}",
-            f"  Lights:    {self.lights.count}  (density: {self.lights.density_per_sq_unit:.6f}/u²)",
-            f"  Regions:   {self.regions.counts}",
+            f"  UV scale : median={self.uv_scale_mean:.2f}  std={self.uv_scale_std:.2f}",
+            f"  ZON      : {'yes' if self.has_zon else 'no (embedded placement)'}",
+            f"  Lights   : {self.lights.count}  (density: {self.lights.density_per_sq_unit:.2e}/u²)",
+            f"  Regions  : {self.regions.counts}",
         ]
         return "\n".join(lines)
 
@@ -139,7 +144,14 @@ class ZoneExtractor:
 
         # --- ZON file ---
         zon_data = arc.get(f"{self.zone_name}.zon")
+        if zon_data is None:
+            # RoF2 ZON filenames sometimes differ from zone name
+            zon_files = arc.get_by_extension("zon")
+            if zon_files:
+                zon_data = zon_files[0].data
+
         if zon_data is not None:
+            metrics.has_zon = True
             try:
                 zon = ZonFile.from_bytes(zon_data)
                 self._extract_lights(zon, metrics)
@@ -176,15 +188,22 @@ class ZoneExtractor:
         if metrics.floor_area > 0:
             metrics.poly_density = metrics.polygon_count / metrics.floor_area
 
-        # UV scale: estimate by looking at max UV value per polygon
+        # UV scale: use per-vertex UV magnitude, clipped at 99th percentile to
+        # avoid skew from large terrain tiling values (outdoor zones legitimately
+        # use U/V values of 50–200+ for texture repetition across large meshes).
+        import math
         uv_scales = []
         for v in ter.vertices:
             scale = max(abs(v.u), abs(v.v))
-            if scale > 0:
+            if scale > 0 and not math.isnan(scale) and not math.isinf(scale):
                 uv_scales.append(scale)
         if uv_scales:
-            metrics.uv_scale_mean = statistics.mean(uv_scales)
-            metrics.uv_scale_std  = statistics.stdev(uv_scales) if len(uv_scales) > 1 else 0.0
+            uv_scales.sort()
+            # Clip at 99th percentile before computing stats
+            p99_idx = int(len(uv_scales) * 0.99)
+            clipped = uv_scales[:p99_idx] if p99_idx > 0 else uv_scales
+            metrics.uv_scale_mean = statistics.median(clipped)   # median is more robust
+            metrics.uv_scale_std  = statistics.stdev(clipped) if len(clipped) > 1 else 0.0
 
     def _extract_materials(self, ter: TerFile, metrics: ZoneMetrics) -> None:
         metrics.material_count  = len(ter.materials)

@@ -46,19 +46,19 @@
       "std": 41.88
     },
     "shaders": [
+      "Opaque_MPLBlend.fx",
+      "Alpha_MPLBasicAT.fx",
       "Opaque_MaxWater.fx",
-      "Opaque_MPLBump.fx",
-      "Opaque_MPLBasic.fx",
       "Opaque_MaxWaterFall.fx",
-      "Alpha_MPLBasicAT.fx"
+      "Opaque_MPLBump.fx"
     ]
   },
   "uv": {
     "scale": {
       "min": 1.0,
-      "max": 6.44,
-      "mean": 3.15,
-      "std": 2.89
+      "max": 3.96,
+      "mean": 1.99,
+      "std": 1.71
     }
   },
   "lighting": {

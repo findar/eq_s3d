@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Phase 1 complete ✅ — Phase 2 (procedural geometry) up next
+> **Status**: Phase 1 complete ✅ · Zone inspector complete ✅ — Phase 2 (procedural geometry) up next
 
 ---
 
@@ -33,6 +33,9 @@ No 3D modelling required at any step. The tool handles geometry, textures, light
 ```
 core/       — Binary I/O: PFS container, TER terrain, ZON placement
 analyzer/   — Extract style metrics from existing EQ zones
+  ├─ extractor.py   — per-zone metric extraction
+  ├─ style_builder.py — build style profile JSONs from a corpus
+  └─ inspect.py     — rich terminal inspector + zone comparator ✅
 generators/ — Procedural geometry, lighting, region volumes      [Phase 2]
 ai/         — LLM planner, texture generation, iterative agent   [Phase 3]
 viewer/     — Browser-based Three.js preview (GLB + Flask)
@@ -76,6 +79,16 @@ cp .env.example .env
 
 ## Usage
 
+### Inspect a zone and validate metrics
+
+```bash
+# Single zone inspection with style profile comparison
+python -m analyzer.inspect F:/everquest_rof2/bertoxtemple.eqg --theme dungeon
+
+# Compare two zones side-by-side
+python -m analyzer.inspect F:/everquest_rof2/bertoxtemple.eqg --compare F:/everquest_rof2/dreadspire.eqg
+```
+
 ### Build style profiles from your EQ install (do this once)
 
 ```bash
@@ -100,6 +113,7 @@ python -m pytest tests/ -v
 |-------|-------------|--------|
 | **0** | Zone analyzer — extract style profiles from RoF2 install | ✅ Done |
 | **1** | Core I/O — PFS reader/writer, TER/ZON binary serialisers | ✅ Done |
+| **1b** | Zone inspector — rich terminal metrics + profile comparison | ✅ Done |
 | **2** | Procedural geometry — rooms, corridors, lighting, regions | 🔨 Next |
 | **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | ⏳ |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
@@ -150,20 +164,53 @@ plus GLB export for browser preview.
 **`viewer/`** — Self-contained Three.js first-person zone viewer. Served locally via Flask,
 auto-reloads when a new GLB is written. WASD movement at EQ scale (6 units = 1 character height).
 
+### Phase 1b — Zone Inspector ✅
+
+**`analyzer/inspect.py`** — Rich terminal inspector for validating zone metrics against style profiles.
+
+```
+python -m analyzer.inspect F:/everquest_rof2/bertoxtemple.eqg --theme dungeon
+```
+
+Output includes:
+- Geometry table: vertex/polygon counts, dimensions (u), floor area, polygon density
+- Per-metric ✓/⚠ indicators vs. the style profile's min/max range
+- Materials: count, texture filenames, shader names
+- Lights & Regions: count, density, mean RGB, region type breakdown (water/lava/zoneline)
+- Full texture list
+- ASCII bounding-box diagram with scale
+
+```
+python -m analyzer.inspect zone_a.eqg --compare zone_b.eqg
+```
+
+Side-by-side delta comparison of any two zones — the foundation for comparing
+generated zones against reference originals.
+
+**Metric fixes made during investigation:**
+- UV scale now uses **median of 99th-pct-clipped** values (terrain zones legitimately tile at 50–200+)
+- ZON file search now tries any `.zon` in the archive (RoF2 names don't always match zone name)
+- `has_zon` flag added to metrics — many RoF2 dungeons use embedded MOD placement without a ZON file
+- Style profiles rebuilt from corrected extractor
+
 ---
 
 ## What's Next — Phase 2: Procedural Geometry
 
 Build the zone geometry generator that converts a `ZoneSpec` (structured JSON describing
-rooms, corridors, and features) into TER/ZON binary files:
+rooms, corridors, and features) into TER/ZON binary files ready for the RoF2 client:
 
-- `generators/geometry.py` — box rooms, corridors, arched ceilings, stairs
+- `generators/zone_spec.py` — `ZoneSpec` dataclass: rooms, corridors, lights, regions
+- `generators/geometry.py` — box rooms, corridors, arched ceilings, UV mapping
 - `generators/layout.py` — room connectivity graph, door placement, zone bounds
 - `generators/lighting.py` — torch/ambient light placement heuristics
 - `generators/regions.py` — water/lava/zoneline region volume helpers
+- `generators/builder.py` — orchestrates all generators → TER + ZON + EQG
 
-Target: flat-shaded box zones with placeholder textures that load correctly in the
-RoF2 client and are walkable. This validates the full write path end-to-end.
+Target: flat-shaded box zones with solid-colour placeholder materials that load
+correctly in the RoF2 client and are fully walkable. The inspector will then be
+used to compare the generated zone's metrics against the dungeon/outdoor style profile
+as a first validation pass.
 
 ---
 
@@ -199,9 +246,9 @@ Full format documentation: [`docs/file_formats.md`](docs/file_formats.md) _(to b
 
 ## Known Issues / To Fix
 
-- UV scale statistics in style profiles are skewed by extreme float values in some zone TER files — needs outlier clipping before Phase 3.
-- Light count reads as 0 for all RoF2 zones — lights may be stored in a different file or format than the classic ZON structure. Needs investigation.
-- Style profiles for `city` theme are from only 3 zones — expand once more city zones are identified.
+- Style profiles for `city` and `cave` themes are thin (3–4 zones) — expand with more representatives once more zone names are identified.
+- Light density stat reads 0 in the profile because most dungeon reference zones use embedded MOD placement without ZON lights — this is accurate, not a bug.
+- The inspector's ASCII bbox diagram is proportional to zone size but doesn't render Z height — a future iteration could add a side-elevation view.
 
 ---
 

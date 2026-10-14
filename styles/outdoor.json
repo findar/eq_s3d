@@ -53,29 +53,29 @@
       "Opaque_MaxCB1.fx",
       "Opaque_MaxCB1_2UV.fx",
       "Opaque_MaxWater.fx",
-      "Opaque_MaxTerrain.fx"
+      "Opaque_MaxC1_2UV.fx"
     ]
   },
   "uv": {
     "scale": {
-      "min": 1.38,
-      "max": 58.31,
-      "mean": 17.14,
-      "std": 21.64
+      "min": 0.59,
+      "max": 62.0,
+      "mean": 13.32,
+      "std": 24.05
     }
   },
   "lighting": {
     "count": {
       "min": 0,
       "max": 452,
-      "mean": 112.67,
-      "std": 188.85
+      "mean": 131.5,
+      "std": 180.83
     },
     "mean_radius": {
       "min": 58.58,
-      "max": 64.17,
-      "mean": 61.38,
-      "std": 3.96
+      "max": 99.0,
+      "mean": 73.92,
+      "std": 21.9
     },
     "density": {
       "min": 0.0,
@@ -84,15 +84,15 @@
       "std": 0.0
     },
     "mean_color": [
-      0.722,
-      0.54,
-      0.312
+      0.753,
+      0.55,
+      0.319
     ]
   },
   "regions": {
     "type_counts": {
-      "ALV": 8.17,
-      "ATP": 1.33,
+      "ALV": 27.0,
+      "ATP": 2.5,
       "AWT": 2.83
     }
   }
