@@ -8,23 +8,30 @@ Generate EverQuest EQG zone files from natural language prompts, targeting the *
 
 ## What It Does
 
-Type a prompt, get a playable `.eqg` zone file and a browser preview:
+Generate playable EverQuest `.eqg` zone files and walk through them in the browser —
+no 3D modelling required. The tool handles geometry, textures, lighting, and packaging.
+
+**Today** (web app, dropdown-driven): pick a theme, room count, and elevation, hit
+Generate, and walk through a freshly built multi-level zone in a first-person
+browser viewer. Every generation uses a random seed, so the same inputs always
+produce a different zone.
+
+```bash
+cd web && npm install && npm run dev     # one command starts everything
+#    → open http://localhost:5173
+```
+
+**The end goal** (Phase 3) is prompt-driven generation on the same pipeline:
 
 ```
 > generate a dark stone dungeon with a lava river and torch lighting
-→ output/myrealm.eqg    (drop into your EQ directory)
-→ output/myrealm.glb    (opens in browser for preview)
-```
-
-Iterate with follow-up prompts:
-
-```
 > make the entrance corridor wider
 > add a second room to the north with a water pool
-> the lava texture needs to look more molten
 ```
 
-No 3D modelling required at any step. The tool handles geometry, textures, lighting, and packaging.
+The `/api/generate` endpoint already accepts a `prompt` field (currently ignored),
+so Phase 3 is additive: add a prompt box to the UI and an LLM planner behind the
+endpoint, with no change to the geometry/packaging pipeline underneath.
 
 ---
 
@@ -135,8 +142,8 @@ different zone. Click the viewport to capture the mouse, then walk with WASD
 (Shift to sprint, Q/E for down/up, R to reset). Toggle wireframe, light, and
 region overlays in the side panel.
 
-> The text-prompt box is wired for Phase 3; for now generation is driven by the
-> theme/rooms/elevation controls.
+> Generation is driven by the theme/rooms/elevation controls today. A text-prompt
+> box plugs into the same endpoint in Phase 3.
 
 ### Generate a zone from the CLI
 
@@ -157,7 +164,7 @@ python -m analyzer.inspect output/myrealm.eqg --theme dungeon
 
 ```bash
 python -m pytest tests/ -v
-# 43 passed
+# 49 passed
 ```
 
 ---
@@ -288,15 +295,34 @@ python -m analyzer.inspect output/testdungeon.eqg --theme dungeon
   Shader      MPLBump2UV ✓                 ← matches real dungeons
 ```
 
+### Web App — Browser Generate + Walk ✅
+
+The browser UI is the primary way to use the tool today.
+
+- **`server/app.py`** — FastAPI backend wrapping the generators. `POST /api/generate`
+  builds a zone with a **fresh random seed** every call (identical inputs → different
+  zone), serves the resulting `.glb` + `.zone.json` sidecar, and (when built) serves
+  the front-end itself.
+- **`web/`** — Vite + TypeScript single-page app. Three.js first-person viewer with
+  WASD movement at EQ scale, pointer-lock mouse look, and toggleable light / region /
+  wireframe overlays. Live metrics panel (seed, verts, polys, bounds).
+- **`web/dev.mjs`** — single-command launcher: `npm run dev` spawns the Python backend,
+  waits for its health check, then starts the bundler. One Ctrl+C stops both.
+
+Verified end-to-end: a generate request from the browser reaches the backend through
+the dev proxy, returns a random zone, and renders walkable in the viewport. Each click
+of Generate produces a different seed and different geometry.
+
 ## What's Next — Phase 3: AI Integration
 
 - `ai/planner.py` — LLM prompt → `ZoneSpec` JSON (structured output / tool use)
 - `ai/style.py` — load style profiles as generation constraints
 - `generators/textures.py` — replace placeholders with real AI-generated DDS textures
 - `ai/agent.py` — iterative chat loop: refine zones with follow-up prompts
+- add a prompt box to the web UI, posting to `/api/generate`'s `prompt` field
 
 Target: type a natural-language prompt, get a styled, textured, walkable zone, then
-refine it conversationally.
+refine it conversationally — all in the browser UI that already exists.
 
 ---
 
