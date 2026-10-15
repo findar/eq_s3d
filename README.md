@@ -228,6 +228,14 @@ The interior themes cluster at ~11–14 u median triangle edge — the authentic
 Classic–PoP resolution the generator targets (cave default `voxel=12` ≈ 12 u).
 These profiles constrain the generator so output stays within real-zone bounds.
 
+**Theme-accurate scale.** The profiles also record whole-zone footprint, and the
+measurement is dramatic: outdoor zones average **~94M u²** of floor area vs **~2M u²**
+for indoor zones — roughly **40× larger**. The `LayoutGenerator` now derives
+room size from each theme's measured `floor_area` divided across the room count,
+so a generated outdoor zone is correctly vast and a dungeon is correctly tight —
+the same room count yields a ~7× larger room in `outdoor` than in `dungeon`.
+Ceiling heights likewise track the measured per-theme means.
+
 ### Phase 1 — Core I/O ✅
 
 **`core/pfs.py`** — Full PFS archive read/write.

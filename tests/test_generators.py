@@ -112,6 +112,28 @@ class TestLayout:
         # Connected rooms should have at least one open wall each
         assert any(r.open_walls for r in spec.rooms)
 
+    def test_outdoor_rooms_larger_than_dungeon(self):
+        # Theme-accurate scale: outdoor zones are far larger than dungeons.
+        dungeon = LayoutGenerator(theme="dungeon", seed=1).generate("d", room_count=5)
+        outdoor = LayoutGenerator(theme="outdoor", seed=1).generate("o", room_count=5)
+        d_side = dungeon.rooms[0].width
+        o_side = outdoor.rooms[0].width
+        assert o_side > d_side * 3, f"outdoor {o_side:.0f} vs dungeon {d_side:.0f}"
+
+    def test_size_multiplier_scales(self):
+        base = LayoutGenerator(theme="dungeon", seed=1)
+        base_spec = base.generate("b", room_count=5)
+        big = LayoutGenerator(theme="dungeon", seed=1)
+        big.size_multiplier = 2.0
+        big_spec = big.generate("g", room_count=5)
+        assert big_spec.rooms[0].width > base_spec.rooms[0].width * 1.5
+
+    def test_more_rooms_smaller_each(self):
+        few = LayoutGenerator(theme="dungeon", seed=1).generate("f", room_count=3)
+        many = LayoutGenerator(theme="dungeon", seed=1).generate("m", room_count=15)
+        # Dividing the footprint across more rooms → smaller individual rooms
+        assert many.rooms[0].width < few.rooms[0].width
+
 
 class TestBuilder:
     def test_full_build(self, tmp_path):

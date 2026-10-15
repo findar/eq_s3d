@@ -36,10 +36,9 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None) -> ZoneSpec:
 
     gen = LayoutGenerator(theme=plan.theme, seed=rng_seed)
 
-    # Apply size → room spacing
-    scale = _SIZE_SCALE.get(plan.size, 1.0)
-    gen.room_min *= scale
-    gen.room_max *= scale
+    # Apply size as a multiplier on top of the theme-accurate base footprint.
+    # (generate() recomputes room scale from the measured profile; this persists.)
+    gen.size_multiplier = _SIZE_SCALE.get(plan.size, 1.0)
 
     # Apply verticality
     chance, rise_min, rise_max = _VERTICALITY.get(plan.verticality, _VERTICALITY["moderate"])

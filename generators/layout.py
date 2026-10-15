@@ -68,15 +68,40 @@ class LayoutGenerator:
         self.profile = load_style_profile(theme)
         self.rng = random.Random(seed)
 
-        # Pull target dimensions from the style profile, with dungeon-sane fallbacks.
-        # Note: profile floor_area/width are whole-zone; for a single room we
-        # scale down to a reasonable per-room size.
-        self.room_min = 150.0
-        self.room_max = 400.0
-        self.ceiling = max(40.0, min(120.0,
-            _profile_mean(self.profile, ["geometry", "ceiling_height"], 60.0) / 20.0))
+        # ------------------------------------------------------------------
+        # Per-theme scale, derived from the measured style profile.
+        #
+        # The profile stores the mean whole-zone floor_area for this theme
+        # (e.g. ~2M u² for dungeons, ~94M u² for outdoor — outdoor zones are
+        # ~40× the footprint). We size individual rooms so the assembled zone
+        # lands near that real footprint: each room covers roughly
+        # floor_area / room_count, so a room's side ≈ sqrt(area / count).
+        #
+        # The default room_count assumption here (used only to set the base
+        # per-room size) is refined per-generate by _room_size_for(count).
+        # ------------------------------------------------------------------
+        self._target_floor_area = _profile_mean(
+            self.profile, ["geometry", "floor_area"], 2_000_000.0)
+
+        # Ceiling comes straight from the measured mean, clamped to sane bounds.
+        # Indoor ceilings ~300-470u, outdoor "ceiling" (hill vertical range)
+        # ~1100u — but a single room shouldn't be a kilometre tall, so cap it.
+        measured_ceiling = _profile_mean(
+            self.profile, ["geometry", "ceiling_height"], 300.0)
+        self.ceiling = max(50.0, min(400.0, measured_ceiling * 0.4))
+
+        # Corridor scale tracks room scale (set in _apply_room_scale).
         self.corridor_width = 50.0
         self.corridor_height = max(40.0, self.ceiling * 0.8)
+
+        # Optional overall size multiplier (small/large/huge from a plan).
+        # Applied on top of the theme-accurate base in _apply_room_scale.
+        self.size_multiplier = 1.0
+
+        # Placeholder room-size band; refined per generate() by room count.
+        self.room_min = 150.0
+        self.room_max = 400.0
+        self._apply_room_scale(room_count=5)
 
         # Elevation parameters. elevation_chance is the probability that a
         # connection between two rooms changes height. step_rise is the Z change
@@ -84,6 +109,24 @@ class LayoutGenerator:
         self.elevation_chance = 0.5
         self.step_rise_min = 20.0
         self.step_rise_max = 80.0
+
+    def _apply_room_scale(self, room_count: int) -> None:
+        """
+        Set room_min/room_max (and corridor width) from the theme's measured
+        floor area divided across `room_count` rooms, so the assembled zone's
+        footprint tracks the real indoor-vs-outdoor proportions.
+        """
+        count = max(1, room_count)
+        # Rooms don't tile perfectly (gaps, corridors), so target ~55% of the
+        # per-room area share as actual room floor; the rest is spacing.
+        per_room_area = (self._target_floor_area / count) * 0.55
+        side = max(120.0, per_room_area ** 0.5) * self.size_multiplier
+        # Allow natural variation around the target side length.
+        self.room_min = side * 0.7
+        self.room_max = side * 1.3
+        # Corridors scale with rooms but stay walkable-narrow relative to them.
+        self.corridor_width = max(40.0, min(side * 0.25, 400.0))
+        self.corridor_height = max(40.0, self.ceiling * 0.8)
 
     # ------------------------------------------------------------------
     # Main generation
@@ -95,6 +138,10 @@ class LayoutGenerator:
                  add_lights: bool = True,
                  elevation: bool = True) -> ZoneSpec:
         spec = ZoneSpec(name=name, theme=self.theme, style_profile=self.theme)
+
+        # Scale rooms to the theme's measured footprint divided across the
+        # requested room count, so total zone size matches real proportions.
+        self._apply_room_scale(room_count)
 
         self._add_default_materials(spec)
 
