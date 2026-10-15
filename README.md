@@ -49,7 +49,7 @@ the design detail behind each stage.
 ## Setup
 
 ```bash
-git clone https://github.com/yourname/eq_s3d.git
+git clone https://github.com/findar/eq_s3d.git
 cd eq_s3d
 
 python -m venv .venv
