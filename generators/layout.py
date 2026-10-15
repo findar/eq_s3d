@@ -178,14 +178,22 @@ class LayoutGenerator:
                     rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
                     cz += rise * self.rng.choice([1, -1])
 
-        # Connect consecutive rooms with corridors (ramp/stairs if heights differ)
+        # Connect consecutive rooms with corridors. Corridors run WALL-TO-WALL
+        # (from the opening in room A's facing wall to the opening in room B's
+        # facing wall), not centre-to-centre — otherwise the corridor box
+        # drives into the middle of each room and the transition reads as the
+        # hallway "going into" the room.
         for i in range(len(placed) - 1):
             a, b = placed[i], placed[i + 1]
             use_steps = abs(b.floor_z - a.floor_z) > 1.0 and self.rng.random() < 0.5
+
+            fx, fy = self._wall_point(a, b)   # exit point on room A's wall
+            tx, ty = self._wall_point(b, a)   # entry point on room B's wall
+
             spec.corridors.append(CorridorSpec(
                 id=f"corr_{i}",
-                from_x=a.center_x, from_y=a.center_y,
-                to_x=b.center_x, to_y=b.center_y,
+                from_x=fx, from_y=fy,
+                to_x=tx, to_y=ty,
                 from_z=a.floor_z, to_z=b.floor_z,
                 width=self.corridor_width,
                 height=self.corridor_height,
@@ -253,6 +261,27 @@ class LayoutGenerator:
             r=r, g=g, b=b,
             radius=max(room.width, room.depth) * 0.9,
         ))
+
+    def _wall_point(self, room: RoomSpec, toward: RoomSpec) -> Tuple[float, float]:
+        """
+        Return the (x, y) point on *room*'s wall that faces *toward*, where the
+        corridor should connect. This is the midpoint of the facing wall, so
+        the corridor meets the wall opening cleanly instead of driving to the
+        room centre. A small inset keeps the corridor flush with the wall plane.
+        """
+        dx = toward.center_x - room.center_x
+        dy = toward.center_y - room.center_y
+        hw, hd = room.width / 2, room.depth / 2
+        # Small inset so the corridor overlaps the wall slightly (clean join).
+        inset = 2.0
+        if abs(dx) >= abs(dy):
+            # East/West wall
+            x = room.center_x + (hw - inset) * (1 if dx > 0 else -1)
+            return x, room.center_y
+        else:
+            # North/South wall
+            y = room.center_y + (hd - inset) * (1 if dy > 0 else -1)
+            return room.center_x, y
 
     def _open_facing_walls(self, room: RoomSpec, toward: RoomSpec) -> None:
         """Open the wall of *room* that faces *toward* so a corridor connects."""

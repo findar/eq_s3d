@@ -119,6 +119,17 @@ html, body {
 #generate:hover { background: #8fc5ff; }
 #generate:disabled { opacity: 0.5; cursor: wait; }
 
+button.secondary {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+button.secondary:hover { border-color: var(--accent); color: var(--text); }
+
 #status { font-size: 12px; color: var(--muted); margin-left: 4px; }
 
 /* ---- Viewport ---- */

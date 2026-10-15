@@ -88,11 +88,13 @@ class ZoneBuilder:
         eqg_path = out_dir / f"{name}.eqg"
         eqg.write(eqg_path)
 
-        # 5. GLB preview
+        # 5. GLB preview — pass per-material base colours so the preview shows
+        #    the real palette rather than arbitrary hues.
         glb_path = None
         if write_glb:
             glb_path = out_dir / f"{name}.glb"
-            result = eqg.write_glb(glb_path)
+            mat_colors = self._material_color_map(ter)
+            result = eqg.write_glb(glb_path, material_colors=mat_colors)
             if result is None:
                 glb_path = None  # trimesh not available
 
@@ -104,6 +106,26 @@ class ZoneBuilder:
             polygon_count=len(ter.polygons),
             material_count=len(ter.materials),
         )
+
+    def _material_color_map(self, ter: TerFile) -> dict:
+        """
+        Map each TER material index → its spec base colour (r,g,b 0-255), so
+        the GLB preview reflects the zone's intended palette. Matches by
+        material name; organic/terrain backends use a single 'cave_rock'/
+        'ground' material, so fall back to the dominant floor colour.
+        """
+        colors: dict = {}
+        for mat in ter.materials:
+            spec_mat = self.spec.materials.get(mat.name)
+            if spec_mat is not None:
+                colors[mat.index] = spec_mat.color
+            else:
+                # Organic/terrain single-material meshes: use floor/wall colour
+                fallback = (self.spec.materials.get("wall")
+                            or self.spec.materials.get("floor"))
+                if fallback is not None:
+                    colors[mat.index] = fallback.color
+        return colors
 
     # ------------------------------------------------------------------
     # Geometry backend selection

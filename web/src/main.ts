@@ -90,6 +90,14 @@ async function doGenerate() {
     const params = prompt
       ? { prompt }
       : { theme, rooms, elevation };
+
+    // Log the user's input so it's visible in the browser console.
+    if (prompt) {
+      console.log(`[input] prompt: "${prompt}"`);
+    } else {
+      console.log(`[input] controls: theme=${theme} rooms=${rooms} elevation=${elevation}`);
+    }
+
     const result = await generateZone(params);
     statusEl.textContent = "loading…";
 
@@ -98,17 +106,22 @@ async function doGenerate() {
     zoneScene.applyOverlays(sidecar);
     updatePanel(result, sidecar);
 
-    // Place camera at the first light (roughly room 0) looking into the zone,
-    // or fall back to the box edge.
+    // Place the camera near the zone's lowest/entry corner at a sensible
+    // eye height, looking toward the centre. World is Z-up and the mesh is
+    // centred on the origin, so the centre is roughly (0,0,0).
     const size = box.getSize(new THREE.Vector3());
-    const start = new THREE.Vector3(0, -size.y * 0.4, size.z * 0.25 + 20);
-    if (sidecar.lights.length > 0) {
-      const offset: THREE.Vector3 = (zoneScene as any).zoneGroup?.userData?.offset;
-      const l = sidecar.lights[0];
-      start.set(l.pos[0], l.pos[1], l.pos[2] - 20);
-      if (offset) start.add(offset);
-    }
-    controls.setStart(start, 0);
+    const groundZ = -size.z / 2;        // bottom of the centred mesh
+    const eye = Math.min(60, size.z * 0.3);
+    // Stand back along -Y, near the floor, looking toward +Y (yaw = +90°).
+    const start = new THREE.Vector3(0, -size.y * 0.45, groundZ + eye);
+    const startYaw = Math.PI / 2;       // face +Y (into the zone)
+    controls.setStart(start, startYaw);
+
+    console.info(
+      `[generate] seed=${result.seed} theme=${result.theme} rooms=${result.rooms} ` +
+      `source=${result.source}` +
+      (result.planner ? ` planner=${result.planner}` : ""),
+    );
 
     statusEl.textContent = `seed ${result.seed} · ${result.polygons.toLocaleString()} polys`;
   } catch (err) {
@@ -120,6 +133,12 @@ async function doGenerate() {
 }
 
 genBtn.addEventListener("click", doGenerate);
+
+// Reset View button — return the camera to its starting position/orientation
+$("reset-view").addEventListener("click", () => {
+  controls.reset();
+  console.log("[input] reset view");
+});
 
 // Enter in the prompt box triggers generation
 ($("prompt") as HTMLInputElement).addEventListener("keydown", (e) => {
