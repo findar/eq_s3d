@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Prompt-driven generation ✅ — type a description, get a zone. Rule-based planner (no API) with LLM drop-in.
+> **Status**: Prompt-driven generation ✅ + WLD reader ✅ — can now read Classic–PoP (.s3d) zones for fidelity calibration.
 
 ---
 
@@ -38,7 +38,8 @@ endpoint, with no change to the geometry/packaging pipeline underneath.
 ## Architecture
 
 ```
-core/       — Binary I/O: PFS container, TER terrain, ZON placement
+core/       — Binary I/O: PFS container, TER terrain, ZON placement, WLD reader
+  └─ wld.py         — Classic–PoP .s3d/WLD geometry reader (0x36 meshes)
 analyzer/   — Extract style metrics from existing EQ zones
   ├─ extractor.py   — per-zone metric extraction
   ├─ style_builder.py — build style profile JSONs from a corpus
@@ -478,6 +479,36 @@ Full format documentation: [`docs/file_formats.md`](docs/file_formats.md) _(to b
 - [knervous/eqsage](https://github.com/knervous/eqsage) — browser-based S3D/EQG viewer
 
 ---
+
+## Geometric Fidelity by Era
+
+To match EQ's look, generated geometry should sit at the same resolution the
+original artists worked at — not smoother (reads as too modern) nor coarser.
+The key metric is **median triangle edge length** (world units), measured from
+real zones. The project reads both EQG (`.ter`) and now Classic–PoP (`.s3d`/WLD)
+zones to establish this.
+
+The hard format boundary is **Gates of Discord (2003)**: Classic → Planes of
+Power ship as `.s3d`/WLD; GoD onward ship as `.eqg`.
+
+| Era | Format | Median edge (u) | Median polys |
+|-----|--------|-----------------|--------------|
+| Classic (1999) | s3d | **13.1** | 22.6k |
+| Kunark (2000) | s3d | **14.1** | 39.3k |
+| Velious (2000) | s3d | 49.3 (big open zones) | 41.6k |
+| Luclin (2001) | s3d | 8.0 (finer architecture) | 57.8k |
+| PoP (2002) | s3d | **12.2** | 105k |
+| GoD/OoW (2003–4) | eqg | 13.2 | 166k |
+| DoN/DoDH (2005) | eqg | 5.8 | 148k |
+| TBS/SoF (2007) | eqg | 15.8 | 50k |
+| SoD/UF (2008–9) | eqg | 18.4 | 61k |
+| HoT/VoA (2010–11) | eqg | 20.4 | 213k |
+| RoF (2012) | eqg | 5.8 | 71k |
+
+The iconic **Classic/Kunark/PoP look clusters at ~12–14u median edge**, which is
+the default target. The cave backend's default `voxel=12` produces ~12u edges —
+a confirmed match for that era. Fidelity did not evolve monotonically; it
+oscillated with art teams, tools, and zone type.
 
 ## Roadmap Notes / Future Work
 
