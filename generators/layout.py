@@ -575,6 +575,7 @@ class LayoutGenerator:
                 width=self.corridor_width,
                 height=self.corridor_height,
                 steps=self.rng.randint(4, 8) if use_steps else 0,
+                from_room=a.id, to_room=b.id,
             ))
             self._open_facing_walls(a, b)
             self._open_facing_walls(b, a)

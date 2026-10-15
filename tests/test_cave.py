@@ -135,6 +135,52 @@ class TestFeatures:
         assert result.polygon_count > 3000
 
 
+class TestCaveConnectivity:
+    """
+    Regression tests for the disconnected-cave bug: chambers must be joined by
+    tunnels into a single navigable void, with no stray floating shells, and
+    floor triangles must face up (not into the rock, which rendered as
+    see-through geometry).
+    """
+
+    def _mesh(self, seed):
+        import numpy as np
+        gen = LayoutGenerator(theme="cave", seed=seed)
+        spec = gen.generate("conn", room_count=5)
+        result = ZoneBuilder(spec).build(output_dir="output", write_glb=False)
+        arc = PfsArchive.from_file(result.eqg_path)
+        ter = TerFile.from_bytes(arc.get("ter_conn.ter"))
+        V = np.array([[v.x, v.y, v.z] for v in ter.vertices])
+        F = np.array([[p.v1, p.v2, p.v3] for p in ter.polygons])
+        return V, F
+
+    def test_cave_is_single_connected_component(self):
+        import numpy as np
+        try:
+            import trimesh
+        except ImportError:
+            import pytest
+            pytest.skip("trimesh not available")
+        for seed in (5, 42, 678358326, 1, 99):
+            V, F = self._mesh(seed)
+            m = trimesh.Trimesh(vertices=V, faces=F, process=False)
+            comps = m.split(only_watertight=False)
+            assert len(comps) == 1, f"seed {seed}: {len(comps)} components (want 1)"
+
+    def test_cave_floor_faces_up(self):
+        import numpy as np
+        V, F = self._mesh(42)
+        # Lowest 15% of triangles by centroid Z should mostly face up (+Z),
+        # i.e. their winding normal points into the air, not into the rock.
+        tc = V[F].mean(axis=1)
+        zmin, zmax = V[:, 2].min(), V[:, 2].max()
+        lo = tc[:, 2] < zmin + (zmax - zmin) * 0.15
+        wn = np.cross(V[F[:, 1]] - V[F[:, 0]], V[F[:, 2]] - V[F[:, 0]])
+        wn = wn / (np.linalg.norm(wn, axis=1, keepdims=True) + 1e-9)
+        up_fraction = (wn[lo][:, 2] > 0.5).mean()
+        assert up_fraction > 0.6, f"only {up_fraction:.0%} of floor faces point up"
+
+
 class TestCaveThemeRouting:
     def test_cave_theme_uses_organic_backend(self, tmp_path):
         gen = LayoutGenerator(theme="cave", seed=5)

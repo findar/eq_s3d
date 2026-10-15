@@ -90,6 +90,13 @@ class CorridorSpec:
     wall_material: str = "wall"
     ceiling_material: str = "ceiling"
 
+    # Which rooms this corridor connects (room ids). Optional for hand-authored
+    # specs; the layout sets them so backends know the exact endpoints rather
+    # than guessing from wall-point proximity (the cave backend needs this to
+    # anchor tunnels to the right two chambers).
+    from_room: str = ""
+    to_room: str = ""
+
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
     def floor_z(self) -> float:

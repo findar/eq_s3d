@@ -209,27 +209,60 @@ class ZoneBuilder:
         base_seed = abs(hash(name)) % (2 ** 31)
 
         chambers = []
+        chamber_centers = []   # (x, y, z, radius) per room, index-aligned
         for i, room in enumerate(self.spec.rooms):
             # Chamber radius from the room footprint; centre at mid-height
-            radius = 0.5 * min(room.width, room.depth)
+            radius = max(40.0, 0.5 * min(room.width, room.depth))
             cz = room.floor_z + room.height * 0.5
             # Larger chambers can afford more lobes without losing their floor.
             lobes = 3 if radius < 120 else 4
             chambers.append(Chamber(
                 center=(room.center_x, room.center_y, cz),
-                radius=max(40.0, radius),
+                radius=radius,
                 lobes=lobes,
                 irregularity=0.55,
                 shape_seed=base_seed + i * 101 + 1,
             ))
+            chamber_centers.append((room.center_x, room.center_y, cz, radius))
 
+        room_index = {room.id: i for i, room in enumerate(self.spec.rooms)}
+
+        def _nearest_chamber(x: float, y: float):
+            """Index of the chamber whose centre is closest to (x, y)."""
+            best, bd = 0, float("inf")
+            for ci, (cx, cy, _cz, _r) in enumerate(chamber_centers):
+                d = (x - cx) ** 2 + (y - cy) ** 2
+                if d < bd:
+                    bd, best = d, ci
+            return best
+
+        # IMPORTANT: corridor endpoints come from the box backend's wall points
+        # (on each room's bounding box), but cave chambers are inscribed blobs
+        # much smaller than that box. A tunnel built to the wall point dangles
+        # in solid rock, short of the chamber void — leaving every chamber a
+        # sealed, disconnected shell. So anchor each tunnel at the two chambers'
+        # CENTRES so the capsule bridges straight through both air volumes and
+        # the carve fuses them into one connected cave.
+        #
+        # Use the corridor's recorded room ids (reliable); only fall back to
+        # nearest-chamber-by-position for hand-authored specs that omit them.
+        # The nearest-position heuristic is unreliable because a wall point can
+        # sit closer to a neighbouring chamber's centre than its own.
         tunnels = []
         for i, cor in enumerate(self.spec.corridors):
-            za = cor.from_z + 0.5 * cor.height
-            zb = cor.to_z + 0.5 * cor.height
+            if cor.from_room in room_index and cor.to_room in room_index:
+                ia = room_index[cor.from_room]
+                ib = room_index[cor.to_room]
+            else:
+                ia = _nearest_chamber(cor.from_x, cor.from_y)
+                ib = _nearest_chamber(cor.to_x, cor.to_y)
+            if ia == ib:
+                continue   # degenerate (self-loop)
+            ax, ay, az, _ = chamber_centers[ia]
+            bx, by, bz, _ = chamber_centers[ib]
             tunnels.append(Tunnel(
-                a=(cor.from_x, cor.from_y, za),
-                b=(cor.to_x, cor.to_y, zb),
+                a=(ax, ay, az),
+                b=(bx, by, bz),
                 radius=max(20.0, cor.width * 0.5),
                 wander=0.2,
                 segments=4,

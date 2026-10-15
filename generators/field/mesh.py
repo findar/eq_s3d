@@ -44,6 +44,14 @@ def field_to_ter(grid: FieldGrid,
         density, level=0.0, spacing=(grid.voxel, grid.voxel, grid.voxel)
     )
 
+    # Drop tiny disconnected shells. FBM noise can leave a few isolated air
+    # voxels far from the main cave; meshed, they become small floating blobs
+    # the player can see from "outside". Keep only components that are a
+    # meaningful fraction of the largest.
+    verts, faces, normals = _keep_large_components(verts, faces, normals)
+    if len(faces) == 0:
+        return None
+
     # marching_cubes returns verts in grid space scaled by spacing; shift to world
     ox, oy, oz = grid.origin
     verts = verts + np.array([ox, oy, oz], dtype=np.float32)
@@ -64,15 +72,77 @@ def field_to_ter(grid: FieldGrid,
         for v, n in zip(verts, normals)
     ]
 
-    # marching_cubes winding: faces index into verts. The client wants CCW
-    # from the visible side; skimage normals point toward decreasing density
-    # (into the air), which is the visible side, so keep the order.
+    # Winding: the client (and back-face culling) wants each triangle wound so
+    # its geometric normal — cross(b-a, c-a) — points toward the VISIBLE side,
+    # i.e. into the air, which is the direction the marching-cubes vertex
+    # normals point. skimage's face winding is NOT guaranteed to agree with its
+    # gradient normals (notably on the flat floor plane, where every triangle
+    # came out wound to face down into the rock — making the floor invisible
+    # from above and read as "see-through"). So flip any face whose winding
+    # normal opposes the averaged vertex normal.
+    a = verts[faces[:, 0]]
+    b = verts[faces[:, 1]]
+    c = verts[faces[:, 2]]
+    wind_n = np.cross(b - a, c - a)
+    face_vn = normals[faces[:, 0]] + normals[faces[:, 1]] + normals[faces[:, 2]]
+    flip = np.einsum("ij,ij->i", wind_n, face_vn) < 0.0
+    faces_fixed = faces.copy()
+    faces_fixed[flip] = faces_fixed[flip][:, ::-1]
+
     ter.polygons = [
         Polygon(int(f[0]), int(f[1]), int(f[2]), material=0, flags=0)
-        for f in faces
+        for f in faces_fixed
     ]
 
     return ter
+
+
+def _keep_large_components(verts: np.ndarray, faces: np.ndarray,
+                           normals: np.ndarray, min_fraction: float = 0.02):
+    """
+    Keep only connected mesh components whose triangle count is at least
+    `min_fraction` of the largest component's. Removes stray noise islands
+    (e.g. a handful of triangles) while preserving the main cave and any
+    genuinely sizeable sub-caves. Returns filtered (verts, faces, normals) with
+    vertices re-indexed compactly.
+    """
+    n_v = len(verts)
+    if len(faces) == 0:
+        return verts, faces, normals
+
+    # Union-find over vertices connected by shared triangles.
+    parent = np.arange(n_v)
+
+    def find(x):
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    for a, b, c in faces:
+        ra, rb, rc = find(a), find(b), find(c)
+        parent[rb] = ra
+        parent[rc] = ra
+
+    roots = np.array([find(f[0]) for f in faces])
+    uniq, counts = np.unique(roots, return_counts=True)
+    biggest = counts.max()
+    keep_roots = set(uniq[counts >= max(1, int(biggest * min_fraction))].tolist())
+
+    face_mask = np.array([r in keep_roots for r in roots], dtype=bool)
+    if face_mask.all():
+        return verts, faces, normals
+
+    kept_faces = faces[face_mask]
+
+    # Re-index vertices to the subset actually used.
+    used = np.unique(kept_faces)
+    remap = np.full(n_v, -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    new_faces = remap[kept_faces]
+    return verts[used], new_faces, normals[used]
 
 
 def decimate_ter(ter: TerFile, target_ratio: float = 0.5) -> TerFile:

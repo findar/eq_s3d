@@ -17,8 +17,7 @@ import numpy as np
 
 from core.ter import TerFile
 from .sdf import (
-    FieldGrid, sdf_sphere, sdf_capsule, sdf_dome, carve, smooth_union_carve,
-    smooth_min,
+    FieldGrid, sdf_sphere, sdf_capsule, sdf_dome, carve, smooth_min,
 )
 from .noise import fbm_field
 from .mesh import field_to_ter, decimate_ter
@@ -128,26 +127,36 @@ def build_cave(spec: CaveSpec, name: str,
     # World Z of every voxel — used to taper noise near chamber floors.
     _, _, Z = grid.world_coords()
 
-    # Carve each chamber as an irregular multi-lobe blob with a flat walkable
-    # floor and floor-tapered noise so the floor is navigable while the walls
-    # and ceiling stay rough.
+    # Build ONE combined air-volume SDF for the whole cave, then carve it into
+    # the solid in a single pass.
     #
-    # Near the floor the noise is both tapered (small amplitude) AND made
-    # one-sided: it may raise gentle bumps but never carves BELOW the floor
-    # plane (which would create pits/dips that break walkability). Higher up,
-    # the full two-sided noise applies for rough walls and ceiling.
+    # Why combine first: each chamber/tunnel is a real signed-distance field (in
+    # world units). We smooth-UNION them together with `smooth_min` so adjacent
+    # shapes merge with organic fillets and — crucially — any tunnel that
+    # overlaps a chamber fuses into one continuous void (connected cave). Only
+    # after the full air SDF is assembled do we carve, using a plain hard min
+    # (`carve`). Carving each shape individually with a smooth-min against the
+    # running density is WRONG: the density starts at a small +solid constant
+    # while the SDFs span hundreds of world units, so the smooth-min band
+    # (~k units) never reaches the deep interior and leaves it solid.
+    #
+    # Floor-shaped noise: near each shape's floor the noise is tapered and made
+    # one-sided (raises gentle bumps, never digs pits below the floor) so floors
+    # stay walkable; higher up the full two-sided noise roughens walls/ceiling.
     for ch in spec.chambers:
         floor_z = ch.floor_z if ch.floor_z is not None else ch.center[2] - ch.radius * 0.5
         n = _floor_shaped_noise(Z, base_noise, floor_z, spec)
-        s = _chamber_sdf(grid, ch, floor_z) + n
-        smooth_union_carve(grid, s, k=spec.smooth_k)
+        carve(grid, _chamber_sdf(grid, ch, floor_z) + n)
 
-    # Tunnels wind between rooms instead of running dead straight.
+    # Tunnels wind between rooms. They are carved with a hard union (min) so
+    # that wherever a tunnel overlaps a chamber the two voids FUSE into one
+    # connected cave — the whole point of the tunnels. Each tunnel is anchored
+    # (by the caller) to span chamber-centre to chamber-centre, so it always
+    # penetrates both chamber volumes.
     for tn in spec.tunnels:
         floor_z = min(tn.a[2], tn.b[2]) - tn.radius
         n = _floor_shaped_noise(Z, base_noise, floor_z, spec)
-        s = _tunnel_sdf(grid, tn) + n
-        smooth_union_carve(grid, s, k=spec.smooth_k)
+        carve(grid, _tunnel_sdf(grid, tn) + n)
 
     # Grow natural features into the carved field before meshing so they
     # mesh continuously with the cave surface.
@@ -212,31 +221,33 @@ def _chamber_sdf(grid: FieldGrid, ch: Chamber, floor_z: float) -> np.ndarray:
     lobes are smaller, pushed out horizontally in varied directions and sizes,
     all sharing the same flat floor so the whole chamber stays walkable.
     """
-    base = sdf_dome(grid, ch.center, ch.radius, floor_z)
     if ch.lobes <= 1 or ch.irregularity <= 0.0:
-        return base
+        return sdf_dome(grid, ch.center, ch.radius, floor_z)
 
-    rng = np.random.default_rng(ch.shape_seed or 1)
+    # Smooth-union the lobes as pure SPHERES (no floor cut), then intersect the
+    # whole blob with the floor plane ONCE, with a hard max. This keeps the
+    # organic smooth-union on the walls/ceiling while leaving a single clean
+    # flat floor at floor_z — smooth-unioning floor-cut domes instead would
+    # round the floor crease into a bowl (steep, un-walkable edges).
     cx, cy, cz = ch.center
-    out = base
+    out = sdf_sphere(grid, ch.center, ch.radius)
+    rng = np.random.default_rng(ch.shape_seed or 1)
     for _ in range(ch.lobes - 1):
         ang = rng.uniform(0.0, 2.0 * np.pi)
         dist = ch.radius * ch.irregularity * rng.uniform(0.5, 1.0)
         lobe_r = ch.radius * rng.uniform(0.55, 0.9)
         lx = cx + np.cos(ang) * dist
         ly = cy + np.sin(ang) * dist
-        # Keep the lobe centre at or above the chamber centre so its dome adds
+        # Keep the lobe centre at or above the chamber centre so its sphere adds
         # width/ceiling variety without pulling the air volume below the floor.
         lz = cz + ch.radius * rng.uniform(0.0, 0.2)
-        lobe = sdf_dome(grid, (lx, ly, lz), lobe_r, floor_z)
-        # Fillet proportional to the smaller lobe so junctions read as one cave.
+        lobe = sdf_sphere(grid, (lx, ly, lz), lobe_r)
         out = smooth_min(out, lobe, k=max(12.0, lobe_r * 0.5))
 
-    # The smooth-min fillet can bow the blended air volume slightly below the
-    # floor plane at lobe junctions. Re-intersect with the half-space above the
-    # floor so the chamber keeps a single flat walkable floor at floor_z.
+    # Single flat floor cut: intersect (hard max) with the half-space above
+    # floor_z. above_floor < 0 above the plane, > 0 below.
     _, _, Z = grid.world_coords()
-    above_floor = floor_z - Z   # <0 above the floor, >0 below
+    above_floor = floor_z - Z
     return np.maximum(out, above_floor)
 
 

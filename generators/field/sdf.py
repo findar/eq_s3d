@@ -251,19 +251,12 @@ def smooth_min(a: np.ndarray, b: np.ndarray, k: float = 20.0) -> np.ndarray:
     fillet of size ~k. Used to merge several chamber lobes into one organic
     blob (no hard creases where lobes meet).
     """
+    # Inigo Quilez polynomial smooth-min:
+    #   h = clip(0.5 + 0.5*(b-a)/k, 0, 1)
+    #   mix(b, a, h) - k*h*(1-h)   where mix(x,y,h) = x*(1-h) + y*h
+    # NOTE the interpolation direction: when a is deeply inside (a << b),
+    # h → 1 and the result → a (the interior value), which is what a UNION must
+    # keep. An earlier version used b*h + a*(1-h) (h inverted), which returned
+    # the OUTSIDE value for deep interiors and silently failed to carve.
     h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
-    return b * h + a * (1.0 - h) - k * h * (1.0 - h)
-
-
-def smooth_union_carve(grid: FieldGrid, sdf: np.ndarray, k: float = 20.0) -> None:
-    """
-    Smooth-blend carve — rounds the junction between carved volumes so tunnels
-    meet chambers with organic fillets instead of hard intersections.
-
-    Uses a polynomial smooth-min on the air side.
-    """
-    a = grid.density
-    b = sdf
-    h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
-    blended = b * h + a * (1.0 - h) - k * h * (1.0 - h)
-    np.minimum(grid.density, blended, out=grid.density)
+    return b * (1.0 - h) + a * h - k * h * (1.0 - h)
