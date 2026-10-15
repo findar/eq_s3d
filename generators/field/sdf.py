@@ -93,6 +93,26 @@ def sdf_capsule(grid: FieldGrid, a, b, radius: float) -> np.ndarray:
     return d - radius
 
 
+def sdf_dome(grid: FieldGrid, center, radius: float,
+             floor_z: float) -> np.ndarray:
+    """
+    Signed distance to a flat-bottomed dome: a sphere intersected with the
+    half-space above `floor_z`. Produces a chamber with a FLAT walkable floor
+    at floor_z and a rounded dome of walls/ceiling above it.
+
+    This is the walkable alternative to carving a pure sphere (which leaves a
+    curved bowl floor the player would slide down).
+    """
+    X, Y, Z = grid.world_coords()
+    cx, cy, cz = center
+    sphere = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2 + (Z - cz) ** 2) - radius
+    # Half-space: solid below floor_z. SDF of "above the plane" is (floor_z - Z);
+    # negative above the floor, positive below.
+    above_floor = floor_z - Z
+    # Intersection of sphere-interior and above-floor = max of the two SDFs
+    return np.maximum(sphere, above_floor)
+
+
 def sdf_cone(grid: FieldGrid, tip, axis, height: float, base_radius: float) -> np.ndarray:
     """
     Approximate signed distance to a cone, tip at `tip`, growing along `axis`

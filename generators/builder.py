@@ -118,6 +118,7 @@ class ZoneBuilder:
         rooms → chambers (spheres), corridors → tunnels (capsules).
         """
         from .field.cave import CaveSpec, Chamber, Tunnel, build_cave
+        from .field.features import FeatureParams
 
         chambers = []
         for room in self.spec.rooms:
@@ -148,7 +149,12 @@ class ZoneBuilder:
             noise_amplitude=26.0,
             noise_scale=130.0,
         )
-        ter = build_cave(cave, name=f"ter_{name}", decimate=0.5)
+        # Natural features (stalactites/stalagmites/pillars), seeded from name.
+        feats = FeatureParams(seed=abs(hash(name + "feat")) % (2 ** 31))
+
+        # No decimation — it collapses the walkable floor. voxel=12 keeps
+        # poly count reasonable while preserving navigable floors.
+        ter = build_cave(cave, name=f"ter_{name}", decimate=None, features=feats)
         if ter is not None:
             ter.version = ter_version
         return ter

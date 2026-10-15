@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Organic cave geometry ✅ — SDF + marching cubes caves generate in ~1s. Phase 3 (AI integration) up next
+> **Status**: Organic caves with walkable floors + natural features ✅ — stalactites, stalagmites, pillars. Phase 3 (AI integration) up next
 
 ---
 
@@ -49,9 +49,10 @@ generators/ — Procedural geometry, lighting, region volumes
   ├─ layout.py      — LayoutGenerator: seedable 3D room-graph
   ├─ textures.py    — placeholder DDS (AI textures in Phase 3)
   ├─ field/         — organic (SDF + marching cubes) geometry
-  │   ├─ sdf.py      — density-field primitives (sphere/capsule/cone) + carve
+  │   ├─ sdf.py      — density-field primitives (sphere/capsule/cone/dome) + carve
   │   ├─ noise.py    — fast vectorised FBM value noise (wall roughness)
-  │   ├─ cave.py     — carve chambers+tunnels into rock → organic cave
+  │   ├─ cave.py     — carve chambers+tunnels, walkable flat floors
+  │   ├─ features.py — stalactites / stalagmites / pillars (surface-aware)
   │   └─ mesh.py     — marching cubes → TerFile + decimation
   └─ builder.py     — ZoneBuilder: routes box vs organic backend → .eqg + .glb
 server/     — FastAPI backend wrapping the generators for the web UI
@@ -185,6 +186,7 @@ python -m pytest tests/ -v
 | **2.5** | Elevation — multi-level layout, ramp & staircase corridors | ✅ Done |
 | **web** | Browser app — dropdown generate + first-person walk + overlays | ✅ Done |
 | **organic** | Cave geometry — SDF + marching cubes, noise-roughened walls | ✅ Done |
+| **organic+** | Walkable floors + natural features (stalactites/pillars) | ✅ Done |
 | **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | 🔨 Next |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
@@ -329,6 +331,20 @@ python main.py generate grotto --theme cave --rooms 5
 
 The noise is fully vectorised numpy (no per-voxel Python), bringing generation
 from ~27s down to ~1s — fast enough for the interactive web loop.
+
+**Walkable floors.** Characters have to navigate these zones, so chambers are
+carved as flat-bottomed **domes** (sphere ∩ half-space) rather than full spheres,
+and wall noise is **tapered to near-zero at the floor** and clamped one-sided
+there so it raises gentle bumps but never digs pits. The result is a navigable
+floor with natural undulation — not a flat disc, not a slippery bowl. (Mesh
+decimation is deliberately off for caves: quadric decimation collapses the flat
+floor into a few steep triangles, so poly count is controlled via voxel size.)
+
+**Natural features.** `field/features.py` grows stalactites (ceiling cones),
+stalagmites (floor cones), and pillars (floor-to-ceiling columns) into the carved
+field *before* meshing, so they fuse with the rock as one continuous surface
+rather than looking like placed props. Floor features are kept toward chamber
+edges so the walkable core stays clear.
 
 ### Web App — Browser Generate + Walk ✅
 

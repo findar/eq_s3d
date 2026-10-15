@@ -66,6 +66,75 @@ class TestCaveBuild:
         assert len(ter2.polygons) == len(ter.polygons)
 
 
+class TestWalkableFloor:
+    def _floor_walkable_pct(self, ter, band_frac=0.3, up_thresh=0.5):
+        import numpy as np, math
+        verts = np.array([[v.x, v.y, v.z] for v in ter.vertices])
+        zmin = verts[:, 2].min(); zmax = verts[:, 2].max()
+        band = zmin + (zmax - zmin) * band_frac
+        slopes = []
+        for p in ter.polygons:
+            a, b, c = verts[p.v1], verts[p.v2], verts[p.v3]
+            if (a[2] + b[2] + c[2]) / 3 > band:
+                continue
+            n = np.cross(b - a, c - a)
+            ln = np.linalg.norm(n)
+            if ln < 1e-6:
+                continue
+            n = n / ln
+            if n[2] > up_thresh:
+                slopes.append(math.degrees(math.acos(min(1.0, abs(n[2])))))
+        if not slopes:
+            return 0.0, zmin
+        s = np.array(slopes)
+        return 100.0 * (s < 30).mean(), zmin
+
+    def test_dome_floor_is_mostly_walkable(self):
+        spec = CaveSpec(
+            chambers=[Chamber((0, 0, 0), 110, floor_z=-45)],
+            voxel=10.0, noise_amplitude=24, noise_scale=120, noise_seed=3,
+        )
+        ter = build_cave(spec, "ter_walk", decimate=None)
+        walkable, zmin = self._floor_walkable_pct(ter)
+        # A navigable cave floor: majority of floor triangles under 30deg slope
+        assert walkable > 55, f"only {walkable:.0f}% walkable"
+
+    def test_floor_does_not_dip_far_below_plane(self):
+        import numpy as np
+        floor_z = -45
+        spec = CaveSpec(
+            chambers=[Chamber((0, 0, 0), 110, floor_z=floor_z)],
+            voxel=10.0, noise_amplitude=24, noise_seed=3,
+        )
+        ter = build_cave(spec, "ter_walk", decimate=None)
+        verts = np.array([[v.x, v.y, v.z] for v in ter.vertices])
+        # The floor should not dig far below the target plane (one-sided clamp).
+        # Allow a small margin for voxel resolution.
+        assert verts[:, 2].min() >= floor_z - 15
+
+
+class TestFeatures:
+    def test_features_add_geometry(self):
+        from generators.field.features import FeatureParams
+        base = CaveSpec(chambers=[Chamber((0, 0, 0), 120, floor_z=-50)],
+                        voxel=10.0, noise_seed=5)
+        plain = build_cave(base, "ter_plain", decimate=None)
+
+        feats = FeatureParams(seed=5, stalactite_count=14,
+                              stalagmite_count=9, pillar_count=2)
+        with_feats = build_cave(base, "ter_feat", decimate=None, features=feats)
+
+        # Features grow extra solid into the field → more surface geometry
+        assert len(with_feats.polygons) > len(plain.polygons)
+
+    def test_cave_theme_includes_features(self, tmp_path):
+        gen = LayoutGenerator(theme="cave", seed=9)
+        spec = gen.generate("featzone", room_count=3)
+        result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+        # Dense organic + features
+        assert result.polygon_count > 3000
+
+
 class TestCaveThemeRouting:
     def test_cave_theme_uses_organic_backend(self, tmp_path):
         gen = LayoutGenerator(theme="cave", seed=5)
