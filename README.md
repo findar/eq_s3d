@@ -497,13 +497,15 @@ critical path, so the zone is always **solvable**.
 #   → 2 locks placed deep, keys reachable earlier, climax behind the last lock
 ```
 
-## What's Next — Phase 4: Refinement
+## What's Next
 
-- Iterative chat loop: refine an existing zone with follow-up prompts
-  ("make the entrance wider", "add a water pool to the north")
-- Partial regeneration (re-run only changed rooms/textures)
-- Server-side SQL export (zone records, spawn points) for EQEmu
-- The room-graph grammar and water/mixed-zone work (see Roadmap Notes)
+The authoritative open-items tracker is **[`ROADMAP.md`](ROADMAP.md)** (done /
+next / design-captured / known issues / deliberately-not-doing). The headline is
+**Phase 4 — Refinement**: an iterative chat loop (refine an existing zone with
+follow-up prompts), partial regeneration, and an EQEmu SQL export (zone records,
+spawn points, door/key rows). The larger design directions (doorway-fit for
+gates, water/mixed-environment zones, procedural normal maps) are detailed in
+the Roadmap Notes below and tracked in `ROADMAP.md`.
 
 ---
 
@@ -667,11 +669,10 @@ Real EQ zones blend environments. Two cases to design for:
 
 ## Known Issues / To Fix
 
-- Style profiles for `city` and `cave` themes are thin (3–4 zones) — expand with more representatives once more zone names are identified.
-- Light density stat reads 0 in the profile because most dungeon reference zones use embedded MOD placement without ZON lights — this is accurate, not a bug.
-- The inspector's ASCII bbox diagram is proportional to zone size but doesn't render Z height — a future iteration could add a side-elevation view.
-- Outdoor terrain is currently just the ground surface — no cliff walls, boulders, or vegetation yet, and rooms only set the terrain bounds (see room-graph note above).
-- Procedural textures are diffuse-only. Real zones also use normal maps (the `e_TextureNormal0` material slot) for surface relief — adding procedural normal-map generation is a high-impact, no-API follow-up.
+Tracked with the rest of the open items in **[`ROADMAP.md`](ROADMAP.md)** —
+thin `city`/`cave` profiles, the (accurate) zero light-density stat, the
+inspector's missing Z-elevation view, outdoor terrain detail, and diffuse-only
+textures (procedural normal maps are the high-impact no-API follow-up).
 
 ---
 
