@@ -608,10 +608,46 @@ key-gated dungeons (Chardok). Gating layers onto the paced graph: locks go on
 deep corridor edges, each key in a room reachable before its lock, climax behind
 the final lock — placed by a graph-rewrite-style pass that guarantees
 solvability. Carried as `GateSpec` data for the eventual EQEmu door/key export
-and shown in the viewer. See the Gating section above.
+and shown in the viewer. Gates are **suggestions** — advisory metadata for a
+later manual authoring pass, not authored content; they don't touch geometry or
+collision (a gated corridor is still a fully open, walkable gap). See the Gating
+section above, and "Doors are records, not geometry" below for how a suggested
+gate becomes a real door and why openings must fit a door model.
 
 **Still future:** Outdoor should turn its rooms into meaningful places
 (clearings, lookouts) rather than only terrain bounds.
+
+### Doors are records, not geometry — and openings must fit a door model
+
+A functional EQ door is **not** part of the zone mesh and **not** an ordinary
+placed object (MOD). It is a separate record (on EQEmu, a row in the `doors`
+table) that references an animated door model and carries position, heading,
+open type, and a `keyitem` (lock) field; the server drives open/close and
+gatekeeping at runtime. This split is expected to be consistent across our two
+target formats — EQG (RoF2) and classic `.s3d`/WLD — since both ultimately feed
+the same EQEmu door system; the per-format detail (how the client resolves the
+door *model* — EQG object vs. the classic object/door WLD) still needs
+verifying against our readers before we write the export.
+
+Consequences for the generator:
+
+- **Never bake a door into the `.ter`.** Welding door triangles into the
+  terrain mesh produces a door-shaped wall that can never open and that the
+  engine won't treat as a door. Our corridors stay as open gaps — exactly what
+  a real door needs to sit in — and the door becomes real only in the eventual
+  **EQEmu SQL export**, where a `GateSpec` maps to a `doors` row (`lock_x/y/z` →
+  position, `corridor_id` → the opening, key → `keyitem`).
+
+- **Openings must fit a door model, not the reverse.** Because a door is a fixed
+  model dropped into the gap, the *opening* is the constraint: the corridor
+  width/height where a gate sits must match the footprint of a standard EQ door
+  so the model fills the frame without clipping the walls or leaving a gap. The
+  follow-up work is to (1) catalogue the door models the RoF2 client actually
+  uses for doorways and their world-space footprints (classic swinging
+  wood/stone doors, portcullis/gate types, double doors, archway/no-leaf
+  frames), grouped by theme, then (2) have the layout snap a gated corridor's
+  opening to the chosen door type's dimensions (and record the model name on the
+  `GateSpec`). Non-gated corridors keep their current size-by-theme behaviour.
 
 ### Water and mixed-environment zones
 
