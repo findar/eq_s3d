@@ -426,11 +426,49 @@ Full format documentation: [`docs/file_formats.md`](docs/file_formats.md) _(to b
 
 ---
 
+## Roadmap Notes / Future Work
+
+Larger design directions captured for later (not yet implemented):
+
+### Room-graph grammar (composition)
+
+The "room-graph" is a zone's abstract floor-plan — rooms (nodes) connected by
+corridors (edges) — that every geometry backend realises into 3D (box tunnels,
+carved cave chambers, or terrain bounds). Today `LayoutGenerator` builds it as a
+**naive random walk**: a connected chain with no design intent.
+
+To reach "feels hand-crafted," upgrade the room-graph to a **grammar with pacing**
+(entrance → branching side-passages → key chamber → exit, with loops and
+dead-ends) à la Dormans' mission/space separation. This matters for **both**
+backends:
+- **Caves** already use the graph well (rooms → chambers) but would benefit from
+  authored pacing instead of a straight chain.
+- **Outdoor** currently only uses the graph for terrain *bounds* — the rooms
+  should become meaningful places (clearings, hilltop lookouts, valley camps)
+  carved/flattened into the terrain.
+
+### Water and mixed-environment zones
+
+Real EQ zones blend environments. Two cases to design for:
+- **Outdoor areas adjacent to large bodies of water** — a lake/ocean edge means a
+  water plane at a fixed Z, terrain that slopes beneath it to form a shoreline and
+  lakebed, and an `AWT_` water region volume so the client treats it as swimmable.
+  The terrain backend would need a "water level" and shoreline shaping.
+- **Caves inside outdoor zones** — a cave mouth in a hillside: the SDF cave
+  backend and the heightfield terrain backend would need to **compose into one
+  TER**, carving the cave volume where it intersects the terrain and stitching the
+  entrance. This is the strongest argument for eventually unifying both backends
+  onto a single density-field representation (terrain as an SDF too), so a zone
+  can be any mix of carved and surfaced geometry in one mesh.
+
+---
+
 ## Known Issues / To Fix
 
 - Style profiles for `city` and `cave` themes are thin (3–4 zones) — expand with more representatives once more zone names are identified.
 - Light density stat reads 0 in the profile because most dungeon reference zones use embedded MOD placement without ZON lights — this is accurate, not a bug.
 - The inspector's ASCII bbox diagram is proportional to zone size but doesn't render Z height — a future iteration could add a side-elevation view.
+- Outdoor terrain is currently just the ground surface — no cliff walls, boulders, or vegetation yet, and rooms only set the terrain bounds (see room-graph note above).
 
 ---
 
