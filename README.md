@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Prompt-driven generation ✅ + WLD reader ✅ — can now read Classic–PoP (.s3d) zones for fidelity calibration.
+> **Status**: Classic–PoP style profiles ✅ — the analyzer reads .s3d/WLD zones, profiles rebuilt from authentic classic zones (Guk, Sebilis, Faydark…).
 
 ---
 
@@ -214,17 +214,19 @@ Reads any `.eqg` archive from a RoF2 install and extracts measurable style metri
 bounding dimensions, polygon density, material counts, shader usage, light density,
 and region type distribution.
 
-Style profiles derived from real RoF2 zones (stored in `styles/`):
+Style profiles are derived from authentic **Classic–PoP** zones (the default
+target era), read via the WLD reader (stored in `styles/`):
 
-| Theme | Zones | Ceiling range | Materials (mean) | Key shaders |
-|-------|-------|--------------|-----------------|-------------|
-| `dungeon` | 10 | 77–10,560 u | 51 | `Opaque_MPLBump2UV`, `Opaque_MPLBump` |
-| `outdoor` | 6 | 449–1,494 u | varies | `Opaque_MaxLava`, `Opaque_MaxCB1` |
-| `city` | 3 | 157–3,132 u | 71 | `Opaque_MaxWater`, `Opaque_MPLBump` |
-| `cave` | 4 | 133–4,067 u | 41 | `Opaque_MPLBump2UV`, `Opaque_MPLGB` |
+| Theme | Reference zones | Ceiling (mean) | Edge median | Materials |
+|-------|-----------------|----------------|-------------|-----------|
+| `dungeon` | Befallen, Sol A/B, Najena, Sebilis, Chardok, Velketor, Paw, Guk | 303 u | **12.4 u** | 102 |
+| `outdoor` | Greater Faydark, Karanas, Oasis, Feerrott, Burning Woods, E. Wastes | 1103 u | 75 u (wide) | 52 |
+| `city` | Qeynos, Freeport, Felwithe, Rivervale, Cabilis, Neriak | 403 u | **11.2 u** | 117 |
+| `cave` | Crushbone, Blackburrow, Runnyeye, Cazic-Thule, Kedge, Guk, Warrens | 474 u | **14.1 u** | 116 |
 
-These profiles constrain the AI generator so output stays within the measured bounds
-of real EQ zones.
+The interior themes cluster at ~11–14 u median triangle edge — the authentic
+Classic–PoP resolution the generator targets (cave default `voxel=12` ≈ 12 u).
+These profiles constrain the generator so output stays within real-zone bounds.
 
 ### Phase 1 — Core I/O ✅
 

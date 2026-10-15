@@ -1,77 +1,93 @@
 {
   "theme": "city",
-  "zone_count": 3,
+  "zone_count": 6,
   "analyzed_zones": [
-    "sarithcity",
-    "argath",
-    "bazaar"
+    "qeynos2",
+    "freportw",
+    "felwithea",
+    "rivervale",
+    "cabwest",
+    "neriaka"
   ],
   "geometry": {
     "width_x": {
-      "min": 2122.04,
-      "max": 7341.79,
-      "mean": 4487.94,
-      "std": 2643.86
+      "min": 615.75,
+      "max": 2421.03,
+      "mean": 1506.06,
+      "std": 776.6
     },
     "width_y": {
-      "min": 2905.77,
-      "max": 5299.6,
-      "mean": 4072.9,
-      "std": 1198.02
+      "min": 737.69,
+      "max": 3092.75,
+      "mean": 1615.35,
+      "std": 897.94
     },
     "ceiling_height": {
-      "min": 157.45,
-      "max": 3132.23,
-      "mean": 1447.33,
-      "std": 1526.22
+      "min": 97.97,
+      "max": 669.72,
+      "mean": 403.01,
+      "std": 230.77
     },
     "poly_density": {
       "min": 0.0,
       "max": 0.03,
-      "mean": 0.01,
+      "mean": 0.02,
       "std": 0.01
     },
     "floor_area": {
-      "min": 6166167.58,
-      "max": 38908534.89,
-      "mean": 20376005.8,
-      "std": 16793745.75
+      "min": 670281.3,
+      "max": 7487644.4,
+      "mean": 2952703.78,
+      "std": 2804184.06
     }
   },
   "materials": {
     "count": {
-      "min": 24,
-      "max": 105,
-      "mean": 70.67,
-      "std": 41.88
+      "min": 84,
+      "max": 162,
+      "mean": 117,
+      "std": 28.82
     },
     "shaders": [
-      "Opaque_MPLBlend.fx",
-      "Alpha_MPLBasicAT.fx",
-      "Opaque_MaxWater.fx",
-      "Opaque_MaxWaterFall.fx",
-      "Opaque_MPLBump.fx"
+      "<fixed-function>"
     ]
   },
+  "fidelity": {
+    "edge_median": {
+      "min": 8.97,
+      "max": 14.0,
+      "mean": 11.15,
+      "std": 1.7
+    },
+    "edge_mean": {
+      "min": 12.87,
+      "max": 22.71,
+      "mean": 17.64,
+      "std": 3.36
+    }
+  },
+  "source_formats": [
+    "s3d"
+  ],
   "uv": {
     "scale": {
       "min": 1.0,
-      "max": 3.96,
-      "mean": 1.99,
-      "std": 1.71
+      "max": 1.0,
+      "mean": 1.0,
+      "std": 0.0
     }
   },
   "lighting": {
     "count": {
       "min": 0,
-      "max": 237,
-      "mean": 79,
-      "std": 136.83
+      "max": 0,
+      "mean": 0,
+      "std": 0.0
     },
     "mean_radius": {
-      "min": 120.26,
-      "max": 120.26,
-      "mean": 120.26,
+      "min": 0,
+      "max": 0,
+      "mean": 0,
       "std": 0
     },
     "density": {
@@ -81,14 +97,12 @@
       "std": 0.0
     },
     "mean_color": [
-      0.844,
-      0.865,
-      0.872
+      1.0,
+      0.8,
+      0.5
     ]
   },
   "regions": {
-    "type_counts": {
-      "ATP": 1.33
-    }
+    "type_counts": {}
   }
 }

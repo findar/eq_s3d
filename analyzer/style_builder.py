@@ -29,23 +29,24 @@ from .extractor import ZoneExtractor, ZoneMetrics
 
 REFERENCE_ZONES: Dict[str, List[str]] = {
     "dungeon": [
-        # RoF2-era underground / interior dungeons
-        "bertoxtemple", "drachnidhive", "convorteum", "coolingchamber",
-        "chapterhouse", "mansion", "dreadspire", "crystallos",
-        "grelleth", "xorbb",
+        # Classic–PoP dungeons (the iconic EQ look), read via the WLD reader
+        "befallen", "soldunga", "soldungb", "najena", "sebilis",
+        "chardok", "velketor", "paw", "guktop", "gukbottom",
     ],
     "outdoor": [
-        # RoF2-era open outdoor zones
-        "nektulos", "lavastorm", "broodlands", "dragonscale",
-        "delvea", "anguish", "corathus", "discord",
+        # Classic–PoP outdoor zones
+        "gfaydark", "eastkarana", "northkarana", "oasis", "feerrott",
+        "nektulos", "fieldofbone", "burningwood", "eastwastes",
     ],
     "city": [
-        # RoF2-era city / social zones
-        "sarithcity", "argath", "bazaar",
+        # Classic–PoP cities / social hubs
+        "qeynos2", "freportw", "felwithea", "rivervale", "cabwest",
+        "neriaka",
     ],
     "cave": [
-        # Organic cave / underground tunnels
-        "corathus", "drachnidhive", "xorbb", "bertoxtemple",
+        # Classic–PoP natural caves / organic underground
+        "crushbone", "blackburrow", "runnyeye", "cazicthule", "kedge",
+        "guktop", "gukbottom", "warrens",
     ],
 }
 
@@ -69,26 +70,21 @@ class StyleBuilder:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def _find_eqg(self, zone_name: str) -> Optional[Path]:
-        """Locate a .eqg file for zone_name inside the EQ directory."""
-        candidates = [
-            self.eq_path / f"{zone_name}.eqg",
-            self.eq_path / "resources" / f"{zone_name}.eqg",
-        ]
-        for c in candidates:
+    def _find_zone(self, zone_name: str) -> Optional[Path]:
+        """
+        Locate a zone archive for zone_name. Prefers .eqg (modern), falls back
+        to .s3d (Classic–PoP, read via the WLD reader).
+        """
+        for ext in (".eqg", ".s3d"):
+            c = self.eq_path / f"{zone_name}{ext}"
             if c.exists():
                 return c
-        # Walk one level deep
-        for child in self.eq_path.iterdir():
-            candidate = child / f"{zone_name}.eqg"
-            if candidate.exists():
-                return candidate
         return None
 
     def analyze_zone(self, zone_name: str) -> Optional[ZoneMetrics]:
-        path = self._find_eqg(zone_name)
+        path = self._find_zone(zone_name)
         if path is None:
-            print(f"  [skip] {zone_name}.eqg not found in {self.eq_path}")
+            print(f"  [skip] {zone_name} (.eqg/.s3d) not found in {self.eq_path}")
             return None
         print(f"  [analyze] {path.name}")
         try:
@@ -142,6 +138,15 @@ class StyleBuilder:
                 "count":   agg([m.material_count for m in metrics_list]),
                 "shaders": _most_common([s for m in metrics_list for s in m.shader_names]),
             },
+
+            "fidelity": {
+                # Median triangle edge length (world units) — the resolution
+                # target the generator should match for this theme's era.
+                "edge_median": agg([m.edge_median for m in metrics_list if m.edge_median > 0]),
+                "edge_mean":   agg([m.edge_mean for m in metrics_list if m.edge_mean > 0]),
+            },
+
+            "source_formats": _most_common([m.source_format for m in metrics_list]),
 
             "uv": {
                 "scale": agg([m.uv_scale_mean for m in metrics_list]),

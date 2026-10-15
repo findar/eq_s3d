@@ -28,6 +28,7 @@ from typing import Dict, List, Optional, Tuple
 from core.pfs import PfsArchive
 from core.ter import TerFile, MAGIC_TERRAIN, MAGIC_MODEL
 from core.zon import ZonFile, ZonLight, ZonRegion
+from core.wld import load_wld, WldZone
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +76,14 @@ class ZoneMetrics:
     uv_scale_mean: float = 1.0
     uv_scale_std: float = 0.0
 
+    # Geometric fidelity — median triangle edge length (world units).
+    # The key metric for matching an era's resolution.
+    edge_median: float = 0.0
+    edge_mean: float = 0.0
+
+    # Container format: "eqg" (TER) or "s3d" (WLD)
+    source_format: str = "eqg"
+
     # Lights  (from ZON file — 0 if zone has no ZON)
     lights: LightStats = field(default_factory=LightStats)
 
@@ -91,6 +100,7 @@ class ZoneMetrics:
             f"  Bounds   : {self.width_x:.0f} × {self.width_y:.0f} × {self.ceiling_height:.0f} EQ units",
             f"  Area     : {self.floor_area:,.0f} u²  |  density: {self.poly_density:.5f} polys/u²",
             f"  Materials: {self.material_count}  |  textures: {len(self.texture_filenames)}",
+            f"  Fidelity : edge median={self.edge_median:.1f}u  mean={self.edge_mean:.1f}u  [{self.source_format}]",
             f"  UV scale : median={self.uv_scale_mean:.2f}  std={self.uv_scale_std:.2f}",
             f"  ZON      : {'yes' if self.has_zon else 'no (embedded placement)'}",
             f"  Lights   : {self.lights.count}  (density: {self.lights.density_per_sq_unit:.2e}/u²)",
@@ -113,24 +123,32 @@ class ZoneExtractor:
         print(metrics.summary())
     """
 
-    def __init__(self, eqg_path: str | Path):
-        self.path = Path(eqg_path)
+    def __init__(self, zone_path: str | Path):
+        self.path = Path(zone_path)
         self.zone_name = self.path.stem.lower()
 
     def extract(self) -> ZoneMetrics:
+        """Route by container format: .eqg → TER, .s3d → WLD."""
         metrics = ZoneMetrics(zone_name=self.zone_name)
+        if self.path.suffix.lower() == ".s3d":
+            metrics.source_format = "s3d"
+            return self._extract_s3d(metrics)
+        metrics.source_format = "eqg"
+        return self._extract_eqg(metrics)
 
+    # ------------------------------------------------------------------
+    # EQG (.ter / .zon) path
+    # ------------------------------------------------------------------
+
+    def _extract_eqg(self, metrics: ZoneMetrics) -> ZoneMetrics:
         arc = PfsArchive.from_file(self.path)
 
-        # --- Find terrain file (prefer .ter, fall back to first geometry) ---
         ter_data = arc.get(f"{self.zone_name}.ter")
         if ter_data is None:
-            # RoF2 zones often name the ter file 'ter_<something>.ter' not '<zone>.ter'
             ter_files = arc.get_by_extension("ter")
             if ter_files:
                 ter_data = ter_files[0].data
             else:
-                # No geometry at all
                 return metrics
 
         try:
@@ -141,11 +159,10 @@ class ZoneExtractor:
 
         self._extract_geometry(ter, metrics)
         self._extract_materials(ter, metrics)
+        self._extract_fidelity_ter(ter, metrics)
 
-        # --- ZON file ---
         zon_data = arc.get(f"{self.zone_name}.zon")
         if zon_data is None:
-            # RoF2 ZON filenames sometimes differ from zone name
             zon_files = arc.get_by_extension("zon")
             if zon_files:
                 zon_data = zon_files[0].data
@@ -159,6 +176,36 @@ class ZoneExtractor:
             except Exception as e:
                 print(f"[extractor] Could not parse ZON for {self.zone_name}: {e}")
 
+        return metrics
+
+    # ------------------------------------------------------------------
+    # S3D (.wld) path — Classic–PoP zones
+    # ------------------------------------------------------------------
+
+    def _extract_s3d(self, metrics: ZoneMetrics) -> ZoneMetrics:
+        arc = PfsArchive.from_file(self.path)
+
+        wld_data = arc.get(f"{self.zone_name}.wld")
+        if wld_data is None:
+            # Pick the main zone WLD (not lights/objects)
+            wlds = [f for f in arc.list_files()
+                    if f.lower().endswith(".wld")
+                    and f.lower() not in ("lights.wld", "objects.wld")]
+            if not wlds:
+                return metrics
+            wld_data = arc.get(wlds[0])
+
+        try:
+            wld = load_wld(wld_data)
+        except Exception as e:
+            print(f"[extractor] Could not parse WLD for {self.zone_name}: {e}")
+            return metrics
+
+        self._extract_geometry_wld(wld, metrics)
+        self._extract_materials_wld(wld, metrics)
+        self._extract_fidelity_wld(wld, metrics)
+        # Classic zones embed lighting/placement in WLD fragments we don't parse;
+        # leave lights/regions empty (has_zon stays False), which is accurate.
         return metrics
 
     # ------------------------------------------------------------------
@@ -233,3 +280,68 @@ class ZoneExtractor:
             rs.counts[prefix] = rs.counts.get(prefix, 0) + 1
         rs.total = len(zon.regions)
         metrics.regions = rs
+
+    # ------------------------------------------------------------------
+    # WLD-specific extraction (Classic–PoP)
+    # ------------------------------------------------------------------
+
+    def _extract_geometry_wld(self, wld: WldZone, metrics: ZoneMetrics) -> None:
+        if wld.total_vertices == 0:
+            return
+        all_v = [v for m in wld.meshes for v in m.vertices]
+        xs = [v[0] for v in all_v]
+        ys = [v[1] for v in all_v]
+        zs = [v[2] for v in all_v]
+        bmin = (min(xs), min(ys), min(zs))
+        bmax = (max(xs), max(ys), max(zs))
+        metrics.bbox_min = bmin
+        metrics.bbox_max = bmax
+        metrics.width_x = bmax[0] - bmin[0]
+        metrics.width_y = bmax[1] - bmin[1]
+        metrics.ceiling_height = bmax[2] - bmin[2]
+        metrics.floor_area = metrics.width_x * metrics.width_y
+        metrics.vertex_count = wld.total_vertices
+        metrics.polygon_count = wld.total_polygons
+        if metrics.floor_area > 0:
+            metrics.poly_density = metrics.polygon_count / metrics.floor_area
+
+    def _extract_materials_wld(self, wld: WldZone, metrics: ZoneMetrics) -> None:
+        metrics.material_count = len(wld.texture_names)
+        metrics.texture_filenames = list(dict.fromkeys(wld.texture_names))
+        # Classic WLD has no shader strings (fixed-function pipeline)
+        metrics.shader_names = ["<fixed-function>"] if wld.texture_names else []
+
+    # ------------------------------------------------------------------
+    # Geometric fidelity (median triangle edge length)
+    # ------------------------------------------------------------------
+
+    def _extract_fidelity_ter(self, ter: TerFile, metrics: ZoneMetrics) -> None:
+        verts = ter.vertices
+        tris = [(verts[p.v1], verts[p.v2], verts[p.v3])
+                for p in ter.polygons
+                if p.v1 < len(verts) and p.v2 < len(verts) and p.v3 < len(verts)]
+        self._edge_stats(
+            [((a.x, a.y, a.z), (b.x, b.y, b.z), (c.x, c.y, c.z)) for a, b, c in tris],
+            metrics,
+        )
+
+    def _extract_fidelity_wld(self, wld: WldZone, metrics: ZoneMetrics) -> None:
+        self._edge_stats(wld.all_triangles(), metrics)
+
+    def _edge_stats(self, triangles, metrics: ZoneMetrics) -> None:
+        if not triangles:
+            return
+        # Sample large meshes for speed
+        step = max(1, len(triangles) // 15000)
+        edges: List[float] = []
+        for a, b, c in triangles[::step]:
+            edges.append(_dist(a, b))
+            edges.append(_dist(b, c))
+            edges.append(_dist(c, a))
+        if edges:
+            metrics.edge_median = statistics.median(edges)
+            metrics.edge_mean = statistics.mean(edges)
+
+
+def _dist(a, b) -> float:
+    return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)

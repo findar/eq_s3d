@@ -2,70 +2,83 @@
   "theme": "dungeon",
   "zone_count": 10,
   "analyzed_zones": [
-    "bertoxtemple",
-    "drachnidhive",
-    "convorteum",
-    "coolingchamber",
-    "chapterhouse",
-    "mansion",
-    "dreadspire",
-    "crystallos",
-    "grelleth",
-    "xorbb"
+    "befallen",
+    "soldunga",
+    "soldungb",
+    "najena",
+    "sebilis",
+    "chardok",
+    "velketor",
+    "paw",
+    "guktop",
+    "gukbottom"
   ],
   "geometry": {
     "width_x": {
-      "min": 1147.47,
-      "max": 9978.73,
-      "mean": 4494.62,
-      "std": 3209.99
+      "min": 713.72,
+      "max": 2555.0,
+      "mean": 1505.4,
+      "std": 538.37
     },
     "width_y": {
-      "min": 575.08,
-      "max": 10082.28,
-      "mean": 4728.95,
-      "std": 3350.8
+      "min": 477.78,
+      "max": 1939.22,
+      "mean": 1300.67,
+      "std": 490.53
     },
     "ceiling_height": {
-      "min": 77.15,
-      "max": 10560.19,
-      "mean": 2549.33,
-      "std": 3147.41
+      "min": 107.97,
+      "max": 521.78,
+      "mean": 303.24,
+      "std": 154.17
     },
     "poly_density": {
-      "min": 0.0,
-      "max": 0.17,
-      "mean": 0.03,
-      "std": 0.05
+      "min": 0.01,
+      "max": 0.05,
+      "mean": 0.02,
+      "std": 0.02
     },
     "floor_area": {
-      "min": 659884.57,
-      "max": 95871117.21,
-      "mean": 30473166.26,
-      "std": 35641232.5
+      "min": 494787.28,
+      "max": 4535843.59,
+      "mean": 2102076.68,
+      "std": 1335762.12
     }
   },
   "materials": {
     "count": {
-      "min": 18,
-      "max": 83,
-      "mean": 51.2,
-      "std": 20.25
+      "min": 14,
+      "max": 211,
+      "mean": 101.8,
+      "std": 68.17
     },
     "shaders": [
-      "Opaque_MPLBump2UV.fx",
-      "Opaque_MPLBump.fx",
-      "Opaque_MPLGB.fx",
-      "Opaque_MaxWaterFall.fx",
-      "Opaque_MPLBasic.fx"
+      "<fixed-function>"
     ]
   },
+  "fidelity": {
+    "edge_median": {
+      "min": 5.23,
+      "max": 15.97,
+      "mean": 12.43,
+      "std": 3.04
+    },
+    "edge_mean": {
+      "min": 9.3,
+      "max": 19.58,
+      "mean": 15.61,
+      "std": 3.38
+    }
+  },
+  "source_formats": [
+    "s3d"
+  ],
   "uv": {
     "scale": {
-      "min": 0.59,
-      "max": 1256.41,
-      "mean": 126.65,
-      "std": 396.95
+      "min": 1.0,
+      "max": 1.0,
+      "mean": 1.0,
+      "std": 0.0
     }
   },
   "lighting": {
