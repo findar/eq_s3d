@@ -15,6 +15,7 @@
 
     <button id="generate">Generate</button>
     <button id="reset-view" class="secondary" title="Return to the starting view (R)">Reset View</button>
+    <button id="show-map" class="secondary" title="Top-down layout map (M)">Map</button>
 
     <details id="advanced">
       <summary>Controls</summary>
@@ -84,10 +85,23 @@
       WASD move · mouse look (level horizon)<br>
       Shift sprint · Space/Q up/down<br>
       R or "Reset View" to return to start<br>
+      M for top-down map<br>
       Esc release mouse</p>
   </aside>
 
   <div id="hint-overlay">Click to look around · WASD to move</div>
+
+  <!-- Top-down map modal -->
+  <div id="map-modal" class="hidden">
+    <div id="map-dialog">
+      <header>
+        <span>Top-down layout</span>
+        <a id="map-download" href="#" download="layout.svg" class="secondary">Download SVG</a>
+        <button id="map-close" class="secondary">Close</button>
+      </header>
+      <div id="map-body"></div>
+    </div>
+  </div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

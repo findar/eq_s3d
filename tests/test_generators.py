@@ -376,6 +376,41 @@ class TestGatingPlanner:
         assert p.locks == 3
 
 
+class TestMapView:
+    def test_renders_svg_with_rooms(self):
+        from generators.mapview import render_map_svg
+        gen = LayoutGenerator(theme="dungeon", seed=11)
+        spec = gen.generate("maptest", room_count=6)
+        svg = render_map_svg(spec)
+        assert svg.startswith("<svg")
+        assert svg.rstrip().endswith("</svg>")
+        # One <rect> per room (plus background + legend), so at least room count
+        assert svg.count("<rect") >= len(spec.rooms)
+
+    def test_empty_spec_renders_placeholder(self):
+        from generators.mapview import render_map_svg
+        from generators.zone_spec import ZoneSpec
+        svg = render_map_svg(ZoneSpec(name="empty"))
+        assert svg.startswith("<svg")
+        assert "no layout" in svg
+
+    def test_gates_drawn_when_present(self):
+        from generators.mapview import render_map_svg
+        gen = LayoutGenerator(theme="dungeon", seed=11)
+        spec = gen.generate("maptest", room_count=10, locks=2)
+        svg = render_map_svg(spec)
+        # Gold key diamonds use <path>; two gates → at least two paths
+        assert svg.count("<path") >= len(spec.gates)
+
+    def test_builder_writes_map_sidecar(self, tmp_path):
+        gen = LayoutGenerator(theme="dungeon", seed=11)
+        spec = gen.generate("mapsidecar", room_count=4)
+        ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=True)
+        svg_path = tmp_path / "mapsidecar.map.svg"
+        assert svg_path.exists()
+        assert svg_path.read_text(encoding="utf-8").startswith("<svg")
+
+
 class TestBuilder:
     def test_full_build(self, tmp_path):
         gen = LayoutGenerator(theme="dungeon", seed=42)

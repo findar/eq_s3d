@@ -244,6 +244,17 @@ def _subgrid(grid: FieldGrid, lo, hi):
     return sl, (X, Y, Z)
 
 
+def smooth_min(a: np.ndarray, b: np.ndarray, k: float = 20.0) -> np.ndarray:
+    """
+    Polynomial smooth-minimum of two SDFs. Returns an SDF whose zero-crossing
+    is the union of the two shapes' interiors, with the junction rounded by a
+    fillet of size ~k. Used to merge several chamber lobes into one organic
+    blob (no hard creases where lobes meet).
+    """
+    h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
+    return b * h + a * (1.0 - h) - k * h * (1.0 - h)
+
+
 def smooth_union_carve(grid: FieldGrid, sdf: np.ndarray, k: float = 20.0) -> None:
     """
     Smooth-blend carve — rounds the junction between carved volumes so tunnels

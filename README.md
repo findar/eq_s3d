@@ -156,8 +156,15 @@ yourself with `python -m uvicorn server.app:app --host 127.0.0.1 --port 8000`).
 Pick a theme and room count from the dropdowns and hit **Generate**. Each
 generation uses a fresh random seed, so the same inputs always produce a
 different zone. Click the viewport to capture the mouse, then walk with WASD
-(Shift to sprint, Q/E for down/up, R to reset). Toggle wireframe, light, and
-region overlays in the side panel.
+(Shift to sprint, Q/E for down/up, R to reset). Toggle wireframe, light, region,
+and gate overlays in the side panel. Movement keys are ignored while you're
+typing in the prompt box, so WASD edits the text instead of flying the camera.
+
+**Top-down map.** Hit **Map** (or press **M**) for a schematic floor-plan of the
+layout seen from above: rooms coloured by pacing role (entrance / hub / climax /
+dead-end) and labelled with graph depth, corridors, and any lock/key gates with
+a dashed connector from each key to the door it opens. The map is a lightweight
+SVG (served as a `.map.svg` sidecar) and can be downloaded from the dialog.
 
 > Generation is driven by the theme/rooms/elevation controls today. A text-prompt
 > box plugs into the same endpoint in Phase 3.
@@ -340,12 +347,21 @@ no pattern to tell them apart.
 The `cave` theme now uses a **density-field backend** instead of boxes:
 
 1. Start with a solid block of rock (a 3D scalar field, positive = solid).
-2. **Carve** the walkable volume — rooms become spherical chambers, corridors
-   become capsule tunnels — pushing the field negative (air).
+2. **Carve** the walkable volume, pushing the field negative (air):
+   - rooms become **irregular multi-lobe blobs** — a cluster of offset dome
+     lobes smooth-unioned together, so a chamber has a lumpy non-circular
+     footprint instead of reading as a perfect bubble;
+   - corridors become **winding tunnels** — a chain of capsule segments through
+     jittered waypoints, so passages curve and pinch like real caves rather than
+     running dead straight.
 3. Add **FBM value noise** to the carved boundary so walls are lumpy and organic,
    not smooth tubes.
 4. Extract the rock/air surface with **marching cubes** → a single watertight
    organic mesh, decimated to a sane poly count.
+
+Through all of this the chamber floor is re-intersected with a flat plane at
+`floor_z` after the lobe blend and noise, so the organic walls and ceiling stay
+rough while the floor remains a single navigable surface (verified by tests).
 
 This maps perfectly onto EQG: collision is per-triangle (confirmed from
 `azone/map.cpp`), so a dense organic mesh works exactly like a hand-made zone's.

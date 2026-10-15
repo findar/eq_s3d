@@ -198,3 +198,59 @@ button.secondary:hover { border-color: var(--accent); color: var(--text); }
   transition: opacity 0.3s;
 }
 #hint-overlay.hidden { opacity: 0; }
+
+/* ---- Top-down map modal ---- */
+#map-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 40;
+  backdrop-filter: blur(3px);
+}
+#map-modal.hidden { display: none; }
+
+#map-dialog {
+  background: var(--panel);
+  border: 1px solid #2a3040;
+  border-radius: 10px;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+#map-dialog header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #1e2230;
+  font-size: 13px;
+  color: var(--text);
+}
+#map-dialog header span { flex: 1; font-weight: 600; }
+#map-dialog header a.secondary {
+  text-decoration: none;
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#map-dialog header a.secondary:hover { border-color: var(--accent); color: var(--text); }
+
+#map-body {
+  padding: 14px;
+  overflow: auto;
+}
+#map-body svg {
+  display: block;
+  max-width: 86vw;
+  max-height: 78vh;
+  height: auto;
+  width: auto;
+}

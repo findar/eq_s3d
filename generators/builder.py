@@ -118,6 +118,11 @@ class ZoneBuilder:
             if result is None:
                 glb_path = None  # trimesh not available
 
+            # Top-down schematic map (SVG sidecar) for the UI "Map" view.
+            from .mapview import render_map_svg
+            map_path = out_dir / f"{name}.map.svg"
+            map_path.write_text(render_map_svg(self.spec), encoding="utf-8")
+
         return BuildResult(
             spec=self.spec,
             eqg_path=eqg_path,
@@ -201,34 +206,48 @@ class ZoneBuilder:
         from .field.cave import CaveSpec, Chamber, Tunnel, build_cave
         from .field.features import FeatureParams
 
+        base_seed = abs(hash(name)) % (2 ** 31)
+
         chambers = []
-        for room in self.spec.rooms:
+        for i, room in enumerate(self.spec.rooms):
             # Chamber radius from the room footprint; centre at mid-height
             radius = 0.5 * min(room.width, room.depth)
             cz = room.floor_z + room.height * 0.5
+            # Larger chambers can afford more lobes without losing their floor.
+            lobes = 3 if radius < 120 else 4
             chambers.append(Chamber(
                 center=(room.center_x, room.center_y, cz),
                 radius=max(40.0, radius),
+                lobes=lobes,
+                irregularity=0.55,
+                shape_seed=base_seed + i * 101 + 1,
             ))
 
         tunnels = []
-        for cor in self.spec.corridors:
+        for i, cor in enumerate(self.spec.corridors):
             za = cor.from_z + 0.5 * cor.height
             zb = cor.to_z + 0.5 * cor.height
             tunnels.append(Tunnel(
                 a=(cor.from_x, cor.from_y, za),
                 b=(cor.to_x, cor.to_y, zb),
                 radius=max(20.0, cor.width * 0.5),
+                wander=0.2,
+                segments=4,
+                shape_seed=base_seed + i * 211 + 3,
             ))
 
-        # Seed the cave noise from the zone name for determinism within a build
+        # Seed the cave noise from the zone name for determinism within a build.
+        # A shorter base wavelength + more octaves gives finer rock relief that
+        # breaks up the dome silhouette, and a larger amplitude makes walls
+        # read as rough stone rather than smooth bubbles.
         cave = CaveSpec(
             chambers=chambers,
             tunnels=tunnels,
-            noise_seed=abs(hash(name)) % (2 ** 31),
+            noise_seed=base_seed,
             voxel=12.0,
-            noise_amplitude=26.0,
-            noise_scale=130.0,
+            noise_amplitude=34.0,
+            noise_scale=90.0,
+            noise_octaves=5,
         )
         # Natural features (stalactites/stalagmites/pillars), seeded from name.
         feats = FeatureParams(seed=abs(hash(name + "feat")) % (2 ** 31))

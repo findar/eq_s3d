@@ -31,8 +31,19 @@ export class FirstPersonControls {
     // Make the camera treat Z as up so the horizon stays level in our Z-up world.
     this.camera.up.set(0, 0, 1);
 
-    document.addEventListener("keydown", (e) => { this.keys[e.code] = true; });
+    // Ignore movement keys while the user is typing into a form field, so
+    // WASD/Space/R edit the text instead of flying the camera. We still record
+    // keyups so a key held before focusing an input doesn't get stuck down.
+    document.addEventListener("keydown", (e) => {
+      if (this._typingTarget(e.target)) return;
+      this.keys[e.code] = true;
+    });
     document.addEventListener("keyup", (e) => { this.keys[e.code] = false; });
+
+    // Releasing pointer lock or blurring the window should clear held keys so
+    // the camera doesn't keep drifting.
+    const clearKeys = () => { this.keys = {}; };
+    window.addEventListener("blur", clearKeys);
 
     domElement.addEventListener("click", () => {
       if (!this.locked) domElement.requestPointerLock();
@@ -50,6 +61,19 @@ export class FirstPersonControls {
       const lim = Math.PI / 2 - 0.02;
       this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
     });
+  }
+
+  /** True when focus is in a text input / select / textarea / editable node. */
+  private _typingTarget(target: EventTarget | null): boolean {
+    const el = target as HTMLElement | null;
+    if (!el) return false;
+    const tag = el.tagName;
+    return (
+      tag === "INPUT" ||
+      tag === "SELECT" ||
+      tag === "TEXTAREA" ||
+      el.isContentEditable === true
+    );
   }
 
   /** Set the camera start position and the yaw it should face. */

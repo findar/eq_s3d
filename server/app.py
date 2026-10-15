@@ -85,6 +85,7 @@ class GenerateResponse(BaseModel):
     materials: int
     glb_url: str
     zone_url: str
+    map_url: str
     # What drove the generation (so the UI can show inferred choices)
     source: str                      # "prompt" | "controls"
     planner: Optional[str] = None    # "rule" | "llm" when a prompt was used
@@ -149,6 +150,7 @@ def generate(req: GenerateRequest):
         materials=result.material_count,
         glb_url=f"/api/zones/{zone_id}.glb",
         zone_url=f"/api/zones/{zone_id}.zone.json",
+        map_url=f"/api/zones/{zone_id}.map.svg",
         source=source,
         planner=planner_name,
         plan=plan_dict,
@@ -166,7 +168,12 @@ def get_zone_file(filename: str):
     if not path.exists():
         raise HTTPException(404, "Not found")
 
-    media = "model/gltf-binary" if filename.endswith(".glb") else "application/json"
+    if filename.endswith(".glb"):
+        media = "model/gltf-binary"
+    elif filename.endswith(".svg"):
+        media = "image/svg+xml"
+    else:
+        media = "application/json"
     return FileResponse(str(path), media_type=media)
 
 

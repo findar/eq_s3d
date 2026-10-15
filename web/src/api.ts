@@ -29,6 +29,7 @@ export interface GenerateResult {
   materials: number;
   glb_url: string;
   zone_url: string;
+  map_url: string;             // top-down SVG layout map
   source: string;              // "prompt" | "controls"
   planner?: string | null;     // "rule" | "llm"
   plan?: ZonePlan | null;

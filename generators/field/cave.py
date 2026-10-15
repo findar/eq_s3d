@@ -18,6 +18,7 @@ import numpy as np
 from core.ter import TerFile
 from .sdf import (
     FieldGrid, sdf_sphere, sdf_capsule, sdf_dome, carve, smooth_union_carve,
+    smooth_min,
 )
 from .noise import fbm_field
 from .mesh import field_to_ter, decimate_ter
@@ -30,21 +31,41 @@ from .mesh import field_to_ter, decimate_ter
 @dataclass
 class Chamber:
     """
-    A chamber (open space). By default it has a FLAT walkable floor at
-    `floor_z` and a rounded dome above — the navigable shape. `center` is the
-    chamber's centre point and `radius` its horizontal/vertical reach.
+    A chamber (open space). It has a FLAT walkable floor at `floor_z` and an
+    irregular domed ceiling above. `center` is the chamber's centre point and
+    `radius` its nominal horizontal/vertical reach.
+
+    Rather than a single sphere (which reads as an artificial bubble), the
+    chamber is carved as a cluster of several offset lobes smooth-unioned
+    together — an organic blob with an irregular, non-circular footprint.
+    `lobes` controls how many; `irregularity` how far they wander (as a
+    fraction of radius). `shape_seed` makes the lobe placement deterministic
+    yet unique per chamber.
     """
     center: Tuple[float, float, float]
     radius: float
     floor_z: Optional[float] = None   # if None, defaults to center_z - radius*0.5
+    lobes: int = 3
+    irregularity: float = 0.55
+    shape_seed: int = 0
 
 
 @dataclass
 class Tunnel:
-    """A capsule-shaped passage between two points."""
+    """
+    A passage between two points. Instead of a single straight capsule (which
+    reads as a pipe), the tunnel meanders: it is built from several capsule
+    segments through intermediate waypoints that are jittered off the straight
+    A→B line, and its radius varies slightly along the way. `wander` is the
+    perpendicular jitter as a fraction of the A→B length; `segments` the number
+    of pieces; `shape_seed` makes the path deterministic yet unique.
+    """
     a: Tuple[float, float, float]
     b: Tuple[float, float, float]
     radius: float
+    wander: float = 0.18
+    segments: int = 4
+    shape_seed: int = 0
 
 
 @dataclass
@@ -107,8 +128,9 @@ def build_cave(spec: CaveSpec, name: str,
     # World Z of every voxel — used to taper noise near chamber floors.
     _, _, Z = grid.world_coords()
 
-    # Carve each chamber as a flat-bottomed dome with floor-tapered noise so
-    # the floor is walkable while walls/ceiling stay rough.
+    # Carve each chamber as an irregular multi-lobe blob with a flat walkable
+    # floor and floor-tapered noise so the floor is navigable while the walls
+    # and ceiling stay rough.
     #
     # Near the floor the noise is both tapered (small amplitude) AND made
     # one-sided: it may raise gentle bumps but never carves BELOW the floor
@@ -117,14 +139,14 @@ def build_cave(spec: CaveSpec, name: str,
     for ch in spec.chambers:
         floor_z = ch.floor_z if ch.floor_z is not None else ch.center[2] - ch.radius * 0.5
         n = _floor_shaped_noise(Z, base_noise, floor_z, spec)
-        s = sdf_dome(grid, ch.center, ch.radius, floor_z) + n
+        s = _chamber_sdf(grid, ch, floor_z) + n
         smooth_union_carve(grid, s, k=spec.smooth_k)
 
-    # Tunnels keep a flat-ish floor too.
+    # Tunnels wind between rooms instead of running dead straight.
     for tn in spec.tunnels:
         floor_z = min(tn.a[2], tn.b[2]) - tn.radius
         n = _floor_shaped_noise(Z, base_noise, floor_z, spec)
-        s = sdf_capsule(grid, tn.a, tn.b, tn.radius) + n
+        s = _tunnel_sdf(grid, tn) + n
         smooth_union_carve(grid, s, k=spec.smooth_k)
 
     # Grow natural features into the carved field before meshing so they
@@ -178,6 +200,108 @@ def _floor_shaped_noise(Z: np.ndarray, base_noise: np.ndarray,
 
 
 # ---------------------------------------------------------------------------
+# Organic chamber / tunnel shapes
+# ---------------------------------------------------------------------------
+
+def _chamber_sdf(grid: FieldGrid, ch: Chamber, floor_z: float) -> np.ndarray:
+    """
+    SDF of an irregular chamber: a cluster of offset dome lobes smooth-unioned
+    together, so the chamber footprint is a lumpy blob rather than a circle.
+
+    The first lobe is the full-radius dome at the chamber centre; the extra
+    lobes are smaller, pushed out horizontally in varied directions and sizes,
+    all sharing the same flat floor so the whole chamber stays walkable.
+    """
+    base = sdf_dome(grid, ch.center, ch.radius, floor_z)
+    if ch.lobes <= 1 or ch.irregularity <= 0.0:
+        return base
+
+    rng = np.random.default_rng(ch.shape_seed or 1)
+    cx, cy, cz = ch.center
+    out = base
+    for _ in range(ch.lobes - 1):
+        ang = rng.uniform(0.0, 2.0 * np.pi)
+        dist = ch.radius * ch.irregularity * rng.uniform(0.5, 1.0)
+        lobe_r = ch.radius * rng.uniform(0.55, 0.9)
+        lx = cx + np.cos(ang) * dist
+        ly = cy + np.sin(ang) * dist
+        # Keep the lobe centre at or above the chamber centre so its dome adds
+        # width/ceiling variety without pulling the air volume below the floor.
+        lz = cz + ch.radius * rng.uniform(0.0, 0.2)
+        lobe = sdf_dome(grid, (lx, ly, lz), lobe_r, floor_z)
+        # Fillet proportional to the smaller lobe so junctions read as one cave.
+        out = smooth_min(out, lobe, k=max(12.0, lobe_r * 0.5))
+
+    # The smooth-min fillet can bow the blended air volume slightly below the
+    # floor plane at lobe junctions. Re-intersect with the half-space above the
+    # floor so the chamber keeps a single flat walkable floor at floor_z.
+    _, _, Z = grid.world_coords()
+    above_floor = floor_z - Z   # <0 above the floor, >0 below
+    return np.maximum(out, above_floor)
+
+
+def _tunnel_waypoints(tn: Tunnel) -> List[Tuple[float, float, float]]:
+    """
+    Build a meandering polyline from a→b: evenly spaced points along the
+    straight line, each (except the endpoints) jittered perpendicular to the
+    line so the passage curves naturally. Jitter is in the horizontal plane
+    (plus a little vertical) and tapers to zero at both ends so the tunnel
+    still meets its rooms squarely.
+    """
+    import math
+
+    ax, ay, az = tn.a
+    bx, by, bz = tn.b
+    dx, dy, dz = bx - ax, by - ay, bz - az
+    length = math.sqrt(dx * dx + dy * dy + dz * dz) or 1.0
+
+    # Horizontal perpendicular (unit) to the a→b direction.
+    hx, hy = -dy, dx
+    hlen = math.sqrt(hx * hx + hy * hy) or 1.0
+    hx, hy = hx / hlen, hy / hlen
+
+    seg = max(2, tn.segments)
+    rng = np.random.default_rng(tn.shape_seed or 1)
+    amp = tn.wander * length
+
+    pts: List[Tuple[float, float, float]] = [tn.a]
+    for i in range(1, seg):
+        t = i / seg
+        # Base point on the straight line.
+        px = ax + dx * t
+        py = ay + dy * t
+        pz = az + dz * t
+        # Taper the offset so it is 0 at both ends and max in the middle.
+        taper = math.sin(math.pi * t)
+        off = float(rng.uniform(-1.0, 1.0)) * amp * taper
+        px += hx * off
+        py += hy * off
+        pz += float(rng.uniform(-0.08, 0.08)) * amp * taper
+        pts.append((px, py, pz))
+    pts.append(tn.b)
+    return pts
+
+
+def _tunnel_sdf(grid: FieldGrid, tn: Tunnel) -> np.ndarray:
+    """
+    SDF of a winding tunnel: a chain of capsule segments through jittered
+    waypoints, smooth-unioned so the bends are rounded. Segment radius varies
+    mildly along the length so the passage pinches and widens like a real cave.
+    """
+    pts = _tunnel_waypoints(tn)
+    rng = np.random.default_rng((tn.shape_seed or 1) + 7)
+
+    def seg_radius(i: int) -> float:
+        return tn.radius * float(rng.uniform(0.82, 1.18))
+
+    out = sdf_capsule(grid, pts[0], pts[1], seg_radius(0))
+    for i in range(1, len(pts) - 1):
+        s = sdf_capsule(grid, pts[i], pts[i + 1], seg_radius(i))
+        out = smooth_min(out, s, k=max(14.0, tn.radius * 0.6))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Grid sizing
 # ---------------------------------------------------------------------------
 
@@ -199,10 +323,11 @@ def _make_grid(spec: CaveSpec) -> FieldGrid:
     max_r = 0.0
     for ch in spec.chambers:
         pts.append(ch.center)
-        max_r = max(max_r, ch.radius)
+        # Lobes push the footprint out past the nominal radius.
+        max_r = max(max_r, ch.radius * (1.0 + ch.irregularity))
     for tn in spec.tunnels:
-        pts.append(tn.a)
-        pts.append(tn.b)
+        # Include the meander waypoints so wandering tunnels stay inside the grid.
+        pts.extend(_tunnel_waypoints(tn))
         max_r = max(max_r, tn.radius)
 
     arr = np.array(pts, dtype=np.float32)

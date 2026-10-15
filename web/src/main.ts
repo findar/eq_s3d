@@ -12,6 +12,9 @@ const statusEl = $("status");
 const genBtn = $("generate") as HTMLButtonElement;
 const hintOverlay = $("hint-overlay");
 
+// Latest generated map URL, shown by the Map modal.
+let currentMapUrl: string | null = null;
+
 // ---- Scene + controls ----
 const zoneScene = new ZoneScene(canvas);
 const controls = new FirstPersonControls(zoneScene.camera, canvas);
@@ -127,6 +130,7 @@ async function doGenerate() {
     }
 
     const result = await generateZone(params);
+    currentMapUrl = result.map_url;
     statusEl.textContent = "loading…";
 
     const box = await zoneScene.loadZone(result.glb_url);
@@ -171,6 +175,49 @@ $("reset-view").addEventListener("click", () => {
 // Enter in the prompt box triggers generation
 ($("prompt") as HTMLInputElement).addEventListener("keydown", (e) => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate();
+});
+
+// ---- Top-down map modal ----
+const mapModal = $("map-modal");
+const mapBody = $("map-body");
+const mapDownload = $("map-download") as HTMLAnchorElement;
+
+async function openMap() {
+  if (!currentMapUrl) return;
+  try {
+    const res = await fetch(currentMapUrl);
+    if (!res.ok) throw new Error(`map fetch failed (${res.status})`);
+    mapBody.innerHTML = await res.text();   // inline SVG so it scales crisply
+    mapDownload.href = currentMapUrl;
+    mapModal.classList.remove("hidden");
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "map unavailable — see console";
+  }
+}
+
+function closeMap() {
+  mapModal.classList.add("hidden");
+}
+
+$("show-map").addEventListener("click", openMap);
+$("map-close").addEventListener("click", closeMap);
+// Click the dim backdrop (but not the dialog) to close.
+mapModal.addEventListener("click", (e) => {
+  if (e.target === mapModal) closeMap();
+});
+// M toggles the map, Esc closes it — but not while typing in a field.
+document.addEventListener("keydown", (e) => {
+  const ev = e as KeyboardEvent;
+  const el = ev.target as HTMLElement | null;
+  const typing = el && (el.tagName === "INPUT" || el.tagName === "SELECT" ||
+    el.tagName === "TEXTAREA" || el.isContentEditable);
+  if (typing) return;
+  if (ev.key === "m" || ev.key === "M") {
+    mapModal.classList.contains("hidden") ? openMap() : closeMap();
+  } else if (ev.key === "Escape" && !mapModal.classList.contains("hidden")) {
+    closeMap();
+  }
 });
 
 // ---- Render loop ----
