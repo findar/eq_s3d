@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Organic caves with walkable floors + natural features ✅ — stalactites, stalagmites, pillars. Phase 3 (AI integration) up next
+> **Status**: Organic caves + outdoor terrain ✅ — walkable floors, natural features, eroded hills. Phase 3 (AI integration) up next
 
 ---
 
@@ -53,6 +53,7 @@ generators/ — Procedural geometry, lighting, region volumes
   │   ├─ noise.py    — fast vectorised FBM value noise (wall roughness)
   │   ├─ cave.py     — carve chambers+tunnels, walkable flat floors
   │   ├─ features.py — stalactites / stalagmites / pillars (surface-aware)
+  │   ├─ terrain.py  — heightfield + erosion → walkable rolling hills
   │   └─ mesh.py     — marching cubes → TerFile + decimation
   └─ builder.py     — ZoneBuilder: routes box vs organic backend → .eqg + .glb
 server/     — FastAPI backend wrapping the generators for the web UI
@@ -187,6 +188,7 @@ python -m pytest tests/ -v
 | **web** | Browser app — dropdown generate + first-person walk + overlays | ✅ Done |
 | **organic** | Cave geometry — SDF + marching cubes, noise-roughened walls | ✅ Done |
 | **organic+** | Walkable floors + natural features (stalactites/pillars) | ✅ Done |
+| **terrain** | Outdoor heightfield terrain — eroded, walkable rolling hills | ✅ Done |
 | **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | 🔨 Next |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
@@ -345,6 +347,23 @@ stalagmites (floor cones), and pillars (floor-to-ceiling columns) into the carve
 field *before* meshing, so they fuse with the rock as one continuous surface
 rather than looking like placed props. Floor features are kept toward chamber
 edges so the walkable core stays clear.
+
+### Outdoor Terrain ✅
+
+The `outdoor` theme uses a **heightfield** backend (`field/terrain.py`) — a
+surface rather than a carved volume:
+
+1. FBM noise generates rolling hills over a 2D grid.
+2. **Thermal erosion** slumps steep slopes to a natural angle of repose, so
+   ridges and valleys read as weathered rather than blobby noise.
+3. A **walkable-gradient cap** relaxes any cell steeper than the max climbable
+   grade, keeping the whole surface navigable (verified: ~100% under 40°).
+4. The grid is triangulated into a ground mesh with gradient-derived normals.
+
+```bash
+python main.py generate meadow --theme outdoor --rooms 5
+#   → eroded rolling hills sized to the zone footprint, fully walkable
+```
 
 ### Web App — Browser Generate + Walk ✅
 

@@ -27,9 +27,10 @@ _REGION_PREFIX = {
     "zoneline": "ATP", "ice": "ASL", "generic": "APV",
 }
 
-# Themes that use the organic (SDF + marching cubes) geometry backend.
-# Others use the box/architectural backend.
-_ORGANIC_THEMES = {"cave"}
+# Themes that use the organic (SDF + marching cubes) cave backend.
+_CAVE_THEMES = {"cave"}
+# Themes that use the heightfield terrain backend.
+_TERRAIN_THEMES = {"outdoor"}
 
 
 class ZoneBuilder:
@@ -103,14 +104,46 @@ class ZoneBuilder:
     # ------------------------------------------------------------------
 
     def _build_geometry(self, name: str, ter_version: int) -> TerFile:
-        """Route to the organic (SDF) backend for caves, box backend otherwise."""
-        if self.spec.theme in _ORGANIC_THEMES:
+        """Route to the right geometry backend by theme."""
+        if self.spec.theme in _CAVE_THEMES:
             ter = self._build_organic(name, ter_version)
             if ter is not None:
                 return ter
-            # Fall back to box backend if organic produced nothing
+        elif self.spec.theme in _TERRAIN_THEMES:
+            ter = self._build_terrain(name, ter_version)
+            if ter is not None:
+                return ter
+        # Fall back to the box backend
         mesh = build_mesh(self.spec)
         return mesh.to_ter(name=f"ter_{name}", version=ter_version)
+
+    def _build_terrain(self, name: str, ter_version: int):
+        """Generate heightfield terrain spanning the zone's room-graph bounds."""
+        from .field.terrain import TerrainSpec, build_terrain
+
+        # Size the terrain to the room footprint plus a generous margin.
+        if self.spec.rooms:
+            xs = [r.center_x for r in self.spec.rooms]
+            ys = [r.center_y for r in self.spec.rooms]
+            margin = 600.0
+            width = max(1200.0, (max(xs) - min(xs)) + 2 * margin)
+            depth = max(1200.0, (max(ys) - min(ys)) + 2 * margin)
+        else:
+            width = depth = 2000.0
+
+        spec = TerrainSpec(
+            width=width,
+            depth=depth,
+            resolution=50.0,
+            seed=abs(hash(name)) % (2 ** 31),
+            height_scale=360.0,
+            noise_scale=max(500.0, min(width, depth) * 0.4),
+            max_walkable_grad=0.85,
+        )
+        ter = build_terrain(spec, name=f"ter_{name}")
+        if ter is not None:
+            ter.version = ter_version
+        return ter
 
     def _build_organic(self, name: str, ter_version: int):
         """
