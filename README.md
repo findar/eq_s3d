@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Phase 2.5 + web app ✅ — generate and walk zones in the browser. Phase 3 (AI integration) up next
+> **Status**: Organic cave geometry ✅ — SDF + marching cubes caves generate in ~1s. Phase 3 (AI integration) up next
 
 ---
 
@@ -45,10 +45,15 @@ analyzer/   — Extract style metrics from existing EQ zones
   └─ inspect.py     — rich terminal inspector + zone comparator
 generators/ — Procedural geometry, lighting, region volumes
   ├─ zone_spec.py   — serialisable ZoneSpec (the IR)
-  ├─ geometry.py    — MeshBuilder: rooms, corridors, ramps, stairs
+  ├─ geometry.py    — MeshBuilder: box rooms, corridors, ramps, stairs
   ├─ layout.py      — LayoutGenerator: seedable 3D room-graph
   ├─ textures.py    — placeholder DDS (AI textures in Phase 3)
-  └─ builder.py     — ZoneBuilder: spec → .eqg + .glb
+  ├─ field/         — organic (SDF + marching cubes) geometry
+  │   ├─ sdf.py      — density-field primitives (sphere/capsule/cone) + carve
+  │   ├─ noise.py    — fast vectorised FBM value noise (wall roughness)
+  │   ├─ cave.py     — carve chambers+tunnels into rock → organic cave
+  │   └─ mesh.py     — marching cubes → TerFile + decimation
+  └─ builder.py     — ZoneBuilder: routes box vs organic backend → .eqg + .glb
 server/     — FastAPI backend wrapping the generators for the web UI
 web/        — Vite + TypeScript browser app (Three.js first-person viewer)
 viewer/     — Legacy standalone Flask GLB preview (superseded by web/)
@@ -179,6 +184,7 @@ python -m pytest tests/ -v
 | **2** | Procedural geometry — rooms, corridors, lighting, regions | ✅ Done |
 | **2.5** | Elevation — multi-level layout, ramp & staircase corridors | ✅ Done |
 | **web** | Browser app — dropdown generate + first-person walk + overlays | ✅ Done |
+| **organic** | Cave geometry — SDF + marching cubes, noise-roughened walls | ✅ Done |
 | **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | 🔨 Next |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
@@ -294,6 +300,35 @@ python -m analyzer.inspect output/testdungeon.eqg --theme dungeon
   Materials   3 ⚠       (profile: 18–83)   ← placeholder, Phase 3 adds variety
   Shader      MPLBump2UV ✓                 ← matches real dungeons
 ```
+
+### Organic Cave Geometry ✅
+
+The target is zones **indistinguishable from hand-crafted** — focused on *natural*
+geometry (caves, hills, earthen walls, stalactites, pillars) rather than clean
+architecture. Natural forms are irregular by definition, which is exactly where
+procedural techniques excel: a noise-eroded cave wall and a hand-sculpted one have
+no pattern to tell them apart.
+
+The `cave` theme now uses a **density-field backend** instead of boxes:
+
+1. Start with a solid block of rock (a 3D scalar field, positive = solid).
+2. **Carve** the walkable volume — rooms become spherical chambers, corridors
+   become capsule tunnels — pushing the field negative (air).
+3. Add **FBM value noise** to the carved boundary so walls are lumpy and organic,
+   not smooth tubes.
+4. Extract the rock/air surface with **marching cubes** → a single watertight
+   organic mesh, decimated to a sane poly count.
+
+This maps perfectly onto EQG: collision is per-triangle (confirmed from
+`azone/map.cpp`), so a dense organic mesh works exactly like a hand-made zone's.
+
+```bash
+python main.py generate grotto --theme cave --rooms 5
+#   → ~40k-poly organic cave, generated in ~1 second
+```
+
+The noise is fully vectorised numpy (no per-voxel Python), bringing generation
+from ~27s down to ~1s — fast enough for the interactive web loop.
 
 ### Web App — Browser Generate + Walk ✅
 

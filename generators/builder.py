@@ -16,6 +16,7 @@ from typing import Optional, Tuple
 
 from core.eqg import EqgZone
 from core.zon import ZonFile, ZonLight, ZonRegion
+from core.ter import TerFile
 from .zone_spec import ZoneSpec
 from .geometry import build_mesh
 from .textures import generate_texture
@@ -25,6 +26,10 @@ _REGION_PREFIX = {
     "water": "AWT", "lava": "ALV", "pvp": "APK",
     "zoneline": "ATP", "ice": "ASL", "generic": "APV",
 }
+
+# Themes that use the organic (SDF + marching cubes) geometry backend.
+# Others use the box/architectural backend.
+_ORGANIC_THEMES = {"cave"}
 
 
 class ZoneBuilder:
@@ -50,9 +55,9 @@ class ZoneBuilder:
         name = self.spec.name.lower()
         ter_filename = f"ter_{name}.ter"
 
-        # 1. Geometry → TER (named ter_<zone> per RoF2 convention)
-        mesh = build_mesh(self.spec)
-        ter = mesh.to_ter(name=f"ter_{name}", version=ter_version)
+        # 1. Geometry → TER (named ter_<zone> per RoF2 convention).
+        #    Route to the organic backend for cave-like themes, box backend otherwise.
+        ter = self._build_geometry(name, ter_version)
 
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
@@ -92,6 +97,61 @@ class ZoneBuilder:
             polygon_count=len(ter.polygons),
             material_count=len(ter.materials),
         )
+
+    # ------------------------------------------------------------------
+    # Geometry backend selection
+    # ------------------------------------------------------------------
+
+    def _build_geometry(self, name: str, ter_version: int) -> TerFile:
+        """Route to the organic (SDF) backend for caves, box backend otherwise."""
+        if self.spec.theme in _ORGANIC_THEMES:
+            ter = self._build_organic(name, ter_version)
+            if ter is not None:
+                return ter
+            # Fall back to box backend if organic produced nothing
+        mesh = build_mesh(self.spec)
+        return mesh.to_ter(name=f"ter_{name}", version=ter_version)
+
+    def _build_organic(self, name: str, ter_version: int):
+        """
+        Convert the ZoneSpec's rooms/corridors into an organic cave:
+        rooms → chambers (spheres), corridors → tunnels (capsules).
+        """
+        from .field.cave import CaveSpec, Chamber, Tunnel, build_cave
+
+        chambers = []
+        for room in self.spec.rooms:
+            # Chamber radius from the room footprint; centre at mid-height
+            radius = 0.5 * min(room.width, room.depth)
+            cz = room.floor_z + room.height * 0.5
+            chambers.append(Chamber(
+                center=(room.center_x, room.center_y, cz),
+                radius=max(40.0, radius),
+            ))
+
+        tunnels = []
+        for cor in self.spec.corridors:
+            za = cor.from_z + 0.5 * cor.height
+            zb = cor.to_z + 0.5 * cor.height
+            tunnels.append(Tunnel(
+                a=(cor.from_x, cor.from_y, za),
+                b=(cor.to_x, cor.to_y, zb),
+                radius=max(20.0, cor.width * 0.5),
+            ))
+
+        # Seed the cave noise from the zone name for determinism within a build
+        cave = CaveSpec(
+            chambers=chambers,
+            tunnels=tunnels,
+            noise_seed=abs(hash(name)) % (2 ** 31),
+            voxel=12.0,
+            noise_amplitude=26.0,
+            noise_scale=130.0,
+        )
+        ter = build_cave(cave, name=f"ter_{name}", decimate=0.5)
+        if ter is not None:
+            ter.version = ter_version
+        return ter
 
     def _build_zon(self, ter_filename: str) -> ZonFile:
         zon = ZonFile()
