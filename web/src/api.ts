@@ -48,12 +48,20 @@ export interface ZoneRegion {
   extent: [number, number, number];
 }
 
+export interface ZoneRoom {
+  id: string;
+  role: string;
+  graph_depth: number;
+  center: [number, number, number];
+}
+
 export interface ZoneSidecar {
   name: string;
   bounds: { min: [number, number, number]; max: [number, number, number] };
   metrics: { vertices: number; polygons: number; materials: number };
   lights: ZoneLight[];
   regions: ZoneRegion[];
+  rooms: ZoneRoom[];
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {

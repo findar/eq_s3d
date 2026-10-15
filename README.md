@@ -202,6 +202,8 @@ python -m pytest tests/ -v
 | **textures** | Procedural seamless textures (no API) + AI provider drop-in | ✅ Done |
 | **3** | Prompt-driven generation — rule planner (no API) + LLM drop-in | ✅ Done |
 | **layout** | TinyKeep room-graph — scatter/separate/Delaunay/MST + loops | ✅ Done |
+| **pacing** | Room roles & depth — entrance/hub/dead-end/climax, biased geometry & lighting | ✅ Done |
+| **gating** | Lock-and-key progression (optional, keyed dungeons) | ⏳ Next |
 | **4** | Refinement — iterative chat loop, partial regen, SQL export | ⏳ |
 
 ---
@@ -542,13 +544,26 @@ random walk has been **replaced with a TinyKeep-style spatial layout** (see
 This fixes the old overlap/tangle/linearity problems and produces composed,
 hub-and-branch layouts. All three geometry backends consume the result unchanged.
 
-**Still future — pacing (Dormans mission/space):** TinyKeep gives spatial
-structure but no narrative intent (entrance → key chamber → climax, locked
-branches, reward dead-ends). The clean next increment is to tag the entrance,
-derive a "deepest" room from the MST as a climax, and bias loop/dead-end
-placement — layering authored pacing on top of the spatial layout. Outdoor
-should also turn its rooms into meaningful places (clearings, lookouts) rather
-than only terrain bounds.
+**Pacing (done).** On top of the spatial layout, the graph is analysed to give
+each room a **role** and **graph depth**:
+- *entrance* — a peripheral room (farthest from the layout centroid); the safe point
+- *graph_depth* — BFS hops from the entrance; the progression axis
+- *climax* — the deepest room (grand boss chamber)
+- *hub* — a crossroads (graph degree ≥ 3)
+- *deadend* — a leaf (reward/rare-spawn spot)
+
+Geometry and lighting are biased by role & depth so the pacing is *visible*: the
+climax is larger and taller, hubs are spacious, dead-ends intimate; interior
+lighting fades and cools with depth (bright entrance → dim depths), and the
+climax gets a charged/eerie tint. The sidecar carries the per-room pacing so the
+viewer shows it and a future SQL/spawn export knows where the boss goes.
+
+**Still future — gating (optional lock-and-key):** EQ has both open sprawls
+(Guk) and key-gated dungeons (Chardok). Gating layers onto the paced graph —
+place a lock on a deep corridor edge, put its key in a room reachable before the
+lock, climax behind the final lock. Carried as `GateSpec` data + door/key MOD
+placements for the eventual EQEmu export. Outdoor should also turn its rooms into
+meaningful places (clearings, lookouts) rather than only terrain bounds.
 
 ### Water and mixed-environment zones
 

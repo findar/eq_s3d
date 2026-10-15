@@ -222,6 +222,61 @@ class TestTinyKeepLayout:
         assert len(spec.corridors) == 1
 
 
+class TestPacing:
+    def test_exactly_one_entrance_and_climax(self):
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        roles = [r.role for r in spec.rooms]
+        assert roles.count("entrance") == 1
+        assert roles.count("climax") == 1
+
+    def test_entrance_is_depth_zero(self):
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        entrance = next(r for r in spec.rooms if r.role == "entrance")
+        assert entrance.graph_depth == 0
+
+    def test_climax_is_deepest(self):
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        climax = next(r for r in spec.rooms if r.role == "climax")
+        max_depth = max(r.graph_depth for r in spec.rooms)
+        assert climax.graph_depth == max_depth
+
+    def test_climax_larger_than_deadends(self):
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=12)
+        climax = next(r for r in spec.rooms if r.role == "climax")
+        deadends = [r for r in spec.rooms if r.role == "deadend"]
+        if deadends:
+            avg_de = sum(r.width * r.depth for r in deadends) / len(deadends)
+            assert climax.width * climax.depth > avg_de
+
+    def test_depth_assigned_to_all(self):
+        spec = LayoutGenerator(theme="dungeon", seed=11).generate("z", room_count=10)
+        # Every room reachable from entrance → every room has a sensible depth
+        assert all(r.graph_depth >= 0 for r in spec.rooms)
+        # At least some progression beyond the entrance
+        assert max(r.graph_depth for r in spec.rooms) >= 2
+
+    def test_safe_point_at_entrance(self):
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        entrance = next(r for r in spec.rooms if r.role == "entrance")
+        sx, sy, _sz = spec.safe_point
+        assert abs(sx - entrance.center_x) < 1.0
+        assert abs(sy - entrance.center_y) < 1.0
+
+    def test_lighting_fades_with_depth(self):
+        # Deeper dungeon rooms should have dimmer lights than the entrance.
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=12)
+        depth_by_id = {r.id: r.graph_depth for r in spec.rooms}
+        # Match lights to rooms by id prefix
+        bright = {}
+        for lt in spec.lights:
+            # light id = light_<idx>_<role>; map by position to a room
+            rid = min(spec.rooms,
+                      key=lambda r: (r.center_x - lt.x) ** 2 + (r.center_y - lt.y) ** 2).id
+            bright[depth_by_id[rid]] = (lt.r + lt.g + lt.b)
+        if 0 in bright and max(bright) >= 3:
+            assert bright[max(bright)] < bright[0]
+
+
 class TestBuilder:
     def test_full_build(self, tmp_path):
         gen = LayoutGenerator(theme="dungeon", seed=42)

@@ -73,6 +73,30 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   $("m-wx").textContent = wx;
   $("m-wy").textContent = wy;
   $("m-wz").textContent = wz;
+
+  // Pacing: role counts + max depth
+  const pacing = $("m-pacing");
+  pacing.innerHTML = "";
+  if (sidecar.rooms && sidecar.rooms.length) {
+    const counts: Record<string, number> = {};
+    let maxDepth = 0;
+    for (const r of sidecar.rooms) {
+      counts[r.role] = (counts[r.role] || 0) + 1;
+      if (r.graph_depth > maxDepth) maxDepth = r.graph_depth;
+    }
+    const order = ["entrance", "hub", "standard", "deadend", "climax"];
+    for (const role of order) {
+      if (!counts[role]) continue;
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `<span>${role}</span><span>${counts[role]}</span>`;
+      pacing.appendChild(div);
+    }
+    const dd = document.createElement("div");
+    dd.className = "row";
+    dd.innerHTML = `<span>max depth</span><span>${maxDepth}</span>`;
+    pacing.appendChild(dd);
+  }
 }
 
 // ---- Generate ----

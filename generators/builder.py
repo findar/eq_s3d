@@ -94,7 +94,17 @@ class ZoneBuilder:
         if write_glb:
             glb_path = out_dir / f"{name}.glb"
             mat_colors = self._material_color_map(ter)
-            result = eqg.write_glb(glb_path, material_colors=mat_colors)
+            room_pacing = [
+                {
+                    "id": r.id,
+                    "role": r.role,
+                    "graph_depth": r.graph_depth,
+                    "center": [r.center_x, r.center_y, r.floor_z],
+                }
+                for r in self.spec.rooms
+            ]
+            result = eqg.write_glb(glb_path, material_colors=mat_colors,
+                                   room_pacing=room_pacing)
             if result is None:
                 glb_path = None  # trimesh not available
 

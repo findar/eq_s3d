@@ -46,6 +46,13 @@ class RoomSpec:
     # Which walls to omit (for openings into corridors): any of N/S/E/W
     open_walls: List[str] = field(default_factory=list)
 
+    # Pacing (derived from the room graph):
+    #   role        — entrance | hub | deadend | climax | standard
+    #   graph_depth — hops from the entrance (0 = entrance). Progression axis.
+    # NOTE: named graph_depth to avoid colliding with `depth` (the Y-extent).
+    role: str = "standard"
+    graph_depth: int = 0
+
     @property
     def bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
         hw, hd = self.width / 2, self.depth / 2

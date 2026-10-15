@@ -156,8 +156,19 @@ class LayoutGenerator:
         rooms = self._scatter_rooms(room_count)
         self._separate_rooms(rooms)
         edges = self._connect_rooms(rooms)          # list of (i, j) index pairs
+
+        # Pacing: derive entrance / depth / roles from the graph, then bias
+        # room geometry (and later lighting) by role & depth so the zone reads
+        # as a progression rather than a flat set of equal rooms.
+        entrance = self._apply_pacing(rooms, edges)
+
+        # Role biasing resized rooms (climax/hub grew, dead-ends shrank), so
+        # re-separate to resolve any overlaps the new sizes introduced. Keep
+        # the graph edges — only positions shift slightly.
+        self._separate_rooms(rooms)
+
         if elevation:
-            self._assign_elevation(rooms, edges)
+            self._assign_elevation(rooms, edges, entrance)
 
         for i, room in enumerate(rooms):
             spec.rooms.append(room)
@@ -166,12 +177,104 @@ class LayoutGenerator:
 
         self._build_corridors(spec, rooms, edges)
 
-        # Safe point in the entrance room (room 0).
+        # Safe point in the entrance room.
         if rooms:
-            r0 = rooms[0]
-            spec.safe_point = (r0.center_x, r0.center_y, r0.floor_z + 5.0)
+            e = rooms[entrance]
+            spec.safe_point = (e.center_x, e.center_y, e.floor_z + 5.0)
 
         return spec
+
+    # ------------------------------------------------------------------
+    # Pacing — graph-derived roles & depth
+    # ------------------------------------------------------------------
+
+    def _apply_pacing(self, rooms: List[RoomSpec],
+                      edges: List[Tuple[int, int]]) -> int:
+        """
+        Analyse the room graph to assign each room a role and depth:
+
+          - entrance : a peripheral room (outermost from the layout centroid),
+                       so players enter from the edge, not the middle.
+          - depth    : graph hops from the entrance (BFS). The progression axis.
+          - climax   : the room with the greatest graph depth (boss chamber).
+          - hub      : a crossroads (graph degree >= 3).
+          - deadend  : a leaf (degree 1) that isn't the entrance.
+          - standard : everything else.
+
+        Then bias room geometry by role & depth so the shape reflects the pacing.
+        Returns the entrance room index.
+        """
+        n = len(rooms)
+        if n == 0:
+            return 0
+
+        # Build adjacency and degree.
+        from collections import defaultdict, deque
+        adj = defaultdict(list)
+        for i, j in edges:
+            adj[i].append(j)
+            adj[j].append(i)
+
+        # Entrance = the room farthest from the layout centroid (peripheral).
+        cx = sum(r.center_x for r in rooms) / n
+        cy = sum(r.center_y for r in rooms) / n
+        entrance = max(
+            range(n),
+            key=lambda i: (rooms[i].center_x - cx) ** 2 + (rooms[i].center_y - cy) ** 2,
+        )
+
+        # BFS graph-depth from the entrance.
+        gdepth = {entrance: 0}
+        q = deque([entrance])
+        while q:
+            cur = q.popleft()
+            for nxt in adj[cur]:
+                if nxt not in gdepth:
+                    gdepth[nxt] = gdepth[cur] + 1
+                    q.append(nxt)
+        for i in range(n):
+            rooms[i].graph_depth = gdepth.get(i, 0)
+
+        # Climax = deepest room (ties broken by lowest index for determinism).
+        climax = max(range(n), key=lambda i: (rooms[i].graph_depth, -i)) if n > 1 else entrance
+
+        # Assign roles.
+        for i in range(n):
+            deg = len(adj[i])
+            if i == entrance:
+                rooms[i].role = "entrance"
+            elif i == climax:
+                rooms[i].role = "climax"
+            elif deg >= 3:
+                rooms[i].role = "hub"
+            elif deg == 1:
+                rooms[i].role = "deadend"
+            else:
+                rooms[i].role = "standard"
+
+        self._bias_rooms_by_role(rooms)
+        return entrance
+
+    def _bias_rooms_by_role(self, rooms: List[RoomSpec]) -> None:
+        """
+        Scale room geometry by role so pacing is visible in the shape:
+          - climax : grand — larger footprint, taller ceiling
+          - hub    : spacious crossroads
+          - deadend: intimate — smaller
+          - entrance/standard: baseline
+        """
+        role_scale = {
+            "climax":   (1.6, 1.5),   # (footprint, ceiling) multipliers
+            "hub":      (1.3, 1.15),
+            "entrance": (1.1, 1.0),
+            "deadend":  (0.7, 0.85),
+            "standard": (1.0, 1.0),
+        }
+        for r in rooms:
+            fs, cs = role_scale.get(r.role, (1.0, 1.0))
+            r.width *= fs
+            r.depth *= fs
+            r.height = max(40.0, r.height * cs)
 
     # ------------------------------------------------------------------
     # TinyKeep layout steps
@@ -311,12 +414,13 @@ class LayoutGenerator:
             return []
 
     def _assign_elevation(self, rooms: List[RoomSpec],
-                          edges: List[Tuple[int, int]]) -> None:
+                          edges: List[Tuple[int, int]],
+                          entrance: int = 0) -> None:
         """
-        Step 6: assign floor heights over the graph via BFS from room 0, so
-        connected rooms can sit at different Z and corridors ramp/step between
-        them. Height changes propagate along edges (not arbitrarily), which
-        keeps elevation coherent rather than random.
+        Step 6: assign floor heights over the graph via BFS from the entrance,
+        so connected rooms can sit at different Z and corridors ramp/step
+        between them. Height changes propagate along edges (not arbitrarily),
+        which keeps elevation coherent rather than random.
         """
         from collections import defaultdict, deque
         adj = defaultdict(list)
@@ -324,8 +428,8 @@ class LayoutGenerator:
             adj[i].append(j)
             adj[j].append(i)
 
-        visited = {0}
-        q = deque([0])
+        visited = {entrance}
+        q = deque([entrance])
         while q:
             cur = q.popleft()
             for nxt in adj[cur]:
@@ -398,7 +502,7 @@ class LayoutGenerator:
                               color=color, description=desc)
 
     def _add_room_lights(self, spec: ZoneSpec, room: RoomSpec, idx: int) -> None:
-        # Theme-appropriate light colour
+        # Theme-appropriate base light colour
         colors = {
             "dungeon": (1.0, 0.55, 0.15),   # torch orange
             "cave":    (0.5, 0.6, 0.8),     # cool blue
@@ -406,11 +510,28 @@ class LayoutGenerator:
             "city":    (1.0, 0.85, 0.6),    # warm lantern
         }
         r, g, b = colors.get(self.theme, (1.0, 0.6, 0.2))
-        # One light near the ceiling centre of the room
+
+        # Pacing-driven mood: deeper rooms are dimmer and cooler (more
+        # ominous), the entrance is brightest, the climax gets a slightly
+        # intensified/charged light. Outdoor zones keep daylight (depth doesn't
+        # darken the sky).
+        intensity = 1.0
+        if self.theme != "outdoor":
+            # Fade brightness with graph depth, floored so it never goes black.
+            fade = max(0.45, 1.0 - room.graph_depth * 0.08)
+            intensity = fade
+            if room.role == "entrance":
+                intensity = 1.0
+            elif room.role == "climax":
+                # Climax: restore brightness and push the colour toward a
+                # charged/eerie tint so it reads as "the place".
+                intensity = 0.9
+                r, g, b = (min(1.0, r * 1.1), g * 0.8, min(1.0, b * 1.3))
+
         spec.lights.append(LightSpec(
-            id=f"light_{idx}",
+            id=f"light_{idx}_{room.role}",
             x=room.center_x, y=room.center_y, z=room.floor_z + room.height * 0.75,
-            r=r, g=g, b=b,
+            r=r * intensity, g=g * intensity, b=b * intensity,
             radius=max(room.width, room.depth) * 0.9,
         ))
 
