@@ -1,12 +1,17 @@
 """
 generators/layout.py
 --------------------
-Procedural zone layout. Generates a ZoneSpec (rooms + corridors + lights)
-from high-level parameters, constrained by a style profile.
+Procedural zone layout. Generates a ZoneSpec (rooms + corridors + lights) from
+high-level parameters, constrained by a style profile.
 
-This is a deterministic, seedable layout generator. In Phase 3 the AI planner
-will produce ZoneSpecs directly; this module provides the algorithmic fallback
-and the building blocks the AI can call.
+Layout uses a TinyKeep-style spatial algorithm (scatter → separate → Delaunay →
+MST + loop edges → graph-based elevation → wall-to-wall corridors), which
+produces composed hub-and-branch dungeons without overlaps or tangling. Room
+sizes track the theme's measured footprint; the result feeds all three geometry
+backends (box, organic cave, heightfield terrain) unchanged.
+
+Deterministic and seedable. The AI planner produces a ZonePlan which
+ai.expand.plan_to_spec drives through this generator.
 """
 
 from __future__ import annotations
@@ -142,56 +147,211 @@ class LayoutGenerator:
         # Scale rooms to the theme's measured footprint divided across the
         # requested room count, so total zone size matches real proportions.
         self._apply_room_scale(room_count)
-
         self._add_default_materials(spec)
 
-        # Lay out rooms along a rough grid walk to keep them connected.
-        # Each room tracks its own floor_z; the walk raises/lowers height to
-        # create verticality.
-        placed: List[RoomSpec] = []
-        cx, cy, cz = 0.0, 0.0, 0.0
-        direction_choices = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+        # --- TinyKeep-style layout -------------------------------------
+        # 1. Scatter rooms in an ellipse, 2. separate them, 3. classify
+        #    main/filler, 4. Delaunay graph, 5. MST + a few loop edges,
+        #    6. assign elevation over the graph, 7. wall-to-wall corridors.
+        rooms = self._scatter_rooms(room_count)
+        self._separate_rooms(rooms)
+        edges = self._connect_rooms(rooms)          # list of (i, j) index pairs
+        if elevation:
+            self._assign_elevation(rooms, edges)
 
-        for i in range(room_count):
-            w = self.rng.uniform(self.room_min, self.room_max)
-            d = self.rng.uniform(self.room_min, self.room_max)
-            h = self.ceiling
-
-            room = RoomSpec(
-                id=f"room_{i}",
-                center_x=cx, center_y=cy, floor_z=cz,
-                width=w, depth=d, height=h,
-            )
-            placed.append(room)
+        for i, room in enumerate(rooms):
             spec.rooms.append(room)
-
             if add_lights:
                 self._add_room_lights(spec, room, i)
 
-            # Walk to next room position (and optionally change elevation)
-            if i < room_count - 1:
-                dx, dy = self.rng.choice(direction_choices)
-                step = self.rng.uniform(self.room_max, self.room_max * 1.8)
-                cx += dx * step
-                cy += dy * step
-                if elevation and self.rng.random() < self.elevation_chance:
+        self._build_corridors(spec, rooms, edges)
+
+        # Safe point in the entrance room (room 0).
+        if rooms:
+            r0 = rooms[0]
+            spec.safe_point = (r0.center_x, r0.center_y, r0.floor_z + 5.0)
+
+        return spec
+
+    # ------------------------------------------------------------------
+    # TinyKeep layout steps
+    # ------------------------------------------------------------------
+
+    def _scatter_rooms(self, room_count: int) -> List[RoomSpec]:
+        """
+        Step 1: scatter rooms inside an ellipse. Sizes drawn from a normal
+        distribution around the theme's room scale so a few rooms are large
+        (hubs) and most are smaller (connective), à la TinyKeep.
+        """
+        mean_side = (self.room_min + self.room_max) / 2
+        std_side = (self.room_max - self.room_min) / 3
+        # Ellipse radius grows with room count so rooms have space to separate.
+        spread = mean_side * (0.8 + 0.5 * room_count)
+
+        rooms: List[RoomSpec] = []
+        for i in range(room_count):
+            # Random point in an ellipse (slightly wider than tall for a
+            # natural footprint ratio).
+            px, py = self._rand_in_ellipse(spread, spread * 0.75)
+            w = max(self.room_min * 0.6, self.rng.gauss(mean_side, std_side))
+            d = max(self.room_min * 0.6, self.rng.gauss(mean_side, std_side))
+            rooms.append(RoomSpec(
+                id=f"room_{i}",
+                center_x=px, center_y=py, floor_z=0.0,
+                width=w, depth=d, height=self.ceiling,
+            ))
+        return rooms
+
+    def _rand_in_ellipse(self, rx: float, ry: float) -> Tuple[float, float]:
+        import math
+        t = 2 * math.pi * self.rng.random()
+        u = self.rng.random() + self.rng.random()
+        r = (2 - u) if u > 1 else u
+        return rx * r * math.cos(t) / 2, ry * r * math.sin(t) / 2
+
+    def _separate_rooms(self, rooms: List[RoomSpec], iterations: int = 60) -> None:
+        """
+        Step 2: push overlapping rooms apart (no physics engine needed). Each
+        iteration nudges any overlapping pair apart along their centre-to-centre
+        vector until the layout settles with a small gap between rooms.
+        """
+        gap = max(self.corridor_width * 0.5, 30.0)
+        for _ in range(iterations):
+            moved = False
+            for a in range(len(rooms)):
+                for b in range(a + 1, len(rooms)):
+                    ra, rb = rooms[a], rooms[b]
+                    # Required half-separation on each axis (AABB + gap)
+                    min_dx = (ra.width + rb.width) / 2 + gap
+                    min_dy = (ra.depth + rb.depth) / 2 + gap
+                    dx = rb.center_x - ra.center_x
+                    dy = rb.center_y - ra.center_y
+                    ox = min_dx - abs(dx)   # overlap on X
+                    oy = min_dy - abs(dy)   # overlap on Y
+                    if ox > 0 and oy > 0:
+                        # Resolve along the axis of least penetration
+                        if ox < oy:
+                            push = ox / 2 * (1 if dx >= 0 else -1)
+                            ra.center_x -= push
+                            rb.center_x += push
+                        else:
+                            push = oy / 2 * (1 if dy >= 0 else -1)
+                            ra.center_y -= push
+                            rb.center_y += push
+                        moved = True
+            if not moved:
+                break
+
+    def _connect_rooms(self, rooms: List[RoomSpec]) -> List[Tuple[int, int]]:
+        """
+        Steps 3–5: build a connection graph via Delaunay triangulation, reduce
+        it to a minimum spanning tree (guarantees reachability, mostly tree-
+        shaped), then add back a few edges to create loops/alternate paths.
+        Returns a list of (i, j) room-index edges.
+        """
+        n = len(rooms)
+        if n <= 1:
+            return []
+        if n == 2:
+            return [(0, 1)]
+
+        pts = [(r.center_x, r.center_y) for r in rooms]
+
+        # Candidate edges from Delaunay triangulation (fall back to a chain if
+        # scipy/Delaunay is unavailable or degenerate — e.g. collinear points).
+        candidate = self._delaunay_edges(pts)
+        if not candidate:
+            return [(i, i + 1) for i in range(n - 1)]
+
+        # Minimum spanning tree over candidate edges (Kruskal).
+        import math
+        weighted = sorted(
+            candidate,
+            key=lambda e: (pts[e[0]][0] - pts[e[1]][0]) ** 2
+                          + (pts[e[0]][1] - pts[e[1]][1]) ** 2,
+        )
+        parent = list(range(n))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        mst: List[Tuple[int, int]] = []
+        extra: List[Tuple[int, int]] = []
+        for i, j in weighted:
+            ri, rj = find(i), find(j)
+            if ri != rj:
+                parent[ri] = rj
+                mst.append((i, j))
+            else:
+                extra.append((i, j))
+
+        # Add back ~12% of the non-tree edges for loops/alternate routes.
+        self.rng.shuffle(extra)
+        n_add = max(0, int(len(extra) * 0.12))
+        mst.extend(extra[:n_add])
+        return mst
+
+    def _delaunay_edges(self, pts: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
+        """Delaunay triangulation edges via scipy; empty list on failure."""
+        try:
+            import numpy as np
+            from scipy.spatial import Delaunay
+            tri = Delaunay(np.array(pts))
+            edges = set()
+            for simplex in tri.simplices:
+                for a in range(3):
+                    for b in range(a + 1, 3):
+                        i, j = int(simplex[a]), int(simplex[b])
+                        edges.add((min(i, j), max(i, j)))
+            return list(edges)
+        except Exception:
+            return []
+
+    def _assign_elevation(self, rooms: List[RoomSpec],
+                          edges: List[Tuple[int, int]]) -> None:
+        """
+        Step 6: assign floor heights over the graph via BFS from room 0, so
+        connected rooms can sit at different Z and corridors ramp/step between
+        them. Height changes propagate along edges (not arbitrarily), which
+        keeps elevation coherent rather than random.
+        """
+        from collections import defaultdict, deque
+        adj = defaultdict(list)
+        for i, j in edges:
+            adj[i].append(j)
+            adj[j].append(i)
+
+        visited = {0}
+        q = deque([0])
+        while q:
+            cur = q.popleft()
+            for nxt in adj[cur]:
+                if nxt in visited:
+                    continue
+                visited.add(nxt)
+                z = rooms[cur].floor_z
+                if self.rng.random() < self.elevation_chance:
                     rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
-                    cz += rise * self.rng.choice([1, -1])
+                    z += rise * self.rng.choice([1, -1])
+                rooms[nxt].floor_z = z
+                q.append(nxt)
 
-        # Connect consecutive rooms with corridors. Corridors run WALL-TO-WALL
-        # (from the opening in room A's facing wall to the opening in room B's
-        # facing wall), not centre-to-centre — otherwise the corridor box
-        # drives into the middle of each room and the transition reads as the
-        # hallway "going into" the room.
-        for i in range(len(placed) - 1):
-            a, b = placed[i], placed[i + 1]
+    def _build_corridors(self, spec: ZoneSpec, rooms: List[RoomSpec],
+                         edges: List[Tuple[int, int]]) -> None:
+        """
+        Step 7: a wall-to-wall corridor for each graph edge, ramping/stepping
+        where the two rooms differ in height.
+        """
+        for k, (i, j) in enumerate(edges):
+            a, b = rooms[i], rooms[j]
             use_steps = abs(b.floor_z - a.floor_z) > 1.0 and self.rng.random() < 0.5
-
-            fx, fy = self._wall_point(a, b)   # exit point on room A's wall
-            tx, ty = self._wall_point(b, a)   # entry point on room B's wall
-
+            fx, fy = self._wall_point(a, b)
+            tx, ty = self._wall_point(b, a)
             spec.corridors.append(CorridorSpec(
-                id=f"corr_{i}",
+                id=f"corr_{k}",
                 from_x=fx, from_y=fy,
                 to_x=tx, to_y=ty,
                 from_z=a.floor_z, to_z=b.floor_z,
@@ -199,16 +359,8 @@ class LayoutGenerator:
                 height=self.corridor_height,
                 steps=self.rng.randint(4, 8) if use_steps else 0,
             ))
-            # Open the facing walls so the corridor connects into the rooms
             self._open_facing_walls(a, b)
             self._open_facing_walls(b, a)
-
-        # Safe point in the first room
-        if placed:
-            r0 = placed[0]
-            spec.safe_point = (r0.center_x, r0.center_y, r0.floor_z + 5.0)
-
-        return spec
 
     # ------------------------------------------------------------------
     # Helpers

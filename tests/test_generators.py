@@ -98,8 +98,11 @@ class TestLayout:
         gen = LayoutGenerator(theme="dungeon", seed=1)
         spec = gen.generate("z", room_count=6)
         assert len(spec.rooms) == 6
-        # N rooms connected by N-1 corridors
-        assert len(spec.corridors) == 5
+        # TinyKeep layout: at least N-1 corridors (MST = connected), possibly
+        # a few more from loop edges added back for alternate paths.
+        assert len(spec.corridors) >= 5
+        # But not fully connected (that would be a complete graph)
+        assert len(spec.corridors) < 6 * 5 // 2
 
     def test_lights_generated(self):
         gen = LayoutGenerator(theme="dungeon", seed=1)
@@ -133,6 +136,90 @@ class TestLayout:
         many = LayoutGenerator(theme="dungeon", seed=1).generate("m", room_count=15)
         # Dividing the footprint across more rooms → smaller individual rooms
         assert many.rooms[0].width < few.rooms[0].width
+
+
+class TestTinyKeepLayout:
+    def _rooms_overlap(self, a, b, gap=0.0):
+        return (abs(b.center_x - a.center_x) < (a.width + b.width) / 2 - gap
+                and abs(b.center_y - a.center_y) < (a.depth + b.depth) / 2 - gap)
+
+    def test_no_room_overlaps(self):
+        for seed in (3, 7, 11, 42):
+            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+                "z", room_count=12, elevation=False)
+            rs = spec.rooms
+            for i in range(len(rs)):
+                for j in range(i + 1, len(rs)):
+                    assert not self._rooms_overlap(rs[i], rs[j]), \
+                        f"rooms {i},{j} overlap (seed {seed})"
+
+    def test_fully_connected(self):
+        # Build adjacency from corridors (by nearest room to each endpoint)
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate(
+            "z", room_count=10, elevation=False)
+        n = len(spec.rooms)
+        # At minimum a spanning tree exists → corridors >= n-1
+        assert len(spec.corridors) >= n - 1
+
+    def test_connectivity_reachable(self):
+        # Every room should be reachable from room 0 via the corridor graph.
+        # Reconstruct adjacency by matching each corridor endpoint to the room
+        # whose wall it sits on (endpoints are on room walls, within half the
+        # room's extent of its centre on one axis).
+        spec = LayoutGenerator(theme="dungeon", seed=11).generate(
+            "z", room_count=10, elevation=False)
+        rooms = spec.rooms
+
+        def room_at_wall(x, y):
+            best, bd = None, float("inf")
+            for idx, r in enumerate(rooms):
+                # Point must be within the room's AABB (plus a small inset
+                # tolerance since the wall point sits just inside the wall).
+                within_x = abs(x - r.center_x) <= r.width / 2 + 5
+                within_y = abs(y - r.center_y) <= r.depth / 2 + 5
+                if within_x and within_y:
+                    d = (r.center_x - x) ** 2 + (r.center_y - y) ** 2
+                    if d < bd:
+                        bd, best = d, idx
+            return best
+
+        adj = {i: set() for i in range(len(rooms))}
+        for c in spec.corridors:
+            a = room_at_wall(c.from_x, c.from_y)
+            b = room_at_wall(c.to_x, c.to_y)
+            if a is not None and b is not None and a != b:
+                adj[a].add(b)
+                adj[b].add(a)
+
+        seen = {0}
+        stack = [0]
+        while stack:
+            cur = stack.pop()
+            for nxt in adj[cur]:
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        assert len(seen) == len(rooms), \
+            f"only {len(seen)}/{len(rooms)} rooms reachable"
+
+    def test_loops_added_for_larger_zones(self):
+        # A larger zone should get at least one loop edge above the MST (n-1).
+        total_extra = 0
+        for seed in range(20):
+            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+                "z", room_count=16, elevation=False)
+            total_extra += len(spec.corridors) - (len(spec.rooms) - 1)
+        assert total_extra > 0, "no loop edges ever added across 20 seeds"
+
+    def test_single_room(self):
+        spec = LayoutGenerator(theme="dungeon", seed=1).generate("z", room_count=1)
+        assert len(spec.rooms) == 1
+        assert len(spec.corridors) == 0
+
+    def test_two_rooms_one_corridor(self):
+        spec = LayoutGenerator(theme="dungeon", seed=1).generate("z", room_count=2)
+        assert len(spec.rooms) == 2
+        assert len(spec.corridors) == 1
 
 
 class TestBuilder:

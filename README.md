@@ -201,8 +201,8 @@ python -m pytest tests/ -v
 | **terrain** | Outdoor heightfield terrain — eroded, walkable rolling hills | ✅ Done |
 | **textures** | Procedural seamless textures (no API) + AI provider drop-in | ✅ Done |
 | **3** | Prompt-driven generation — rule planner (no API) + LLM drop-in | ✅ Done |
+| **layout** | TinyKeep room-graph — scatter/separate/Delaunay/MST + loops | ✅ Done |
 | **4** | Refinement — iterative chat loop, partial regen, SQL export | ⏳ |
-| **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
 ---
 
@@ -524,22 +524,31 @@ oscillated with art teams, tools, and zone type.
 
 Larger design directions captured for later (not yet implemented):
 
-### Room-graph grammar (composition)
+### Room-graph composition — TinyKeep (done) + pacing (future)
 
 The "room-graph" is a zone's abstract floor-plan — rooms (nodes) connected by
-corridors (edges) — that every geometry backend realises into 3D (box tunnels,
-carved cave chambers, or terrain bounds). Today `LayoutGenerator` builds it as a
-**naive random walk**: a connected chain with no design intent.
+corridors (edges) — that every geometry backend realises into 3D. The naive
+random walk has been **replaced with a TinyKeep-style spatial layout** (see
+`LayoutGenerator`):
 
-To reach "feels hand-crafted," upgrade the room-graph to a **grammar with pacing**
-(entrance → branching side-passages → key chamber → exit, with loops and
-dead-ends) à la Dormans' mission/space separation. This matters for **both**
-backends:
-- **Caves** already use the graph well (rooms → chambers) but would benefit from
-  authored pacing instead of a straight chain.
-- **Outdoor** currently only uses the graph for terrain *bounds* — the rooms
-  should become meaningful places (clearings, hilltop lookouts, valley camps)
-  carved/flattened into the terrain.
+1. Scatter rooms in an ellipse (sizes from a normal distribution → natural hubs)
+2. Separate overlapping rooms (iterative push-apart; no physics engine)
+3. Delaunay triangulation of room centres → candidate connection graph (scipy)
+4. Minimum spanning tree → guarantees reachability, mostly tree-shaped
+5. Add back ~12% of edges → loops / alternate paths so it's not purely linear
+6. Assign elevation over the graph via BFS → connected rooms ramp/step between
+7. Wall-to-wall corridors per edge
+
+This fixes the old overlap/tangle/linearity problems and produces composed,
+hub-and-branch layouts. All three geometry backends consume the result unchanged.
+
+**Still future — pacing (Dormans mission/space):** TinyKeep gives spatial
+structure but no narrative intent (entrance → key chamber → climax, locked
+branches, reward dead-ends). The clean next increment is to tag the entrance,
+derive a "deepest" room from the MST as a climax, and bias loop/dead-end
+placement — layering authored pacing on top of the spatial layout. Outdoor
+should also turn its rooms into meaningful places (clearings, lookouts) rather
+than only terrain bounds.
 
 ### Water and mixed-environment zones
 
