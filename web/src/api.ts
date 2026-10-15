@@ -55,6 +55,14 @@ export interface ZoneRoom {
   center: [number, number, number];
 }
 
+export interface ZoneGate {
+  id: string;
+  tier: number;
+  lock: [number, number, number];
+  key: [number, number, number];
+  key_room: string;
+}
+
 export interface ZoneSidecar {
   name: string;
   bounds: { min: [number, number, number]; max: [number, number, number] };
@@ -62,6 +70,7 @@ export interface ZoneSidecar {
   lights: ZoneLight[];
   regions: ZoneRegion[];
   rooms: ZoneRoom[];
+  gates: ZoneGate[];
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {

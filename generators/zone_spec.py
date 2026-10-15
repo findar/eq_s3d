@@ -132,6 +132,28 @@ class RegionSpec:
 
 
 @dataclass
+class GateSpec:
+    """
+    A lock-and-key gate: a locked door on a corridor, and the key that opens
+    it placed in a room reachable before the lock. Guarantees solvable
+    progression (the key is always obtainable before the door that needs it).
+
+    This is carried as data for the EQEmu export (a door object + a key item);
+    the geometry backend can also place a visible door MOD at the lock point.
+    """
+    id: str
+    corridor_id: str            # which corridor this door sits on
+    lock_x: float               # world position of the locked door
+    lock_y: float
+    lock_z: float
+    key_room_id: str            # room where the key is found
+    key_x: float                # world position of the key placement
+    key_y: float
+    key_z: float
+    tier: int = 0               # nesting depth (0 = outermost lock)
+
+
+@dataclass
 class MaterialSpec:
     """
     A material definition. The *texture* is a DDS filename that will be
@@ -173,6 +195,7 @@ class ZoneSpec:
     corridors: List[CorridorSpec] = field(default_factory=list)
     lights: List[LightSpec]     = field(default_factory=list)
     regions: List[RegionSpec]   = field(default_factory=list)
+    gates: List["GateSpec"]     = field(default_factory=list)
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -190,6 +213,7 @@ class ZoneSpec:
             "corridors": [asdict(c) for c in self.corridors],
             "lights": [asdict(l) for l in self.lights],
             "regions": [asdict(r) for r in self.regions],
+            "gates": [asdict(g) for g in self.gates],
         }
 
     def save(self, path: str | Path) -> Path:
@@ -220,6 +244,8 @@ class ZoneSpec:
             spec.lights.append(LightSpec(**l))
         for rg in d.get("regions", []):
             spec.regions.append(RegionSpec(**rg))
+        for g in d.get("gates", []):
+            spec.gates.append(GateSpec(**g))
         return spec
 
     @classmethod
@@ -242,5 +268,6 @@ class ZoneSpec:
         return (
             f"ZoneSpec({self.name!r}, theme={self.theme!r}, "
             f"rooms={len(self.rooms)}, corridors={len(self.corridors)}, "
-            f"lights={len(self.lights)}, regions={len(self.regions)})"
+            f"lights={len(self.lights)}, regions={len(self.regions)}, "
+            f"gates={len(self.gates)})"
         )

@@ -89,6 +89,7 @@ class GenerateResponse(BaseModel):
     source: str                      # "prompt" | "controls"
     planner: Optional[str] = None    # "rule" | "llm" when a prompt was used
     plan: Optional[dict] = None      # the ZonePlan the planner produced
+    gates: int = 0                   # number of lock-and-key gates (keyed dungeon)
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +123,7 @@ def generate(req: GenerateRequest):
         plan_dict = plan.to_dict()
         theme = plan.theme
         rooms = plan.room_count
+        gate_count = len(spec.gates)
     else:
         # Control-driven: explicit theme/rooms/elevation.
         source = "controls"
@@ -131,6 +133,7 @@ def generate(req: GenerateRequest):
         rooms = req.rooms
         gen = LayoutGenerator(theme=theme, seed=seed)
         spec = gen.generate(zone_id, room_count=rooms, elevation=req.elevation)
+        gate_count = len(spec.gates)
 
     result = ZoneBuilder(spec).build(output_dir=OUTPUT_DIR, write_glb=True)
     if result.glb_path is None:
@@ -149,6 +152,7 @@ def generate(req: GenerateRequest):
         source=source,
         planner=planner_name,
         plan=plan_dict,
+        gates=gate_count,
     )
 
 

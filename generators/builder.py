@@ -103,8 +103,18 @@ class ZoneBuilder:
                 }
                 for r in self.spec.rooms
             ]
+            gates = [
+                {
+                    "id": g.id,
+                    "tier": g.tier,
+                    "lock": [g.lock_x, g.lock_y, g.lock_z],
+                    "key": [g.key_x, g.key_y, g.key_z],
+                    "key_room": g.key_room_id,
+                }
+                for g in self.spec.gates
+            ]
             result = eqg.write_glb(glb_path, material_colors=mat_colors,
-                                   room_pacing=room_pacing)
+                                   room_pacing=room_pacing, gates=gates)
             if result is None:
                 glb_path = None  # trimesh not available
 

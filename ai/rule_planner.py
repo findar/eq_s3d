@@ -42,6 +42,10 @@ _SIZE_WORDS = {
     "small": ["small", "tiny", "cramped", "cozy", "little", "compact"],
 }
 
+# Words implying a keyed / gated dungeon
+_GATED_WORDS = ["locked", "key", "keyed", "sealed", "gated", "vault", "secured",
+                "barred", "warded", "sanctum", "forbidden"]
+
 _VERTICALITY_WORDS = {
     "dramatic": ["towering", "vertical", "multi-level", "multilevel", "layered",
                  "steep", "cliffs", "tiered", "stacked"],
@@ -72,6 +76,7 @@ class RulePlanner:
         room_count = self._room_count(text, size)
         elevation = verticality != "flat"
         mood = self._extract_mood(text)
+        locks = self._lock_count(text, room_count)
 
         return ZonePlan(
             name=name,
@@ -81,6 +86,7 @@ class RulePlanner:
             elevation=elevation,
             verticality=verticality,
             regions=regions,
+            locks=locks,
             mood=mood,
             prompt=prompt or "",
         ).validate()
@@ -121,6 +127,26 @@ class RulePlanner:
         elif any(w in text for w in _FEW_WORDS):
             base = max(2, int(base * 0.5))
         return max(1, min(30, base))
+
+    def _lock_count(self, text: str, room_count: int) -> int:
+        """
+        Infer the number of locked gates from the prompt. A keyed/sealed/
+        vaulted dungeon gets 1–2 locks scaled to its size; otherwise open (0).
+        An explicit number ("two locked doors") wins.
+        """
+        if not any(w in text for w in _GATED_WORDS):
+            return 0
+        import re
+        # Explicit digit: "2 locked doors"
+        m = re.search(r"(\d+)\s+(?:locked|keyed|sealed|key)", text)
+        if m:
+            return max(1, min(5, int(m.group(1))))
+        # Explicit word number: "two locked doors"
+        for word, num in _WORD_NUMBERS.items():
+            if re.search(rf"\b{word}\s+(?:locked|keyed|sealed|key)", text):
+                return max(1, min(5, num))
+        # Otherwise 1 lock for small zones, 2 for larger keyed dungeons.
+        return 2 if room_count >= 10 else 1
 
     def _extract_mood(self, text: str) -> str:
         mood_words = ["dark", "damp", "gloomy", "bright", "ancient", "ruined",

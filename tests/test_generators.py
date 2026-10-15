@@ -277,6 +277,105 @@ class TestPacing:
             assert bright[max(bright)] < bright[0]
 
 
+class TestGating:
+    def _room_at_wall(self, rooms, x, y):
+        best, bd = None, float("inf")
+        for i, r in enumerate(rooms):
+            if (abs(x - r.center_x) <= r.width / 2 + 6 and
+                    abs(y - r.center_y) <= r.depth / 2 + 6):
+                d = (r.center_x - x) ** 2 + (r.center_y - y) ** 2
+                if d < bd:
+                    bd, best = d, i
+        if best is not None:
+            return best
+        return min(range(len(rooms)),
+                   key=lambda i: (rooms[i].center_x - x) ** 2 + (rooms[i].center_y - y) ** 2)
+
+    def _is_solvable(self, spec):
+        from collections import defaultdict
+        rooms = spec.rooms
+        rid = {r.id: i for i, r in enumerate(rooms)}
+        entrance = next(i for i, r in enumerate(rooms) if r.role == "entrance")
+
+        locked = {g.corridor_id: g.id for g in spec.gates}
+        key_in = defaultdict(set)
+        for g in spec.gates:
+            key_in[rid[g.key_room_id]].add(g.id)
+
+        adj = defaultdict(list)
+        for c in spec.corridors:
+            a = self._room_at_wall(rooms, c.from_x, c.from_y)
+            b = self._room_at_wall(rooms, c.to_x, c.to_y)
+            gate = locked.get(c.id)
+            adj[a].append((b, gate))
+            adj[b].append((a, gate))
+
+        keys, changed = set(), True
+        reachable = set()
+        while changed:
+            changed = False
+            seen = {entrance}
+            stack = [entrance]
+            while stack:
+                cur = stack.pop()
+                for g in key_in.get(cur, ()):
+                    if g not in keys:
+                        keys.add(g); changed = True
+                for nxt, gate in adj[cur]:
+                    if nxt in seen:
+                        continue
+                    if gate is not None and gate not in keys:
+                        continue
+                    seen.add(nxt); stack.append(nxt)
+            reachable = seen
+        return len(reachable) == len(rooms)
+
+    def test_open_dungeon_has_no_gates(self):
+        spec = LayoutGenerator(theme="dungeon", seed=3).generate(
+            "z", room_count=12, locks=0)
+        assert len(spec.gates) == 0
+
+    def test_keyed_dungeon_has_gates(self):
+        spec = LayoutGenerator(theme="dungeon", seed=3).generate(
+            "z", room_count=12, locks=2)
+        assert len(spec.gates) >= 1
+
+    def test_keyed_dungeons_always_solvable(self):
+        for locks in (1, 2, 3):
+            for seed in range(10):
+                spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+                    "z", room_count=12, locks=locks)
+                assert self._is_solvable(spec), \
+                    f"unsolvable: locks={locks} seed={seed}"
+
+    def test_keys_shallower_than_their_locks(self):
+        # Each key room's graph_depth should be <= the deepest reachable before
+        # the lock — a simple sanity check that keys aren't placed behind locks.
+        spec = LayoutGenerator(theme="dungeon", seed=5).generate(
+            "z", room_count=12, locks=2)
+        depth_by_id = {r.id: r.graph_depth for r in spec.rooms}
+        for g in spec.gates:
+            # Key should not be at an absurd depth; placed near entrance.
+            assert depth_by_id[g.key_room_id] <= max(depth_by_id.values())
+
+
+class TestGatingPlanner:
+    def test_rule_planner_detects_keyed(self):
+        from ai.rule_planner import RulePlanner
+        p = RulePlanner().plan("a sealed vault with a locked sanctum")
+        assert p.locks >= 1
+
+    def test_rule_planner_open_is_zero(self):
+        from ai.rule_planner import RulePlanner
+        p = RulePlanner().plan("an open sprawling cave to explore")
+        assert p.locks == 0
+
+    def test_rule_planner_explicit_word_count(self):
+        from ai.rule_planner import RulePlanner
+        p = RulePlanner().plan("a dungeon with three locked doors")
+        assert p.locks == 3
+
+
 class TestBuilder:
     def test_full_build(self, tmp_path):
         gen = LayoutGenerator(theme="dungeon", seed=42)

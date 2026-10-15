@@ -37,6 +37,9 @@ class ZonePlan:
     # Named special regions to add (water pools, lava, etc.)
     regions: List[str] = field(default_factory=list)   # kinds from VALID_REGION_KINDS
 
+    # Lock-and-key gating: number of locked gates (0 = open dungeon).
+    locks: int = 0
+
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
 
@@ -53,6 +56,7 @@ class ZonePlan:
         if self.verticality not in ("flat", "moderate", "dramatic"):
             self.verticality = "moderate"
         self.regions = [r for r in self.regions if r in VALID_REGION_KINDS]
+        self.locks = max(0, min(5, int(self.locks)))
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -98,6 +102,12 @@ ZONE_PLAN_JSON_SCHEMA = {
             "type": "array",
             "items": {"type": "string", "enum": VALID_REGION_KINDS},
             "description": "Special region volumes to include (e.g. water pools, lava).",
+        },
+        "locks": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5,
+            "description": "Number of locked gates for a keyed dungeon (0 = open/explorable).",
         },
         "mood": {
             "type": "string",

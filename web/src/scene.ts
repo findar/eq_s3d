@@ -21,6 +21,7 @@ export class ZoneScene {
   private zoneGroup = new THREE.Group();
   private lightGroup = new THREE.Group();
   private regionGroup = new THREE.Group();
+  private gateGroup = new THREE.Group();
   private wireframe: THREE.LineSegments | null = null;
   private loader = new GLTFLoader();
 
@@ -45,6 +46,7 @@ export class ZoneScene {
     this.scene.add(this.zoneGroup);
     this.scene.add(this.lightGroup);
     this.scene.add(this.regionGroup);
+    this.scene.add(this.gateGroup);
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -83,6 +85,7 @@ export class ZoneScene {
   applyOverlays(sidecar: ZoneSidecar): void {
     this.lightGroup.clear();
     this.regionGroup.clear();
+    this.gateGroup.clear();
 
     const offset: THREE.Vector3 =
       this.zoneGroup.userData.offset ?? new THREE.Vector3();
@@ -124,6 +127,37 @@ export class ZoneScene {
       );
       this.regionGroup.add(box);
     }
+
+    // Gates — a red locked-door marker on the corridor, a gold key marker in
+    // its room, and a dashed line connecting them.
+    for (const g of sidecar.gates ?? []) {
+      const lockPos = new THREE.Vector3(
+        g.lock[0] + offset.x, g.lock[1] + offset.y, g.lock[2] + offset.z + 15);
+      const keyPos = new THREE.Vector3(
+        g.key[0] + offset.x, g.key[1] + offset.y, g.key[2] + offset.z + 15);
+
+      const lock = new THREE.Mesh(
+        new THREE.BoxGeometry(16, 16, 24),
+        new THREE.MeshBasicMaterial({ color: 0xe53935 })
+      );
+      lock.position.copy(lockPos);
+      this.gateGroup.add(lock);
+
+      const key = new THREE.Mesh(
+        new THREE.OctahedronGeometry(12),
+        new THREE.MeshBasicMaterial({ color: 0xffd24a })
+      );
+      key.position.copy(keyPos);
+      this.gateGroup.add(key);
+
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([keyPos, lockPos]),
+        new THREE.LineDashedMaterial({ color: 0xffd24a, dashSize: 20, gapSize: 12,
+          transparent: true, opacity: 0.6 })
+      );
+      line.computeLineDistances();
+      this.gateGroup.add(line);
+    }
   }
 
   setWireframe(on: boolean): void {
@@ -138,6 +172,7 @@ export class ZoneScene {
 
   setLightsVisible(on: boolean): void { this.lightGroup.visible = on; }
   setRegionsVisible(on: boolean): void { this.regionGroup.visible = on; }
+  setGatesVisible(on: boolean): void { this.gateGroup.visible = on; }
 
   render(): void {
     this.renderer.render(this.scene, this.camera);

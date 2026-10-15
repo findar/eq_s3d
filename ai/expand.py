@@ -50,6 +50,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None) -> ZoneSpec:
         plan.name,
         room_count=plan.room_count,
         elevation=plan.elevation and plan.verticality != "flat",
+        locks=plan.locks,
     )
 
     # Add requested regions, placed in/near rooms.

@@ -23,6 +23,7 @@ from typing import List, Optional, Tuple
 
 from .zone_spec import (
     ZoneSpec, RoomSpec, CorridorSpec, LightSpec, RegionSpec, MaterialSpec,
+    GateSpec,
 )
 
 # ---------------------------------------------------------------------------
@@ -141,7 +142,12 @@ class LayoutGenerator:
                  name: str,
                  room_count: int = 5,
                  add_lights: bool = True,
-                 elevation: bool = True) -> ZoneSpec:
+                 elevation: bool = True,
+                 locks: int = 0) -> ZoneSpec:
+        """
+        Generate a zone. *locks* > 0 produces a keyed dungeon with that many
+        lock-and-key gates (solvability guaranteed); 0 is a fully open dungeon.
+        """
         spec = ZoneSpec(name=name, theme=self.theme, style_profile=self.theme)
 
         # Scale rooms to the theme's measured footprint divided across the
@@ -182,7 +188,114 @@ class LayoutGenerator:
             e = rooms[entrance]
             spec.safe_point = (e.center_x, e.center_y, e.floor_z + 5.0)
 
+        # Optional lock-and-key gating (keyed dungeons). Runs after corridors
+        # exist so gates can reference corridor ids. Solvability is guaranteed.
+        if locks > 0:
+            self._apply_gating(spec, rooms, edges, entrance, n_locks=locks)
+
         return spec
+
+    # ------------------------------------------------------------------
+    # Gating — solvability-guaranteed lock & key placement
+    # ------------------------------------------------------------------
+
+    def _apply_gating(self, spec: ZoneSpec, rooms: List[RoomSpec],
+                      edges: List[Tuple[int, int]], entrance: int,
+                      n_locks: int) -> None:
+        """
+        Place `n_locks` lock-and-key gates on the room graph such that the
+        dungeon is ALWAYS solvable.
+
+        Method (a constrained graph-rewrite): lock only edges of the BFS tree
+        rooted at the entrance. Cutting a tree edge cleanly partitions rooms
+        into a "near" set (containing the entrance) and a "far" subtree. The
+        key for that lock is placed in a room in the near set, outside any
+        deeper locked subtree. This guarantees every key is obtainable before
+        the door it opens — nested or sequential, never a deadlock.
+        """
+        from collections import defaultdict, deque
+
+        n = len(rooms)
+        if n < 3 or not edges:
+            return
+
+        adj = defaultdict(list)
+        for i, j in edges:
+            adj[i].append(j)
+            adj[j].append(i)
+
+        # BFS tree from the entrance → parent[] + traversal order.
+        parent = {entrance: None}
+        order = [entrance]
+        q = deque([entrance])
+        while q:
+            cur = q.popleft()
+            for nxt in adj[cur]:
+                if nxt not in parent:
+                    parent[nxt] = cur
+                    order.append(nxt)
+                    q.append(nxt)
+
+        children = defaultdict(list)
+        for c in order:
+            if parent[c] is not None:
+                children[parent[c]].append(c)
+
+        def subtree(node: int) -> set:
+            s = set()
+            stack = [node]
+            while stack:
+                cur = stack.pop()
+                s.add(cur)
+                stack.extend(children[cur])
+            return s
+
+        # Candidate lock edges: tree edges that gate a meaningful subtree.
+        tree_edges = [(c, parent[c]) for c in order if parent[c] is not None]
+        tree_edges.sort(key=lambda e: rooms[e[0]].graph_depth, reverse=True)
+
+        corr_by_pair = {}
+        for k, (i, j) in enumerate(edges):
+            corr_by_pair[frozenset((i, j))] = f"corr_{k}"
+
+        chosen = []
+        for child, par in tree_edges:
+            if len(chosen) >= n_locks:
+                break
+            far = subtree(child)
+            if len(far) < 1 or len(far) >= n - 1:
+                continue
+            chosen.append((child, par, far))
+
+        # Place locks shallow→deep (tier 0 = outermost).
+        chosen.sort(key=lambda c: rooms[c[0]].graph_depth)
+        locked_far: set = set()
+        for tier, (child, par, far) in enumerate(chosen):
+            corr_id = corr_by_pair.get(frozenset((child, par)))
+            if corr_id is None:
+                continue
+
+            # Key goes in a room reachable before this lock: not behind this
+            # lock, nor behind any deeper lock. Prefer closest to the entrance.
+            forbidden = set(far) | locked_far
+            candidates = [i for i in range(n) if i not in forbidden and i != entrance]
+            if not candidates:
+                candidates = [i for i in range(n) if i not in far]
+            key_room = min(candidates, key=lambda i: rooms[i].graph_depth)
+
+            cor = next(c for c in spec.corridors if c.id == corr_id)
+            kr = rooms[key_room]
+            spec.gates.append(GateSpec(
+                id=f"gate_{tier}",
+                corridor_id=corr_id,
+                lock_x=(cor.from_x + cor.to_x) / 2,
+                lock_y=(cor.from_y + cor.to_y) / 2,
+                lock_z=(cor.from_z + cor.to_z) / 2,
+                key_room_id=kr.id,
+                key_x=kr.center_x, key_y=kr.center_y, key_z=kr.floor_z + 5.0,
+                tier=tier,
+            ))
+            locked_far |= far
 
     # ------------------------------------------------------------------
     # Pacing — graph-derived roles & depth

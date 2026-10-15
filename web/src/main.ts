@@ -30,6 +30,9 @@ controls.onLockChange = (locked) => {
 ($("t-regions") as HTMLInputElement).addEventListener("change", (e) =>
   zoneScene.setRegionsVisible((e.target as HTMLInputElement).checked)
 );
+($("t-gates") as HTMLInputElement).addEventListener("change", (e) =>
+  zoneScene.setGatesVisible((e.target as HTMLInputElement).checked)
+);
 
 // ---- Metrics panel ----
 function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
@@ -70,6 +73,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   $("m-mats").textContent = String(result.materials);
   $("m-lights").textContent = String(sidecar.lights.length);
   $("m-regions").textContent = String(sidecar.regions.length);
+  $("m-gates").textContent = String((sidecar.gates ?? []).length);
   $("m-wx").textContent = wx;
   $("m-wy").textContent = wy;
   $("m-wz").textContent = wz;

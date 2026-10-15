@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Classic–PoP style profiles ✅ — the analyzer reads .s3d/WLD zones, profiles rebuilt from authentic classic zones (Guk, Sebilis, Faydark…).
+> **Status**: Lock-and-key gating ✅ — optional keyed dungeons (Chardok-style) with solvability-guaranteed layout, on top of the TinyKeep spatial layout + pacing. Open dungeons (Guk-style) remain the default.
 
 ---
 
@@ -203,8 +203,8 @@ python -m pytest tests/ -v
 | **3** | Prompt-driven generation — rule planner (no API) + LLM drop-in | ✅ Done |
 | **layout** | TinyKeep room-graph — scatter/separate/Delaunay/MST + loops | ✅ Done |
 | **pacing** | Room roles & depth — entrance/hub/dead-end/climax, biased geometry & lighting | ✅ Done |
-| **gating** | Lock-and-key progression (optional, keyed dungeons) | ⏳ Next |
-| **4** | Refinement — iterative chat loop, partial regen, SQL export | ⏳ |
+| **gating** | Lock-and-key progression (optional, keyed dungeons), solvability-guaranteed | ✅ Done |
+| **4** | Refinement — iterative chat loop, partial regen, SQL export | ⏳ Next |
 
 ---
 
@@ -452,6 +452,35 @@ verticality, regions, mood) so you can see how it read your prompt.
 #   → dramatic verticality, lava region, dungeon theme
 ```
 
+### Gating — Lock-and-Key Progression ✅
+
+EQ has both open sprawls (Guk) and key-gated dungeons (Chardok). Gating is an
+**optional** layer on top of the paced graph: ask for a keyed dungeon and the
+layout gets locks on deep corridors with their keys placed earlier on the
+critical path, so the zone is always **solvable**.
+
+- **`GateSpec`** — serialisable gate record: the locked corridor, the lock
+  position, the key room, the key position, and a difficulty tier. Carried on
+  `ZoneSpec.gates` and round-tripped through the sidecar for the viewer and a
+  future EQEmu door/key export.
+- **`LayoutGenerator.generate(..., locks=N)`** — when `locks > 0`, `_apply_gating`
+  runs a graph-rewrite-style placement: build the BFS tree from the entrance,
+  lock the deepest tree edges first, then place each key in a room that is
+  reachable **before** its lock and **not** behind a deeper lock. This preserves
+  the solvability invariant — verified across dozens of randomly generated keyed
+  dungeons in the test suite.
+- **Planner integration** — the rule planner detects gating language ("keyed",
+  "locked", "requires a key", explicit counts like "two locks") and sets a lock
+  count; open-dungeon prompts stay open. The LLM planner can set it directly.
+- **Viewer** — gates render as a red lock marker on the corridor, a gold key
+  marker in its room, and a dashed line connecting them, toggleable in the
+  Overlays panel. The panel shows the gate count.
+
+```bash
+# In the web UI:  "a keyed stone dungeon with two locked doors"
+#   → 2 locks placed deep, keys reachable earlier, climax behind the last lock
+```
+
 ## What's Next — Phase 4: Refinement
 
 - Iterative chat loop: refine an existing zone with follow-up prompts
@@ -526,7 +555,7 @@ oscillated with art teams, tools, and zone type.
 
 Larger design directions captured for later (not yet implemented):
 
-### Room-graph composition — TinyKeep (done) + pacing (future)
+### Room-graph composition — TinyKeep + pacing + gating (done)
 
 The "room-graph" is a zone's abstract floor-plan — rooms (nodes) connected by
 corridors (edges) — that every geometry backend realises into 3D. The naive
@@ -558,12 +587,15 @@ lighting fades and cools with depth (bright entrance → dim depths), and the
 climax gets a charged/eerie tint. The sidecar carries the per-room pacing so the
 viewer shows it and a future SQL/spawn export knows where the boss goes.
 
-**Still future — gating (optional lock-and-key):** EQ has both open sprawls
-(Guk) and key-gated dungeons (Chardok). Gating layers onto the paced graph —
-place a lock on a deep corridor edge, put its key in a room reachable before the
-lock, climax behind the final lock. Carried as `GateSpec` data + door/key MOD
-placements for the eventual EQEmu export. Outdoor should also turn its rooms into
-meaningful places (clearings, lookouts) rather than only terrain bounds.
+**Gating (done — optional lock-and-key).** EQ has both open sprawls (Guk) and
+key-gated dungeons (Chardok). Gating layers onto the paced graph: locks go on
+deep corridor edges, each key in a room reachable before its lock, climax behind
+the final lock — placed by a graph-rewrite-style pass that guarantees
+solvability. Carried as `GateSpec` data for the eventual EQEmu door/key export
+and shown in the viewer. See the Gating section above.
+
+**Still future:** Outdoor should turn its rooms into meaningful places
+(clearings, lookouts) rather than only terrain bounds.
 
 ### Water and mixed-environment zones
 
