@@ -168,6 +168,82 @@ def add_solid(grid: FieldGrid, sdf: np.ndarray) -> None:
     np.maximum(grid.density, -sdf, out=grid.density)
 
 
+def add_cone_local(grid: FieldGrid, tip, axis, height: float,
+                   base_radius: float) -> None:
+    """
+    Add a cone as solid, computing the SDF only within a local bounding box
+    around the cone (not the whole grid). This is the fast path for placing
+    many small features (stalactites/stalagmites) into a large field.
+    """
+    tx, ty, tz = tip
+    ax, ay, az = axis
+    # The cone spans from tip to tip + axis*height, with max radius base_radius.
+    end = (tx + ax * height, ty + ay * height, tz + az * height)
+    lo = (min(tx, end[0]) - base_radius, min(ty, end[1]) - base_radius,
+          min(tz, end[2]) - base_radius)
+    hi = (max(tx, end[0]) + base_radius, max(ty, end[1]) + base_radius,
+          max(tz, end[2]) + base_radius)
+    sl, sub = _subgrid(grid, lo, hi)
+    if sub is None:
+        return
+    X, Y, Z = sub
+    px = X - tx; py = Y - ty; pz = Z - tz
+    along = px * ax + py * ay + pz * az
+    along_c = np.clip(along, 0.0, height)
+    allowed = (along_c / height) * base_radius
+    perp_x = px - along * ax
+    perp_y = py - along * ay
+    perp_z = pz - along * az
+    radial = np.sqrt(perp_x ** 2 + perp_y ** 2 + perp_z ** 2)
+    radial_d = radial - allowed
+    cap_d = np.maximum(-along, along - height)
+    sdf = np.maximum(radial_d, cap_d)
+    np.maximum(grid.density[sl], -sdf, out=grid.density[sl])
+
+
+def add_capsule_local(grid: FieldGrid, a, b, radius: float) -> None:
+    """Add a capsule (pillar) as solid within a local bounding box."""
+    ax, ay, az = a
+    bx, by, bz = b
+    lo = (min(ax, bx) - radius, min(ay, by) - radius, min(az, bz) - radius)
+    hi = (max(ax, bx) + radius, max(ay, by) + radius, max(az, bz) + radius)
+    sl, sub = _subgrid(grid, lo, hi)
+    if sub is None:
+        return
+    X, Y, Z = sub
+    ab = np.array([bx - ax, by - ay, bz - az], dtype=np.float32)
+    ab_len2 = float(ab @ ab) or 1e-6
+    px = X - ax; py = Y - ay; pz = Z - az
+    t = np.clip((px * ab[0] + py * ab[1] + pz * ab[2]) / ab_len2, 0.0, 1.0)
+    cx = ax + t * ab[0]; cy = ay + t * ab[1]; cz = az + t * ab[2]
+    d = np.sqrt((X - cx) ** 2 + (Y - cy) ** 2 + (Z - cz) ** 2) - radius
+    np.maximum(grid.density[sl], -d, out=grid.density[sl])
+
+
+def _subgrid(grid: FieldGrid, lo, hi):
+    """
+    Return (slices, (X,Y,Z)) for the voxel sub-box covering world bounds lo..hi,
+    or (None, None) if the box is outside the grid. The coordinate arrays are
+    world positions for just that sub-box.
+    """
+    ox, oy, oz = grid.origin
+    v = grid.voxel
+    i0 = max(0, int(np.floor((lo[0] - ox) / v)))
+    j0 = max(0, int(np.floor((lo[1] - oy) / v)))
+    k0 = max(0, int(np.floor((lo[2] - oz) / v)))
+    i1 = min(grid.shape[0], int(np.ceil((hi[0] - ox) / v)) + 1)
+    j1 = min(grid.shape[1], int(np.ceil((hi[1] - oy) / v)) + 1)
+    k1 = min(grid.shape[2], int(np.ceil((hi[2] - oz) / v)) + 1)
+    if i0 >= i1 or j0 >= j1 or k0 >= k1:
+        return None, None
+    sl = (slice(i0, i1), slice(j0, j1), slice(k0, k1))
+    xi = np.arange(i0, i1, dtype=np.float32) * v + ox
+    yi = np.arange(j0, j1, dtype=np.float32) * v + oy
+    zi = np.arange(k0, k1, dtype=np.float32) * v + oz
+    X, Y, Z = np.meshgrid(xi, yi, zi, indexing="ij")
+    return sl, (X, Y, Z)
+
+
 def smooth_union_carve(grid: FieldGrid, sdf: np.ndarray, k: float = 20.0) -> None:
     """
     Smooth-blend carve — rounds the junction between carved volumes so tunnels

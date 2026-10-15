@@ -1,11 +1,22 @@
 // api.ts — client for the eq_s3d FastAPI backend
 
 export interface GenerateParams {
-  theme: string;
-  rooms: number;
-  elevation: boolean;
-  seed?: number;
   prompt?: string;
+  theme?: string;
+  rooms?: number;
+  elevation?: boolean;
+  seed?: number;
+}
+
+export interface ZonePlan {
+  theme: string;
+  room_count: number;
+  size: string;
+  elevation: boolean;
+  verticality: string;
+  regions: string[];
+  mood: string;
+  prompt: string;
 }
 
 export interface GenerateResult {
@@ -18,6 +29,9 @@ export interface GenerateResult {
   materials: number;
   glb_url: string;
   zone_url: string;
+  source: string;              // "prompt" | "controls"
+  planner?: string | null;     // "rule" | "llm"
+  plan?: ZonePlan | null;
 }
 
 export interface ZoneLight {

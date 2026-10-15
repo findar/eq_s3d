@@ -181,8 +181,20 @@ def _floor_shaped_noise(Z: np.ndarray, base_noise: np.ndarray,
 # Grid sizing
 # ---------------------------------------------------------------------------
 
+# Cap total voxels so large/sprawling caves stay fast and bounded in memory.
+# ~2.5M voxels keeps generation well under a second; beyond that we coarsen
+# the voxel size automatically.
+_MAX_VOXELS = 2_500_000
+
+
 def _make_grid(spec: CaveSpec) -> FieldGrid:
-    """Compute a grid that bounds all chambers/tunnels plus padding."""
+    """
+    Compute a grid that bounds all chambers/tunnels plus padding.
+
+    If the requested voxel size would exceed the voxel budget (sprawling zones),
+    the voxel size is automatically coarsened so generation stays fast. Finer
+    detail is traded for feasibility on very large footprints.
+    """
     pts: List[Tuple[float, float, float]] = []
     max_r = 0.0
     for ch in spec.chambers:
@@ -200,6 +212,15 @@ def _make_grid(spec: CaveSpec) -> FieldGrid:
 
     origin = (float(lo[0]), float(lo[1]), float(lo[2]))
     extent = hi - lo
-    shape = tuple(int(np.ceil(e / spec.voxel)) + 1 for e in extent)
 
-    return FieldGrid.solid(shape=shape, origin=origin, voxel=spec.voxel)
+    voxel = spec.voxel
+    while True:
+        shape = tuple(int(np.ceil(e / voxel)) + 1 for e in extent)
+        total = shape[0] * shape[1] * shape[2]
+        if total <= _MAX_VOXELS:
+            break
+        # Coarsen by the cube-root ratio to get back under budget in one or two steps
+        ratio = (total / _MAX_VOXELS) ** (1.0 / 3.0)
+        voxel *= max(1.1, ratio)
+
+    return FieldGrid.solid(shape=shape, origin=origin, voxel=voxel)

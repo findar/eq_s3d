@@ -60,6 +60,49 @@ html, body {
   cursor: pointer;
 }
 
+#prompt {
+  flex: 1;
+  min-width: 220px;
+  background: #141822;
+  color: var(--text);
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 13px;
+}
+#prompt:focus { outline: none; border-color: var(--accent); }
+#prompt::placeholder { color: #4a5464; }
+
+#advanced {
+  position: relative;
+  font-size: 12px;
+  color: var(--muted);
+}
+#advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 6px 10px;
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  user-select: none;
+}
+#advanced > summary::-webkit-details-marker { display: none; }
+#advanced[open] > summary { border-color: var(--accent); }
+.adv-body {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  background: var(--panel);
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 30;
+  min-width: 160px;
+}
+
 #controls input[type="checkbox"] { cursor: pointer; accent-color: var(--accent); }
 
 #generate {

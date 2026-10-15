@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Procedural texturing ✅ — seamless stone/rock/dirt/grass, no API needed; AI provider wired as a drop-in. LLM planner up next
+> **Status**: Prompt-driven generation ✅ — type a description, get a zone. Rule-based planner (no API) with LLM drop-in.
 
 ---
 
@@ -63,7 +63,12 @@ generators/ — Procedural geometry, lighting, region volumes
 server/     — FastAPI backend wrapping the generators for the web UI
 web/        — Vite + TypeScript browser app (Three.js first-person viewer)
 viewer/     — Legacy standalone Flask GLB preview (superseded by web/)
-ai/         — LLM planner, texture generation, iterative agent   [Phase 3]
+ai/         — prompt → ZoneSpec planning
+  ├─ schema.py      — ZonePlan (the compact plan a planner produces)
+  ├─ rule_planner.py — keyword/heuristic planner (no-API default)
+  ├─ llm_planner.py — LLM planner (OpenAI/Anthropic drop-in, optional)
+  ├─ expand.py      — ZonePlan → ZoneSpec via LayoutGenerator
+  └─ planner.py     — factory: LLM if key else rule, with fallback
 styles/     — Empirically-derived style profiles per zone theme
 ```
 
@@ -194,7 +199,8 @@ python -m pytest tests/ -v
 | **organic+** | Walkable floors + natural features (stalactites/pillars) | ✅ Done |
 | **terrain** | Outdoor heightfield terrain — eroded, walkable rolling hills | ✅ Done |
 | **textures** | Procedural seamless textures (no API) + AI provider drop-in | ✅ Done |
-| **3** | AI integration — LLM planner (prompt → ZoneSpec) | 🔨 Next |
+| **3** | Prompt-driven generation — rule planner (no API) + LLM drop-in | ✅ Done |
+| **4** | Refinement — iterative chat loop, partial regen, SQL export | ⏳ |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
 ---
@@ -407,18 +413,39 @@ Verified end-to-end: a generate request from the browser reaches the backend thr
 the dev proxy, returns a random zone, and renders walkable in the viewport. Each click
 of Generate produces a different seed and different geometry.
 
-## What's Next — Phase 3: LLM Planner
+### Prompt-Driven Generation ✅
 
-Texture generation (the AI-leaning half of the original Phase 3) is done via the
-provider abstraction. What remains is the natural-language front door:
+Type a description in the web UI and get a zone. Mirrors the texture system:
+a no-API default with an LLM drop-in.
 
-- `ai/planner.py` — LLM prompt → `ZoneSpec` JSON (structured output / tool use)
-- `ai/style.py` — load style profiles as generation constraints
-- `ai/agent.py` — iterative chat loop: refine zones with follow-up prompts
-- add a prompt box to the web UI, posting to `/api/generate`'s `prompt` field
+- **`RulePlanner`** (default) — keyword/heuristic parsing turns a prompt into a
+  `ZonePlan`: detects theme (cave/outdoor/city/dungeon), size, verticality,
+  explicit or implied room counts, and region kinds (water/lava/ice). "a big
+  flooded cave with lots of chambers" → large cave, ~14 rooms, water region.
+  No API, deterministic.
+- **`LLMPlanner`** (optional) — OpenAI or Anthropic, selected by whichever key is
+  present, using JSON-structured output grounded in the measured style profiles.
+  Falls back to the rule planner on any failure.
+- **`expand.plan_to_spec`** — turns the compact `ZonePlan` into a full `ZoneSpec`
+  by driving the same `LayoutGenerator` the dropdowns use, so everything
+  downstream (geometry, textures, packaging) is unchanged.
 
-Target: type a natural-language prompt, get a styled, textured, walkable zone, then
-refine it conversationally — all in the browser UI that already exists.
+The web UI has a prompt box (Enter to generate) with the dropdowns tucked into a
+"Controls" menu. The panel shows what the planner inferred (theme, size,
+verticality, regions, mood) so you can see how it read your prompt.
+
+```bash
+# In the web UI:  "a towering multi-level temple with lava"
+#   → dramatic verticality, lava region, dungeon theme
+```
+
+## What's Next — Phase 4: Refinement
+
+- Iterative chat loop: refine an existing zone with follow-up prompts
+  ("make the entrance wider", "add a water pool to the north")
+- Partial regeneration (re-run only changed rooms/textures)
+- Server-side SQL export (zone records, spawn points) for EQEmu
+- The room-graph grammar and water/mixed-zone work (see Roadmap Notes)
 
 ---
 
@@ -495,6 +522,7 @@ Real EQ zones blend environments. Two cases to design for:
 - Light density stat reads 0 in the profile because most dungeon reference zones use embedded MOD placement without ZON lights — this is accurate, not a bug.
 - The inspector's ASCII bbox diagram is proportional to zone size but doesn't render Z height — a future iteration could add a side-elevation view.
 - Outdoor terrain is currently just the ground surface — no cliff walls, boulders, or vegetation yet, and rooms only set the terrain bounds (see room-graph note above).
+- Procedural textures are diffuse-only. Real zones also use normal maps (the `e_TextureNormal0` material slot) for surface relief — adding procedural normal-map generation is a high-impact, no-API follow-up.
 
 ---
 

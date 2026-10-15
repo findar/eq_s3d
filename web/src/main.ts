@@ -38,6 +38,32 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   const wy = (b.max[1] - b.min[1]).toFixed(0);
   const wz = (b.max[2] - b.min[2]).toFixed(0);
 
+  // Plan readout
+  const sourceLabel = result.source === "prompt"
+    ? `prompt (${result.planner})`
+    : "controls";
+  $("m-source").textContent = sourceLabel;
+  $("m-theme").textContent = result.theme;
+  $("m-rooms").textContent = String(result.rooms);
+
+  const extra = $("m-plan-extra");
+  extra.innerHTML = "";
+  if (result.plan) {
+    const p = result.plan;
+    const rows: [string, string][] = [
+      ["Size", p.size],
+      ["Verticality", p.verticality],
+    ];
+    if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
+    if (p.mood) rows.push(["Mood", p.mood]);
+    for (const [k, v] of rows) {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `<span>${k}</span><span>${v}</span>`;
+      extra.appendChild(div);
+    }
+  }
+
   $("m-seed").textContent = String(result.seed);
   $("m-verts").textContent = result.vertices.toLocaleString();
   $("m-polys").textContent = result.polygons.toLocaleString();
@@ -51,6 +77,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
 
 // ---- Generate ----
 async function doGenerate() {
+  const prompt = ($("prompt") as HTMLInputElement).value.trim();
   const theme = ($("theme") as HTMLSelectElement).value;
   const rooms = parseInt(($("rooms") as HTMLSelectElement).value, 10);
   const elevation = ($("elevation") as HTMLInputElement).checked;
@@ -59,7 +86,11 @@ async function doGenerate() {
   statusEl.textContent = "generating…";
 
   try {
-    const result = await generateZone({ theme, rooms, elevation });
+    // If a prompt is given, it drives generation; otherwise the controls do.
+    const params = prompt
+      ? { prompt }
+      : { theme, rooms, elevation };
+    const result = await generateZone(params);
     statusEl.textContent = "loading…";
 
     const box = await zoneScene.loadZone(result.glb_url);
@@ -89,6 +120,11 @@ async function doGenerate() {
 }
 
 genBtn.addEventListener("click", doGenerate);
+
+// Enter in the prompt box triggers generation
+($("prompt") as HTMLInputElement).addEventListener("keydown", (e) => {
+  if ((e as KeyboardEvent).key === "Enter") doGenerate();
+});
 
 // ---- Render loop ----
 let last = performance.now();

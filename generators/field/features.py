@@ -23,7 +23,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
-from .sdf import FieldGrid, sdf_cone, sdf_capsule, add_solid
+from .sdf import FieldGrid, add_cone_local, add_capsule_local
 
 
 @dataclass
@@ -49,13 +49,24 @@ class FeatureParams:
 
 def add_features(grid: FieldGrid,
                  chambers: List,          # list of cave.Chamber
-                 params: FeatureParams) -> None:
+                 params: FeatureParams,
+                 max_features: int = 120) -> None:
     """
     Add stalactites, stalagmites, and pillars into the carved field (in place).
 
     Must be called AFTER the cave volume is carved but BEFORE meshing.
+
+    `max_features` caps the total feature count across all chambers. Each
+    feature adds a full-grid SDF op, so on large zones an uncapped count becomes
+    the dominant cost. The budget is distributed across chambers.
     """
     rng = random.Random(params.seed)
+
+    # Distribute the feature budget across chambers so large multi-chamber
+    # zones don't spend minutes placing thousands of cones.
+    n_chambers = max(1, len(chambers))
+    per_chamber = max(1, max_features // n_chambers)
+    budget = {"remaining": max_features, "per_chamber": per_chamber}
 
     # Precompute an air mask and the ceiling/floor height at each (x,y) column
     # by scanning each voxel column along Z.
@@ -65,12 +76,23 @@ def add_features(grid: FieldGrid,
     vox = grid.voxel
 
     for ch in chambers:
+        if budget["remaining"] <= 0:
+            break
+        # How many features this chamber may place
+        ch_budget = min(budget["per_chamber"], budget["remaining"])
+
         cx, cy, cz = ch.center
         floor_z = ch.floor_z if ch.floor_z is not None else cz - ch.radius * 0.5
         ceil_z = cz + ch.radius
 
+        # Split this chamber's budget roughly 50/35/15 across the three types
+        stal_cap = max(0, int(ch_budget * 0.5))
+        mite_cap = max(0, int(ch_budget * 0.35))
+        pill_cap = max(0, ch_budget - stal_cap - mite_cap)
+        placed_here = 0
+
         # --- Stalactites: cones from the ceiling pointing down ---
-        n_stal = _scaled_count(params.stalactite_count, ch.radius, rng)
+        n_stal = min(stal_cap, _scaled_count(params.stalactite_count, ch.radius, rng))
         for _ in range(n_stal):
             px, py = _rand_in_disc(rng, cx, cy, ch.radius * 0.85)
             tip_z = _ceiling_at(grid, px, py, cz, ceil_z)
@@ -83,12 +105,12 @@ def add_features(grid: FieldGrid,
             # so put the tip (point) at the bottom and grow upward (+Z) to the
             # wide base at the ceiling.
             bottom = tip_z - length
-            cone = sdf_cone(grid, tip=(px, py, bottom), axis=(0, 0, 1),
-                            height=length, base_radius=base_r)
-            add_solid(grid, cone)
+            add_cone_local(grid, tip=(px, py, bottom), axis=(0, 0, 1),
+                           height=length, base_radius=base_r)
+            placed_here += 1
 
         # --- Stalagmites: cones from the floor pointing up ---
-        n_mite = _scaled_count(params.stalagmite_count, ch.radius, rng)
+        n_mite = min(mite_cap, _scaled_count(params.stalagmite_count, ch.radius, rng))
         for _ in range(n_mite):
             # Keep stalagmites toward the chamber edges (walkable core clear)
             r_min = ch.radius * params.floor_feature_margin
@@ -100,12 +122,12 @@ def add_features(grid: FieldGrid,
             base_r = rng.uniform(*params.stalagmite_radius)
             # Tip at the base (floor), widening... stalagmite is widest at floor,
             # narrowing upward: tip at top, base at floor.
-            cone = sdf_cone(grid, tip=(px, py, base_z + length), axis=(0, 0, -1),
-                            height=length, base_radius=base_r)
-            add_solid(grid, cone)
+            add_cone_local(grid, tip=(px, py, base_z + length), axis=(0, 0, -1),
+                           height=length, base_radius=base_r)
+            placed_here += 1
 
         # --- Pillars: capsules from floor to ceiling, near edges ---
-        n_pillar = min(params.pillar_count, max(0, int(ch.radius / 70)))
+        n_pillar = min(pill_cap, params.pillar_count, max(0, int(ch.radius / 70)))
         for _ in range(n_pillar):
             r_min = ch.radius * params.floor_feature_margin
             px, py = _rand_in_annulus(rng, cx, cy, r_min, ch.radius * 0.85)
@@ -115,8 +137,10 @@ def add_features(grid: FieldGrid,
                 continue
             pr = rng.uniform(*params.pillar_radius)
             # Slight waist: thinner in the middle reads as a natural column.
-            col = sdf_capsule(grid, (px, py, base_z), (px, py, top_z), pr)
-            add_solid(grid, col)
+            add_capsule_local(grid, (px, py, base_z), (px, py, top_z), pr)
+            placed_here += 1
+
+        budget["remaining"] -= placed_here
 
 
 # ---------------------------------------------------------------------------

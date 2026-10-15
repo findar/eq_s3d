@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from generators.layout import LayoutGenerator
 from generators.builder import ZoneBuilder
 from analyzer.style_builder import REFERENCE_ZONES
+from ai.planner import plan_zone, get_planner
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -65,12 +66,13 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 class GenerateRequest(BaseModel):
-    theme: str = Field(default="dungeon", description="Zone theme")
+    # If `prompt` is set, the planner derives theme/rooms/etc. from it and the
+    # explicit fields below are ignored. Otherwise the explicit fields drive it.
+    prompt: Optional[str] = Field(default=None, description="Natural-language prompt")
+    theme: str = Field(default="dungeon", description="Zone theme (ignored if prompt set)")
     rooms: int = Field(default=5, ge=1, le=30, description="Number of rooms")
     elevation: bool = Field(default=True, description="Allow multi-level layout")
     seed: Optional[int] = Field(default=None, description="Pin a seed (omit for random)")
-    # Prompt field reserved for Phase 3 — accepted but not yet used
-    prompt: Optional[str] = None
 
 
 class GenerateResponse(BaseModel):
@@ -83,6 +85,10 @@ class GenerateResponse(BaseModel):
     materials: int
     glb_url: str
     zone_url: str
+    # What drove the generation (so the UI can show inferred choices)
+    source: str                      # "prompt" | "controls"
+    planner: Optional[str] = None    # "rule" | "llm" when a prompt was used
+    plan: Optional[dict] = None      # the ZonePlan the planner produced
 
 
 # ---------------------------------------------------------------------------
@@ -100,33 +106,49 @@ def list_themes():
 
 @app.post("/api/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
-    if req.theme not in VALID_THEMES:
-        raise HTTPException(400, f"Unknown theme: {req.theme}")
-
     # Fresh random seed every call unless the caller pins one.
     seed = req.seed if req.seed is not None else random.randint(0, 2**31 - 1)
-
-    # Unique zone id so repeated generations don't collide on disk.
     zone_id = f"gen_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
-    gen = LayoutGenerator(theme=req.theme, seed=seed)
-    spec = gen.generate(zone_id, room_count=req.rooms, elevation=req.elevation)
+    prompt = (req.prompt or "").strip()
+    plan_dict = None
+    planner_name = None
+
+    if prompt:
+        # Prompt-driven: the planner derives the full spec.
+        source = "prompt"
+        planner_name = get_planner().name
+        plan, spec = plan_zone(prompt, name=zone_id, seed=seed)
+        plan_dict = plan.to_dict()
+        theme = plan.theme
+        rooms = plan.room_count
+    else:
+        # Control-driven: explicit theme/rooms/elevation.
+        source = "controls"
+        if req.theme not in VALID_THEMES:
+            raise HTTPException(400, f"Unknown theme: {req.theme}")
+        theme = req.theme
+        rooms = req.rooms
+        gen = LayoutGenerator(theme=theme, seed=seed)
+        spec = gen.generate(zone_id, room_count=rooms, elevation=req.elevation)
 
     result = ZoneBuilder(spec).build(output_dir=OUTPUT_DIR, write_glb=True)
-
     if result.glb_path is None:
         raise HTTPException(500, "GLB export failed (is trimesh installed?)")
 
     return GenerateResponse(
         id=zone_id,
-        theme=req.theme,
-        rooms=req.rooms,
+        theme=theme,
+        rooms=rooms,
         seed=seed,
         vertices=result.vertex_count,
         polygons=result.polygon_count,
         materials=result.material_count,
         glb_url=f"/api/zones/{zone_id}.glb",
         zone_url=f"/api/zones/{zone_id}.zone.json",
+        source=source,
+        planner=planner_name,
+        plan=plan_dict,
     )
 
 
