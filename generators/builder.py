@@ -73,9 +73,15 @@ class ZoneBuilder:
         # writing a duplicate <zone>.ter — the model is already added above)
         eqg.set_terrain(ter, pack=False)
 
-        # 4. Textures → DDS
+        # 4. Textures → DDS (procedural by default; AI provider if a key is set)
         for mat_name, mat_spec in self.spec.materials.items():
-            dds = generate_texture(mat_spec.description, mat_spec.color)
+            dds = generate_texture(
+                mat_spec.description,
+                mat_spec.color,
+                size=256,
+                name=mat_name,
+                seed=abs(hash((name, mat_name))) % (2 ** 31),
+            )
             eqg.add_texture(mat_spec.texture, dds)
 
         # 5. Pack .eqg

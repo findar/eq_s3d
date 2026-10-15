@@ -2,7 +2,7 @@
 
 Generate EverQuest EQG zone files from natural language prompts, targeting the **RoF2 client**.
 
-> **Status**: Organic caves + outdoor terrain ✅ — walkable floors, natural features, eroded hills. Phase 3 (AI integration) up next
+> **Status**: Procedural texturing ✅ — seamless stone/rock/dirt/grass, no API needed; AI provider wired as a drop-in. LLM planner up next
 
 ---
 
@@ -47,7 +47,11 @@ generators/ — Procedural geometry, lighting, region volumes
   ├─ zone_spec.py   — serialisable ZoneSpec (the IR)
   ├─ geometry.py    — MeshBuilder: box rooms, corridors, ramps, stairs
   ├─ layout.py      — LayoutGenerator: seedable 3D room-graph
-  ├─ textures.py    — placeholder DDS (AI textures in Phase 3)
+  ├─ textures/      — texture providers (procedural default, AI drop-in)
+  │   ├─ procedural.py — layered tileable noise → stone/rock/dirt/grass
+  │   ├─ ai.py       — reference image-API provider (optional, needs key)
+  │   ├─ dds.py      — DDS encoder + seamless-tiling helper
+  │   └─ factory.py  — provider selection, caching, fallback
   ├─ field/         — organic (SDF + marching cubes) geometry
   │   ├─ sdf.py      — density-field primitives (sphere/capsule/cone/dome) + carve
   │   ├─ noise.py    — fast vectorised FBM value noise (wall roughness)
@@ -189,7 +193,8 @@ python -m pytest tests/ -v
 | **organic** | Cave geometry — SDF + marching cubes, noise-roughened walls | ✅ Done |
 | **organic+** | Walkable floors + natural features (stalactites/pillars) | ✅ Done |
 | **terrain** | Outdoor heightfield terrain — eroded, walkable rolling hills | ✅ Done |
-| **3** | AI integration — LLM planner, prompt → ZoneSpec, texture gen | 🔨 Next |
+| **textures** | Procedural seamless textures (no API) + AI provider drop-in | ✅ Done |
+| **3** | AI integration — LLM planner (prompt → ZoneSpec) | 🔨 Next |
 | **4** | Refinement — partial regen, style learning, SQL export | ⏳ |
 
 ---
@@ -365,6 +370,25 @@ python main.py generate meadow --theme outdoor --rooms 5
 #   → eroded rolling hills sized to the zone footprint, fully walkable
 ```
 
+### Texturing — Procedural Default + AI Drop-in ✅
+
+Textures use a **provider abstraction** so the project needs no API key to look
+good. Two providers:
+
+- **`ProceduralProvider`** (default) — layered **tileable value noise** modulated
+  by a base colour produces matte, muted stone / rock / dirt / grass surfaces
+  anchored to EQ's palette. Seamless (an offset-and-blend pass kills edge seams),
+  deterministic, ~20ms per texture, **zero external calls**.
+- **`AIProvider`** (optional) — a reference image-API provider (OpenAI or
+  Stability) that activates only when a key is set in `.env`. Prompts are anchored
+  to the late-90s muted-fantasy-stone aesthetic. On any failure it falls back to
+  procedural, so generation never breaks.
+
+The factory auto-selects (AI if a key is present, else procedural), caches by
+spec, and honours an `EQ_S3D_TEXTURE_PROVIDER=procedural|ai` override. Every
+generated zone gets real tiling surface textures today; adding a key is a pure
+upgrade.
+
 ### Web App — Browser Generate + Walk ✅
 
 The browser UI is the primary way to use the tool today.
@@ -383,11 +407,13 @@ Verified end-to-end: a generate request from the browser reaches the backend thr
 the dev proxy, returns a random zone, and renders walkable in the viewport. Each click
 of Generate produces a different seed and different geometry.
 
-## What's Next — Phase 3: AI Integration
+## What's Next — Phase 3: LLM Planner
+
+Texture generation (the AI-leaning half of the original Phase 3) is done via the
+provider abstraction. What remains is the natural-language front door:
 
 - `ai/planner.py` — LLM prompt → `ZoneSpec` JSON (structured output / tool use)
 - `ai/style.py` — load style profiles as generation constraints
-- `generators/textures.py` — replace placeholders with real AI-generated DDS textures
 - `ai/agent.py` — iterative chat loop: refine zones with follow-up prompts
 - add a prompt box to the web UI, posting to `/api/generate`'s `prompt` field
 
