@@ -154,11 +154,18 @@ class MeshBuilder:
 
     def add_corridor(self, cor: CorridorSpec, spec: ZoneSpec) -> None:
         """
-        Build a corridor as a tube between two points.
+        Build a corridor between two wall openings.
 
-        Corridors are axis-aligned (run along whichever of X/Y has the larger
-        horizontal delta). If the two ends differ in height (from_z != to_z),
-        the corridor ramps between them. If `steps` > 0, build a staircase.
+        The two endpoints usually differ on BOTH axes (the rooms are offset),
+        so a single axis-aligned tube would miss one of the wall openings and
+        leave the corridor — and any staircase on it — floating away from the
+        wall. To meet both openings squarely we build an **L-shaped** corridor
+        when the ends aren't (near) collinear: a straight leg out of the first
+        wall, a corner, then a straight leg into the second wall. When the ends
+        ARE collinear on an axis, we build a single straight leg as before.
+
+        Height change (ramp or staircase) is applied to the longer leg; the
+        shorter leg stays flat, so stairs sit on a real sloped run.
         """
         floor_mat   = self.material_id(spec.materials[cor.floor_material])
         wall_mat    = self.material_id(spec.materials[cor.wall_material])
@@ -167,33 +174,107 @@ class MeshBuilder:
         hw = cor.width / 2
         dx = cor.to_x - cor.from_x
         dy = cor.to_y - cor.from_y
-        along_x = abs(dx) >= abs(dy)
 
-        # Normalise so we always build from the lower-coordinate end to the
-        # higher-coordinate end, carrying the correct floor heights along.
-        if along_x:
-            if cor.from_x <= cor.to_x:
-                a_pos, a_z, b_pos, b_z = cor.from_x, cor.from_z, cor.to_x, cor.to_z
-            else:
-                a_pos, a_z, b_pos, b_z = cor.to_x, cor.to_z, cor.from_x, cor.from_z
-            cross = cor.from_y
-            c0, c1 = cross - hw, cross + hw
+        # The rooms open on whichever axis has the larger separation (the same
+        # test layout uses to pick the facing wall). That axis is the "primary"
+        # run direction out of both wall openings.
+        primary_x = abs(dx) >= abs(dy)
+        cross_off = abs(dy) if primary_x else abs(dx)
+
+        # Near-collinear: a straight corridor meets both openings. (Allow a
+        # little slack so tiny offsets don't force an unnecessary bend.)
+        if cross_off <= max(2.0, hw * 0.5):
+            self._add_straight_leg(
+                cor.from_x, cor.from_y, cor.from_z,
+                cor.to_x, cor.to_y, cor.to_z,
+                primary_x, hw, cor.height, cor.steps,
+                floor_mat, wall_mat, ceiling_mat)
+            return
+
+        # L-shaped: run out of the first wall along the primary axis to a corner
+        # aligned under/over the second opening, then turn and run into the
+        # second wall along the cross axis.
+        if primary_x:
+            corner_x, corner_y = cor.to_x, cor.from_y
         else:
-            if cor.from_y <= cor.to_y:
-                a_pos, a_z, b_pos, b_z = cor.from_y, cor.from_z, cor.to_y, cor.to_z
-            else:
-                a_pos, a_z, b_pos, b_z = cor.to_y, cor.to_z, cor.from_y, cor.from_z
-            cross = cor.from_x
-            c0, c1 = cross - hw, cross + hw
+            corner_x, corner_y = cor.from_x, cor.to_y
 
-        if cor.steps > 0 and abs(b_z - a_z) > 0.01:
+        # Split the height change across the two legs by run length so the
+        # average grade is gentle; put the staircase (if any) on the longer leg.
+        len1 = abs((corner_x - cor.from_x) if primary_x else (corner_y - cor.from_y))
+        len2 = abs((cor.to_y - corner_y) if primary_x else (cor.to_x - corner_x))
+        total = max(len1 + len2, 1e-6)
+        corner_z = cor.from_z + (cor.to_z - cor.from_z) * (len1 / total)
+
+        steps1 = cor.steps if (cor.steps and len1 >= len2) else 0
+        steps2 = cor.steps if (cor.steps and len2 > len1) else 0
+
+        # Leg 1: primary axis, from the first opening to the corner.
+        self._add_straight_leg(
+            cor.from_x, cor.from_y, cor.from_z,
+            corner_x, corner_y, corner_z,
+            primary_x, hw, cor.height, steps1,
+            floor_mat, wall_mat, ceiling_mat)
+        # Leg 2: cross axis, from the corner into the second opening.
+        self._add_straight_leg(
+            corner_x, corner_y, corner_z,
+            cor.to_x, cor.to_y, cor.to_z,
+            not primary_x, hw, cor.height, steps2,
+            floor_mat, wall_mat, ceiling_mat)
+        # Fill the inside/outside corner so the two legs join without a gap.
+        self._add_corner_fill(corner_x, corner_y, corner_z, hw, cor.height,
+                              floor_mat, ceiling_mat)
+
+    def _add_straight_leg(self, fx, fy, fz, tx, ty, tz, along_x, hw, height,
+                          steps, floor_mat, wall_mat, ceiling_mat):
+        """
+        Build one straight axis-aligned leg between two points that share the
+        cross coordinate (collinear along the run axis). Ramps or steps between
+        fz and tz. This is the single-segment primitive both straight and
+        L-shaped corridors are built from.
+        """
+        if along_x:
+            if fx <= tx:
+                a_pos, a_z, b_pos, b_z = fx, fz, tx, tz
+            else:
+                a_pos, a_z, b_pos, b_z = tx, tz, fx, fz
+            cross = fy
+        else:
+            if fy <= ty:
+                a_pos, a_z, b_pos, b_z = fy, fz, ty, tz
+            else:
+                a_pos, a_z, b_pos, b_z = ty, tz, fy, fz
+            cross = fx
+        c0, c1 = cross - hw, cross + hw
+
+        # Degenerate leg (zero length) — nothing to build.
+        if abs(b_pos - a_pos) < 1e-6:
+            return
+
+        if steps > 0 and abs(b_z - a_z) > 0.01:
             self._add_stepped_corridor(a_pos, a_z, b_pos, b_z, c0, c1,
-                                       cor.height, cor.steps, along_x,
+                                       height, steps, along_x,
                                        floor_mat, wall_mat, ceiling_mat)
         else:
             self._add_ramp_corridor(a_pos, a_z, b_pos, b_z, c0, c1,
-                                    cor.height, along_x,
+                                    height, along_x,
                                     floor_mat, wall_mat, ceiling_mat)
+
+    def _add_corner_fill(self, cx, cy, cz, hw, height,
+                         floor_mat, ceiling_mat):
+        """
+        Fill the square where two perpendicular legs meet, so the floor and
+        ceiling are continuous through the bend (no hole at the corner).
+        """
+        x0, x1 = cx - hw, cx + hw
+        y0, y1 = cy - hw, cy + hw
+        # Floor
+        self.add_quad((x0, y0, cz), (x1, y0, cz), (x1, y1, cz), (x0, y1, cz),
+                      normal=(0, 0, 1), material=floor_mat)
+        # Ceiling
+        zc = cz + height
+        self.add_quad((x0, y1, zc), (x1, y1, zc), (x1, y0, zc), (x0, y0, zc),
+                      normal=(0, 0, -1), material=ceiling_mat)
 
     def _seg_quad(self, along_x, pos0, pos1, c0, c1, z_lo0, z_lo1, zc0, zc1,
                   floor_mat, wall_mat, ceiling_mat):
@@ -246,8 +327,14 @@ class MeshBuilder:
     def _add_stepped_corridor(self, a_pos, a_z, b_pos, b_z, c0, c1, height,
                               steps, along_x, floor_mat, wall_mat, ceiling_mat):
         """
-        Staircase: `steps` flat treads, each raised by one riser, with a
-        vertical riser face between treads.
+        Staircase from (a_pos, a_z) up/down to (b_pos, b_z): `steps` flat treads
+        connected by vertical risers.
+
+        Tread i sits at height `a_z + i*rise` (so the FIRST tread is flush with
+        the lower floor and the LAST tread's far edge reaches b_z — no gap at
+        either landing). The riser is at the far edge of each tread and climbs
+        to the next tread's height. The riser normal faces back down the run so
+        it is visible to someone ascending.
         """
         total_run = b_pos - a_pos
         total_rise = b_z - a_z
@@ -257,27 +344,34 @@ class MeshBuilder:
         for i in range(steps):
             p0 = a_pos + i * run_per_step
             p1 = a_pos + (i + 1) * run_per_step
-            z_tread = a_z + (i + 1) * rise_per_step   # flat tread height
-            zc0 = a_z + i * rise_per_step + height
-            zc1 = a_z + (i + 1) * rise_per_step + height
+            z_tread = a_z + i * rise_per_step            # this tread's height
+            z_next = a_z + (i + 1) * rise_per_step        # next tread's height
+            # Ceiling follows the ascending treads so headroom stays constant.
+            zc0 = z_tread + height
+            zc1 = z_next + height
 
-            # Flat tread (floor + ceiling + side walls) at constant z_tread
+            # Flat tread (floor + ceiling + side walls) at constant z_tread.
             self._seg_quad(along_x, p0, p1, c0, c1,
                            z_tread, z_tread, zc0, zc1,
                            floor_mat, wall_mat, ceiling_mat)
 
-            # Vertical riser face at the start of this step (from previous tread
-            # height up to this tread height), facing back down the stairs.
-            z_prev = a_z + i * rise_per_step
-            if z_tread > z_prev:
+            # Vertical riser at the FAR edge of this tread, climbing to the
+            # next tread's height. The final riser (i == steps-1) climbs to b_z
+            # so the staircase lands flush with the upper floor — no gap at the
+            # top landing.
+            if abs(z_next - z_tread) > 1e-6:
+                lo, hi = (z_tread, z_next) if z_next > z_tread else (z_next, z_tread)
                 if along_x:
-                    self.add_quad((p0, c0, z_prev), (p0, c1, z_prev),
-                                  (p0, c1, z_tread), (p0, c0, z_tread),
-                                  normal=(1, 0, 0), material=floor_mat)
+                    # Riser plane at x = p1, normal facing -X (back down an
+                    # ascending run toward the start).
+                    self.add_quad((p1, c0, lo), (p1, c0, hi),
+                                  (p1, c1, hi), (p1, c1, lo),
+                                  normal=(-1, 0, 0), material=wall_mat)
                 else:
-                    self.add_quad((c0, p0, z_prev), (c0, p0, z_tread),
-                                  (c1, p0, z_tread), (c1, p0, z_prev),
-                                  normal=(0, 1, 0), material=floor_mat)
+                    # Riser plane at y = p1, normal facing -Y.
+                    self.add_quad((c0, p1, lo), (c1, p1, lo),
+                                  (c1, p1, hi), (c0, p1, hi),
+                                  normal=(0, -1, 0), material=wall_mat)
 
     # ------------------------------------------------------------------
     # Emit

@@ -517,3 +517,65 @@ class TestElevation:
         ter = TerFile.from_bytes(arc.get("ter_evbuild.ter"))
         zs = [v.z for v in ter.vertices]
         assert max(zs) - min(zs) > 50  # has real verticality
+
+
+class TestCorridorRouting:
+    """
+    Regression tests for the floating/misaligned staircase bug (seed
+    678358326): corridor endpoints usually differ on BOTH axes, so the
+    corridor must bend (L-shape) to meet both wall openings, and a staircase
+    must start flush with the lower floor and finish flush with the upper one.
+    """
+
+    def _mesh(self, cor):
+        spec = ZoneSpec(name="t")
+        from generators.geometry import _ensure_materials
+        _ensure_materials(spec)
+        spec.corridors.append(cor)
+        return build_mesh(spec)
+
+    def test_offset_corridor_reaches_both_openings(self):
+        # Endpoints offset on both axes (primary run along Y, 60u cross jog in X).
+        cor = CorridorSpec("c", from_x=745, from_y=-152, to_x=681, to_y=-290,
+                           from_z=0.0, to_z=-60.0, width=120, height=90, steps=6)
+        mb = self._mesh(cor)
+        xs = [v.x for v in mb.vertices]
+        ys = [v.y for v in mb.vertices]
+        hw = cor.width / 2
+        # The L-corridor must have geometry at BOTH wall openings: near x=745
+        # (room A's wall) and near y=-290 (room B's wall), within the width.
+        assert min(abs(x - 745) for x in xs) <= hw + 1
+        assert min(abs(y - (-290)) for y in ys) <= hw + 1
+        # And it must actually span the full cross jog in X (745 -> 681).
+        assert min(xs) <= 681 + hw + 1
+        assert max(xs) >= 745 - hw - 1
+
+    def test_staircase_is_flush_at_both_landings(self):
+        cor = CorridorSpec("s", from_x=0, from_y=0, to_x=600, to_y=0,
+                           from_z=0.0, to_z=60.0, width=100, height=90, steps=6)
+        mb = self._mesh(cor)
+        # Collect tread (floor, +Z normal) heights.
+        tread_z = sorted({
+            round(mb.vertices[p.v1].z, 3)
+            for p in mb.polygons
+            if mb.vertices[p.v1].nz > 0.9
+            and abs(mb.vertices[p.v1].z - mb.vertices[p.v2].z) < 1e-3
+            and abs(mb.vertices[p.v2].z - mb.vertices[p.v3].z) < 1e-3
+        })
+        # First tread flush with the lower floor; treads climb one rise each.
+        assert tread_z[0] == 0.0
+        assert tread_z == [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
+        # The final riser (a vertical wall, |nx|~1 for an X-run) must climb to
+        # the upper floor level (60) so there's no gap at the top landing.
+        riser_tops = [
+            v.z for v in mb.vertices if abs(v.nx) > 0.9
+        ]
+        assert max(riser_tops) >= 60.0 - 1e-3
+
+    def test_straight_corridor_stays_single_leg(self):
+        # Collinear endpoints (no cross offset) → should not add a corner fill.
+        cor = CorridorSpec("c", from_x=0, from_y=0, to_x=400, to_y=0,
+                           from_z=0.0, to_z=0.0, width=50, height=50)
+        mb = self._mesh(cor)
+        # A straight flat tube is floor+ceiling+2 walls = 4 quads = 8 tris.
+        assert len(mb.polygons) == 8
