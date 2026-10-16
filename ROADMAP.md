@@ -10,20 +10,21 @@ Last updated: 30 commits, 144 tests passing. Priorities re-sequenced; see "Next"
 
 ## ▶ Pick up here (next session)
 
-Most recent work: fixed the organic cave generation — chambers were
-disconnected floating blobs and floors rendered see-through. Root causes were
-an inverted `smooth_min`, tunnels not reaching the inscribed-sphere chambers,
-and backwards floor winding. All fixed and regression-tested (commit `f9c5243`).
+**Cave generation is shelved for now.** Despite the automated connectivity tests
+passing, a human 3D check still shows caves rendering as isolated solid blobs
+(disconnected chambers, stray region volumes). The automated tests and the
+rendered result disagree — a known gap. Rather than keep chasing the current
+cave backend, we're **parking it** and will rebuild it later with a better
+architecture (see "Cave = cavified dungeon layout" below). The `cave` theme is
+not trustworthy until then; focus on the **dungeon (box) backend**, which works.
 
-**Suggested next step:** eyeball the cave fix in the web viewer against
-[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) sections B/C/D (navigability,
-enclosure, cave shapes) for a few seeds — the fix is verified by automated tests
-and mesh analysis, but has NOT yet been confirmed by a human walking it in 3D.
-Once that looks right, start the **Content / semantic layer** (now priority #1
-under "Next"): theme-conforming rooms + suggestions, no prop placement.
+**Suggested next step:** start the **Content / semantic layer** (priority #1
+under "Next"), scoped to the **dungeon theme first**. The box backend produces
+correct, connected, navigable layouts, so it's the right foundation for the
+content work.
 
-**Priorities were re-sequenced** (see "Next"): content layer → refinement → SQL
-export, with the reasoning recorded there.
+**Priorities:** content layer (dungeon first) → refinement → SQL export →
+(revisit) cave rebuild. Re-sequencing reasoning is under "Next".
 
 **Validate major changes** with the acceptance checklist in
 [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md). Proc-gen approach investigations and
@@ -116,6 +117,12 @@ Worth building once there's content-rich output to refine.
 (Opportunistic — slot in around the ordered priorities above. Normal maps in
 particular are a cheap, high-impact quick win.)
 
+- [ ] **Cave rebuild — "cavify the dungeon layout"** *(shelved; revisit after the
+      ordered priorities)* — scrap the current cave backend's independent spatial
+      derivation; instead take the box/dungeon layout (already correct + connected)
+      and apply an organic-styling transform. Fixes the disconnected-blob class of
+      bug by construction. The `cave` theme is untrustworthy until this lands —
+      use `dungeon`. See the design note "Cave = cavified dungeon layout".
 - [ ] **Doorway-fit for gates** — catalogue the RoF2 door models used for doorways
       and their world-space footprints by theme (swinging wood/stone, portcullis,
       double doors, archway frames), then snap gated corridor openings to a chosen
@@ -139,6 +146,15 @@ particular are a cheap, high-impact quick win.)
 
 ## Known issues / smaller fixes
 
+- [ ] **Cave theme broken in 3D despite passing tests** — chambers render as
+      isolated solid blobs with stray region volumes, even though the automated
+      connectivity tests (`TestCaveConnectivity`) report a single watertight
+      component. The tests and the rendered result disagree, so the tests are NOT
+      a faithful acceptance gate for caves — trust the 3D viewer. Being addressed
+      by the "cavify the dungeon layout" rebuild, not a patch. Use `dungeon` until
+      then. (This mismatch is itself a lesson: automated structural checks can
+      pass while the viewer shows something wrong — validate major geometry
+      changes in 3D per `docs/ACCEPTANCE.md`.)
 - [ ] Style profiles for `city` and `cave` are thin (3–4 zones) — expand once more
       zone names are identified.
 - [ ] Light-density stat reads 0 in profiles (most dungeon references use embedded
@@ -182,7 +198,7 @@ Recording these so they aren't re-proposed:
 | **2** | Procedural geometry — rooms, corridors, lighting, regions | ✅ Done |
 | **2.5** | Elevation — multi-level layout, ramp & staircase corridors | ✅ Done |
 | **web** | Browser app — dropdown generate + first-person walk + overlays | ✅ Done |
-| **organic** | Cave geometry — SDF + marching cubes, noise-roughened walls | ✅ Done |
+| **organic** | Cave geometry — SDF + marching cubes | ⚠ Shelved (broken in 3D; rebuild as cavified dungeon layout) |
 | **organic+** | Walkable floors + natural features (stalactites/pillars) | ✅ Done |
 | **terrain** | Outdoor heightfield terrain — eroded, walkable rolling hills | ✅ Done |
 | **textures** | Procedural seamless textures (no API) + AI provider drop-in | ✅ Done |
@@ -354,6 +370,31 @@ verifying against our readers before writing the export.
   standard EQ door. Follow-up: catalogue RoF2 doorway models + footprints by
   theme, then snap gated openings to a chosen door type and record its model name
   on the `GateSpec`.
+
+### Cave = cavified dungeon layout (planned rebuild)
+
+The current cave backend re-derives its own spatial structure (chambers from
+rooms, tunnels from corridors, with fragile endpoint-matching), and it keeps
+rendering as disconnected blobs in 3D even though the connectivity tests pass —
+the tests and the rendered result disagree, which means the backend is building
+geometry our analysis doesn't faithfully capture. Rather than keep patching it,
+the plan is to **rebuild the cave as a transform of the dungeon layout**:
+
+1. Generate the layout with the **box/dungeon backend**, which already produces a
+   correct, connected, navigable set of rooms + corridors that meet their
+   openings. This is the single source of truth for connectivity.
+2. **"Cavify"** that known-good geometry as a post-process: round box rooms into
+   organic chambers, convert corridors into winding tunnels, roughen with noise —
+   while preserving the connectivity that already works.
+
+Connectivity is thus established once, in the backend that gets it right; the
+cave becomes a styling pass over validated geometry instead of an independent
+re-derivation. This should eliminate the disconnected-chamber class of bug by
+construction. Open design question: whether to cavify at the mesh level (deform
+the box mesh) or re-voxelise the box layout into an SDF and re-mesh — the latter
+is closer to what we have and composes with the terrain-as-SDF idea below.
+
+Until this rebuild lands, the `cave` theme is not trustworthy; use `dungeon`.
 
 ### Water and mixed-environment zones
 

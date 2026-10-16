@@ -23,6 +23,12 @@ read before touching the relevant area so it isn't rediscovered.
 
 ## Geometry / fields
 
+- **Automated structural tests can pass while the 3D viewer shows it's broken.**
+  The cave backend's `TestCaveConnectivity` reports a single watertight component,
+  yet caves still render as disconnected blobs in the viewer. The analysis and
+  the render disagree — so for major geometry changes, a passing test suite is
+  NECESSARY but NOT SUFFICIENT; confirm in 3D per `docs/ACCEPTANCE.md`. Caves are
+  shelved pending a rebuild ("cavify the dungeon layout"); use `dungeon` meanwhile.
 - **voxel=12 matches Classic/Kunark/PoP** (~12–14 u median triangle edge, measured
   across real zones). Smaller = too modern/smooth, larger = too coarse.
 - **Don't decimate cave meshes.** Quadric decimation collapses the flat walkable
