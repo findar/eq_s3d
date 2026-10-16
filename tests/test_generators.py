@@ -674,6 +674,45 @@ class TestCorridorRouting:
         # A straight flat tube is floor+ceiling+2 walls = 4 quads = 8 tris.
         assert len(mb.polygons) == 8
 
+    def _opening_point(self, room, toward):
+        # Mirror of LayoutGenerator._wall_point (where the wall hole is cut).
+        dx = toward.center_x - room.center_x
+        dy = toward.center_y - room.center_y
+        hw, hd = room.width / 2, room.depth / 2
+        if abs(dx) >= abs(dy):
+            return room.center_x + (hw - 2) * (1 if dx > 0 else -1), room.center_y
+        return room.center_x, room.center_y + (hd - 2) * (1 if dy > 0 else -1)
+
+    def test_corridor_floor_covers_both_openings(self):
+        # Regression (seed 1516796975): a corridor's first leg must exit each
+        # wall PERPENDICULAR to it. The layout picks each wall from the room-
+        # centre delta, but add_corridor used to pick its run axis from the raw
+        # endpoint delta — which can differ once both ends are inset to wall
+        # midpoints, so a leg ran ALONG the wall and the room opening didn't
+        # line up with the corridor (a visibly disconnected corridor). Assert
+        # every corridor's floor footprint covers both room openings, across
+        # several seeds (including the two earlier staircase-bug seeds).
+        for seed in (1516796975, 481893615, 678358326, 42, 1, 99):
+            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+                "cov", room_count=9)
+            rooms = {r.id: r for r in spec.rooms}
+            for cor in spec.corridors:
+                a, b = rooms[cor.from_room], rooms[cor.to_room]
+                mb = MeshBuilder()
+                from generators.geometry import _ensure_materials
+                _ensure_materials(spec)
+                mb.add_corridor(cor, spec)
+                fx = [v.x for v in mb.vertices if v.nz > 0.5]
+                fy = [v.y for v in mb.vertices if v.nz > 0.5]
+                assert fx and fy, f"{seed}/{cor.id}: corridor has no floor"
+                for room, toward in ((a, b), (b, a)):
+                    ox, oy = self._opening_point(room, toward)
+                    covered = (min(fx) - 1 <= ox <= max(fx) + 1 and
+                               min(fy) - 1 <= oy <= max(fy) + 1)
+                    assert covered, (
+                        f"seed {seed} {cor.id}: opening ({ox:.0f},{oy:.0f}) "
+                        f"not covered by corridor floor")
+
     def test_stepped_lbend_meets_both_room_floors(self):
         # Regression (seed 481893615): on an L-bend staircase, the whole rise
         # must resolve on ONE leg so the corridor floor reaches each room's

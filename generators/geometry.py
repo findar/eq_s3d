@@ -175,10 +175,33 @@ class MeshBuilder:
         dx = cor.to_x - cor.from_x
         dy = cor.to_y - cor.from_y
 
-        # The rooms open on whichever axis has the larger separation (the same
-        # test layout uses to pick the facing wall). That axis is the "primary"
-        # run direction out of both wall openings.
-        primary_x = abs(dx) >= abs(dy)
+        # Which axis does each opening face? The corridor's first leg must run
+        # PERPENDICULAR to the wall it exits, or the leg runs along the wall
+        # face and the room opening doesn't line up with where the corridor
+        # actually goes (disconnected corridor — seed 1516796975).
+        #
+        # The layout chose each wall from the room-CENTRE delta
+        # (LayoutGenerator._wall_point), but the raw endpoint delta used here
+        # can favour a different axis once both ends are inset to their wall
+        # midpoints. So derive the exit axis from the room centres (matching how
+        # the openings were cut) whenever the corridor records its rooms.
+        exit_from_x = exit_to_x = None  # True = exits on an E/W wall (run along X)
+        rooms = {r.id: r for r in spec.rooms}
+        a = rooms.get(cor.from_room)
+        b = rooms.get(cor.to_room)
+        if a is not None and b is not None:
+            cdx = b.center_x - a.center_x
+            cdy = b.center_y - a.center_y
+            exit_from_x = abs(cdx) >= abs(cdy)   # from-wall is E/W → leg runs X
+            exit_to_x = exit_from_x              # the facing wall mirrors it
+
+        # The primary run direction out of the first opening. Prefer the wall-
+        # derived axis; fall back to the endpoint delta for hand-authored specs
+        # that don't set from_room/to_room.
+        if exit_from_x is not None:
+            primary_x = exit_from_x
+        else:
+            primary_x = abs(dx) >= abs(dy)
         cross_off = abs(dy) if primary_x else abs(dx)
 
         # Near-collinear: a straight corridor meets both openings. (Allow a

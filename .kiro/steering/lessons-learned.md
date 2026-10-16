@@ -55,6 +55,20 @@ read before touching the relevant area so it isn't rediscovered.
   to the stepped leg makes it land flush with its room and the flat leg sit
   exactly at the other room's floor. Regression:
   `TestCorridorRouting::test_stepped_lbend_meets_both_room_floors`.
+- **A corridor's first leg must run PERPENDICULAR to the wall it exits**, i.e.
+  the L-bend's primary axis must match the axis the wall opening was cut on.
+  The opening is chosen by `LayoutGenerator._wall_point` from the room-CENTRE
+  delta, but `geometry.add_corridor` used to pick its run axis from the raw
+  (already wall-inset) ENDPOINT delta — and those two can disagree once both
+  ends snap to their wall midpoints. When they disagree the first leg runs
+  ALONG the wall face instead of out through the hole, so the opening doesn't
+  line up with the corridor and it reads as disconnected (seed 1516796975, found
+  in the viewer, not by tests). Fix: `add_corridor` derives the exit axis from
+  the room centres (looked up via `from_room`/`to_room` in the spec), matching
+  how the openings were cut. Regression:
+  `TestCorridorRouting::test_corridor_floor_covers_both_openings` (sweeps
+  several seeds). Lesson: the wall-selection logic and the corridor-routing
+  logic must use the SAME delta, or they silently disagree.
 
 ## Performance
 
