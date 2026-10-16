@@ -673,3 +673,29 @@ class TestCorridorRouting:
         mb = self._mesh(cor)
         # A straight flat tube is floor+ceiling+2 walls = 4 quads = 8 tris.
         assert len(mb.polygons) == 8
+
+    def test_stepped_lbend_meets_both_room_floors(self):
+        # Regression (seed 481893615): on an L-bend staircase, the whole rise
+        # must resolve on ONE leg so the corridor floor reaches each room's
+        # floor height at its opening — never an interpolated corner height that
+        # leaves a gap / a staircase bleeding into a ramp. Here the primary run
+        # is along Y (longer) and there's a shorter X jog; the stairs go on the
+        # Y leg, so the X leg must be flat at the destination floor (to_z).
+        cor = CorridorSpec("s", from_x=545, from_y=-596, to_x=496, to_y=-519,
+                           from_z=-45.0, to_z=-6.7, width=90, height=90, steps=5)
+        mb = self._mesh(cor)
+        # Floor (+Z) vertices at the destination opening (x≈496) must sit at the
+        # destination floor height (-6.7), not partway (e.g. -21 or -26).
+        dest_floor_z = [
+            v.z for v in mb.vertices
+            if v.nz > 0.9 and abs(v.x - 496) <= 1.0
+        ]
+        assert dest_floor_z, "no corridor floor reaches the destination opening"
+        assert min(dest_floor_z) == pytest.approx(-6.7, abs=0.5)
+        # And floor at the source opening (y≈-596) must sit at the source floor.
+        src_floor_z = [
+            v.z for v in mb.vertices
+            if v.nz > 0.9 and abs(v.y - (-596)) <= 1.0
+        ]
+        assert src_floor_z
+        assert min(src_floor_z) == pytest.approx(-45.0, abs=0.5)

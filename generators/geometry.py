@@ -199,15 +199,30 @@ class MeshBuilder:
         else:
             corner_x, corner_y = cor.from_x, cor.to_y
 
-        # Split the height change across the two legs by run length so the
-        # average grade is gentle; put the staircase (if any) on the longer leg.
         len1 = abs((corner_x - cor.from_x) if primary_x else (corner_y - cor.from_y))
         len2 = abs((cor.to_y - corner_y) if primary_x else (cor.to_x - corner_x))
-        total = max(len1 + len2, 1e-6)
-        corner_z = cor.from_z + (cor.to_z - cor.from_z) * (len1 / total)
 
-        steps1 = cor.steps if (cor.steps and len1 >= len2) else 0
-        steps2 = cor.steps if (cor.steps and len2 > len1) else 0
+        # Resolve ALL the height change on ONE leg (the longer one) and keep the
+        # OTHER leg perfectly flat at the floor height of the room it meets.
+        #
+        # Previously the rise was split across both legs by run-length, so a
+        # staircase on one leg landed at an *interpolated* corner height while
+        # the other (flat-looking) leg still had to ramp the remainder — leaving
+        # the corridor meeting a room opening at the wrong height, i.e. a
+        # misaligned/floating staircase (seed 481893615). Confining the whole
+        # rise to a single leg means that leg lands flush with its room and the
+        # flat leg sits exactly at the other room's floor — no gap at either
+        # opening, and a staircase never bleeds into a ramp mid-run.
+        if len1 >= len2:
+            # Leg 1 (primary axis) carries the rise and the stairs; leg 2 is
+            # flat at the destination room's floor height.
+            corner_z = cor.to_z
+            steps1, steps2 = cor.steps, 0
+        else:
+            # Leg 2 (cross axis) carries the rise and the stairs; leg 1 is flat
+            # at the source room's floor height.
+            corner_z = cor.from_z
+            steps1, steps2 = 0, cor.steps
 
         # Leg 1: primary axis, from the first opening to the corner.
         self._add_straight_leg(
@@ -221,7 +236,10 @@ class MeshBuilder:
             cor.to_x, cor.to_y, cor.to_z,
             not primary_x, hw, cor.height, steps2,
             floor_mat, wall_mat, ceiling_mat)
-        # Fill the inside/outside corner so the two legs join without a gap.
+        # Fill the inside/outside corner so the two legs join without a gap. The
+        # corner sits at corner_z, which now equals the floor height of whichever
+        # leg is flat — so the fill is flush with that leg and the foot/head of
+        # the stepped leg.
         self._add_corner_fill(corner_x, corner_y, corner_z, hw, cor.height,
                               floor_mat, ceiling_mat)
 

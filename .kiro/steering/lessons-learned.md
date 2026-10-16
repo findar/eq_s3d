@@ -45,6 +45,16 @@ read before touching the relevant area so it isn't rediscovered.
   floating. Corridors bend into an **L-shape** to meet both openings; staircases
   must start flush with the lower floor and finish flush with the upper (every
   riser emitted, first tread at the base level).
+- **On an L-bend corridor, resolve the ENTIRE height change on ONE leg** (the
+  longer one) and keep the other leg perfectly flat at the floor height of the
+  room it meets. The original code split the rise across both legs by run-length
+  (an interpolated `corner_z`), so a staircase on one leg landed at a mid height
+  while the "flat" leg still had to ramp the remainder — the corridor then met a
+  room opening ~15-25u off, i.e. a misaligned/floating staircase (caught at seed
+  481893615 in the 3D viewer, NOT by tests at the time). Confining all elevation
+  to the stepped leg makes it land flush with its room and the flat leg sit
+  exactly at the other room's floor. Regression:
+  `TestCorridorRouting::test_stepped_lbend_meets_both_room_floors`.
 
 ## Performance
 
