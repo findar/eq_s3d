@@ -4,7 +4,26 @@ The authoritative list of what's done, what's next, and known gaps. The README
 carries the narrative "what it does / how it works"; this file is the tracker.
 Keep it in sync when work lands (check items off, move them, note the commit).
 
-Last updated: commit `5292435` (25 commits, 142 tests passing).
+Last updated: commit `f9c5243` (29 commits, 144 tests passing).
+
+---
+
+## ▶ Pick up here (next session)
+
+Most recent work: fixed the organic cave generation — chambers were
+disconnected floating blobs and floors rendered see-through. Root causes were
+an inverted `smooth_min`, tunnels not reaching the inscribed-sphere chambers,
+and backwards floor winding. All fixed and regression-tested (commit `f9c5243`).
+
+**Suggested next step:** eyeball the cave fix in the web viewer against
+[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) sections B/C/D (navigability,
+enclosure, cave shapes) for a few seeds — the fix is verified by automated tests
+and mesh analysis, but has NOT yet been confirmed by a human walking it in 3D.
+Once that looks right, start **Phase 4 — Refinement** (below): the iterative
+chat loop is the highest-leverage feature.
+
+**Validate major changes** with the acceptance checklist in
+[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md).
 
 ---
 
@@ -31,6 +50,8 @@ Last updated: commit `5292435` (25 commits, 142 tests passing).
 | Gating | Optional lock-and-key suggestions, solvability-guaranteed |
 | Top-down map | SVG floor-plan sidecar + web modal |
 | Staircase fix | L-shaped corridors meet both wall openings; stairs flush at both landings |
+| Cave connectivity fix | Tunnels join chambers into one watertight cave; floor winding fixed (no see-through); noise specks removed |
+| Acceptance checklist | `docs/ACCEPTANCE.md` — manual UAT for validating major changes |
 
 ---
 

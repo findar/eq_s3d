@@ -65,3 +65,7 @@ output is a starting point for a human authoring pass, not a finished zone.
   solvability test fails, that's usually a real geometry/graph bug.
 - Analytical/test verification is good, but note when something was NOT verified
   in the live 3D viewer so the user knows to eyeball it.
+- After a **major change** (geometry backend, layout, pacing/gating, textures,
+  viewer), walk `docs/ACCEPTANCE.md` — the manual UAT checklist for things only
+  a human looking at the result can confirm. Update `ROADMAP.md` ("Pick up here"
+  + Done table) and the commit count/hash when work lands.
