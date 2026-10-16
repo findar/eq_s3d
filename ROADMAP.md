@@ -89,6 +89,12 @@ The phase that turns a one-shot generator into an iterative tool.
       bounds; make them clearings, lookouts, etc.
 - [ ] **Procedural normal maps** — textures are diffuse-only; real zones use the
       `e_TextureNormal0` material slot. No-API, high visual impact.
+- [ ] **Content / semantic layer** — rooms are empty shells; give them semantic
+      types + shared themes so a zone reads as a coherent place, realized through
+      the existing pipeline (Version A: model supplies intent, deterministic
+      rules realize it). No-new-art first slice = themes, region volumes,
+      lighting mood, shape bias, spawn/encounter intent as data. See the design
+      note "Content / semantic layer" below; pairs with the SQL export.
 
 ---
 
@@ -312,3 +318,87 @@ verifying against our readers before writing the export.
 - **Cave-mouth-in-hillside** — compose SDF cave + heightfield terrain into one
   TER. Strongest argument for unifying both onto a single density-field
   representation (terrain as an SDF too).
+
+### Content / semantic layer — making rooms *interesting* (candidate for after Phase 4)
+
+So far the generator solves **spatial structure**: where rooms are, how they
+connect, that they're navigable and enclosed. It does almost nothing about
+**content** — what makes a room a memorable *place* rather than an empty shell.
+These are different problems and should stay separated.
+
+**Two separate problems hiding under "interesting rooms":**
+
+1. **Semantic content** — what a room *is* and *means*: a flooded crypt with an
+   submerged altar, collapsed mine shaft, guard barracks, throne dais. Props,
+   set dressing, encounter/spawn intent, loot, and a *theme* that ties rooms
+   into a small narrative (barracks → prison → ritual chamber). Almost entirely
+   missing today.
+2. **Geometric uniqueness** — the room's shape being distinctive. We have a
+   little (pacing biases size, caves vary) but it's shallow.
+
+"Rooms as nodes that share themes" is problem #1, and it lives at the
+**ZoneSpec / graph level, not the mesh level** — which decides where ML fits.
+
+**Where a model helps — Version A (recommended):** a model (most likely the
+existing `LLMPlanner`, extended) produces a *richer structured ZoneSpec* — per-
+room semantic type + theme + intent ("flooded ritual chamber, floor -40, raised
+altar platform, water region in the lower third, 4 braziers, boss on the dais").
+Our deterministic pipeline already converts structured descriptions into
+EQ-accurate, navigable, enclosed geometry. The model supplies *creativity and
+semantics*; the pipeline keeps the hard-constraint guarantees. No training data
+needed — it's a design/language task on a general model.
+
+**Where a model does NOT help — Version B (avoid):** a model generates the
+actual 3D *mesh* of a room and we "restyle" it to look EQ. 3D mesh style-transfer
+isn't a drop-in solved thing; you'd get wrong-resolution, hole-ridden meshes you
+must remesh/repair/retexture anyway, and there's no corpus to train a room-mesh
+generator on. Repairing back to our guarantees throws away most of what the model
+gave you.
+
+**Key insight:** "convert generated rooms to the EQ look" assumes the look lives
+in the geometry and must be transferred. But from our measurements the EQ look
+lives mostly in **resolution, proportion, palette, and texture** — which the
+style profiles and backends already enforce. So we don't need to restyle a mesh;
+we need to feed richer *semantic intent* into a pipeline that already produces
+the look. The model never needs to know what EQ looks like.
+
+**Proposed layer (between layout and geometry):**
+- Assign each room a **semantic type + theme**, coherent with neighbours, so the
+  progression reads as a small story (graph-labelling on the pacing graph we have).
+- Each room type carries **content rules** → expand into ZoneSpec elements
+  (region volumes, lights, elevation/shape bias) and eventually MOD placements +
+  EQEmu spawn/loot/door data via the same deterministic realization.
+- The (LLM) planner proposes theme assignment + per-room intent from the prompt;
+  deterministic rules realize it as valid, era-accurate geometry/placement.
+- Lines up with the planned EQEmu SQL export — content and server-side data are
+  the same layer.
+
+**No-new-art first slice:** props/set-dressing need actual MOD models to place,
+which we don't generate (generating EQ-authentic props is its own hard problem;
+likely reference existing EQ object models, cf. the door-model note). So start
+with the parts needing zero new art: semantic room themes, region volumes
+(water/lava), lighting mood, per-theme elevation/shape bias, and spawn/encounter
+intent carried as data for the SQL export.
+
+### Should we train a bespoke model instead? (decision: no, for the core)
+
+Recorded so the question has a durable answer. Training a from-scratch 3D-mesh
+generator for zones is the wrong tool here:
+- **Data regime** — only a few hundred real EQ zones exist, one narrow art
+  style, no pretrained base to fine-tune. Far too little for 3D generation.
+- **Hard constraints** — navigable floors, watertight enclosure, reachable
+  rooms, solvable gating are discrete global pass/fail properties. Generative
+  mesh models produce plausible-but-leaky output (holes, non-manifold edges,
+  unreachable pockets — the exact bugs we fix deterministically). You'd bolt the
+  repair passes back on anyway.
+- **Controllability** — prompt-driven iteration ("make the entrance wider") is
+  trivial with explicit parametric knobs, hard to steer in a mesh generator.
+- **Format** — output still has to become valid `.ter`/`.zon`/PFS with
+  per-triangle collision; the model doesn't help with the part we've solved.
+
+Where ML *does* fit, in priority: (1) richer LLM planning / the semantic layer
+above; (2) a lightweight learned "EQ-ness" critic that scores a generated zone
+against real-zone feature distributions (discriminative, modest data) — only if
+"does this *feel* like EQ?" becomes the bottleneck; (3) learned textures /
+normal maps (the AI texture provider is already a drop-in slot). Keep the
+procedural spine; push ML into planning/semantics and optionally textures.
