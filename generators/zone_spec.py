@@ -53,6 +53,23 @@ class RoomSpec:
     role: str = "standard"
     graph_depth: int = 0
 
+    # Content / semantic layer (assigned on top of the pacing graph).
+    #   semantic_type    — what the room *is* (e.g. "barracks", "flooded_crypt").
+    #   room_theme       — the zone archetype label this room belongs to (e.g.
+    #                       "fortress"); same across every room of a district.
+    #   district         — which district this room belongs to (0 = the only
+    #                       district for single-theme zones). Set by Step 2.
+    # Suggestion fields (DATA / NOTES ONLY — never placed as geometry):
+    #   prop_hints       — set-dressing suggestions ("submerged altar", "braziers").
+    #   encounter_intent — spawn/encounter note ("undead ambush, medium").
+    #   boss             — whether this room is a suggested boss/climax chamber.
+    semantic_type: str = ""
+    room_theme: str = ""
+    district: int = 0
+    prop_hints: List[str] = field(default_factory=list)
+    encounter_intent: str = ""
+    boss: bool = False
+
     @property
     def bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
         hw, hd = self.width / 2, self.depth / 2
@@ -194,6 +211,15 @@ class ZoneSpec:
     theme: str = "dungeon"
     style_profile: str = "dungeon"
 
+    # Content / semantic layer (dungeon theme). A theme is archetype × race ×
+    # elemental tint; these are advisory metadata realised by the pipeline.
+    #   dungeon_theme  — archetype label ("fortress", "temple", "sunken_ruin"…).
+    #   dungeon_race   — inhabiting race, a global scale multiplier ("giant"…).
+    #   elemental_tint — optional overlay ("lava" | "ice" | "water" | "").
+    dungeon_theme: str = ""
+    dungeon_race: str = ""
+    elemental_tint: str = ""
+
     ambient_light: Tuple[float, float, float] = (0.1, 0.1, 0.12)
     safe_point: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 
@@ -213,6 +239,9 @@ class ZoneSpec:
             "name": self.name,
             "theme": self.theme,
             "style_profile": self.style_profile,
+            "dungeon_theme": self.dungeon_theme,
+            "dungeon_race": self.dungeon_race,
+            "elemental_tint": self.elemental_tint,
             "ambient_light": list(self.ambient_light),
             "safe_point": list(self.safe_point),
             "materials": {k: asdict(v) for k, v in self.materials.items()},
@@ -235,6 +264,9 @@ class ZoneSpec:
             name=d["name"],
             theme=d.get("theme", "dungeon"),
             style_profile=d.get("style_profile", "dungeon"),
+            dungeon_theme=d.get("dungeon_theme", ""),
+            dungeon_race=d.get("dungeon_race", ""),
+            elemental_tint=d.get("elemental_tint", ""),
             ambient_light=tuple(d.get("ambient_light", (0.1, 0.1, 0.12))),
             safe_point=tuple(d.get("safe_point", (0.0, 0.0, 0.0))),
         )

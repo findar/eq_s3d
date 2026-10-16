@@ -411,6 +411,100 @@ class TestMapView:
         assert svg_path.read_text(encoding="utf-8").startswith("<svg")
 
 
+class TestSemantics:
+    """Content / semantic layer (Step 1 — single district, dungeon theme)."""
+
+    def _themed(self, seed=7, rooms=10, theme="fortress", race="", tint=None):
+        return LayoutGenerator(theme="dungeon", seed=seed).generate(
+            "sem", room_count=rooms, dungeon_theme=theme,
+            dungeon_race=race, elemental_tint=tint)
+
+    def test_every_room_gets_a_type_and_theme(self):
+        spec = self._themed()
+        assert spec.dungeon_theme == "fortress"
+        assert all(r.semantic_type for r in spec.rooms)
+        assert all(r.room_theme == "fortress" for r in spec.rooms)
+
+    def test_entrance_and_climax_map_to_arc_endpoints(self):
+        from generators.semantics import ARCHETYPES
+        arch = ARCHETYPES["fortress"]
+        spec = self._themed()
+        entrance = next(r for r in spec.rooms if r.role == "entrance")
+        climax = next(r for r in spec.rooms if r.role == "climax")
+        assert entrance.semantic_type == arch.entrance_type
+        assert climax.semantic_type == arch.climax_type
+
+    def test_boss_only_on_climax(self):
+        spec = self._themed()
+        bosses = [r for r in spec.rooms if r.boss]
+        assert len(bosses) == 1
+        assert bosses[0].role == "climax"
+
+    def test_suggestion_fields_populated(self):
+        spec = self._themed()
+        # Every themed room carries data-only suggestions (no geometry).
+        assert all(r.encounter_intent for r in spec.rooms)
+        assert any(r.prop_hints for r in spec.rooms)
+
+    def test_unthemed_dungeon_has_no_semantic_type(self):
+        # A plain dungeon (no theme args) keeps the old behaviour.
+        spec = LayoutGenerator(theme="dungeon", seed=7).generate("plain", room_count=8)
+        assert spec.dungeon_theme == ""
+        assert all(r.semantic_type == "" for r in spec.rooms)
+
+    def test_water_theme_emits_water_region(self):
+        spec = self._themed(theme="sunken_ruin")
+        assert spec.elemental_tint == "water"
+        assert any(r.kind == "water" for r in spec.regions)
+
+    def test_lava_theme_emits_lava_region(self):
+        spec = self._themed(theme="lava_forge")
+        assert spec.elemental_tint == "lava"
+        assert any(r.kind == "lava" for r in spec.regions)
+
+    def test_themed_palette_adds_material_variants(self):
+        spec = self._themed(theme="temple")
+        # Themed zones register per-theme floor/wall variants and rooms use them.
+        assert "wall_temple" in spec.materials
+        assert any(r.wall_material == "wall_temple" for r in spec.rooms)
+
+    def test_race_scale_enlarges_rooms(self):
+        small = self._themed(race="froglok", seed=3)
+        big = self._themed(race="giant", seed=3)
+        # Same seed/arc → giant halls are larger than froglok halls.
+        small_area = sum(r.width * r.depth for r in small.rooms)
+        big_area = sum(r.width * r.depth for r in big.rooms)
+        assert big_area > small_area * 2.0
+
+    def test_deterministic_for_seed(self):
+        a = self._themed(seed=99)
+        b = self._themed(seed=99)
+        assert [r.semantic_type for r in a.rooms] == [r.semantic_type for r in b.rooms]
+
+    def test_rooms_stay_walkable_flat_floor(self):
+        # Semantic shape bias must not tilt floors — rooms are still boxes with
+        # a single floor_z (walkability invariant).
+        spec = self._themed(theme="lava_forge", race="ogre")
+        for r in spec.rooms:
+            assert r.width > 0 and r.depth > 0 and r.height >= 50.0
+
+    def test_sidecar_carries_semantic_fields(self, tmp_path):
+        spec = self._themed(theme="wizard_lair", rooms=6)
+        ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=True)
+        import json
+        data = json.loads((tmp_path / "sem.zone.json").read_text())
+        assert data["theme"]["dungeon_theme"] == "wizard_lair"
+        assert all("semantic_type" in rm for rm in data["rooms"])
+        assert any(rm["boss"] for rm in data["rooms"])
+
+    def test_map_labels_semantic_types(self):
+        from generators.mapview import render_map_svg
+        spec = self._themed(theme="temple", rooms=6)
+        svg = render_map_svg(spec)
+        # At least one room's semantic type appears as a label in the SVG.
+        assert any(r.semantic_type in svg for r in spec.rooms)
+
+
 class TestBuilder:
     def test_full_build(self, tmp_path):
         gen = LayoutGenerator(theme="dungeon", seed=42)

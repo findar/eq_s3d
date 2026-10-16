@@ -25,6 +25,7 @@ from .zone_spec import (
     ZoneSpec, RoomSpec, CorridorSpec, LightSpec, RegionSpec, MaterialSpec,
     GateSpec,
 )
+from . import semantics
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -53,6 +54,11 @@ def _profile_mean(profile: dict, path: list, default: float) -> float:
         val = node["mean"]
         return val if val and val > 0 else default
     return default
+
+
+# Themes that use the box backend and therefore support the semantic layer.
+# (Cave/outdoor backends are organic/heightfield and are out of scope here.)
+_SEMANTIC_THEMES = {"dungeon", "city"}
 
 
 # ---------------------------------------------------------------------------
@@ -143,10 +149,22 @@ class LayoutGenerator:
                  room_count: int = 5,
                  add_lights: bool = True,
                  elevation: bool = True,
-                 locks: int = 0) -> ZoneSpec:
+                 locks: int = 0,
+                 dungeon_theme: str = "",
+                 dungeon_race: str = "",
+                 elemental_tint: Optional[str] = None,
+                 room_type_overrides: Optional[dict] = None) -> ZoneSpec:
         """
         Generate a zone. *locks* > 0 produces a keyed dungeon with that many
         lock-and-key gates (solvability guaranteed); 0 is a fully open dungeon.
+
+        Content / semantic layer (dungeon theme, Step 1): *dungeon_theme* picks
+        the archetype arc (e.g. "fortress", "temple", "sunken_ruin");
+        *dungeon_race* is a global scale multiplier ("giant", "froglok", …);
+        *elemental_tint* overrides the archetype's default tint ("" forces none,
+        None uses the default). *room_type_overrides* maps room id → semantic
+        type for planner-driven assignment. Semantic labelling only runs for the
+        box (dungeon/city) themes — cave/outdoor backends are untouched.
         """
         spec = ZoneSpec(name=name, theme=self.theme, style_profile=self.theme)
 
@@ -168,6 +186,19 @@ class LayoutGenerator:
         # as a progression rather than a flat set of equal rooms.
         entrance = self._apply_pacing(rooms, edges)
 
+        # Content / semantic layer (box themes only): label rooms with a
+        # semantic type + theme and apply the shape/proportion/ceiling/floor
+        # biases BEFORE the re-separate + elevation passes, so the themed shapes
+        # resolve for overlaps and elevation builds on the sunk/raised floors.
+        themed = self.theme in _SEMANTIC_THEMES and (
+            dungeon_theme or dungeon_race or elemental_tint is not None
+            or room_type_overrides)
+        if themed:
+            semantics.label_rooms(
+                spec, rooms, self.rng,
+                archetype=dungeon_theme, race=dungeon_race,
+                tint=elemental_tint, overrides=room_type_overrides)
+
         # Role biasing resized rooms (climax/hub grew, dead-ends shrank), so
         # re-separate to resolve any overlaps the new sizes introduced. Keep
         # the graph edges — only positions shift slightly.
@@ -180,6 +211,11 @@ class LayoutGenerator:
             spec.rooms.append(room)
             if add_lights:
                 self._add_room_lights(spec, room, i)
+
+        # Realize the semantic parts that need final geometry + the assembled
+        # spec: per-room palette, elemental regions, and lighting mood.
+        if themed:
+            semantics.realize_semantics(spec, self.rng)
 
         self._build_corridors(spec, rooms, edges)
 

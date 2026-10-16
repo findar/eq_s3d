@@ -100,6 +100,13 @@ class ZoneBuilder:
                     "role": r.role,
                     "graph_depth": r.graph_depth,
                     "center": [r.center_x, r.center_y, r.floor_z],
+                    # Content / semantic layer (advisory; may be empty).
+                    "semantic_type": r.semantic_type,
+                    "room_theme": r.room_theme,
+                    "district": r.district,
+                    "prop_hints": list(r.prop_hints),
+                    "encounter_intent": r.encounter_intent,
+                    "boss": r.boss,
                 }
                 for r in self.spec.rooms
             ]
@@ -113,8 +120,14 @@ class ZoneBuilder:
                 }
                 for g in self.spec.gates
             ]
+            theme_meta = {
+                "dungeon_theme": self.spec.dungeon_theme,
+                "dungeon_race": self.spec.dungeon_race,
+                "elemental_tint": self.spec.elemental_tint,
+            }
             result = eqg.write_glb(glb_path, material_colors=mat_colors,
-                                   room_pacing=room_pacing, gates=gates)
+                                   room_pacing=room_pacing, gates=gates,
+                                   theme=theme_meta)
             if result is None:
                 glb_path = None  # trimesh not available
 

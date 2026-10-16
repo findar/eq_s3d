@@ -20,6 +20,12 @@ from typing import List, Tuple
 from .zone_spec import ZoneSpec
 
 
+def _esc(s: str) -> str:
+    """Minimal XML-escape for text drawn into the SVG."""
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;"))
+
+
 # Role → fill colour for room boxes.
 _ROLE_FILL = {
     "entrance": "#2e7d32",   # green — the safe start
@@ -110,10 +116,25 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
             f'<text x="{cx:.1f}" y="{cy + 4:.1f}" fill="#e8eef2" font-size="12" '
             f'font-family="monospace" text-anchor="middle">{r.graph_depth}</text>'
         )
+        # Semantic type label below the room (content layer). Falls back to the
+        # pacing role label for un-themed zones so existing behaviour is kept.
+        sem = getattr(r, "semantic_type", "")
+        if sem:
+            parts.append(
+                f'<text x="{cx:.1f}" y="{y + rh + 11:.1f}" fill="#b0bec5" '
+                f'font-size="9" font-family="sans-serif" text-anchor="middle">'
+                f'{_esc(sem)}</text>'
+            )
         if r.role in label_rooms:
             parts.append(
                 f'<text x="{cx:.1f}" y="{y - 4:.1f}" fill="{stroke}" font-size="11" '
                 f'font-family="sans-serif" text-anchor="middle">{r.role}</text>'
+            )
+        # Boss marker (content layer): a small star glyph in the top-right.
+        if getattr(r, "boss", False):
+            parts.append(
+                f'<text x="{x + rw - 3:.1f}" y="{y + 11:.1f}" fill="#ffd24a" '
+                f'font-size="13" font-family="sans-serif" text-anchor="end">&#9733;</text>'
             )
 
     # ---- Gates (lock + key + connector) ----

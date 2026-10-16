@@ -25,6 +25,13 @@ suggestions you can accept, move, or ignore.
   at EQ scale, a top-down map, and toggleable light/region/gate overlays.
 - **Composed layouts** — a TinyKeep-style room graph with pacing (entrance / hub
   / climax / dead-end) and optional, solvability-guaranteed lock-and-key gating.
+- **Theme-conforming rooms (dungeon)** — a content layer gives each room a
+  semantic type drawn from a zone archetype (fortress, temple, tomb,
+  wizard-lair, sunken ruin, forge, ice keep, …), scaled by an inhabiting race
+  (giant halls dwarf a froglok warren) with optional lava/ice/water tint. Shape,
+  region volumes, lighting mood, and palette are realised into geometry; props,
+  encounters, and boss placement are carried as written suggestions (no new
+  art, no placed props).
 - **No-API by default** — procedural textures and the rule planner need no keys;
   AI texture generation and the LLM planner activate only when a key is present.
 - **Random by default** — every generation uses a fresh seed, so identical

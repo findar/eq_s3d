@@ -56,6 +56,41 @@ _VERTICALITY_WORDS = {
 _MANY_WORDS = ["many", "lots", "numerous", "maze", "labyrinth", "sprawling", "warren"]
 _FEW_WORDS = ["few", "couple", "single", "one big", "simple"]
 
+# Keyword → dungeon archetype (semantic layer). Scored like themes; first/best
+# hit wins. Order roughly specific → general.
+_ARCHETYPE_WORDS = {
+    "sunken_ruin": ["sunken", "flooded ruin", "drowned", "undercity", "cistern",
+                    "submerged"],
+    "lava_forge": ["forge", "foundry", "smithy", "molten", "furnace"],
+    "ice_keep": ["ice keep", "frozen keep", "glacier", "frost castle", "icy keep"],
+    "wizard_lair": ["wizard", "mage", "magician", "arcane", "laboratory",
+                    "sorcerer", "warlock", "necromancer"],
+    "temple": ["temple", "shrine", "cathedral", "sanctuary", "monastery",
+               "chapel"],
+    "corrupted_sanctum": ["corrupted", "defiled", "desecrated", "fallen temple",
+                          "profaned"],
+    "tomb": ["tomb", "crypt", "catacomb", "mausoleum", "necropolis", "burial",
+             "sepulcher", "ossuary"],
+    "mine_delve": ["mine", "delve", "quarry", "excavation", "shaft", "dig"],
+    "warren": ["warren", "den", "burrow", "nest", "lair"],
+    "war_city": ["war city", "citadel", "capital", "metropolis"],
+    "fortress": ["fortress", "stronghold", "keep", "castle", "garrison", "fort",
+                 "bastion"],
+}
+
+# Keyword → inhabiting race (scales rooms/corridors).
+_RACE_WORDS = {
+    "giant": ["giant", "giants", "titan", "colossal", "kromzek", "kromrif"],
+    "ogre": ["ogre", "ogres"],
+    "troll": ["troll", "trolls"],
+    "froglok": ["froglok", "frogloks", "frog people", "frogmen", "amphibian"],
+    "goblin": ["goblin", "goblins"],
+    "kobold": ["kobold", "kobolds"],
+    "lizardman": ["lizardman", "lizardmen", "lizard men", "reptilian"],
+    "gnoll": ["gnoll", "gnolls"],
+    "sarnak": ["sarnak", "iksar"],
+}
+
 # size → base room count and footprint multiplier
 _SIZE_ROOMS = {"small": 3, "medium": 5, "large": 8, "huge": 14}
 
@@ -78,6 +113,11 @@ class RulePlanner:
         mood = self._extract_mood(text)
         locks = self._lock_count(text, room_count)
 
+        # Content / semantic layer (only meaningful for dungeon theme).
+        dungeon_theme = self._match_archetype(text) if theme == "dungeon" else ""
+        dungeon_race = self._match_one(text, _RACE_WORDS, default="")
+        elemental_tint = self._match_tint(regions)
+
         return ZonePlan(
             name=name,
             theme=theme,
@@ -87,6 +127,9 @@ class RulePlanner:
             verticality=verticality,
             regions=regions,
             locks=locks,
+            dungeon_theme=dungeon_theme,
+            dungeon_race=dungeon_race,
+            elemental_tint=elemental_tint,
             mood=mood,
             prompt=prompt or "",
         ).validate()
@@ -107,6 +150,22 @@ class RulePlanner:
             if any(w in text for w in words):
                 return value
         return default
+
+    def _match_archetype(self, text: str) -> str:
+        """Score each archetype by keyword hits; "" if none match (default)."""
+        best, best_score = "", 0
+        for arch, words in _ARCHETYPE_WORDS.items():
+            score = sum(text.count(w) for w in words)
+            if score > best_score:
+                best, best_score = arch, score
+        return best
+
+    def _match_tint(self, regions: List[str]) -> str:
+        """Promote a detected lava/ice/water region to the elemental tint."""
+        for kind in ("lava", "ice", "water"):
+            if kind in regions:
+                return kind
+        return ""
 
     def _match_regions(self, text: str) -> List[str]:
         found = []

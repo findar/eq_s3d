@@ -107,7 +107,8 @@ class EqgZone:
     def write_glb(self, path: str | Path,
                   material_colors: Optional[Dict[int, tuple]] = None,
                   room_pacing: Optional[list] = None,
-                  gates: Optional[list] = None) -> Optional[Path]:
+                  gates: Optional[list] = None,
+                  theme: Optional[dict] = None) -> Optional[Path]:
         """
         Export the zone terrain as a GLB file for browser preview.
 
@@ -180,12 +181,13 @@ class EqgZone:
         # Emit a companion .zone.json sidecar carrying lights, regions, and
         # metadata so the browser viewer can render overlays. Named
         # <zone>.zone.json next to the GLB.
-        self._write_glb_sidecar(out_path, room_pacing, gates)
+        self._write_glb_sidecar(out_path, room_pacing, gates, theme)
 
         return out_path
 
     def _write_glb_sidecar(self, glb_path: Path, room_pacing: Optional[list] = None,
-                           gates: Optional[list] = None) -> None:
+                           gates: Optional[list] = None,
+                           theme: Optional[dict] = None) -> None:
         """Write a <name>.zone.json next to the GLB with lights/regions/metrics."""
         import json
 
@@ -209,6 +211,7 @@ class EqgZone:
             "regions": [],
             "rooms": room_pacing or [],
             "gates": gates or [],
+            "theme": theme or {},
         }
 
         if self._placement is not None:

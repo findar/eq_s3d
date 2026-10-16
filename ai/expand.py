@@ -51,10 +51,17 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None) -> ZoneSpec:
         room_count=plan.room_count,
         elevation=plan.elevation and plan.verticality != "flat",
         locks=plan.locks,
+        dungeon_theme=plan.dungeon_theme,
+        dungeon_race=plan.dungeon_race,
+        elemental_tint=(plan.elemental_tint or None),
     )
 
-    # Add requested regions, placed in/near rooms.
-    _add_regions(spec, plan, rng_seed)
+    # Add requested regions, placed in/near rooms. When the semantic layer is
+    # active it already emits themed elemental region volumes (water/lava), so
+    # skip those kinds here to avoid double-placing; keep any non-elemental
+    # regions the plan requested (pvp/zoneline/generic).
+    themed = bool(spec.dungeon_theme)
+    _add_regions(spec, plan, rng_seed, skip_elemental=themed)
 
     # Fold mood into material descriptions so textures pick it up.
     if plan.mood:
@@ -66,12 +73,19 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None) -> ZoneSpec:
     return spec
 
 
-def _add_regions(spec: ZoneSpec, plan: ZonePlan, seed: int) -> None:
+_ELEMENTAL_KINDS = {"water", "lava", "ice"}
+
+
+def _add_regions(spec: ZoneSpec, plan: ZonePlan, seed: int,
+                 skip_elemental: bool = False) -> None:
     """Place each requested region kind in a room (water/lava pools, etc.)."""
     if not plan.regions or not spec.rooms:
         return
     rng = random.Random(seed ^ 0x5EED)
-    for i, kind in enumerate(plan.regions):
+    kinds = plan.regions
+    if skip_elemental:
+        kinds = [k for k in kinds if k not in _ELEMENTAL_KINDS]
+    for i, kind in enumerate(kinds):
         # Put the region in a room (cycle through rooms if more regions)
         room = spec.rooms[i % len(spec.rooms)]
         # A pool covering part of the room floor

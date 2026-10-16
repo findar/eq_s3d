@@ -20,6 +20,18 @@ from typing import List, Optional, Dict, Any
 VALID_THEMES = ["dungeon", "outdoor", "cave", "city"]
 VALID_REGION_KINDS = ["water", "lava", "ice", "pvp", "zoneline", "generic"]
 
+# Content / semantic layer (dungeon theme). Archetypes mirror
+# generators.semantics.ARCHETYPES; races mirror generators.semantics.RACE_SCALE.
+VALID_DUNGEON_THEMES = [
+    "fortress", "war_city", "warren", "temple", "tomb", "wizard_lair",
+    "corrupted_sanctum", "mine_delve", "sunken_ruin", "lava_forge", "ice_keep",
+]
+VALID_DUNGEON_RACES = [
+    "goblin", "froglok", "kobold", "lizardman", "gnoll", "sarnak", "troll",
+    "ogre", "giant",
+]
+VALID_ELEMENTAL_TINTS = ["lava", "ice", "water"]
+
 
 @dataclass
 class ZonePlan:
@@ -40,6 +52,13 @@ class ZonePlan:
     # Lock-and-key gating: number of locked gates (0 = open dungeon).
     locks: int = 0
 
+    # Content / semantic layer (dungeon theme). All optional — a terse prompt
+    # or sparse plan still yields a valid zone (the generator falls back to a
+    # deterministic default archetype).
+    dungeon_theme: str = ""          # archetype, from VALID_DUNGEON_THEMES
+    dungeon_race: str = ""           # inhabiting race, from VALID_DUNGEON_RACES
+    elemental_tint: str = ""         # from VALID_ELEMENTAL_TINTS ("" = default)
+
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
 
@@ -57,6 +76,12 @@ class ZonePlan:
             self.verticality = "moderate"
         self.regions = [r for r in self.regions if r in VALID_REGION_KINDS]
         self.locks = max(0, min(5, int(self.locks)))
+        if self.dungeon_theme and self.dungeon_theme not in VALID_DUNGEON_THEMES:
+            self.dungeon_theme = ""
+        if self.dungeon_race and self.dungeon_race not in VALID_DUNGEON_RACES:
+            self.dungeon_race = ""
+        if self.elemental_tint and self.elemental_tint not in VALID_ELEMENTAL_TINTS:
+            self.elemental_tint = ""
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -112,6 +137,26 @@ ZONE_PLAN_JSON_SCHEMA = {
         "mood": {
             "type": "string",
             "description": "Short mood/atmosphere note, e.g. 'dark and damp'.",
+        },
+        "dungeon_theme": {
+            "type": "string",
+            "enum": VALID_DUNGEON_THEMES,
+            "description": "Semantic archetype for a dungeon: what kind of place "
+                           "it is (a fortress, a temple, a flooded ruin, a mad "
+                           "wizard's lair, a tomb, a forge, an ice keep, …).",
+        },
+        "dungeon_race": {
+            "type": "string",
+            "enum": VALID_DUNGEON_RACES,
+            "description": "The race that built/inhabits the place. Scales room "
+                           "and corridor size (e.g. 'giant' = huge halls, "
+                           "'froglok'/'goblin' = smaller).",
+        },
+        "elemental_tint": {
+            "type": "string",
+            "enum": VALID_ELEMENTAL_TINTS,
+            "description": "Optional elemental overlay: lava, ice, or water "
+                           "regions + matching light mood.",
         },
     },
     "required": ["theme", "room_count", "size"],

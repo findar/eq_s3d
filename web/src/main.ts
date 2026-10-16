@@ -104,6 +104,58 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     dd.innerHTML = `<span>max depth</span><span>${maxDepth}</span>`;
     pacing.appendChild(dd);
   }
+
+  // Content / semantic layer: theme line, room-type counts, boss + a sample of
+  // suggestions. Only shown when the zone was themed.
+  const content = $("m-content");
+  content.innerHTML = "";
+  const theme = sidecar.theme;
+  const themed = !!(theme && theme.dungeon_theme);
+  if (themed && sidecar.rooms && sidecar.rooms.length) {
+    const tbits: string[] = [theme!.dungeon_theme!];
+    if (theme!.dungeon_race && theme!.dungeon_race !== "default")
+      tbits.push(theme!.dungeon_race!);
+    if (theme!.elemental_tint) tbits.push(theme!.elemental_tint!);
+    const head = document.createElement("div");
+    head.className = "row";
+    head.innerHTML = `<span>Theme</span><span>${tbits.join(" · ")}</span>`;
+    content.appendChild(head);
+
+    const typeCounts: Record<string, number> = {};
+    const bosses: ZoneSidecar["rooms"] = [];
+    for (const r of sidecar.rooms) {
+      const t = r.semantic_type || "—";
+      typeCounts[t] = (typeCounts[t] || 0) + 1;
+      if (r.boss) bosses.push(r);
+    }
+    for (const [t, n] of Object.entries(typeCounts).sort((a, b) => b[1] - a[1])) {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `<span>${t}</span><span>${n}</span>`;
+      content.appendChild(div);
+    }
+    for (const b of bosses) {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `<span style="color:#ce93d8">boss</span>` +
+        `<span style="color:#ce93d8">${b.semantic_type || b.role}</span>`;
+      content.appendChild(div);
+    }
+    // One representative suggestion (climax/boss room if present, else first).
+    const sample = bosses[0] ?? sidecar.rooms[0];
+    if (sample && (sample.prop_hints?.length || sample.encounter_intent)) {
+      const note = document.createElement("div");
+      note.style.cssText = "font-size:10px;color:#8aa;margin-top:4px;line-height:1.4";
+      const props = (sample.prop_hints ?? []).join(", ");
+      note.innerHTML =
+        `<b>${sample.semantic_type}</b><br>` +
+        (props ? `props: ${props}<br>` : "") +
+        (sample.encounter_intent ? `intent: ${sample.encounter_intent}` : "");
+      content.appendChild(note);
+    }
+  } else {
+    content.innerHTML = `<span style="color:#555;font-size:11px">no theme (plain dungeon)</span>`;
+  }
 }
 
 // ---- Generate ----

@@ -54,6 +54,19 @@ export interface ZoneRoom {
   role: string;
   graph_depth: number;
   center: [number, number, number];
+  // Content / semantic layer (advisory; may be empty on un-themed zones).
+  semantic_type?: string;
+  room_theme?: string;
+  district?: number;
+  prop_hints?: string[];
+  encounter_intent?: string;
+  boss?: boolean;
+}
+
+export interface ZoneTheme {
+  dungeon_theme?: string;
+  dungeon_race?: string;
+  elemental_tint?: string;
 }
 
 export interface ZoneGate {
@@ -72,6 +85,7 @@ export interface ZoneSidecar {
   regions: ZoneRegion[];
   rooms: ZoneRoom[];
   gates: ZoneGate[];
+  theme?: ZoneTheme;
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {

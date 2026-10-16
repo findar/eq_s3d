@@ -4,7 +4,7 @@ The authoritative list of what's done, what's next, and known gaps. The README
 carries the narrative "what it does / how it works"; this file is the tracker.
 Keep it in sync when work lands (check items off, move them, note the commit).
 
-Last updated: 30 commits, 144 tests passing. Priorities re-sequenced; see "Next".
+Last updated: content layer Step 1 landed, 164 tests passing. See "Next".
 
 ---
 
@@ -18,13 +18,26 @@ cave backend, we're **parking it** and will rebuild it later with a better
 architecture (see "Cave = cavified dungeon layout" below). The `cave` theme is
 not trustworthy until then; focus on the **dungeon (box) backend**, which works.
 
-**Suggested next step:** start the **Content / semantic layer** (priority #1
-under "Next"), scoped to the **dungeon theme first**. The box backend produces
-correct, connected, navigable layouts, so it's the right foundation for the
-content work.
+**Content layer — Step 1 (single-district themes) is DONE.** Dungeon rooms now
+get a semantic type from an archetype × race × elemental-tint theme (realised
+into shape/region/light/palette; props/encounters/boss carried as suggestions).
+See "Next" #1 and the design in `docs/RESEARCH.md`.
 
-**Priorities:** content layer (dungeon first) → refinement → SQL export →
+**Suggested next step:** the content layer's **Step 2 — districts** (multi-area
+zones): partition the room graph into contiguous sub-themed districts
+(auto-split large zones, with an off switch), per-district climaxes, and gated
+thresholds between districts. Design + decisions are in `docs/RESEARCH.md`
+("Multi-area zones — districts").
+
+**Priorities:** content layer Step 2 (districts) → refinement → SQL export →
 (revisit) cave rebuild. Re-sequencing reasoning is under "Next".
+
+**Needs a 3D eyeball (Step 1):** the structural tests pass, but per the cave
+lesson that is necessary-not-sufficient. Before Step 2, confirm in the viewer
+that themed rooms read as distinct places — processional throne/ritual halls,
+tight prison cells, sunken flooded rooms with water regions sitting in the
+floor, forge rooms glowing with lava — and that the per-room palette variants
+and lighting mood are visibly different between themes. See `docs/ACCEPTANCE.md`.
 
 **Validate major changes** with the acceptance checklist in
 [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md). Proc-gen approach investigations and
@@ -57,6 +70,7 @@ their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 | Staircase fix | L-shaped corridors meet both wall openings; stairs flush at both landings |
 | Cave connectivity fix | Tunnels join chambers into one watertight cave; floor winding fixed (no see-through); noise specks removed |
 | Acceptance checklist | `docs/ACCEPTANCE.md` — manual UAT for validating major changes |
+| Content layer — Step 1 | Dungeon semantic themes: archetype × race × tint; per-room type, shape/region/light/palette realization; props/encounter/boss as suggestions; surfaced in viewer panel + top-down map |
 
 ---
 
@@ -72,22 +86,36 @@ export sits last.
 
 ### 1. Content / semantic layer — theme-conforming rooms + suggestions
 
-Rooms are empty shells today. Give each room a semantic **type + theme**, assigned
-coherently across the graph so the zone reads as a place with a progression
-(barracks → prison → ritual chamber). Scope is **no new art** and splits cleanly:
+Give each room a semantic **type + theme**, assigned coherently across the graph
+so the zone reads as a place with a progression. Scope is **no new art**. Design,
+theme vocabulary, and the archetype × race × tint + districts model are in
+`docs/RESEARCH.md` ("Content / semantic layer — dungeon theme vocabulary &
+districts"). Split into two steps:
 
-- **Build into geometry** (realized by the existing pipeline): per-room shape /
-  proportion bias, **region volumes** (flooded crypt → `AWT_` water; forge →
-  `ALV_` lava), **lighting mood** (colour/intensity/placement), elevation
-  character, and **texture/palette** selection per theme.
-- **Emit as suggestions only** (data/notes, never placed): prop / set-dressing
-  hints, spawn / encounter intent, boss placement — shown in the viewer/map and
-  carried as fields for the eventual SQL export.
-- **Explicitly NOT doing:** placing prop MODs. A room should *be* a
-  theme-conforming empty space with written suggestions, not furnished geometry.
+- [x] **Step 1 — single-district themes (DONE).** A room gets a semantic type
+  from a zone **archetype** (fortress / war_city / warren / temple / tomb /
+  wizard_lair / corrupted_sanctum / mine_delve / sunken_ruin / lava_forge /
+  ice_keep), scaled by an inhabiting **race** (global size multiplier) with an
+  optional elemental **tint** (lava/ice/water). Realized into geometry — shape /
+  proportion bias, `AWT_`/`ALV_` region volumes, lighting mood, elevation
+  character, per-theme palette (material variants). Props / encounter intent /
+  boss are carried as **suggestions** (RoomSpec fields → sidecar + map + viewer,
+  for the eventual SQL export). The rule planner detects archetype/race/tint
+  keywords; the LLM planner can propose them (schema extended). Code:
+  `generators/semantics.py`, wired into `generators/layout.py::generate`.
+  *Known gap: race scale values are relative placeholders pending real EQ model
+  dimensions (see Known issues).*
+- [ ] **Step 2 — districts (NEXT).** Partition the room graph into 1–3
+  contiguous **districts**, each its own sub-theme, joined at hubs / gated
+  thresholds — so a zone can be several places at once (live vs. dead side,
+  fortress + warren). Auto-split large zones (≥8 → 2, ≥14 → 3) with an off
+  switch; **per-district climaxes** (multiple boss rooms allowed); a district
+  **relationship** tag (sequential / factional / abandoned-vs-active). Renders
+  district boundaries on the map/viewer. `RoomSpec.district` and a
+  `ZoneSpec.districts` list already exist as placeholders.
 
-The (LLM) planner proposes the theme assignment + per-room intent from the prompt;
-deterministic rules realize it. See the design note "Content / semantic layer".
+- **Explicitly NOT doing:** placing prop MODs. A room *is* a theme-conforming
+  empty space with written suggestions, not furnished geometry.
 
 ### 2. Iterative refinement
 
@@ -155,6 +183,13 @@ particular are a cheap, high-impact quick win.)
       then. (This mismatch is itself a lesson: automated structural checks can
       pass while the viewer shows something wrong — validate major geometry
       changes in 3D per `docs/ACCEPTANCE.md`.)
+- [ ] **Race scale values are relative placeholders** — the content layer's
+      per-race size multipliers (`giant` 2.2×, `froglok` 0.9×, …, in
+      `generators/semantics.py::RACE_SCALE`) are tuned-by-feel, not measured.
+      Real per-race limits (doorway clearance, headroom) should come from EQ
+      model bounding boxes, which we don't have yet; the RoF2 install at
+      `F:\everquest_rof2` could be mined for model bounds the way the
+      era-fidelity triangle-edge table was. Until then they're a tunable knob.
 - [ ] Style profiles for `city` and `cave` are thin (3–4 zones) — expand once more
       zone names are identified.
 - [ ] Light-density stat reads 0 in profiles (most dungeon references use embedded
@@ -206,7 +241,7 @@ Recording these so they aren't re-proposed:
 | **layout** | TinyKeep room-graph — scatter/separate/Delaunay/MST + loops | ✅ Done |
 | **pacing** | Room roles & depth — entrance/hub/dead-end/climax, biased geometry & lighting | ✅ Done |
 | **gating** | Lock-and-key suggestions (optional, keyed dungeons), solvability-guaranteed | ✅ Done |
-| **content** | Theme-conforming rooms + suggestions (no prop placement) | ⏳ Next |
+| **content** | Theme-conforming rooms + suggestions (no prop placement) | ◑ Step 1 done (single-district themes); Step 2 (districts) next |
 | **refine** | Iterative chat loop + partial regeneration | ⏳ |
 | **export** | EQEmu SQL export + in-engine validation (capstone) | ⏳ |
 
