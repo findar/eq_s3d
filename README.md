@@ -175,6 +175,10 @@ Targets **EQG Standard (v1–v3)**, the format used by the RoF2 client.
 - [EQGZI Getting Started](https://vegaseq.com/docs/client/eqgzi/getting-started-advanced/) — existing zone creation pipeline
 - [knervous/eqsage](https://github.com/knervous/eqsage) — browser-based S3D/EQG viewer
 
+For the procedural-generation approaches we investigated and why we chose what we
+chose (TinyKeep, BSP/WFC/CA, Dormans graph rewriting, Labyrinth, SDF caves), see
+[`docs/RESEARCH.md`](docs/RESEARCH.md).
+
 ---
 
 ## Contributing

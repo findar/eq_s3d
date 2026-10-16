@@ -4,7 +4,7 @@ The authoritative list of what's done, what's next, and known gaps. The README
 carries the narrative "what it does / how it works"; this file is the tracker.
 Keep it in sync when work lands (check items off, move them, note the commit).
 
-Last updated: commit `f9c5243` (29 commits, 144 tests passing).
+Last updated: 30 commits, 144 tests passing. Priorities re-sequenced; see "Next".
 
 ---
 
@@ -19,11 +19,15 @@ and backwards floor winding. All fixed and regression-tested (commit `f9c5243`).
 [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) sections B/C/D (navigability,
 enclosure, cave shapes) for a few seeds — the fix is verified by automated tests
 and mesh analysis, but has NOT yet been confirmed by a human walking it in 3D.
-Once that looks right, start **Phase 4 — Refinement** (below): the iterative
-chat loop is the highest-leverage feature.
+Once that looks right, start the **Content / semantic layer** (now priority #1
+under "Next"): theme-conforming rooms + suggestions, no prop placement.
+
+**Priorities were re-sequenced** (see "Next"): content layer → refinement → SQL
+export, with the reasoning recorded there.
 
 **Validate major changes** with the acceptance checklist in
-[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md).
+[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md). Proc-gen approach investigations and
+their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 
 ---
 
@@ -55,9 +59,38 @@ chat loop is the highest-leverage feature.
 
 ---
 
-## Next — Phase 4: Refinement (highest priority)
+## Next — ordered priorities
 
-The phase that turns a one-shot generator into an iterative tool.
+Rationale for this order: the north-star is "indistinguishable from hand-crafted"
+with the layout as a starting point for a manual pass. Making rooms *theme-coherent*
+moves that needle most; iterative refinement is usability polish worth doing once
+there's richer output to iterate on; the SQL export is the "now make it playable"
+capstone that consumes the content layer's suggestion data. Manual validation
+passes (`docs/ACCEPTANCE.md`) are good enough to vet designs until then, so the
+export sits last.
+
+### 1. Content / semantic layer — theme-conforming rooms + suggestions
+
+Rooms are empty shells today. Give each room a semantic **type + theme**, assigned
+coherently across the graph so the zone reads as a place with a progression
+(barracks → prison → ritual chamber). Scope is **no new art** and splits cleanly:
+
+- **Build into geometry** (realized by the existing pipeline): per-room shape /
+  proportion bias, **region volumes** (flooded crypt → `AWT_` water; forge →
+  `ALV_` lava), **lighting mood** (colour/intensity/placement), elevation
+  character, and **texture/palette** selection per theme.
+- **Emit as suggestions only** (data/notes, never placed): prop / set-dressing
+  hints, spawn / encounter intent, boss placement — shown in the viewer/map and
+  carried as fields for the eventual SQL export.
+- **Explicitly NOT doing:** placing prop MODs. A room should *be* a
+  theme-conforming empty space with written suggestions, not furnished geometry.
+
+The (LLM) planner proposes the theme assignment + per-room intent from the prompt;
+deterministic rules realize it. See the design note "Content / semantic layer".
+
+### 2. Iterative refinement
+
+Worth building once there's content-rich output to refine.
 
 - [ ] **Iterative chat loop** — refine an existing zone with follow-up prompts
       ("make the entrance wider", "add a water pool to the north") instead of
@@ -65,13 +98,23 @@ The phase that turns a one-shot generator into an iterative tool.
       a diff-style prompt interpretation, and a way to carry the seed/spec forward.
 - [ ] **Partial regeneration** — re-run only changed rooms/textures, not the whole
       zone, so iteration is fast.
-- [ ] **EQEmu SQL export** — zone records, spawn points, and door/key rows. A
-      `GateSpec` maps to a `doors` row (`lock_x/y/z` → position, `corridor_id` →
-      the opening, key → `keyitem`). This is what makes a generated zone playable.
+
+### 3. EQEmu SQL export (capstone — makes a zone playable)
+
+- [ ] Zone records, spawn points, and door/key rows. A `GateSpec` maps to a
+      `doors` row (`lock_x/y/z` → position, `corridor_id` → the opening, key →
+      `keyitem`); the content layer's spawn/encounter suggestions become spawn
+      and loot rows. Deferred to last: empty shells aren't worth standing up on a
+      server, and manual validation covers design checks until then. This is also
+      where to add a real **in-engine validation loop** (load one generated zone
+      on an EQEmu server) so quality isn't judged only by our own reader/viewer.
 
 ---
 
 ## Design work captured, not yet built
+
+(Opportunistic — slot in around the ordered priorities above. Normal maps in
+particular are a cheap, high-impact quick win.)
 
 - [ ] **Doorway-fit for gates** — catalogue the RoF2 door models used for doorways
       and their world-space footprints by theme (swinging wood/stone, portcullis,
@@ -89,12 +132,8 @@ The phase that turns a one-shot generator into an iterative tool.
       bounds; make them clearings, lookouts, etc.
 - [ ] **Procedural normal maps** — textures are diffuse-only; real zones use the
       `e_TextureNormal0` material slot. No-API, high visual impact.
-- [ ] **Content / semantic layer** — rooms are empty shells; give them semantic
-      types + shared themes so a zone reads as a coherent place, realized through
-      the existing pipeline (Version A: model supplies intent, deterministic
-      rules realize it). No-new-art first slice = themes, region volumes,
-      lighting mood, shape bias, spawn/encounter intent as data. See the design
-      note "Content / semantic layer" below; pairs with the SQL export.
+- [ ] **Doorway-fit** also gates a real door export (listed above); it depends on
+      the catalogue of RoF2 door models.
 
 ---
 
@@ -126,6 +165,10 @@ Recording these so they aren't re-proposed:
   by the SQL export, dropped into the open corridor gap.
 - **Full Dormans mission-graph grammar** — EQ gates by depth/danger, not Zelda-style
   lock chains. We adopted only the solvability-invariant idea for gating.
+- **Grid + rule-tile rooms (Labyrinth "Blueprints")** — grid-snapped rooms whose
+  shape is chosen from the neighbour pattern read as modern roguelike (Isaac /
+  Gungeon), the opposite of hand-crafted EQ sprawl. We already use the stronger
+  non-grid choices (TinyKeep over Drunkard's-Walk+A\*). See `docs/RESEARCH.md`.
 
 ---
 
@@ -147,7 +190,9 @@ Recording these so they aren't re-proposed:
 | **layout** | TinyKeep room-graph — scatter/separate/Delaunay/MST + loops | ✅ Done |
 | **pacing** | Room roles & depth — entrance/hub/dead-end/climax, biased geometry & lighting | ✅ Done |
 | **gating** | Lock-and-key suggestions (optional, keyed dungeons), solvability-guaranteed | ✅ Done |
-| **4** | Refinement — iterative chat loop, partial regen, SQL export | ⏳ Next |
+| **content** | Theme-conforming rooms + suggestions (no prop placement) | ⏳ Next |
+| **refine** | Iterative chat loop + partial regeneration | ⏳ |
+| **export** | EQEmu SQL export + in-engine validation (capstone) | ⏳ |
 
 ---
 
