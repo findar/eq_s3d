@@ -20,6 +20,8 @@ validate), `docs/RESEARCH.md` (decisions & investigations).
 | [content-layer-dungeon](content-layer-dungeon.md) | in-progress | Content / semantic layer — Step 1 built (needs 3D eyeball); Step 2 districts is the next build |
 | [corridor-connection](corridor-connection.md) | not-started | Box-backend geometry correctness — same-axis room pairs need a 3-segment Z-corridor (ramps + stairs); plus elevation-steepness (unwalkable cliffs / oversized steps) |
 | [traversability-validator](traversability-validator.md) | done | Validation tooling — automated "can a player reach every room?" mesh walk (dungeon/box backend); CLI + seed-sweep suite. Outdoor/cave deferred (mesh/graph coord-frame mismatch). Pending one 3D eyeball |
+| [cave-backend-refactor](cave-backend-refactor.md) | not-started | Cave rebuild (1/2) — park the broken independent cave backend and isolate cave-specific logic behind a clean geometry-backend seam; no new capability |
+| [cave-cavify-dungeon](cave-cavify-dungeon.md) | not-started | Cave rebuild (2/2) — rebuild `cave` as an organic-styling transform of the validated box/dungeon geometry; must pass the traversability validator |
 
 ## Backlog (not yet broken into task files)
 

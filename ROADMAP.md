@@ -164,7 +164,11 @@ particular are a cheap, high-impact quick win.)
       derivation; instead take the box/dungeon layout (already correct + connected)
       and apply an organic-styling transform. Fixes the disconnected-blob class of
       bug by construction. The `cave` theme is untrustworthy until this lands —
-      use `dungeon`. See the design note "Cave = cavified dungeon layout".
+      use `dungeon`. See the design note "Cave = cavified dungeon layout". Now
+      broken into two task files: `tasks/cave-backend-refactor.md` (park the
+      broken backend + isolate cave logic behind a geometry-backend seam) then
+      `tasks/cave-cavify-dungeon.md` (build the cavify transform; gated on the
+      traversability validator passing the cavified mesh).
 - [ ] **Doorway-fit for gates** — catalogue the RoF2 door models used for doorways
       and their world-space footprints by theme (swinging wood/stone, portcullis,
       double doors, archway frames), then snap gated corridor openings to a chosen
