@@ -77,3 +77,13 @@ output is a starting point for a human authoring pass, not a finished zone.
   `tasks/README.md`. Set `Status: done` only when the acceptance criteria pass.
   Read the relevant task file before working — and VERIFY it against the actual
   code, because the repo can advance past the docs (it has before).
+- **Running a task:** when the user points you at a `tasks/<id>.md` file (or
+  names a task), treat that as an instruction to **run that task** — not merely
+  to read or summarise it. That means: read the file, verify it against the
+  current code (it can be stale), then work the unchecked subtasks toward the
+  acceptance criteria, committing as you go and keeping the task file,
+  `tasks/README.md`, and `ROADMAP.md` in sync. The task file's Goal /
+  Acceptance criteria / Subtasks are the single source of truth for *what* to
+  do; this always-on steering supplies the *how* (workflow, verification, the
+  "structural tests pass ≠ done — eyeball it in 3D" rule). No per-task kickoff
+  prompt is needed — pointing at the file is the trigger.
