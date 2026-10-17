@@ -100,7 +100,7 @@ place, palette, lighting mood) — only the mechanical navigability MUSTs.
 - Docs: `docs/ACCEPTANCE.md` (section B automated-vs-manual split), `ROADMAP.md`
   (item done + outdoor/cave coordinate-frame Known issue); this file.
 - Verification: full suite green — `179 passed, 3 xfailed`.
-- Commits: <hashes, newest last>
+- Commits: 48b08c8 (validator + tests + docs)
 
 ## Notes / decisions / blockers
 
