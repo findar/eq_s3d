@@ -145,14 +145,20 @@ Worth building once there's content-rich output to refine.
 (Opportunistic — slot in around the ordered priorities above. Normal maps in
 particular are a cheap, high-impact quick win.)
 
-- [ ] **Traversability validator** — an automated check that a player can walk
-      to every room, run on the generated mesh (not just the room graph), with
-      an EQ-scale agent (walkable slope cap + max step-up). Replaces the manual
-      navigability UAT, which has missed every corridor bug so far (they passed
-      structural tests and were only caught by eye). Tracked as
-      `tasks/traversability-validator.md`. Strong synergy with
-      `tasks/corridor-connection.md` — it's the objective gate those fixes
-      should pass.
+- [x] **Traversability validator** — ✅ **Done (dungeon/box backend).** An
+      automated check that a player can walk to every room, run on the generated
+      TER mesh (not the room graph), with an EQ-scale agent (walkable slope cap
+      40°, max step-up 3u). Walks the actual triangles from the safe point and
+      reports per-room reachability + *why* (cliff ramp / oversized stair step /
+      misaligned corridor). CLI: `python -m analyzer.traverse output/<zone>.eqg`;
+      suite: `tests/test_traversability.py` (sweeps known-good flat seeds; the
+      known-bad elevation seeds are xfail until `corridor-connection` lands, then
+      flip green). It's the objective gate those fixes should pass. Code in
+      `analyzer/traverse.py`. *Known limit: outdoor/cave not swept — their
+      heightfield/organic meshes are generated in a different coordinate frame
+      than the room graph (terrain starts at origin going +X/+Y rather than
+      centred on the rooms), so room-footprint mapping isn't meaningful for them
+      yet. Logged in Known issues.* Tracked as `tasks/traversability-validator.md`.
 - [ ] **Cave rebuild — "cavify the dungeon layout"** *(shelved; revisit after the
       ordered priorities)* — scrap the current cave backend's independent spatial
       derivation; instead take the box/dungeon layout (already correct + connected)
@@ -201,6 +207,15 @@ particular are a cheap, high-impact quick win.)
       producing unwalkable cliff ramps (~53°) and oversized stair steps
       (~15u). Tracked as `tasks/corridor-connection.md` (supersedes the earlier
       mis-scoped "connecting-ramps").
+- [ ] **Outdoor/cave mesh vs room graph are in different coordinate frames** —
+      surfaced while building the traversability validator. The heightfield
+      terrain mesh places vertices at `x = i*res` (origin → +X/+Y), while the
+      room graph is centred near the origin (negative coords common), so the
+      terrain isn't actually under its rooms. Same mismatch for the organic cave
+      backend. Consequence: the validator can't map room footprints onto those
+      meshes, so outdoor/cave navigability stays manual for now. Fix direction:
+      offset/centre the terrain (and cave) mesh onto the room-graph frame so
+      world positions agree. (`generators/field/terrain.py::_heightfield_to_ter`.)
 - [ ] **Race scale values are relative placeholders** — the content layer's
       per-race size multipliers (`giant` 2.2×, `froglok` 0.9×, …, in
       `generators/semantics.py::RACE_SCALE`) are tuned-by-feel, not measured.

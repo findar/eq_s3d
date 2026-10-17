@@ -34,15 +34,37 @@ seeds per theme.
 
 ## B. Navigability (the "navigable" north-star)
 
+> **Now partly automated (dungeon / box backend).** The traversability validator
+> walks the real TER mesh from the safe point with an EQ-scale agent and reports
+> which rooms are reachable and *why not* (cliff ramp / oversized step /
+> misaligned corridor):
+>
+> ```bash
+> python -m analyzer.traverse output/<zone>.eqg        # exits non-zero on FAIL
+> python -m pytest tests/test_traversability.py -q     # seed-sweep regression
+> ```
+>
+> It covers the mechanical MUSTs below for **dungeon** zones (the ✅-marked
+> items). It does **not** cover outdoor/cave yet (mesh is in a different
+> coordinate frame than the room graph — see ROADMAP Known issues), nor the
+> aesthetic "does it read as a place" judgement. Walk those in the viewer.
+
 - [ ] **[MUST] Walkable floors** — You can walk across each room's floor without
       hitting steep, slippery, or pit-like surfaces. Gentle undulation is fine.
+      *(✅ auto for dungeon: the agent's walkable-slope cap rejects floors/ramps
+      steeper than 40°; outdoor/cave still manual.)*
 - [ ] **[MUST] Rooms are reachable** — Every room can be reached on foot from the
-      entrance; no room is sealed off.
+      entrance; no room is sealed off. *(✅ auto for dungeon via
+      `analyzer.traverse` — the core check. Outdoor/cave still manual.)*
 - [ ] **[MUST] Corridors connect cleanly** — Each corridor meets both rooms it
       joins; no corridor (or staircase) floats detached from a wall opening.
+      *(✅ auto for dungeon: a corridor that's nominally walkable but whose mesh
+      opening doesn't meet the room is reported as a "misaligned/detached
+      corridor".)*
 - [ ] **[MUST] Stairs are continuous** — Staircases start flush with the lower
       floor and end flush with the upper floor — no gap to step over at either
-      landing.
+      landing. *(✅ auto for dungeon: oversized stair steps / landing gaps beyond
+      the agent's max step-up are flagged by name.)*
 
 ## C. Enclosure / no see-through (the "enclosed rooms" requirement)
 
