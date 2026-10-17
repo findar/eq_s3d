@@ -183,11 +183,16 @@ particular are a cheap, high-impact quick win.)
       then. (This mismatch is itself a lesson: automated structural checks can
       pass while the viewer shows something wrong — validate major geometry
       changes in 3D per `docs/ACCEPTANCE.md`.)
-- [ ] **L-bend ramp corridors meet rooms at the wrong floor height** — the
-      smooth-ramp (`steps=0`) path can reach a room's wall opening tens of units
-      off that room's floor, leaving a gap (seeds 1516796975, 678358326, 13, 55).
-      The stepped-staircase path was fixed (commits 03dc912, 9f69d1f) but the
-      ramp path wasn't brought in line. Tracked as `tasks/connecting-ramps.md`.
+- [ ] **Corridors between same-axis room pairs mis-connect, esp. with elevation**
+      — when two rooms face each other on parallel walls (both E↔W or both N↔S),
+      the single-corner L-bend forces one leg parallel to a wall; with an
+      elevation change that leg meets the opening at the wrong floor height,
+      leaving a gap so the room looks unreachable (seed 1955208177, also
+      1516796975/678358326). Needs a 3-segment Z-corridor for the same-axis
+      case. Separately, elevation rises aren't bounded by corridor run length,
+      producing unwalkable cliff ramps (~53°) and oversized stair steps
+      (~15u). Tracked as `tasks/corridor-connection.md` (supersedes the earlier
+      mis-scoped "connecting-ramps").
 - [ ] **Race scale values are relative placeholders** — the content layer's
       per-race size multipliers (`giant` 2.2×, `froglok` 0.9×, …, in
       `generators/semantics.py::RACE_SCALE`) are tuned-by-feel, not measured.

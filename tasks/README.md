@@ -18,7 +18,7 @@ validate), `docs/RESEARCH.md` (decisions & investigations).
 | Task | Status | Epic |
 |------|--------|------|
 | [content-layer-dungeon](content-layer-dungeon.md) | in-progress | Content / semantic layer — Step 1 built (needs 3D eyeball); Step 2 districts is the next build |
-| [connecting-ramps](connecting-ramps.md) | not-started | Box-backend geometry correctness — L-bend ramp corridors meet both rooms flush (ramp counterpart to the stepped-staircase fixes) |
+| [corridor-connection](corridor-connection.md) | not-started | Box-backend geometry correctness — same-axis room pairs need a 3-segment Z-corridor (ramps + stairs); plus elevation-steepness (unwalkable cliffs / oversized steps) |
 
 ## Backlog (not yet broken into task files)
 
