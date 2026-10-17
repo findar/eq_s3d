@@ -183,6 +183,11 @@ particular are a cheap, high-impact quick win.)
       then. (This mismatch is itself a lesson: automated structural checks can
       pass while the viewer shows something wrong — validate major geometry
       changes in 3D per `docs/ACCEPTANCE.md`.)
+- [ ] **L-bend ramp corridors meet rooms at the wrong floor height** — the
+      smooth-ramp (`steps=0`) path can reach a room's wall opening tens of units
+      off that room's floor, leaving a gap (seeds 1516796975, 678358326, 13, 55).
+      The stepped-staircase path was fixed (commits 03dc912, 9f69d1f) but the
+      ramp path wasn't brought in line. Tracked as `tasks/connecting-ramps.md`.
 - [ ] **Race scale values are relative placeholders** — the content layer's
       per-race size multipliers (`giant` 2.2×, `froglok` 0.9×, …, in
       `generators/semantics.py::RACE_SCALE`) are tuned-by-feel, not measured.

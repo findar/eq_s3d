@@ -18,6 +18,7 @@ validate), `docs/RESEARCH.md` (decisions & investigations).
 | Task | Status | Epic |
 |------|--------|------|
 | [content-layer-dungeon](content-layer-dungeon.md) | in-progress | Content / semantic layer — Step 1 built (needs 3D eyeball); Step 2 districts is the next build |
+| [connecting-ramps](connecting-ramps.md) | not-started | Box-backend geometry correctness — L-bend ramp corridors meet both rooms flush (ramp counterpart to the stepped-staircase fixes) |
 
 ## Backlog (not yet broken into task files)
 
