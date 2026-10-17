@@ -69,3 +69,10 @@ output is a starting point for a human authoring pass, not a finished zone.
   viewer), walk `docs/ACCEPTANCE.md` — the manual UAT checklist for things only
   a human looking at the result can confirm. Update `ROADMAP.md` ("Pick up here"
   + Done table) and the commit count/hash when work lands.
+- **Task tracking** lives in `tasks/` (tactical tier below ROADMAP). When you
+  start work on something, open or create its `tasks/<id>.md` from
+  `tasks/_TEMPLATE.md`; keep its `Status:` line, subtask checkboxes, and
+  Deliverables (commit hashes) current as you go, and update the row in
+  `tasks/README.md`. Set `Status: done` only when the acceptance criteria pass.
+  Read the relevant task file before working — and VERIFY it against the actual
+  code, because the repo can advance past the docs (it has before).
