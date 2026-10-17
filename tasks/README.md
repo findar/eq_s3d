@@ -19,6 +19,7 @@ validate), `docs/RESEARCH.md` (decisions & investigations).
 |------|--------|------|
 | [content-layer-dungeon](content-layer-dungeon.md) | in-progress | Content / semantic layer — Step 1 built (needs 3D eyeball); Step 2 districts is the next build |
 | [corridor-connection](corridor-connection.md) | not-started | Box-backend geometry correctness — same-axis room pairs need a 3-segment Z-corridor (ramps + stairs); plus elevation-steepness (unwalkable cliffs / oversized steps) |
+| [traversability-validator](traversability-validator.md) | not-started | Validation tooling — automated "can a player reach every room?" check on the generated mesh, to replace manual navigability UAT |
 
 ## Backlog (not yet broken into task files)
 

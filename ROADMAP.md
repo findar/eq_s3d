@@ -145,6 +145,14 @@ Worth building once there's content-rich output to refine.
 (Opportunistic — slot in around the ordered priorities above. Normal maps in
 particular are a cheap, high-impact quick win.)
 
+- [ ] **Traversability validator** — an automated check that a player can walk
+      to every room, run on the generated mesh (not just the room graph), with
+      an EQ-scale agent (walkable slope cap + max step-up). Replaces the manual
+      navigability UAT, which has missed every corridor bug so far (they passed
+      structural tests and were only caught by eye). Tracked as
+      `tasks/traversability-validator.md`. Strong synergy with
+      `tasks/corridor-connection.md` — it's the objective gate those fixes
+      should pass.
 - [ ] **Cave rebuild — "cavify the dungeon layout"** *(shelved; revisit after the
       ordered priorities)* — scrap the current cave backend's independent spatial
       derivation; instead take the box/dungeon layout (already correct + connected)
