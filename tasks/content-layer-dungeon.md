@@ -2,7 +2,7 @@
 
 Status: in-progress        <!-- not-started | in-progress | blocked | done -->
 Epic: Content / semantic layer (ROADMAP "Next" #1)
-Last touched: picking up after commit 9f69d1f (166 tests passing)
+Last touched: picking up after commit 9f69d1f
 
 ## Goal
 
@@ -34,7 +34,7 @@ volumes, lighting, textures, and shape; prop/spawn/boss intent is emitted as
       pacing graph (entrance/climax map to arc endpoints)
 - [x] Theme drives region volume / lighting / texture; no prop MODs placed
 - [x] Suggestions (prop hints, boss) emitted as spec data, shown in viewer + map
-- [x] Automated tests green (166 passing)
+- [x] Automated tests written for the new behaviour and the suite is green
 - [ ] **ACCEPTANCE.md A/E confirmed in the 3D viewer** for several archetypes +
       seeds (NOT yet done — the automated pass ≠ a human 3D pass; see cave lesson)
 - [ ] Rooms stay navigable/enclosed with semantic shape bias applied (spot-check

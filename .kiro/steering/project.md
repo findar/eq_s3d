@@ -55,8 +55,9 @@ output is a starting point for a human authoring pass, not a finished zone.
 
 ## Workflow expectations
 
-- **Commit regularly**, one logical change per commit. Local git only (no remote
-  configured yet). Keep `README.md` and `ROADMAP.md` in sync when work lands.
+- **Commit regularly**, one logical change per commit. Remote is
+  `github.com/findar/eq_s3d` (origin/master); push when work lands. Keep
+  `README.md` and `ROADMAP.md` in sync when work lands.
 - **Run the suite before claiming done**: `python -m pytest tests/ -q`. Build the
   frontend when web files change: `cd web && npx vite build`.
 - **Don't add tests unless they're warranted** by the change (regressions, new

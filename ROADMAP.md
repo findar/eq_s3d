@@ -4,7 +4,7 @@ The authoritative list of what's done, what's next, and known gaps. The README
 carries the narrative "what it does / how it works"; this file is the tracker.
 Keep it in sync when work lands (check items off, move them, note the commit).
 
-Last updated: content layer Step 1 landed, 164 tests passing. See "Next".
+Last updated: content layer Step 1 landed; test suite green. See "Next".
 
 ---
 
