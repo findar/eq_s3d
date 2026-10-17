@@ -22,6 +22,8 @@ validate), `docs/RESEARCH.md` (decisions & investigations).
 | [traversability-validator](traversability-validator.md) | done | Validation tooling — automated "can a player reach every room?" mesh walk (dungeon/box backend); CLI + seed-sweep suite. Outdoor/cave deferred (mesh/graph coord-frame mismatch). Pending one 3D eyeball |
 | [cave-backend-refactor](cave-backend-refactor.md) | not-started | Cave rebuild (1/2) — park the broken independent cave backend and isolate cave-specific logic behind a clean geometry-backend seam; no new capability |
 | [cave-cavify-dungeon](cave-cavify-dungeon.md) | not-started | Cave rebuild (2/2) — rebuild `cave` as an organic-styling transform of the validated box/dungeon geometry; must pass the traversability validator |
+| [web-seed-input](web-seed-input.md) | not-started | Web viewer UX — add a seed input so a human can reproduce/walk a specific seed in 3D (unblocks the validator's final spot-check). Front-end only; backend already seed-capable |
+| [validate-in-pipeline](validate-in-pipeline.md) | not-started | Validation tooling — bake the traversability validator into generate (server + CLI) via a shared generate-validate-retry helper with timeout + structured failure logging; never serve an invalid zone |
 
 ## Backlog (not yet broken into task files)
 
