@@ -119,8 +119,11 @@ merging often, NOT from worktrees alone.
   `-Venv` so you don't change everyone's environment.
 - **`output/` is per-worktree by design** — generate freely; your `.eqg`/`.glb`/
   `.png` artifacts won't clobber another agent's.
-- **Tear down from the MAIN checkout** once a branch is merged:
-  `git worktree remove "..\eq_s3d-worktrees\<scope>"` (clears the junction
-  cleanly), then delete the branch.
+- **Tear down from the MAIN checkout** once a branch is merged, using
+  `./scripts/remove-worktree.ps1 -Branch <scope> -DeleteBranch`. **Never** use a
+  bare `git worktree remove` here: on Windows it follows the shared
+  `web/node_modules` junction and deletes files inside the MAIN repo's
+  `node_modules` (verified — it will gut the primary checkout). The remove script
+  unlinks the junction first, then removes the worktree safely.
 - **Keep `scripts/new-worktree.ps1` committed on `master`** — a worktree forked
   from `master` only inherits the tooling if it's tracked there.

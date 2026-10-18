@@ -109,6 +109,17 @@ read before touching the relevant area so it isn't rediscovered.
   in commit messages (describe the frontend build without those literal words).
 - **Never start long-running processes** (dev server, watchers) with a blocking
   shell call — they hang. The user runs those manually.
+- **`git worktree remove` follows a junction and deletes the TARGET.** The
+  parallel-agent worktrees (`scripts/new-worktree.ps1`) share `web/node_modules`
+  via a Windows junction. Running a bare `git worktree remove` on such a worktree
+  recurses THROUGH the junction and deletes files inside the MAIN repo's
+  `node_modules` (confirmed in a smoke test — it got partway, dropping 3
+  top-level packages, before stalling on a locked `esbuild.exe` and prompting for
+  input; a `cd web; npm install` restored it). Always tear down with
+  `scripts/remove-worktree.ps1`, which unlinks the junction as a LINK (`cmd
+  rmdir`, no recursion) before removing the worktree. Same trap for any manual
+  cleanup: delete a junction with `rmdir`/`(Get-Item).Delete()`, never
+  `Remove-Item -Recurse` which can follow it into the target.
 - EQ install for analysis lives at `F:\everquest_rof2` (1057 eqg, 1010 s3d).
 
 ## Design calls already settled (don't relitigate)

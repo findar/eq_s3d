@@ -103,4 +103,6 @@ Write-Host ""
 Write-Host "Done. New worktree ready:" -ForegroundColor Cyan
 Write-Host "  $worktreePath" -ForegroundColor White
 Write-Host "Point an agent at that folder. Remove it later with:" -ForegroundColor Cyan
-Write-Host "  git worktree remove `"$worktreePath`"" -ForegroundColor White
+Write-Host "  .\scripts\remove-worktree.ps1 -Branch $Branch -DeleteBranch" -ForegroundColor White
+Write-Host "  (do NOT use a bare 'git worktree remove' — it follows the" -ForegroundColor DarkYellow
+Write-Host "   node_modules junction and deletes the MAIN repo's modules)" -ForegroundColor DarkYellow
