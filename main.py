@@ -21,29 +21,64 @@ import sys
 from pathlib import Path
 
 from generators.layout import LayoutGenerator
-from generators.builder import ZoneBuilder
-from generators.zone_spec import ZoneSpec
+from generators.pipeline import generate_validated, GenerationFailed
 
 
 def cmd_generate(args) -> None:
     print(f"Generating zone '{args.name}' (theme={args.theme}, rooms={args.rooms})")
 
-    gen = LayoutGenerator(theme=args.theme, seed=args.seed)
-    spec = gen.generate(args.name, room_count=args.rooms)
+    def factory(seed):
+        return LayoutGenerator(theme=args.theme, seed=seed).generate(
+            args.name, room_count=args.rooms,
+        )
 
-    # Save the spec alongside output for inspection / iteration
-    out_dir = Path(args.output)
-    spec_path = out_dir / f"{args.name}.json"
-    spec.save(spec_path)
+    # Build through the shared validated pipeline, so the CLI gets the same
+    # "every room reachable on foot" guarantee as the server (dungeon/box
+    # backend). --no-validate bypasses the gate to inspect a broken seed.
+    try:
+        vb = generate_validated(
+            factory,
+            theme=args.theme,
+            zone_id=args.name,
+            seed=args.seed,
+            output_dir=args.output,
+            ter_version=args.ter_version,
+            validate_enabled=not args.no_validate,
+            failure_log=Path(args.output) / "validation_failures.jsonl",
+        )
+    except GenerationFailed as e:
+        print(f"\nerror: {e}", file=sys.stderr)
+        for fail in e.failures:
+            print(f"  attempt {fail.attempt} (seed {fail.seed}): "
+                  f"{fail.reachable_rooms}/{fail.total_rooms} rooms reachable",
+                  file=sys.stderr)
+            for reason in fail.reasons:
+                print(f"    - {reason}", file=sys.stderr)
+        if e.pinned:
+            print("  (pinned seed failed; omit --seed to let the generator "
+                  "find a valid one, or use --no-validate to build it anyway)",
+                  file=sys.stderr)
+        sys.exit(1)
+
+    # Save the passing spec alongside output for inspection / iteration. Using
+    # vb.spec records the seed that actually produced a valid zone.
+    spec_path = Path(args.output) / f"{args.name}.json"
+    vb.spec.save(spec_path)
     print(f"  Spec saved: {spec_path}")
 
-    result = ZoneBuilder(spec).build(output_dir=args.output,
-                                     ter_version=args.ter_version)
     print()
-    print(result.summary())
+    print(vb.result.summary())
+    if vb.gated:
+        status = "validated" if vb.validated else "NOT validated"
+        print(f"  Traversability: {status} "
+              f"(seed {vb.seed}, {vb.attempts} attempt(s))")
+    elif args.no_validate:
+        print("  Traversability: skipped (--no-validate)")
+    else:
+        print(f"  Traversability: ungated theme '{args.theme}' (not validated)")
 
     if args.preview:
-        _launch_preview(result.glb_path)
+        _launch_preview(vb.result.glb_path)
 
 
 def cmd_preview(args) -> None:
@@ -76,6 +111,10 @@ def main() -> None:
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--preview", action="store_true", help="Launch browser preview")
+    g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
+                   action="store_true",
+                   help="Skip the traversability gate (build even an invalid "
+                        "zone — for debugging broken seeds on purpose)")
     g.set_defaults(func=cmd_generate)
 
     p = sub.add_parser("preview", help="Preview a generated zone in the browser")

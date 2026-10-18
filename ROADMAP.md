@@ -159,6 +159,21 @@ particular are a cheap, high-impact quick win.)
       than the room graph (terrain starts at origin going +X/+Y rather than
       centred on the rooms), so room-footprint mapping isn't meaningful for them
       yet. Logged in Known issues.* Tracked as `tasks/traversability-validator.md`.
+- [x] **Validator gates the pipeline** — ✅ **Done (dungeon/box backend).** The
+      validator now runs in the hot path, not just on demand: a shared
+      `generators.pipeline.generate_validated(...)` helper builds → validates →
+      **retries on a fresh seed** (bounded by an attempt cap *and* a wall-clock
+      timeout) and returns the first passing zone, or raises `GenerationFailed`.
+      Both `/api/generate` and `main.py generate` call it, so a validator-failing
+      dungeon never reaches a client — on exhaustion the server returns a clean
+      503 instead of a broken GLB. Every rejected attempt is appended to
+      `output/validation_failures.jsonl` (seed + theme + per-room reasons) as the
+      triage feed for `corridor-connection`. Gating is dungeon-only for now;
+      outdoor/cave pass through **ungated** (their coordinate-frame mismatch would
+      false-fail every zone — see Known issues), extended to cave once
+      `cave-cavify-dungeon` lands. A pinned seed that fails errors out (never a
+      silent seed swap); `main.py generate --no-validate` bypasses the gate for
+      debugging broken seeds. Tracked as `tasks/validate-in-pipeline.md`.
 - [ ] **Cave rebuild — "cavify the dungeon layout"** *(shelved; revisit after the
       ordered priorities)* — scrap the current cave backend's independent spatial
       derivation; instead take the box/dungeon layout (already correct + connected)

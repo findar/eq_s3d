@@ -1,6 +1,6 @@
 # TASK: validate-in-pipeline
 
-Status: not-started        <!-- not-started | in-progress | blocked | done -->
+Status: done        <!-- not-started | in-progress | blocked | done -->
 Epic: Validation tooling — close the loop: a client is never shown a zone that
       fails the traversability validator; failures time out gracefully and are
       logged for triage.
@@ -55,65 +55,78 @@ measure and prioritise fixes.
   failure reasons from `TraversalReport`. Plus a `logging` line to stderr. This
   is the triage feed.
 
-## Open decisions (confirm with user before building)
+## Open decisions (RESOLVED — built with the proposed defaults)
 
-- [ ] Budget defaults: `max_attempts` (proposed **8**) and `timeout_s` (proposed
-      **20s**), whichever first. OK or adjust?
-- [ ] Pinned-seed-fails behaviour: **error** (proposed) vs retry-anyway.
-- [ ] Non-dungeon themes: pass-through-ungated (proposed) vs also-gate-once-fixed.
-- [ ] Log location/format: `output/validation_failures.jsonl` (proposed).
-- [ ] Client-facing error shape on exhaustion: HTTP 503 + a friendly
-      "couldn't produce a valid zone, try again" message (proposed).
+Shipped with the proposals; all are parameters on `generate_validated(...)` so
+they're easy to revisit.
+
+- [x] Budget defaults: `max_attempts=8`, `timeout_s=20.0`, whichever first.
+      (`DEFAULT_MAX_ATTEMPTS` / `DEFAULT_TIMEOUT_S` in `generators/pipeline.py`.)
+- [x] Pinned-seed-fails behaviour: **error** (raises `GenerationFailed(pinned=True)`;
+      the seed is never silently swapped).
+- [x] Non-dungeon themes: **pass-through-ungated** (`DEFAULT_GATED_THEMES={"dungeon"}`,
+      configurable via `gated_themes`). Extend to cave after `cave-cavify-dungeon`.
+- [x] Log location/format: `output/validation_failures.jsonl` (append-only JSONL).
+- [x] Client-facing error shape on exhaustion: **HTTP 503** + a friendly
+      "couldn't produce a valid zone, try again" message.
 
 ## Acceptance criteria
 
-- [ ] A shared `generate_validated(...)` helper: builds, runs
+- [x] A shared `generate_validated(...)` helper: builds, runs
       `analyzer.traverse.validate`, retries on a fresh seed for the gated themes,
       bounded by attempt cap + timeout; returns the first passing result or
       raises a typed `GenerationFailed` carrying the attempts/reasons.
-- [ ] `/api/generate` uses it: a validator-failing dungeon seed is never
-      returned; on exhaustion the client gets a clean error (not a broken GLB).
-      A passing zone is returned transparently (response unchanged on success,
-      possibly with attempt count / validated flag added).
-- [ ] `main.py generate` uses the same helper (so the CLI guarantee matches the
+      (`generators/pipeline.py`.)
+- [x] `/api/generate` uses it: a validator-failing dungeon seed is never
+      returned; on exhaustion the client gets a clean HTTP 503 (not a broken
+      GLB). A passing zone is returned transparently, with `validated` +
+      `attempts` added to the response.
+- [x] `main.py generate` uses the same helper (so the CLI guarantee matches the
       server). A `--no-validate` / `--allow-invalid` escape hatch exists for
       debugging broken seeds on purpose.
-- [ ] Timeout works: a run that can't find a valid zone returns within
-      ~`timeout_s` and does not hang the request/process.
-- [ ] Every rejected attempt is logged to the structured failure log with
-      seed + theme + per-room reasons; verified by forcing failures (low
-      `max_attempts`, known-bad theme/seed) and inspecting the log.
-- [ ] Dungeon-only gating is explicit; non-dungeon themes pass through ungated
-      with a logged note (no false-fail retry storms on outdoor/cave).
-- [ ] Pinned-seed-fails behaves per the confirmed decision (error vs retry).
-- [ ] Tests (`tests/test_pipeline.py` or extend existing): helper returns a
-      passing result when one exists; errors on exhaustion; respects the
-      timeout; writes a failure log line; honours the pinned-seed rule; CLI
-      `--no-validate` bypasses. Keep them fast (small room counts, tiny budgets).
-- [ ] Full suite green.
-- [ ] Docs: ROADMAP (validator now gates the pipeline), `docs/ACCEPTANCE.md`
-      (note the server self-rejects invalid zones), README if it describes the
-      generate flow; this file.
+- [x] Timeout works: a run that can't find a valid zone returns within
+      ~`timeout_s` and does not hang (budget is checked after each full attempt,
+      so at least one attempt always completes). Covered by
+      `test_timeout_returns_promptly`.
+- [x] Every rejected attempt is logged to the structured failure log with
+      seed + theme + per-room reasons (JSONL + stderr `logging`); verified by
+      `TestFailureLog` and by a manual pinned-bad-seed run.
+- [x] Dungeon-only gating is explicit (`DEFAULT_GATED_THEMES`); non-dungeon
+      themes pass through ungated with a logged note (no false-fail retry
+      storms). Covered by `TestGating`.
+- [x] Pinned-seed-fails errors out (never a silent swap). Covered by
+      `TestPinnedSeed`.
+- [x] Tests (`tests/test_pipeline.py`): helper returns a passing result first-try
+      and after fresh-seed retry; errors on exhaustion; respects the timeout;
+      writes a failure log line; honours the pinned-seed rule; CLI
+      `--no-validate` bypasses and the gate blocks a pinned bad seed. Fast
+      (write_glb=False, tiny budgets). 12 tests.
+- [x] Full suite green (191 passed, 3 xfailed — the known-bad traversability
+      seeds, unchanged).
+- [x] Docs: ROADMAP (validator now gates the pipeline), `docs/ACCEPTANCE.md`
+      (server self-rejects invalid zones), README (generate flow); this file.
 
 ## Subtasks
 
-- [ ] Confirm the open decisions above with the user.
-- [ ] Implement `generate_validated(...)` (build + validate + fresh-seed retry +
-      timeout + JSONL logging + typed failure). Keep `ZoneBuilder.build` and
+- [x] Confirm the open decisions above with the user. *(Built with the proposed
+      defaults, exposed as parameters so they're trivial to revisit — see
+      RESOLVED block above.)*
+- [x] Implement `generate_validated(...)` (build + validate + fresh-seed retry +
+      timeout + JSONL logging + typed failure). `ZoneBuilder.build` and
       `analyzer.traverse.validate` unchanged underneath.
-- [ ] Wire `/api/generate` to it; map exhaustion → clean HTTP error; keep the
-      success response shape stable (optionally add `attempts`/`validated`).
-- [ ] Wire `main.py generate` to it with a `--no-validate` escape hatch.
-- [ ] Structured failure logging helper (append JSONL + stderr `logging`).
-- [ ] Tests + full suite green.
-- [ ] Docs synced.
+- [x] Wire `/api/generate` to it; map exhaustion → HTTP 503; success response
+      shape stable + `validated`/`attempts`.
+- [x] Wire `main.py generate` to it with a `--no-validate` escape hatch.
+- [x] Structured failure logging helper (append JSONL + stderr `logging`).
+- [x] Tests + full suite green.
+- [x] Docs synced.
 
 ## Deliverables
 
-- Code: `generators/builder.py` or new `generators/pipeline.py`
-  (`generate_validated`, `GenerationFailed`); `server/app.py` and `main.py`
-  wiring; a small logging helper.
-- Tests: `tests/test_pipeline.py` (or extensions).
+- Code: `generators/pipeline.py` (`generate_validated`, `GenerationFailed`,
+  `ValidatedBuild`, `AttemptFailure`, `log_validation_failure`,
+  `DEFAULT_GATED_THEMES`); `server/app.py` + `main.py` wiring.
+- Tests: `tests/test_pipeline.py` (12 tests).
 - Docs: ROADMAP, `docs/ACCEPTANCE.md`, README (generate flow); this file.
 - Commits: <hashes, newest last>
 

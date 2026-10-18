@@ -48,6 +48,16 @@ seeds per theme.
 > items). It does **not** cover outdoor/cave yet (mesh is in a different
 > coordinate frame than the room graph — see ROADMAP Known issues), nor the
 > aesthetic "does it read as a place" judgement. Walk those in the viewer.
+>
+> **The generator now self-rejects invalid dungeons.** This validator runs in
+> the generation hot path (`generators.pipeline.generate_validated`), so both
+> `/api/generate` and `main.py generate` build → validate → retry on a fresh
+> seed and never return a dungeon with an unreachable room: on exhaustion the
+> server answers HTTP 503 instead of serving a broken GLB, and every rejected
+> attempt is logged to `output/validation_failures.jsonl`. So for **dungeon**
+> zones the ✅ navigability items below are enforced before you ever see the
+> zone — this manual pass is the backstop and the sole gate for outdoor/cave.
+> (`main.py generate --no-validate` bypasses the gate to inspect a broken seed.)
 
 - [ ] **[MUST] Walkable floors** — You can walk across each room's floor without
       hitting steep, slippery, or pit-like surfaces. Gentle undulation is fine.

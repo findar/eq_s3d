@@ -111,6 +111,15 @@ Output lands in `output/`: `myrealm.eqg` (for the client), `myrealm.glb`
 (browser preview), `myrealm.zone.json` (lights/regions/pacing sidecar), and
 `myrealm.json` (the editable ZoneSpec).
 
+Dungeon zones pass through the **traversability gate** (shared with the web
+`/api/generate`): the generator builds, checks every room is reachable on foot,
+and retries on a fresh seed until one passes (bounded by an attempt cap and a
+timeout). A pinned `--seed` that fails errors out rather than shipping a broken
+zone; rejected attempts are logged to `output/validation_failures.jsonl`. Pass
+`--no-validate` to build an invalid zone anyway (for debugging a broken seed).
+Outdoor/cave are ungated for now (their mesh is in a different coordinate frame
+— see ROADMAP Known issues).
+
 ### Inspect a zone against the style profile
 
 ```bash

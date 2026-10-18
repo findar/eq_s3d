@@ -18,7 +18,6 @@ or:
 
 from __future__ import annotations
 
-import random
 import time
 import uuid
 from pathlib import Path
@@ -31,9 +30,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from generators.layout import LayoutGenerator
-from generators.builder import ZoneBuilder
+from generators.pipeline import generate_validated, GenerationFailed
 from analyzer.style_builder import REFERENCE_ZONES
-from ai.planner import plan_zone, get_planner
+from ai.planner import make_plan, get_planner
+from ai.expand import plan_to_spec
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -42,6 +42,7 @@ from ai.planner import plan_zone, get_planner
 ROOT        = Path(__file__).parent.parent
 OUTPUT_DIR  = ROOT / "output" / "web"
 WEB_DIST    = ROOT / "web" / "dist"      # built front-end (Vite build)
+FAILURE_LOG = ROOT / "output" / "validation_failures.jsonl"  # triage feed
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 VALID_THEMES = ["dungeon", "outdoor", "cave", "city"]
@@ -91,6 +92,9 @@ class GenerateResponse(BaseModel):
     planner: Optional[str] = None    # "rule" | "llm" when a prompt was used
     plan: Optional[dict] = None      # the ZonePlan the planner produced
     gates: int = 0                   # number of lock-and-key gates (keyed dungeon)
+    # Traversability gate provenance (see generators/pipeline.py).
+    validated: bool = False          # did the traversability gate run AND pass?
+    attempts: int = 1                # builds it took (fresh-seed retries on failure)
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +112,6 @@ def list_themes():
 
 @app.post("/api/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
-    # Fresh random seed every call unless the caller pins one.
-    seed = req.seed if req.seed is not None else random.randint(0, 2**31 - 1)
     zone_id = f"gen_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
     prompt = (req.prompt or "").strip()
@@ -117,14 +119,18 @@ def generate(req: GenerateRequest):
     planner_name = None
 
     if prompt:
-        # Prompt-driven: the planner derives the full spec.
+        # Prompt-driven: the planner derives the full spec. The plan is
+        # seed-independent (it comes from the prompt), so build it once and let
+        # the pipeline re-run spec expansion per fresh-seed retry.
         source = "prompt"
         planner_name = get_planner().name
-        plan, spec = plan_zone(prompt, name=zone_id, seed=seed)
+        plan = make_plan(prompt, name=zone_id)
         plan_dict = plan.to_dict()
         theme = plan.theme
         rooms = plan.room_count
-        gate_count = len(spec.gates)
+
+        def factory(s: int):
+            return plan_to_spec(plan, seed=s)
     else:
         # Control-driven: explicit theme/rooms/elevation.
         source = "controls"
@@ -132,11 +138,39 @@ def generate(req: GenerateRequest):
             raise HTTPException(400, f"Unknown theme: {req.theme}")
         theme = req.theme
         rooms = req.rooms
-        gen = LayoutGenerator(theme=theme, seed=seed)
-        spec = gen.generate(zone_id, room_count=rooms, elevation=req.elevation)
-        gate_count = len(spec.gates)
 
-    result = ZoneBuilder(spec).build(output_dir=OUTPUT_DIR, write_glb=True)
+        def factory(s: int):
+            return LayoutGenerator(theme=theme, seed=s).generate(
+                zone_id, room_count=rooms, elevation=req.elevation,
+            )
+
+    # Build + traversability gate. On gated themes a failing dungeon seed is
+    # never returned: the pipeline retries on fresh seeds (bounded by attempts +
+    # timeout) and returns the first passing zone, or raises GenerationFailed.
+    try:
+        vb = generate_validated(
+            factory,
+            theme=theme,
+            zone_id=zone_id,
+            seed=req.seed,
+            output_dir=OUTPUT_DIR,
+            write_glb=True,
+            failure_log=FAILURE_LOG,
+        )
+    except GenerationFailed as e:
+        # Exhaustion / pinned-seed failure -> clean error, never a broken GLB.
+        raise HTTPException(
+            503,
+            detail=(
+                "Couldn't produce a valid zone (every room reachable on foot) "
+                f"within budget after {e.attempts} attempt(s). Please try again"
+                + ("." if not e.pinned else
+                   " with a different seed, or omit the seed to let the "
+                   "generator find a valid one.")
+            ),
+        )
+
+    result = vb.result
     if result.glb_path is None:
         raise HTTPException(500, "GLB export failed (is trimesh installed?)")
 
@@ -144,7 +178,7 @@ def generate(req: GenerateRequest):
         id=zone_id,
         theme=theme,
         rooms=rooms,
-        seed=seed,
+        seed=vb.seed,
         vertices=result.vertex_count,
         polygons=result.polygon_count,
         materials=result.material_count,
@@ -154,7 +188,9 @@ def generate(req: GenerateRequest):
         source=source,
         planner=planner_name,
         plan=plan_dict,
-        gates=gate_count,
+        gates=len(vb.spec.gates),
+        validated=vb.validated,
+        attempts=vb.attempts,
     )
 
 
