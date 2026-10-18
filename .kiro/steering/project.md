@@ -87,3 +87,40 @@ output is a starting point for a human authoring pass, not a finished zone.
   do; this always-on steering supplies the *how* (workflow, verification, the
   "structural tests pass ≠ done — eyeball it in 3D" rule). No per-task kickoff
   prompt is needed — pointing at the file is the trigger.
+
+## Parallel agents (git worktrees)
+
+Multiple agents can run at once, each in its **own git worktree on its own
+branch**, so they never fight over the working directory. Worktrees share one
+`.git`; conflict avoidance comes from branch-per-agent + module partitioning +
+merging often, NOT from worktrees alone.
+
+- **Create a worktree with the helper, never by hand:**
+  `./scripts/new-worktree.ps1 -Branch agent/<scope>`. It lands a ready checkout
+  at `..\eq_s3d-worktrees\<scope>` (sibling of the repo, forked from `master`)
+  and bootstraps the gitignored files a fresh worktree lacks.
+- **If you were spawned into a worktree, STAY in it.** Work only your branch,
+  commit there, push it (`git push -u origin <branch>`). Never
+  `git checkout`/`switch` to another branch inside a worktree, never run two
+  agents in the same directory, and don't rebase/merge another agent's in-flight
+  branch unless told to.
+- **Partition by module** using the repo map above — `core/`,
+  `generators/field/`, `generators/textures/`, `ai/`, `server/`, `web/` are the
+  natural seams. Agents in different directories rarely collide.
+- **Shared-state conflict hotspots** across branches: `ROADMAP.md`,
+  `tasks/README.md`, `generators/pipeline.py`, `main.py`, `requirements.txt`.
+  Keep edits to these minimal, merge frequently, and prefer touching only your
+  own `tasks/<id>.md`. Expect to hand-resolve these at merge time.
+- **Gitignored state is not shared into a fresh worktree** — the script handles
+  it: copies `.env`, junctions `web/node_modules` from the main worktree
+  (shared, so don't mutate web deps there — use `-IsolateNode` if your task
+  changes `web/package.json`), and shares the global Python env unless you pass
+  `-Venv`. If your task edits `requirements.txt`, recreate the worktree with
+  `-Venv` so you don't change everyone's environment.
+- **`output/` is per-worktree by design** — generate freely; your `.eqg`/`.glb`/
+  `.png` artifacts won't clobber another agent's.
+- **Tear down from the MAIN checkout** once a branch is merged:
+  `git worktree remove "..\eq_s3d-worktrees\<scope>"` (clears the junction
+  cleanly), then delete the branch.
+- **Keep `scripts/new-worktree.ps1` committed on `master`** — a worktree forked
+  from `master` only inherits the tooling if it's tracked there.
