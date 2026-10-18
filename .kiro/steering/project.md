@@ -55,12 +55,14 @@ output is a starting point for a human authoring pass, not a finished zone.
 
 ## Workflow expectations
 
-- **Commit regularly**, one logical change per commit, and **push periodically
-  after commits** — don't let local commits pile up unpushed. Pushing often keeps
-  the remote current and your work backed up; it's not a single push at the very
-  end. Remote is `github.com/findar/eq_s3d`: a solo agent on `master` pushes
-  `git push origin master`; a spawned agent pushes its own branch
-  (`git push -u origin <branch>`), never `master`.
+- **Commit regularly**, one logical change per commit, and **push `master`
+  periodically** (`git push origin master`) so local commits don't pile up
+  unpushed. The remote (`github.com/findar/eq_s3d`) is purely BACKUP for a
+  single-machine setup, so keeping `master` current there is the whole point —
+  push after commits, not just once at the very end. **Don't push agent
+  branches:** they're local-only, short-lived, and merged into `master` from the
+  MAIN checkout (which is what gets pushed). Pushing branches adds no value on
+  one machine.
 - **Tracker ownership is single-writer — one unconditional rule, solo or
   parallel.** While working a task you update ONLY that task's own
   `tasks/<id>.md` (Status, subtask checkboxes, Deliverables / commit hashes).
@@ -119,8 +121,9 @@ merging often, NOT from worktrees alone.
   `./scripts/new-worktree.ps1 -Branch agent/<scope>`. It lands a ready checkout
   at `..\eq_s3d-worktrees\<scope>` (sibling of the repo, forked from `master`)
   and bootstraps the gitignored files a fresh worktree lacks.
-- **If you were spawned into a worktree, STAY in it.** Work only your branch,
-  commit there, push it (`git push -u origin <branch>`). Never
+- **If you were spawned into a worktree, STAY in it.** Work only your branch and
+  commit there — do NOT push the branch (it's local-only and gets merged into
+  `master` from the MAIN checkout, which is what's pushed for backup). Never
   `git checkout`/`switch` to another branch inside a worktree, never run two
   agents in the same directory, and don't rebase/merge another agent's in-flight
   branch unless told to.
