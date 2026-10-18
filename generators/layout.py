@@ -78,6 +78,11 @@ class LayoutGenerator:
     def __init__(self, theme: str = "dungeon", seed: Optional[int] = None):
         self.theme = theme
         self.profile = load_style_profile(theme)
+        # Remember the seed so it can be recorded on the ZoneSpec. The geometry
+        # backends (cave/terrain) seed from this rather than a hash of the
+        # (always-unique, timestamped) name, so a pinned seed reproduces the
+        # zone. None stays None → the spec records "no explicit seed".
+        self.seed = seed
         self.rng = random.Random(seed)
 
         # ------------------------------------------------------------------
@@ -166,7 +171,8 @@ class LayoutGenerator:
         type for planner-driven assignment. Semantic labelling only runs for the
         box (dungeon/city) themes — cave/outdoor backends are untouched.
         """
-        spec = ZoneSpec(name=name, theme=self.theme, style_profile=self.theme)
+        spec = ZoneSpec(name=name, theme=self.theme, style_profile=self.theme,
+                        seed=self.seed)
 
         # Scale rooms to the theme's measured footprint divided across the
         # requested room count, so total zone size matches real proportions.

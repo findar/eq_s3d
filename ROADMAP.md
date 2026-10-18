@@ -55,7 +55,7 @@ their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 | Inspector (Phase 1b) | Rich terminal metrics + zone comparison |
 | Geometry (Phase 2) | Box rooms/corridors; inward walls; planar UVs |
 | Elevation (Phase 2.5) | Multi-level layout; ramp & staircase corridors |
-| Web app | FastAPI + Vite/Three.js; generate + first-person walk + overlays |
+| Web app | FastAPI + Vite/Three.js; generate + first-person walk + overlays + seed input (reproduce a zone) |
 | Organic caves | SDF + marching cubes; noise-roughened walls; multi-lobe chambers; winding tunnels |
 | Walkable floors + features | Flat-bottomed domes; stalactites/stalagmites/pillars |
 | Outdoor terrain | Heightfield + erosion; walkable rolling hills |
@@ -174,6 +174,15 @@ particular are a cheap, high-impact quick win.)
       `cave-cavify-dungeon` lands. A pinned seed that fails errors out (never a
       silent seed swap); `main.py generate --no-validate` bypasses the gate for
       debugging broken seeds. Tracked as `tasks/validate-in-pipeline.md`.
+- [ ] **Multi-level / stacked-floor dungeons** — today's box layout is 2.5D:
+      rooms scatter + separate on XY only (so one can never sit directly above
+      another) and elevation is just a per-room `floor_z` nudge on a planar
+      graph, with every corridor a horizontal run + ramp/stairs. Add true
+      stacked floors — rooms above/below each other joined by vertical
+      connectors (stairwells/shafts) — behind a "levels" control, so a zone can
+      be a tower or a deep vertical dungeon. Follows `corridor-connection`
+      (vertical connectors reuse its stair helper) and is gated by the
+      traversability validator. Tracked as `tasks/multi-level-dungeon.md`.
 - [ ] **Cave rebuild — "cavify the dungeon layout"** *(shelved; revisit after the
       ordered priorities)* — scrap the current cave backend's independent spatial
       derivation; instead take the box/dungeon layout (already correct + connected)
@@ -383,11 +392,14 @@ back to procedural on any failure). Factory auto-selects, caches, honours
 
 ### Web app
 
-FastAPI backend (`server/app.py`, fresh random seed per call, serves GLB +
-`.zone.json` sidecar + front-end). Vite/TS/Three.js first-person viewer
-(`web/`): WASD at EQ scale, pointer-lock look, toggleable overlays
-(wire/lights/regions/gates), top-down SVG map modal, live metrics panel.
-Single-command dev launcher (`web/dev.mjs`).
+FastAPI backend (`server/app.py`, fresh random seed per call unless a seed is
+pinned, serves GLB + `.zone.json` sidecar + front-end). Vite/TS/Three.js
+first-person viewer (`web/`): WASD at EQ scale, pointer-lock look, a seed input
+(blank = random, a number pins the zone) with a "⟳ reproduce" button,
+toggleable overlays (wire/lights/regions/gates), top-down SVG map modal, live
+metrics panel. Single-command dev launcher (`web/dev.mjs`). Seeds reproduce
+deterministically across all themes — geometry is seeded from the user seed
+(carried on `ZoneSpec.seed`), not a hash of the timestamped zone name.
 
 ### Prompt-driven generation
 

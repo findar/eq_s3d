@@ -60,6 +60,18 @@ html, body {
   cursor: pointer;
 }
 
+#controls input[type="number"] {
+  background: #141822;
+  color: var(--text);
+  border: 1px solid #2a3040;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 13px;
+  width: 130px;
+}
+#controls input[type="number"]:focus { outline: none; border-color: var(--accent); }
+#controls input[type="number"]::placeholder { color: #4a5464; }
+
 #prompt {
   flex: 1;
   min-width: 220px;
@@ -169,6 +181,26 @@ button.secondary:hover { border-color: var(--accent); color: var(--text); }
   margin: 4px 0;
 }
 .row span:last-child { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* Seed row: value + a small "reproduce" button */
+.seed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.seed-row #m-seed { color: var(--accent); font-variant-numeric: tabular-nums; }
+.seed-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid #2a3040;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seed-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.seed-btn:disabled { opacity: 0.4; cursor: default; }
 
 .toggle {
   display: flex;

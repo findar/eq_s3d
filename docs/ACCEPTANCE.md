@@ -108,8 +108,12 @@ seeds per theme.
 
 ## F. Web viewer UX
 
-- [ ] **[MUST] Typing is safe** — While typing in the prompt box, WASD/Space/R
-      edit the text and do NOT move the camera.
+- [ ] **[MUST] Typing is safe** — While typing in the prompt box *or the seed
+      box*, WASD/Space/R edit the text and do NOT move the camera.
+- [ ] **[SHOULD] Seed input reproduces** — Enter a seed in Controls, Generate,
+      then "⟳ reproduce" (refills + copies the seed) and Generate again: the
+      same seed + theme/rooms/elevation yields an identical zone (same polys /
+      bounds). Blank seed = a fresh random zone each time.
 - [ ] **[SHOULD] Overlays toggle** — Wireframe, lights, regions, and gates each
       show/hide from the panel.
 - [ ] **[SHOULD] Reset view** — "Reset View" (or R, when not typing) returns the

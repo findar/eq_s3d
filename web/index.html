@@ -29,16 +29,14 @@
           </select>
         </label>
         <label>Rooms
-          <select id="rooms">
-            <option>3</option>
-            <option selected>5</option>
-            <option>8</option>
-            <option>12</option>
-            <option>16</option>
-          </select>
+          <input type="number" id="rooms" min="1" max="30" step="1" value="5" />
         </label>
         <label class="checkbox">
           <input type="checkbox" id="elevation" checked /> Elevation
+        </label>
+        <label>Seed
+          <input type="number" id="seed" min="0" step="1"
+                 placeholder="blank = random" />
         </label>
       </div>
     </details>
@@ -58,7 +56,7 @@
     <div id="m-plan-extra"></div>
 
     <h3>Zone</h3>
-    <div class="row"><span>Seed</span><span id="m-seed">—</span></div>
+    <div class="row"><span>Seed</span><span class="seed-row"><span id="m-seed">—</span><button id="reproduce" class="seed-btn" title="Reuse this seed: refill the seed box and copy it to the clipboard" disabled>⟳ reproduce</button></span></div>
     <div class="row"><span>Vertices</span><span id="m-verts">—</span></div>
     <div class="row"><span>Polygons</span><span id="m-polys">—</span></div>
     <div class="row"><span>Materials</span><span id="m-mats">—</span></div>

@@ -211,6 +211,13 @@ class ZoneSpec:
     theme: str = "dungeon"
     style_profile: str = "dungeon"
 
+    # The random seed this spec was generated from. Threaded through so the
+    # geometry backends (cave/terrain) seed from the *user seed* rather than a
+    # hash of the (timestamped, always-unique) name — otherwise pinning a seed
+    # couldn't reproduce an organic/outdoor zone. None = hand-authored spec with
+    # no recorded seed; backends then fall back to a stable hash of the name.
+    seed: Optional[int] = None
+
     # Content / semantic layer (dungeon theme). A theme is archetype × race ×
     # elemental tint; these are advisory metadata realised by the pipeline.
     #   dungeon_theme  — archetype label ("fortress", "temple", "sunken_ruin"…).
@@ -239,6 +246,7 @@ class ZoneSpec:
             "name": self.name,
             "theme": self.theme,
             "style_profile": self.style_profile,
+            "seed": self.seed,
             "dungeon_theme": self.dungeon_theme,
             "dungeon_race": self.dungeon_race,
             "elemental_tint": self.elemental_tint,
@@ -264,6 +272,7 @@ class ZoneSpec:
             name=d["name"],
             theme=d.get("theme", "dungeon"),
             style_profile=d.get("style_profile", "dungeon"),
+            seed=d.get("seed"),
             dungeon_theme=d.get("dungeon_theme", ""),
             dungeon_race=d.get("dungeon_race", ""),
             elemental_tint=d.get("elemental_tint", ""),

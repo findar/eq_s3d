@@ -11,9 +11,13 @@ const canvas = $("viewport") as HTMLCanvasElement;
 const statusEl = $("status");
 const genBtn = $("generate") as HTMLButtonElement;
 const hintOverlay = $("hint-overlay");
+const seedInput = $("seed") as HTMLInputElement;
+const reproduceBtn = $("reproduce") as HTMLButtonElement;
 
 // Latest generated map URL, shown by the Map modal.
 let currentMapUrl: string | null = null;
+// Seed of the last successful generation, for the "reproduce" affordance.
+let lastSeed: number | null = null;
 
 // ---- Scene + controls ----
 const zoneScene = new ZoneScene(canvas);
@@ -162,27 +166,50 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
 async function doGenerate() {
   const prompt = ($("prompt") as HTMLInputElement).value.trim();
   const theme = ($("theme") as HTMLSelectElement).value;
-  const rooms = parseInt(($("rooms") as HTMLSelectElement).value, 10);
+  // Rooms is a free number input; clamp to the server's accepted 1–30 range
+  // and fall back to 5 if blank/unparseable so an out-of-range value never
+  // trips the backend's validation (422).
+  const roomsRaw = parseInt(($("rooms") as HTMLInputElement).value, 10);
+  const rooms = Number.isFinite(roomsRaw)
+    ? Math.min(30, Math.max(1, roomsRaw))
+    : 5;
   const elevation = ($("elevation") as HTMLInputElement).checked;
+
+  // Seed: blank or non-numeric → omit (server picks a fresh random seed, the
+  // default "identical inputs still vary" behaviour). A number pins the seed so
+  // the same inputs reproduce the exact zone. Negative/decimal input is
+  // floored to a non-negative integer; anything unparseable falls back to
+  // random rather than erroring.
+  const seedRaw = seedInput.value.trim();
+  let seed: number | undefined;
+  if (seedRaw !== "") {
+    const n = Number(seedRaw);
+    if (Number.isFinite(n)) seed = Math.abs(Math.trunc(n));
+  }
 
   genBtn.disabled = true;
   statusEl.textContent = "generating…";
 
   try {
-    // If a prompt is given, it drives generation; otherwise the controls do.
+    // If a prompt is given, it drives generation (theme/rooms); otherwise the
+    // controls do. Either way the seed, when set, pins the randomness — the
+    // backend applies `seed` in both paths.
     const params = prompt
-      ? { prompt }
-      : { theme, rooms, elevation };
+      ? { prompt, ...(seed !== undefined ? { seed } : {}) }
+      : { theme, rooms, elevation, ...(seed !== undefined ? { seed } : {}) };
 
     // Log the user's input so it's visible in the browser console.
+    const seedNote = seed !== undefined ? ` seed=${seed}` : " seed=random";
     if (prompt) {
-      console.log(`[input] prompt: "${prompt}"`);
+      console.log(`[input] prompt: "${prompt}"${seedNote}`);
     } else {
-      console.log(`[input] controls: theme=${theme} rooms=${rooms} elevation=${elevation}`);
+      console.log(`[input] controls: theme=${theme} rooms=${rooms} elevation=${elevation}${seedNote}`);
     }
 
     const result = await generateZone(params);
     currentMapUrl = result.map_url;
+    lastSeed = result.seed;
+    reproduceBtn.disabled = false;
     statusEl.textContent = "loading…";
 
     const box = await zoneScene.loadZone(result.glb_url);
@@ -227,6 +254,25 @@ $("reset-view").addEventListener("click", () => {
 // Enter in the prompt box triggers generation
 ($("prompt") as HTMLInputElement).addEventListener("keydown", (e) => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate();
+});
+
+// Enter in the seed box triggers generation too.
+seedInput.addEventListener("keydown", (e) => {
+  if ((e as KeyboardEvent).key === "Enter") doGenerate();
+});
+
+// Reproduce last: refill the seed box with the last result's seed and copy it
+// to the clipboard, so the next Generate reruns the exact same zone.
+reproduceBtn.addEventListener("click", () => {
+  if (lastSeed === null) return;
+  seedInput.value = String(lastSeed);
+  console.log(`[input] reproduce: seed set to ${lastSeed}`);
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(String(lastSeed)).catch(() => {/* non-fatal */});
+  }
+  const prev = reproduceBtn.textContent;
+  reproduceBtn.textContent = "✓ seed set";
+  setTimeout(() => { reproduceBtn.textContent = prev; }, 1200);
 });
 
 // ---- Top-down map modal ----

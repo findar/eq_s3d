@@ -11,6 +11,7 @@ This is the single entry point the CLI and (later) the AI agent call.
 
 from __future__ import annotations
 
+import zlib
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -33,6 +34,19 @@ _CAVE_THEMES = {"cave"}
 _TERRAIN_THEMES = {"outdoor"}
 
 
+def _stable_seed(*parts) -> int:
+    """
+    Deterministic 31-bit seed from arbitrary parts.
+
+    Uses zlib.crc32 rather than the builtin hash(): hash() of strings is salted
+    per-process (PYTHONHASHSEED), so it is NOT stable across runs. crc32 is, so
+    the same inputs always yield the same seed — the guarantee the seed-pinning
+    feature depends on.
+    """
+    s = "|".join(str(p) for p in parts)
+    return zlib.crc32(s.encode("utf-8")) & 0x7FFFFFFF
+
+
 class ZoneBuilder:
     """
     Build a complete zone from a ZoneSpec.
@@ -45,6 +59,16 @@ class ZoneBuilder:
 
     def __init__(self, spec: ZoneSpec):
         self.spec = spec
+
+    def _base_seed(self, name: str) -> int:
+        """
+        The seed the geometry/texture backends derive from. Prefer the spec's
+        recorded seed (so pinning a seed reproduces the exact zone); fall back
+        to a stable hash of the name for hand-authored specs that carry none.
+        """
+        if self.spec.seed is not None:
+            return self.spec.seed & 0x7FFFFFFF
+        return _stable_seed(name)
 
     def build(self,
               output_dir: str | Path = "output",
@@ -80,7 +104,7 @@ class ZoneBuilder:
                 mat_spec.color,
                 size=256,
                 name=mat_name,
-                seed=abs(hash((name, mat_name))) % (2 ** 31),
+                seed=_stable_seed(self._base_seed(name), mat_name),
             )
             eqg.add_texture(mat_spec.texture, dds)
 
@@ -201,7 +225,7 @@ class ZoneBuilder:
             width=width,
             depth=depth,
             resolution=50.0,
-            seed=abs(hash(name)) % (2 ** 31),
+            seed=self._base_seed(name),
             height_scale=360.0,
             noise_scale=max(500.0, min(width, depth) * 0.4),
             max_walkable_grad=0.85,
@@ -219,7 +243,7 @@ class ZoneBuilder:
         from .field.cave import CaveSpec, Chamber, Tunnel, build_cave
         from .field.features import FeatureParams
 
-        base_seed = abs(hash(name)) % (2 ** 31)
+        base_seed = self._base_seed(name)
 
         chambers = []
         chamber_centers = []   # (x, y, z, radius) per room, index-aligned
@@ -282,7 +306,8 @@ class ZoneBuilder:
                 shape_seed=base_seed + i * 211 + 3,
             ))
 
-        # Seed the cave noise from the zone name for determinism within a build.
+        # Seed the cave noise from the base seed (user seed when pinned) so the
+        # same seed reproduces the same cave.
         # A shorter base wavelength + more octaves gives finer rock relief that
         # breaks up the dome silhouette, and a larger amplitude makes walls
         # read as rough stone rather than smooth bubbles.
@@ -295,8 +320,9 @@ class ZoneBuilder:
             noise_scale=90.0,
             noise_octaves=5,
         )
-        # Natural features (stalactites/stalagmites/pillars), seeded from name.
-        feats = FeatureParams(seed=abs(hash(name + "feat")) % (2 ** 31))
+        # Natural features (stalactites/stalagmites/pillars), seeded from the
+        # same base seed so they reproduce with a pinned seed too.
+        feats = FeatureParams(seed=_stable_seed(base_seed, "feat"))
 
         # No decimation — it collapses the walkable floor. voxel=12 keeps
         # poly count reasonable while preserving navigable floors.
