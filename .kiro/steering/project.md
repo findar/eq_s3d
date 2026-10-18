@@ -55,8 +55,12 @@ output is a starting point for a human authoring pass, not a finished zone.
 
 ## Workflow expectations
 
-- **Commit regularly**, one logical change per commit. Remote is
-  `github.com/findar/eq_s3d` (origin/master); push when work lands.
+- **Commit regularly**, one logical change per commit, and **push periodically
+  after commits** — don't let local commits pile up unpushed. Pushing often keeps
+  the remote current and your work backed up; it's not a single push at the very
+  end. Remote is `github.com/findar/eq_s3d`: a solo agent on `master` pushes
+  `git push origin master`; a spawned agent pushes its own branch
+  (`git push -u origin <branch>`), never `master`.
 - **Tracker ownership is single-writer — one unconditional rule, solo or
   parallel.** While working a task you update ONLY that task's own
   `tasks/<id>.md` (Status, subtask checkboxes, Deliverables / commit hashes).
