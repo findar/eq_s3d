@@ -96,6 +96,15 @@ read before touching the relevant area so it isn't rediscovered.
   `Get-ChildItem`, etc. Never use cmd syntax.
 - **Commit messages: heredocs fail in PowerShell.** Write the message to
   `.git/COMMIT_EDITMSG_TMP` and `git commit -F` it, then delete the temp file.
+- **`git diff > file.patch` corrupts non-ASCII bytes in PowerShell.** The `>`
+  redirect decodes git's raw UTF-8 stdout through the console code page and
+  re-encodes it, mangling em dashes, arrows, etc. (`—` → `ΓÇö`). A patch written
+  this way then fails `git apply` with a bytewise "patch does not apply" even
+  though the text looks right. Use `git diff --output=file.patch` (git writes the
+  file itself, raw bytes) — or `git diff | Out-File -Encoding utf8`. Same trap for
+  any `git show`/`git cat-file` piped through PowerShell: to inspect raw bytes,
+  go through Python `subprocess.run(..., capture_output=True).stdout`, not a PS
+  pipe.
 - **A commit-message hook blocks the words "Vite" and "dev server"** — avoid them
   in commit messages (describe the frontend build without those literal words).
 - **Never start long-running processes** (dev server, watchers) with a blocking
