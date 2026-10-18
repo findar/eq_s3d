@@ -56,8 +56,20 @@ output is a starting point for a human authoring pass, not a finished zone.
 ## Workflow expectations
 
 - **Commit regularly**, one logical change per commit. Remote is
-  `github.com/findar/eq_s3d` (origin/master); push when work lands. Keep
-  `README.md` and `ROADMAP.md` in sync when work lands.
+  `github.com/findar/eq_s3d` (origin/master); push when work lands.
+- **Tracker ownership is single-writer — one unconditional rule, solo or
+  parallel.** While working a task you update ONLY that task's own
+  `tasks/<id>.md` (Status, subtask checkboxes, Deliverables / commit hashes).
+  You do NOT edit `ROADMAP.md`, `README.md`, or `tasks/README.md` as part of
+  task work. Those three are *integration state*, written once per landed branch
+  by a single explicit integration step run from the MAIN checkout. This is
+  unconditional ON PURPOSE: a working agent usually cannot tell whether other
+  agents are running right now, so a rule that only applied "when parallel" would
+  eventually guess wrong and clobber `ROADMAP.md` at merge time. One rule erases
+  that whole class of conflict. When you finish, surface a short **integration
+  note** — the Done-table row, "Pick up here" line, commit hash/count, and the
+  `tasks/README.md` status change — so whoever integrates applies it in that one
+  serialized step.
 - **Run the suite before claiming done**: `python -m pytest tests/ -q`. Build the
   frontend when web files change: `cd web && npx vite build`.
 - **Don't add tests unless they're warranted** by the change (regressions, new
@@ -68,21 +80,25 @@ output is a starting point for a human authoring pass, not a finished zone.
   in the live 3D viewer so the user knows to eyeball it.
 - After a **major change** (geometry backend, layout, pacing/gating, textures,
   viewer), walk `docs/ACCEPTANCE.md` — the manual UAT checklist for things only
-  a human looking at the result can confirm. Update `ROADMAP.md` ("Pick up here"
-  + Done table) and the commit count/hash when work lands.
+  a human looking at the result can confirm. The `ROADMAP.md` "Pick up here" +
+  Done table and commit count/hash go in the integration note, not written by
+  you directly (see tracker ownership above).
 - **Task tracking** lives in `tasks/` (tactical tier below ROADMAP). When you
   start work on something, open or create its `tasks/<id>.md` from
   `tasks/_TEMPLATE.md`; keep its `Status:` line, subtask checkboxes, and
-  Deliverables (commit hashes) current as you go, and update the row in
-  `tasks/README.md`. Set `Status: done` only when the acceptance criteria pass.
-  Read the relevant task file before working — and VERIFY it against the actual
-  code, because the repo can advance past the docs (it has before).
+  Deliverables (commit hashes) current as you go. (The `tasks/README.md` index
+  row is integration state — updated in the single-writer integration step, not
+  here; see tracker ownership.) Set `Status: done` only when the acceptance
+  criteria pass. Read the relevant task file before working — and VERIFY it
+  against the actual code, because the repo can advance past the docs (it has
+  before).
 - **Running a task:** when the user points you at a `tasks/<id>.md` file (or
   names a task), treat that as an instruction to **run that task** — not merely
   to read or summarise it. That means: read the file, verify it against the
   current code (it can be stale), then work the unchecked subtasks toward the
-  acceptance criteria, committing as you go and keeping the task file,
-  `tasks/README.md`, and `ROADMAP.md` in sync. The task file's Goal /
+  acceptance criteria, committing as you go and keeping the task file in sync.
+  (`tasks/README.md` and `ROADMAP.md` are updated only in the single-writer
+  integration step — see tracker ownership.) The task file's Goal /
   Acceptance criteria / Subtasks are the single source of truth for *what* to
   do; this always-on steering supplies the *how* (workflow, verification, the
   "structural tests pass ≠ done — eyeball it in 3D" rule). No per-task kickoff
@@ -107,10 +123,12 @@ merging often, NOT from worktrees alone.
 - **Partition by module** using the repo map above — `core/`,
   `generators/field/`, `generators/textures/`, `ai/`, `server/`, `web/` are the
   natural seams. Agents in different directories rarely collide.
-- **Shared-state conflict hotspots** across branches: `ROADMAP.md`,
-  `tasks/README.md`, `generators/pipeline.py`, `main.py`, `requirements.txt`.
-  Keep edits to these minimal, merge frequently, and prefer touching only your
-  own `tasks/<id>.md`. Expect to hand-resolve these at merge time.
+- **Tracker files are already handled** by the single-writer rule above —
+  `ROADMAP.md`, `README.md`, and `tasks/README.md` are never written during task
+  work, so they can't conflict across branches. The remaining cross-branch
+  hotspots are CODE: `generators/pipeline.py`, `main.py`, `requirements.txt`.
+  Single-writer isn't an option for code, so partition the work such that only
+  one agent owns each of these at a time, keep edits minimal, and merge often.
 - **Gitignored state is not shared into a fresh worktree** — the script handles
   it: copies `.env`, junctions `web/node_modules` from the main worktree
   (shared, so don't mutate web deps there — use `-IsolateNode` if your task

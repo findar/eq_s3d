@@ -124,6 +124,16 @@ read before touching the relevant area so it isn't rediscovered.
 
 ## Design calls already settled (don't relitigate)
 
+- **Tracker writes are single-writer, and that rule is UNCONDITIONAL — do not
+  "optimise" it back into a solo-vs-parallel conditional.** Agents update only
+  their own `tasks/<id>.md`; `ROADMAP.md`, `README.md`, and `tasks/README.md`
+  are written once per landed branch at an explicit integration step. The
+  temptation is to say "let the agent update ROADMAP directly when it's the only
+  one running." That's the trap: a working agent generally can't know whether
+  other agents are live at that moment, so a conditional rule will eventually
+  fire in the wrong mode and clobber `ROADMAP.md` at merge. Safety must not
+  depend on knowledge the agent doesn't have. One always-on rule costs a little
+  convenience in solo sessions and removes an entire conflict class forever.
 - TinyKeep layout over BSP/WFC/prefab/pure-random (see ROADMAP "NOT doing").
 - Pacing is analytical (graph-derived), not a full mission-graph grammar.
 - Gating adopted only the solvability-invariant idea from graph rewriting.
