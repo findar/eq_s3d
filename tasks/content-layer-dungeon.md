@@ -2,7 +2,7 @@
 
 Status: in-progress        <!-- not-started | in-progress | blocked | done -->
 Epic: Content / semantic layer (ROADMAP "Next" #1)
-Last touched: picking up after commit 9f69d1f
+Last touched: Step 1 navigability measured via analyzer.traverse — blocked on corridor-connection
 
 ## Goal
 
@@ -37,19 +37,33 @@ volumes, lighting, textures, and shape; prop/spawn/boss intent is emitted as
 - [x] Automated tests written for the new behaviour and the suite is green
 - [ ] **ACCEPTANCE.md A/E confirmed in the 3D viewer** for several archetypes +
       seeds (NOT yet done — the automated pass ≠ a human 3D pass; see cave lesson)
-- [ ] Rooms stay navigable/enclosed with semantic shape bias applied (spot-check
-      in 3D, not just the walkable-floor test)
+- [~] Rooms stay navigable with semantic shape bias applied — now has an
+      AUTOMATED gate (`analyzer.traverse`). Measured across archetypes; see the
+      finding below. **BLOCKED**: themed zones currently fail traversability, but
+      the cause is the `corridor-connection` bug (sink-induced elevation routed
+      through same-axis corridors that mis-connect), NOT the content layer. The
+      content layer's elevation is gentle/walkable (ramps 6-7°, steps <1.2u).
+- [ ] Rooms stay enclosed (no see-through) with shape bias — still a manual 3D
+      check (the traversability validator covers navigability, not enclosure).
 
 ## Subtasks
 
 - [x] Research theme vocabulary & districts (commit bb97abe)
 - [x] Implement semantics module + wiring — Step 1, single district (commit 1f155b6)
-- [ ] **Human 3D validation pass (Step 1)** across archetypes (fortress / temple /
-      sunken_ruin / lava_forge / ice_keep) and a few seeds — confirm it reads as a
-      coherent place, regions/lights land right, rooms stay walkable & enclosed.
-      Log findings here. (Structural tests pass, but per the cave lesson that is
-      necessary-not-sufficient.)
-- [ ] Address any issues the 3D pass surfaces.
+- [~] **Step 1 validation pass** — split into two halves now that the
+      traversability validator exists:
+  - [x] *Navigability (automated):* ran `analyzer.traverse` across all archetypes
+        × seeds. Finding: content layer is sound (gentle walkable elevation) but
+        themed zones fail traversability because `sink` routes elevation through
+        same-axis corridors that mis-connect — i.e. the `corridor-connection`
+        bug, not a content-layer bug. **Navigability sign-off is BLOCKED on
+        `tasks/corridor-connection.md`.** Re-run this sweep after it lands; it
+        should go green with no content-layer changes.
+  - [ ] *Aesthetic + enclosure (manual, NOT blocked):* human 3D pass that themed
+        rooms read as coherent places — regions/lights/palette land right, rooms
+        stay enclosed (no see-through). Doesn't depend on corridors connecting.
+- [ ] Address any issues the aesthetic pass surfaces (the navigability failures
+      are already owned by `corridor-connection`).
 - [ ] **Step 2 — districts** (the live next build; design already decided in
       `docs/RESEARCH.md` "Multi-area zones — districts"):
   - [ ] Graph partition on the pacing graph (multi-source BFS/cut); auto-split
@@ -82,3 +96,20 @@ volumes, lighting, textures, and shape; prop/spawn/boss intent is emitted as
   had advanced past the stale session summary. Step 1 is BUILT; the remaining
   Step 1 work is the **human 3D validation**, then Step 2 (districts) is the next
   build. VERIFY the code state before assuming, as it may have moved again.
+- **Navigability finding (via `analyzer.traverse`, measured this session):**
+  Swept all 7 archetypes × 2 seeds with elevation OFF to isolate the content
+  layer. The `sink` (per-room elevation character) introduces gentle floor
+  offsets (10-30u) EVEN with the elevation flag off, because it's applied in
+  `label_rooms` before `_assign_elevation`. Those offsets are individually
+  walkable (validator reports the corridors as "nominally walkable" — ramps
+  6-7°, stairs 0.6-1.2u/step), but ~half the themed zones still fail because the
+  corridors carrying that elevation hit the **same-axis mis-connection** bug
+  ("mesh opening doesn't meet the room / disconnected corridor"). Conclusion:
+  the content layer is sound; its navigability sign-off is gated on
+  `tasks/corridor-connection.md`. Recommended sequencing: do corridor-connection
+  next (it also unblocks `multi-level-dungeon`), then re-run the sweep here — it
+  should pass with zero content-layer changes.
+- Open design question surfaced by the above: should `sink` be suppressed /
+  scaled when the user asked for a FLAT zone (elevation off)? Today a "flat"
+  themed zone still gets sink offsets. Defer the call until corridor-connection
+  lands and we can see whether the gentle sink elevation reads well in 3D.
