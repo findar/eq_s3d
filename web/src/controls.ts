@@ -114,10 +114,13 @@ export class FirstPersonControls {
   update(dt: number): void {
     this._applyOrientation();
 
+    // Sprint is the default pace in the viewer — the zones are large and
+    // walk speed makes getting around tedious. Hold Shift to drop to the
+    // slower walk speed for careful/close inspection.
     const speed =
       this.keys["ShiftLeft"] || this.keys["ShiftRight"]
-        ? this.sprintSpeed
-        : this.walkSpeed;
+        ? this.walkSpeed
+        : this.sprintSpeed;
 
     const forward = this._forward();
     const right = this._right();
