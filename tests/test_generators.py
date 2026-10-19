@@ -738,3 +738,127 @@ class TestCorridorRouting:
         ]
         assert src_floor_z
         assert min(src_floor_z) == pytest.approx(-45.0, abs=0.5)
+
+    # ------------------------------------------------------------------
+    # Same-axis Z-corridor routing + walkable elevation (seed 1955208177)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _wall_axis(room, toward):
+        dx = toward.center_x - room.center_x
+        dy = toward.center_y - room.center_y
+        if abs(dx) >= abs(dy):
+            return "E" if dx > 0 else "W"
+        return "N" if dy > 0 else "S"
+
+    @staticmethod
+    def _floor_z_at_opening(mb, px, py, wall, tol=1.5):
+        # Floor (+Z) height where the corridor meets an opening, probed ALONG
+        # the wall line so a nearby stair-tread edge of the jog can't give a
+        # false reading (see scripts/measure_corridors.py).
+        on_x_wall = wall in ("E", "W")
+        best_d, best_z = float("inf"), None
+        for v in mb.vertices:
+            if v.nz <= 0.5:
+                continue
+            if on_x_wall:
+                if abs(v.x - px) > tol:
+                    continue
+                d = (v.y - py) ** 2
+            else:
+                if abs(v.y - py) > tol:
+                    continue
+                d = (v.x - px) ** 2
+            if d < best_d:
+                best_d, best_z = d, v.z
+        return best_z
+
+    @staticmethod
+    def _max_floor_slope(mb):
+        worst = 0.0
+        for p in mb.polygons:
+            vs = [mb.vertices[p.v1], mb.vertices[p.v2], mb.vertices[p.v3]]
+            if any(v.nz <= 0.5 for v in vs):
+                continue
+            zspan = max(v.z for v in vs) - min(v.z for v in vs)
+            if zspan < 1e-6:
+                continue
+            run = ((max(v.x for v in vs) - min(v.x for v in vs)) ** 2 +
+                   (max(v.y for v in vs) - min(v.y for v in vs)) ** 2) ** 0.5
+            if run > 1e-6:
+                worst = max(worst, zspan / run)
+        return worst
+
+    def test_same_axis_pair_routes_as_z_corridor_flush(self):
+        # Two rooms facing each other on PARALLEL E/W walls, offset in Y, with
+        # an elevation change. The old single-corner L ran one leg along a wall
+        # and met that opening at the wrong height; the Z-corridor must meet
+        # BOTH openings flush at each room's floor_z.
+        spec = ZoneSpec(name="t")
+        from generators.geometry import _ensure_materials
+        _ensure_materials(spec)
+        a = RoomSpec("a", center_x=0, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=90)
+        b = RoomSpec("b", center_x=600, center_y=240, floor_z=40.0,
+                     width=200, depth=200, height=90)
+        spec.rooms.extend([a, b])
+        a.open_walls.append("E")
+        b.open_walls.append("W")
+        cor = CorridorSpec("c", from_x=98, from_y=0, to_x=502, to_y=240,
+                           from_z=0.0, to_z=40.0, width=60, height=80,
+                           from_room="a", to_room="b")
+        spec.corridors.append(cor)
+        mb = MeshBuilder()
+        mb.add_corridor(cor, spec)
+        # Flush at A's E wall (x≈98) at z=0, and at B's W wall (x≈502) at z=40.
+        za = self._floor_z_at_opening(mb, 98, 0, "E")
+        zb = self._floor_z_at_opening(mb, 502, 240, "W")
+        assert za == pytest.approx(0.0, abs=2.0)
+        assert zb == pytest.approx(40.0, abs=2.0)
+
+    def test_pinned_and_random_seeds_corridors_connect_and_walkable(self):
+        # The regression bar for the corridor-connection task: across the
+        # reported elevation-heavy seeds plus random ones, EVERY corridor must
+        # meet both room openings flush (right floor height) AND be walkable
+        # (ramp grade bounded, stair step height bounded). Structural-only tests
+        # passed while 3D showed gaps, so this asserts the measured geometry.
+        from generators.geometry import _ensure_materials
+        seeds = [1955208177, 1516796975, 678358326, 481893615,
+                 4, 53, 161, 7, 42, 99, 2024]
+        for seed in seeds:
+            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+                "cw", room_count=9)
+            _ensure_materials(spec)
+            rooms = {r.id: r for r in spec.rooms}
+            for cor in spec.corridors:
+                a, b = rooms[cor.from_room], rooms[cor.to_room]
+                mb = MeshBuilder()
+                mb.add_corridor(cor, spec)
+
+                wa = self._wall_axis(a, b)
+                wb = self._wall_axis(b, a)
+                oax, oay = self._opening_point(a, b)
+                obx, oby = self._opening_point(b, a)
+                za = self._floor_z_at_opening(mb, oax, oay, wa)
+                zb = self._floor_z_at_opening(mb, obx, oby, wb)
+                assert za is not None and zb is not None, \
+                    f"seed {seed} {cor.id}: corridor has no floor at an opening"
+                # Flush: corridor floor at each opening == room floor_z (<2u).
+                assert za == pytest.approx(a.floor_z, abs=2.0), \
+                    f"seed {seed} {cor.id}: gap at {a.id} ({za} vs {a.floor_z})"
+                assert zb == pytest.approx(b.floor_z, abs=2.0), \
+                    f"seed {seed} {cor.id}: gap at {b.id} ({zb} vs {b.floor_z})"
+
+                dz = abs(cor.to_z - cor.from_z)
+                if dz <= 0.5:
+                    continue
+                if cor.steps > 0:
+                    # Stair step height bounded to ~a player step.
+                    assert dz / cor.steps <= 8.0, \
+                        f"seed {seed} {cor.id}: {dz/cor.steps:.1f}u/step too tall"
+                else:
+                    # Ramp grade bounded to a walkable slope (~27°, allow a
+                    # small numerical margin from triangle measurement).
+                    slope = self._max_floor_slope(mb)
+                    assert slope <= 0.6, \
+                        f"seed {seed} {cor.id}: ramp slope {slope:.2f} too steep"

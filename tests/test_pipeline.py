@@ -14,10 +14,12 @@ Covers the acceptance checklist for tasks/validate-in-pipeline.md:
   * ungated themes pass through unvalidated with NO retry storm
   * the CLI --no-validate escape hatch bypasses the gate
 
-Determinism: we drive the pipeline with factories pinned to seeds the
-traversability suite already proves reliably PASS (seed 1, flat 5-room dungeon)
-or reliably FAIL (seed 1955208177, 8-room elevation dungeon). Builds use
-write_glb=False to stay fast and avoid the trimesh dependency.
+Determinism: we drive the pipeline with factories that deterministically PASS
+(seed 1, flat 5-room dungeon) or FAIL. Since corridor-connection landed, no
+well-formed seed is reliably broken any more, so a failing zone is produced
+by CONSTRUCTION — a good zone plus one isolated room with no corridor, which is
+unreachable regardless of corridor routing. Builds use write_glb=False to stay
+fast and avoid the trimesh dependency.
 """
 
 import json
@@ -27,6 +29,7 @@ from pathlib import Path
 import pytest
 
 from generators.layout import LayoutGenerator
+from generators.zone_spec import RoomSpec
 from generators.pipeline import (
     generate_validated,
     GenerationFailed,
@@ -34,17 +37,30 @@ from generators.pipeline import (
     DEFAULT_GATED_THEMES,
 )
 
-# Seeds the traversability regression suite asserts on (not xfail):
-#   test_traversability.TestKnownGoodDungeons  -> seed 1, rooms=5 fully reachable
-#   test_traversability.test_validator_flags_the_breakage -> seed 1955208177,
-#   rooms=8 is reliably broken (hard assertion there).
 GOOD_SEED = 1
-BAD_SEED = 1955208177
+# A pinned-seed value for the pinned-seed tests. Its brokenness is no longer
+# relevant (the factory decides the outcome), it's just a stable seed number.
+PINNED_SEED = 1955208177
 
 
 # ---------------------------------------------------------------------------
 # Factories (ignore the pipeline's fresh seed on purpose, to force outcomes)
 # ---------------------------------------------------------------------------
+
+def _broken_spec(rooms=5):
+    """
+    A deterministically-unreachable zone: a good base zone plus one ISOLATED
+    room that no corridor connects to. The validator must always reject it,
+    independent of corridor routing — the robust stand-in for the old
+    reliably-broken seed now that corridor-connection makes seeds connect.
+    """
+    spec = LayoutGenerator(theme="dungeon", seed=GOOD_SEED).generate(
+        "pipe", room_count=rooms)
+    spec.rooms.append(RoomSpec(
+        id="isolated", center_x=100_000.0, center_y=100_000.0, floor_z=0.0,
+        width=200, depth=200, height=100))
+    return spec
+
 
 def _good_factory(rooms=5):
     def f(seed):
@@ -55,8 +71,7 @@ def _good_factory(rooms=5):
 
 def _bad_factory(rooms=8):
     def f(seed):
-        return LayoutGenerator(theme="dungeon", seed=BAD_SEED).generate(
-            "pipe", room_count=rooms)
+        return _broken_spec()
     return f
 
 
@@ -67,8 +82,7 @@ def _flaky_factory(fail_times):
     def f(seed):
         calls["n"] += 1
         if calls["n"] <= fail_times:
-            return LayoutGenerator(theme="dungeon", seed=BAD_SEED).generate(
-                "pipe", room_count=8)
+            return _broken_spec()
         return LayoutGenerator(theme="dungeon", seed=GOOD_SEED).generate(
             "pipe", room_count=5)
     return f
@@ -145,7 +159,7 @@ class TestExhaustion:
 class TestPinnedSeed:
     def test_pinned_failure_errors_without_retry(self, tmp_path):
         with pytest.raises(GenerationFailed) as ei:
-            _run(_bad_factory(), tmp_path, seed=BAD_SEED, max_attempts=8)
+            _run(_bad_factory(), tmp_path, seed=PINNED_SEED, max_attempts=8)
         err = ei.value
         assert err.pinned
         assert err.attempts == 1            # pinned: built once, never swapped
@@ -192,7 +206,7 @@ class TestGating:
 class TestFailureLog:
     def test_line_has_triage_fields(self, tmp_path):
         with pytest.raises(GenerationFailed):
-            _run(_bad_factory(), tmp_path, seed=BAD_SEED, max_attempts=1)
+            _run(_bad_factory(), tmp_path, seed=PINNED_SEED, max_attempts=1)
         lines = _log_lines(tmp_path / "fail.jsonl")
         assert len(lines) == 1
         rec = lines[0]
@@ -213,7 +227,7 @@ class TestCliEscapeHatch:
     def _args(self, tmp_path, **over):
         import argparse
         ns = argparse.Namespace(
-            name="cli", theme="dungeon", rooms=8, seed=BAD_SEED,
+            name="cli", theme="dungeon", rooms=8, seed=PINNED_SEED,
             output=str(tmp_path), ter_version=2, preview=False,
             no_validate=False,
         )
@@ -227,8 +241,22 @@ class TestCliEscapeHatch:
         assert (tmp_path / "cli.eqg").exists()
         assert (tmp_path / "cli.json").exists()
 
-    def test_gate_blocks_pinned_bad_seed(self, tmp_path):
+    def test_gate_blocks_pinned_bad_seed(self, tmp_path, monkeypatch):
+        # Force the CLI to build a broken zone (an isolated, corridor-less room)
+        # so the pinned-seed gate must error out. No seed is reliably broken any
+        # more, so we inject the breakage rather than rely on one.
         import main
+        from generators.layout import LayoutGenerator as _RealLG
+
+        class _BrokenLG(_RealLG):
+            def generate(self, *a, **k):
+                spec = super().generate(*a, **k)
+                spec.rooms.append(RoomSpec(
+                    id="isolated", center_x=100_000.0, center_y=100_000.0,
+                    floor_z=0.0, width=200, depth=200, height=100))
+                return spec
+
+        monkeypatch.setattr(main, "LayoutGenerator", _BrokenLG)
         with pytest.raises(SystemExit) as ei:
             main.cmd_generate(self._args(tmp_path, no_validate=False))
         assert ei.value.code == 1

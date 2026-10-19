@@ -27,7 +27,7 @@ import pytest
 
 import analyzer.traverse as T
 from analyzer.traverse import AgentModel, classify_corridor, validate
-from generators.zone_spec import CorridorSpec
+from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 from generators.layout import LayoutGenerator
 from generators.builder import ZoneBuilder
 
@@ -41,12 +41,12 @@ from generators.builder import ZoneBuilder
 # validator regressed or the box backend broke a previously-good flat zone.
 KNOWN_GOOD_DUNGEON = [1, 6, 26, 49]
 
-# Elevation-/same-axis-heavy seeds that are genuinely broken today (cliff ramps,
-# oversized stair steps, or misaligned openings). These SHOULD fail until
-# tasks/corridor-connection.md lands; kept as xfail so the suite stays green but
-# the day they're fixed, xfail → xpass flags it loudly (strict=False so an
-# incidental pass doesn't error the run).
-KNOWN_BAD_DUNGEON = [1955208177, 1516796975, 481893615]
+# Elevation-/same-axis-heavy seeds that USED to be broken (cliff ramps,
+# oversized stair steps, or misaligned openings on same-axis room pairs). Since
+# tasks/corridor-connection.md landed they connect cleanly and walk end to end,
+# so they are now a regression guard: if one starts failing again, the
+# same-axis Z-corridor routing or the elevation-grade cap regressed.
+FORMERLY_BROKEN_DUNGEON = [1955208177, 1516796975, 481893615, 678358326]
 
 
 def _build_and_validate(theme: str, seed: int, rooms: int, tmp_path):
@@ -133,29 +133,54 @@ class TestKnownGoodDungeons:
 # Integration: known-bad seeds — flagged (xfail until corridor-connection)
 # ---------------------------------------------------------------------------
 
-class TestKnownBadDungeons:
-    @pytest.mark.parametrize("seed", KNOWN_BAD_DUNGEON)
-    @pytest.mark.xfail(
-        reason="Elevation/same-axis corridor bugs (tasks/corridor-connection.md). "
-               "Flips to xpass once those land — then drop the xfail.",
-        strict=False,
-    )
+class TestFormerlyBrokenDungeons:
+    """
+    The seeds that drove tasks/corridor-connection.md. They must now walk end to
+    end on the real mesh — the regression bar that the same-axis Z-corridor
+    routing and the elevation-grade cap stay fixed.
+    """
+
+    @pytest.mark.parametrize("seed", FORMERLY_BROKEN_DUNGEON)
     def test_fully_reachable(self, seed, tmp_path):
-        rep = _build_and_validate("dungeon", seed, rooms=8, tmp_path=tmp_path)
+        rep = _build_and_validate("dungeon", seed, rooms=9, tmp_path=tmp_path)
         assert rep.passed, rep.summary()
 
+
+class TestValidatorFlagsBreakage:
+    def _cliff_spec(self):
+        # Hand-built, deterministically-broken zone: two rooms joined by a
+        # single over-steep ramp (150u rise over a ~100u run ≈ 56°). The ramp
+        # is unstandable (slope > the agent's 40° cap), so the far room is
+        # unreachable and the corridor classifier names it a cliff ramp. This
+        # replaces the old "known-bad seed" now that no seed is reliably broken.
+        spec = ZoneSpec(name="trav", theme="dungeon")
+        a = RoomSpec("a", center_x=0, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=100)
+        a.role = "entrance"
+        a.open_walls = ["N"]
+        b = RoomSpec("b", center_x=0, center_y=300, floor_z=150.0,
+                     width=200, depth=200, height=100)
+        b.open_walls = ["S"]
+        spec.rooms = [a, b]
+        spec.corridors.append(CorridorSpec(
+            "corr_0", from_x=0, from_y=100, to_x=0, to_y=200,
+            from_z=0.0, to_z=150.0, width=50, height=90,
+            from_room="a", to_room="b"))
+        spec.safe_point = (0.0, 0.0, 5.0)
+        return spec
+
     def test_validator_flags_the_breakage(self, tmp_path):
-        # The positive assertion: on a known-bad seed the validator MUST report a
-        # failure AND name a concrete cause (so it's trustworthy, not just red).
-        rep = _build_and_validate("dungeon", 1955208177, rooms=8, tmp_path=tmp_path)
+        # The validator MUST report a failure AND name a concrete walkability
+        # cause (so it's trustworthy, not just red).
+        spec = self._cliff_spec()
+        result = ZoneBuilder(spec).build(output_dir=str(tmp_path), write_glb=False)
+        rep = validate(result.eqg_path, spec=spec)
         assert not rep.passed
         assert rep.reachable_rooms < rep.total_rooms
         unreachable = [r for r in rep.rooms if not r.reachable]
         assert unreachable, "expected at least one unreachable room"
-        # Every unreachable room gets a non-empty diagnosis.
         assert all(r.reason for r in unreachable)
-        # At least one failure is a walkability cause (cliff ramp / oversized
-        # step) — the exact class the structural tests miss.
+        # The failure names a walkability cause — the class structural tests miss.
         joined = " ".join(r.reason for r in unreachable)
         assert ("step-up" in joined or "cliff ramp" in joined
                 or "walkable cap" in joined), joined

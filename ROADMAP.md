@@ -67,7 +67,7 @@ their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 | Pacing | Graph-derived roles (entrance/hub/climax/deadend) + depth; biased geometry & lighting |
 | Gating | Optional lock-and-key suggestions, solvability-guaranteed |
 | Top-down map | SVG floor-plan sidecar + web modal |
-| Staircase fix | L-shaped corridors meet both wall openings; stairs flush at both landings |
+| Corridor connection fix | Z/L/straight routing meets both wall openings flush; elevation grade-capped and carried by subdivided (walkable) ramps |
 | Cave connectivity fix | Tunnels join chambers into one watertight cave; floor winding fixed (no see-through); noise specks removed |
 | Acceptance checklist | `docs/ACCEPTANCE.md` — manual UAT for validating major changes |
 | Content layer — Step 1 | Dungeon semantic themes: archetype × race × tint; per-room type, shape/region/light/palette realization; props/encounter/boss as suggestions; surfaced in viewer panel + top-down map |
@@ -151,9 +151,10 @@ particular are a cheap, high-impact quick win.)
       40°, max step-up 3u). Walks the actual triangles from the safe point and
       reports per-room reachability + *why* (cliff ramp / oversized stair step /
       misaligned corridor). CLI: `python -m analyzer.traverse output/<zone>.eqg`;
-      suite: `tests/test_traversability.py` (sweeps known-good flat seeds; the
-      known-bad elevation seeds are xfail until `corridor-connection` lands, then
-      flip green). It's the objective gate those fixes should pass. Code in
+      suite: `tests/test_traversability.py` (sweeps known-good flat seeds plus
+      the formerly-broken elevation seeds, which now walk 9/9 after
+      `corridor-connection` landed). It's the objective gate those fixes pass.
+      Code in
       `analyzer/traverse.py`. *Known limit: outdoor/cave not swept — their
       heightfield/organic meshes are generated in a different coordinate frame
       than the room graph (terrain starts at origin going +X/+Y rather than
@@ -225,16 +226,20 @@ particular are a cheap, high-impact quick win.)
       then. (This mismatch is itself a lesson: automated structural checks can
       pass while the viewer shows something wrong — validate major geometry
       changes in 3D per `docs/ACCEPTANCE.md`.)
-- [ ] **Corridors between same-axis room pairs mis-connect, esp. with elevation**
-      — when two rooms face each other on parallel walls (both E↔W or both N↔S),
-      the single-corner L-bend forces one leg parallel to a wall; with an
-      elevation change that leg meets the opening at the wrong floor height,
-      leaving a gap so the room looks unreachable (seed 1955208177, also
-      1516796975/678358326). Needs a 3-segment Z-corridor for the same-axis
-      case. Separately, elevation rises aren't bounded by corridor run length,
-      producing unwalkable cliff ramps (~53°) and oversized stair steps
-      (~15u). Tracked as `tasks/corridor-connection.md` (supersedes the earlier
-      mis-scoped "connecting-ramps").
+- [x] **Corridors between same-axis room pairs mis-connect, esp. with elevation**
+      — ✅ **Fixed.** When two rooms faced each other on parallel walls (both
+      E↔W or both N↔S — the common case), the single-corner L-bend forced one
+      leg parallel to a wall and met the opening at the wrong XY/floor height,
+      leaving a gap (seeds 1955208177, 1516796975, 678358326). `add_corridor`
+      now routes a 3-segment **Z-corridor** for same-axis pairs (perpendicular
+      stub → cross-jog → perpendicular stub), keeps the L-bend for genuine
+      cross-axis pairs and a straight leg for collinear openings, all through one
+      `_emit_route` helper. Elevation is now bounded by corridor run (grade cap
+      0.5 ≈ 26.6°, with loop-edge relaxation) and carried by **subdivided ramps**
+      so the per-triangle traversability agent (step-up ~3u) can climb them — a
+      single-quad ramp read as a cliff regardless of slope. `analyzer.traverse`
+      passes 9/9 on the reported seeds and across a 160-zone + 100-themed sweep.
+      Delivered by `tasks/corridor-connection.md`.
 - [ ] **Outdoor/cave mesh vs room graph are in different coordinate frames** —
       surfaced while building the traversability validator. The heightfield
       terrain mesh places vertices at `x = i*res` (origin → +X/+Y), while the
@@ -363,10 +368,12 @@ UV scale uses median of 99th-pct-clipped values; ZON search tries any `.zon`;
 Box backend: hollow rooms + corridors with inward-facing walls, planar UVs,
 material resolution. Elevation is a generator feature (EQG collision is
 per-triangle via the `0x01` flag — confirmed in `azone/map.cpp::CompileEQG` —
-no BSP needed). Corridors ramp or build staircases between differing floor
-heights. Corridors bend into an **L-shape** when the two wall openings aren't
-collinear, and staircases sit flush at both landings (fixes a floating-stairs
-bug).
+no BSP needed). Corridors ramp between differing floor heights. Routing picks a
+**straight** leg for collinear openings, a 3-segment **Z-corridor** when the two
+rooms face each other on parallel walls (the common case), or an **L-bend** for
+a genuine cross-axis pair — meeting both openings flush at each room's floor.
+Elevation grade is capped to a walkable slope and the ramp mesh is subdivided so
+it's climbable by the traversability agent.
 
 ### Organic caves + features
 

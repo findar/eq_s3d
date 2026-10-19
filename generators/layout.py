@@ -127,6 +127,15 @@ class LayoutGenerator:
         self.step_rise_min = 20.0
         self.step_rise_max = 80.0
 
+        # Walkability bound for elevation (corridor-connection task #2). The
+        # elevation magnitude used to be picked with no regard to how long the
+        # corridor between the two rooms' walls actually is, so close rooms with
+        # a big Z delta produced unwalkable cliffs (seeds 1955208177, 678358326).
+        #   max_grade — steepest floor slope (rise / run) allowed on a corridor
+        #               ramp. 0.5 ≈ 26.6°, comfortably under the traversability
+        #               agent's 40° walkable-slope cap.
+        self.max_grade = 0.5
+
     def _apply_room_scale(self, room_count: int) -> None:
         """
         Set room_min/room_max (and corridor width) from the theme's measured
@@ -594,9 +603,87 @@ class LayoutGenerator:
                 z = rooms[cur].floor_z
                 if self.rng.random() < self.elevation_chance:
                     rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
-                    z += rise * self.rng.choice([1, -1])
+                    # Bound the rise by what the corridor run can carry at a
+                    # walkable grade. The geometry confines the rise to one leg;
+                    # capping by the interior-jog length (the shortest leg a
+                    # staircase could ride) keeps BOTH the stair case and the
+                    # gentler ramp case within max_grade. A rise steeper than
+                    # that would be a cliff — rooms end up closer in Z rather
+                    # than unreachable.
+                    run = self._elevation_run(rooms[cur], rooms[nxt])
+                    rise = min(rise, run * self.max_grade)
+                    if rise >= 1.0:
+                        z += rise * self.rng.choice([1, -1])
                 rooms[nxt].floor_z = z
                 q.append(nxt)
+
+        # The BFS caps only TREE edges. A loop (non-tree) edge connects two
+        # rooms placed down separate tree paths, so its corridor can still be an
+        # unwalkable cliff even though every tree step was capped (seed 4
+        # corr_3). Relax the whole graph: pull every room into the walkable Z
+        # band of ALL its neighbours until it settles, so every corridor — tree
+        # or loop — ends up walkable.
+        self._relax_elevation(rooms, adj, entrance)
+
+    def _relax_elevation(self, rooms: List[RoomSpec], adj, entrance: int,
+                         iterations: int = 200) -> None:
+        """
+        Iteratively pull each room's floor_z into the intersection of its
+        neighbours' walkable Z bands (|dz| <= run * max_grade per corridor).
+        A room already inside every band doesn't move, so consistent verticality
+        is preserved; only cliffs get compressed. The entrance stays fixed as
+        the Z reference. Converges because each pass is a clamp toward feasibility.
+        """
+        for _ in range(iterations):
+            moved = 0.0
+            for i in adj:
+                if i == entrance:
+                    continue
+                lo, hi = float("-inf"), float("inf")
+                for m in adj[i]:
+                    cap = self._elevation_run(rooms[i], rooms[m]) * self.max_grade
+                    lo = max(lo, rooms[m].floor_z - cap)
+                    hi = min(hi, rooms[m].floor_z + cap)
+                if lo <= hi:
+                    newz = min(max(rooms[i].floor_z, lo), hi)
+                else:
+                    # Conflicting neighbours (rare): least-violating midpoint.
+                    newz = (lo + hi) / 2
+                moved = max(moved, abs(newz - rooms[i].floor_z))
+                rooms[i].floor_z = newz
+            if moved < 0.01:
+                break
+
+    def _route_legs(self, a: RoomSpec, b: RoomSpec) -> List[float]:
+        """
+        Lengths of the axis-aligned legs of the corridor that will connect *a*
+        and *b*, in order. Mirrors generators.geometry.add_corridor's routing:
+        a single-element list for a straight corridor, or [stub, jog, stub] for
+        a Z-corridor (parallel facing walls). Used to keep the elevation cap and
+        the stair/ramp choice consistent with the geometry actually built.
+        """
+        fx, fy = self._wall_point(a, b)
+        tx, ty = self._wall_point(b, a)
+        dx, dy = tx - fx, ty - fy
+        primary_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
+        hw = self.corridor_width / 2
+        cross_off = abs(dy) if primary_x else abs(dx)
+        if cross_off <= max(2.0, hw * 0.5):
+            return [abs(dx) if primary_x else abs(dy)]
+        if primary_x:
+            mid = (fx + tx) / 2
+            return [abs(mid - fx), abs(ty - fy), abs(tx - mid)]
+        mid = (fy + ty) / 2
+        return [abs(mid - fy), abs(tx - fx), abs(ty - mid)]
+
+    def _elevation_run(self, a: RoomSpec, b: RoomSpec) -> float:
+        """
+        The run length the elevation cap is measured against: the interior jog
+        of a Z-corridor (where a staircase rides and the steepest case lives),
+        or the single leg of a straight corridor.
+        """
+        legs = self._route_legs(a, b)
+        return legs[1] if len(legs) >= 3 else legs[0]
 
     def _build_corridors(self, spec: ZoneSpec, rooms: List[RoomSpec],
                          edges: List[Tuple[int, int]]) -> None:
@@ -606,7 +693,14 @@ class LayoutGenerator:
         """
         for k, (i, j) in enumerate(edges):
             a, b = rooms[i], rooms[j]
-            use_steps = abs(b.floor_z - a.floor_z) > 1.0 and self.rng.random() < 0.5
+            # Elevation is carried by a smooth ramp (steps=0). The geometry
+            # backend subdivides the slope finely, so it is both walkable to the
+            # per-triangle traversability agent (every face within a step of its
+            # neighbour) and flush at both openings (the ramp floor reaches each
+            # room's exact floor_z at its wall). A staircase would meet the
+            # per-mesh step-up limit only with sub-player-height steps and exact
+            # landings; the ramp is the robust choice and _assign_elevation has
+            # already capped the grade to a walkable slope.
             fx, fy = self._wall_point(a, b)
             tx, ty = self._wall_point(b, a)
             spec.corridors.append(CorridorSpec(
@@ -616,7 +710,7 @@ class LayoutGenerator:
                 from_z=a.floor_z, to_z=b.floor_z,
                 width=self.corridor_width,
                 height=self.corridor_height,
-                steps=self.rng.randint(4, 8) if use_steps else 0,
+                steps=0,
                 from_room=a.id, to_room=b.id,
             ))
             self._open_facing_walls(a, b)

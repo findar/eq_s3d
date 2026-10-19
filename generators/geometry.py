@@ -13,11 +13,20 @@ viewed from the visible side.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
 from core.ter import TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
+
+
+# A sloped corridor floor is subdivided so each segment rises at most this much
+# in Z. A single tall ramp quad splits into two triangles whose centroids sit
+# dz/3 apart in Z; the traversability agent (step-up ~3u) then reads its own
+# ramp as an unclimbable gap. Fine segments keep every walkable face within a
+# small step of its neighbour so a ramp is actually walkable end to end.
+MAX_SEG_RISE = 2.5
 
 
 # ---------------------------------------------------------------------------
@@ -154,18 +163,30 @@ class MeshBuilder:
 
     def add_corridor(self, cor: CorridorSpec, spec: ZoneSpec) -> None:
         """
-        Build a corridor between two wall openings.
+        Build a corridor between two wall openings, picking one of three routes
+        so the corridor meets BOTH openings perpendicularly and at the right
+        floor height:
 
-        The two endpoints usually differ on BOTH axes (the rooms are offset),
-        so a single axis-aligned tube would miss one of the wall openings and
-        leave the corridor — and any staircase on it — floating away from the
-        wall. To meet both openings squarely we build an **L-shaped** corridor
-        when the ends aren't (near) collinear: a straight leg out of the first
-        wall, a corner, then a straight leg into the second wall. When the ends
-        ARE collinear on an axis, we build a single straight leg as before.
+        * **Straight** — the openings are (near) collinear on the run axis: a
+          single axis-aligned leg.
+        * **Z-corridor** (3 segments) — both rooms face each other on PARALLEL
+          walls (both E/W, or both N/S). This is the common layout case. A
+          single-corner L cannot serve it: one of its legs would run *along* a
+          wall face instead of out through the opening, so it meets that opening
+          at the wrong XY and (for elevation) the wrong floor height, leaving a
+          gap (seed 1955208177). Instead we emit a perpendicular stub straight
+          out of wall A, a middle cross-jog, and a perpendicular stub into wall
+          B. Each end stub stays flat at its own room's floor; the middle jog
+          carries the entire elevation change.
+        * **L-bend** (2 segments) — the genuine cross-axis case (one opening on
+          an E/W wall, the other on an N/S wall). A single corner serves it: a
+          perpendicular leg out of A, then a perpendicular leg into B.
 
-        Height change (ramp or staircase) is applied to the longer leg; the
-        shorter leg stays flat, so stairs sit on a real sloped run.
+        For every route the whole height change (ramp or staircase) is confined
+        to ONE segment via the shared `_emit_route` helper, so that segment
+        lands flush with its room while the flat segments sit exactly at the
+        other room's floor — no gap at either opening, and ramp/stair behave
+        identically regardless of route.
         """
         floor_mat   = self.material_id(spec.materials[cor.floor_material])
         wall_mat    = self.material_id(spec.materials[cor.wall_material])
@@ -175,96 +196,125 @@ class MeshBuilder:
         dx = cor.to_x - cor.from_x
         dy = cor.to_y - cor.from_y
 
-        # Which axis does each opening face? The corridor's first leg must run
-        # PERPENDICULAR to the wall it exits, or the leg runs along the wall
-        # face and the room opening doesn't line up with where the corridor
-        # actually goes (disconnected corridor — seed 1516796975).
+        # Which axis does each opening face? The corridor's stub at each end
+        # must run PERPENDICULAR to the wall it meets, or the stub runs along
+        # the wall face and the opening doesn't line up with the corridor
+        # (disconnected corridor — seed 1516796975).
         #
-        # The layout chose each wall from the room-CENTRE delta
-        # (LayoutGenerator._wall_point), but the raw endpoint delta used here
-        # can favour a different axis once both ends are inset to their wall
-        # midpoints. So derive the exit axis from the room centres (matching how
-        # the openings were cut) whenever the corridor records its rooms.
-        exit_from_x = exit_to_x = None  # True = exits on an E/W wall (run along X)
+        # The layout cut each wall from the room-CENTRE delta
+        # (LayoutGenerator._wall_point), so derive each exit axis from the room
+        # centres whenever the corridor records its rooms. Compute both ends
+        # INDEPENDENTLY so a genuine cross-axis pair still routes as an L.
         rooms = {r.id: r for r in spec.rooms}
         a = rooms.get(cor.from_room)
         b = rooms.get(cor.to_room)
         if a is not None and b is not None:
-            cdx = b.center_x - a.center_x
-            cdy = b.center_y - a.center_y
-            exit_from_x = abs(cdx) >= abs(cdy)   # from-wall is E/W → leg runs X
-            exit_to_x = exit_from_x              # the facing wall mirrors it
-
-        # The primary run direction out of the first opening. Prefer the wall-
-        # derived axis; fall back to the endpoint delta for hand-authored specs
-        # that don't set from_room/to_room.
-        if exit_from_x is not None:
-            primary_x = exit_from_x
+            # True = this opening is on an E/W wall → its stub runs along X.
+            exit_from_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
+            exit_to_x   = abs(a.center_x - b.center_x) >= abs(a.center_y - b.center_y)
         else:
-            primary_x = abs(dx) >= abs(dy)
+            # Hand-authored spec with no rooms: infer a single run axis from the
+            # endpoint delta (treats the pair as same-axis, the common case).
+            exit_from_x = exit_to_x = abs(dx) >= abs(dy)
+
+        same_axis = (exit_from_x == exit_to_x)
+        primary_x = exit_from_x
         cross_off = abs(dy) if primary_x else abs(dx)
+        z_carry = None   # default: carry the rise on the longest leg
 
-        # Near-collinear: a straight corridor meets both openings. (Allow a
-        # little slack so tiny offsets don't force an unnecessary bend.)
-        if cross_off <= max(2.0, hw * 0.5):
+        if same_axis and cross_off <= max(2.0, hw * 0.5):
+            # --- Straight: (near) collinear openings meet with a single leg.
+            # (A little slack so tiny offsets don't force an unnecessary bend.)
+            waypoints = [(cor.from_x, cor.from_y), (cor.to_x, cor.to_y)]
+            axes = [primary_x]
+        elif same_axis:
+            # --- Z-corridor: parallel facing walls. A perpendicular stub out
+            # of A, a cross-jog, then a perpendicular stub into B.
+            if primary_x:
+                mid = (cor.from_x + cor.to_x) / 2
+                waypoints = [
+                    (cor.from_x, cor.from_y),
+                    (mid, cor.from_y),
+                    (mid, cor.to_y),
+                    (cor.to_x, cor.to_y),
+                ]
+                axes = [True, False, True]   # X stub, Y jog, X stub
+            else:
+                mid = (cor.from_y + cor.to_y) / 2
+                waypoints = [
+                    (cor.from_x, cor.from_y),
+                    (cor.from_x, mid),
+                    (cor.to_x, mid),
+                    (cor.to_x, cor.to_y),
+                ]
+                axes = [False, True, False]  # Y stub, X jog, Y stub
+            # A STAIRCASE must ride the interior jog (leg 1), so the flat end
+            # stubs stay as flush landings at each room's floor — stairs on a
+            # wall stub would abut the wall a step short. A smooth RAMP is
+            # continuous, so it can ride the longest leg (carry=None) for the
+            # gentlest grade; it stays flush either way.
+            if cor.steps > 0:
+                z_carry = 1
+        else:
+            # --- L-bend: genuine cross-axis pair (perpendicular walls). A
+            # perpendicular leg out of A, then a perpendicular leg into B.
+            if exit_from_x:
+                corner = (cor.to_x, cor.from_y)
+                axes = [True, False]
+            else:
+                corner = (cor.from_x, cor.to_y)
+                axes = [False, True]
+            waypoints = [(cor.from_x, cor.from_y), corner, (cor.to_x, cor.to_y)]
+
+        self._emit_route(
+            waypoints, axes, carry=z_carry,
+            from_z=cor.from_z, to_z=cor.to_z,
+            hw=hw, height=cor.height, steps=cor.steps,
+            floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat)
+
+    @staticmethod
+    def _seg_len(waypoints, k):
+        (x0, y0), (x1, y1) = waypoints[k], waypoints[k + 1]
+        return abs(x1 - x0) + abs(y1 - y0)   # axis-aligned → one term is 0
+
+    def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
+                    steps, floor_mat, wall_mat, ceiling_mat):
+        """
+        Shared multi-segment corridor builder. `waypoints` is an ordered list of
+        (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
+        `axes[k]` is True when leg k runs along X.
+
+        The ENTIRE elevation change (and the staircase, if any) is confined to
+        leg `carry`: every leg before it stays flat at `from_z`, every leg after
+        stays flat at `to_z`. This single rule keeps ramps and stairs behaving
+        identically across the straight / Z / L routes — the carry leg lands
+        flush with its room, the flat legs sit exactly at the other room's
+        floor, so there is no gap at either opening — regardless of WHICH leg
+        carries. We therefore default `carry` to the LONGEST leg, which gives
+        the gentlest ramp grade / most room for stair treads without disturbing
+        the flush landings (seed 481893615 verified both openings stay flush).
+        Corner fills join consecutive legs at their shared height.
+        """
+        n_legs = len(waypoints) - 1
+        if carry is None:
+            carry = max(range(n_legs), key=lambda k: self._seg_len(waypoints, k))
+
+        # Floor height at each waypoint: from_z up to (and including) the start
+        # of the carry leg, to_z from the end of the carry leg onward.
+        zs = [from_z if i <= carry else to_z for i in range(len(waypoints))]
+
+        for k in range(len(waypoints) - 1):
+            (x0, y0), (x1, y1) = waypoints[k], waypoints[k + 1]
+            leg_steps = steps if k == carry else 0
             self._add_straight_leg(
-                cor.from_x, cor.from_y, cor.from_z,
-                cor.to_x, cor.to_y, cor.to_z,
-                primary_x, hw, cor.height, cor.steps,
+                x0, y0, zs[k], x1, y1, zs[k + 1],
+                axes[k], hw, height, leg_steps,
                 floor_mat, wall_mat, ceiling_mat)
-            return
 
-        # L-shaped: run out of the first wall along the primary axis to a corner
-        # aligned under/over the second opening, then turn and run into the
-        # second wall along the cross axis.
-        if primary_x:
-            corner_x, corner_y = cor.to_x, cor.from_y
-        else:
-            corner_x, corner_y = cor.from_x, cor.to_y
-
-        len1 = abs((corner_x - cor.from_x) if primary_x else (corner_y - cor.from_y))
-        len2 = abs((cor.to_y - corner_y) if primary_x else (cor.to_x - corner_x))
-
-        # Resolve ALL the height change on ONE leg (the longer one) and keep the
-        # OTHER leg perfectly flat at the floor height of the room it meets.
-        #
-        # Previously the rise was split across both legs by run-length, so a
-        # staircase on one leg landed at an *interpolated* corner height while
-        # the other (flat-looking) leg still had to ramp the remainder — leaving
-        # the corridor meeting a room opening at the wrong height, i.e. a
-        # misaligned/floating staircase (seed 481893615). Confining the whole
-        # rise to a single leg means that leg lands flush with its room and the
-        # flat leg sits exactly at the other room's floor — no gap at either
-        # opening, and a staircase never bleeds into a ramp mid-run.
-        if len1 >= len2:
-            # Leg 1 (primary axis) carries the rise and the stairs; leg 2 is
-            # flat at the destination room's floor height.
-            corner_z = cor.to_z
-            steps1, steps2 = cor.steps, 0
-        else:
-            # Leg 2 (cross axis) carries the rise and the stairs; leg 1 is flat
-            # at the source room's floor height.
-            corner_z = cor.from_z
-            steps1, steps2 = 0, cor.steps
-
-        # Leg 1: primary axis, from the first opening to the corner.
-        self._add_straight_leg(
-            cor.from_x, cor.from_y, cor.from_z,
-            corner_x, corner_y, corner_z,
-            primary_x, hw, cor.height, steps1,
-            floor_mat, wall_mat, ceiling_mat)
-        # Leg 2: cross axis, from the corner into the second opening.
-        self._add_straight_leg(
-            corner_x, corner_y, corner_z,
-            cor.to_x, cor.to_y, cor.to_z,
-            not primary_x, hw, cor.height, steps2,
-            floor_mat, wall_mat, ceiling_mat)
-        # Fill the inside/outside corner so the two legs join without a gap. The
-        # corner sits at corner_z, which now equals the floor height of whichever
-        # leg is flat — so the fill is flush with that leg and the foot/head of
-        # the stepped leg.
-        self._add_corner_fill(corner_x, corner_y, corner_z, hw, cor.height,
-                              floor_mat, ceiling_mat)
+        # Fill each interior corner flush with the shared floor height there.
+        for i in range(1, len(waypoints) - 1):
+            self._add_corner_fill(waypoints[i][0], waypoints[i][1], zs[i],
+                                  hw, height, floor_mat, ceiling_mat)
 
     def _add_straight_leg(self, fx, fy, fz, tx, ty, tz, along_x, hw, height,
                           steps, floor_mat, wall_mat, ceiling_mat):
@@ -360,10 +410,24 @@ class MeshBuilder:
 
     def _add_ramp_corridor(self, a_pos, a_z, b_pos, b_z, c0, c1, height,
                            along_x, floor_mat, wall_mat, ceiling_mat):
-        """Single sloped segment from (a_pos,a_z) to (b_pos,b_z)."""
-        self._seg_quad(along_x, a_pos, b_pos, c0, c1,
-                       a_z, b_z, a_z + height, b_z + height,
-                       floor_mat, wall_mat, ceiling_mat)
+        """
+        Sloped floor from (a_pos, a_z) to (b_pos, b_z), subdivided along the run
+        into segments that each rise at most MAX_SEG_RISE. The subdivision is
+        what makes a ramp walkable to the per-triangle traversability agent: a
+        single quad would present a dz/3 step between its two triangles, read as
+        an unclimbable gap. Visually it is still a smooth ramp.
+        """
+        dz = abs(b_z - a_z)
+        n = max(1, int(math.ceil(dz / MAX_SEG_RISE)))
+        for i in range(n):
+            t0, t1 = i / n, (i + 1) / n
+            p0 = a_pos + (b_pos - a_pos) * t0
+            p1 = a_pos + (b_pos - a_pos) * t1
+            z0 = a_z + (b_z - a_z) * t0
+            z1 = a_z + (b_z - a_z) * t1
+            self._seg_quad(along_x, p0, p1, c0, c1,
+                           z0, z1, z0 + height, z1 + height,
+                           floor_mat, wall_mat, ceiling_mat)
 
     def _add_stepped_corridor(self, a_pos, a_z, b_pos, b_z, c0, c1, height,
                               steps, along_x, floor_mat, wall_mat, ceiling_mat):

@@ -40,35 +40,41 @@ read before touching the relevant area so it isn't rediscovered.
 - **Multi-lobe chambers + smooth-min can bow below the floor** at lobe junctions —
   always re-clamp to the floor half-space afterward (this exact regression was
   caught by the walkability tests).
-- **Corridor endpoints usually differ on BOTH axes** (rooms are offset). A single
-  axis-aligned tube misses one wall opening and leaves geometry (and stairs)
-  floating. Corridors bend into an **L-shape** to meet both openings; staircases
-  must start flush with the lower floor and finish flush with the upper (every
-  riser emitted, first tread at the base level).
-- **On an L-bend corridor, resolve the ENTIRE height change on ONE leg** (the
-  longer one) and keep the other leg perfectly flat at the floor height of the
-  room it meets. The original code split the rise across both legs by run-length
-  (an interpolated `corner_z`), so a staircase on one leg landed at a mid height
-  while the "flat" leg still had to ramp the remainder — the corridor then met a
-  room opening ~15-25u off, i.e. a misaligned/floating staircase (caught at seed
-  481893615 in the 3D viewer, NOT by tests at the time). Confining all elevation
-  to the stepped leg makes it land flush with its room and the flat leg sit
-  exactly at the other room's floor. Regression:
-  `TestCorridorRouting::test_stepped_lbend_meets_both_room_floors`.
-- **A corridor's first leg must run PERPENDICULAR to the wall it exits**, i.e.
-  the L-bend's primary axis must match the axis the wall opening was cut on.
-  The opening is chosen by `LayoutGenerator._wall_point` from the room-CENTRE
-  delta, but `geometry.add_corridor` used to pick its run axis from the raw
-  (already wall-inset) ENDPOINT delta — and those two can disagree once both
-  ends snap to their wall midpoints. When they disagree the first leg runs
-  ALONG the wall face instead of out through the hole, so the opening doesn't
-  line up with the corridor and it reads as disconnected (seed 1516796975, found
-  in the viewer, not by tests). Fix: `add_corridor` derives the exit axis from
-  the room centres (looked up via `from_room`/`to_room` in the spec), matching
-  how the openings were cut. Regression:
-  `TestCorridorRouting::test_corridor_floor_covers_both_openings` (sweeps
-  several seeds). Lesson: the wall-selection logic and the corridor-routing
-  logic must use the SAME delta, or they silently disagree.
+- **Same-axis room pairs need a Z-route, not an L.** Most corridors connect two
+  rooms whose facing walls are PARALLEL (both E/W, or both N/S) — `_wall_point`
+  always cuts both openings on the same (dominant-centre-delta) axis, so this is
+  the common case, not the exception. A single-corner **L-bend** cannot serve it:
+  one of its two legs ends up running ALONG a wall face instead of out through
+  the opening, so it meets that opening at the wrong XY and (with elevation) the
+  wrong floor height, leaving a gap. `geometry.add_corridor` now routes by case:
+  **straight** (collinear openings), **Z-corridor** (3 segments: perpendicular
+  stub out of A, a cross-jog, perpendicular stub into B — for parallel walls),
+  or **L-bend** (2 segments, only for a genuine cross-axis pair). All three go
+  through one `_emit_route` helper that confines the WHOLE rise to a single leg
+  (flat before it, flat after), so ramp and stair behave identically and both
+  openings land flush regardless of which leg carries. Caught at seed 1955208177
+  in the 3D viewer; the earlier "L-bend" framing (seeds 481893615, 1516796975)
+  was the same bug seen partially. Regressions:
+  `TestCorridorRouting::test_same_axis_pair_routes_as_z_corridor_flush` and
+  `::test_pinned_and_random_seeds_corridors_connect_and_walkable`.
+- **A ramp must be SUBDIVIDED or the traversability agent can't climb its own
+  slope.** `analyzer.traverse` connects two walkable faces only when their
+  centroids are within `max_step_up` (~3u) in Z. A ramp built as a SINGLE quad
+  splits into two triangles whose centroids sit `dz/3` apart — so any ramp with
+  `dz > ~9u` reads as an unclimbable gap and every room beyond it shows up as a
+  1000u-away island, even though the floor looks continuous. `_add_ramp_corridor`
+  now subdivides the slope into segments that each rise `<= MAX_SEG_RISE` (2.5u).
+  A flush floor at the opening is NECESSARY but not sufficient — the per-triangle
+  agent is the real bar. (This is also why generated elevation uses ramps, not
+  stairs: stairs would need sub-player-height steps to clear the same 3u limit.)
+- **Bound elevation by the corridor run, and clamp loop edges too.** Room heights
+  are assigned by BFS over the room graph; `_assign_elevation` caps each tree
+  step so `|dz| <= run * max_grade` (0.5 ≈ 26.6°, under the agent's 40° cap).
+  But a LOOP (non-tree) edge joins two rooms placed down separate tree paths, so
+  its own run never constrained their gap — leaving the occasional cliff
+  corridor (seed 4). `_relax_elevation` then pulls every room into the walkable
+  Z-band of ALL its neighbours (loop edges included) until the graph settles;
+  rooms already consistent don't move, so verticality is preserved.
 
 ## Performance
 
