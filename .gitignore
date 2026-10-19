@@ -59,3 +59,6 @@ web/package-lock.json
 
 # Generated web output
 output/web/
+
+# Agent migration backups (one-time .json -> IDE 1.0 schema; local safety copies)
+.kiro/agents/*.bak
