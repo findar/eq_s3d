@@ -91,7 +91,8 @@ is tracked as its own coherent change. The full Step 2 design still lives in
 - Tests: `tests/test_generators.py::TestSemantics`, `tests/test_planner.py`
 - Docs: `docs/RESEARCH.md` (theme vocabulary + districts design); ROADMAP in sync
 - Close-out helper: `scripts/sweep_themed_navigability.py` (themed navigability sweep)
-- Commits: bb97abe, 1f155b6, 9c75a05 (close-out: navigability re-sweep + Status done)
+- Commits: bb97abe, 1f155b6, 69dea3c (close-out: navigability re-sweep + Status
+  done; this line's hash recorded in a follow-up commit)
 
 ## Notes / decisions / blockers
 
