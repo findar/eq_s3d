@@ -281,3 +281,97 @@ realises them and invents sensible defaults when the planner is silent.
 
 Each step gets its own acceptance eyeball pass because structural tests passing
 is necessary but not sufficient (the cave lesson).
+
+---
+
+## In-client EQ map files (`maps/*.txt`)
+
+The EverQuest client renders its in-game Map window (M key) from plain-text line
+files in the client's `maps/` folder (or a selectable subfolder of it). These
+are **not** the same as our web `*.map.svg` schematic — they are navigation
+overlays the player trusts to match the walls they walk, so they must be derived
+from the actual walkable geometry (the TER mesh), not from the ZoneSpec.
+
+Confirmed against the martinlindhe/eqformat_map reader (Rust, with unit-test
+vectors) and the EQ forums; the crande25/eql-maps project generates these the
+same mesh-derived way we plan to.
+
+### File layout
+
+- One base file per zone, named by the zone **short name**: `<shortname>.txt`.
+- Up to three additional layers: `<shortname>_1.txt`, `_2.txt`, `_3.txt`.
+  The reader auto-detects layers 1–3 alongside the base. Layers are typically
+  used as depth bands (main level vs. above vs. below).
+- The client matches a map to a zone by filename short name — renaming breaks it.
+- Custom maps go in a **subfolder** of `maps/` (e.g. `maps/Brewall/`) so they
+  appear as a selectable set and the patcher doesn't overwrite them.
+
+### Record formats (one record per line)
+
+Two record types, distinguished by the first two characters of the line:
+
+```
+L  x1, y1, z1, x2, y2, z2, R, G, B
+P  x, y, z, R, G, B, size, text
+```
+
+- `L ` — a **line** segment (wall / ledge boundary). Nine comma-separated
+  fields: two 3D endpoints then an RGB colour.
+- `P ` — a **label/point**. Eight fields: a 3D position, an RGB colour, an
+  integer `size` (2 = medium), and the label text. Label text may itself
+  contain commas (parsers split into at most 8 fields, text takes the remainder).
+- Colour channels are integers **0–255** (readers normalise to 0–1).
+
+Verified example records (from the reader's test vectors):
+
+```
+L 2881.0, -2022.0, -295.0, 2885.0, -2027.0, -295.0, 128, 255, 0
+P 5531.2642, -168.7061, -299.5485, 128, 255, 0, 2, Gargoyle_Island
+```
+
+### Coordinate convention (important)
+
+EQ is Z-up and ~1 unit ≈ 1 foot (same as our world). **But the map file's first
+two coordinates are inverted relative to in-game `/loc`:** both negated in sign
+*and* swapped in order. In practice the map X/Y are a transform of world X/Y
+(negate + swap); Z is world Z. This transform must be applied when writing (and
+inverted when reading) or the map renders mirrored/rotated versus the zone.
+
+### Depth-band colouring (community convention)
+
+Lines are coloured by the depth band of the geometry they trace, so overlapping
+levels stay legible:
+
+- **Black** — the main walkable level (most of the floor area).
+- **Tan / gray** — above the main level.
+- **Purple / blue** — below the main level.
+
+Only wall/ledge boundaries are drawn; flat floor interiors are left blank so the
+map stays readable when levels overlap.
+
+### How a map is extracted from zone geometry (the mesh-derived method)
+
+The approach used by crande25/eql-maps and the one we adopt:
+
+1. Take the zone's TER triangle mesh (we have it in-process at build time; no
+   need to re-unpack the `.eqg`).
+2. Classify each triangle as floor / wall / ceiling by its surface normal.
+3. Keep the edges where floors meet walls — the walkable boundary — plus open
+   ledges. Discard flat floor interiors and ceilings.
+4. Chain those edges into polylines; simplify; drop duplicate contours.
+5. Convert world → map coordinates (negate+swap XY) and colour by depth band.
+6. Emit `L` records (and optional `P` labels for entrance / boss from pacing).
+
+This "extract top-down wall outlines from the mesh" core is reusable: it drives
+both the EQ `.txt` export and (separately) an accurate web SVG outline layer.
+
+### Scope boundary
+
+Mesh-derived means the map is only correct where the mesh is trustworthy and in
+the room-graph coordinate frame — **dungeon/box backend today**. Outdoor/cave are
+in a different coordinate frame (see Known issues) and cave is shelved, so EQ map
+export is dungeon-first, matching where the traversability gate already runs.
+
+Sources: martinlindhe/eqformat_map (format + test vectors), crande25/eql-maps
+(mesh-derived generation method), EQ official forums (coordinate inversion),
+Fanra's EQ wiki (maps folder / layer files). Content rephrased for compliance.
