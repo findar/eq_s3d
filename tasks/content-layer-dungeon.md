@@ -1,8 +1,10 @@
 # TASK: content-layer-dungeon
 
 Status: in-progress        <!-- not-started | in-progress | blocked | done -->
-Epic: Content / semantic layer (ROADMAP "Next" #1)
-Last touched: Step 1 navigability measured via analyzer.traverse — blocked on corridor-connection
+Epic: Content / semantic layer, Step 1 — single-theme rooms (ROADMAP "Next" #1).
+      Step 2 (districts) split out to tasks/content-layer-districts.md.
+Last touched: 2026-10-18 — Step 2 (districts) split out to its own task; this
+      file now closes on the remaining Step 1 human 3D validation.
 
 ## Goal
 
@@ -64,19 +66,14 @@ volumes, lighting, textures, and shape; prop/spawn/boss intent is emitted as
         stay enclosed (no see-through). Doesn't depend on corridors connecting.
 - [ ] Address any issues the aesthetic pass surfaces (the navigability failures
       are already owned by `corridor-connection`).
-- [ ] **Step 2 — districts** (the live next build; design already decided in
-      `docs/RESEARCH.md` "Multi-area zones — districts"):
-  - [ ] Graph partition on the pacing graph (multi-source BFS/cut); auto-split
-        ≥8 rooms → 2, ≥14 → 3 (cap 3), with an off switch / `multi_district` control.
-  - [ ] Per-district sub-theme + its own entrance→climax arc (climax is per-district).
-  - [ ] District boundary = threshold corridor; reuse gating for an optional
-        locked door; flip palette/light sharply across the boundary.
-  - [ ] IR: `RoomSpec.district`/`district_theme` (exist), add `ZoneSpec.districts:
-        List[DistrictSpec]`; `ZonePlan` optional district proposals; deterministic
-        partitioner with sensible defaults when the planner is silent.
-  - [ ] Render district boundaries in the top-down map + viewer.
-  - [ ] Tests + a separate 3D validation pass.
-- [ ] Sync ROADMAP + README when Step 2 lands.
+- [ ] Sync ROADMAP + README when this task's Step 1 validation closes.
+
+**Step 2 — districts has moved to its own task:
+`tasks/content-layer-districts.md`.** It was split out so this file can close on
+Step 1 (single-theme rooms, now built — only the human 3D aesthetic/enclosure
+validation remains) while districts (making a zone several themed places at once)
+is tracked as its own coherent change. The full Step 2 design still lives in
+`docs/RESEARCH.md` ("Multi-area zones — districts").
 
 ## Deliverables
 
@@ -88,14 +85,16 @@ volumes, lighting, textures, and shape; prop/spawn/boss intent is emitted as
 
 ## Notes / decisions / blockers
 
-- Step 2 design + user decisions are already captured in `docs/RESEARCH.md`
-  ("Multi-area zones — districts") and ROADMAP — don't re-derive them.
+- Step 2 (districts) is now its own task: `tasks/content-layer-districts.md`.
+  Its design + user decisions are captured in `docs/RESEARCH.md` ("Multi-area
+  zones — districts") and ROADMAP — don't re-derive them.
 - Semantic labelling only runs for box themes (dungeon/city); cave/outdoor are
   untouched (cave is shelved — see ROADMAP).
 - IMPORTANT: this task file was reconstructed by inspecting the repo — the code
   had advanced past the stale session summary. Step 1 is BUILT; the remaining
-  Step 1 work is the **human 3D validation**, then Step 2 (districts) is the next
-  build. VERIFY the code state before assuming, as it may have moved again.
+  work in THIS file is the **human 3D validation** (aesthetic + enclosure).
+  Step 2 (districts) is now `tasks/content-layer-districts.md`. VERIFY the code
+  state before assuming, as it may have moved again.
 - **Navigability finding (via `analyzer.traverse`, measured this session):**
   Swept all 7 archetypes × 2 seeds with elevation OFF to isolate the content
   layer. The `sink` (per-room elevation character) introduces gentle floor
