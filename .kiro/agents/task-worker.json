@@ -28,7 +28,7 @@
         "python -m pytest.*",
         "python -m analyzer.*",
         "python main.py.*",
-        "npx vite build",
+        ".*npx vite build.*",
         "git status.*",
         "git diff.*",
         "git log.*",
@@ -72,6 +72,7 @@
         "ROADMAP.md",
         "README.md",
         "tasks/README.md",
+        "docs/reviews/**",
         ".env"
       ]
     }
