@@ -144,8 +144,18 @@ Working rules for every task:
     - **Deliverable commit:** `1091c8e` (adds `tests/pbt_helpers.py`; tracker
       line recorded in a follow-up commit).
 
-- [ ] 3. Checkpoint: harness in place
+- [x] 3. Checkpoint: harness in place
   - Run `python -m pytest tests/ -q`. It must be green with no `PytestUnknownMarkWarning`. Commit the harness. Ask the user if questions arise.
+  - **Done.** Suite green: **197 passed in 87.50s**, exit 0. No
+    `PytestUnknownMarkWarning` — confirmed by re-running `--collect-only` with
+    `-W error::pytest.PytestUnknownMarkWarning`, which collected all 197 tests
+    cleanly (would have errored on any unknown mark). The harness code
+    (`pytest.ini`, `.gitignore`, `requirements.txt`, `tests/conftest.py`,
+    `tests/strategies.py`, `tests/pbt_helpers.py`) was already committed across
+    tasks 2.1–2.5 (HEAD `29bc319` at checkpoint entry); the working tree was
+    already clean on entry (no leftover `COMMIT_EDITMSG_TMP`, no unexpected code
+    changes), so this checkpoint commit lands only the checkbox bookkeeping.
+  - **Commit:** `3143f3f` ("M0 checkpoint 3: harness in place (197 passed, no unknown-mark warning)") — tracker bookkeeping only.
 
 - [ ] 4. Capture the outdoor TER baseline before any deletion
   - [ ] 4.1 Capture the fork-point hashes and add the baseline test
