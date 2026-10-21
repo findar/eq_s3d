@@ -293,13 +293,42 @@ Working rules for every task:
     - _Requirements: 6.1, 6.10_
 
 - [ ] 6. Remove the legacy viewer
-  - [ ] 6.1 Delete the viewer and its CLI entry points
+  - [x] 6.1 Delete the viewer and its CLI entry points
     - Delete `viewer/` (`serve.py`, `index.html`).
     - In `main.py`, delete `cmd_preview`, `_launch_preview`, the `preview` subparser, the `--preview` option and the `if args.preview:` block. Rewrite the module docstring so it lists only `generate`. Change the entry point to `def main(argv: list[str] | None = None)` with `parser.parse_args(argv)`.
     - Remove `flask==3.1.0` from `requirements.txt` and rename the section comment to "API backend".
     - Drop `preview=False` from `TestCliEscapeHatch._args` in `tests/test_pipeline.py`.
     - Confirm that `README.md` and `docs/` contain no preview launch instruction.
     - _Requirements: 8.1, 8.2, 8.6_
+    - **Done.** Deleted `viewer/` via `git rm -r` (both `serve.py` and
+      `index.html`). `main.py`: removed `cmd_preview`, `_launch_preview`, the
+      `preview` subparser, the `--preview` option and the `if args.preview:`
+      block; docstring now lists only `generate`; entry point is
+      `def main(argv: list[str] | None = None)` with `parser.parse_args(argv)`
+      (the only CLI signature change). `requirements.txt`: dropped `flask==3.1.0`,
+      section comment renamed `# Web viewer / API backend` → `# API backend`.
+      `tests/test_pipeline.py`: dropped `preview=False` from
+      `TestCliEscapeHatch._args`; switched the existing `TestCliArgs` cave-theme
+      test to drive `main.main([...])` positionally (behaviour unchanged — still
+      `SystemExit(2)`, output dir not created), removing the `sys.argv` monkeypatch
+      `_cli` helper. (The NEW preview CLI tests are task 6.2 — not added here.)
+    - **Verification (worktree `-Venv`):**
+      - `python -m pytest tests/ -q` → **205 passed**, 2 warnings (pre-existing
+        starlette `BlockingPortal` deprecation + a runpy `server.app` warning),
+        no `PytestUnknownMarkWarning`. Exit 0.
+      - `python -c "import main; main.main(['generate','smoke6_1','--rooms','3','--output','output'])"`
+        → built a validated 3-room dungeon through the argv path end to end
+        (seed 209879124, 1 attempt); smoke artifacts cleaned up afterward.
+      - `python main.py --help` lists only `{generate}` (no preview).
+      - `git grep -in preview -- main.py viewer` → nothing (viewer gone,
+        `main.py` clean).
+    - **README/docs preview scan (flag, don't fix):** `docs/*.md` has **no**
+      preview mentions. `README.md` mentions "preview" at lines 6, 47, 111, but
+      all three describe the `.glb` as a *browser preview artifact*, not a launch
+      instruction for the deleted viewer/CLI — and README is single-writer
+      integration state, so left untouched. No stray launch instruction found.
+    - **Commit (staged `main.py`, `requirements.txt`, `tests/test_pipeline.py`,
+      deleted `viewer/`):** `5eb913fea13f1afb351a155215940317753df055`.
   - [ ] 6.2 Add CLI tests for the removed preview paths
     - Add these to the `TestCliArgs` class in `tests/test_pipeline.py` (created in 5.3), using `no_network`:
       - `main.main(["preview", "x"])` exits with code 2 and stderr names `preview` as an invalid choice.
@@ -366,10 +395,37 @@ Working rules for every task:
         our `Content-Type`); the test asserts `content-type` is present
         case-insensitively rather than exact-match, and Allow-Methods ⊇ {POST}.
     - **Commit (staged only `tests/test_server.py`):** `69700d3`.
-  - [ ] 7.3 Write the property test for foreign origins
+  - [x] 7.3 Write the property test for foreign origins
     - **Property 18: Foreign origins get no CORS grant**
     - In `tests/test_server.py`, `@given(origins_outside)`: simple GET, POST and preflight responses carry no `access-control-allow-*` header and never `Access-Control-Allow-Origin: *`. Include a Property_Docstring.
     - **Validates: Requirements 9.3, 9.4**
+    - **Done.** Appended `test_foreign_origins_get_no_cors` to `tests/test_server.py`
+      (`@settings(max_examples=scaled(100))` + `@given(origin=origins_outside)`),
+      with a local `_assert_no_cors_grant` check that reuses the 7.2 module-level
+      `assert_no_wildcard` helper (no duplication). For each drawn foreign origin
+      it issues (a) GET `/api/health`, (b) a preflight OPTIONS `/api/generate`
+      (Access-Control-Request-Method POST + Access-Control-Request-Headers
+      content-type), and (c) a simple POST `/api/generate`. The POST carries
+      `theme="cave"`, which the controls path rejects 400 *before* any
+      factory/build runs, so the test stays fast and writes no artifacts; the
+      assertion is on the CORS headers of whatever status returns, never
+      requiring 200. All three responses must carry no `access-control-allow-*`
+      header and no `ACAO: *`.
+    - **Fixture discipline:** the `@given` test takes NO function-scoped fixtures.
+      It uses a module-scoped `_FOREIGN_CLIENT = TestClient(app_mod.app)` (avoids
+      the Hypothesis function_scoped_fixture health check). No OUTPUT_DIR /
+      FAILURE_LOG monkeypatch is needed because none of the three paths write
+      artifacts (health touches nothing; the cave POST 400s before the factory;
+      the preflight returns before any handler body). The existing 7.2 example
+      tests and the 5.3 cave-controls-400 test were left untouched — this is a
+      pure append.
+    - **Property_Docstring:** `Feature: zone-generator-m0-hygiene, Property 18
+      (umbrella P-CORS): Foreign origins get no CORS grant` + `Validates: M0 Req
+      9.3, 9.4`.
+    - **Verification:** `python -m pytest tests/test_server.py -q` → **13 passed**
+      (12 prior + this property test over 100 examples, default profile). Full
+      `python -m pytest tests/ -q` → **205 passed**, exit 0.
+    - **Commit (staged only `tests/test_server.py`):** `1c218cd`.
 
 - [ ] 8. Checkpoint: removals and server change landed
   - Run `python -m pytest tests/ -q`. It must be green. Tasks 4–7 are committed separately (4.1 first; 5.2 + 5.3 together). Ask the user if questions arise.
