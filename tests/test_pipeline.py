@@ -227,7 +227,7 @@ class TestCliEscapeHatch:
         import argparse
         ns = argparse.Namespace(
             name="cli", theme="dungeon", rooms=8, seed=PINNED_SEED,
-            output=str(tmp_path), ter_version=2, preview=False,
+            output=str(tmp_path), ter_version=2,
             no_validate=False,
         )
         for k, v in over.items():
@@ -266,27 +266,14 @@ class TestCliEscapeHatch:
 # ---------------------------------------------------------------------------
 
 class TestCliArgs:
-    def _cli(self, monkeypatch, argv):
-        """Drive the CLI in-process.
-
-        ``main.main()`` on this branch still reads ``sys.argv`` (the
-        ``main(argv=None)`` refactor is task 6.1), so we patch ``sys.argv``
-        rather than pass the list positionally. The behaviour asserted — argparse
-        rejecting ``--theme cave`` with exit code 2 — is identical either way.
-        """
-        import sys
-        import main
-        monkeypatch.setattr(sys, "argv", ["eq_s3d"] + argv)
-        return main.main
-
-    def test_cave_theme_rejected_by_argparse(self, tmp_path, monkeypatch):
+    def test_cave_theme_rejected_by_argparse(self, tmp_path):
         # "cave" was removed from the --theme choices (M0 6.8): argparse exits 2
         # in parse_args, before any build, so no output directory is created.
+        # Driven in-process via the main(argv) entry point (task 6.1).
+        import main
         out = str(tmp_path / "cli_out")
-        run = self._cli(monkeypatch,
-                        ["generate", "x", "--theme", "cave", "--output", out])
         with pytest.raises(SystemExit) as ei:
-            run()
+            main.main(["generate", "x", "--theme", "cave", "--output", out])
         assert ei.value.code == 2
         assert not Path(out).exists()
 
