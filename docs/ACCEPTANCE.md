@@ -22,7 +22,7 @@ seeds per theme.
 ## A. Core generation (all themes)
 
 - [ ] **[MUST] Generates without error** — Generate succeeds for `dungeon`,
-      `cave`, `outdoor`, `city`; the panel shows seed, polys, bounds.
+      `outdoor`, `city`; the panel shows seed, polys, bounds.
 - [ ] **[MUST] Randomness** — Generating twice with the same controls yields a
       different seed and visibly different geometry.
 - [ ] **[MUST] Performance** — Generation completes in under ~5 minutes (should
@@ -45,7 +45,7 @@ seeds per theme.
 > ```
 >
 > It covers the mechanical MUSTs below for **dungeon** zones (the ✅-marked
-> items). It does **not** cover outdoor/cave yet (mesh is in a different
+> items). It does **not** cover outdoor yet (mesh is in a different
 > coordinate frame than the room graph — see ROADMAP Known issues), nor the
 > aesthetic "does it read as a place" judgement. Walk those in the viewer.
 >
@@ -56,16 +56,16 @@ seeds per theme.
 > server answers HTTP 503 instead of serving a broken GLB, and every rejected
 > attempt is logged to `output/validation_failures.jsonl`. So for **dungeon**
 > zones the ✅ navigability items below are enforced before you ever see the
-> zone — this manual pass is the backstop and the sole gate for outdoor/cave.
+> zone — this manual pass is the backstop and the sole gate for outdoor.
 > (`main.py generate --no-validate` bypasses the gate to inspect a broken seed.)
 
 - [ ] **[MUST] Walkable floors** — You can walk across each room's floor without
       hitting steep, slippery, or pit-like surfaces. Gentle undulation is fine.
       *(✅ auto for dungeon: the agent's walkable-slope cap rejects floors/ramps
-      steeper than 40°; outdoor/cave still manual.)*
+      steeper than 40°; outdoor still manual.)*
 - [ ] **[MUST] Rooms are reachable** — Every room can be reached on foot from the
       entrance; no room is sealed off. *(✅ auto for dungeon via
-      `analyzer.traverse` — the core check. Outdoor/cave still manual.)*
+      `analyzer.traverse` — the core check. Outdoor still manual.)*
 - [ ] **[MUST] Corridors connect cleanly** — Each corridor meets both rooms it
       joins; no corridor (or staircase) floats detached from a wall opening.
       *(✅ auto for dungeon: a corridor that's nominally walkable but whose mesh
@@ -84,10 +84,14 @@ seeds per theme.
       near the zone.
 - [ ] **[MUST] Floors render solid from above** — Looking down, the floor is
       opaque (not back-face-culled / see-through).
-- [ ] **[SHOULD] Single connected cave** — For the `cave` theme, the whole zone
-      is one continuous space (chambers joined by tunnels), not separate bubbles.
+- *Retired: pending the natural geometry style (umbrella M5).* **[SHOULD] Single
+      connected cave** — For the `cave` theme, the whole zone is one continuous
+      space (chambers joined by tunnels), not separate bubbles.
 
 ## D. Caves specifically
+
+*Retired: pending the natural geometry style (umbrella M5).* The cave pipeline
+was removed in M0; these items return when the natural geometry style ships.
 
 - [ ] **[MUST] Natural shapes** — Chambers read as irregular organic blobs, not
       perfect spheres; tunnels wind rather than running dead straight.
@@ -139,7 +143,7 @@ watertightness) without opening the browser:
 ```bash
 python -c "from generators.layout import LayoutGenerator; from generators.builder import ZoneBuilder; from core.ter import TerFile; from core.pfs import PfsArchive; import numpy as np, trimesh
 for seed in [1,5,42,99,678358326]:
-    s=LayoutGenerator(theme='cave',seed=seed).generate('q',room_count=5)
+    s=LayoutGenerator(theme='dungeon',seed=seed).generate('q',room_count=5)
     r=ZoneBuilder(s).build(output_dir='output',write_glb=False)
     t=TerFile.from_bytes(PfsArchive.from_file(r.eqg_path).get('ter_q.ter'))
     V=np.array([[v.x,v.y,v.z] for v in t.vertices]); F=np.array([[p.v1,p.v2,p.v3] for p in t.polygons])

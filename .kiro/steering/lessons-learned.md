@@ -23,6 +23,13 @@ read before touching the relevant area so it isn't rediscovered.
 
 ## Geometry / fields
 
+> **The cave pipeline was removed in M0.** Cave returns as a dungeon archetype
+> (umbrella M3) and the natural geometry style (umbrella M5). The cave-specific
+> entries below (the first five here, plus "Localized feature SDFs" and "Voxel
+> budget" under Performance) describe the removed field pipeline. They are kept
+> VERBATIM as hard-won guidance for whoever rebuilds the natural style in M5 —
+> they are not describing current code.
+
 - **Automated structural tests can pass while the 3D viewer shows it's broken.**
   The cave backend's `TestCaveConnectivity` reports a single watertight component,
   yet caves still render as disconnected blobs in the viewer. The analysis and
@@ -77,6 +84,11 @@ read before touching the relevant area so it isn't rediscovered.
   rooms already consistent don't move, so verticality is preserved.
 
 ## Performance
+
+> **Cave-pipeline note:** the localized-SDF and voxel-budget entries below
+> describe the cave field pipeline removed in M0. Cave returns as a dungeon
+> archetype (umbrella M3) and the natural geometry style (umbrella M5); these are
+> kept VERBATIM as M5 guidance, not a description of current code.
 
 - **opensimplex was the bottleneck** (~26 s for a big cave). Replaced with a fully
   vectorised numpy value-noise → ~1 s. Never reintroduce a per-voxel Python loop.

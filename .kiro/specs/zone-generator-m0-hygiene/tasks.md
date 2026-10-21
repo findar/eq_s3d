@@ -287,10 +287,29 @@ Working rules for every task:
   - [ ] 5.4 Run the suite without the cave-only dependencies installed
     - In the worktree venv, run `pip uninstall -y fast-simplification scikit-image`, then `python -m pytest tests/ -q`. Record the result here: zero failures, zero errors.
     - _Requirements: 7.3_
-  - [ ] 5.5 Update the docs and steering for the cave removal
+  - [x] 5.5 Update the docs and steering for the cave removal
     - `docs/ACCEPTANCE.md`: remove `cave` from the theme list, retire C "Single connected cave" and section D (pending umbrella M5), drop the cave sweep snippet, and change "outdoor/cave" to "outdoor".
     - `.kiro/steering/lessons-learned.md`: rewrite the cave entries to "cave pipeline removed in M0; cave = dungeon archetype (M3), natural style (M5)". Keep the walkable-floor, no-decimation and voxel-fidelity facts as M5 guidance.
     - _Requirements: 6.1, 6.10_
+    - **Done.** Docs + steering only; no code touched. Verified both files against
+      their real contents before editing.
+      - `docs/ACCEPTANCE.md`: section A "Generates without error" theme list is now
+        `dungeon`, `outdoor`, `city` (dropped `cave`). Section B: the three
+        "outdoor/cave" / "Outdoor/cave" occurrences (the gate sentence and the two
+        ✅-auto notes) → "outdoor" / "Outdoor". Section C "Single connected cave"
+        item prefixed *Retired: pending the natural geometry style (umbrella M5).*
+        Section D "Caves specifically" gained the same retirement lead line noting
+        the cave pipeline was removed in M0; its checklist items are kept as history
+        (not deleted). The quick seed-sweep snippet now builds `theme='dungeon'`
+        (same pattern, one-line change).
+      - `.kiro/steering/lessons-learned.md`: added a lead blockquote under
+        "Geometry / fields" and under "Performance" stating the cave pipeline was
+        removed in M0 and cave returns as a dungeon archetype (umbrella M3) and the
+        natural geometry style (umbrella M5); the cave entries are kept VERBATIM as
+        M5 guidance (never decimate walkable floors; voxel ≈ 12 u matches Classic–PoP
+        edge length; clamp floors one-sided and re-intersect with the floor plane
+        after blends; the walkable-floor shaping facts). No hard-won fact deleted.
+    - **Commit:** `__PENDING__`
 
 - [ ] 6. Remove the legacy viewer
   - [x] 6.1 Delete the viewer and its CLI entry points
@@ -431,13 +450,42 @@ Working rules for every task:
   - Run `python -m pytest tests/ -q`. It must be green. Tasks 4–7 are committed separately (4.1 first; 5.2 + 5.3 together). Ask the user if questions arise.
 
 - [ ] 9. Core property module (`tests/test_properties_core.py`)
-  - [ ] 9.1 Write the property test for the PFS archive round-trip
+  - [x] 9.1 Write the property test for the PFS archive round-trip
     - **Property 1: PFS archive round-trip** (umbrella P13)
     - `test_pfs_roundtrip` over `pfs_entries`, with a budget of `scaled(100)`.
     - Assert that `from_bytes(to_bytes(arc))` gives an equal name→bytes map with case-preserved names and no extra entries.
     - Pin `@example` for 600 bulk names of length 60 (name block ≈ 39,000 B, which is also multi-chunk).
     - If a CRC collision or a sentinel clash appears, stop and ask the user. Don't narrow the strategy.
     - **Validates: Requirements 2.1, 1.6**
+    - **Done.** Created `tests/test_properties_core.py` with `test_pfs_roundtrip`
+      as its first property. Verified against the real `core/pfs.py` API:
+      construct `PfsArchive()`, `arc.add(name, data)` per entry, serialize with
+      `arc.to_bytes()`, parse with `PfsArchive.from_bytes(...)`. The round-trip
+      map is read off `parsed.files` (`{f.name: f.data}`), NOT via `arc.get()`
+      (which is case-insensitive) — so case preservation is actually asserted.
+      Property asserts: same key set (case-preserved), `len(parsed.files) ==
+      len(entries)` (catches a dropped entry from any CRC/sentinel collapse), and
+      byte-equal payloads.
+    - **`@example`:** 600 distinct printable-ASCII names of length 60, built
+      inline from a seeded RNG over the same alphabet `pfs_entries` uses
+      (case-insensitively deduped) → name block = 4 + 600*(4+61) = **39,004 B**,
+      well over the 8192-B deflate chunk, so it exercises the multi-chunk
+      `_deflate_chunks`/`_inflate_chunks` path.
+    - **One deviation from the literal task:** added `deadline=None` to the
+      `@settings` (alongside `max_examples=scaled(100)`). The default profile sets
+      `deadline=200` ms; the ~39 KB / up-to-2000-entry archives take a few hundred
+      ms to serialize+parse (a cost that scales with entry count, not a
+      correctness signal), so the per-example wall-clock deadline flaked. The
+      strategy and the property are unchanged — only the deadline is lifted.
+    - **CRC collision / sentinel clash:** NONE surfaced across the 100 generated
+      examples + the pinned 39 KB example.
+    - **Verification:** `python -m pytest tests/test_properties_core.py -q` →
+      **1 passed** (100 examples + the @example). Full `python -m pytest tests/ -q`
+      → **208 passed** (205 prior + 3; note the +3 vs the single new test reflects
+      concurrent sibling landings in the shared worktree branch state at run time),
+      exit 0.
+    - **Commit (staged only `tests/test_properties_core.py` + this `tasks.md`):**
+      `__HASH__`.
   - [ ] 9.2 Write the property test for the PFS filename CRC
     - **Property 2: PFS filename CRC matches the reference** (umbrella P14)
     - `test_pfs_crc_matches_reference`: assert `_filename_crc32(n) == ref_crc(n)`.
@@ -450,11 +498,47 @@ Working rules for every task:
     - **Validates: Requirements 2.3, 1.5, 1.6**
 
 - [ ] 10. Layout property module (`tests/test_properties_layout.py`)
-  - [ ] 10.1 Write the property test for the ZoneSpec JSON round-trip
+  - [x] 10.1 Write the property test for the ZoneSpec JSON round-trip
     - **Property 4: ZoneSpec JSON round-trip** (umbrella P11)
     - `test_zonespec_json_roundtrip` over `spec_themes`, n 1–30, locks 0–5, elevation and `semantic_inputs`.
     - Assert `ZoneSpec.from_dict(json.loads(j)).to_dict()` (normalised through JSON) `== json.loads(j)`, with exact float equality.
     - **Validates: Requirements 2.4, 1.6**
+    - **Done.** Created `tests/test_properties_layout.py` with
+      `test_zonespec_json_roundtrip` as the first test in the module. Verified
+      against the real code first:
+      - `ZoneSpec.to_dict` / `ZoneSpec.from_dict` are the exact names
+        (`generators/zone_spec.py`). `to_dict` emits tuples as lists; `from_dict`
+        rebuilds tuples. `CorridorSpec.floor_z` is a `@property` (not a dataclass
+        field), so `asdict` omits it and `from_dict(**fields)` never sees it —
+        no round-trip hazard.
+      - Production path is `ai.expand.plan_to_spec(ZonePlan(...), seed=seed)`
+        (same path the other layout tests use) — the full real layout, so the
+        spec carries realistic rooms/corridors/gates/materials + semantic fields.
+        `semantic_inputs` map onto `ZonePlan.{dungeon_theme,dungeon_race,
+        elemental_tint}`; the `None` elemental-tint sentinel is passed as `""`
+        (ZonePlan's field default).
+      - Assertion framed exactly as the design states: `j = json.dumps(spec.to_dict())`,
+        then `json.loads(json.dumps(ZoneSpec.from_dict(json.loads(j)).to_dict()))
+        == json.loads(j)`. The outer json dump/load on the reserialised side puts
+        BOTH sides in the same list-not-tuple shape so the `==` is a pure JSON
+        fixpoint with exact float equality. **No adjustment to the assertion was
+        needed** — the round-trip is a clean fixpoint for every drawn input; no
+        counterexample surfaced.
+      - ONE deviation from the bare design wording: added
+        `@settings(deadline=None, max_examples=scaled(100))`. A full layout for up
+        to 30 rooms + semantic layer occasionally exceeds the Default_Profile's
+        200 ms per-example deadline on a cold first call (import/JIT warmup, then
+        ~1–35 ms thereafter), which Hypothesis flagged as a flaky DeadlineExceeded.
+        That's timing variance, not a property failure. Budget stays 100 (via
+        `scaled(100)`, so it still 5×-scales under `thorough`); NOT a build-tier
+        test, so no `slow` marker and no `build_settings`.
+    - **Verification:** `python -m pytest tests/test_properties_layout.py -q
+      --hypothesis-show-statistics` → **1 passed, 100 passing examples, 0 failing,
+      0 invalid**. Full suite `python -m pytest tests/ -q` → **208 passed**
+      (2 pre-existing unrelated warnings: starlette anyio-alias deprecation,
+      runpy re-import).
+    - **Commit (staged only `tests/test_properties_layout.py` + this `tasks.md`):**
+      `__PENDING__`
   - [ ] 10.2 Write the property test for connectivity and pacing roles
     - **Property 5: Layout connectivity and pacing roles** (umbrella P3, single District)
     - `test_connectivity_and_roles` over `box_themes`, n 1–30 and `semantic_inputs`.
@@ -500,11 +584,42 @@ Working rules for every task:
     - **Validates: Requirements 6.5**
 
 - [ ] 11. Build property module (`tests/test_properties_build.py`, all `@pytest.mark.slow` with `build_settings`)
-  - [ ] 11.1 Write the property test for raw dungeon navigability
+  - [x] 11.1 Write the property test for raw dungeon navigability
     - **Property 10: Raw dungeon builds are navigable** (umbrella P1, dungeon)
     - `test_raw_dungeon_navigable` with `build_settings(20)`, over dungeon, n 2–12 and elevation, using `LayoutGenerator.generate` + `build_raw` + `validate(eqg, spec=spec)`.
     - Builder exceptions propagate as failures. Never call `assume` here.
     - **Validates: Requirements 4.1, 1.5, 1.6**
+    - **Done.** Created `tests/test_properties_build.py` (module header: all tests
+      here are `@pytest.mark.slow` with `build_settings`) and added
+      `test_raw_dungeon_navigable` as the first test, decorated
+      `@pytest.mark.slow` + `@build_settings(20)` + `@given(s=seeds,
+      n=room_counts(2, 12), elevation=st.booleans())`. Property: builds a dungeon
+      via `LayoutGenerator(theme="dungeon", seed=s).generate("navdun",
+      room_count=n, elevation=elevation)`, then `build_raw(spec, out)` in a
+      `fresh_dir()`, then asserts `analyzer.traverse.validate(result.eqg_path,
+      spec=spec).passed`. No `assume` — builder exceptions propagate (Req 4.1).
+      Property_Docstring present (names umbrella P1 and "Validates: M0 Req 4.1,
+      1.5; umbrella P1").
+    - **Real validator API used:** `analyzer.traverse.validate(eqg_path, *,
+      spec=ZoneSpec) -> TraversalReport`; "is navigable" is `report.passed`
+      (`total_rooms > 0 and reachable_rooms == total_rooms`). It loads the TER
+      from the `.eqg`, builds a per-triangle walk surface, floods from the
+      entrance safe point, and maps each room's floor footprint onto the
+      reachable set — the same validator `tests/test_traversability.py` uses.
+    - **Verification (worktree `-Venv`):** `python -m pytest
+      tests/test_properties_build.py -q` → **1 passed** (~2.4 s warm;
+      `--hypothesis-show-statistics` confirms **20 passing examples**, stopped at
+      `max_examples=20`, typical per-example runtime ~49–391 ms — a cold run is
+      several seconds). Full `python -m pytest tests/ -q` → **208 passed**,
+      2 warnings (pre-existing starlette `BlockingPortal` + runpy `server.app`),
+      ~22 s. No counterexample surfaced.
+    - **NOT 3D-verified:** this is an ANALYTICAL navigability check on the TER
+      mesh (`analyzer.traverse`), necessary but not sufficient per the project
+      rule — not eyeballed in the live 3D viewer. If a non-navigable dungeon ever
+      fails this property, treat it as a real geometry bug (task 13.1), not an
+      input to assume away.
+    - **Commit:** `__HASH__` — staged only `tests/test_properties_build.py` and
+      this spec's `tasks.md`.
   - [ ] 11.2 Write the property test for ramp subdivision
     - **Property 11: Ramp subdivision** (umbrella P8)
     - `test_ramp_subdivision` with `build_settings(20)`, over `box_themes`, n 2–12, elevation on and verticality `moderate`/`dramatic`, through `plan_to_spec`.
