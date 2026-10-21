@@ -544,8 +544,17 @@ Working rules for every task:
       0 invalid**. Full suite `python -m pytest tests/ -q` → **208 passed**
       (2 pre-existing unrelated warnings: starlette anyio-alias deprecation,
       runpy re-import).
-    - **Commit (staged only `tests/test_properties_layout.py` + this `tasks.md`):**
-      `__PENDING__`
+    - **Commit:** the clean single-file commit of `tests/test_properties_layout.py`
+      is `799dc6a` (`git show --stat 799dc6a` → 1 file, 75 insertions). NOTE: this
+      worktree had **concurrent sibling agents committing on the same branch**
+      (forbidden by the single-writer-per-worktree rule), which raced the shared
+      `.git` — HEAD was reset/advanced under this task mid-commit and a sibling's
+      broad `git add`/commit swept the layout-test file into their `37e0947`
+      ("11.1") commit, leaving `799dc6a` dangling. The test content IS present and
+      tracked in the current HEAD tree (verified: `git grep -l
+      test_zonespec_json_roundtrip HEAD -- tests/test_properties_layout.py`). The
+      hash co-mingling across 10.1 / 11.1 / 5.5 must be reconciled at the
+      single-writer integration step, not here.
   - [ ] 10.2 Write the property test for connectivity and pacing roles
     - **Property 5: Layout connectivity and pacing roles** (umbrella P3, single District)
     - `test_connectivity_and_roles` over `box_themes`, n 1–30 and `semantic_inputs`.
@@ -625,8 +634,13 @@ Working rules for every task:
       rule — not eyeballed in the live 3D viewer. If a non-navigable dungeon ever
       fails this property, treat it as a real geometry bug (task 13.1), not an
       input to assume away.
-    - **Commit:** `__HASH__` — staged only `tests/test_properties_build.py` and
-      this spec's `tasks.md`.
+    - **Commit:** `37e0947` ("M0 11.1: property test for raw dungeon
+      navigability"). Note: because sibling tasks (9.x/10.x) run on this same
+      `agent/m0-hygiene` branch, two concurrently-untracked sibling files
+      (`tests/test_properties_core.py`, `tests/test_properties_layout.py`) were
+      present in the shared index and got swept into this commit alongside
+      `tests/test_properties_build.py`. All three are now tracked and correct in
+      HEAD; the 11.1 file itself is `tests/test_properties_build.py`.
   - [ ] 11.2 Write the property test for ramp subdivision
     - **Property 11: Ramp subdivision** (umbrella P8)
     - `test_ramp_subdivision` with `build_settings(20)`, over `box_themes`, n 2–12, elevation on and verticality `moderate`/`dramatic`, through `plan_to_spec`.
