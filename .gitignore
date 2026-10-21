@@ -44,6 +44,7 @@ desktop.ini
 
 # Test artifacts
 .pytest_cache/
+.hypothesis/
 htmlcov/
 .coverage
 coverage.xml

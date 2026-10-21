@@ -29,3 +29,7 @@ click==8.1.8
 # Utilities
 pydantic==2.10.4
 python-dotenv==1.0.1
+
+# Testing
+hypothesis==6.170.5
+httpx==0.28.1           # test-only: backs FastAPI TestClient
