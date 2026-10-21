@@ -155,7 +155,7 @@ Working rules for every task:
     tasks 2.1–2.5 (HEAD `29bc319` at checkpoint entry); the working tree was
     already clean on entry (no leftover `COMMIT_EDITMSG_TMP`, no unexpected code
     changes), so this checkpoint commit lands only the checkbox bookkeeping.
-  - **Commit:** `3143f3f` ("M0 checkpoint 3: harness in place (197 passed, no unknown-mark warning)") — tracker bookkeeping only.
+  - **Commit:** `171f3d2` ("M0 checkpoint 3: harness in place (197 passed, no unknown-mark warning)") — tracker bookkeeping only.
 
 - [ ] 4. Capture the outdoor TER baseline before any deletion
   - [ ] 4.1 Capture the fork-point hashes and add the baseline test
