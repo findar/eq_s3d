@@ -166,7 +166,7 @@ Working rules for every task:
 
 - [ ] 5. Delete the cave pipeline and the `cave` theme
   - Commit one sub-task at a time and keep the suite green after each commit. Code and the tests of that code are deleted in the same commit. 5.2 and 5.3 land in one commit. `test_outdoor_ter_matches_fork_point` must pass unchanged after every commit.
-  - [ ] 5.1 Delete the cave pipeline code and its dependencies
+  - [x] 5.1 Delete the cave pipeline code and its dependencies
     - Delete `generators/field/cave.py`, `features.py`, `mesh.py` and `sdf.py`.
     - `generators/field/noise.py`: delete `fbm_field` and `from .sdf import FieldGrid`. Keep `_value_noise_3d` and its helpers. Reword the module docstring to "terrain heightfields". Drop "caves" from the `generators/field/__init__.py` comment.
     - `generators/builder.py`: delete `_CAVE_THEMES`, the cave branch of `_build_geometry` and `_build_organic`. Reword the step-1 comment and the `'cave_rock'` mention in the material colour docstring.
@@ -176,6 +176,35 @@ Working rules for every task:
     - Delete `tests/test_cave.py` in the same commit.
     - If a remaining cave-theme test goes red on this commit, fold 5.2 + 5.3 into it rather than committing red.
     - _Requirements: 6.1, 6.2, 6.4, 6.10, 7.1, 7.2_
+    - **Done.** Deleted `generators/field/{cave,sdf,mesh,features}.py` and
+      `tests/test_cave.py` in one commit. `noise.py`: removed `fbm_field` and the
+      `from .sdf import FieldGrid` import; kept `_value_noise_3d` + helpers
+      (terrain still imports it) and reworded the module docstring to terrain
+      heightfields; `field/__init__.py` comment no longer names caves.
+      `builder.py`: removed `_CAVE_THEMES`, the cave branch of `_build_geometry`
+      and `_build_organic`; reworded the step-1 comment and the material-colour
+      docstring (dropped `'cave_rock'`). `layout.py`: dropped the `"cave"` entries
+      from the material palette and the light-colour table. `pipeline.py`: dropped
+      "cave" from the `DEFAULT_GATED_THEMES` comment and the module /
+      `generate_validated` docstrings; the gated set value is unchanged
+      (`{"dungeon"}`). `requirements.txt`: removed `scikit-image==0.26.0` and
+      `fast-simplification==0.1.11`. No remaining cave-theme test went red, so
+      5.2 + 5.3 were NOT folded in — they stay separate as planned.
+    - **Verification:** `python -m pytest tests/ -q` → **196 passed** (no
+      `PytestUnknownMarkWarning`). `test_outdoor_ter_matches_fork_point` → 3
+      passed, unchanged (outdoor terrain depends on value-noise, not fbm/sdf).
+      `python -c "import generators.builder, generators.layout,
+      generators.pipeline, generators.field.noise"` imports cleanly; `_value_noise_3d`
+      still importable. `git grep` confirms zero remaining references to the
+      deleted field modules / `fbm_field` / `FieldGrid` / `_CAVE_THEMES` /
+      `_build_organic` and to `skimage` / `fast_simplification`. Cave-only deps
+      not uninstalled from the venv (that's task 5.4); pins removed from
+      `requirements.txt`.
+    - **Commit:** `d1429e47fee611c966c8018d6a1b98fd3d5d6fa3` — staged only the 5.1
+      fileset (`generators/field/{cave,sdf,mesh,features}.py` deletions,
+      `generators/field/{noise,__init__}.py`, `generators/{builder,layout,pipeline}.py`,
+      `requirements.txt`, `tests/test_cave.py`). The sibling agent's
+      `tests/test_server.py` (task 7.2) was left unstaged.
   - [ ] 5.2 Remove `cave` from the theme surface
     - `ai/schema.py` and `server/app.py`: `VALID_THEMES = ["dungeon", "outdoor", "city"]`.
     - `main.py`: `--theme` `choices=["dungeon", "outdoor", "city"]`.
