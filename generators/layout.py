@@ -732,11 +732,6 @@ class LayoutGenerator:
                 "wall":    ((120, 115, 100),"weathered rock cliff face"),
                 "ceiling": ((120, 140, 170),"overcast sky"),
             },
-            "cave": {
-                "floor":   ((80, 75, 70),  "damp cave floor, rocky"),
-                "wall":    ((90, 82, 76),  "jagged cave rock wall, wet"),
-                "ceiling": ((50, 46, 44),  "dark stalactite cave ceiling"),
-            },
             "city": {
                 "floor":   ((130, 125, 118),"paved stone street"),
                 "wall":    ((150, 140, 125),"cut sandstone building wall"),
@@ -755,7 +750,6 @@ class LayoutGenerator:
         # Theme-appropriate base light colour
         colors = {
             "dungeon": (1.0, 0.55, 0.15),   # torch orange
-            "cave":    (0.5, 0.6, 0.8),     # cool blue
             "outdoor": (1.0, 0.95, 0.85),   # daylight
             "city":    (1.0, 0.85, 0.6),    # warm lantern
         }

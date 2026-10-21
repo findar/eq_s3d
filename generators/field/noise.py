@@ -1,8 +1,8 @@
 """
 generators/field/noise.py
 --------------------------
-Fast fractal (FBM) value noise sampled over a FieldGrid, used to perturb cave
-surfaces so walls are irregular and organic rather than smooth tubes.
+Fast vectorised value noise used to perturb terrain heightfields so surfaces
+are irregular and organic rather than smoothly interpolated.
 
 Implementation is fully vectorised numpy gradient/value noise — no per-voxel
 Python loops — so a ~100k-voxel grid evaluates in milliseconds. (The previous
@@ -12,34 +12,6 @@ opensimplex.noise3array path was pure-Python and took ~26s for the same grid.)
 from __future__ import annotations
 
 import numpy as np
-
-from .sdf import FieldGrid
-
-
-def fbm_field(grid: FieldGrid,
-              seed: int = 0,
-              scale: float = 140.0,
-              octaves: int = 4,
-              lacunarity: float = 2.0,
-              gain: float = 0.5) -> np.ndarray:
-    """
-    Fractional Brownian Motion value-noise at every voxel's world position.
-    Returns a float32 array in roughly [-1, 1]. *scale* is the world-space
-    wavelength of the base octave (larger = smoother, broader bumps).
-    """
-    X, Y, Z = grid.world_coords()
-
-    total = np.zeros(X.shape, dtype=np.float32)
-    amp = 1.0
-    freq = 1.0 / scale
-    norm = 0.0
-    for o in range(octaves):
-        n = _value_noise_3d(X * freq, Y * freq, Z * freq, seed + o * 1013)
-        total += amp * n
-        norm += amp
-        amp *= gain
-        freq *= lacunarity
-    return (total / max(norm, 1e-6)).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------

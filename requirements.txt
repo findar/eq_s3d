@@ -2,8 +2,6 @@
 numpy==2.2.1
 trimesh==5.1.1
 scipy==1.15.1              # trimesh GLB export dependency
-scikit-image==0.26.0      # marching cubes for organic cave geometry
-fast-simplification==0.1.11  # mesh decimation backend for trimesh
 
 # Image handling (DDS encoding via Pillow; DXT compression via imageio plugin)
 Pillow==11.1.0
