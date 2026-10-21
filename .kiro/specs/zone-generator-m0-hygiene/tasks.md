@@ -50,10 +50,37 @@ Working rules for every task:
     - Add a `no_api_keys` fixture. It deletes `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `STABILITY_API_KEY`, `EQ_S3D_PLANNER` and `EQ_S3D_TEXTURE_PROVIDER`, then calls `ai.planner.set_planner(None)` and `generators.textures.factory.set_provider(None)`.
     - Add a `no_network` fixture. It patches `socket.socket.connect`, `connect_ex`, `bind` and `socket.getaddrinfo` so that loopback and `AF_UNIX` pass through, and every other target is recorded in `attempts` and raises `OSError`.
     - _Requirements: 1.3, 1.9, 5.4, 5.5, 8.3, 8.4_
-  - [ ] 2.4 Add `tests/strategies.py`
+  - [x] 2.4 Add `tests/strategies.py`
     - Implement `seeds`, `room_counts(lo, hi)`, `box_themes`, `spec_themes`, `semantic_inputs`, `verticality`, `zone_plan_dicts`, `pfs_names` and `origins_outside` as specified in the design Strategies table.
     - Implement `pfs_entries` as a descriptor-based composite: explicit entries are `(name, (length, byte_seed))`; bulk entries use `bulk_n`/`bulk_seed` with case-insensitive deduplication. Expand payloads with `random.Random(byte_seed).randbytes(length)`. This keeps the Hypothesis buffer under its limit.
     - _Requirements: 2.1, 2.2, 3.1, 3.2, 3.3, 3.5, 9.3_
+    - **Done.** Added `tests/strategies.py` with module constants `DEFINED_THEMES`
+      and `CAVE_WORDS`, and strategies `seeds`, `room_counts`, `box_themes`,
+      `spec_themes`, `verticality`, `semantic_inputs`, `zone_plan_dicts`,
+      `pfs_names`, `pfs_entries` (descriptor-based composite, reaches the full
+      2000-entry regime so the P13 600-name `@example` is drawable) and
+      `origins_outside`. Verified: module imports standalone
+      (`python -c "import tests.strategies"`); every strategy produces examples;
+      `zone_plan_dicts` feeds `ZonePlan.from_dict` cleanly; `pfs_entries` yields
+      case-insensitively-unique name→bytes maps with deterministic payload
+      expansion; `origins_outside` never emits an allowed origin;
+      `pytest --collect-only` still green (197 tests, no import error).
+    - **Symbol deviations / notes:**
+      - All vocab constants (`VALID_DUNGEON_THEMES`, `VALID_DUNGEON_RACES`,
+        `VALID_ELEMENTAL_TINTS`, `VALID_REGION_KINDS`) and `ZonePlan` live in
+        **`ai/schema.py`** (imported from there) — names match the design.
+      - `origins_outside` filters against `server.app.WEB_APP_ORIGINS`, which
+        **does not exist yet** (task 7.1 adds it). The strategy does a late
+        import of `WEB_APP_ORIGINS` and falls back to the design's literal tuple
+        (`http://127.0.0.1:8000`, `http://localhost:8000`,
+        `http://localhost:5173`, `http://127.0.0.1:5173`) until 7.1 lands, so
+        `strategies.py` imports cleanly now. **Dependency for 7.1:** server/app.py
+        must expose `WEB_APP_ORIGINS` with exactly that membership.
+      - `ai.schema.VALID_THEMES` still contains `"cave"` at the fork point
+        (removed in 5.2), so `DEFINED_THEMES` is a hand-written literal
+        `{"dungeon","city","outdoor"}`, and `zone_plan_dicts`' `theme` vocab still
+        includes `"cave"` on purpose (to exercise the cave→dungeon normalisation).
+    - **Commit:** `9424cba` (amended to fold in this hash line; final hash below).
   - [ ] 2.5 Add `tests/pbt_helpers.py`
     - Implement `scaled`, `build_settings`, `fresh_dir`, `build_raw`, `room_graph`, `solvable_walk`, `run_for`, `upward_faces`, `ramp_rises`, `opening_floor_z`, `clear_advisory`, `f32` and `ref_crc` per the design Helpers table.
     - `build_raw` must compare the TER and ZON read back from the `.eqg`, never the `.eqg` bytes. `run_for` must call the production `LayoutGenerator._elevation_run`. `ref_crc` must not use `core.pfs`'s table.
