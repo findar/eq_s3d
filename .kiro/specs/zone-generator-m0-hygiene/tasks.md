@@ -664,12 +664,45 @@ Working rules for every task:
     - **Validates: Requirements 4.5, 1.5, 1.6**
 
 - [ ] 12. Pipeline property module (`tests/test_properties_pipeline.py`)
-  - [ ] 12.1 Write the property test that returned builds passed the gate
+  - [x] 12.1 Write the property test that returned builds passed the gate
     - **Property 15: Returned builds passed the gate** (umbrella P2)
     - `test_returned_build_is_validated`: slow, `build_settings(15)`, `max_attempts` 1–8, `rng=st.randoms(use_true_random=False)`, a spy `spec_factory` and `failure_log=None`.
     - Assert that the result is validated, that `1 <= calls <= max_attempts`, and that the returned seed equals the last seed the factory received.
     - `GenerationFailed` → `assume(False)`.
     - **Validates: Requirements 5.1, 1.5, 1.6**
+    - **Done.** Created `tests/test_properties_pipeline.py` (first test in the
+      module) with `test_returned_build_is_validated`. Marked `@pytest.mark.slow`
+      with `@build_settings(15)`; `@given(max_attempts=st.integers(1, 8),
+      rng=st.randoms(use_true_random=False))`; `failure_log=None`; output dir via
+      `fresh_dir()` (no `tmp_path` under `@given`).
+    - **Real `generate_validated` signature/result shape used:**
+      `generate_validated(spec_factory, *, theme, zone_id, seed=None,
+      output_dir, write_glb, ter_version, max_attempts, timeout_s, gated_themes,
+      validate_enabled, agent, rng, failure_log)`. `spec_factory(seed) ->
+      ZoneSpec`. Returns a `ValidatedBuild` dataclass; the property reads
+      `.validated` (gate ran AND passed) and `.seed` (the seed that produced the
+      returned zone). On a gated theme (dungeon) with no pinned seed, the loop
+      does `use_seed = _fresh_seed(rng)` → `spec_factory(use_seed)` → build →
+      `validate`; on pass it returns `seed=use_seed`, so `result.seed` equals the
+      LAST seed the factory was handed. `_fresh_seed(rng)` calls
+      `rng.randint(0, 2**31-1)` — the Hypothesis `randoms` object supplies it.
+    - **Spy/factory idiom:** reused `test_pipeline`'s `_good_*` pattern — the spy
+      records each seed it receives and a call counter, then ignores that seed
+      for GEOMETRY and builds a fixed navigable dungeon (`LayoutGenerator(
+      "dungeon", seed=1).generate("p15", room_count=3)`) so the gate passes on
+      attempt 1. `write_glb=False` to stay fast.
+    - **Assume-skip check:** the factory builds a connected, sub-second dungeon,
+      so every example returns on the first attempt — NO example was
+      assume-skipped (no `GenerationFailed`). `calls` is always 1 here, well
+      within `[1, max_attempts]`, and `result.seed == seeds_seen[-1]` holds.
+    - **Verification (worktree `-Venv`):**
+      `python -m pytest tests/test_properties_pipeline.py -q` → **1 passed** in
+      1.86s (15 examples under the default profile). Full
+      `python -m pytest tests/ -q` → **209 passed**, 2 pre-existing warnings
+      (starlette `BlockingPortal` deprecation + runpy `server.app`), no
+      `PytestUnknownMarkWarning`, exit 0.
+    - **Deliverable commit:** `0a1e245` — staged only
+      `tests/test_properties_pipeline.py`.
   - [ ] 12.2 Write the property test that forced failures are reported
     - **Property 16: Forced failures are reported, never swapped** (umbrella P2, pinned + exhaustion)
     - `test_forced_failure_reported`: slow, `build_settings(15)`. The factory builds a dungeon (n 2–4) plus one isolated room, keyed on the seed.
