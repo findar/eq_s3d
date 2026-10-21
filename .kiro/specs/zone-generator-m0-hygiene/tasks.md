@@ -45,11 +45,36 @@ Working rules for every task:
     - _Requirements: 1.2_
     - **Done.** Added `pytest.ini` at the repo root with the exact design content: `[pytest]`, `testpaths = tests`, and a `markers` block registering only `slow` ("build-level property test (runs the Zone_Builder or Pipeline); deselect with -m \"not slow\""). No `addopts`. Verified `pytest --markers` lists the `slow` marker and `pytest --co -q` collects 197 tests from `tests/` with no unknown-marker warning. (Hypothesis isn't installed in the venv yet — task 2.1 — so the Property_Suite modules aren't present; marker registration is the deliverable here.)
     - **Commit:** `48ea28b` ("Add pytest.ini registering the slow marker (M0 2.2)") — `pytest.ini` only.
-  - [ ] 2.3 Add `tests/conftest.py`
+  - [x] 2.3 Add `tests/conftest.py`
     - When the module is imported, register the `default` profile (`max_examples=100, derandomize=True, database=None, deadline=200`) and the `thorough` profile (`max_examples=500, derandomize=False, deadline=None`, default database). Then call `load_profile("default")`.
     - Add a `no_api_keys` fixture. It deletes `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `STABILITY_API_KEY`, `EQ_S3D_PLANNER` and `EQ_S3D_TEXTURE_PROVIDER`, then calls `ai.planner.set_planner(None)` and `generators.textures.factory.set_provider(None)`.
     - Add a `no_network` fixture. It patches `socket.socket.connect`, `connect_ex`, `bind` and `socket.getaddrinfo` so that loopback and `AF_UNIX` pass through, and every other target is recorded in `attempts` and raises `OSError`.
     - _Requirements: 1.3, 1.9, 5.4, 5.5, 8.3, 8.4_
+    - **Done.** Added `tests/conftest.py`. Registers the `default` and `thorough`
+      Hypothesis profiles at import (before the Hypothesis plugin's profile
+      selection), then `load_profile("default")`. Added the `no_api_keys` and
+      `no_network` fixtures per the design.
+    - **API verification:** `ai.planner.set_planner(planner)` and
+      `generators.textures.factory.set_provider(provider)` both exist with the
+      documented `None -> restore auto-select` behaviour (read in the worktree;
+      names match the design, no deviation). `get_planner`/`get_provider` honour
+      `EQ_S3D_PLANNER` / `EQ_S3D_TEXTURE_PROVIDER` env overrides, so `no_api_keys`
+      deletes those two plus the three key vars and resets the forced globals.
+    - **`no_network` detail:** `attempts` is the yielded list (tests assert
+      `attempts == []`). Loopback classification covers `127.0.0.0/8`, `::1`,
+      the `localhost`/`::1` host strings, and IPv4-mapped loopback
+      (`::ffff:127.*`); AF_UNIX (str/bytes address) and unrecognised address
+      shapes pass through. `getaddrinfo(None, ...)` (used for passive binds)
+      passes through. Teardown is handled by `monkeypatch` (fixtures restore the
+      real socket attrs automatically).
+    - **Verification:** `python -m pytest tests/ -q` green (197 passed, no
+      unknown-marker warning, clean collection). Fixture behaviour smoke-tested
+      in a throwaway test (deleted): `no_api_keys` -> rule planner + procedural
+      provider; `no_network` passes a `127.0.0.1` bind, blocks a foreign
+      `connect` and a foreign `getaddrinfo` with `OSError` and records each.
+      Staged `tests/conftest.py` only (siblings' `strategies.py` / `pbt_helpers.py`
+      left untouched and unstaged).
+    - **Commit:** `cc6e34ebd5f41915d8504dab98eaedc913910fc9`
   - [x] 2.4 Add `tests/strategies.py`
     - Implement `seeds`, `room_counts(lo, hi)`, `box_themes`, `spec_themes`, `semantic_inputs`, `verticality`, `zone_plan_dicts`, `pfs_names` and `origins_outside` as specified in the design Strategies table.
     - Implement `pfs_entries` as a descriptor-based composite: explicit entries are `(name, (length, byte_seed))`; bulk entries use `bulk_n`/`bulk_seed` with case-insensitive deduplication. Expand payloads with `random.Random(byte_seed).randbytes(length)`. This keeps the Hypothesis buffer under its limit.
@@ -82,11 +107,42 @@ Working rules for every task:
         includes `"cave"` on purpose (to exercise the cave→dungeon normalisation).
     - **Commit:** `fd60c42` (adds `tests/strategies.py`; this tracker line was
       recorded in a follow-up commit).
-  - [ ] 2.5 Add `tests/pbt_helpers.py`
+  - [x] 2.5 Add `tests/pbt_helpers.py`
     - Implement `scaled`, `build_settings`, `fresh_dir`, `build_raw`, `room_graph`, `solvable_walk`, `run_for`, `upward_faces`, `ramp_rises`, `opening_floor_z`, `clear_advisory`, `f32` and `ref_crc` per the design Helpers table.
     - `build_raw` must compare the TER and ZON read back from the `.eqg`, never the `.eqg` bytes. `run_for` must call the production `LayoutGenerator._elevation_run`. `ref_crc` must not use `core.pfs`'s table.
     - `build_settings(n)` asserts `10 <= n <= 25`.
     - _Requirements: 1.3, 1.5, 2.2, 2.3, 3.2, 3.3, 3.4, 4.2, 4.5_
+    - **Done.** Added `tests/pbt_helpers.py` with all 13 helpers. Verified against
+      the real code: `ZoneBuilder(spec).build(output_dir=, write_glb=False)` →
+      `BuildResult.eqg_path`; archive members are `ter_<name>.ter` and `<name>.zon`
+      (confirmed in `core/eqg.EqgZone.write` / `builder.ZoneBuilder.build`). TER
+      read via `core.ter.TerFile`; `PfsArchive.from_file`/`.get` are
+      case-insensitive. `run_for` calls the production
+      `LayoutGenerator._elevation_run` (sets `size_multiplier =
+      ai.expand._SIZE_SCALE[size]`, then `_apply_room_scale(room_count)`).
+      `ref_crc` is a standalone MSB-first bitwise CRC (poly 0x04C11DB7, init 0,
+      no final XOR, over name+NUL), independent of `core.pfs`'s table —
+      cross-checked equal to `core.pfs._filename_crc32` for a sample set
+      including `"gukbottom.ter"`, `"Ab"`, `"aB"`, empty and 64-char names.
+      Module imports cleanly (`python -c "import tests.pbt_helpers"` from the
+      worktree root) and all helpers smoke-tested against a real seed-7 dungeon
+      build (TER read-back, 108 upward faces, max ramp rise 2.47, solvable walk
+      visits all rooms, `clear_advisory` resets roles/gates while keeping
+      `dungeon_theme`, `opening_floor_z` finds the corridor-opening floor).
+    - **Deviations (noted, vs the design Helpers table):**
+      1. `run_for(spec, theme, room_count, size, a, b)` — the design lists
+         `run_for(spec, theme, room_count, size)`, but the production
+         `_elevation_run(a, b)` needs the two `RoomSpec` endpoints to compute a
+         per-corridor run, so `a`/`b` are accepted explicitly. `spec` is kept for
+         parity (currently unused by the run computation). No re-implementation:
+         it still calls the production function.
+      2. `upward_faces`/`ramp_rises`/`opening_floor_z` accept either a `TerFile`
+         or raw TER bytes (convenience; callers may hold either), via a small
+         `_ter()` adapter.
+      3. `no_network` is intentionally NOT in this module — it is a pytest
+         fixture owned by `tests/conftest.py` (task 2.3), as the prompt directed.
+    - **Deliverable commit:** `1091c8e` (adds `tests/pbt_helpers.py`; tracker
+      line recorded in a follow-up commit).
 
 - [ ] 3. Checkpoint: harness in place
   - Run `python -m pytest tests/ -q`. It must be green with no `PytestUnknownMarkWarning`. Commit the harness. Ask the user if questions arise.
