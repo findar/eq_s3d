@@ -309,7 +309,12 @@ Working rules for every task:
         M5 guidance (never decimate walkable floors; voxel ≈ 12 u matches Classic–PoP
         edge length; clamp floors one-sided and re-intersect with the floor plane
         after blends; the walkable-floor shaping facts). No hard-won fact deleted.
-    - **Commit:** `__PENDING__`
+    - **Commit:** `d6d9d5aa4a49d4a1fff1c5fcaebe6181cc07aaeb` — staged only
+      `docs/ACCEPTANCE.md`, `.kiro/steering/lessons-learned.md` and this spec's
+      `tasks.md`. (Note: that commit object carries a stale subject line from a
+      concurrent sibling commit because git fell back to `.git/COMMIT_EDITMSG`;
+      the committed *content* is exactly the 5.5 fileset above — verified by
+      `git show --stat`: 3 files, docs + steering + this tracker, no code.)
 
 - [ ] 6. Remove the legacy viewer
   - [x] 6.1 Delete the viewer and its CLI entry points
