@@ -218,12 +218,16 @@ Working rules for every task:
     - _Requirements: 8.3, 8.4, 8.5_
 
 - [ ] 7. Bind the server to loopback and restrict CORS
-  - [ ] 7.1 Implement the loopback bind and `LocalCORSMiddleware` in `server/app.py`
+  - [x] 7.1 Implement the loopback bind and `LocalCORSMiddleware` in `server/app.py`
     - Add `HOST = "127.0.0.1"`, `PORT = 8000` and the `WEB_APP_ORIGINS` tuple.
     - Subclass `CORSMiddleware` and override `preflight_response` so that every `access-control-allow-*` header is removed when the origin is disallowed. Register the subclass with an explicit `allow_origins`, `allow_methods=["GET", "POST"]` and `allow_headers=["Content-Type"]`, and without credentials or expose headers.
     - Change `__main__` to `uvicorn.run("server.app:app", host=HOST, port=PORT, reload=False)`.
     - If 1.1 found that the override point differs at the pinned starlette version, use the design's fallback instead: a pure ASGI wrapper that strips the headers.
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.6, 9.7_
+    - **Done.** Commit `aca7020ecc32aaf9a16fe19a7492d10ec3c70f07` (only `server/app.py` staged). Implemented the design shape verbatim — no ASGI fallback needed.
+    - **API check (worktree venv, starlette 0.41.3) — for task 7.3:** `CORSMiddleware.is_allowed_origin` EXISTS with signature `(self, origin: 'str') -> 'bool'`, and `preflight_response` is `(self, request_headers: 'Headers') -> 'Response'`. The design override (`super().preflight_response(...)` + `self.is_allowed_origin(request_headers["origin"])`) works as written; no deviation. Task 7.3's foreign-origin property test can rely on `is_allowed_origin` / the four-member `WEB_APP_ORIGINS` tuple directly.
+    - **Verification:** `python -c "import server.app; print(server.app.WEB_APP_ORIGINS, server.app.HOST, server.app.PORT)"` → the four origins + `127.0.0.1 8000`. `runpy.run_module("server.app", run_name="__main__")` with `uvicorn.run` patched → called as `('server.app:app', host='127.0.0.1', port=8000, reload=False)` (no real bind). TestClient smoke: allowed origin → ACAO echoed; foreign GET → no ACAO; foreign preflight → 400 with zero `access-control-allow-*`; allowed preflight → 200 + ACAO + methods `GET, POST`; no-Origin → no ACA-*. No `*` wildcard emitted anywhere. Full suite: **200 passed** in the worktree venv.
+    - **Note (not my scope):** `VALID_THEMES` still lists `cave`; that's task 5.2, left untouched. `test_server.py` is task 7.2 (not yet present).
   - [ ] 7.2 Add example tests in `tests/test_server.py`
     - Use `TestClient`, with `OUTPUT_DIR`/`FAILURE_LOG` monkeypatched to `tmp_path`. Every response goes through an `assert_no_wildcard` helper. Cover:
       - 9.1: `runpy.run_module("server.app", run_name="__main__")` with `uvicorn.run` captured; assert host `127.0.0.1` and port 8000, with no real bind.
