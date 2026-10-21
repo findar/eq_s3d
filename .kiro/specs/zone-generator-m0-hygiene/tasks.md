@@ -228,7 +228,7 @@ Working rules for every task:
     - **API check (worktree venv, starlette 0.41.3) — for task 7.3:** `CORSMiddleware.is_allowed_origin` EXISTS with signature `(self, origin: 'str') -> 'bool'`, and `preflight_response` is `(self, request_headers: 'Headers') -> 'Response'`. The design override (`super().preflight_response(...)` + `self.is_allowed_origin(request_headers["origin"])`) works as written; no deviation. Task 7.3's foreign-origin property test can rely on `is_allowed_origin` / the four-member `WEB_APP_ORIGINS` tuple directly.
     - **Verification:** `python -c "import server.app; print(server.app.WEB_APP_ORIGINS, server.app.HOST, server.app.PORT)"` → the four origins + `127.0.0.1 8000`. `runpy.run_module("server.app", run_name="__main__")` with `uvicorn.run` patched → called as `('server.app:app', host='127.0.0.1', port=8000, reload=False)` (no real bind). TestClient smoke: allowed origin → ACAO echoed; foreign GET → no ACAO; foreign preflight → 400 with zero `access-control-allow-*`; allowed preflight → 200 + ACAO + methods `GET, POST`; no-Origin → no ACA-*. No `*` wildcard emitted anywhere. Full suite: **200 passed** in the worktree venv.
     - **Note (not my scope):** `VALID_THEMES` still lists `cave`; that's task 5.2, left untouched. `test_server.py` is task 7.2 (not yet present).
-  - [ ] 7.2 Add example tests in `tests/test_server.py`
+  - [x] 7.2 Add example tests in `tests/test_server.py`
     - Use `TestClient`, with `OUTPUT_DIR`/`FAILURE_LOG` monkeypatched to `tmp_path`. Every response goes through an `assert_no_wildcard` helper. Cover:
       - 9.1: `runpy.run_module("server.app", run_name="__main__")` with `uvicorn.run` captured; assert host `127.0.0.1` and port 8000, with no real bind.
       - 9.2: ACAO is echoed byte-identically for each of the four origins.
@@ -236,6 +236,45 @@ Working rules for every task:
       - 9.6: a preflight for `POST` + `content-type` returns 200 with matching ACAO and Allow-Methods/Allow-Headers.
       - 9.7: a request with no `Origin` gets no ACA-* header.
     - _Requirements: 9.1, 9.2, 9.4, 9.5, 9.6, 9.7_
+    - **Done.** `tests/test_server.py` added with a module-level
+      `assert_no_wildcard(resp)` helper (Req 9.4) that every response is routed
+      through, plus a `client` fixture that monkeypatches `server.app.OUTPUT_DIR`
+      and `server.app.FAILURE_LOG` to a `tmp_path` so no artifacts leak into the
+      worktree. Tests: `test_main_binds_host_and_port` (9.1, `uvicorn.run`
+      monkeypatched — no real bind), `test_health_echoes_origin` (9.2,
+      parametrised over all four `WEB_APP_ORIGINS`), `test_generate_and_fetch_files`
+      (9.5, pinned seed 42 + 3-room dungeon → 200/validated, then `glb_url` +
+      `zone_url` → 200, ACAO echoed on each), `test_preflight_from_allowed_origin`
+      (9.6, parametrised), `test_no_origin_no_cors_headers` (9.7). Property 18 /
+      Req 9.3 deliberately NOT here — that's task 7.3.
+    - **Verification:** `python -m pytest tests/test_server.py -q` → **11 passed**
+      (2 benign warnings: starlette TestClient anyio-alias DeprecationWarning, and
+      the standard runpy "found in sys.modules" RuntimeWarning for the 9.1
+      re-exec — neither affects correctness). The full-suite check (`pytest tests/
+      -q`) could NOT be run clean because the sibling's task-5.1 cave removal was
+      mid-edit in this shared worktree: `generators/field/sdf.py` was deleted but
+      `noise.py` still had `from .sdf import FieldGrid`, so `test_terrain.py`
+      failed to collect. That is the sibling's in-flight partition, unrelated to
+      this task; my import surface (`HOST`/`PORT`/`WEB_APP_ORIGINS`/CORS) is
+      untouched by it, and my file collects and passes. Re-run the full suite once
+      5.1 lands.
+    - **Route / schema verification against the real `server/app.py` (no
+      deviations from the task's assumed names):**
+      - Routes: `GET /api/health`, `POST /api/generate`, `GET /api/zones/{filename}`.
+      - Generate request body: `{prompt?, theme, rooms, elevation, seed?}` —
+        pinned a seed via `seed` and requested 3 rooms via `rooms: 3` on the
+        controls path (`theme: "dungeon"`).
+      - Response fields: `glb_url`, `zone_url` (also `map_url`), `validated`,
+        `seed`, `rooms` — all as named in the task. URLs are
+        `/api/zones/{id}.glb` and `/api/zones/{id}.zone.json`.
+      - Monkeypatch targets confirmed as the real module globals read at request
+        time: `server.app.OUTPUT_DIR`, `server.app.FAILURE_LOG`. App object is
+        `server.app.app`. Imported `WEB_APP_ORIGINS`, `HOST`, `PORT` from `server.app`.
+      - Note (9.6 detail): Starlette's preflight response lists Allow-Headers as
+        `Accept, Accept-Language, Content-Language, Content-Type` (safelisted set +
+        our `Content-Type`); the test asserts `content-type` is present
+        case-insensitively rather than exact-match, and Allow-Methods ⊇ {POST}.
+    - **Commit (staged only `tests/test_server.py`):** `69700d3`.
   - [ ] 7.3 Write the property test for foreign origins
     - **Property 18: Foreign origins get no CORS grant**
     - In `tests/test_server.py`, `@given(origins_outside)`: simple GET, POST and preflight responses carry no `access-control-allow-*` header and never `Access-Control-Allow-Origin: *`. Include a Property_Docstring.
