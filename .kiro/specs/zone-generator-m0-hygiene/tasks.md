@@ -505,11 +505,32 @@ Working rules for every task:
       `2b1dad8e79918147b63ad094be6e9d6e9ea10826`. (The 9.1 `tasks.md` note itself
       was swept into a concurrent sibling's commit `d6d9d5a` in the shared
       worktree; the hash backfill lands in a follow-up `tasks.md`-only commit.)
-  - [ ] 9.2 Write the property test for the PFS filename CRC
+  - [x] 9.2 Write the property test for the PFS filename CRC
     - **Property 2: PFS filename CRC matches the reference** (umbrella P14)
     - `test_pfs_crc_matches_reference`: assert `_filename_crc32(n) == ref_crc(n)`.
     - Pin `@example`s for the two existence claims: `"gukbottom.ter"` differs from `zlib.crc32`, and `"Ab"` differs from `"aB"`. Add `event()` counts across generated names.
     - **Validates: Requirements 2.2, 1.6**
+    - **Done.** Appended `test_pfs_crc_matches_reference` to
+      `tests/test_properties_core.py` (9.1's `test_pfs_roundtrip` left
+      untouched). Budget `@settings(max_examples=scaled(100))` over the
+      `pfs_names` strategy (`tests.strategies`). Core assertion:
+      `core.pfs._filename_crc32(n) == ref_crc(n)` (`tests.pbt_helpers`) for every
+      generated name. **Real CRC symbol confirmed:** `core.pfs._filename_crc32`
+      (`name: str -> int`) — the design/pbt_helpers docstring reference was
+      accurate; used the real one. Pinned `@example`s for both existence claims:
+      `"gukbottom.ter"` (asserts EQ CRC != `zlib.crc32(...) & 0xFFFFFFFF` — EQ CRC
+      is NOT the reflected zlib CRC32) and `"Ab"` vs `"aB"` (asserts
+      `_filename_crc32("Ab") != _filename_crc32("aB")` — case-sensitive). Added
+      `event()` counts (`differs from zlib.crc32: <bool>` and `crc parity`) so the
+      "differs" claims show in statistics — verified via
+      `--hypothesis-show-statistics`: `differs from zlib.crc32: True` at 100% over
+      100 examples. Both `@example`s pass.
+    - **Verification:** `python -m pytest tests/test_properties_core.py -q` →
+      **2 passed**. Full `python -m pytest tests/ -q` → **210 passed**, 2
+      pre-existing warnings (starlette `BlockingPortal` deprecation, runpy
+      `server.app`), no `PytestUnknownMarkWarning`. Staged only
+      `tests/test_properties_core.py` for the code commit.
+    - **Commit:** `4ba550e` ("M0 9.2: property test for PFS filename CRC (P14)").
   - [ ] 9.3 Write the property test for the built TER/ZON round-trip
     - **Property 3: Built TER and ZON round-trip** (umbrella P15)
     - `test_ter_zon_roundtrip` with `@pytest.mark.slow` and `build_settings(20)`, over `box_themes`, n 2–12 and `semantic_inputs`.
