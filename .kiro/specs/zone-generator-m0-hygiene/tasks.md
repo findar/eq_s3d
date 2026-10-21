@@ -284,9 +284,21 @@ Working rules for every task:
       `PytestUnknownMarkWarning`. `test_outdoor_ter_matches_fork_point` passes
       unchanged (3 passed). Frontend bundle rebuilds cleanly.
     - **Deliverable commit (shared with 5.2):** `f5c6008`.
-  - [ ] 5.4 Run the suite without the cave-only dependencies installed
+  - [x] 5.4 Run the suite without the cave-only dependencies installed
     - In the worktree venv, run `pip uninstall -y fast-simplification scikit-image`, then `python -m pytest tests/ -q`. Record the result here: zero failures, zero errors.
     - _Requirements: 7.3_
+    - **Done.** In the isolated `-Venv` worktree (`..\eq_s3d-worktrees\agent-m0-hygiene\.venv`),
+      uninstalled both cave-only packages: `fast_simplification-0.1.11` and
+      `scikit-image-0.26.0` (confirmed "Successfully uninstalled" for each). This makes
+      the installed env match the pinned `requirements.txt` (task 5.1 already removed
+      both pins — not re-added, not reinstalled).
+    - **Suite result with both packages uninstalled:** `python -m pytest tests/ -q` →
+      **209 passed, zero failures, zero errors** (39.24 s). No `skimage` or
+      `fast_simplification` import error — the cave-pipeline removal in 5.1–5.3 left
+      no residual dependency on the cave-only packages. (Two pre-existing warnings
+      only: a starlette `anyio.abc.BlockingPortal` deprecation and a runpy
+      `server.app` warning — both unrelated to the cave removal.)
+    - No code change in this task — verification + tracker note only.
   - [x] 5.5 Update the docs and steering for the cave removal
     - `docs/ACCEPTANCE.md`: remove `cave` from the theme list, retire C "Single connected cave" and section D (pending umbrella M5), drop the cave sweep snippet, and change "outdoor/cave" to "outdoor".
     - `.kiro/steering/lessons-learned.md`: rewrite the cave entries to "cave pipeline removed in M0; cave = dungeon archetype (M3), natural style (M5)". Keep the walkable-floor, no-decimation and voxel-fidelity facts as M5 guidance.
