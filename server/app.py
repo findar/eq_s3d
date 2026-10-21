@@ -48,17 +48,59 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 VALID_THEMES = ["dungeon", "outdoor", "cave", "city"]
 
 # ---------------------------------------------------------------------------
+# Network binding (loopback only) and CORS
+# ---------------------------------------------------------------------------
+
+# The server binds the loopback interface only; it is never exposed off-box.
+# HOST/PORT are module-level so the __main__ path is testable without a real
+# bind (Req 9.1).
+HOST = "127.0.0.1"
+PORT = 8000
+
+# Exactly the origins the browser front-end is served from. An explicit list
+# (never "*") means Starlette echoes the request Origin only when it matches
+# one of these, so credentials/other origins are never granted (Req 9.2-9.4).
+WEB_APP_ORIGINS = (
+    "http://127.0.0.1:8000", "http://localhost:8000",     # same-origin (web/dist)
+    "http://localhost:5173", "http://127.0.0.1:5173",     # frontend port
+)
+
+
+# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 
 app = FastAPI(title="eq_s3d zone generator", version="0.3.0")
 
-# Allow the Vite dev server (localhost:5173) to call the API during development
+
+class LocalCORSMiddleware(CORSMiddleware):
+    """Explicit-origin CORS that also closes a stock-Starlette leak.
+
+    Starlette's ``CORSMiddleware`` short-circuits every preflight (an OPTIONS
+    with ``Access-Control-Request-Method``) into a canned 200 response whose
+    ``Access-Control-Allow-*`` headers are precomputed and emitted *regardless*
+    of whether the request Origin is actually allowed. That hands a disallowed
+    origin a usable CORS grant on preflight. We override ``preflight_response``
+    and strip every ``Access-Control-Allow-*`` header back off when the Origin
+    isn't in the allow list, so a foreign preflight gets no grant (Req 9.3, 9.7).
+    """
+
+    def preflight_response(self, request_headers):
+        resp = super().preflight_response(request_headers)
+        if not self.is_allowed_origin(request_headers["origin"]):
+            for k in [k for k in resp.headers
+                      if k.lower().startswith("access-control-allow-")]:
+                del resp.headers[k]
+        return resp
+
+
+# Loopback-only CORS: explicit origins, GET/POST, Content-Type only. No
+# credentials and no exposed headers.
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    LocalCORSMiddleware,
+    allow_origins=list(WEB_APP_ORIGINS),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 
@@ -229,4 +271,4 @@ if WEB_DIST.exists():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server.app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("server.app:app", host=HOST, port=PORT, reload=False)
