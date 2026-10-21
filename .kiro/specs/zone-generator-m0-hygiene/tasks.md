@@ -34,10 +34,12 @@ Working rules for every task:
     - _Requirements: 1.4_
 
 - [ ] 2. Build the property-test harness
-  - [ ] 2.1 Pin test dependencies and ignore the Hypothesis database
+  - [x] 2.1 Pin test dependencies and ignore the Hypothesis database
     - Add `hypothesis==6.170.5` and `httpx==0.28.1` to `requirements.txt`, with httpx commented as test-only (it backs FastAPI `TestClient`). Install both in the venv.
     - Add `.hypothesis/` to `.gitignore` under "Test artifacts".
     - _Requirements: 1.1, 1.8_
+    - **Done.** Added a `# Testing` block to `requirements.txt` pinning `hypothesis==6.170.5` and `httpx==0.28.1` (commented test-only, backs FastAPI `TestClient`). Added `.hypothesis/` under "Test artifacts" in `.gitignore`. Installed both into the worktree venv (`hypothesis` + `sortedcontainers` fresh; `httpx==0.28.1` already satisfied, pulled in earlier). Suite green: **197 passed** before commit.
+    - **Commit:** `4a16304` ("M0 2.1: pin test deps and ignore Hypothesis database") — `requirements.txt` and `.gitignore` only.
   - [x] 2.2 Add `pytest.ini` at the repo root
     - Set `testpaths = tests`. Register `slow` as the only custom marker, with the description from the design. No `addopts`.
     - _Requirements: 1.2_
