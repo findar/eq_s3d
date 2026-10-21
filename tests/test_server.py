@@ -204,3 +204,85 @@ def test_controls_cave_theme_rejected(client):
         assert theme in detail, f"detail does not name {theme!r}: {detail!r}"
     # The 400 is raised before the factory runs, so no artifacts are produced.
     assert list(app_mod.OUTPUT_DIR.iterdir()) == []
+
+# ---------------------------------------------------------------------------
+# Property 18 (Req 9.3, 9.4) — foreign origins get no CORS grant
+# ---------------------------------------------------------------------------
+#
+# A module-scoped TestClient is used here on purpose: @given tests must not take
+# function-scoped fixtures (tmp_path/monkeypatch), which would trip Hypothesis'
+# function_scoped_fixture health check by being reset only once per test, not
+# per example. These foreign-origin requests never write artifacts anyway:
+#   - GET /api/health is a trivial handler that touches no output dir;
+#   - the POST deliberately carries theme="cave", which the controls path
+#     rejects with a 400 *before* any factory/build runs (M0 6.7), so no zone is
+#     generated regardless of the drawn origin;
+#   - the preflight (OPTIONS) returns before any handler body.
+# So no OUTPUT_DIR monkeypatch is needed to keep the worktree clean.
+
+from hypothesis import given, settings  # noqa: E402
+
+from tests.pbt_helpers import scaled  # noqa: E402
+from tests.strategies import origins_outside  # noqa: E402
+
+# Built once at import time (no per-example fixture): foreign-origin requests
+# are rejected at the CORS layer / fail fast, so a shared client is safe.
+_FOREIGN_CLIENT = TestClient(app_mod.app)
+
+
+def _assert_no_cors_grant(resp, origin):
+    """No ``Access-Control-Allow-*`` header of any kind, and no wildcard ACAO.
+
+    This is the core of Req 9.3/9.4 for a disallowed origin: the response must
+    neither echo the foreign origin nor hand out ``*`` — it must carry no
+    ``Access-Control-Allow-*`` header at all.
+    """
+    assert_no_wildcard(resp)  # reuse the 7.2 helper: forbids ``*`` ACAO
+    leaked = [n for n in resp.headers
+              if n.lower().startswith("access-control-allow-")]
+    assert not leaked, (
+        f"foreign origin {origin!r} received CORS grant header(s): {leaked}"
+    )
+
+
+@settings(max_examples=scaled(100))
+@given(origin=origins_outside)
+def test_foreign_origins_get_no_cors(origin):
+    """Feature: zone-generator-m0-hygiene, Property 18 (umbrella P-CORS):
+    Foreign origins get no CORS grant.
+
+    For ANY Origin outside WEB_APP_ORIGINS (random printable strings plus the
+    scheme / host-case / port / trailing-slash near-misses, ``null`` and the
+    IPv6 loopback), a simple GET, a simple POST and a CORS preflight (OPTIONS)
+    each come back with NO ``Access-Control-Allow-*`` header — in particular no
+    ``Access-Control-Allow-Origin: *``.
+
+    Validates: M0 Req 9.3, 9.4
+    """
+    # (a) a simple GET
+    get_resp = _FOREIGN_CLIENT.get(
+        "/api/health", headers={"Origin": origin}
+    )
+    _assert_no_cors_grant(get_resp, origin)
+
+    # (b) a CORS preflight for POST + content-type (foreign preflight is
+    # stripped of its grant by LocalCORSMiddleware before any handler runs)
+    pre_resp = _FOREIGN_CLIENT.options(
+        "/api/generate",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    _assert_no_cors_grant(pre_resp, origin)
+
+    # (c) a simple POST. theme="cave" is rejected 400 before any build, so this
+    # stays fast and writes nothing; we assert only on the CORS headers of
+    # whatever status comes back, never requiring a 200.
+    post_resp = _FOREIGN_CLIENT.post(
+        "/api/generate",
+        json={"theme": "cave", "rooms": ROOMS},
+        headers={"Origin": origin},
+    )
+    _assert_no_cors_grant(post_resp, origin)
