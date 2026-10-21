@@ -38,9 +38,11 @@ Working rules for every task:
     - Add `hypothesis==6.170.5` and `httpx==0.28.1` to `requirements.txt`, with httpx commented as test-only (it backs FastAPI `TestClient`). Install both in the venv.
     - Add `.hypothesis/` to `.gitignore` under "Test artifacts".
     - _Requirements: 1.1, 1.8_
-  - [ ] 2.2 Add `pytest.ini` at the repo root
+  - [x] 2.2 Add `pytest.ini` at the repo root
     - Set `testpaths = tests`. Register `slow` as the only custom marker, with the description from the design. No `addopts`.
     - _Requirements: 1.2_
+    - **Done.** Added `pytest.ini` at the repo root with the exact design content: `[pytest]`, `testpaths = tests`, and a `markers` block registering only `slow` ("build-level property test (runs the Zone_Builder or Pipeline); deselect with -m \"not slow\""). No `addopts`. Verified `pytest --markers` lists the `slow` marker and `pytest --co -q` collects 197 tests from `tests/` with no unknown-marker warning. (Hypothesis isn't installed in the venv yet — task 2.1 — so the Property_Suite modules aren't present; marker registration is the deliverable here.)
+    - **Commit:** `48ea28b` ("Add pytest.ini registering the slow marker (M0 2.2)") — `pytest.ini` only.
   - [ ] 2.3 Add `tests/conftest.py`
     - When the module is imported, register the `default` profile (`max_examples=100, derandomize=True, database=None, deadline=200`) and the `thorough` profile (`max_examples=500, derandomize=False, deadline=None`, default database). Then call `load_profile("default")`.
     - Add a `no_api_keys` fixture. It deletes `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `STABILITY_API_KEY`, `EQ_S3D_PLANNER` and `EQ_S3D_TEXTURE_PROVIDER`, then calls `ai.planner.set_planner(None)` and `generators.textures.factory.set_provider(None)`.
