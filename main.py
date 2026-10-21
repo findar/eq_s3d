@@ -105,7 +105,7 @@ def main() -> None:
     g = sub.add_parser("generate", help="Procedurally generate a zone")
     g.add_argument("name", help="Zone short name (lowercase, no spaces)")
     g.add_argument("--theme", default="dungeon",
-                   choices=["dungeon", "outdoor", "cave", "city"])
+                   choices=["dungeon", "outdoor", "city"])
     g.add_argument("--rooms", type=int, default=5, help="Number of rooms")
     g.add_argument("--seed", type=int, default=None, help="Random seed")
     g.add_argument("--output", default="output", help="Output directory")

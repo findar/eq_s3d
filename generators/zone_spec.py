@@ -268,9 +268,14 @@ class ZoneSpec:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ZoneSpec":
+        # The cave pipeline was removed in M0; a legacy spec with theme "cave"
+        # loads back as a dungeon. No other theme is remapped.
+        theme = d.get("theme", "dungeon")
+        if theme == "cave":
+            theme = "dungeon"
         spec = cls(
             name=d["name"],
-            theme=d.get("theme", "dungeon"),
+            theme=theme,
             style_profile=d.get("style_profile", "dungeon"),
             seed=d.get("seed"),
             dungeon_theme=d.get("dungeon_theme", ""),

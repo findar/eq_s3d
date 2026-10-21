@@ -179,7 +179,6 @@ class TestGating:
     def test_dungeon_is_gated_by_default(self):
         assert "dungeon" in DEFAULT_GATED_THEMES
         assert "outdoor" not in DEFAULT_GATED_THEMES
-        assert "cave" not in DEFAULT_GATED_THEMES
 
     def test_ungated_theme_passes_through_without_retry(self, tmp_path):
         # Force "dungeon" to be ungated: even a would-fail zone is returned as-is
@@ -260,3 +259,60 @@ class TestCliEscapeHatch:
         with pytest.raises(SystemExit) as ei:
             main.cmd_generate(self._args(tmp_path, no_validate=False))
         assert ei.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# CLI argument handling (M0 6.8, 6.9)
+# ---------------------------------------------------------------------------
+
+class TestCliArgs:
+    def _cli(self, monkeypatch, argv):
+        """Drive the CLI in-process.
+
+        ``main.main()`` on this branch still reads ``sys.argv`` (the
+        ``main(argv=None)`` refactor is task 6.1), so we patch ``sys.argv``
+        rather than pass the list positionally. The behaviour asserted — argparse
+        rejecting ``--theme cave`` with exit code 2 — is identical either way.
+        """
+        import sys
+        import main
+        monkeypatch.setattr(sys, "argv", ["eq_s3d"] + argv)
+        return main.main
+
+    def test_cave_theme_rejected_by_argparse(self, tmp_path, monkeypatch):
+        # "cave" was removed from the --theme choices (M0 6.8): argparse exits 2
+        # in parse_args, before any build, so no output directory is created.
+        out = str(tmp_path / "cli_out")
+        run = self._cli(monkeypatch,
+                        ["generate", "x", "--theme", "cave", "--output", out])
+        with pytest.raises(SystemExit) as ei:
+            run()
+        assert ei.value.code == 2
+        assert not Path(out).exists()
+
+
+# ---------------------------------------------------------------------------
+# Cave words plan a validated dungeon end-to-end (M0 6.9)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+def test_cave_prompt_builds_validated_dungeon(tmp_path):
+    """An unpinned pipeline run on a cave-word prompt returns a validated build
+    whose theme is dungeon (M0 Req 6.9): the cave pipeline is gone, so cave
+    prompts plan and build as gated dungeons."""
+    from ai.rule_planner import RulePlanner
+    from ai.expand import plan_to_spec
+
+    plan = RulePlanner().plan("a dark underground cavern with many tunnels")
+    assert plan.theme == "dungeon"
+
+    def factory(s):
+        return plan_to_spec(plan, seed=s)
+
+    vb = generate_validated(
+        factory, theme=plan.theme, zone_id="cavedungeon",
+        output_dir=str(tmp_path), write_glb=False,
+        failure_log=tmp_path / "fail.jsonl",
+    )
+    assert vb.validated
+    assert vb.spec.theme == "dungeon"

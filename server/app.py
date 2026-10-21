@@ -45,7 +45,7 @@ WEB_DIST    = ROOT / "web" / "dist"      # built front-end (Vite build)
 FAILURE_LOG = ROOT / "output" / "validation_failures.jsonl"  # triage feed
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-VALID_THEMES = ["dungeon", "outdoor", "cave", "city"]
+VALID_THEMES = ["dungeon", "outdoor", "city"]
 
 # ---------------------------------------------------------------------------
 # Network binding (loopback only) and CORS
@@ -177,7 +177,11 @@ def generate(req: GenerateRequest):
         # Control-driven: explicit theme/rooms/elevation.
         source = "controls"
         if req.theme not in VALID_THEMES:
-            raise HTTPException(400, f"Unknown theme: {req.theme}")
+            raise HTTPException(
+                400,
+                f"Unknown theme: {req.theme!r}; valid themes: "
+                f"{', '.join(VALID_THEMES)}",
+            )
         theme = req.theme
         rooms = req.rooms
 

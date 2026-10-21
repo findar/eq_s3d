@@ -16,9 +16,9 @@ Three groups:
   * known-BAD elevation/same-axis seeds → xfail until ``corridor-connection``
     lands (then they flip green and we drop the xfail)
 
-Outdoor/cave are intentionally NOT swept here: their meshes (heightfield
-terrain / organic cave) live in a different coordinate frame than the room
-graph, so room-footprint mapping isn't meaningful yet. See the task notes.
+Outdoor is intentionally NOT swept here: its mesh (heightfield terrain) lives
+in a different coordinate frame than the room graph, so room-footprint mapping
+isn't meaningful yet. See the task notes.
 """
 
 import math

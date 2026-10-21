@@ -186,3 +186,21 @@ def test_no_origin_no_cors_headers(client):
         assert not name.lower().startswith("access-control-allow-"), (
             f"unexpected CORS header on an origin-less request: {name}"
         )
+
+
+# ---------------------------------------------------------------------------
+# M0 6.7 — controls path rejects the removed "cave" theme
+# ---------------------------------------------------------------------------
+
+def test_controls_cave_theme_rejected(client):
+    """A control-driven generate with theme="cave" is a 400 whose detail names
+    all three valid themes, and nothing is written to OUTPUT_DIR (M0 Req 6.7)."""
+    resp = assert_no_wildcard(
+        client.post("/api/generate", json={"theme": "cave", "rooms": ROOMS})
+    )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    for theme in ("dungeon", "outdoor", "city"):
+        assert theme in detail, f"detail does not name {theme!r}: {detail!r}"
+    # The 400 is raised before the factory runs, so no artifacts are produced.
+    assert list(app_mod.OUTPUT_DIR.iterdir()) == []
