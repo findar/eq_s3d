@@ -205,7 +205,7 @@ Working rules for every task:
       `generators/field/{noise,__init__}.py`, `generators/{builder,layout,pipeline}.py`,
       `requirements.txt`, `tests/test_cave.py`). The sibling agent's
       `tests/test_server.py` (task 7.2) was left unstaged.
-  - [ ] 5.2 Remove `cave` from the theme surface
+  - [x] 5.2 Remove `cave` from the theme surface
     - `ai/schema.py` and `server/app.py`: `VALID_THEMES = ["dungeon", "outdoor", "city"]`.
     - `main.py`: `--theme` `choices=["dungeon", "outdoor", "city"]`.
     - `web/index.html`: drop `<option value="cave">` and change the placeholder to `e.g. a flooded temple with lots of chambers`. Then run `cd web; npx vite build`.
@@ -214,7 +214,32 @@ Working rules for every task:
     - `server/app.py` controls path: keep the existing 400 before the factory is built, and change the detail to list the valid themes per the design.
     - Commit together with 5.3.
     - _Requirements: 6.4, 6.5, 6.6, 6.7, 6.8_
-  - [ ] 5.3 Retarget the cave-theme tests
+    - **Done.** All verified against the real code first:
+      - `VALID_THEMES` was `["dungeon", "outdoor", "cave", "city"]` in BOTH
+        `ai/schema.py` and `server/app.py`; both now `["dungeon", "outdoor", "city"]`.
+        Confirmed at runtime: `ai.schema.VALID_THEMES == server.app.VALID_THEMES ==
+        ['dungeon', 'outdoor', 'city']`.
+      - `main.py` `--theme` choices updated; argparse exits 2 on `--theme cave`.
+      - `web/index.html`: cave `<option>` dropped, placeholder is now
+        `e.g. a flooded temple with lots of chambers`. Frontend bundle rebuilt
+        successfully; the rebuilt `web/dist/` carries the new placeholder and only
+        dungeon/outdoor/city options.
+      - `ai/rule_planner.py::_THEME_WORDS`: cave bucket removed, its six words
+        appended to the `dungeon` bucket. Dict order is now `outdoor, city,
+        dungeon` (the cave key simply dropped; relative order of the surviving
+        keys preserved). `mine` kept in `_ARCHETYPE_WORDS["mine_delve"]`; the
+        `_match_theme` strict-`>` tie rule is untouched. Module docstring example
+        reworded to "a big flooded cavern … large dungeon with a water region".
+      - `generators/zone_spec.py::ZoneSpec.from_dict`: adds `theme = "dungeon" if
+        theme == "cave"` before constructing the spec; only `cave` remapped.
+      - `server/app.py` controls 400 detail now
+        `f"Unknown theme: {req.theme!r}; valid themes: {', '.join(VALID_THEMES)}"`,
+        still raised before the factory is built.
+      - No deviations from the design for 5.2. The `web/dist/` build artifacts are
+        gitignored in this repo, so they were rebuilt-and-verified but NOT staged
+        (the design's "stage the built assets" doesn't apply when dist is ignored).
+    - **Deliverable commit (shared with 5.3):** `f5c6008`.
+  - [x] 5.3 Retarget the cave-theme tests
     - `tests/test_pipeline.py`: delete the `assert "cave" not in DEFAULT_GATED_THEMES` line (~182).
     - `tests/test_traversability.py`: docstring "Outdoor/cave" → "Outdoor".
     - `tests/test_generators.py::test_rule_planner_open_is_zero`: keep the cave prompt and add `assert plan.theme == "dungeon"`.
@@ -222,6 +247,43 @@ Working rules for every task:
     - `tests/test_server.py`: add a controls POST with `theme="cave"` → 400, detail names all three Defined_Themes, `OUTPUT_DIR` stays empty.
     - `tests/test_pipeline.py`: add a `TestCliArgs` class with `main.main(["generate", "x", "--theme", "cave", "--output", out])` → `SystemExit(2)` and `out` not created. Add a slow example: unpinned `generate_validated` on `plan_to_spec(RulePlanner().plan("a dark underground cavern with many tunnels"), seed=s)` returns a validated build with theme `dungeon`.
     - _Requirements: 6.5, 6.6, 6.7, 6.8, 6.9_
+    - **Done.** All retargets verified against the real test files first:
+      - `test_pipeline.py`: removed the `assert "cave" not in DEFAULT_GATED_THEMES`
+        line from `TestGating::test_dungeon_is_gated_by_default`. Added
+        `TestCliArgs::test_cave_theme_rejected_by_argparse`
+        (`--theme cave` → `SystemExit(2)`, output dir not created) and a slow
+        `test_cave_prompt_builds_validated_dungeon`
+        (`RulePlanner().plan("a dark underground cavern with many tunnels")` plans
+        `dungeon`, then `generate_validated` returns a validated build whose
+        `vb.spec.theme == "dungeon"`).
+      - `test_traversability.py`: module docstring reworded — the "Outdoor/cave …
+        organic cave" clause now reads "Outdoor … heightfield terrain" (the cave
+        mesh no longer exists, so the stale half-sentence was dropped along with
+        the literal "cave").
+      - `test_generators.py::test_rule_planner_open_is_zero`: kept the cave prompt,
+        added `assert p.theme == "dungeon"`.
+      - `test_planner.py`: `test_roundtrip_dict` → `outdoor`; `test_plan_to_spec_basic`
+        → `outdoor`; `test_regions_added` → `dungeon`; `test_from_dict_ignores_unknown`
+        asserts `cave` → `dungeon`; `test_detects_cave` replaced by parametrised
+        `test_cave_words_mean_dungeon` (one prompt per Cave_Word: cave, cavern,
+        grotto, underground, tunnel — each → `dungeon`); new
+        `test_zonespec_cave_theme_normalised` (ZoneSpec dict with `theme="cave"` →
+        `dungeon`).
+      - `test_server.py`: appended `test_controls_cave_theme_rejected` (controls
+        POST `theme="cave"` → 400, detail names dungeon/outdoor/city, `OUTPUT_DIR`
+        stays empty) — added after the task-7.2 example tests, which were left
+        undisturbed. `tests/strategies.py` NOT edited.
+    - **Deviation (noted):** the task text spells the CLI test as
+      `main.main(["generate", "x", "--theme", "cave", "--output", out])`, but on
+      this branch `main.main()` still reads `sys.argv` (the `main(argv=None)`
+      refactor is task 6.1). To avoid pre-empting 6.1's signature change, the test
+      patches `sys.argv` and calls `main.main()` with no args. The asserted
+      behaviour (argparse exit 2 on `--theme cave`, no output dir) is identical;
+      task 6.1 can switch it to the positional-argv form once `main(argv=None)` lands.
+    - **Verification:** `python -m pytest tests/ -q` → **204 passed**, exit 0, no
+      `PytestUnknownMarkWarning`. `test_outdoor_ter_matches_fork_point` passes
+      unchanged (3 passed). Frontend bundle rebuilds cleanly.
+    - **Deliverable commit (shared with 5.2):** `f5c6008`.
   - [ ] 5.4 Run the suite without the cave-only dependencies installed
     - In the worktree venv, run `pip uninstall -y fast-simplification scikit-image`, then `python -m pytest tests/ -q`. Record the result here: zero failures, zero errors.
     - _Requirements: 7.3_
