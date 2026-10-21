@@ -80,7 +80,8 @@ Working rules for every task:
         (removed in 5.2), so `DEFINED_THEMES` is a hand-written literal
         `{"dungeon","city","outdoor"}`, and `zone_plan_dicts`' `theme` vocab still
         includes `"cave"` on purpose (to exercise the cave→dungeon normalisation).
-    - **Commit:** `9424cba` (amended to fold in this hash line; final hash below).
+    - **Commit:** `fd60c42` (adds `tests/strategies.py`; this tracker line was
+      recorded in a follow-up commit).
   - [ ] 2.5 Add `tests/pbt_helpers.py`
     - Implement `scaled`, `build_settings`, `fresh_dir`, `build_raw`, `room_graph`, `solvable_walk`, `run_for`, `upward_faces`, `ramp_rises`, `opening_floor_z`, `clear_advisory`, `f32` and `ref_crc` per the design Helpers table.
     - `build_raw` must compare the TER and ZON read back from the `.eqg`, never the `.eqg` bytes. `run_for` must call the production `LayoutGenerator._elevation_run`. `ref_crc` must not use `core.pfs`'s table.
