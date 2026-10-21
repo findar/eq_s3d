@@ -11,18 +11,20 @@ Property_Docstring beginning ``Feature: zone-generator-m0-hygiene, Property N:
 
 Properties in this module:
   * P13 — PFS archive round-trip (this file's ``test_pfs_roundtrip``)
+  * P14 — PFS filename CRC matches the reference (``test_pfs_crc_matches_reference``)
 """
 
 from __future__ import annotations
 
 import random
+import zlib
 
-from hypothesis import example, given, settings
+from hypothesis import event, example, given, settings
 
-from core.pfs import PfsArchive
+from core.pfs import PfsArchive, _filename_crc32
 
-from tests.pbt_helpers import scaled
-from tests.strategies import pfs_entries
+from tests.pbt_helpers import ref_crc, scaled
+from tests.strategies import pfs_entries, pfs_names
 
 
 # ---------------------------------------------------------------------------
@@ -102,3 +104,55 @@ def test_pfs_roundtrip(entries):
     # Same bytes for every name.
     for name, data in entries.items():
         assert round_tripped[name] == data, f"payload mismatch for {name!r}"
+
+# ---------------------------------------------------------------------------
+# Property 2: PFS filename CRC matches the reference (umbrella P14).
+# ---------------------------------------------------------------------------
+
+@settings(max_examples=scaled(100))
+@given(name=pfs_names)
+# Two pinned existence claims (the lessons-learned facts this property guards):
+#   * EQ's CRC is NOT a reflected zlib CRC32 — "gukbottom.ter" must differ.
+#   * EQ's CRC is case-sensitive — "Ab" and "aB" must differ.
+@example(name="gukbottom.ter")
+@example(name="Ab")
+@example(name="aB")
+def test_pfs_crc_matches_reference(name):
+    """Feature: zone-generator-m0-hygiene, Property 2: PFS filename CRC matches the reference.
+
+    Umbrella P14. Validates: M0 Req 2.2; umbrella Req 1.6.
+
+    For any printable-ASCII filename, ``core.pfs``'s production filename CRC
+    (``_filename_crc32``) equals an independent bitwise reference derivation
+    (``ref_crc`` — poly 0x04C11DB7, init 0, no final XOR, over name+NUL,
+    written without ``core.pfs``'s precomputed table). The two pinned
+    @examples assert the two existence claims from lessons-learned: EQ's CRC
+    is NOT the reflected zlib CRC32 (``gukbottom.ter`` differs from
+    ``zlib.crc32``), and it is case-sensitive (``Ab`` differs from ``aB``).
+    """
+    produced = _filename_crc32(name)
+    reference = ref_crc(name)
+
+    # Core assertion: production CRC agrees with the independent reference.
+    assert produced == reference, (
+        f"CRC mismatch for {name!r}: _filename_crc32={produced:#010x} "
+        f"ref_crc={reference:#010x}"
+    )
+
+    # Make the two "differs" existence claims visible in Hypothesis statistics.
+    differs_from_zlib = produced != (zlib.crc32(name.encode("ascii")) & 0xFFFFFFFF)
+    event(f"differs from zlib.crc32: {differs_from_zlib}")
+    event(f"crc parity: {'odd' if produced & 1 else 'even'}")
+
+    # Existence claim 1: EQ's CRC is NOT the reflected zlib CRC32.
+    if name == "gukbottom.ter":
+        assert produced != (zlib.crc32(name.encode("ascii")) & 0xFFFFFFFF), (
+            "EQ PFS CRC must not equal the reflected zlib CRC32 for "
+            "'gukbottom.ter' (lessons-learned: EQ CRC is its own big-endian CRC)"
+        )
+
+    # Existence claim 2: EQ's CRC is case-sensitive.
+    if name == "Ab":
+        assert _filename_crc32("Ab") != _filename_crc32("aB"), (
+            "EQ PFS CRC must be case-sensitive ('Ab' != 'aB')"
+        )
