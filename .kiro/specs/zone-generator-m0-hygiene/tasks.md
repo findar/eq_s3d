@@ -484,8 +484,10 @@ Working rules for every task:
       → **208 passed** (205 prior + 3; note the +3 vs the single new test reflects
       concurrent sibling landings in the shared worktree branch state at run time),
       exit 0.
-    - **Commit (staged only `tests/test_properties_core.py` + this `tasks.md`):**
-      `__HASH__`.
+    - **Commit (`tests/test_properties_core.py`):**
+      `2b1dad8e79918147b63ad094be6e9d6e9ea10826`. (The 9.1 `tasks.md` note itself
+      was swept into a concurrent sibling's commit `d6d9d5a` in the shared
+      worktree; the hash backfill lands in a follow-up `tasks.md`-only commit.)
   - [ ] 9.2 Write the property test for the PFS filename CRC
     - **Property 2: PFS filename CRC matches the reference** (umbrella P14)
     - `test_pfs_crc_matches_reference`: assert `_filename_crc32(n) == ref_crc(n)`.
