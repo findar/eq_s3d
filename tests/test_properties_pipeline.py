@@ -286,3 +286,85 @@ def test_no_api_default_selection(no_api_keys, no_network):
         f"selecting the no-API defaults made outbound network attempts: "
         f"{no_network}"
     )
+
+
+@pytest.mark.slow
+def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
+    """
+    Feature: zone-generator-m0-hygiene, Property 16 (umbrella P16): No-API
+    prompt and CLI.
+
+    The whole point of P16: the full prompt->zone and CLI->zone flows both work
+    with ZERO API keys and ZERO outbound network. With ``no_api_keys`` clearing
+    every key / provider override and resetting the forced globals, and
+    ``no_network`` blocking every non-loopback socket operation, both the
+    natural-language SERVER path and the in-process CLI path must still produce
+    an Accepted_Build (a traversability-validated zone), and neither may attempt
+    a single foreign network connection.
+
+    Server path: a ``TestClient`` wrapping ``server.app.app`` with the module's
+    ``OUTPUT_DIR`` / ``FAILURE_LOG`` redirected under ``tmp_path`` (both read as
+    module globals at request time). POST a natural-language ``prompt`` — this
+    routes through the rule planner (``get_planner()`` is the zero-key default
+    after ``no_api_keys``), builds and gates the zone, and returns a validated
+    build. The returned ``glb_url`` then fetches 200.
+
+    CLI path: ``main.main(["generate", "p16", "--rooms", "5", "--output",
+    tmp_path])`` runs the same validated pipeline in-process on the default
+    (gated) dungeon theme, writing ``p16.eqg`` / ``p16.glb`` / ``p16.json`` under
+    ``tmp_path``.
+
+    The loopback TestClient transport passes through ``no_network`` (finding 4),
+    so ``attempts`` records only genuinely foreign connects — and it must stay
+    empty across BOTH paths.
+
+    Validates: M0 Req 5.5; umbrella Req 1.6.
+    """
+    import main
+    import server.app as app_mod
+    from fastapi.testclient import TestClient
+
+    # --- Server path: natural-language prompt -> rule planner -> validated zone
+    server_out = tmp_path / "server"
+    server_out.mkdir()
+    monkeypatch.setattr(app_mod, "OUTPUT_DIR", server_out)
+    monkeypatch.setattr(app_mod, "FAILURE_LOG", tmp_path / "server_failures.jsonl")
+
+    client = TestClient(app_mod.app)
+    resp = client.post(
+        "/api/generate",
+        json={"prompt": "a dark dungeon with a few rooms"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    # Prompt path drove the planner (the zero-key rule planner is the default).
+    assert body["source"] == "prompt", f"prompt was not prompt-driven: {body['source']!r}"
+    assert body["planner"] == "rule", (
+        f"prompt used planner {body['planner']!r}, expected the no-API 'rule' default"
+    )
+    # Accepted_Build: the traversability gate ran AND passed.
+    assert body["validated"] is True, "server prompt build was not validated (gate did not pass)"
+
+    # The returned GLB is fetchable (200) from the redirected OUTPUT_DIR.
+    glb_resp = client.get(body["glb_url"])
+    assert glb_resp.status_code == 200, (
+        f"GET {body['glb_url']} -> {glb_resp.status_code}: {glb_resp.text}"
+    )
+
+    # --- CLI path: in-process generate on the default gated dungeon theme
+    cli_out = tmp_path / "cli"
+    main.main(["generate", "p16", "--rooms", "5", "--output", str(cli_out)])
+
+    # Accepted_Build artifacts written under the CLI output dir.
+    eqg = cli_out / "p16.eqg"
+    glb = cli_out / "p16.glb"
+    spec_json = cli_out / "p16.json"
+    assert eqg.exists(), f"CLI did not write the .eqg: {eqg}"
+    assert glb.exists(), f"CLI did not write the .glb: {glb}"
+    assert spec_json.exists(), f"CLI did not write the spec: {spec_json}"
+
+    # --- The whole point of P16: zero outbound network across BOTH paths.
+    assert no_network == [], (
+        f"the no-API prompt/CLI flow attempted outbound network: {no_network}"
+    )
