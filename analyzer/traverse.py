@@ -189,6 +189,124 @@ class WalkSurface:
     adjacency: Dict[int, List[int]]   # standable face -> neighbouring standable faces
 
 
+# ---------------------------------------------------------------------------
+# XY contact geometry (footprint-proximity adjacency)
+# ---------------------------------------------------------------------------
+#
+# Two standable triangles are walkably adjacent across a mesh seam only when
+# their floors ACTUALLY MEET: their XY footprints touch (overlap, or abut within
+# adjacency_eps) AND the two floor heights agree where they touch (within
+# max_step_up). The old test asked only whether the two XY BOUNDING BOXES came
+# within eps on each axis independently, which "touches" triangles that are
+# tens of units apart (offset on the other axis) or stacked at different heights
+# -- that is the source of the false PASSes. These helpers do the honest test:
+# the true minimum XY distance between the two triangles, and each triangle's
+# interpolated floor height at the point where they come closest.
+
+def _point_in_tri_xy(px: float, py: float, tri: np.ndarray) -> bool:
+    """Is (px, py) inside triangle ``tri`` (XY projection, inclusive edges)?"""
+    ax, ay = tri[0, 0], tri[0, 1]
+    bx, by = tri[1, 0], tri[1, 1]
+    cx, cy = tri[2, 0], tri[2, 1]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    if abs(det) < 1e-12:
+        return False
+    l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / det
+    l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / det
+    l3 = 1.0 - l1 - l2
+    tol = 1e-9
+    return l1 >= -tol and l2 >= -tol and l3 >= -tol
+
+
+def _seg_seg_closest_xy(p1, p2, p3, p4):
+    """
+    Closest pair of points between 2D segments p1p2 and p3p4. Returns
+    (distance, mid_xy) where mid_xy is the midpoint of the closest pair.
+    """
+    p1 = np.asarray(p1, float); p2 = np.asarray(p2, float)
+    p3 = np.asarray(p3, float); p4 = np.asarray(p4, float)
+
+    def ccw(a, b, c):
+        return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    # Proper intersection -> distance 0 at the crossing point.
+    d1, d2 = ccw(p3, p4, p1), ccw(p3, p4, p2)
+    d3, d4 = ccw(p1, p2, p3), ccw(p1, p2, p4)
+    if ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)):
+        den = (p1[0] - p2[0]) * (p3[1] - p4[1]) - (p1[1] - p2[1]) * (p3[0] - p4[0])
+        if abs(den) > 1e-12:
+            t = ((p1[0] - p3[0]) * (p3[1] - p4[1]) -
+                 (p1[1] - p3[1]) * (p3[0] - p4[0])) / den
+            ip = p1 + t * (p2 - p1)
+            return 0.0, ip
+        return 0.0, (p1 + p3) * 0.5
+
+    def pt_seg(p, a, b):
+        ab = b - a
+        denom = ab.dot(ab)
+        t = 0.0 if denom <= 1e-12 else float(np.clip((p - a).dot(ab) / denom, 0.0, 1.0))
+        proj = a + t * ab
+        return float(np.linalg.norm(p - proj)), proj
+
+    best_d = float("inf")
+    best_mid = None
+    for p, a, b in ((p1, p3, p4), (p2, p3, p4), (p3, p1, p2), (p4, p1, p2)):
+        d, proj = pt_seg(p, a, b)
+        if d < best_d:
+            best_d = d
+            best_mid = (p + proj) * 0.5
+    return best_d, best_mid
+
+
+def _tri_tri_xy_contact(ti: np.ndarray, tj: np.ndarray):
+    """
+    Minimum XY distance between triangles ``ti`` and ``tj`` and a representative
+    contact point. Returns (distance, point_xy). Distance is 0 when they
+    genuinely overlap (a vertex of one inside the other, or edges crossing);
+    otherwise it is the closest edge-to-edge gap. ``point_xy`` is where they
+    come closest -- the spot to compare floor heights at.
+    """
+    # Containment: a vertex of one triangle inside the other => real overlap.
+    for v in ti[:3, :2]:
+        if _point_in_tri_xy(v[0], v[1], tj):
+            return 0.0, np.asarray(v, float)
+    for v in tj[:3, :2]:
+        if _point_in_tri_xy(v[0], v[1], ti):
+            return 0.0, np.asarray(v, float)
+
+    ei = [(ti[k, :2], ti[(k + 1) % 3, :2]) for k in range(3)]
+    ej = [(tj[k, :2], tj[(k + 1) % 3, :2]) for k in range(3)]
+    best_d = float("inf")
+    best_pt = None
+    for a, b in ei:
+        for c2, d2 in ej:
+            d, mid = _seg_seg_closest_xy(a, b, c2, d2)
+            if d < best_d:
+                best_d = d
+                best_pt = mid
+                if best_d == 0.0:
+                    return best_d, best_pt
+    return best_d, best_pt
+
+
+def _plane_z_at(tri: np.ndarray, px: float, py: float) -> float:
+    """
+    Height of the plane through ``tri`` at (px, py), via barycentric
+    interpolation on the XY projection. Falls back to the mean vertex Z when the
+    triangle is XY-degenerate.
+    """
+    ax, ay = tri[0, 0], tri[0, 1]
+    bx, by = tri[1, 0], tri[1, 1]
+    cx, cy = tri[2, 0], tri[2, 1]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    if abs(det) < 1e-12:
+        return float((tri[0, 2] + tri[1, 2] + tri[2, 2]) / 3.0)
+    l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / det
+    l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / det
+    l3 = 1.0 - l1 - l2
+    return float(l1 * tri[0, 2] + l2 * tri[1, 2] + l3 * tri[2, 2])
+
+
 def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     """
     Classify standable triangles and build walkable adjacency between them.
@@ -234,21 +352,32 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 
     adjacency: Dict[int, List[int]] = {int(fi): set() for fi in std_idx}
 
-    def _z_gap_ok(fi: int, fj: int) -> bool:
-        return abs(centroids[fi, 2] - centroids[fj, 2]) <= agent.max_step_up
-
+    # Two faces that share a mesh vertex (same index) meet EXACTLY at that
+    # vertex in 3D -- they already agree in Z there (it is one point), so the
+    # step across that seam is zero and they are walkably connected. This is the
+    # vertex-based form of the step check: a welded seam has no step to clear,
+    # so the old centroid-Z gate here was a spurious proxy that could wrongly
+    # cut a legitimately-welded pair of standable faces. We keep this pass as the
+    # exact mesh-connectivity backbone and drop the centroid test.
     for vi, flist in vert_to_faces.items():
         for i in range(len(flist)):
             for j in range(i + 1, len(flist)):
                 fi, fj = flist[i], flist[j]
-                if _z_gap_ok(fi, fj):
-                    adjacency[fi].add(fj)
-                    adjacency[fj].add(fi)
+                adjacency[fi].add(fj)
+                adjacency[fj].add(fi)
 
-    # 2) Footprint-proximity adjacency across mesh seams (corridor->room joins
+    # 2) Footprint-contact adjacency across mesh seams (corridor->room joins
     #    where vertices don't coincide). Spatial hash on XY to keep it O(F).
+    #    Two faces connect ONLY when their XY footprints genuinely touch (true
+    #    triangle overlap, or an edge-to-edge gap within adjacency_eps) AND their
+    #    interpolated floor heights AT THAT CONTACT POINT are within max_step_up.
+    #    Comparing Z at the contact -- not the two centroids -- is the fix: a room
+    #    floor and a ramp/jog passing over the same XY at a different height no
+    #    longer wire together, and two slabs whose bounding boxes merely clip by a
+    #    couple of units on each axis while sitting tens of units apart in the
+    #    other no longer "touch".
     eps = agent.adjacency_eps
-    # bounding box per standable face (XY)
+    tris = np.stack([a, b, c], axis=1)  # (F, 3, 3): per-face vertex positions
     fxy_min = np.minimum(np.minimum(a, b), c)[:, :2]
     fxy_max = np.maximum(np.maximum(a, b), c)[:, :2]
 
@@ -268,7 +397,8 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
         for key in _cells_for(int(fi)):
             grid.setdefault(key, []).append(int(fi))
 
-    def _xy_overlap(fi: int, fj: int) -> bool:
+    def _bbox_near(fi: int, fj: int) -> bool:
+        # Cheap reject before the exact test: XY bounding boxes within eps.
         return (fxy_min[fi, 0] - eps <= fxy_max[fj, 0] and
                 fxy_max[fi, 0] + eps >= fxy_min[fj, 0] and
                 fxy_min[fi, 1] - eps <= fxy_max[fj, 1] and
@@ -285,7 +415,16 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
                 if pk in seen_pairs:
                     continue
                 seen_pairs.add(pk)
-                if _xy_overlap(fi, fj) and _z_gap_ok(fi, fj):
+                if not _bbox_near(fi, fj):
+                    continue
+                # True XY contact test: do the triangles actually touch?
+                dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
+                if pt is None or dist > eps:
+                    continue
+                # Floors must agree in height WHERE they touch, not at centroids.
+                zi = _plane_z_at(tris[fi], pt[0], pt[1])
+                zj = _plane_z_at(tris[fj], pt[0], pt[1])
+                if abs(zi - zj) <= agent.max_step_up:
                     adjacency[fi].add(fj)
                     adjacency[fj].add(fi)
 
