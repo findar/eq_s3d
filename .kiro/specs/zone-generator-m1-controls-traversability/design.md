@@ -1489,3 +1489,27 @@ from it; nothing in this section is built, tested or gated in M1.
     Web_App; every build file is named by its Build_Name in its own
     `<zone id>/v1/` directory, and `rof2check` checks Build_Name agreement only.
     The target is chosen at Export (M6), which makes a rename-only copy.
+15. **Continuity floods its own region with full adjacency.** The pruned walk
+    surface (union-find speed-up) keeps components but drops redundant seam
+    edges, so a flood restricted to one corridor's region could miss a path
+    the reference finds. `corridor_continuity` therefore computes seam
+    contacts locally among the region's standable faces (the region is small,
+    so this is cheap) and never relies on the pruned adjacency lists. M1-P4
+    asserts equal continuity results on both surfaces.
+16. **Corridor-conflict clearance and reporting.** Clearance = the lower
+    corridor's `height` + 1 u (the box backend models no ceiling thickness),
+    and never less than `agent.player_height`. Conflicts are reported in
+    `TraversalReport.conflicts: list[tuple[str, str]]`, and both corridors get
+    `CorridorResult.reason = "conflicts with corridor <id>"`;
+    `corridors_passed` requires no conflicts.
+17. **Wave sequencing adjustments found while writing tasks.** The Sidecar is
+    written on every build, and builds move into `<zone id>/v<version>/` (with
+    the server's per-build route), in wave 4, because the wave-4 Pipeline
+    merges gate results into the Sidecar. Wave 6 adds the Build_Name checks on
+    top. `wilderness` joins the Enabled set in wave 4 on P1, M1-P1, P18 and
+    M1-P2 (the Format_Checker is still a passing stub there); wave 6 confirms
+    it under P20 and disables it again if that fails. Until wave 4, the wave-2
+    `/api/zone_types` body is `{"zone_types": [names], "default",
+    "reference_zones"}`. `new_zone_id()` moves to `core/paths.py` in wave 6 so
+    the CLI doesn't import the server.
+
