@@ -1769,8 +1769,31 @@ Working rules for every task:
     - **Commit (configs):** `bf9cdf4` — staged only the five
       `.kiro/agents/*.json`; `5 files changed, 21 insertions(+), 21 deletions(-)`.
       This spec `tasks.md` tracker update lands in a separate commit.
-  - [ ] 17.3 Update the steering
+  - [x] 17.3 Update the steering
     - In `.kiro/steering/project.md`, rewrite "Task tracking" and "Running a task" so that `.kiro/specs/<feature>/tasks.md` is the unit of work for new work, and `tasks/` is kept as history.
+    - **Done.** Rewrote the two "Workflow expectations" bullets in
+      `.kiro/steering/project.md`:
+      - **Task tracking** now names `.kiro/specs/<feature>/tasks.md` as the unit
+        of work for NEW work (open/create the entry; keep Status/checkbox state,
+        subtask checkboxes and Deliverables current; read + VERIFY against the
+        actual code, plus the spec's `requirements.md`/`design.md`, before
+        working; mark done only when acceptance criteria pass). Added a line that
+        the legacy `tasks/<id>.md` tier is kept as HISTORY (prior work lives
+        there; new work goes in the spec `tasks.md`).
+      - **Running a task** now points the "pointing at the file is the trigger to
+        RUN it" semantics at a spec `tasks.md` task (or a legacy `tasks/<id>.md`,
+        or a named task), keeping the read→verify→work-unchecked-subtasks→commit
+        loop and the "structural tests pass ≠ done — eyeball it in 3D" rule
+        verbatim.
+      - Re-pointed the UNIT reference inside the single-writer tracker-ownership
+        bullet from `tasks/<id>.md` to "its `.kiro/specs/<feature>/tasks.md` for
+        new work (or a legacy `tasks/<id>.md` for historical work)"; the rest of
+        that bullet (unconditional single-writer intent, never editing
+        `ROADMAP.md`/`README.md`/`tasks/README.md` during task work, integration
+        note) is unchanged.
+      - Everything else in `project.md` left intact (north-star intent, repo map,
+        architecture conventions, parallel-agent worktree guidance, commit/push
+        workflow, verification expectations). Steering-only change; no code.
     - _Requirements: Delivery and process (steering)_
 
 - [ ] 18. Exit checks and hand-off
