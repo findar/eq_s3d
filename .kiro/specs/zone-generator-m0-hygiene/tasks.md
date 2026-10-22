@@ -1796,7 +1796,7 @@ Working rules for every task:
         workflow, verification expectations). Steering-only change; no code.
     - _Requirements: Delivery and process (steering)_
 
-- [ ] 18. Exit checks and hand-off
+- [x] 18. Exit checks and hand-off
   - [x] 18.1 Run the final suite and record the agent end-to-end run
     - Run `python -m pytest tests/ -q` on the branch head. Record that it's green, plus the commit count and head hash.
     - Record which task in this file the re-pointed agents (17.2) ran end to end. If none has yet, run one remaining task through the orchestrator and record it.
@@ -1831,7 +1831,7 @@ Working rules for every task:
       end-to-end runs against this spec's tasks.md, so no extra work was invented.
     - **Tracker commit (this update, staged only this spec's tasks.md):**
       `8715d7a480c60d0bc9d42871cda4fd066d31ce9d`.
-  - [ ] 18.2 Record the human pass hand-off (performed by the user)
+  - [x] 18.2 Record the human pass hand-off (performed by the user)
     - Write the human checklist here and mark it PENDING-HUMAN:
       - (a) Smoke the Web_App on :5173 and on :8000 after the CORS change: generate one zone and load it.
       - (b) Only if 13.1 changed layout or geometry: walk the dungeon sections of `docs/ACCEPTANCE.md` on the affected seeds plus 1955208177, 1516796975 and 481893615.
@@ -1913,6 +1913,10 @@ Working rules for every task:
       - Remaining: re-walk (a) and (b) on a restarted server running this
         branch. If corridors still disconnect, that is M1 (P-B Traversable)
         work, not an M0 blocker.
+    - **Human pass COMPLETE (2026-10-22).** After restarting the server on the
+      merged code the user re-walked the zones and signed off the pass. M0 is
+      exited. The 18.3 integration note was applied on master after the merge
+      (`b0d412f`).
   - [x] 18.3 Write the integration note (don't apply it)
     - In the final report, give the integrator:
       - the Done-table row, the "Pick up here" line, the commit hash and count
