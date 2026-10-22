@@ -774,12 +774,43 @@ Working rules for every task:
       `generators/layout.py`), fixed under task 13.1 first; the test is NOT
       weakened to pass. Green over 100 examples (default) and 500 (thorough).
     - **Commit:** `d47111a` — `tests/test_properties_layout.py` only.
-  - [ ] 10.6 Write the relax-conflict fallback example test
+  - [x] 10.6 Write the relax-conflict fallback example test
     - **Property 7: Elevation grade cap** (umbrella P6, constructed conflict case)
     - `test_relax_conflict_fallback`: set up `LayoutGenerator("dungeon", seed=0)` with `_apply_room_scale(3)` and rooms E (z 0), B (z 0) and C (z 200), each 200×200 on the X axis with 40 u gaps, and `adj` with B inserted first.
     - Precondition: B's two walkable bands, computed with `gen._elevation_run`, are disjoint. This proves the midpoint branch runs.
     - Postcondition: after `_relax_elevation`, every adjacent pair satisfies `|Δz| <= run * 0.5 + 0.01`.
     - **Validates: Requirements 3.7, 1.6**
+    - **Done.** Appended `test_relax_conflict_fallback` to
+      `tests/test_properties_layout.py` (10.1/10.2/10.4/10.5 left untouched). It
+      is an EXAMPLE test (plain `def`, no `@given`/`@settings`, no `slow`, no
+      binary build) that drives `_relax_elevation`'s conflicting-neighbours
+      midpoint branch directly, per the design "Fallback-path examples → Relax
+      conflict fallback (Req 3.7)".
+    - **Verified against the real post-13.1 code:** signature is
+      `_relax_elevation(self, rooms, adj, entrance, iterations=200)` — the test
+      calls it exactly as the design specifies, `gen._relax_elevation(rooms, adj,
+      entrance)`. `RoomSpec` fields used are the real dataclass
+      (`id, center_x, center_y, floor_z, width, depth, height`); rooms are
+      `width=depth=200` on +X with centre spacing 240 (200 + 40 u gap), all on
+      y=0, so each corridor is a straight single leg and
+      `gen._elevation_run(a,b) == 44`, giving `cap = 44 * max_grade(0.5) = 22`.
+      `adj = {1:[0,2], 2:[1], 0:[1]}` with B (index 1) inserted first.
+    - **Precondition holds (midpoint branch runs):** at the initial Z, B's two
+      bands `[E.z−cap, E.z+cap] = [−22, 22]` and `[C.z−cap, C.z+cap] = [178, 222]`
+      are DISJOINT, so no single Z satisfies both neighbours and the `lo > hi`
+      midpoint branch fires on pass 1 (B is the first non-entrance node visited).
+      Confirmed by running the real generator before writing the assertion.
+    - **Postcondition passes:** after `gen._relax_elevation(rooms, adj, 0)` the
+      final floor_z are E=0.0, B≈22.00007, C≈44.00007; both adjacent pairs satisfy
+      `|Δz| ≤ run*0.5+0.01` (22.00007 ≤ 22.01 for E–B, 22.0 ≤ 22.01 for B–C) —
+      the thin-tolerance case Req 3.7 calls out.
+    - **Verification:** `.\.venv\Scripts\python.exe -m pytest
+      tests/test_properties_layout.py -q` → **5 passed**; full suite
+      `python -m pytest tests/ -q` → **220 passed** (2 pre-existing unrelated
+      warnings: starlette `BlockingPortal` deprecation, runpy `server.app`).
+    - **Commit:** `d2f88656faf630831622574f58435be9c50d2d32` ("M0 10.6: add
+      relax-conflict fallback example test") — staged only
+      `tests/test_properties_layout.py` (1 file, +93).
   - [ ] 10.7 Write the property test for flush openings
     - **Property 8: Flush openings** (umbrella P7)
     - `test_flush_openings` with a budget of `scaled(50)`, over `box_themes`, n 2–12 and elevation, using `geometry.build_mesh(spec).to_ter(...)` in memory.
