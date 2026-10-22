@@ -19,10 +19,18 @@ from hypothesis import strategies as st
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
+from generators.geometry import MAX_SEG_RISE, build_mesh
 from generators.layout import LayoutGenerator
 from generators.zone_spec import ZoneSpec
 
-from .pbt_helpers import scaled, room_graph, solvable_walk, run_for, _entrance_id
+from .pbt_helpers import (
+    scaled,
+    room_graph,
+    solvable_walk,
+    run_for,
+    opening_floor_z,
+    _entrance_id,
+)
 from .strategies import (
     seeds,
     room_counts,
@@ -431,3 +439,133 @@ def test_relax_conflict_fallback():
                 f"over the grade cap: |dz|={dz:.4f} > run*0.5+0.01={cap:.4f} "
                 f"(run={run:.4f})"
             )
+
+
+# --- Property 8: Flush openings (umbrella P7) ---------------------------------
+#
+# Budget scaled(50): the design pins 50, bounded by mesh cost -- this builds the
+# Box_Backend mesh in memory for every example (no binary archive), which is
+# heavier than the pure-spec layout properties above, so the per-test budget is
+# halved relative to them. Still layout/geometry only (no ZoneBuilder, no .eqg),
+# so no `slow` marker and no `build_settings`; `deadline=None` because the
+# in-memory mesh build for up to 12 rooms can brush the Default_Profile's 200 ms
+# per-example deadline on a cold call (import/JIT warmup) -- timing variance, not
+# a property failure.
+#
+# The probe band is scoped TIGHT to the seam: `band=MAX_SEG_RISE` (2.5 u, the
+# step-up / per-segment-rise limit from generators.geometry). The design's
+# `opening_floor_z(..., band)` window `z_ref +/- band` exists precisely to scope
+# the probe to the SEAM, not to the whole corridor-height column. Using the
+# corridor height (~97 u) as the band is too wide: on a Z-corridor the far,
+# legitimately-elevated leg can overhang the opening XY, and that distant
+# walkable ramp -- correctly within the grade cap -- would be swept into the
+# probe and read as non-flush even though the opening itself sits exactly on the
+# floor. A band of MAX_SEG_RISE admits only faces at the seam: P7/Req 3.4 is "the
+# opening sits at the room floor", so any real step at the seam is <= 2.5 u off
+# and is STILL caught by the strict 0.01 u assertion below, while the far end of
+# a Z-corridor is correctly excluded. This is correct probe scoping, not a
+# loosened assertion. An EMPTY return means the probe XY missed every upward face
+# within the seam band, which (per the design) should not happen -- the opening
+# point is exactly the corridor endpoint, which sits on the room's floor quad
+# edge AND the corridor floor -- so an empty list is itself a failure (a
+# misplaced opening), asserted non-empty rather than tolerated.
+@settings(deadline=None, max_examples=scaled(50))
+@given(
+    seed=seeds,
+    theme=box_themes,
+    n=room_counts(2, 12),
+    elevation=st.booleans(),
+)
+def test_flush_openings(seed, theme, n, elevation):
+    """Feature: zone-generator-m0-hygiene, Property 8: Flush openings.
+
+    Umbrella P7. For any seed, box theme (dungeon/city), room count 2-12 and
+    elevation flag, every corridor meets both its rooms flush at the floor:
+
+    1. The corridor's ``from_z`` / ``to_z`` EQUAL the respective rooms'
+       ``floor_z`` -- the opening is cut at the room floor, never above or below
+       it.
+    2. At each opening XY -- ``(from_x, from_y)`` on the ``from_room`` wall and
+       ``(to_x, to_y)`` on the ``to_room`` wall -- every upward face of the
+       Box_Backend mesh within ``MAX_SEG_RISE`` (2.5 u, the step-up /
+       segment-rise limit) of that room's floor lies within 0.01 u of
+       ``floor_z``. The band is scoped to the SEAM, not the whole corridor-height
+       column: that is what the design's ``z_ref +/- band`` window expresses. A
+       real step at the opening would be <= 2.5 u off and is still caught by the
+       strict 0.01 u assertion, while the far, legitimately-elevated leg of a
+       Z-corridor -- a walkable ramp within the grade cap -- is correctly
+       excluded. The probe must find at least one upward face at each opening (an
+       empty result means the opening XY is misplaced, which is itself a flush
+       failure).
+
+    The mesh is built in memory via ``geometry.build_mesh(spec).to_ter(...)`` --
+    no binary archive. If this fails it is a REAL geometry bug (an opening not
+    flush at the floor); report the counterexample and fix the geometry at the
+    root -- do NOT widen the 0.01 u band or narrow the strategy.
+
+    Validates: M0 Req 3.4; umbrella Req 1.6.
+    """
+    plan = ZonePlan(
+        name=f"flush{seed}",
+        theme=theme,
+        room_count=n,
+        elevation=elevation,
+    )
+    spec = plan_to_spec(plan, seed=seed)
+
+    # Build the Box_Backend mesh in memory (no ZoneBuilder, no .eqg write).
+    ter = build_mesh(spec).to_ter(spec.name.lower())
+
+    rooms_by_id = {r.id: r for r in spec.rooms}
+
+    for c in spec.corridors:
+        from_room = rooms_by_id.get(c.from_room)
+        to_room = rooms_by_id.get(c.to_room)
+        # The layout always wires corridors between two real rooms; guard the
+        # lookup rather than crash if that ever changes.
+        assert from_room is not None and to_room is not None, (
+            f"corridor {c.id} references unknown room(s) "
+            f"{c.from_room!r}/{c.to_room!r} (seed={seed}, theme={theme}, n={n})"
+        )
+
+        # (1) The opening Z equals the room floor at each end. Exact equality:
+        # the layout sets from_z/to_z directly from the rooms' floor_z, so any
+        # drift here is a real bug, not float noise.
+        assert c.from_z == from_room.floor_z, (
+            f"corridor {c.id} from_z {c.from_z!r} != from_room floor_z "
+            f"{from_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
+            f"elevation={elevation})"
+        )
+        assert c.to_z == to_room.floor_z, (
+            f"corridor {c.id} to_z {c.to_z!r} != to_room floor_z "
+            f"{to_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
+            f"elevation={elevation})"
+        )
+
+        # (2) Every upward face under each opening point, within MAX_SEG_RISE
+        # (2.5 u, the step-up/segment-rise limit) of that floor, is flush with
+        # the room floor to within 0.01 u. The band is scoped to the SEAM so the
+        # far, legitimately-elevated leg of a Z-corridor is excluded; a real step
+        # at the opening is <= 2.5 u off and still caught by the 0.01 u check.
+        for label, (ox, oy), floor_z in (
+            ("from", (c.from_x, c.from_y), from_room.floor_z),
+            ("to", (c.to_x, c.to_y), to_room.floor_z),
+        ):
+            zs = opening_floor_z(ter, ox, oy, z_ref=floor_z, band=MAX_SEG_RISE)
+            # The opening point is the corridor endpoint, which lies on the room
+            # floor quad's edge AND the corridor floor -- so an upward face MUST
+            # be found there. An empty result means the opening XY is off, which
+            # is a flush failure in itself.
+            assert zs, (
+                f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) found no "
+                f"upward floor face within {MAX_SEG_RISE} u of floor_z "
+                f"{floor_z:.3f} (seed={seed}, theme={theme}, n={n}, "
+                f"elevation={elevation})"
+            )
+            for z in zs:
+                assert abs(z - floor_z) <= 0.01, (
+                    f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) has a "
+                    f"floor face at z={z:.5f}, off floor_z {floor_z:.3f} by "
+                    f"{abs(z - floor_z):.5f} u > 0.01 (seed={seed}, "
+                    f"theme={theme}, n={n}, elevation={elevation})"
+                )
