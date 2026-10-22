@@ -800,12 +800,35 @@ Working rules for every task:
       `PytestUnknownMarkWarning`, exit 0.
     - **Deliverable commit:** `0a1e245` — staged only
       `tests/test_properties_pipeline.py`.
-  - [ ] 12.2 Write the property test that forced failures are reported
+  - [x] 12.2 Write the property test that forced failures are reported
     - **Property 16: Forced failures are reported, never swapped** (umbrella P2, pinned + exhaustion)
     - `test_forced_failure_reported`: slow, `build_settings(15)`. The factory builds a dungeon (n 2–4) plus one isolated room, keyed on the seed.
     - Pinned case: expect `GenerationFailed(pinned=True)` with `attempts == 1` and `failures[0].seed == seed`.
     - Unpinned case: `max_attempts` 1–8 and `timeout_s=1e9`; expect `pinned=False`, `timed_out=False` and `attempts == max_attempts`.
     - **Validates: Requirements 5.2, 5.6, 1.5, 1.6**
+    - **Done.** Appended `test_forced_failure_reported` to
+      `tests/test_properties_pipeline.py` below 12.1's
+      `test_returned_build_is_validated` (left untouched; its imports
+      `generate_validated`, `GenerationFailed`, `ValidatedBuild`,
+      `build_settings`, `fresh_dir` are reused, plus a grouped `RoomSpec` import
+      for the isolated room). `@pytest.mark.slow`, `@build_settings(15)`.
+      - Factory `_forced_fail_factory(rooms)` mirrors
+        `tests/test_pipeline._broken_spec`: builds the dungeon on the seed the
+        pipeline hands it (keyed on the seed, n 2–4), then appends one far-away
+        isolated `RoomSpec` so the traversability gate rejects every attempt
+        regardless of seed.
+      - Verified against `generators/pipeline.py`: `GenerationFailed` carries
+        `.pinned`, `.timed_out`, `.attempts` (`= len(failures)`) and `.failures`
+        (list of `AttemptFailure`, each with `.seed`). A pinned seed is signalled
+        by passing `seed=<int>` (non-None ⇒ `pinned`); unpinned passes
+        `seed=None`. Both branches asserted with the real attribute names — no
+        adaptation needed, no swapped/wrong seed observed.
+      - **Verification:** `python -m pytest tests/test_properties_pipeline.py -q`
+        → **2 passed** in 11.68s. Full suite `python -m pytest tests/ -q` →
+        **213 passed** in 57.55s, exit 0 (2 pre-existing unrelated warnings, no
+        `PytestUnknownMarkWarning`).
+    - **Deliverable commit:** `2541c14` — staged only
+      `tests/test_properties_pipeline.py`.
   - [ ] 12.3 Write the property test that fresh seeds vary
     - **Property 17: Fresh seeds vary** (umbrella P10)
     - `test_fresh_seeds_vary`: slow, `build_settings(10)`. Make k ∈ 3–10 unpinned calls on a 2-room dungeon with `rng` omitted, using a spy to record seeds.
