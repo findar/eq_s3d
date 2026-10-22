@@ -1199,11 +1199,35 @@ Working rules for every task:
       (2 pre-existing warnings only). Staged only
       `tests/test_properties_pipeline.py` for the code commit.
     - **Commit:** `1cce4b3` (code — `tests/test_properties_pipeline.py` only).
-  - [ ] 12.4 Write the no-API default selection example test
+  - [x] 12.4 Write the no-API default selection example test
     - umbrella P16 (example)
     - `test_no_api_default_selection` with `no_api_keys` + `no_network`.
     - Assert `get_planner().name == "rule"`, that the active texture provider is procedural, and that `attempts == []`.
     - **Validates: Requirements 5.4, 1.6**
+    - **Done.** Appended `test_no_api_default_selection` to
+      `tests/test_properties_pipeline.py` (12.1/12.2/12.3 left untouched). Plain
+      example test — no `@given` — so the function-scoped `no_api_keys` and
+      `no_network` fixtures are used directly. Carries the P16 docstring naming
+      the property and validated reqs.
+    - **API verified against the real code first:**
+      - `ai.planner.get_planner()` returns `RulePlanner` (which has
+        `name = "rule"`) when no key / no `EQ_S3D_PLANNER` override and the
+        forced global is `None` — `no_api_keys` deletes the env vars and calls
+        `set_planner(None)`, so auto-select re-runs.
+      - `generators.textures.factory.get_provider()` returns `ProceduralProvider`
+        (which has `name = "procedural"`) under the same no-key path
+        (`set_provider(None)` reset by the fixture). Asserted via `.name ==
+        "procedural"`.
+      - `no_network` yields its `attempts` list directly (conftest:
+        `yield attempts`), so the test asserts `no_network == []`.
+    - **Verification (worktree `-Venv`):**
+      `python -m pytest tests/test_properties_pipeline.py -q` → **4 passed** (the
+      3 existing pipeline properties + the new example). Full suite
+      `python -m pytest tests/ -q` → **228 passed**, 2 pre-existing warnings
+      (starlette `BlockingPortal` deprecation, runpy `server.app`), exit 0.
+      Observed defaults: planner `rule`, provider `procedural`, `attempts == []`.
+    - **Deliverable commit:** `826cfde` ("M0 12.4: add no-API default selection
+      example test") — staged `tests/test_properties_pipeline.py` only.
   - [ ] 12.5 Write the no-API prompt and CLI example test
     - umbrella P16 (example, slow)
     - `test_no_api_prompt_and_cli` with `no_api_keys` + `no_network`.
