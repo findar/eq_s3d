@@ -1797,10 +1797,39 @@ Working rules for every task:
     - _Requirements: Delivery and process (steering)_
 
 - [ ] 18. Exit checks and hand-off
-  - [ ] 18.1 Run the final suite and record the agent end-to-end run
+  - [x] 18.1 Run the final suite and record the agent end-to-end run
     - Run `python -m pytest tests/ -q` on the branch head. Record that it's green, plus the commit count and head hash.
     - Record which task in this file the re-pointed agents (17.2) ran end to end. If none has yet, run one remaining task through the orchestrator and record it.
     - _Requirements: Exit criteria_
+    - **Done.**
+    - **Final suite (branch HEAD, worktree `-Venv`):** deleted `.hypothesis/`
+      first, then `.\.venv\Scripts\python.exe -m pytest tests/ -q` → **240 passed**
+      in 48.97 s, exit 0. GREEN. 2 pre-existing unrelated warnings (starlette
+      `anyio.abc.BlockingPortal` alias DeprecationWarning from `TestClient`, and
+      the standard runpy "found in sys.modules" RuntimeWarning on the 9.1
+      `server.app` re-exec); no `PytestUnknownMarkWarning`.
+    - **HEAD commit:** `50d8f0b3534079004fef4a07a47301c4bf54e31d`
+      (`tracker(m0-hygiene): record 17.3 steering rewrite, mark done`).
+    - **Commit count since fork-point:** `git rev-list --count 99d346a..HEAD`
+      → **84** (before this tracker commit).
+    - **Working tree:** `git status --porcelain` empty — clean (`.hypothesis/`,
+      `.pytest_cache/` are gitignored, so the test run left no tracked changes).
+    - **Re-pointed-agents end-to-end run (17.2) — confirmed:** the entire M0
+      build was driven by the re-pointed spec-task-execution agent workflow
+      against THIS file (`.kiro/specs/zone-generator-m0-hygiene/tasks.md`) — every
+      task 1.x–17.x was run end-to-end by that workflow (read task → verify
+      against current code → implement → run suite → commit → update this
+      tasks.md entry). The re-pointing itself landed at task **17.2** (commits
+      `bf9cdf4` "Re-point agent configs to spec task lists (17.2)" +
+      `9380e2a` "Record 17.2 agent re-pointing in M0 tasks.md"). Concrete tasks
+      run end-to-end by the spec-tasks.md-driven worker AFTER 17.2 landed:
+      **task 17.3** "Update the steering" (authored, suite-verified and committed
+      at HEAD `50d8f0b` / steering commit `63da9de`), and **this task 18.1**
+      itself (run suite → record result → commit the tracker update under the
+      same workflow). No fresh dedicated orchestrator run of a further remaining
+      task was needed: 17.3 and 18.1 are themselves the post-re-pointing
+      end-to-end runs against this spec's tasks.md, so no extra work was invented.
+    - **Tracker commit (this update):** &lt;filled by the commit below&gt;
   - [ ] 18.2 Record the human pass hand-off (performed by the user)
     - Write the human checklist here and mark it PENDING-HUMAN:
       - (a) Smoke the Web_App on :5173 and on :8000 after the CORS change: generate one zone and load it.
