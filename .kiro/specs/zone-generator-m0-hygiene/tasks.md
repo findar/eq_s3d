@@ -475,8 +475,9 @@ Working rules for every task:
       `python -m pytest tests/ -q` → **205 passed**, exit 0.
     - **Commit (staged only `tests/test_server.py`):** `1c218cd`.
 
-- [ ] 8. Checkpoint: removals and server change landed
+- [x] 8. Checkpoint: removals and server change landed
   - Run `python -m pytest tests/ -q`. It must be green. Tasks 4–7 are committed separately (4.1 first; 5.2 + 5.3 together). Ask the user if questions arise.
+  - **Verified:** `python -m pytest tests/ -q` GREEN — 217 passed (2 unrelated warnings: anyio `BlockingPortal` deprecation and a `runpy` RuntimeWarning; no `PytestUnknownMarkWarning`). Re-ran collection under `--co -q -W error::pytest.PytestUnknownMarkWarning`: 217 tests collected, exit 0 — proves no unknown-mark warning (the `slow` marker is registered in `pytest.ini`). Tasks 4–7 and the 9.x property-test commits are all landed; working tree clean. HEAD `b14c176`, 43 commits since fork-point `99d346a`.
 
 - [ ] 9. Core property module (`tests/test_properties_core.py`)
   - [x] 9.1 Write the property test for the PFS archive round-trip
