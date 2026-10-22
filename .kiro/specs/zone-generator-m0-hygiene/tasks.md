@@ -1170,11 +1170,35 @@ Working rules for every task:
         `PytestUnknownMarkWarning`).
     - **Deliverable commit:** `2541c14` — staged only
       `tests/test_properties_pipeline.py`.
-  - [ ] 12.3 Write the property test that fresh seeds vary
+  - [x] 12.3 Write the property test that fresh seeds vary
     - **Property 17: Fresh seeds vary** (umbrella P10)
     - `test_fresh_seeds_vary`: slow, `build_settings(10)`. Make k ∈ 3–10 unpinned calls on a 2-room dungeon with `rng` omitted, using a spy to record seeds.
     - Assert that every seed is in 0–2,147,483,647 and that the seeds are not all equal.
     - **Validates: Requirements 5.3, 1.5, 1.6**
+    - **Done.** Appended `test_fresh_seeds_vary` to
+      `tests/test_properties_pipeline.py` (12.1/12.2 untouched; reuses
+      `generate_validated`, the 12.1 spy `spec_factory` idiom, `fresh_dir` and
+      `build_settings`). `@pytest.mark.slow`, `@build_settings(10)`,
+      `@given(k=st.integers(3, 10))` (no `tmp_path` on `@given` — uses
+      `fresh_dir()`). Makes `k` unpinned `generate_validated` calls on a navigable
+      2-room dungeon with BOTH `rng` and `seed` omitted, so each call draws a
+      fresh seed via `_fresh_seed(None)`; the spy records every seed. Asserts the
+      factory was called `k` times, every recorded seed ∈ `[0, 2147483647]`, and
+      `len(set(seeds)) > 1` ("not all equal", not "all distinct" — a rare
+      collision is acceptable).
+    - **Fresh-seed independence confirmed:** `_fresh_seed(None)` (read in
+      `generators/pipeline.py`) pulls from the module-level `random` generator via
+      `random.randint(0, 2**31 - 1)`. Hypothesis's `default` profile
+      `derandomize=True` only fixes Hypothesis's INPUT buffer, not the pipeline's
+      internal RNG, so the `k` draws still vary within one example — verified
+      (`[_fresh_seed(None) for _ in range(5)]` → 5 distinct values). No
+      randomness regression; strategy NOT narrowed.
+    - **Verification (worktree `-Venv`):**
+      `python -m pytest tests/test_properties_pipeline.py -q` → **3 passed in
+      8.14s**. Full suite `python -m pytest tests/ -q` → **227 passed in 51.69s**
+      (2 pre-existing warnings only). Staged only
+      `tests/test_properties_pipeline.py` for the code commit.
+    - **Commit:** `1cce4b3` (code — `tests/test_properties_pipeline.py` only).
   - [ ] 12.4 Write the no-API default selection example test
     - umbrella P16 (example)
     - `test_no_api_default_selection` with `no_api_keys` + `no_network`.
