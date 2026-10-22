@@ -338,3 +338,96 @@ def test_elevation_grade_cap(seed, theme, n, vert, elevation, semantic):
             f"elevation={elevation}, semantic={semantic}, "
             f"rooms {c.from_room!r}->{c.to_room!r}"
         )
+
+# --- Property 7 (constructed conflict case): relax-conflict fallback ----------
+#
+# This is an EXAMPLE test, not a `@given` property. Generation has no observable
+# that forces `_relax_elevation`'s conflicting-neighbours (midpoint) branch, so
+# per design "Fallback-path examples -> Relax conflict fallback (Req 3.7)" the
+# branch is driven directly on a constructed room set. No `@settings`/`@given`,
+# no binary build, no `slow` marker.
+#
+# Construction mirrors the design exactly: `LayoutGenerator("dungeon", seed=0)`
+# with `_apply_room_scale(3)`, three 200x200 rooms strung along +X with 40 u
+# wall gaps (so each corridor is straight and `_elevation_run` is the single
+# leg; here run = 44, cap = run * max_grade = 22). Rooms: E (entrance, z 0),
+# B (z 0), C (z 200). `adj = {B: [E, C], C: [B], E: [B]}` with B inserted FIRST,
+# because B is then the first non-entrance node the sweep visits, so the
+# `lo > hi` midpoint branch runs on pass 1.
+def test_relax_conflict_fallback():
+    """Feature: zone-generator-m0-hygiene, Property 7: Elevation grade cap (constructed conflict case).
+
+    Umbrella P6. Drives `LayoutGenerator._relax_elevation`'s conflicting-
+    neighbours fallback -- the ``lo > hi`` midpoint branch -- on a constructed
+    room set, because generation exposes no input that forces it. Three 200x200
+    rooms sit on the X axis with 40 u wall gaps (straight corridors, run 44,
+    cap ``run * max_grade`` = 22): E (entrance, z 0), B (z 0) and C (z 200), with
+    ``adj`` listing B first so B is the first non-entrance node the sweep visits.
+
+    Precondition (proves the branch runs): with B at its initial z, the two
+    walkable Z bands B must satisfy -- ``[E.z - cap, E.z + cap]`` from the E-B
+    corridor and ``[C.z - cap, C.z + cap]`` from the B-C corridor -- are
+    DISJOINT, so no single z can satisfy both neighbours and ``_relax_elevation``
+    must take the ``lo > hi`` midpoint branch.
+
+    Postcondition: after ``gen._relax_elevation(rooms, adj, entrance)`` every
+    adjacent pair satisfies ``abs(dz) <= run * 0.5 + 0.01``, run being
+    ``gen._elevation_run`` for that pair. The relaxation compresses the conflict
+    down to within the grade cap's thin tolerance -- the exact case Req 3.7
+    calls out. A failure here is a REAL fallback bug; the fix goes at the root of
+    the relaxation, never by widening the 0.01 tolerance.
+
+    Validates: M0 Req 3.7; umbrella Req 1.6.
+    """
+    from generators.zone_spec import RoomSpec
+
+    gen = LayoutGenerator("dungeon", seed=0)
+    gen._apply_room_scale(3)
+
+    # Three 200x200 rooms strung along +X with 40 u wall gaps (centre spacing
+    # 200 + 40 = 240), all on y = 0 so every corridor is a straight single leg.
+    entrance = 0
+    e_room = RoomSpec(id="E", center_x=0.0, center_y=0.0, floor_z=0.0,
+                      width=200.0, depth=200.0, height=gen.ceiling)
+    b_room = RoomSpec(id="B", center_x=240.0, center_y=0.0, floor_z=0.0,
+                      width=200.0, depth=200.0, height=gen.ceiling)
+    c_room = RoomSpec(id="C", center_x=480.0, center_y=0.0, floor_z=200.0,
+                      width=200.0, depth=200.0, height=gen.ceiling)
+    rooms = [e_room, b_room, c_room]  # indices: E=0, B=1, C=2
+
+    # B inserted FIRST so B (index 1) is the first non-entrance node visited and
+    # the midpoint branch runs on pass 1. Mirrors the design's
+    # `adj = {B: [E, C], C: [B], E: [B]}`.
+    adj = {1: [0, 2], 2: [1], 0: [1]}
+
+    # --- Precondition: B's two walkable bands are DISJOINT at the initial z ---
+    # Run is symmetric for these endpoints; compute each corridor's cap from the
+    # production _elevation_run so the bands match what _relax_elevation uses.
+    cap_eb = gen._elevation_run(e_room, b_room) * gen.max_grade
+    cap_bc = gen._elevation_run(b_room, c_room) * gen.max_grade
+    band_from_e = (e_room.floor_z - cap_eb, e_room.floor_z + cap_eb)
+    band_from_c = (c_room.floor_z - cap_bc, c_room.floor_z + cap_bc)
+    # Disjoint iff one band ends entirely below the other begins. If this ever
+    # fails the constructed geometry stopped forcing the conflict -- fix the
+    # construction, never the assertion.
+    assert band_from_e[1] < band_from_c[0] or band_from_c[1] < band_from_e[0], (
+        f"precondition failed: B's bands {band_from_e} and {band_from_c} "
+        f"overlap, so the midpoint branch would not run"
+    )
+
+    # --- Drive the fallback exactly as the generator calls it ---
+    gen._relax_elevation(rooms, adj, entrance)
+
+    # --- Postcondition: every adjacent pair is within the grade cap ----------
+    for i in adj:
+        for m in adj[i]:
+            if i >= m:
+                continue  # check each undirected pair once
+            run = gen._elevation_run(rooms[i], rooms[m])
+            dz = abs(rooms[i].floor_z - rooms[m].floor_z)
+            cap = run * 0.5 + 0.01
+            assert dz <= cap, (
+                f"relax fallback left corridor {rooms[i].id}->{rooms[m].id} "
+                f"over the grade cap: |dz|={dz:.4f} > run*0.5+0.01={cap:.4f} "
+                f"(run={run:.4f})"
+            )
