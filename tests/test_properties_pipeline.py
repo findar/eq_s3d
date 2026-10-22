@@ -246,3 +246,43 @@ def test_fresh_seeds_vary(k):
         f"all {k} fresh seeds were identical ({seeds_seen[0]}) — the pipeline "
         "is not drawing fresh seeds (randomness-is-a-feature regression)"
     )
+
+
+def test_no_api_default_selection(no_api_keys, no_network):
+    """
+    Feature: zone-generator-m0-hygiene, Property 16 (umbrella P16): No-API
+    default selection.
+
+    With no API keys and no planner / texture-provider env override, and with
+    the forced globals reset (both done by the ``no_api_keys`` fixture),
+    auto-selection must pick the zero-key, no-network defaults:
+
+    * ``ai.planner.get_planner()`` returns the rule planner (``.name == "rule"``).
+    * ``generators.textures.factory.get_provider()`` returns the procedural
+      provider (``.name == "procedural"``).
+
+    And making those selections must perform NO outbound network call: the
+    ``no_network`` fixture yields its ``attempts`` list, which stays empty.
+
+    Validates: M0 Req 5.4; umbrella Req 1.6.
+    """
+    import ai.planner
+    import generators.textures.factory as texture_factory
+
+    planner = ai.planner.get_planner()
+    assert planner.name == "rule", (
+        f"default planner is {planner.name!r}, expected 'rule' with no API keys"
+    )
+
+    provider = texture_factory.get_provider()
+    assert provider.name == "procedural", (
+        f"default texture provider is {provider.name!r}, expected 'procedural' "
+        "with no API keys"
+    )
+
+    # The no_network fixture yields its `attempts` list directly (conftest:
+    # `yield attempts`), so `no_network` IS that list.
+    assert no_network == [], (
+        f"selecting the no-API defaults made outbound network attempts: "
+        f"{no_network}"
+    )
