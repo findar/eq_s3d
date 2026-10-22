@@ -1892,6 +1892,27 @@ Working rules for every task:
       perform the live browser/3D work, so once this checklist + status is
       recorded and committed, the agent side is complete. The task is NOT done
       until the user completes the live pass above.
+
+    - **Human pass, first attempt (2026-10-22): FINDINGS, not yet a pass.**
+      The user reported disconnected-looking corridors on 30-room prompt
+      dungeons (`create a dungeon with 30 rooms` seed 1949459644; `a dungeon
+      with 30 rooms and long halls` seed 1510177507). What the investigation
+      established:
+      - `analyzer.traverse` adjacency was UNSOUND (bbox overlap + centroid Z
+        bridged real gaps). Fixed in `a47385e` + `04b056d`. The build-level
+        navigability properties (P1, P2, P7) had gone green under the unsound
+        gate; they re-ran green under the sound gate (suite 245, now 249).
+      - The user's server was running STALE code (uvicorn `reload=False`).
+        After a restart the zones looked better. Build identity + a stale-code
+        banner were added (`d17529b`, `83762aa`) so this is visible in the UI.
+      - Coverage gap: build-level properties use 2-12 rooms; every reported
+        failure was at 30 rooms. Not addressed in M0.
+      - Out-of-scope additions that landed on this branch during the pass:
+        the gate soundness fix, room-id labels (`d2f45b3`, `0729170`) and
+        build identity. Record them in the integration step.
+      - Remaining: re-walk (a) and (b) on a restarted server running this
+        branch. If corridors still disconnect, that is M1 (P-B Traversable)
+        work, not an M0 blocker.
   - [x] 18.3 Write the integration note (don't apply it)
     - In the final report, give the integrator:
       - the Done-table row, the "Pick up here" line, the commit hash and count
