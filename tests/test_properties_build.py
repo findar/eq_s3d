@@ -273,3 +273,78 @@ def test_seed_determinism(s, theme, n, locks, elevation):
         f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
         f"elevation={elevation}): non-deterministic placement"
     )
+
+from tests.strategies import semantic_inputs
+from tests.pbt_helpers import clear_advisory
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    s=seeds,
+    theme=box_themes,
+    n=room_counts(3, 12),
+    locks=st.integers(min_value=1, max_value=5),
+    semantic=semantic_inputs,
+)
+def test_advisory_clearing(s, theme, n, locks, semantic):
+    """
+    Feature: zone-generator-m0-hygiene, Property 14: Advisory clearing leaves
+    the TER unchanged (umbrella P5, advisory clearing).
+
+    Pacing and gating are ADVISORY metadata for a manual finishing pass — room
+    roles, graph depth, semantic type, district, prop hints, encounter intent,
+    the boss flag, and lock gates ride in the ``.zone.json`` sidecar (and the
+    EQEmu ``doors`` table), never in the binary geometry. So stripping every
+    advisory field off a fully-realised spec MUST NOT change what gets built:
+    the TER mesh of ``spec`` is BYTE-IDENTICAL to the TER of
+    ``clear_advisory(spec)``. This asserts the north-star "layouts are
+    suggestions ... they must not alter geometry or collision" invariant head-on
+    — if any advisory datum bled into the mesh, the two builds would diverge.
+
+    The spec is built through ``ai.expand.plan_to_spec`` with ``semantic_inputs``
+    (``dungeon_theme`` / ``dungeon_race`` / ``elemental_tint``) so there IS
+    advisory content to clear: the semantic layer realises room roles,
+    graph_depth, semantic_type, prop_hints, encounter_intent and the boss flag,
+    and ``locks`` in [1, 5] realises lock gates. ``clear_advisory`` deep-copies
+    (the original ``spec`` is never mutated) and resets those advisory fields
+    while KEEPING ``room_theme`` and the spec-level ``dungeon_theme`` /
+    ``dungeon_race`` / ``elemental_tint`` — those are realised content (they
+    drive materials/textures), not suggestions — so textures/materials are
+    unaffected too and the TER comparison isolates the advisory->geometry
+    question.
+
+    Scope: the TER is the asserted invariant (per the task). The ``.eqg`` bytes
+    are NOT compared (the PFS footer stamps ``int(time.time())`` and would differ
+    between two archives even when their contents match); ``build_raw`` reads the
+    TER member back out for exactly that reason. The two builds go into separate
+    ``fresh_dir()``s.
+
+    NOTE: this is an ANALYTICAL byte-equality check on the built TER, not a live
+    3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: M0 Req 4.5, 1.5; umbrella Req 1.6.
+    """
+    plan = ZonePlan(
+        name="advclear",
+        theme=theme,
+        room_count=n,
+        locks=locks,
+        dungeon_theme=semantic["dungeon_theme"],
+        dungeon_race=semantic["dungeon_race"],
+        elemental_tint=semantic["elemental_tint"],
+    )
+    spec = plan_to_spec(plan, seed=s)
+    cleared = clear_advisory(spec)
+
+    with fresh_dir() as out_original:
+        _r1, ter_original, _zon_original = build_raw(spec, out_original)
+    with fresh_dir() as out_cleared:
+        _r2, ter_cleared, _zon_cleared = build_raw(cleared, out_cleared)
+
+    assert ter_original == ter_cleared, (
+        f"advisory clearing changed the TER mesh "
+        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"semantic={semantic}): advisory (pacing/gating) data leaked into "
+        f"geometry — this is a real bug, advisory data is suggestions-only"
+    )
