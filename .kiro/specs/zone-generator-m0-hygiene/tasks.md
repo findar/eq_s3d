@@ -1459,10 +1459,27 @@ Working rules for every task:
       registered in `pytest.ini`).
 
 - [ ] 16. Measure the suite budget and run the thorough profile
-  - [ ] 16.1 Check the Default_Run time budget
+  - [x] 16.1 Check the Default_Run time budget
     - Run `python -m pytest tests/ -q` 3 times in a row, deleting `.hypothesis/` before each run. Record the median here against the 1.2 baseline. It must be ≤ baseline + 60 s.
     - If it's over, apply the design's budget levers in order: lower build budgets toward 10; cap P13 `bulk_n` at 500 and keep the 2000-entry case as an `@example`; weight outdoor in P9. Re-measure after each lever.
     - _Requirements: 1.4, 1.5_
+    - **Done — PASS, no budget lever needed.** Measured in the worktree
+      `-Venv` (`.venv\Scripts\python.exe`), sole user of the venv/git index (no
+      contention). Deleted `.hypothesis/` with `Remove-Item -Recurse -Force`
+      before each of the three runs. All three runs: **240 passed, 2 warnings**
+      (pre-existing starlette `BlockingPortal` deprecation + runpy `server.app`),
+      no `PytestUnknownMarkWarning`, exit 0.
+    - **Three wall-clock times (`Measure-Command` around the full `pytest tests/ -q`):**
+      - Run 1: **54.21 s** (pytest self-timer 52.43 s)
+      - Run 2: **54.52 s** (pytest self-timer 53.21 s)
+      - Run 3: **52.83 s** (pytest self-timer 51.57 s)
+    - **Median wall-clock: 54.21 s.**
+    - **Budget comparison:** baseline (task 1.2) 92 s + 60 s = **152 s ceiling**.
+      Median 54.21 s ≤ 152 s → **PASS** (≈98 s of headroom, ~36% of the ceiling).
+    - **No budget lever applied** — the Default_Run is comfortably under the
+      ceiling, so none of (a) lower build budgets toward 10, (b) cap P13
+      `bulk_n` at 500, (c) weight outdoor in P9 was needed. No code/test/strategy
+      change; this is a measurement-only record. Tracker-only commit below.
   - [ ] 16.2 Verify derandomization, budgets and docstrings
     - Run the Default_Run twice with `--hypothesis-show-statistics` and record that the example counts per property test match.
     - Confirm that every Property_Suite test has a Property_Docstring and runs ≥ 5× the examples under `--hypothesis-profile=thorough` (via `scaled`). Confirm that every build-level test has `slow`, `deadline=None` and a budget of 10–25.
