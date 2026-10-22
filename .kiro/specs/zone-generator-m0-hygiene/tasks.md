@@ -1384,6 +1384,25 @@ Working rules for every task:
     - **Commits:** generator fix `0e3799a` (`generators/layout.py`); property
       test `d47111a` (`tests/test_properties_layout.py`).
 
+    - **16.3 thorough-run counterexample — PFS CRC collision (FORMAT LIMIT, NOT
+      a 13.1 root-cause fix; routed to the user).** The thorough run in 16.3 (at
+      HEAD `84d415a`) surfaced a third counterexample, in
+      `tests/test_properties_core.py::test_pfs_roundtrip` (Property 1 / umbrella
+      P13): with ~60 case-insensitively-distinct printable-ASCII names, one name
+      (`:D:m\`^4Xl<f\`+4kRz5Q^D!TTntb3ZOXL!Lwq)-`, CRC `0x377d2620`) was dropped
+      on round-trip (`missing={...}, extra=set()`). Root cause is a 32-bit
+      filename-CRC collision in the PFS container (confirmed in-venv:
+      `'l6WFj\`[l'` and `'uI\`()'` → both CRC `0x1f89dc5`, collapse to one file).
+      Per this task's own rule and design 9.1, **a CRC collision / sentinel clash
+      is a format limit, not a bug — do NOT fix the generator, do NOT weaken the
+      property or narrow the strategy; ask the user.** So this is recorded, not
+      fixed, and it is NOT a 13.1 generator change (there is no generator fix that
+      makes two CRC-colliding names coexist in the on-disk format). Full detail,
+      including the user-decision options, is under task **16.3**. 13.1 remains
+      done for the two *genuine* generator bugs above; this PFS item is the
+      format-limit exception that goes back to the user, after which 16.3's
+      thorough run is repeated.
+
 - [ ] 14. Residue guards
   - [x] 14.1 Extend `tests/test_hygiene.py` with the residue guards
     - Add to the module created in 4.1. Static checks over tracked `*.py` files, excluding this module. Build the forbidden tokens by string concatenation so the module doesn't match itself. Check that:
@@ -1559,6 +1578,61 @@ Working rules for every task:
     - Run `python -m pytest tests/ -q --hypothesis-profile=thorough`. Record the result, the duration and the commit hash here.
     - Any counterexample goes through task 13.1, after which this run is repeated.
     - _Requirements: 1.3, Exit criteria_
+    - **RUN 1 — RED (counterexample surfaced; format limit, routed to the user).**
+      Ran once in the worktree `-Venv` (`.venv\Scripts\python.exe`), sole user of
+      the venv/git index, over the full suite with the randomized 5× profile:
+      `.\.venv\Scripts\python.exe -m pytest tests/ -q --hypothesis-profile=thorough`.
+      - **Result:** `1 failed, 239 passed, 3 warnings`.
+      - **Duration:** 311.76 s pytest-reported (0:05:11); 313.3 s wall.
+      - **HEAD at run time:** `84d415a72660d08108b9a1021597aabd74efcadf`
+        (branch `agent/m0-hygiene`).
+      - **Warnings (pre-existing, not failures):** starlette `anyio.abc.BlockingPortal`
+        deprecation, runpy `server.app`, and a Hypothesis "overly large repr"
+        warning emitted while formatting the big failing PFS example.
+    - **Counterexample — `tests/test_properties_core.py::test_pfs_roundtrip`
+      (Property 1 / umbrella P13).** This is the derandomized-default-misses,
+      randomized-5×-finds case the task anticipated.
+      - **Assertion that failed** (test line 115): `set(round_tripped) == set(entries)`
+        — `AssertionError: round-tripped names differ from input
+        (missing={':D:m\`^4Xl<f\`+4kRz5Q^D!TTntb3ZOXL!Lwq)-'}, extra=set())`.
+        One input name is dropped on round-trip; nothing extra appears, i.e. two
+        distinct input names collapsed to one archive entry.
+      - **Minimal falsifying input:** a generated `pfs_entries()` map of ~60
+        case-insensitively-distinct printable-ASCII names with random payloads.
+        Hypothesis emitted an "overly large repr" (~133 kB) for the full dict, so
+        the console repr is truncated with `...`; the diagnostic signal is the
+        `missing=` name above plus `extra=set()`. Hypothesis Explanation pinned
+        the drop to the two assertions at lines 116/119 (name-set + count checks).
+      - **ROOT CAUSE — PFS filename-CRC collision (a FORMAT LIMIT, not a code
+        bug).** The PFS container keys files by EQ's big-endian filename CRC
+        (`core.pfs._filename_crc32`), so two distinct names that hash to the same
+        32-bit CRC share one directory slot and one is lost on round-trip.
+        Confirmed empirically in this venv with a one-off probe (not committed):
+        scanning the same printable-ASCII alphabet the strategy uses found the
+        collision `'l6WFj\`[l'` and `'uI\`()'` → both CRC `0x1f89dc5`; adding both
+        to a `PfsArchive` and round-tripping yields a single file. The missing
+        name's CRC is `0x377d2620`. A 32-bit CRC over an unbounded distinct-name
+        space WILL collide by the birthday bound at ~60 names; the default
+        derandomized profile simply never drew a colliding draw, the randomized 5×
+        profile did.
+      - **Per the task + design (9.1): a CRC collision / sentinel clash is a
+        format limit — STOP, do NOT weaken the property or narrow the strategy,
+        ask the user.** Not fixed here and NOT routed into a 13.1 generator fix:
+        there is no root-cause generator change that makes two CRC-colliding names
+        survive in this on-disk format. Reported to the orchestrator for a user
+        decision. Options the user can pick from (design's "ask the user"): (a)
+        pin this exact collision as an `@example(...).via("CRC collision — format
+        limit")` and have the property `assume` no intra-set CRC collision, scoping
+        the round-trip claim to collision-free name sets (keeps the strategy's name
+        space intact, only excludes the physically-impossible case); or (b) accept
+        the format limit and document it, leaving the property as-is but marking
+        this thorough run's PFS failure as a known format-limit exception. Either
+        needs the user's call — not an agent decision.
+    - **16.3 stays OPEN (`[-]`).** The thorough run is RED; per the task it is
+      repeated only after the counterexample is resolved (here: after the user
+      picks a disposition for the CRC-collision format limit). No property was
+      weakened, no strategy narrowed, no code changed by this task. Tracker-only
+      commit below.
 
 - [ ] 17. Process items (agent configuration and steering)
   - [ ] 17.1 Resolve the uncommitted agent config and the stray backups
