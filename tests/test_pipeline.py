@@ -277,6 +277,57 @@ class TestCliArgs:
         assert ei.value.code == 2
         assert not Path(out).exists()
 
+    # -- Removed preview paths (M0 6.2) -----------------------------------
+    # The legacy viewer and its CLI entry points were deleted in task 6.1:
+    # the "preview" subcommand and the "--preview" option are both gone, so
+    # argparse rejects them in parse_args (exit 2) before any build runs. The
+    # no_network fixture proves no preview server could have started: it
+    # records every non-loopback connect/bind, so attempts == [] means no
+    # foreign listener opened. 'out' must stay absent because argparse exits
+    # before cmd_generate creates the output directory.
+
+    def test_preview_subcommand_rejected(self, capsys, no_network):
+        # `preview` is no longer a subcommand: argparse reports it as an
+        # invalid choice and exits 2, with no network activity.
+        import main
+        with pytest.raises(SystemExit) as ei:
+            main.main(["preview", "x"])
+        assert ei.value.code == 2
+        err = capsys.readouterr().err
+        assert "invalid choice" in err
+        assert "preview" in err
+        assert no_network == []          # no non-loopback bind / listener
+
+    def test_preview_option_rejected(self, capsys, tmp_path, no_network):
+        # `--preview` is no longer an option on `generate`: argparse reports it
+        # as unrecognized and exits 2, before any output dir is created.
+        import main
+        out = str(tmp_path / "prev_out")
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "x", "--preview", "--output", out])
+        assert ei.value.code == 2
+        err = capsys.readouterr().err
+        assert "unrecognized arguments" in err
+        assert "--preview" in err
+        assert no_network == []          # no non-loopback bind / listener
+        assert not Path(out).exists()    # argparse exits before any build
+
+    def test_help_does_not_mention_preview(self, capsys):
+        # --help exits 0 and writes usage to stdout; neither the top-level nor
+        # the `generate` help should mention the removed preview path.
+        import main
+        with pytest.raises(SystemExit) as ei:
+            main.main(["--help"])
+        assert ei.value.code == 0
+        top = capsys.readouterr().out
+        assert "preview" not in top.lower()
+
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "--help"])
+        assert ei.value.code == 0
+        gen = capsys.readouterr().out
+        assert "preview" not in gen.lower()
+
 
 # ---------------------------------------------------------------------------
 # Cave words plan a validated dungeon end-to-end (M0 6.9)
