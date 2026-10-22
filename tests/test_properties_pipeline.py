@@ -186,3 +186,63 @@ def test_forced_failure_reported(pinned, seed, max_attempts, rooms):
         assert err.attempts == max_attempts, (
             f"attempts={err.attempts}, expected all {max_attempts} exhausted"
         )
+
+
+@pytest.mark.slow
+@build_settings(10)
+@given(k=st.integers(min_value=3, max_value=10))
+def test_fresh_seeds_vary(k):
+    """
+    Feature: zone-generator-m0-hygiene, Property 17: Fresh seeds vary
+    (umbrella P10).
+
+    When ``generate_validated`` is called repeatedly with NO pinned ``seed`` and
+    NO explicit ``rng``, the pipeline draws a brand-new seed for each build via
+    ``_fresh_seed(None)`` — the "randomness is a feature" path: same inputs must
+    not give the same output. Across ``k`` (3-10) such unpinned calls on the same
+    navigable 2-room dungeon, a spy ``spec_factory`` records every seed the
+    pipeline hands it. Two invariants hold: every recorded seed is a valid 31-bit
+    seed in ``[0, 2147483647]``, and the recorded seeds are NOT all identical.
+    (A rare collision between two of the k draws is acceptable — "not all equal"
+    is the bar, not "all distinct"; all k identical would mean the pipeline isn't
+    actually drawing fresh seeds.) ``_fresh_seed(None)`` uses the module ``random``
+    generator, which is independent of Hypothesis's (derandomized) INPUT draws, so
+    the seeds still vary across the k calls within one example.
+
+    Validates: M0 Req 5.3, 1.5; umbrella Req 1.6.
+    """
+    seeds_seen: list[int] = []
+
+    def spec_factory(seed: int):
+        # Record the seed the pipeline drew, then build a genuinely navigable
+        # 2-room dungeon (fixed good seed) so the gate passes on the first
+        # attempt and the call returns — same 12.1 spy idiom.
+        seeds_seen.append(seed)
+        return LayoutGenerator(theme="dungeon", seed=_NAVIGABLE_SEED).generate(
+            "p17", room_count=2
+        )
+
+    with fresh_dir() as out:
+        for _ in range(k):
+            result = generate_validated(
+                spec_factory,
+                theme="dungeon",
+                zone_id="p17",
+                # rng OMITTED and seed OMITTED: each call draws a fresh seed via
+                # _fresh_seed(None) off the module random generator.
+                output_dir=out,
+                write_glb=False,
+                failure_log=None,
+            )
+            assert isinstance(result, ValidatedBuild)
+
+    assert len(seeds_seen) == k, (
+        f"factory called {len(seeds_seen)} times, expected {k}"
+    )
+    assert all(0 <= s <= 2_147_483_647 for s in seeds_seen), (
+        f"a drawn seed is outside [0, 2147483647]: {seeds_seen}"
+    )
+    assert len(set(seeds_seen)) > 1, (
+        f"all {k} fresh seeds were identical ({seeds_seen[0]}) — the pipeline "
+        "is not drawing fresh seeds (randomness-is-a-feature regression)"
+    )
