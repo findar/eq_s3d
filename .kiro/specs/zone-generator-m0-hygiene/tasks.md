@@ -365,13 +365,25 @@ Working rules for every task:
       integration state, so left untouched. No stray launch instruction found.
     - **Commit (staged `main.py`, `requirements.txt`, `tests/test_pipeline.py`,
       deleted `viewer/`):** `5eb913fea13f1afb351a155215940317753df055`.
-  - [ ] 6.2 Add CLI tests for the removed preview paths
+  - [x] 6.2 Add CLI tests for the removed preview paths
     - Add these to the `TestCliArgs` class in `tests/test_pipeline.py` (created in 5.3), using `no_network`:
       - `main.main(["preview", "x"])` exits with code 2 and stderr names `preview` as an invalid choice.
       - `main.main(["generate", "x", "--preview", "--output", out])` exits with code 2 and stderr names `--preview` as unrecognized.
       - In both cases no non-loopback bind and no listener is recorded, and `out` doesn't exist afterwards.
       - Neither `--help` nor `generate --help` output mentions "preview".
     - _Requirements: 8.3, 8.4, 8.5_
+    - **Done.** Added three methods to `TestCliArgs` in `tests/test_pipeline.py`:
+      `test_preview_subcommand_rejected` (argparse `invalid choice: 'preview'`,
+      exit 2, `no_network == []`), `test_preview_option_rejected`
+      (`unrecognized arguments: --preview`, exit 2, `no_network == []`, output
+      dir absent afterwards), and `test_help_does_not_mention_preview`
+      (`--help` and `generate --help` both exit 0 and their stdout has no
+      "preview"). Verified the real argparse wording against `main.main(argv)`
+      before writing the asserts. The `no_network` fixture yields its `attempts`
+      list, which records every non-loopback connect/bind; `attempts == []`
+      proves no foreign listener opened on either rejected path. Full suite
+      `python -m pytest tests/ -q` → **216 passed** (2 pre-existing
+      deprecation/runtime warnings, unrelated).
 
 - [ ] 7. Bind the server to loopback and restrict CORS
   - [x] 7.1 Implement the loopback bind and `LocalCORSMiddleware` in `server/app.py`
