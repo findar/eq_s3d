@@ -1892,7 +1892,7 @@ Working rules for every task:
       perform the live browser/3D work, so once this checklist + status is
       recorded and committed, the agent side is complete. The task is NOT done
       until the user completes the live pass above.
-  - [ ] 18.3 Write the integration note (don't apply it)
+  - [x] 18.3 Write the integration note (don't apply it)
     - In the final report, give the integrator:
       - the Done-table row, the "Pick up here" line, the commit hash and count
       - the `tasks/README.md` reconciliation (5 task files missing from the index; the `content-layer-dungeon` status mismatch)
@@ -1902,6 +1902,176 @@ Working rules for every task:
       - retirement of `.kiro/specs/content-layer-districts`
       - the secondary findings: `_assign_elevation` overwrites semantic `sink` when elevation is on (left for the content-layer follow-up); procedural texture seeds use salted `hash()`; the shared env runs fastapi/starlette versions other than the pins
     - _Requirements: Delivery and process (integration step)_
+    - **Done — the note below IS the deliverable.** Per the task title the note is
+      WRITTEN here and NOT applied: `ROADMAP.md`, `README.md` and
+      `tasks/README.md` are integration state, applied later by a single-writer
+      integration step run from the MAIN checkout. The checkbox is `[x]` because
+      the completion criterion is the note existing in this file. Every repo fact
+      below was verified against the live worktree state (branch
+      `agent/m0-hygiene`); MAIN-checkout-only facts are flagged as such.
+
+      ---
+
+      # M0 integration note — hand-off for merging `agent/m0-hygiene` -> `master`
+
+      ## 0. Branch / build facts (verified)
+
+      - **Branch:** `agent/m0-hygiene` (local-only; do NOT push the branch — merge
+        into `master` from the MAIN checkout, which is what gets pushed for backup).
+      - **Final HEAD:** `28441e898b631578d832b5ba18a90ec27ab16232` (`git rev-parse HEAD`).
+      - **Commit count since fork-point `99d346a`:** **87** (`git rev-list --count 99d346a..HEAD`).
+      - **Working tree:** clean (`git status --porcelain` empty) at hand-off.
+      - **Suite:** `Default_Run` **240 passed**; the `thorough` profile is green
+        (**240 passed, ~3m13s**, per task 16.3). `Default_Run` median ~**54s**
+        (task 16.1), well under the **152s** budget.
+      - **Env note:** the worktree `-Venv` carries the pinned `fastapi==0.115.6` /
+        `starlette 0.41.3` (verified). The *shared global* interpreter runs
+        `fastapi 0.143.1` / `starlette 1.8.0` — NOT the pins (see section 7c).
+
+      ## 1. ROADMAP Done-table row + "Pick up here" + commit stamp
+
+      Apply (from MAIN, single-writer) to `ROADMAP.md`:
+
+      - **Done-table row (M0 — Hygiene + PBT harness):**
+        > **M0 — Hygiene + PBT harness.** Hypothesis-backed property-test harness
+        > (`pytest.ini` `slow` marker, `conftest` default/thorough profiles +
+        > `no_api_keys`/`no_network` fixtures, `strategies.py`, `pbt_helpers.py`);
+        > a 22-test `Property_Suite` covering P1–P16 + CORS (P18). **Cave pipeline
+        > and the `cave` theme deleted outright** (`generators/field/{cave,sdf,mesh,features}.py`,
+        > `noise.fbm_field`, `ZoneBuilder._build_organic`/`_CAVE_THEMES`, the
+        > `layout.py` cave material/light entries, `tests/test_cave.py`, and the
+        > `scikit-image` + `fast-simplification` deps). **Legacy viewer removed**
+        > (`viewer/`, the `preview` CLI, `flask`). **Server hardened**: loopback
+        > bind (`127.0.0.1:8000`) + `LocalCORSMiddleware` restricting CORS to the
+        > four Web_App origins. **Elevation grade-cap root-cause fix** (task 13.1,
+        > `generators/layout.py`): the semantic-floor relax pass now runs on
+        > themed dungeons with elevation OFF, and the relax fixpoint exit is
+        > tightened so loop-edge cliff-corridors converge. Suite 240 passed
+        > (thorough green). HEAD `28441e8`, 87 commits since `99d346a`.
+      - **"Pick up here" line:**
+        > Pick up here: **M0 is complete bar the task-18.2 human pass**
+        > (live browser smoke on :5173/:8000 + the dungeon 3D ACCEPTANCE walk on
+        > seeds 1, 3600, 1955208177, 1516796975, 481893615). Next up is the
+        > umbrella milestone ladder — **M1 (Controls + all-theme traversability +
+        > format gate)** is the first open milestone after M0.
+
+      ## 2. `tasks/README.md` reconciliation (integrator, from MAIN)
+
+      The index Board is stale vs the `tasks/` directory:
+
+      - **5 task files missing from the index Board** (present in `tasks/` but no
+        row):
+        - `content-layer-districts.md`
+        - `eq-map-export.md`
+        - `layout-oneway-connections.md`
+        - `layout-topology-control.md`
+        - `web-svg-mesh-outline.md`
+      - **Status mismatch:** `tasks/content-layer-dungeon.md` has `Status: done`,
+        but the index Board row still reads **`in-progress`**. Reconcile the row
+        to `done` (or re-confirm the file's status) — one of the two is stale.
+
+      ## 3. ROADMAP correction — no `ZoneSpec.districts` placeholder (verified)
+
+      `ROADMAP.md` (district section, ~line 115) claims *"`RoomSpec.district` and a
+      `ZoneSpec.districts` list already exist as placeholders."* Half true:
+
+      - `RoomSpec.district: int = 0` **does** exist (`generators/zone_spec.py:68`).
+      - A `ZoneSpec.districts` **list does NOT exist** — `git grep` finds no
+        `districts` field anywhere in `generators/` (only the `RoomSpec.district`
+        singular int and comments).
+
+      Correct the ROADMAP line so it claims only what exists (`RoomSpec.district`),
+      and drop the `ZoneSpec.districts` placeholder claim (that list is introduced
+      with the district work in umbrella M3).
+
+      ## 4. Absorbed task files (per umbrella design "Scope of open task files")
+
+      Confirmed both files exist in the worktree `tasks/`; both currently
+      `Status: not-started`. Mark them absorbed (integrator, from MAIN):
+
+      - `tasks/cave-backend-refactor.md` -> **absorbed by the M0 deletion** (the
+        broken cave pipeline + theme were deleted outright; nothing to park or
+        refactor).
+      - `tasks/cave-cavify-dungeon.md` -> **absorbed by umbrella M5** (natural
+        geometry style; "cavify the dungeon layout" becomes the natural style for
+        any dungeon archetype, cave being the main user).
+
+      ## 5. Cave-removal integration state (integrator, from MAIN)
+
+      - **`README.md`:** drop the "organic caves" feature line — currently
+        line 21: *"Natural, era-accurate geometry — organic caves (SDF + marching
+        cubes), eroded outdoor terrain, and box dungeons/cities…"*. Remove the
+        "organic caves (SDF + marching cubes)" clause (the pipeline is gone).
+      - **`ROADMAP.md`:** mark the cave items **"cave pipeline removed"** — the
+        Known-issue entry, the organic/cave phase row, and the cave-rebuild design
+        note. (The future cave returns as a dungeon archetype in M3 and the
+        natural style in M5 — not a separate pipeline.)
+      - **Behaviour note:** mine prompts now yield **`dungeon` + `mine_delve`**
+        (rule-planner cave/mine words map to the `dungeon` theme bucket; `mine`
+        stays in `_ARCHETYPE_WORDS["mine_delve"]`).
+
+      ## 6. Retire `.kiro/specs/content-layer-districts` (integrator, from MAIN)
+
+      The separate `content-layer-districts` spec is **absorbed into umbrella M3**
+      (its requirements become the district requirements). Retire the separate
+      spec directory. **MAIN-checkout-only:** this spec dir is **absent from the
+      worktree** but **present in the MAIN checkout** (`F:\Dev Projects\eq_s3d\.kiro\specs\content-layer-districts`
+      — verified), so the retirement is a MAIN-side action.
+
+      ## 7. Secondary findings to record
+
+      - **(a) `_assign_elevation` overwrites the semantic `sink` when elevation is
+        ON** — *separate from the 13.1 fix, deferred to the content-layer
+        follow-up.* Task 13.1 fixed the elevation-**OFF** themed path (the new
+        `_relax_semantic_floors` pass, `generators/layout.py` ~line 230) and the
+        relax fixpoint exit. But when elevation is **ON**, the branch calls
+        `_assign_elevation` directly, which re-derives `floor_z` by BFS and thus
+        overwrites the semantic sink/raise bias. This is a known content-layer
+        concern, not an M0 regression — leave it for the content-layer follow-up.
+      - **(b) Procedural texture seeds use salted `hash()`** —
+        `generators/textures/procedural.py::_seed_from` returns
+        `abs(hash((spec.name, spec.description, spec.kind))) % 2**31`. Python's
+        `hash()` is salted per-process (PYTHONHASHSEED), so texture seeds are not
+        reproducible across runs. Noted for umbrella **P9** (TER/ZON are compared
+        for determinism; **textures are excluded** from that comparison for
+        exactly this reason).
+      - **(c) Shared global env runs non-pinned fastapi/starlette** — the shared
+        global interpreter has `fastapi 0.143.1` / `starlette 1.8.0`, while the
+        worktree `-Venv` has the pinned `fastapi==0.115.6` / `starlette 0.41.3`
+        (both verified). The pins matter for the task-7 CORS override point
+        (`LocalCORSMiddleware` subclasses `CORSMiddleware.preflight_response` and
+        relies on `is_allowed_origin`, whose signatures were confirmed at starlette
+        0.41.3). The integrator should be aware that running the server/tests
+        against the global env may hit a different starlette API surface than the
+        one M0 targeted.
+
+      ## 8. Orchestrator-observed items (recorded for the integrator)
+
+      - **(a) MAIN checkout has an UNCOMMITTED `orchestrator.json` change** that
+        was NOT present in the worktree (task 17.1 found it absent in the
+        worktree). The integrator should decide whether that MAIN-checkout
+        `orchestrator.json` change is intended/committed or discarded — it was
+        **out of scope** for the branch work and is not part of this branch.
+        *(MAIN-checkout-only observation — not verifiable from the worktree.)*
+      - **(b) `.kiro/steering/project.md` still has the "organic cave backend"
+        line** — verified in the worktree: the architecture-conventions "Geometry
+        backends" bullet still reads *"box (dungeon/city), **organic cave
+        (cave)**, heightfield terrain (outdoor)"* (lines 48–49). Task 17.3 only
+        rewrote the Task-tracking / Running-a-task sections (its defined scope),
+        so this cave-backend line **still needs the integrator's touch** — drop
+        the "organic cave (cave)" backend from that bullet to match the cave
+        removal.
+      - **(c) The task-18.2 human pass is PENDING-HUMAN.** M0 is **not fully
+        exited** until the user completes: the Web_App browser smoke on :5173 and
+        :8000 (post-CORS change), and the dungeon 3D ACCEPTANCE walk on seeds
+        **1, 3600, 1955208177, 1516796975, 481893615** (13.1 is triggered and
+        changed geometry, so this pass is mandatory). Nothing in M0 has been
+        verified by the agent in a live browser or the 3D viewer — the suite is
+        necessary but not sufficient.
+
+      ---
+
+      - **Deliverable commit:** _recorded below once committed._
 
 ## Notes
 
