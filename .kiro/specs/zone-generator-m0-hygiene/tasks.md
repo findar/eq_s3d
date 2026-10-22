@@ -1574,10 +1574,68 @@ Working rules for every task:
       budget out of [10,25], counts identical run-to-run, thorough is 5×. This is
       a verification-only task; the only staged change is this tracker note.
       Tracker-only commit below.
-  - [ ] 16.3 Run the Thorough_Profile once and record it
+  - [x] 16.3 Run the Thorough_Profile once and record it
     - Run `python -m pytest tests/ -q --hypothesis-profile=thorough`. Record the result, the duration and the commit hash here.
     - Any counterexample goes through task 13.1, after which this run is repeated.
     - _Requirements: 1.3, Exit criteria_
+    - **RUN 2 — GREEN (counterexample resolved; thorough now passes).** After the
+      CRC-collision disposition landed (option (a), below), re-ran the full suite
+      once under the randomized 5× profile in the worktree `-Venv`
+      (`.venv\Scripts\python.exe`), sole user of the venv/git index, with
+      `.hypothesis/` deleted first:
+      `.\.venv\Scripts\python.exe -m pytest tests/ -q --hypothesis-profile=thorough`.
+      - **Result:** **240 passed, 2 warnings** — GREEN.
+      - **Duration:** 193.53 s pytest-reported (0:03:13); 194.80 s wall.
+      - **HEAD at run time:** `aee25e77b13fd54e7e983b4a03ff809b2454c8c9`
+        (branch `agent/m0-hygiene`, the test-change commit below).
+      - **Warnings (pre-existing, not failures):** starlette
+        `anyio.abc.BlockingPortal` deprecation + runpy `server.app`. The
+        Hypothesis "overly large repr" warning from RUN 1 is GONE — the colliding
+        ~60-name draw is now `assume`d away before it can be reported.
+      - **Default_Run cross-check (same HEAD):**
+        `.\.venv\Scripts\python.exe -m pytest tests/ -q` → **240 passed,
+        2 warnings** in 50.56 s. Still 240, no regression. Core module alone:
+        `tests/test_properties_core.py -q` → **3 passed** (9.03 s default;
+        3 passed / 45.30 s under thorough).
+    - **CRC-collision disposition — option (a), assume collision-free (FORMAT
+      LIMIT per the user's approved decision).** The RUN-1 counterexample in
+      `tests/test_properties_core.py::test_pfs_roundtrip` (Property 1 / umbrella
+      P13) was a 32-bit PFS filename-CRC collision: the container keys files by
+      `core.pfs._filename_crc32` (one directory slot per CRC value), so two
+      distinct names sharing a CRC cannot coexist in one archive — the second
+      overwrites the first and the round-trip drops a name. This is a property of
+      the on-disk format, not of the writer; no generator change makes two
+      CRC-colliding names survive. The user approved scoping the round-trip
+      property to collision-free name sets: real EverQuest zones use a small
+      FIXED set of controlled filenames that never collide, and the colliding
+      ~60-random-name set is physically unstorable in the format. So at the TOP
+      of `test_pfs_roundtrip` the test now computes CRCs for the drawn names with
+      the REAL production `_filename_crc32` (NOT `tests.pbt_helpers.ref_crc`) and
+      `assume(len(set(crcs)) == len(names))`, skipping any set with an intra-set
+      CRC collision. This EXCLUDES an input the format cannot represent — it is
+      NOT a narrowing of the name alphabet (the `pfs_entries` strategy in
+      `tests/strategies.py` keeps its full alphabet, untouched) and NOT a
+      weakening of the property: name-set equality, count equality and byte
+      equality are all UNCHANGED. `core/pfs.py` was NOT touched.
+    - **Collision pair documented (verified real in-venv).** The RUN-1 note's
+      `'l6WFj`[l'` / `'uI`()'` pair was Python-repr backtick-escaped and does NOT
+      actually collide when the literal chars are reconstructed (confirmed in the
+      venv: different CRCs) — so a genuine pair was re-derived from the strategy's
+      own alphabet and pinned in the test module: **`"R,YF%a"` and `"po}(]x19"`
+      both hash to CRC `0x23a58563`** under the production `_filename_crc32`
+      (verified in-venv; adding both to a `PfsArchive` and round-tripping yields a
+      single file). A standalone module-level `assert` in
+      `tests/test_properties_core.py` proves the pair shares `0x23a58563`, so the
+      format limit is real and checkable. No `@example` for the pair was added —
+      it would be filtered by the `assume` guard; the standalone assert + comment
+      is the clean documentation per the task.
+    - **600x60 bulk `@example` confirmed collision-free.** Verified in-venv that
+      the pinned `_BULK_600x60` names all have distinct production CRCs (600 names
+      → 600 distinct CRCs), so it passes the new precondition unchanged — no
+      regeneration needed.
+    - **Commit (code — staged only `tests/test_properties_core.py`):** `aee25e7`
+      ("m0 16.3: scope PFS round-trip to collision-free name sets", 1 file,
+      +51 −1). This tracker line lands in the follow-up commit.
     - **RUN 1 — RED (counterexample surfaced; format limit, routed to the user).**
       Ran once in the worktree `-Venv` (`.venv\Scripts\python.exe`), sole user of
       the venv/git index, over the full suite with the randomized 5× profile:
@@ -1628,11 +1686,11 @@ Working rules for every task:
         the format limit and document it, leaving the property as-is but marking
         this thorough run's PFS failure as a known format-limit exception. Either
         needs the user's call — not an agent decision.
-    - **16.3 stays OPEN (`[-]`).** The thorough run is RED; per the task it is
-      repeated only after the counterexample is resolved (here: after the user
-      picks a disposition for the CRC-collision format limit). No property was
-      weakened, no strategy narrowed, no code changed by this task. Tracker-only
-      commit below.
+    - **RUN 1 outcome (now RESOLVED).** This run was RED; per the task it was
+      repeated after the counterexample disposition — see RUN 2 above, GREEN.
+      The user picked option (a) for the CRC-collision format limit; 16.3 is now
+      `[x]`. No property was weakened, no strategy narrowed; the only code change
+      is the collision-free precondition in `test_pfs_roundtrip`.
 
 - [ ] 17. Process items (agent configuration and steering)
   - [ ] 17.1 Resolve the uncommitted agent config and the stray backups
