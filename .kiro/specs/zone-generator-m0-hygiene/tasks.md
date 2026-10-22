@@ -1064,11 +1064,42 @@ Working rules for every task:
       **No same-seed pair diverged** in spec, TER, or ZON — determinism holds
       across the drawn inputs.
     - **Commit:** `7b10b16` (code — `tests/test_properties_build.py` only).
-  - [ ] 11.5 Write the property test for advisory clearing
+  - [x] 11.5 Write the property test for advisory clearing
     - **Property 14: Advisory clearing leaves the TER unchanged** (umbrella P5, advisory clearing)
     - `test_advisory_clearing` with `build_settings(15)`, over `box_themes`, n 3–12, locks 1–5 and `semantic_inputs`.
     - Assert that the TER of `spec` is byte-identical to the TER of `clear_advisory(spec)`.
     - **Validates: Requirements 4.5, 1.5, 1.6**
+    - **Done.** Appended `test_advisory_clearing` to `tests/test_properties_build.py`
+      (11.1–11.4 left untouched). `@pytest.mark.slow`, `@build_settings(15)`, over
+      `box_themes`, n (room_count) 3–12, locks 1–5 and `semantic_inputs`. Builds
+      the spec via `plan_to_spec` (so the semantic layer realises advisory data),
+      builds the original and `clear_advisory(spec)` into two separate
+      `fresh_dir()`s via `build_raw`, and asserts the two TERs are byte-identical.
+    - **Verified against real code:**
+      - `pbt_helpers.clear_advisory` deep-copies (confirmed: `spec.to_dict()`
+        unchanged after the call), resets the 7 room advisory fields
+        (`role='standard'`, `graph_depth=0`, `semantic_type=''`, `district=0`,
+        `prop_hints=[]`, `encounter_intent=''`, `boss=False`) and empties `gates`,
+        while KEEPING `room_theme` and spec-level `dungeon_theme`/`dungeon_race`/
+        `elemental_tint` — confirmed in a smoke test (room_theme `fortress` and the
+        dungeon_* fields survive the clear).
+      - `plan_to_spec` realises the advisory surface: with valid `semantic_inputs`
+        vocab a seed-7 fortress build populated `role` {entrance, hub, standard,
+        climax, deadend}, `graph_depth` {0..3}, `semantic_type` {throne,
+        gatehouse, guard_post, ...}, `prop_hints`/`encounter_intent`/`boss` all
+        truthy, and `locks=3` realised 3 gates — so the invariant is exercised,
+        not vacuous.
+      - `build_raw` reads the TER/ZON back out of the `.eqg` (never the `.eqg`
+        bytes, whose PFS footer stamps `time.time()`).
+    - **Advisory clearing NEVER changed the TER** — byte-identical in every
+      example (and the ZON too, sanity-noted). No geometry-leak bug found.
+    - **ANALYTICAL byte-equality verification only — NOT confirmed in the live 3D
+      viewer** (geometry byte-identity is a stronger-than-visual check here).
+    - **Verification:** `python -m pytest tests/test_properties_build.py -q` →
+      **5 passed in 10.96s**. Full suite `python -m pytest tests/ -q` →
+      **226 passed in 46.30s** (only the two pre-existing unrelated warnings:
+      starlette `BlockingPortal` deprecation + runpy `server.app`).
+    - **Commit:** `8c44f02` ("M0 11.5: property test for advisory clearing (TER byte-identical)") — `tests/test_properties_build.py` only.
 
 - [ ] 12. Pipeline property module (`tests/test_properties_pipeline.py`)
   - [x] 12.1 Write the property test that returned builds passed the gate
