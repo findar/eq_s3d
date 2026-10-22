@@ -1480,10 +1480,81 @@ Working rules for every task:
       ceiling, so none of (a) lower build budgets toward 10, (b) cap P13
       `bulk_n` at 500, (c) weight outdoor in P9 was needed. No code/test/strategy
       change; this is a measurement-only record. Tracker-only commit below.
-  - [ ] 16.2 Verify derandomization, budgets and docstrings
+  - [x] 16.2 Verify derandomization, budgets and docstrings
     - Run the Default_Run twice with `--hypothesis-show-statistics` and record that the example counts per property test match.
     - Confirm that every Property_Suite test has a Property_Docstring and runs ≥ 5× the examples under `--hypothesis-profile=thorough` (via `scaled`). Confirm that every build-level test has `slow`, `deadline=None` and a budget of 10–25.
     - _Requirements: 1.3, 1.5, 1.6, 1.9_
+    - **Done — all four checks PASS, no code change needed.** Verified in the
+      worktree `-Venv` (`.venv\Scripts\python.exe`), sole user of the venv/git
+      index. `.hypothesis/` deleted with `Remove-Item -Recurse -Force` before each
+      measured run. Both Default_Runs: **240 passed, 2 warnings** (pre-existing
+      starlette `BlockingPortal` deprecation + runpy `server.app`), exit 0.
+    - **(1) Derandomization — MATCH (yes).** Two Default_Runs with
+      `--hypothesis-show-statistics`; the per-test passing/failing/INVALID counts
+      are byte-for-byte identical across the 19 Property_Suite tests (the invalid
+      counts match too, which would drift if the default profile weren't
+      derandomized). `default` profile is `derandomize=True, database=None`
+      (conftest), so no saved-failure replay. Sample recorded counts (run 1 ≡
+      run 2 for every test):
+      - `test_pfs_roundtrip` 100p/0f/**2 invalid** · `test_pfs_crc_matches_reference`
+        100p · `test_ter_zon_roundtrip` 20p
+      - `test_zonespec_json_roundtrip` 100p · `test_connectivity_and_roles` 100p
+        · `test_gating_solvable` 100p · `test_elevation_grade_cap` 100p ·
+        `test_flush_openings` 50p · `test_zoneplan_normalisation` 100p/**12
+        invalid** · `test_cave_words_mean_dungeon` 100p/**36 invalid**
+      - `test_raw_dungeon_navigable` 20p · `test_ramp_subdivision` 20p ·
+        `test_locks_do_not_touch_geometry` 15p · `test_seed_determinism` 15p ·
+        `test_advisory_clearing` 15p
+      - `test_returned_build_is_validated` 15p · `test_forced_failure_reported`
+        15p · `test_fresh_seeds_vary` 8p (k∈[3,10] is 8 distinct ints, so it
+        exhausts at 8 — "Stopped because nothing left to do", not a budget cap)
+      - `test_foreign_origins_get_no_cors` (P18, in test_server.py) 100p
+      - Programmatic diff of both stats files: **0 mismatches across all 19**.
+    - **(2) Property_Docstrings — present on EVERY Property_Suite test, none
+      missing.** Grepped `Feature: zone-generator-m0-hygiene` across the four
+      property modules (+ P18 in `test_server.py`) and cross-checked every
+      `def test_…`. Each property test's docstring opens with
+      `Feature: zone-generator-m0-hygiene, Property N: …` and carries a
+      `Validates: M0 Req …` line. Full roster (22 property-tagged tests):
+      core P1/P2/P3; layout P4/P5/P6/P7(`@given`)/P7(constructed example)/P8/P9/P19;
+      build P10/P11/P12/P13/P14; pipeline P15/P16/P17 plus the two P16-tagged
+      example tests `test_no_api_default_selection` (Req 5.4) and
+      `test_no_api_prompt_and_cli` (Req 5.5); server P18 (`test_foreign_origins_
+      get_no_cors`, Req 9.3/9.4). **No test missing a Property_Docstring.**
+    - **(3) Thorough ≥ 5× — CONFIRMED via a representative module.** Ran
+      `tests/test_properties_core.py` under `--hypothesis-profile=thorough`
+      (`max_examples=500`). `scaled(n) = n * active_max_examples // 100`, so a
+      scaled(100) test → 500 and a build_settings(20) test → 100 under thorough.
+      Observed (thorough): `test_pfs_roundtrip` **500** (default 100 → 5×),
+      `test_pfs_crc_matches_reference` **500** (default 100 → 5×),
+      `test_ter_zon_roundtrip` **100** (default 20 → 5×). This single module
+      covers BOTH a scaled(100) and a build_settings(20) test, proving `scaled()`
+      multiplies by exactly 5 with the profile. (The whole suite under thorough
+      is task 16.3.) 3 passed in 45.07 s.
+    - **(4) Build-level tests — all `slow`, `deadline=None`, budget n∈[10,25].**
+      `build_settings(n)` asserts `10 <= n <= 25` and sets `deadline=None`
+      (pbt_helpers.py), so every build property's deadline and budget-range are
+      enforced at construction. The nine build-tier `@given` properties, each
+      with `@pytest.mark.slow` + `build_settings(n)`:
+      - `test_properties_core.py::test_ter_zon_roundtrip` — slow, **20**
+      - `test_properties_build.py::test_raw_dungeon_navigable` — slow, **20**
+      - `test_properties_build.py::test_ramp_subdivision` — slow, **20**
+      - `test_properties_build.py::test_locks_do_not_touch_geometry` — slow, **15**
+      - `test_properties_build.py::test_seed_determinism` — slow, **15**
+      - `test_properties_build.py::test_advisory_clearing` — slow, **15**
+      - `test_properties_pipeline.py::test_returned_build_is_validated` — slow, **15**
+      - `test_properties_pipeline.py::test_forced_failure_reported` — slow, **15**
+      - `test_properties_pipeline.py::test_fresh_seeds_vary` — slow, **10**
+      All nine: `slow` ✓, `deadline=None` (via build_settings) ✓, budget in
+      [10,25] ✓. (`test_no_api_prompt_and_cli` is `@pytest.mark.slow` but is a
+      P16 EXAMPLE test, not a `@given` build property — it has no
+      `build_settings` and no per-example budget, which is correct for an
+      example test; the build-level budget/deadline criterion applies to the
+      `@given` build properties above.)
+    - **Nothing to fix** — no missing docstring, no non-slow build property, no
+      budget out of [10,25], counts identical run-to-run, thorough is 5×. This is
+      a verification-only task; the only staged change is this tracker note.
+      Tracker-only commit below.
   - [ ] 16.3 Run the Thorough_Profile once and record it
     - Run `python -m pytest tests/ -q --hypothesis-profile=thorough`. Record the result, the duration and the commit hash here.
     - Any counterexample goes through task 13.1, after which this run is repeated.
