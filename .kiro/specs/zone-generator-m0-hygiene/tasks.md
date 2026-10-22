@@ -1034,11 +1034,36 @@ Working rules for every task:
       TER/ZON — NOT confirmed in the live 3D viewer (see docs/ACCEPTANCE.md).
     - **Code commit:** `4edb768` (`tests/test_properties_build.py` only). Tracker
       bookkeeping lands in the follow-up commit.
-  - [ ] 11.4 Write the property test for seed determinism
+  - [x] 11.4 Write the property test for seed determinism
     - **Property 13: Seed determinism** (umbrella P9, no map artifacts)
     - `test_seed_determinism` with `build_settings(15)`, over `spec_themes`, n 2–12, locks 0–5 and elevation.
     - Run two `plan_to_spec` + `build_raw` passes into two `fresh_dir()`s. Assert equal Zone_Spec dicts and byte-identical TER and ZON.
     - **Validates: Requirements 4.4, 1.5, 1.6**
+    - **Done.** Appended `test_seed_determinism` to `tests/test_properties_build.py`
+      (11.1/11.2/11.3 left untouched). `@pytest.mark.slow`, `@build_settings(15)`,
+      drawing `spec_themes` (dungeon/city/outdoor), `room_counts(2, 12)`, `locks`
+      0–5 and an `elevation` bool (with `verticality="moderate"` so the elevation
+      flag actually toggles multi-level layout — `plan_to_spec` ANDs
+      `elevation and verticality != "flat"`). Two `plan_to_spec(plan, seed=s)` +
+      `build_raw` passes into two separate `fresh_dir()`s; asserts
+      `spec1.to_dict() == spec2.to_dict()` AND byte-identical TER AND byte-identical
+      ZON. Deliberately does NOT compare `.eqg` bytes (PFS footer stamps
+      `int(time.time())`) or any texture/`.glb` output (salted procedural texture
+      `hash()` can vary across processes); `build_raw` reads TER/ZON back out of
+      the archive, so texture salting is irrelevant to the comparison.
+    - **Verified against real code first:** `plan_to_spec` draws a fresh
+      `random.randint` only when `seed is None`, so with an explicit seed the whole
+      layout/geometry/placement pipeline is a pure function of (plan, seed);
+      `ZoneSpec.to_dict()` exists; `spec_themes = {dungeon, city, outdoor}`;
+      `ZonePlan` carries `name/theme/room_count/locks/elevation/verticality`.
+    - **Verification (ANALYTICAL byte-equality on built TER/ZON, NOT eyeballed in
+      the 3D viewer — see docs/ACCEPTANCE.md):**
+      `tests/test_properties_build.py -q` → **4 passed in 9.23s**. Full suite
+      `tests/ -q` → **225 passed in 46.64s** (only 2 pre-existing unrelated
+      warnings: starlette `BlockingPortal` deprecation + runpy `server.app`).
+      **No same-seed pair diverged** in spec, TER, or ZON — determinism holds
+      across the drawn inputs.
+    - **Commit:** `7b10b16` (code — `tests/test_properties_build.py` only).
   - [ ] 11.5 Write the property test for advisory clearing
     - **Property 14: Advisory clearing leaves the TER unchanged** (umbrella P5, advisory clearing)
     - `test_advisory_clearing` with `build_settings(15)`, over `box_themes`, n 3–12, locks 1–5 and `semantic_inputs`.
