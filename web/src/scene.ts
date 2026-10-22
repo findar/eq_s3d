@@ -22,6 +22,7 @@ export class ZoneScene {
   private lightGroup = new THREE.Group();
   private regionGroup = new THREE.Group();
   private gateGroup = new THREE.Group();
+  private labelGroup = new THREE.Group();
   private wireframe: THREE.LineSegments | null = null;
   private loader = new GLTFLoader();
 
@@ -47,6 +48,7 @@ export class ZoneScene {
     this.scene.add(this.lightGroup);
     this.scene.add(this.regionGroup);
     this.scene.add(this.gateGroup);
+    this.scene.add(this.labelGroup);
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -86,6 +88,7 @@ export class ZoneScene {
     this.lightGroup.clear();
     this.regionGroup.clear();
     this.gateGroup.clear();
+    this.labelGroup.clear();
 
     const offset: THREE.Vector3 =
       this.zoneGroup.userData.offset ?? new THREE.Vector3();
@@ -158,6 +161,72 @@ export class ZoneScene {
       line.computeLineDistances();
       this.gateGroup.add(line);
     }
+
+    // Room id labels — a camera-facing sprite floating above each room centre,
+    // showing the room's id (e.g. "room_7") so a human can cross-reference the
+    // 3D view with the top-down map and the spec. Driven entirely from the
+    // sidecar's rooms[]; no geometry or backend data is touched.
+    for (const r of sidecar.rooms ?? []) {
+      const sprite = this.makeLabelSprite(r.id);
+      sprite.position.set(
+        r.center[0] + offset.x,
+        r.center[1] + offset.y,
+        r.center[2] + offset.z + 30   // float above the floor (Z is up)
+      );
+      this.labelGroup.add(sprite);
+    }
+  }
+
+  /**
+   * Build a camera-facing text sprite for a room id. The text is rendered to a
+   * small canvas (white glyphs with a dark outline + translucent backing so
+   * it's legible against any floor colour) and used as a CanvasTexture on a
+   * THREE.Sprite. Dependency-free — no extra npm packages.
+   */
+  private makeLabelSprite(text: string): THREE.Sprite {
+    const pad = 12;
+    const fontSize = 48;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+    const font = `bold ${fontSize}px monospace`;
+
+    // Measure first, then size the canvas to fit.
+    ctx.font = font;
+    const textW = Math.ceil(ctx.measureText(text).width);
+    canvas.width = textW + pad * 2;
+    canvas.height = fontSize + pad * 2;
+
+    // Re-apply after resizing the canvas (resize resets the 2D context state).
+    ctx.font = font;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "center";
+
+    // Translucent dark backing for contrast.
+    ctx.fillStyle = "rgba(10, 10, 18, 0.6)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    // Dark outline + white fill so the id reads over any floor colour.
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.9)";
+    ctx.strokeText(text, cx, cy);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(text, cx, cy);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(material);
+
+    // Scale to a sensible world size: ~90u wide, height kept to the canvas
+    // aspect so the text isn't stretched.
+    const worldW = 90;
+    const worldH = worldW * (canvas.height / canvas.width);
+    sprite.scale.set(worldW, worldH, 1);
+    return sprite;
   }
 
   setWireframe(on: boolean): void {
@@ -173,6 +242,7 @@ export class ZoneScene {
   setLightsVisible(on: boolean): void { this.lightGroup.visible = on; }
   setRegionsVisible(on: boolean): void { this.regionGroup.visible = on; }
   setGatesVisible(on: boolean): void { this.gateGroup.visible = on; }
+  setLabelsVisible(on: boolean): void { this.labelGroup.visible = on; }
 
   render(): void {
     this.renderer.render(this.scene, this.camera);

@@ -369,6 +369,7 @@ class TestGatingPlanner:
         from ai.rule_planner import RulePlanner
         p = RulePlanner().plan("an open sprawling cave to explore")
         assert p.locks == 0
+        assert p.theme == "dungeon"
 
     def test_rule_planner_explicit_word_count(self):
         from ai.rule_planner import RulePlanner

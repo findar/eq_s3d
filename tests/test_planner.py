@@ -13,6 +13,7 @@ from ai.llm_planner import LLMPlanner
 from ai.expand import plan_to_spec
 from ai.planner import make_plan, plan_zone, get_planner
 from ai import planner as planner_mod
+from generators.zone_spec import ZoneSpec
 
 
 class TestZonePlan:
@@ -23,24 +24,38 @@ class TestZonePlan:
         assert p.size == "medium"
 
     def test_roundtrip_dict(self):
-        p = ZonePlan(theme="cave", room_count=7, regions=["water"])
+        p = ZonePlan(theme="outdoor", room_count=7, regions=["water"])
         p2 = ZonePlan.from_dict(p.to_dict())
-        assert p2.theme == "cave"
+        assert p2.theme == "outdoor"
         assert p2.room_count == 7
         assert p2.regions == ["water"]
 
     def test_from_dict_ignores_unknown(self):
+        # "cave" is no longer a valid theme (M0 removed the cave pipeline);
+        # ZonePlan.validate normalises it to the dungeon default.
         p = ZonePlan.from_dict({"theme": "cave", "nonsense": 123})
-        assert p.theme == "cave"
+        assert p.theme == "dungeon"
+
+    def test_zonespec_cave_theme_normalised(self):
+        # The spec side of cave removal: a legacy ZoneSpec dict carrying
+        # theme="cave" loads back as a dungeon (ZoneSpec.from_dict remaps it).
+        d = ZoneSpec(name="t", theme="dungeon").to_dict()
+        d["theme"] = "cave"
+        spec = ZoneSpec.from_dict(d)
+        assert spec.theme == "dungeon"
 
 
 class TestRulePlanner:
     def setup_method(self):
         self.rp = RulePlanner()
 
-    def test_detects_cave(self):
-        p = self.rp.plan("a dark underground cavern")
-        assert p.theme == "cave"
+    @pytest.mark.parametrize("word", ["cave", "cavern", "grotto",
+                                      "underground", "tunnel"])
+    def test_cave_words_mean_dungeon(self, word):
+        # The cave pipeline was removed in M0: cave-like words fold into the
+        # dungeon bucket, so each one on its own plans as a dungeon.
+        p = self.rp.plan(f"a dark {word} to explore")
+        assert p.theme == "dungeon"
 
     def test_detects_outdoor(self):
         p = self.rp.plan("a sprawling forest with rolling hills")
@@ -105,13 +120,13 @@ class TestRulePlanner:
 
 class TestExpand:
     def test_plan_to_spec_basic(self):
-        plan = ZonePlan(name="t", theme="cave", room_count=4)
+        plan = ZonePlan(name="t", theme="outdoor", room_count=4)
         spec = plan_to_spec(plan, seed=1)
-        assert spec.theme == "cave"
+        assert spec.theme == "outdoor"
         assert len(spec.rooms) == 4
 
     def test_regions_added(self):
-        plan = ZonePlan(name="t", theme="cave", room_count=3, regions=["water"])
+        plan = ZonePlan(name="t", theme="dungeon", room_count=3, regions=["water"])
         spec = plan_to_spec(plan, seed=1)
         assert any(r.kind == "water" for r in spec.regions)
 

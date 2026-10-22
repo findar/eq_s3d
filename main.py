@@ -3,15 +3,12 @@ main.py
 -------
 CLI entry point for eq_s3d.
 
-Phase 2 commands:
+Commands:
     generate   — procedurally generate a zone from parameters
-    preview    — launch the browser preview for a generated zone
 
 Usage::
 
     python main.py generate myrealm --theme dungeon --rooms 5
-    python main.py generate myrealm --theme dungeon --rooms 5 --preview
-    python main.py preview myrealm
 """
 
 from __future__ import annotations
@@ -77,52 +74,26 @@ def cmd_generate(args) -> None:
     else:
         print(f"  Traversability: ungated theme '{args.theme}' (not validated)")
 
-    if args.preview:
-        _launch_preview(vb.result.glb_path)
 
-
-def cmd_preview(args) -> None:
-    glb = Path(args.output) / f"{args.name}.glb"
-    if not glb.exists():
-        print(f"GLB not found: {glb}\nRun 'generate' first.")
-        sys.exit(1)
-    _launch_preview(glb)
-
-
-def _launch_preview(glb_path) -> None:
-    if glb_path is None:
-        print("No GLB was produced (is trimesh installed?). Skipping preview.")
-        return
-    print(f"\nLaunching preview for {glb_path} ...")
-    from viewer.serve import serve
-    serve(str(glb_path))
-
-
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="eq_s3d", description="Agentic EverQuest zone generator")
     sub = parser.add_subparsers(dest="command", required=True)
 
     g = sub.add_parser("generate", help="Procedurally generate a zone")
     g.add_argument("name", help="Zone short name (lowercase, no spaces)")
     g.add_argument("--theme", default="dungeon",
-                   choices=["dungeon", "outdoor", "cave", "city"])
+                   choices=["dungeon", "outdoor", "city"])
     g.add_argument("--rooms", type=int, default=5, help="Number of rooms")
     g.add_argument("--seed", type=int, default=None, help="Random seed")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
-    g.add_argument("--preview", action="store_true", help="Launch browser preview")
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
                    action="store_true",
                    help="Skip the traversability gate (build even an invalid "
                         "zone — for debugging broken seeds on purpose)")
     g.set_defaults(func=cmd_generate)
 
-    p = sub.add_parser("preview", help="Preview a generated zone in the browser")
-    p.add_argument("name", help="Zone short name")
-    p.add_argument("--output", default="output")
-    p.set_defaults(func=cmd_preview)
-
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     args.func(args)
 
 

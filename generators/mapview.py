@@ -116,6 +116,13 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
             f'<text x="{cx:.1f}" y="{cy + 4:.1f}" fill="#e8eef2" font-size="12" '
             f'font-family="monospace" text-anchor="middle">{r.graph_depth}</text>'
         )
+        # Room id in the box's top-left corner so the map matches the 3D view —
+        # a human can point at a room in either and know exactly which room_N it
+        # is. Small monospace, slightly dimmed to sit under the depth number.
+        parts.append(
+            f'<text x="{x + 3:.1f}" y="{y + 11:.1f}" fill="#9fb2bd" font-size="9" '
+            f'font-family="monospace" text-anchor="start">{_esc(r.id)}</text>'
+        )
         # Semantic type label below the room (content layer). Falls back to the
         # pacing role label for un-themed zones so existing behaviour is kept.
         sem = getattr(r, "semantic_type", "")

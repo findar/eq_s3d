@@ -1,1 +1,1 @@
-# eq_s3d field — SDF-based organic geometry (caves, terrain, natural features)
+# eq_s3d field — vectorised noise for heightfield terrain

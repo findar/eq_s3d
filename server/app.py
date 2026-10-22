@@ -18,8 +18,11 @@ or:
 
 from __future__ import annotations
 
+import hashlib
+import subprocess
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -45,7 +48,95 @@ WEB_DIST    = ROOT / "web" / "dist"      # built front-end (Vite build)
 FAILURE_LOG = ROOT / "output" / "validation_failures.jsonl"  # triage feed
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-VALID_THEMES = ["dungeon", "outdoor", "cave", "city"]
+VALID_THEMES = ["dungeon", "outdoor", "city"]
+
+# ---------------------------------------------------------------------------
+# Build identity (which code is this process actually running?)
+# ---------------------------------------------------------------------------
+#
+# The server runs with reload=False, so edits/commits made after it started are
+# NOT live until a restart. BUILD_INFO is captured once, at import (= process
+# start); /api/version recomputes the same values per request and reports
+# `stale` when they differ, so the web UI can warn instead of silently showing
+# geometry from old code.
+
+REPO_ROOT = Path(__file__).resolve().parent.parent   # works in worktrees too
+# Python source the server imports; edits here change generated output.
+SOURCE_DIRS = ("ai", "analyzer", "core", "generators", "server")
+UNKNOWN = "unknown"
+
+
+def _git(*args: str) -> Optional[str]:
+    """Run a git command in the repo root; stripped stdout, or None on failure."""
+    try:
+        out = subprocess.run(
+            ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def _current_commit() -> str:
+    """Full HEAD commit hash right now ("unknown" without git)."""
+    return _git("rev-parse", "HEAD") or UNKNOWN
+
+
+def _source_fingerprint() -> str:
+    """Short hash over (relative path, mtime_ns, size) of the server's .py source.
+
+    Catches uncommitted edits made after startup, which a HEAD comparison alone
+    misses. Stat-only (no file reads), so it's cheap enough per request.
+    """
+    h = hashlib.sha1()
+    files = sorted(
+        p for d in SOURCE_DIRS for p in (REPO_ROOT / d).rglob("*.py")
+    )
+    for p in files:
+        try:
+            st = p.stat()
+        except OSError:
+            continue  # vanished between glob and stat; skip it
+        rel = p.relative_to(REPO_ROOT).as_posix()
+        h.update(f"{rel}\0{st.st_mtime_ns}\0{st.st_size}\n".encode())
+    return h.hexdigest()[:12]
+
+
+def _capture_build_info() -> dict:
+    commit = _current_commit()
+    dirty_out = _git("status", "--porcelain", "--untracked-files=no")
+    return {
+        "commit": commit,
+        "short": commit[:7] if commit != UNKNOWN else UNKNOWN,
+        "branch": _git("rev-parse", "--abbrev-ref", "HEAD") or UNKNOWN,
+        # Uncommitted changes to tracked files at startup (None -> no git).
+        "dirty": bool(dirty_out) if dirty_out is not None else False,
+        "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source_fingerprint": _source_fingerprint(),
+    }
+
+
+BUILD_INFO = _capture_build_info()
+
+# ---------------------------------------------------------------------------
+# Network binding (loopback only) and CORS
+# ---------------------------------------------------------------------------
+
+# The server binds the loopback interface only; it is never exposed off-box.
+# HOST/PORT are module-level so the __main__ path is testable without a real
+# bind (Req 9.1).
+HOST = "127.0.0.1"
+PORT = 8000
+
+# Exactly the origins the browser front-end is served from. An explicit list
+# (never "*") means Starlette echoes the request Origin only when it matches
+# one of these, so credentials/other origins are never granted (Req 9.2-9.4).
+WEB_APP_ORIGINS = (
+    "http://127.0.0.1:8000", "http://localhost:8000",     # same-origin (web/dist)
+    "http://localhost:5173", "http://127.0.0.1:5173",     # frontend port
+)
+
 
 # ---------------------------------------------------------------------------
 # App
@@ -53,12 +144,35 @@ VALID_THEMES = ["dungeon", "outdoor", "cave", "city"]
 
 app = FastAPI(title="eq_s3d zone generator", version="0.3.0")
 
-# Allow the Vite dev server (localhost:5173) to call the API during development
+
+class LocalCORSMiddleware(CORSMiddleware):
+    """Explicit-origin CORS that also closes a stock-Starlette leak.
+
+    Starlette's ``CORSMiddleware`` short-circuits every preflight (an OPTIONS
+    with ``Access-Control-Request-Method``) into a canned 200 response whose
+    ``Access-Control-Allow-*`` headers are precomputed and emitted *regardless*
+    of whether the request Origin is actually allowed. That hands a disallowed
+    origin a usable CORS grant on preflight. We override ``preflight_response``
+    and strip every ``Access-Control-Allow-*`` header back off when the Origin
+    isn't in the allow list, so a foreign preflight gets no grant (Req 9.3, 9.7).
+    """
+
+    def preflight_response(self, request_headers):
+        resp = super().preflight_response(request_headers)
+        if not self.is_allowed_origin(request_headers["origin"]):
+            for k in [k for k in resp.headers
+                      if k.lower().startswith("access-control-allow-")]:
+                del resp.headers[k]
+        return resp
+
+
+# Loopback-only CORS: explicit origins, GET/POST, Content-Type only. No
+# credentials and no exposed headers.
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    LocalCORSMiddleware,
+    allow_origins=list(WEB_APP_ORIGINS),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 
@@ -95,6 +209,9 @@ class GenerateResponse(BaseModel):
     # Traversability gate provenance (see generators/pipeline.py).
     validated: bool = False          # did the traversability gate run AND pass?
     attempts: int = 1                # builds it took (fresh-seed retries on failure)
+    # Short commit of the code this server process loaded (BUILD_INFO), so a
+    # result/screenshot can be traced to the exact code that produced it.
+    build_commit: str = UNKNOWN
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +252,11 @@ def generate(req: GenerateRequest):
         # Control-driven: explicit theme/rooms/elevation.
         source = "controls"
         if req.theme not in VALID_THEMES:
-            raise HTTPException(400, f"Unknown theme: {req.theme}")
+            raise HTTPException(
+                400,
+                f"Unknown theme: {req.theme!r}; valid themes: "
+                f"{', '.join(VALID_THEMES)}",
+            )
         theme = req.theme
         rooms = req.rooms
 
@@ -191,6 +312,7 @@ def generate(req: GenerateRequest):
         gates=len(vb.spec.gates),
         validated=vb.validated,
         attempts=vb.attempts,
+        build_commit=BUILD_INFO["short"],
     )
 
 
@@ -218,6 +340,25 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/version")
+def version():
+    """The code this process loaded at startup vs. the code on disk now.
+
+    ``stale`` is True when HEAD moved or any server-side .py file changed
+    (mtime/size) since startup — i.e. the running server needs a restart for
+    its output to match the source tree.
+    """
+    current_commit = _current_commit()
+    current_fp = _source_fingerprint()
+    return {
+        **BUILD_INFO,
+        "current_commit": current_commit,
+        "current_fingerprint": current_fp,
+        "stale": (current_commit != BUILD_INFO["commit"]
+                  or current_fp != BUILD_INFO["source_fingerprint"]),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Serve the built front-end (if present). During development the Vite dev
 # server runs separately on :5173; in production `vite build` fills web/dist.
@@ -229,4 +370,4 @@ if WEB_DIST.exists():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server.app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("server.app:app", host=HOST, port=PORT, reload=False)

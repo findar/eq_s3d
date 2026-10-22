@@ -1,7 +1,10 @@
 // main.ts — wires the UI, API, scene, and controls together
 
 import * as THREE from "three";
-import { generateZone, fetchSidecar, type GenerateResult, type ZoneSidecar } from "./api";
+import {
+  generateZone, fetchSidecar, fetchVersion,
+  type GenerateResult, type ZoneSidecar,
+} from "./api";
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
 
@@ -40,6 +43,54 @@ controls.onLockChange = (locked) => {
 ($("t-gates") as HTMLInputElement).addEventListener("change", (e) =>
   zoneScene.setGatesVisible((e.target as HTMLInputElement).checked)
 );
+($("t-labels") as HTMLInputElement).addEventListener("change", (e) =>
+  zoneScene.setLabelsVisible((e.target as HTMLInputElement).checked)
+);
+
+// ---- Build identity ----
+// The backend runs without auto-reload, so code changed after it started is
+// NOT what generates zones. Show which commit each side runs, and warn loudly
+// when the server's source moved on (restart) or the frontend build doesn't
+// match the server (rebuild/reload).
+const buildLine = $("build-line");
+const buildWarning = $("build-warning");
+
+async function refreshVersion(): Promise<void> {
+  const web = __WEB_COMMIT__;
+  const warnings: string[] = [];
+  let serverLabel = "?";
+  try {
+    const v = await fetchVersion();
+    serverLabel = v.short + (v.dirty ? "*" : "");
+    if (v.stale) {
+      warnings.push(
+        "<b>Server code changed since it started</b> — restart the server " +
+        `(loaded ${v.short}${v.dirty ? "*" : ""}, ` +
+        `started ${new Date(v.started_at).toLocaleTimeString()}).`,
+      );
+    }
+    if (web !== "unknown" && v.short !== "unknown" && web !== v.short) {
+      warnings.push(
+        `<b>Frontend build doesn't match server</b> (web ${web}, server ${v.short}) ` +
+        "— rebuild/reload the frontend or restart the server.",
+      );
+    }
+    buildLine.title =
+      `server ${v.commit} on ${v.branch}` + (v.dirty ? " (uncommitted changes)" : "") +
+      `, started ${v.started_at}\nweb ${web}, built ${__WEB_BUILT_AT__}`;
+  } catch (err) {
+    // A server without /api/version predates this frontend — i.e. it's stale.
+    console.warn("[version]", err);
+    warnings.push(
+      "<b>Couldn't read the server's version</b> — it may be running older " +
+      "code than this frontend; restart the server.",
+    );
+  }
+  buildLine.textContent = `server ${serverLabel} · web ${web}`;
+  buildLine.classList.toggle("mismatch", warnings.length > 0);
+  buildWarning.innerHTML = warnings.join("<br>");
+  buildWarning.classList.toggle("hidden", warnings.length === 0);
+}
 
 // ---- Metrics panel ----
 function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
@@ -75,6 +126,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   }
 
   $("m-seed").textContent = String(result.seed);
+  $("m-build").textContent = result.build_commit ?? "unknown";
   $("m-verts").textContent = result.vertices.toLocaleString();
   $("m-polys").textContent = result.polygons.toLocaleString();
   $("m-mats").textContent = String(result.materials);
@@ -190,6 +242,9 @@ async function doGenerate() {
   genBtn.disabled = true;
   statusEl.textContent = "generating…";
 
+  // Cheap re-check so a stale-server warning shows exactly when it matters.
+  await refreshVersion();
+
   try {
     // If a prompt is given, it drives generation (theme/rooms); otherwise the
     // controls do. Either way the seed, when set, pins the randomness — the
@@ -231,7 +286,8 @@ async function doGenerate() {
     console.info(
       `[generate] seed=${result.seed} theme=${result.theme} rooms=${result.rooms} ` +
       `source=${result.source}` +
-      (result.planner ? ` planner=${result.planner}` : ""),
+      (result.planner ? ` planner=${result.planner}` : "") +
+      ` build=${result.build_commit ?? "unknown"}`,
     );
 
     statusEl.textContent = `seed ${result.seed} · ${result.polygons.toLocaleString()} polys`;

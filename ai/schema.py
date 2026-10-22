@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any
 
-VALID_THEMES = ["dungeon", "outdoor", "cave", "city"]
+VALID_THEMES = ["dungeon", "outdoor", "city"]
 VALID_REGION_KINDS = ["water", "lava", "ice", "pvp", "zoneline", "generic"]
 
 # Content / semantic layer (dungeon theme). Archetypes mirror

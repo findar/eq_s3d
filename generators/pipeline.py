@@ -26,11 +26,11 @@ The validator (`analyzer.traverse.validate`) stays a pure pass/fail; the
 retry / timeout / logging orchestration lives here, on top of it.
 
 Theme scope: only themes whose mesh shares the box / room-graph coordinate
-frame can be validated. Outdoor/cave live in a different frame (ROADMAP "Known
-issues"), so gating them would reject every zone -> infinite retry -> timeout.
+frame can be validated. Outdoor lives in a different frame (ROADMAP "Known
+issues"), so gating it would reject every zone -> infinite retry -> timeout.
 Non-gated themes therefore pass through UNVALIDATED (with a logged note) until
-the coordinate-frame fix / cavify rebuild lands. The gated set is explicit and
-configurable via ``gated_themes``.
+the coordinate-frame fix lands. The gated set is explicit and configurable via
+``gated_themes``.
 """
 
 from __future__ import annotations
@@ -55,8 +55,7 @@ logger = logging.getLogger("eq_s3d.pipeline")
 # ---------------------------------------------------------------------------
 
 # Themes whose generated mesh shares the box / room-graph coordinate frame, so
-# the traversability validator is sound for them. Dungeon-only for now; extend
-# to "cave" once cave-cavify-dungeon puts caves in the box frame.
+# the traversability validator is sound for them. Dungeon-only for now.
 DEFAULT_GATED_THEMES = frozenset({"dungeon"})
 
 # A dungeon build is sub-second, so a small budget finds a good sibling seed
@@ -227,7 +226,7 @@ def generate_validated(
 
     * **Ungated theme** (or ``validate_enabled=False``): build exactly once with
       the pinned seed (or a fresh one) and return it unvalidated, with a logged
-      note. No retries, so there is no false-fail retry storm on outdoor/cave.
+      note. No retries, so there is no false-fail retry storm on outdoor.
     * **Gated theme, random seed**: build -> validate -> on failure pick a NEW
       fresh seed and retry, bounded by ``max_attempts`` AND ``timeout_s``
       (whichever hits first). At least one full attempt always completes, so we

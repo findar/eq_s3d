@@ -179,7 +179,6 @@ class TestGating:
     def test_dungeon_is_gated_by_default(self):
         assert "dungeon" in DEFAULT_GATED_THEMES
         assert "outdoor" not in DEFAULT_GATED_THEMES
-        assert "cave" not in DEFAULT_GATED_THEMES
 
     def test_ungated_theme_passes_through_without_retry(self, tmp_path):
         # Force "dungeon" to be ungated: even a would-fail zone is returned as-is
@@ -228,7 +227,7 @@ class TestCliEscapeHatch:
         import argparse
         ns = argparse.Namespace(
             name="cli", theme="dungeon", rooms=8, seed=PINNED_SEED,
-            output=str(tmp_path), ter_version=2, preview=False,
+            output=str(tmp_path), ter_version=2,
             no_validate=False,
         )
         for k, v in over.items():
@@ -260,3 +259,98 @@ class TestCliEscapeHatch:
         with pytest.raises(SystemExit) as ei:
             main.cmd_generate(self._args(tmp_path, no_validate=False))
         assert ei.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# CLI argument handling (M0 6.8, 6.9)
+# ---------------------------------------------------------------------------
+
+class TestCliArgs:
+    def test_cave_theme_rejected_by_argparse(self, tmp_path):
+        # "cave" was removed from the --theme choices (M0 6.8): argparse exits 2
+        # in parse_args, before any build, so no output directory is created.
+        # Driven in-process via the main(argv) entry point (task 6.1).
+        import main
+        out = str(tmp_path / "cli_out")
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "x", "--theme", "cave", "--output", out])
+        assert ei.value.code == 2
+        assert not Path(out).exists()
+
+    # -- Removed preview paths (M0 6.2) -----------------------------------
+    # The legacy viewer and its CLI entry points were deleted in task 6.1:
+    # the "preview" subcommand and the "--preview" option are both gone, so
+    # argparse rejects them in parse_args (exit 2) before any build runs. The
+    # no_network fixture proves no preview server could have started: it
+    # records every non-loopback connect/bind, so attempts == [] means no
+    # foreign listener opened. 'out' must stay absent because argparse exits
+    # before cmd_generate creates the output directory.
+
+    def test_preview_subcommand_rejected(self, capsys, no_network):
+        # `preview` is no longer a subcommand: argparse reports it as an
+        # invalid choice and exits 2, with no network activity.
+        import main
+        with pytest.raises(SystemExit) as ei:
+            main.main(["preview", "x"])
+        assert ei.value.code == 2
+        err = capsys.readouterr().err
+        assert "invalid choice" in err
+        assert "preview" in err
+        assert no_network == []          # no non-loopback bind / listener
+
+    def test_preview_option_rejected(self, capsys, tmp_path, no_network):
+        # `--preview` is no longer an option on `generate`: argparse reports it
+        # as unrecognized and exits 2, before any output dir is created.
+        import main
+        out = str(tmp_path / "prev_out")
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "x", "--preview", "--output", out])
+        assert ei.value.code == 2
+        err = capsys.readouterr().err
+        assert "unrecognized arguments" in err
+        assert "--preview" in err
+        assert no_network == []          # no non-loopback bind / listener
+        assert not Path(out).exists()    # argparse exits before any build
+
+    def test_help_does_not_mention_preview(self, capsys):
+        # --help exits 0 and writes usage to stdout; neither the top-level nor
+        # the `generate` help should mention the removed preview path.
+        import main
+        with pytest.raises(SystemExit) as ei:
+            main.main(["--help"])
+        assert ei.value.code == 0
+        top = capsys.readouterr().out
+        assert "preview" not in top.lower()
+
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "--help"])
+        assert ei.value.code == 0
+        gen = capsys.readouterr().out
+        assert "preview" not in gen.lower()
+
+
+# ---------------------------------------------------------------------------
+# Cave words plan a validated dungeon end-to-end (M0 6.9)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+def test_cave_prompt_builds_validated_dungeon(tmp_path):
+    """An unpinned pipeline run on a cave-word prompt returns a validated build
+    whose theme is dungeon (M0 Req 6.9): the cave pipeline is gone, so cave
+    prompts plan and build as gated dungeons."""
+    from ai.rule_planner import RulePlanner
+    from ai.expand import plan_to_spec
+
+    plan = RulePlanner().plan("a dark underground cavern with many tunnels")
+    assert plan.theme == "dungeon"
+
+    def factory(s):
+        return plan_to_spec(plan, seed=s)
+
+    vb = generate_validated(
+        factory, theme=plan.theme, zone_id="cavedungeon",
+        output_dir=str(tmp_path), write_glb=False,
+        failure_log=tmp_path / "fail.jsonl",
+    )
+    assert vb.validated
+    assert vb.spec.theme == "dungeon"

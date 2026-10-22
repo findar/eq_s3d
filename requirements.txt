@@ -2,15 +2,12 @@
 numpy==2.2.1
 trimesh==5.1.1
 scipy==1.15.1              # trimesh GLB export dependency
-scikit-image==0.26.0      # marching cubes for organic cave geometry
-fast-simplification==0.1.11  # mesh decimation backend for trimesh
 
 # Image handling (DDS encoding via Pillow; DXT compression via imageio plugin)
 Pillow==11.1.0
 imageio==2.36.1
 
-# Web viewer / API backend
-flask==3.1.0            # legacy standalone GLB preview server
+# API backend
 fastapi==0.115.6        # web UI backend
 uvicorn==0.34.0         # ASGI server for FastAPI
 python-multipart==0.0.20
@@ -29,3 +26,7 @@ click==8.1.8
 # Utilities
 pydantic==2.10.4
 python-dotenv==1.0.1
+
+# Testing
+hypothesis==6.170.5
+httpx==0.28.1           # test-only: backs FastAPI TestClient

@@ -6,8 +6,10 @@ keyword heuristics into a ZonePlan. This is the DEFAULT planner — it runs with
 no API key, deterministically, and makes the prompt box genuinely responsive
 even offline.
 
-It won't match an LLM's nuance, but "a big flooded cave with lots of chambers"
-should reliably produce a large cave with a water region and a high room count.
+It won't match an LLM's nuance, but "a big flooded cavern with lots of chambers"
+should reliably produce a large dungeon with a water region and a high room
+count (the cave pipeline was removed in M0, so cave-like prompts plan as
+dungeons).
 """
 
 from __future__ import annotations
@@ -18,14 +20,17 @@ from typing import List
 from .schema import ZonePlan
 
 
-# Keyword → theme
+# Keyword → theme. Cave-like words fold into the dungeon bucket: the cave
+# pipeline was removed in M0, so a cave prompt plans as a dungeon (realised as a
+# natural, cave-like dungeon archetype). `mine` also stays in the mine_delve
+# archetype, so a mine prompt yields theme `dungeon` AND archetype `mine_delve`.
 _THEME_WORDS = {
-    "cave": ["cave", "cavern", "grotto", "tunnel", "underground", "mine"],
     "outdoor": ["outdoor", "forest", "field", "meadow", "hills", "plains",
                 "valley", "mountain", "wilderness", "swamp", "desert", "coast"],
     "city": ["city", "town", "village", "market", "bazaar", "streets", "plaza"],
     "dungeon": ["dungeon", "crypt", "catacomb", "ruin", "temple", "keep",
-                "fortress", "lair", "stronghold", "vault"],
+                "fortress", "lair", "stronghold", "vault",
+                "cave", "cavern", "grotto", "tunnel", "underground", "mine"],
 }
 
 # Keyword → region kind

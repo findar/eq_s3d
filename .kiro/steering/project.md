@@ -64,10 +64,11 @@ output is a starting point for a human authoring pass, not a finished zone.
   MAIN checkout (which is what gets pushed). Pushing branches adds no value on
   one machine.
 - **Tracker ownership is single-writer — one unconditional rule, solo or
-  parallel.** While working a task you update ONLY that task's own
-  `tasks/<id>.md` (Status, subtask checkboxes, Deliverables / commit hashes).
-  You do NOT edit `ROADMAP.md`, `README.md`, or `tasks/README.md` as part of
-  task work. Those three are *integration state*, written once per landed branch
+  parallel.** While working a task you update ONLY that task's own entry — its
+  `.kiro/specs/<feature>/tasks.md` for new work (or a legacy `tasks/<id>.md` for
+  historical work): Status/checkbox state, subtask checkboxes, Deliverables /
+  commit hashes. You do NOT edit `ROADMAP.md`, `README.md`, or `tasks/README.md`
+  as part of task work. Those three are *integration state*, written once per landed branch
   by a single explicit integration step run from the MAIN checkout. This is
   unconditional ON PURPOSE: a working agent usually cannot tell whether other
   agents are running right now, so a rule that only applied "when parallel" would
@@ -89,24 +90,26 @@ output is a starting point for a human authoring pass, not a finished zone.
   a human looking at the result can confirm. The `ROADMAP.md` "Pick up here" +
   Done table and commit count/hash go in the integration note, not written by
   you directly (see tracker ownership above).
-- **Task tracking** lives in `tasks/` (tactical tier below ROADMAP). When you
-  start work on something, open or create its `tasks/<id>.md` from
-  `tasks/_TEMPLATE.md`; keep its `Status:` line, subtask checkboxes, and
-  Deliverables (commit hashes) current as you go. (The `tasks/README.md` index
-  row is integration state — updated in the single-writer integration step, not
-  here; see tracker ownership.) Set `Status: done` only when the acceptance
-  criteria pass. Read the relevant task file before working — and VERIFY it
-  against the actual code, because the repo can advance past the docs (it has
-  before).
-- **Running a task:** when the user points you at a `tasks/<id>.md` file (or
-  names a task), treat that as an instruction to **run that task** — not merely
-  to read or summarise it. That means: read the file, verify it against the
-  current code (it can be stale), then work the unchecked subtasks toward the
-  acceptance criteria, committing as you go and keeping the task file in sync.
-  (`tasks/README.md` and `ROADMAP.md` are updated only in the single-writer
-  integration step — see tracker ownership.) The task file's Goal /
-  Acceptance criteria / Subtasks are the single source of truth for *what* to
-  do; this always-on steering supplies the *how* (workflow, verification, the
+- **Task tracking** for NEW work lives in `.kiro/specs/<feature>/tasks.md` — the
+  spec task list is the unit of work. When you start work on something, open or
+  create its entry in that spec's `tasks.md`; keep its `Status:`/checkbox state,
+  subtask checkboxes, and Deliverables (commit hashes) current as you go. (The
+  `tasks/README.md` index row is integration state — updated in the single-writer
+  integration step, not here; see tracker ownership.) Mark a task done only when
+  its acceptance criteria pass. Read the relevant spec `tasks.md` entry (and the
+  spec's `requirements.md`/`design.md`) before working — and VERIFY it against the
+  actual code, because the repo can advance past the docs (it has before).
+  The legacy `tasks/<id>.md` tactical tier is kept as **history**: prior work
+  lives there for reference, but new work goes in the spec `tasks.md`.
+- **Running a task:** when the user points you at a spec `tasks.md` task (or a
+  legacy `tasks/<id>.md` file, or names a task), treat that as an instruction to
+  **run that task** — not merely to read or summarise it. That means: read the
+  task, verify it against the current code (it can be stale), then work the
+  unchecked subtasks toward the acceptance criteria, committing as you go and
+  keeping the task entry in sync. (`tasks/README.md` and `ROADMAP.md` are updated
+  only in the single-writer integration step — see tracker ownership.) The task's
+  Goal / Acceptance criteria / Subtasks are the single source of truth for *what*
+  to do; this always-on steering supplies the *how* (workflow, verification, the
   "structural tests pass ≠ done — eyeball it in 3D" rule). No per-task kickoff
   prompt is needed — pointing at the file is the trigger.
 
