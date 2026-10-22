@@ -21,14 +21,22 @@ Requirements are grouped by pillar:
 - P-B Traversable — Requirements 4–7
 - P-C RoF2-usable format — Requirements 8–11
 - P-D True-layout artifacts — Requirements 12–14
-- P-E EverQuest look and feel — Requirements 15–17 and 33 (the `cave` Archetype, which also serves P-G)
+- P-E EverQuest look and feel — Requirements 15–17 and 33 (the `cave` Purpose, which also serves P-G)
 - P-F Iterative feedback — Requirements 18–20
 - P-G Engaging every time — Requirements 21–25
 - Cross-cutting — Requirements 26–32
 
-Caves are not a theme or a separate geometry pipeline: a cave is the `cave`
-Archetype of a `dungeon` (Requirement 33), and the organic look is the optional
+Caves are not a zone type or a separate geometry pipeline: a cave is the `cave`
+Purpose of a `dungeon` (Requirement 33), and the organic look is the optional
 Natural_Style applied to a dungeon's Box_Backend output (Requirement 7).
+
+Vocabulary rule: every descriptive axis below (Zone_Type, Enclosure, Purpose,
+Builder, Inhabitants, Condition, Element, Room_Type) is a separate field with a
+closed, normalised value list. The bare word "theme" is never a field name; it
+may appear only as a UI label. Legacy names (`theme`, `outdoor`, `dungeon_theme`,
+`dungeon_race`, `elemental_tint`, `semantic_type`, `room_theme`, `district_theme`)
+are accepted on load and mapped per Requirement 11.10; design decision 19 records
+the vocabulary and the milestone in which each rename lands.
 
 The delivery model (how milestone specs relate to this one) is a process
 constraint, not system behaviour, and is recorded in its own short section after
@@ -42,26 +50,33 @@ the requirements.
 - **Local_Frontend_Origin**: the configured origin of the frontend build or preview served locally (default: the frontend's local port on 127.0.0.1/localhost).
 - **CLI**: the `main.py` command-line entry point; it has no prompt mode (controls only).
 - **Planner**: the component that turns a prompt or a control set into a Zone_Plan; rule-based by default, LLM-backed when a key is configured.
-- **Zone_Plan**: the small declarative plan (theme, room count, size, verticality, locks, topology, district switch and proposals, archetype, race, tint, Target_Shortname, …) produced by the Planner.
-- **Zone_Spec**: the intermediate representation of a zone (theme, Style_Profile, geometry style, rooms, corridors, lights, regions, gates, districts, materials, safe point, seed, shortname); everything downstream consumes it.
+- **Zone_Plan**: the small declarative plan (zone type, room count, size, verticality, locks, topology, district switch and proposals, purpose, builder, inhabitants, condition, element, Target_Shortname, …) produced by the Planner.
+- **Zone_Spec**: the intermediate representation of a zone (zone type, Style_Profile, geometry style, rooms, corridors, lights, regions, gates, districts, materials, safe point, seed, shortname); everything downstream consumes it.
 - **Layout_Generator**: the component that expands a Zone_Plan into a Zone_Spec (TinyKeep layout, topology, pacing, districts, semantics, elevation, corridors, gating).
 - **Room_Graph**: the graph whose nodes are Zone_Spec rooms and whose edges are corridors (`from_room`/`to_room`).
 - **Pacing_Role**: a room label in {entrance, hub, deadend, climax, standard} derived from the Room_Graph.
-- **District**: a contiguous group of rooms sharing an archetype, palette, light mood and one climax.
+- **District**: a contiguous group of rooms (comparable to a WoW dungeon wing) sharing a Purpose, palette, light mood and one climax; a District may override the zone's Purpose, Condition, Inhabitants and Element.
 - **Threshold**: the single corridor joining two adjacent Districts.
 - **Gate**: an advisory lock on a corridor together with the room holding its key; realised as an EQEmu `doors` row, never as geometry.
-- **Advisory_Data**: Pacing_Roles, graph depth, semantic labels, District metadata, Threshold flags, Gates, suggestion fields (`prop_hints`, `encounter_intent`, `boss`) and all reports (quality, conformance, format). `room_theme` is a realised content-layer field, not Advisory_Data.
-- **Defined_Themes**: the theme vocabulary of the Zone_Generator: `dungeon`, `city` and `outdoor`. Any other theme name (including the retired `cave`) is undefined.
-- **Archetype**: the content-layer zone function of a Zone_Plan or District (for example `fortress`, `warren`, `mine_delve`, `cave`) that supplies room semantic types, palette, light mood and regions; `fortress` is the default.
-- **Geometry_Backend**: a mesh generator selected by theme; one of Box_Backend, Terrain_Backend.
-- **Box_Backend**: the architectural box mesh backend (dungeon, city), covering every dungeon Archetype including `cave`.
-- **Terrain_Backend**: the heightfield backend (outdoor).
-- **Natural_Style**: an optional geometry styling transform applied to a dungeon's validated Box_Backend output (rounded chambers, winding tunnels, rough walls), selected by the Zone_Spec's geometry style (`natural`; default `built`); never a separate theme or Geometry_Backend.
+- **Advisory_Data**: Pacing_Roles, graph depth, Room_Type labels, District metadata, Threshold flags, Gates, suggestion fields (`prop_hints`, `encounter_intent`, `boss`) and all reports (quality, conformance, format). `room_purpose` is a realised content-layer field, not Advisory_Data.
+- **Zone_Type**: the zone-level selector of a Zone_Plan and Zone_Spec (field `zone_type`; legacy key `theme`); one of Defined_Zone_Types. It selects the Geometry_Backend, the scale and Style_Profile and, from M6, the EQ `ztype`.
+- **Defined_Zone_Types**: the Zone_Type vocabulary of the Zone_Generator: `dungeon`, `city` and `wilderness` (legacy value `outdoor` reads as `wilderness`). Any other Zone_Type name (including the retired `cave`) is undefined.
+- **Enclosure**: whether a zone is `indoor` or `outdoor` (sky, levitation and outdoor casting); derived from the Zone_Type (dungeon and city → `indoor`, wilderness → `outdoor`) until set independently. "Outdoor" refers only to Enclosure, never to a Zone_Type.
+- **Purpose**: the content-layer function of a Zone_Plan or District (field `purpose`; legacy `dungeon_theme`, formerly "Archetype"), for example `fortress`, `temple`, `tomb`, `mine`, `warren`, `wizard_tower`, `sewer`, `vault`, `cave`; supplies Room_Types, palette, light mood and regions; `fortress` is the default.
+- **Builder**: who built the place (field `builder`; legacy `dungeon_race` scale half); sets architectural scale.
+- **Inhabitants**: who lives there now (field `inhabitants`; legacy `dungeon_race` encounter half); drives encounter suggestions only.
+- **Condition**: the zone's current state (field `condition`), from `active`, `abandoned`, `ruined`, `haunted`, `flooded`, `overgrown`, `infested`, `cursed`; at most two values; a Condition may imply an Element (for example `flooded` → `water`).
+- **Element**: an elemental overlay (field `element`; legacy `elemental_tint`): `water`, `lava` or `ice`; supplies palette, regions and light mood.
+- **Room_Type**: what a room is (field `room_type`; legacy `semantic_type`), for example `barracks` or `flooded_crypt`; assigned from the Purpose.
+- **Geometry_Backend**: a mesh generator selected by Zone_Type; one of Box_Backend, Terrain_Backend.
+- **Box_Backend**: the architectural box mesh backend (dungeon, city), covering every dungeon Purpose including `cave`.
+- **Terrain_Backend**: the heightfield backend (wilderness).
+- **Natural_Style**: an optional geometry styling transform applied to a dungeon's validated Box_Backend output (rounded chambers, winding tunnels, rough walls), selected by the Zone_Spec's geometry style (`natural`; default `built`); never a separate zone type or Geometry_Backend.
 - **Zone_Builder**: the component that runs the selected Geometry_Backend, textures, ZON and archive assembly and writes the build files.
 - **Raw_Build**: a single build of a Zone_Spec without any pipeline retry.
 - **Pipeline**: the validated generation loop that draws seeds, builds, runs the gates, retries and writes artifacts for the returned build.
 - **Accepted_Build**: the build the Pipeline (or an accepted edit) returns to the caller.
-- **Enabled_Themes**: the subset of Defined_Themes the Web_App, Server and CLI offer for generation; fixed per release.
+- **Enabled_Zone_Types**: the subset of Defined_Zone_Types the Web_App, Server and CLI offer for generation; fixed per release.
 - **Agent_Model**: the EQ-scale player model used for traversal: walkable slope ≤ 40°, step up ≤ 3 units, player height 6 units.
 - **Traversal_Validator**: the analyzer that floods the standable faces of the built mesh from the safe point using the Agent_Model. Headroom (ceiling clearance) is outside its scope.
 - **Format_Checker**: the Tier-1 RoF2 format validator run on every built `.eqg`.
@@ -80,13 +95,13 @@ the requirements.
 - **EQ_Map_Writer**: the component that writes EverQuest in-client map files (`maps/<short>.txt`, `<short>_1..3.txt`).
 - **Map_Parser**: the reader for the EQ map line grammar (`L …` lines and `P …` labels).
 - **Map_Viewer**: the top-down SVG renderer (`<short>.map.svg`).
-- **Style_Profile**: measurements taken from real Classic–PoP zones (`styles/<profile>.json`); a Zone_Spec's Style_Profile is its theme's profile, or the `cave` profile when its Archetype (single-District zone, or District 0) is `cave`.
+- **Style_Profile**: measurements taken from real Classic–PoP zones (`styles/<profile>.json`); a Zone_Spec's Style_Profile is its Zone_Type's profile, or the `cave` profile when its Purpose (single-District zone, or District 0) is `cave`.
 - **Conformance_Meter**: the analyzer comparing a built zone's measured metrics with its Zone_Spec's Style_Profile.
 - **Texture_Generator**: the component producing diffuse and normal-map textures per material (procedural by default, AI provider optional).
 - **Normal_Map**: a tangent-space normal texture stored as a separate DDS in the `.eqg` and referenced by the material property `e_TextureNormal0`.
 - **Preview**: the `<short>.glb` file the Web_App renders.
 - **Quality_Meter**: the component computing a QualityReport (metrics, failures, out-of-band list, score) from a Zone_Spec.
-- **Quality_Bands**: per-metric inclusive target ranges keyed by theme, topology, room count and verticality.
+- **Quality_Bands**: per-metric inclusive target ranges keyed by zone type, topology, room count and verticality.
 - **Quality_Degraded**: the state of a returned build whose QualityReport failed; carries a reason in {`quality_degraded`, `quality_outside_bands_pinned`, `edit_outside_bands`}.
 - **Out_Of_Band_List**: the list of `{metric, value, lo, hi}` entries for every metric outside its band.
 - **Quality_Block**: the single JSON shape `{degraded, reason, score, metrics, out_of_band}` used in HTTP responses and the Sidecar.
@@ -97,7 +112,7 @@ the requirements.
 - **Edit_Engine**: the component that applies Edit_Ops to a Zone_Spec and reports the Affected_Set.
 - **Affected_Set**: the room ids and corridor ids whose geometry an edit may change.
 - **Pinned_Seed**: a seed supplied by the caller, in 0–2,147,483,647; **Fresh_Seed**: a seed drawn by the Zone_Generator, in the same range.
-- **Gated_Theme**: a theme whose builds must pass the Traversal_Validator before the Pipeline returns them.
+- **Gated_Zone_Type**: a Zone_Type whose builds must pass the Traversal_Validator before the Pipeline returns them.
 - **Reference_Machine**: the single local development machine with the Output_Directory on local disk and no concurrent generation; time budgets are measured on it with the AI texture provider and the LLM Planner disabled.
 
 ## Requirements
@@ -113,7 +128,7 @@ the requirements.
 3. WHEN a generate request has `mode` = `prompt`, THE Server SHALL build the Zone_Plan from the prompt text through the Planner, SHALL take only the seed and Target_Shortname from request fields outside the prompt, and SHALL ignore every other control field.
 4. WHEN a generate request has `mode` = `controls`, THE Server SHALL build the Zone_Plan from the control values and SHALL ignore any prompt text.
 5. WHEN a generate request omits `mode` and carries a non-empty prompt, THE Server SHALL handle the request as `mode` = `prompt`.
-6. WHEN a generate request omits `mode` and carries an empty or absent prompt, THE Server SHALL handle the request as `mode` = `controls`, mapping the legacy flat fields (`theme`, `rooms`, `elevation`, `seed`) to control values.
+6. WHEN a generate request omits `mode` and carries an empty or absent prompt, THE Server SHALL handle the request as `mode` = `controls`, mapping the legacy flat fields (`theme` or `zone_type`, `rooms`, `elevation`, `seed`) to control values.
 7. WHEN two generate requests, one in each mode, yield equal Zone_Plans and carry the same Pinned_Seed, THE Server SHALL expand them into identical Zone_Specs and SHALL build both through the Pipeline.
 8. WHEN the CLI is invoked with a set of control options and a Pinned_Seed, THE CLI SHALL produce a Zone_Plan and Zone_Spec equal to those of a controls-mode generate request carrying the same values and seed.
 9. THE CLI SHALL build every Zone_Plan from control options through the controls path.
@@ -127,31 +142,31 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. THE Web_App Controls panel SHALL expose theme, room count (bounded 1–30), size, verticality, locks (bounded 0–5), topology, district switch, dungeon archetype, dungeon race, elemental tint, seed and Target_Shortname, and SHALL send a blank seed as "no seed" so that the Server draws a Fresh_Seed.
-2. THE CLI SHALL accept theme, room count, size, verticality, locks, topology, district switch, seed and Target_Shortname as options.
+1. THE Web_App Controls panel SHALL expose zone type, room count (bounded 1–30), size, verticality, locks (bounded 0–5), topology, district switch, purpose, builder, inhabitants, condition (up to two values), element, seed and Target_Shortname, and SHALL send a blank seed as "no seed" so that the Server draws a Fresh_Seed.
+2. THE CLI SHALL accept zone type, room count, size, verticality, locks, topology, district switch, seed and Target_Shortname as options.
 3. WHEN a Zone_Plan is built from any input, THE Planner SHALL truncate room count and locks to integers and clamp each to its nearest bound (room count 1–30, locks 0–5).
 4. WHEN a Zone_Plan is built from a dictionary, THE Planner SHALL drop keys outside the Zone_Plan schema.
 5. WHEN an already-normalised Zone_Plan is normalised again, THE Planner SHALL return an equal Zone_Plan.
 6. FOR ALL input dictionaries, THE Planner SHALL produce equal field values on the shared keys whether the dictionary enters through the plan-dictionary path or the controls path.
 7. WHILE a Web_App text input, number input, select or textarea has keyboard focus, THE Web_App SHALL deliver key presses to that field and SHALL NOT move the camera.
-8. WHEN a Zone_Plan field holds a value outside its vocabulary, THE Planner SHALL replace the value with the field default (theme → `dungeon`, size → `medium`, verticality → `moderate`, topology → `branching`, archetype, race and tint → empty), SHALL drop region kinds outside the region vocabulary and SHALL keep only the first 3 district proposals; the theme vocabulary is Defined_Themes (dungeon, city, outdoor), so a stored or dictionary theme value `cave` normalises to `dungeon` like any other out-of-vocabulary value, with Enabled_Themes gating left to Requirement 3.
+8. WHEN a Zone_Plan field holds a value outside its vocabulary, THE Planner SHALL replace the value with the field default (zone type → `dungeon`, size → `medium`, verticality → `moderate`, topology → `branching`, purpose, builder, inhabitants and element → empty), SHALL drop Condition values outside the Condition vocabulary and keep the first two, SHALL drop region kinds outside the region vocabulary and SHALL keep only the first 3 district proposals; the Zone_Type vocabulary is Defined_Zone_Types (dungeon, city, wilderness), so a stored or dictionary zone type value `cave` normalises to `dungeon` like any other out-of-vocabulary value, with Enabled_Zone_Types gating left to Requirement 3.
 9. IF a generate request carries a non-integer room count, locks or seed, THEN THE Server SHALL respond HTTP 400 naming the field, before any build. (The truncation in criterion 3 applies to Planner and dictionary inputs.)
 10. IF a CLI option value is out of its domain or unparsable, THEN THE CLI SHALL print an error naming the option and exit with status 2, writing no file.
 
-### Requirement 3: Theme availability
+### Requirement 3: Zone type availability
 
-**User Story:** As a zone author, I want the tool to offer only themes that are known to produce walkable zones, so that I never receive a broken zone.
+**User Story:** As a zone author, I want the tool to offer only zone types that are known to produce walkable zones, so that I never receive a broken zone.
 
 #### Acceptance Criteria
 
-1. THE Server SHALL list exactly the Defined_Themes (dungeon, city, outdoor), each once, at `GET /api/themes`, each with `enabled` equal to membership in Enabled_Themes and a non-empty human-readable `reason`.
-2. THE Pipeline SHALL treat every member of Enabled_Themes as a Gated_Theme.
-3. THE Web_App SHALL render theme options whose `enabled` is false as disabled and non-selectable, showing their `reason`, and SHALL preselect a member of Enabled_Themes by default.
-4. IF a controls-mode request names a theme outside Enabled_Themes (including an undefined theme name such as `cave`), THEN THE Server SHALL respond HTTP 400 listing Enabled_Themes, before any build and writing no file.
-5. IF the Planner selects a theme outside Enabled_Themes for a prompt, THEN THE Server SHALL build with the fixed substitute theme `dungeon`, return a `theme_substituted` warning naming the planned and the substituted theme, and record the planned theme as `planned_theme` in the Sidecar; WHEN no substitution occurs, THE Server SHALL return no `theme_substituted` warning.
-6. IF a CLI invocation names a theme outside Enabled_Themes (including an undefined theme name such as `cave`), THEN THE CLI SHALL print an error listing Enabled_Themes and exit with status 2, writing no file.
-7. WHEN a generate response carries a `theme_substituted` warning, THE Web_App SHALL display the planned and the substituted theme until the next generation request.
-8. THE Server SHALL return only Accepted_Builds whose theme is a member of Enabled_Themes.
+1. THE Server SHALL list exactly the Defined_Zone_Types (dungeon, city, wilderness), each once, at `GET /api/zone_types` (legacy alias `GET /api/themes`), each with `enabled` equal to membership in Enabled_Zone_Types and a non-empty human-readable `reason`.
+2. THE Pipeline SHALL treat every member of Enabled_Zone_Types as a Gated_Zone_Type.
+3. THE Web_App SHALL render zone type options whose `enabled` is false as disabled and non-selectable, showing their `reason`, and SHALL preselect a member of Enabled_Zone_Types by default.
+4. IF a controls-mode request names a zone type outside Enabled_Zone_Types (including an undefined zone type name such as `cave`), THEN THE Server SHALL respond HTTP 400 listing Enabled_Zone_Types, before any build and writing no file.
+5. IF the Planner selects a zone type outside Enabled_Zone_Types for a prompt, THEN THE Server SHALL build with the fixed substitute zone type `dungeon`, return a `zone_type_substituted` warning naming the planned and the substituted zone type, and record the planned zone type as `planned_zone_type` in the Sidecar; WHEN no substitution occurs, THE Server SHALL return no `zone_type_substituted` warning.
+6. IF a CLI invocation names a zone type outside Enabled_Zone_Types (including an undefined zone type name such as `cave`), THEN THE CLI SHALL print an error listing Enabled_Zone_Types and exit with status 2, writing no file.
+7. WHEN a generate response carries a `zone_type_substituted` warning, THE Web_App SHALL display the planned and the substituted zone type until the next generation request.
+8. THE Server SHALL return only Accepted_Builds whose zone type is a member of Enabled_Zone_Types.
 
 ### Requirement 4: Traversability gate
 
@@ -161,9 +176,9 @@ the requirements.
 
 1. THE Traversal_Validator SHALL classify a mesh face as standable when its slope is at most 40° and SHALL connect two standable faces when they share a vertex or their XY footprints touch within 2 units, and the vertical distance between their centroids is at most 3 units.
 2. THE Traversal_Validator SHALL report a pass only when the Zone_Spec has at least one room and every room's footprint contains a standable face reachable from the start face (the standable face nearest the safe point in XY, ties broken by the smallest vertical distance), and SHALL report the room id and failure reason of each failing room.
-3. FOR every theme in Enabled_Themes, any seed in 0–2,147,483,647, room counts 2–12 and verticality on or off, THE Geometry_Backend for that theme SHALL produce a Raw_Build that passes the Traversal_Validator.
-4. WHERE validation is enabled (the default), THE Pipeline SHALL return a build of a Gated_Theme only after the build passed both the Traversal_Validator and the Format_Checker.
-5. IF a build fails the Traversal_Validator or the Format_Checker and the seed is not pinned, THEN THE Pipeline SHALL append one line (zone, theme, seed, attempt number, failed checks) to the validation failure log and retry with a Fresh_Seed while fewer than `max_attempts` (default 8) builds have run and less than `timeout_s` (default 20 s) has elapsed, checking the budget after each build so that at least one build completes.
+3. FOR every zone type in Enabled_Zone_Types, any seed in 0–2,147,483,647, room counts 2–12 and verticality on or off, THE Geometry_Backend for that zone type SHALL produce a Raw_Build that passes the Traversal_Validator.
+4. WHERE validation is enabled (the default), THE Pipeline SHALL return a build of a Gated_Zone_Type only after the build passed both the Traversal_Validator and the Format_Checker.
+5. IF a build fails the Traversal_Validator or the Format_Checker and the seed is not pinned, THEN THE Pipeline SHALL append one line (zone, zone type, seed, attempt number, failed checks) to the validation failure log and retry with a Fresh_Seed while fewer than `max_attempts` (default 8) builds have run and less than `timeout_s` (default 20 s) has elapsed, checking the budget after each build so that at least one build completes.
 6. IF a build with a Pinned_Seed fails the Traversal_Validator or the Format_Checker, THEN THE Pipeline SHALL append one line to the validation failure log and raise a generation failure flagged as pinned, building no other seed.
 7. IF the Pipeline exhausts its build or time budget or raises a pinned generation failure, THEN THE Server SHALL respond HTTP 503 with diagnostics listing each rejected seed and its failed checks, and THE CLI SHALL print one line per rejected build to stderr and exit with status 1.
 8. IF the selected Geometry_Backend cannot run because an optional dependency is missing, THEN THE Zone_Builder SHALL build with the Box_Backend and record a `backend_fallback` warning in the build result.
@@ -184,9 +199,9 @@ the requirements.
 5. THE Box_Backend SHALL confine a corridor's whole rise to the leg named in criterion 4, keep every other leg flat at the adjoining room's `floor_z` within 0.01 units, and join consecutive legs within 0.01 units.
 6. WHEN a corridor joins two rooms through parallel facing walls whose openings are not collinear, THE Box_Backend SHALL route the corridor as three axis-aligned legs (a stub perpendicular to each wall and a cross-jog between them).
 
-### Requirement 6: Outdoor terrain alignment
+### Requirement 6: Wilderness terrain alignment
 
-**User Story:** As a zone author, I want outdoor terrain to sit under the rooms the layout planned, so that outdoor zones are as walkable as dungeons.
+**User Story:** As a zone author, I want wilderness terrain to sit under the rooms the layout planned, so that wilderness zones are as walkable as dungeons.
 
 #### Acceptance Criteria
 
@@ -203,8 +218,8 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. WHERE the Zone_Spec's theme is `dungeon` and its geometry style is `natural`, THE Zone_Builder SHALL apply the Natural_Style to the Box_Backend output before writing the build files.
-2. WHILE the Zone_Spec's geometry style is `built` or its theme is not `dungeon`, THE Zone_Builder SHALL write the Geometry_Backend output without the Natural_Style transform.
+1. WHERE the Zone_Spec's zone type is `dungeon` and its geometry style is `natural`, THE Zone_Builder SHALL apply the Natural_Style to the Box_Backend output before writing the build files.
+2. WHILE the Zone_Spec's geometry style is `built` or its zone type is not `dungeon`, THE Zone_Builder SHALL write the Geometry_Backend output without the Natural_Style transform.
 3. THE Natural_Style SHALL derive its mesh from the Zone_Spec's rooms and corridors as the Layout_Generator produced them, leaving every room and corridor (position, size, `floor_z`, endpoints and route) and the Room_Graph identical before and after styling.
 4. THE Natural_Style SHALL produce a mesh whose triangles form exactly one edge-connected component, with no detached pieces.
 5. THE Natural_Style SHALL keep every standable face inside a room footprint at or above that room's `floor_z` − 1 unit.
@@ -213,7 +228,7 @@ the requirements.
 8. FOR any seed, room counts 2–12 and elevation on or off, THE Zone_Builder SHALL produce for a natural-styled dungeon a Raw_Build that passes the Traversal_Validator.
 9. FOR every corridor of a natural-styled dungeon, THE Zone_Builder SHALL produce a Traversal_Validator path linking a standable face in the corridor's `from_room` to a standable face in its `to_room` without entering the footprint of a third room.
 10. WHEN the Natural_Style is applied, THE Zone_Builder SHALL report in the build result the mesh resolution (voxel size or subdivision length) actually used.
-11. THE Zone_Generator SHALL build every zone through the Box_Backend or the Terrain_Backend, with Defined_Themes as the only theme vocabulary, so that the Zone_Generator offers no cave theme and contains no separate cave geometry pipeline.
+11. THE Zone_Generator SHALL build every zone through the Box_Backend or the Terrain_Backend, with Defined_Zone_Types as the only zone type vocabulary, so that the Zone_Generator offers no cave zone type and contains no separate cave geometry pipeline.
 
 (The Preview of a natural-styled build equals its collision mesh under Requirement 17.6.)
 
@@ -253,7 +268,7 @@ the requirements.
 6. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that at least one standable face lies 0 to 10 units (inclusive) below the safe point in Z and within 50 units of it in XY, and that every vertex coordinate is finite with magnitude below 30000.
 7. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that the Target_Shortname is in the Known_Zone_List and that the archive file name, its TER and ZON entry names, the ZON model reference and the Sidecar `shortname` all use the same Target_Shortname.
 8. THE Format_Checker SHALL report a pass only when every check in criteria 1–7 passes.
-9. FOR every theme in Enabled_Themes, either geometry style of a dungeon (`built` or `natural`) and any seed, THE Zone_Builder SHALL produce a Raw_Build that passes the Format_Checker.
+9. FOR every zone type in Enabled_Zone_Types, either geometry style of a dungeon (`built` or `natural`) and any seed, THE Zone_Builder SHALL produce a Raw_Build that passes the Format_Checker.
 10. WHEN a check fails, THE Format_Checker SHALL report one message per failed check naming the check and the offending entry, material, polygon or value.
 11. IF the archive cannot be parsed or an entry cannot be decoded, THEN THE Format_Checker SHALL report a failure message naming the archive or entry, raise no exception to its caller, and still report every check that does not depend on the failed item.
 12. WHEN an Accepted_Build is produced, THE Pipeline SHALL write the Format_Checker result (pass flag and messages) into the Sidecar.
@@ -286,11 +301,12 @@ the requirements.
 2. THE Zone_Generator SHALL compute PFS filename CRCs case-sensitively as the MSB-first CRC with polynomial 0x04C11DB7 and initial value 0 over the name bytes as stored followed by one NUL byte.
 3. FOR ALL TER and ZON files written by the Zone_Builder, reading back the written bytes SHALL yield the same vertices, polygons (indices, material index and flags), materials (name, shader and every property), lights and regions, equal at on-disk field precision (float32 values compared exactly).
 4. FOR ALL Zone_Specs produced by the Layout_Generator or the Edit_Engine, serialising to JSON and loading back SHALL produce a dictionary equal to the original.
-5. WHEN a Zone_Spec dictionary lacking newer fields (`shortname`, `topology`, `geometry_style`, `districts`, corridor `id` and `threshold`, `district_theme`, material `normal_texture`) is loaded, THE Zone_Generator SHALL fill those fields with their documented defaults (`shortname` → the Default_Target, `geometry_style` → `built`), leave present fields unchanged and ignore unknown extra keys.
+5. WHEN a Zone_Spec dictionary lacking newer fields (`shortname`, `topology`, `geometry_style`, `districts`, corridor `id` and `threshold`, `district_purpose`, material `normal_texture`) is loaded, THE Zone_Generator SHALL fill those fields with their documented defaults (`shortname` → the Default_Target, `geometry_style` → `built`), leave present fields unchanged and ignore unknown extra keys.
 6. THE Zone_Generator SHALL read geometry (vertices, triangles and texture names) from `.s3d` zones (old- and new-format WLD) and from `.eqg` zones for analysis.
 7. THE Zone_Builder SHALL write every generated zone as `.eqg`.
 8. IF a PFS or WLD file has an unrecognised magic or an unsupported version, THEN THE Zone_Generator SHALL raise an error naming the file kind and the bad value and return no partial data.
-9. WHEN a Zone_Spec dictionary whose theme lies outside Defined_Themes (including the retired `cave`) is loaded, THE Zone_Generator SHALL load the Zone_Spec with theme `dungeon` and its rooms, corridors and Style_Profile unchanged, and THE Zone_Builder SHALL build it with the Box_Backend.
+9. WHEN a Zone_Spec dictionary whose zone type lies outside Defined_Zone_Types (including the retired `cave`) is loaded, THE Zone_Generator SHALL load the Zone_Spec with zone type `dungeon` and its rooms, corridors and Style_Profile unchanged, and THE Zone_Builder SHALL build it with the Box_Backend.
+10. WHEN a Zone_Plan or Zone_Spec dictionary carrying a legacy vocabulary key is loaded, THE Zone_Generator SHALL map `theme` → `zone_type`, the value `outdoor` → `wilderness`, `dungeon_theme` → `purpose`, `dungeon_race` → `builder` and `inhabitants`, `elemental_tint` → `element`, `semantic_type` → `room_type`, `room_theme` → `room_purpose` and `district_theme` → `district_purpose`, preferring the new key when both are present, and SHALL write only the new keys.
 
 ### Requirement 12: Mesh-derived outline
 
@@ -308,7 +324,7 @@ the requirements.
 8. WHEN no standable floors overlap in XY with a vertical separation greater than 12 units (twice the Agent_Model's player height), THE Outline_Extractor SHALL place all polylines in the Main_Band.
 9. WHEN standable faces overlap in XY with a vertical separation greater than 12 units, THE Outline_Extractor SHALL place their polylines in different Depth_Bands, subject to the merge rule of criterion 6.
 10. THE Outline_Extractor SHALL emit segments covering at least 99% of the floor region's boundary length outside doorway spans to within 0.05 units.
-11. THE Outline_Extractor SHALL apply to meshes from every Geometry_Backend of a theme in Enabled_Themes.
+11. THE Outline_Extractor SHALL apply to meshes from every Geometry_Backend of a zone type in Enabled_Zone_Types.
 
 ### Requirement 13: EverQuest in-client map file
 
@@ -345,17 +361,17 @@ the requirements.
 
 ### Requirement 15: Era fidelity and measured conformance
 
-**User Story:** As a zone author, I want generated zones measured against real Classic–PoP zones of the same theme, so that "looks like EverQuest" is a number, not a claim.
+**User Story:** As a zone author, I want generated zones measured against real Classic–PoP zones of the same zone type, so that "looks like EverQuest" is a number, not a claim.
 
 #### Acceptance Criteria
 
 1. THE Layout_Generator SHALL size rooms from the floor-area and extent measurements in the Zone_Spec's Style_Profile so that the zone's total floor area falls within that profile's floor-area band.
-2. THE Layout_Generator SHALL assign every room's semantic type from the Zone_Plan Archetype, or from `fortress` when the Zone_Plan names none.
+2. THE Layout_Generator SHALL assign every room's Room_Type from the Zone_Plan Purpose, or from `fortress` when the Zone_Plan names none.
 3. WHEN an Accepted_Build is produced, THE Conformance_Meter SHALL measure width_x, width_y, ceiling height, floor area, polygon density, median triangle edge length, material count and light density, and report for each the value, the inclusive band [min − slack·std, max + slack·std] from the Style_Profile (slack from the profile, default 1.0) and an in-band flag, plus the within-band fraction (in-band metrics divided by banded metrics).
 4. THE Pipeline SHALL write the conformance report into the Sidecar.
 5. THE Pipeline SHALL return the same Accepted_Build whatever the conformance report says, using the report to reject, retry or modify no build.
-6. FOR every theme in Enabled_Themes over at least 20 Fresh_Seeds with the default Zone_Plan, THE Zone_Generator SHALL produce builds whose median within-band fraction is at least 0.75 and each of whose median triangle edge length is within the Style_Profile band.
-7. WHEN the Zone_Plan names a race or an elemental tint, THE Layout_Generator SHALL apply that race's scale and that tint's palette, regions and light mood (defaults: race scale 1.0, no tint).
+6. FOR every zone type in Enabled_Zone_Types over at least 20 Fresh_Seeds with the default Zone_Plan, THE Zone_Generator SHALL produce builds whose median within-band fraction is at least 0.75 and each of whose median triangle edge length is within the Style_Profile band.
+7. WHEN the Zone_Plan names a Builder, a Condition or an Element, THE Layout_Generator SHALL apply that Builder's scale, that Condition's palette and light adjustments and that Element's palette, regions and light mood (defaults: Builder scale 1.0, no Condition, no Element; an Element implied by a Condition applies when none is named).
 8. THE Web_App SHALL display every conformance metric's value, band and in-band flag and the within-band fraction.
 9. IF the Style_Profile lacks a profile or statistic for a metric, THEN THE Conformance_Meter SHALL report that metric unbanded and exclude it from the within-band fraction, and THE Pipeline SHALL still return the build.
 
@@ -397,7 +413,7 @@ the requirements.
 #### Acceptance Criteria
 
 1. WHEN the Pipeline returns an Accepted_Build, THE Server SHALL create a Session holding the Zone_Plan, Zone_Spec, base seed and a history whose single entry, version 0, is that build with its artifacts and Quality_Block, and SHALL return the `session_id` and version 0; WHEN no Accepted_Build is returned, THE Server SHALL create no Session.
-2. WHEN feedback text is submitted to `POST /api/sessions/{id}/edit`, THE Edit_Interpreter SHALL emit zero or more Edit_Ops drawn only from the edit vocabulary (`widen_room`, `narrow_room`, `taller_room`, `lower_room`, `add_room`, `remove_room`, `add_region`, `remove_region`, `set_archetype`, `set_verticality`, `add_lock`, `remove_lock`, `reroll_room`, `set_topology`, `regenerate`), with every parameter clamped into its inclusive schema range and targets resolved against the current Zone_Spec by room id, Pacing_Role ("boss room" → climax, "entrance") or semantic label; IF a target resolves to several rooms, THEN THE Edit_Interpreter SHALL reject that Edit_Op as ambiguous with a note listing the candidate rooms.
+2. WHEN feedback text is submitted to `POST /api/sessions/{id}/edit`, THE Edit_Interpreter SHALL emit zero or more Edit_Ops drawn only from the edit vocabulary (`widen_room`, `narrow_room`, `taller_room`, `lower_room`, `add_room`, `remove_room`, `add_region`, `remove_region`, `set_purpose`, `set_verticality`, `add_lock`, `remove_lock`, `reroll_room`, `set_topology`, `regenerate`), with every parameter clamped into its inclusive schema range and targets resolved against the current Zone_Spec by room id, Pacing_Role ("boss room" → climax, "entrance") or Room_Type; IF a target resolves to several rooms, THEN THE Edit_Interpreter SHALL reject that Edit_Op as ambiguous with a note listing the candidate rooms.
 3. WHEN an edit request carries explicit `ops` instead of feedback text, THE Server SHALL validate those Edit_Ops against the same vocabulary and ranges without invoking the Edit_Interpreter.
 4. IF the Edit_Interpreter produces no Edit_Ops, THEN THE Server SHALL respond `applied: false` with a help message listing the supported edit kinds and leave the Session's history, cursor and current artifacts byte-identical.
 5. IF an Edit_Op's target resolves to no room, THEN THE Edit_Engine SHALL reject that Edit_Op with a note naming the op and the target and apply the remaining Edit_Ops.
@@ -415,14 +431,14 @@ the requirements.
 #### Acceptance Criteria
 
 1. THE Edit_Engine SHALL produce the same output Zone_Spec, Affected_Set and notes for identical (Zone_Spec, Edit_Ops, base seed, version, salt).
-2. WHILE the theme uses the Box_Backend and the geometry style is `built`, THE Zone_Builder SHALL produce, for every room and corridor outside the Affected_Set, the same triangles (positions, winding and material) before and after an edit's rebuild.
-3. THE Edit_Engine SHALL give `add_region`, `remove_region` and `set_archetype` a geometric Affected_Set containing no corridor and no room other than the target room, and SHALL give `add_lock` and `remove_lock` an empty geometric Affected_Set.
+2. WHILE the zone type uses the Box_Backend and the geometry style is `built`, THE Zone_Builder SHALL produce, for every room and corridor outside the Affected_Set, the same triangles (positions, winding and material) before and after an edit's rebuild.
+3. THE Edit_Engine SHALL give `add_region`, `remove_region` and `set_purpose` a geometric Affected_Set containing no corridor and no room other than the target room, and SHALL give `add_lock` and `remove_lock` an empty geometric Affected_Set.
 4. IF a resize Edit_Op would overlap a neighbouring room, THEN THE Edit_Engine SHALL clamp the resize to the largest non-overlapping size, leave every other room unchanged and report the requested and applied size in the edit notes.
 5. IF `remove_room` targets the entrance or would leave any room unreachable from the entrance, THEN THE Edit_Engine SHALL reject that Edit_Op with a note and apply the remaining Edit_Ops.
 6. THE Edit_Engine SHALL keep every surviving corridor's `id` unchanged across edits.
-7. WHEN an edited build passes the Format_Checker and, for a Gated_Theme, the Traversal_Validator, THE Server SHALL accept the edit as the next version even when its quality report fails, marking it Quality_Degraded with reason `edit_outside_bands`.
-8. WHEN the candidate of a randomised Edit_Op (`add_room`, `reroll_room`, `set_topology`, `regenerate`) fails the Format_Checker, the Traversal_Validator (for a Gated_Theme) or a Quality_Band, THE Server SHALL build the next salt, up to 5 candidates in total, and keep the candidate with the best quality score among those passing the hard gates (ties to the lowest salt).
-9. IF no candidate passes the Format_Checker and, for a Gated_Theme, the Traversal_Validator, THEN THE Server SHALL respond `applied: false` with the gate diagnostics and leave the Session's history, cursor and current artifacts byte-identical.
+7. WHEN an edited build passes the Format_Checker and, for a Gated_Zone_Type, the Traversal_Validator, THE Server SHALL accept the edit as the next version even when its quality report fails, marking it Quality_Degraded with reason `edit_outside_bands`.
+8. WHEN the candidate of a randomised Edit_Op (`add_room`, `reroll_room`, `set_topology`, `regenerate`) fails the Format_Checker, the Traversal_Validator (for a Gated_Zone_Type) or a Quality_Band, THE Server SHALL build the next salt, up to 5 candidates in total, and keep the candidate with the best quality score among those passing the hard gates (ties to the lowest salt).
+9. IF no candidate passes the Format_Checker and, for a Gated_Zone_Type, the Traversal_Validator, THEN THE Server SHALL respond `applied: false` with the gate diagnostics and leave the Session's history, cursor and current artifacts byte-identical.
 10. THE Edit_Engine SHALL leave the input Zone_Spec equal to its value before the call.
 11. WHEN an edit request contains only deterministic Edit_Ops, THE Server SHALL build exactly one candidate.
 12. WHEN an edit is accepted, THE Server SHALL include the Affected_Set (room ids and corridor ids) and the edit notes in the response.
@@ -483,15 +499,15 @@ the requirements.
 1. THE Layout_Generator SHALL use k = 1 District when the district switch is off or the zone has fewer than 8 rooms, k = 2 for 8–13 rooms and k = 3 for 14 or more rooms; IF no partition satisfying criteria 2 and 3 exists, THEN THE Layout_Generator SHALL decrement k until one does (k = 1 always does) and record a Sidecar note with the requested and resolved counts. Planner district proposals do not override these counts.
 2. THE Layout_Generator SHALL place every room in exactly one District such that each District's induced subgraph of the Room_Graph is connected and has at least max(3, ⌊n / (k + 1)⌋) rooms, producing the same partition for the same seed and Zone_Plan.
 3. THE Layout_Generator SHALL keep exactly one corridor between each pair of Districts that share at least one corridor, removing the other cross-District corridors, flag that corridor as the Threshold and flag no other corridor; District adjacency may form a cycle.
-4. THE Layout_Generator SHALL give each District exactly one archetype and exactly one climax, the room of greatest in-District graph distance from the District entrance (ties to the lowest room id), where the District entrance is the zone entrance for its own District and, for every other District, that District's endpoint of the first Threshold crossed on the shortest path from the zone entrance (ties to the lowest room id); no other room is a climax.
-5. THE Layout_Generator SHALL give the two endpoint rooms of each Threshold non-identical material sets and light moods differing in colour or intensity, including when both Districts share an archetype.
+4. THE Layout_Generator SHALL give each District exactly one purpose and exactly one climax, the room of greatest in-District graph distance from the District entrance (ties to the lowest room id), where the District entrance is the zone entrance for its own District and, for every other District, that District's endpoint of the first Threshold crossed on the shortest path from the zone entrance (ties to the lowest room id); no other room is a climax.
+5. THE Layout_Generator SHALL give the two endpoint rooms of each Threshold non-identical material sets and light moods differing in colour or intensity, including when both Districts share an purpose.
 6. WHERE the resolved District count is 1, THE Layout_Generator SHALL produce the same rooms, corridors, materials, lights, Pacing_Roles and Gates as with the district switch off, differing only by the reduction note.
 7. WHERE locks ≥ 1 and k ≥ 2, THE Layout_Generator SHALL place min(locks, number of Thresholds) Gates on Threshold corridors before any other corridor, placing each Threshold Gate's key on the zone-entrance side so that the key room is reachable from the entrance without crossing that Gate.
-8. WHERE no archetypes are proposed, THE Layout_Generator SHALL choose District archetypes from the District relationship (default `sequential`) using the bundled compatibility table: `sequential` → pairwise-distinct archetypes with every consecutive pair compatible, `factional` → pairwise-distinct contrasting archetypes, `abandoned_vs_active` → one archetype, with every non-entrance District given a lower-saturation palette and lower light intensity.
-9. WHEN a prompt contains a bundled contrasting-area phrase (for example "living and dead", "two factions", "upper and lower"), THE Planner SHALL switch districts on and propose a District count equal to the number of named areas clamped to 2–3, one archetype per proposed District and exactly one District relationship.
-10. WHERE the Zone_Plan pins a single archetype, THE Layout_Generator SHALL give every District that archetype, satisfy criterion 5 through palette and light variants, and record a Sidecar note.
-11. WHEN the number of District proposals differs from k, THE Layout_Generator SHALL use the first k proposals and choose the remaining Districts' archetypes per criterion 8.
-12. IF a proposed archetype or District relationship is unknown, THEN THE Layout_Generator SHALL ignore that value, apply the default and record a Sidecar note naming the value.
+8. WHERE no purposes are proposed, THE Layout_Generator SHALL choose District purposes from the District relationship (default `sequential`) using the bundled compatibility table: `sequential` → pairwise-distinct purposes with every consecutive pair compatible, `factional` → pairwise-distinct contrasting purposes, `abandoned_vs_active` → one purpose, with every non-entrance District given a lower-saturation palette and lower light intensity.
+9. WHEN a prompt contains a bundled contrasting-area phrase (for example "living and dead", "two factions", "upper and lower"), THE Planner SHALL switch districts on and propose a District count equal to the number of named areas clamped to 2–3, one purpose per proposed District and exactly one District relationship.
+10. WHERE the Zone_Plan pins a single purpose, THE Layout_Generator SHALL give every District that purpose, satisfy criterion 5 through palette and light variants, and record a Sidecar note.
+11. WHEN the number of District proposals differs from k, THE Layout_Generator SHALL use the first k proposals and choose the remaining Districts' purposes per criterion 8.
+12. IF a proposed purpose or District relationship is unknown, THEN THE Layout_Generator SHALL ignore that value, apply the default and record a Sidecar note naming the value.
 
 ### Requirement 24: Quality gate
 
@@ -499,10 +515,10 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. THE Quality_Meter SHALL compute from the Zone_Spec alone, without a mesh: `cyclomatic` = E − N + 1; `max_degree`; `dead_end_ratio` = rooms of degree 1 / N; `critical_path_ratio` = climax depth / (N − 1); `branching_factor` = mean degree of rooms with degree ≥ 2; `elevation_range` = max − min `floor_z`; `elevation_levels` = distinct `floor_z` values after 8-unit binning; `role_diversity` = distinct Pacing_Roles; `semantic_diversity` = distinct semantic types / N; `size_cv` = coefficient of variation of room floor area; `district_balance` = smallest / largest District room count.
+1. THE Quality_Meter SHALL compute from the Zone_Spec alone, without a mesh: `cyclomatic` = E − N + 1; `max_degree`; `dead_end_ratio` = rooms of degree 1 / N; `critical_path_ratio` = climax depth / (N − 1); `branching_factor` = mean degree of rooms with degree ≥ 2; `elevation_range` = max − min `floor_z`; `elevation_levels` = distinct `floor_z` values after 8-unit binning; `role_diversity` = distinct Pacing_Roles; `room_type_diversity` = distinct Room_Types / N; `size_cv` = coefficient of variation of room floor area; `district_balance` = smallest / largest District room count.
 2. FOR ALL Zone_Specs, THE Quality_Meter SHALL return identical metric values, pass result, Out_Of_Band_List and score for repeated calls, for the Zone_Spec after a JSON round-trip, and after changing only `prop_hints`, `encounter_intent`, `boss` or Gates.
 3. THE Quality_Meter SHALL report a pass exactly when every metric lies within its inclusive band; SHALL list in the Out_Of_Band_List exactly the failing metrics, once each, with value and `lo`/`hi` (null for an unbounded side); and SHALL report a score of 0 exactly on a pass and otherwise the sum over failing metrics of the distance to the violated bound divided by the normaliser (the band width, or |bound| for a half-open band, minimum 1), strictly increasing as any single out-of-band value moves away from its band.
-4. THE Quality_Meter SHALL select Quality_Bands by theme, topology, room count and verticality, and SHALL leave every band unbounded for zones with fewer than 4 rooms, `district_balance` unbounded for zones with fewer than 2 Districts, `dead_end_ratio` unbounded for `linear` topology and `semantic_diversity` unbounded for unthemed zones.
+4. THE Quality_Meter SHALL select Quality_Bands by zone type, topology, room count and verticality, and SHALL leave every band unbounded for zones with fewer than 4 rooms, `district_balance` unbounded for zones with fewer than 2 Districts, `dead_end_ratio` unbounded for `linear` topology and `room_type_diversity` unbounded for zones without a Purpose.
 5. WHILE the seed is not pinned, THE Pipeline SHALL measure each drawn seed's Zone_Spec before building, redraw a Fresh_Seed without building on a quality failure, stop after 32 failing draws, and build the first passing seed.
 6. WHEN 32 quality draws have failed, THE Pipeline SHALL build the seed with the lowest quality score (the earliest on a tie); IF that build passes the hard gates, THEN THE Pipeline SHALL return it as Quality_Degraded with reason `quality_degraded` and its Out_Of_Band_List; IF that build fails a hard gate, THEN THE Pipeline SHALL continue the hard-gate retry loop of Requirement 4.5 with Fresh_Seeds and no further quality draws.
 7. WHEN a Pinned_Seed's Zone_Spec fails quality, THE Pipeline SHALL build only that seed and, if the build passes the hard gates, return the build as Quality_Degraded with reason `quality_outside_bands_pinned` and its Out_Of_Band_List.
@@ -532,7 +548,7 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. WHEN two independent runs receive the same Zone_Plan, Pinned_Seed, Target_Shortname and arguments for any theme in Enabled_Themes (dungeons in either geometry style), THE Zone_Generator SHALL produce equal Zone_Spec dictionaries and byte-identical TER, ZON, `<short>.map.svg` and EQ map files (`.eqg` and `.glb` are not required to be byte-identical).
+1. WHEN two independent runs receive the same Zone_Plan, Pinned_Seed, Target_Shortname and arguments for any zone type in Enabled_Zone_Types (dungeons in either geometry style), THE Zone_Generator SHALL produce equal Zone_Spec dictionaries and byte-identical TER, ZON, `<short>.map.svg` and EQ map files (`.eqg` and `.glb` are not required to be byte-identical).
 2. WHEN a generation is requested without a seed, THE Pipeline SHALL draw a Fresh_Seed in 0–2,147,483,647 for that call, such that three consecutive unpinned calls with identical inputs do not all share one seed.
 3. THE Server SHALL include in each generate response the seed of the Accepted_Build (the seed actually built after any retries).
 4. WHILE a seed is pinned, THE Pipeline SHALL build only that Pinned_Seed and draw no Fresh_Seed for any retry.
@@ -545,11 +561,11 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. FOR every theme in Enabled_Themes, every seed and room counts 1–30, THE Zone_Builder SHALL produce byte-identical TER for two Zone_Plans that differ only in locks (1–5 versus 0).
-2. FOR every theme in Enabled_Themes and every already-generated Zone_Spec, THE Zone_Builder SHALL produce byte-identical TER for that Zone_Spec and for a copy with every Advisory_Data field cleared (Pacing_Roles, depth, semantic labels, District metadata, Threshold flags, Gates, `prop_hints`, `encounter_intent`, `boss`) and room dimensions, floors, corridors, regions, lights and materials kept.
-3. THE Zone_Builder SHALL carry in the Sidecar, per room, its Pacing_Role, depth, semantic label, District, `prop_hints`, `encounter_intent` and `boss`; per Gate, its corridor and key room; and per corridor, its Threshold flag.
+1. FOR every zone type in Enabled_Zone_Types, every seed and room counts 1–30, THE Zone_Builder SHALL produce byte-identical TER for two Zone_Plans that differ only in locks (1–5 versus 0).
+2. FOR every zone type in Enabled_Zone_Types and every already-generated Zone_Spec, THE Zone_Builder SHALL produce byte-identical TER for that Zone_Spec and for a copy with every Advisory_Data field cleared (Pacing_Roles, depth, Room_Type labels, District metadata, Threshold flags, Gates, `prop_hints`, `encounter_intent`, `boss`) and room dimensions, floors, corridors, regions, lights and materials kept.
+3. THE Zone_Builder SHALL carry in the Sidecar, per room, its Pacing_Role, depth, Room_Type label, District, `prop_hints`, `encounter_intent` and `boss`; per Gate, its corridor and key room; and per corridor, its Threshold flag.
 4. THE Zone_Generator SHALL write Advisory_Data only to the Sidecar, the SQL export and the map artifacts (map SVG annotations and EQ map labels), and to no `.eqg` entry.
-5. WHILE the theme uses the Box_Backend, THE Zone_Builder SHALL produce after an `add_lock` or `remove_lock` edit a TER byte-identical to the prior version's.
+5. WHILE the zone type uses the Box_Backend, THE Zone_Builder SHALL produce after an `add_lock` or `remove_lock` edit a TER byte-identical to the prior version's.
 
 ### Requirement 28: No API required by default
 
@@ -569,11 +585,11 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. WHEN a validated generation with a Fresh_Seed of 2–30 rooms runs for any theme in Enabled_Themes on the Reference_Machine, THE Pipeline SHALL return an Accepted_Build or a generation failure within 300 seconds of wall-clock time (request receipt to response, or CLI process start to exit).
-2. THE Pipeline SHALL complete validated dungeon (geometry style `built`) and city generations of 2–12 rooms on the Reference_Machine within 20 seconds at the 95th percentile over at least 20 consecutive generations per theme.
-3. THE Pipeline SHALL complete validated outdoor generations of 2–12 rooms on the Reference_Machine within 60 seconds at the 95th percentile over at least 20 consecutive generations.
+1. WHEN a validated generation with a Fresh_Seed of 2–30 rooms runs for any zone type in Enabled_Zone_Types on the Reference_Machine, THE Pipeline SHALL return an Accepted_Build or a generation failure within 300 seconds of wall-clock time (request receipt to response, or CLI process start to exit).
+2. THE Pipeline SHALL complete validated dungeon (geometry style `built`) and city generations of 2–12 rooms on the Reference_Machine within 20 seconds at the 95th percentile over at least 20 consecutive generations per zone type.
+3. THE Pipeline SHALL complete validated wilderness generations of 2–12 rooms on the Reference_Machine within 60 seconds at the 95th percentile over at least 20 consecutive generations.
 4. WHEN one Edit_Op is applied to a Box_Backend Session (geometry style `built`) of 2–12 rooms on the Reference_Machine, THE Server SHALL return the response (including salt retries) within 5 seconds at the 95th percentile over at least 20 edits.
-5. WHERE cave is in Enabled_Themes, THE Pipeline SHALL complete validated cave generations of 2–12 rooms on the Reference_Machine within 180 seconds at the 95th percentile over at least 20 consecutive generations.
+5. WHERE cave is in Enabled_Zone_Types, THE Pipeline SHALL complete validated cave generations of 2–12 rooms on the Reference_Machine within 180 seconds at the 95th percentile over at least 20 consecutive generations.
 
 ### Requirement 30: Local server security and session limits
 
@@ -619,7 +635,7 @@ the requirements.
 3. THE Layout_Generator SHALL place Gates only on existing corridors with keys in existing rooms, producing for a given seed the same rooms and corridors with k locks as with 0 locks.
 4. THE Zone_Builder SHALL write `.eqg` archives containing no `.mod` entries and `.zon` files containing no placeable-object instances, and SHALL carry prop suggestions only as `prop_hints` in the Sidecar.
 5. THE Zone_Generator SHALL use Z as the vertical axis in the Zone_Spec, TER, ZON, Preview and EQ map files, with `floor_z` measured along Z and every standable face normal having a positive Z component, and THE Web_App camera SHALL be Z-up.
-6. THE Layout_Generator and the Conformance_Meter SHALL use the theme's Classic–PoP Style_Profile, and no Zone_Plan field SHALL select another era's profile.
+6. THE Layout_Generator and the Conformance_Meter SHALL use the zone type's Classic–PoP Style_Profile, and no Zone_Plan field SHALL select another era's profile.
 7. THE Zone_Generator SHALL obtain every mesh from the Zone_Spec and SHALL accept no externally authored mesh or model file as generation input.
 
 ## Delivery Model (process constraints)
@@ -640,10 +656,10 @@ Milestones and properties refer to `design.md` (Delivery plan; Correctness Prope
 |-------------|--------|-----------|------------|
 | 1 Explicit generation modes | P-A | M1 | — (human pass) |
 | 2 Control coverage and normalisation | P-A | M1 | P12 |
-| 3 Theme availability | P-A / P-B | M1 | P2, P19 |
-| 4 Traversability gate | P-B | M0 (dungeon), M1 (city, outdoor), M5 (cave) | P1, P2 |
+| 3 Zone type availability | P-A / P-B | M1 | P2, P19 |
+| 4 Traversability gate | P-B | M0 (dungeon), M1 (city, wilderness), M5 (cave) | P1, P2 |
 | 5 Walkable connections | P-B | M0 | P6, P7, P8 |
-| 6 Outdoor terrain alignment | P-B | M1 | P1, P18 |
+| 6 Wilderness terrain alignment | P-B | M1 | P1, P18 |
 | 7 Natural, connected caves | P-B | M1 (park), M5 | P1 (cave) |
 | 8 Short-name takeover | P-C | M1 (M6 for bundle) | P41 |
 | 9 Tier-1 format check | P-C | M1 (normals check M3) | P20, P40, P41 |
