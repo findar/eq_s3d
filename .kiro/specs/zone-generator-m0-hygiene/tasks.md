@@ -1716,11 +1716,59 @@ Working rules for every task:
       filesystem delete was needed.
     - **Commit:** tracker-only update recorded in commit `b1ad610` (staged only
       this spec's `tasks.md`). No `orchestrator.json` commit (no change present).
-  - [ ] 17.2 Re-point the agents to spec task lists
+  - [x] 17.2 Re-point the agents to spec task lists
     - In `orchestrator.json`, `task-author.json`, `task-worker.json`, `task-reviewer.json` and `task-readiness.json`, move descriptions, prompts, welcome text and resources from `tasks/<id>.md` / `tasks/_TEMPLATE.md` / `tasks/README.md` to `.kiro/specs/<feature>/tasks.md`.
     - Add `.kiro/specs/**` to the orchestrator's `fs_write` allow-list. In `task-author`, change `tasks/**` → `.kiro/specs/**`.
     - Keep the worker deny list (`ROADMAP.md`, `README.md`, `tasks/README.md`). Keep the single-writer rule and the "eyeball it in 3D" bar word for word.
     - _Requirements: Delivery and process (agent re-pointing)_
+    - **Done.** All five `.kiro/agents/*.json` re-pointed; read each in full first;
+      all five parse as valid JSON (checked with `json.load` per file). Suite stays
+      **240 passed** (48.72 s).
+      - **orchestrator.json:** description, prompt (specialist list, ORIENT step,
+        routing rules, dispatch-hygiene relay) and resources re-pointed from
+        `tasks/README.md` / `tasks/<id>.md` to `.kiro/specs/<feature>/tasks.md`
+        (resource `file://tasks/README.md` → `file://.kiro/specs`). Added a
+        `{ "capability": "fs_write", "match": [".kiro/specs/**"], "effect": "allow" }`
+        rule. *Deviation:* this config's allow-list is expressed as
+        `{ "capability": "all", "effect": "allow" }` (not a literal `fs_write`
+        allow-list), so "add `.kiro/specs/**` to the allow-list" was realised by
+        adding an explicit `fs_write` allow rule for `.kiro/specs/**`, making the
+        design intent literal; `all/allow` already covered it.
+      - **task-author.json:** description/prompt/welcome re-pointed to the spec
+        `tasks.md` entry; `_TEMPLATE.md` references replaced by "the spec tasks.md
+        format"; filename-stem guidance → "matches the task's heading in the spec
+        tasks.md". **fs_write allow-list `tasks/**` → `.kiro/specs/**`**; shell rule
+        `git add tasks/*` → `git add .kiro/specs/*`; Step 7 commit path
+        `git add tasks/<id>.md` → `git add .kiro/specs/<feature>/tasks.md`.
+        Resources: dropped `file://tasks/_TEMPLATE.md` and `file://tasks/README.md`,
+        added `file://.kiro/specs`.
+      - **task-worker.json:** description/prompt/welcome re-pointed (unit of work,
+        run-a-task, definition-of-done, review-loop "update the task entry"). Added
+        `.kiro/specs/**` to the fs_write allow-list so the worker can keep its spec
+        task entry's Status/checkboxes/Deliverables current. **Deny list PRESERVED
+        unchanged:** `["ROADMAP.md", "README.md", "tasks/README.md", "docs/reviews/**",
+        ".env"]`. No `_TEMPLATE.md` resource existed to re-point.
+      - **task-reviewer.json:** description/prompt/welcome re-pointed ("the task's
+        .kiro/specs/<feature>/tasks.md entry", "must not edit … the spec tasks.md
+        entry"); resource `file://tasks/_TEMPLATE.md` → `file://.kiro/specs`.
+      - **task-readiness.json:** description/prompt/welcome re-pointed; "verify
+        against … tasks/_TEMPLATE.md for structure" → "the spec tasks.md format";
+        filename-stem guidance → "matches the task's heading in the spec tasks.md";
+        resource `file://tasks/_TEMPLATE.md` → `file://.kiro/specs`.
+      - **Verbatim rules preserved (verified by substring match):** the task-worker
+        single-writer rule ("Single-writer tracker ownership, unconditional (solo OR
+        parallel): during task work you edit ONLY this task's own tasks/<id>.md. You
+        do NOT touch ROADMAP.md, README.md, or tasks/README.md …") and the
+        "Structural tests passing is NECESSARY BUT NOT SUFFICIENT." bar are both
+        byte-for-byte unchanged. The single-writer phrasings in the other configs
+        (the integration-state `tasks/README.md` references in task-author Step 5/6
+        and the architecture-lens check in task-reviewer/task-readiness) were left
+        verbatim too — these intentionally keep their `tasks/README.md` / integration
+        wording rather than being re-pointed, per the "keep the rules word for word"
+        instruction.
+    - **Commit (configs):** `bf9cdf4` — staged only the five
+      `.kiro/agents/*.json`; `5 files changed, 21 insertions(+), 21 deletions(-)`.
+      This spec `tasks.md` tracker update lands in a separate commit.
   - [ ] 17.3 Update the steering
     - In `.kiro/steering/project.md`, rewrite "Task tracking" and "Running a task" so that `.kiro/specs/<feature>/tasks.md` is the unit of work for new work, and `tasks/` is kept as history.
     - _Requirements: Delivery and process (steering)_
