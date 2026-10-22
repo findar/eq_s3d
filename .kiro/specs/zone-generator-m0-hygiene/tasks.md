@@ -1439,8 +1439,24 @@ Working rules for every task:
     - **Commits:** `e6c7ae6` (code: `tests/test_hygiene.py`, 344 insertions),
       tracker line in the follow-up commit.
 
-- [ ] 15. Checkpoint: Property_Suite complete
+- [x] 15. Checkpoint: Property_Suite complete
   - Run `python -m pytest tests/ -q`. The suite must be green with the Property_Suite included and no unknown-marker warning. Commit each property module separately. Ask the user if questions arise.
+  - **Done.** Working tree clean at checkpoint. HEAD `8dc15a5`; 72 commits since
+    fork-point (`git rev-list --count 99d346a..HEAD` = 72). Property modules
+    9–12 committed separately, counterexample fix 13.1 landed, residue guards
+    14.1 landed.
+    - **Suite GREEN: 240 passed** (2 warnings, 49.44 s). The two warnings are a
+      starlette `anyio.abc.BlockingPortal` deprecation and the runpy `server.app`
+      warning from `test_main_binds_host_and_port` — neither is a
+      `PytestUnknownMarkWarning`.
+    - **Property_Suite collected (per module, `--co -q`):**
+      `tests/test_properties_core.py` = 3, `tests/test_properties_layout.py` = 8,
+      `tests/test_properties_build.py` = 5, `tests/test_properties_pipeline.py`
+      = 5 (21 property tests total). All four modules present and collected.
+    - **No unknown-marker warning:**
+      `pytest tests/ --co -q -W error::pytest.PytestUnknownMarkWarning` exits 0,
+      so collection raises no `PytestUnknownMarkWarning` (the `slow` marker is
+      registered in `pytest.ini`).
 
 - [ ] 16. Measure the suite budget and run the thorough profile
   - [ ] 16.1 Check the Default_Run time budget
