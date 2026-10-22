@@ -91,3 +91,98 @@ def test_returned_build_is_validated(max_attempts, rng):
         f"returned seed {result.seed} != last seed handed to factory "
         f"{seeds_seen[-1]}"
     )
+
+
+# A dungeon that is navigable EXCEPT for one isolated room with no corridor —
+# unreachable regardless of corridor routing, so the traversability gate always
+# rejects it (the established `tests/test_pipeline._broken_spec` pattern). The
+# room count stays small (n 2-4) so an 8-attempt unpinned example is cheap.
+from generators.zone_spec import RoomSpec  # noqa: E402  (grouped with its use)
+
+
+def _forced_fail_factory(rooms: int):
+    """A spec_factory(seed) that always builds a guaranteed-failing dungeon.
+
+    It honours the seed the pipeline hands it for the base dungeon geometry
+    (keyed on the seed, as required), then appends one far-away isolated room so
+    the Traversal_Validator rejects every attempt no matter the seed.
+    """
+
+    def factory(seed: int):
+        spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+            "p16", room_count=rooms
+        )
+        spec.rooms.append(RoomSpec(
+            id="isolated", center_x=100_000.0, center_y=100_000.0, floor_z=0.0,
+            width=200, depth=200, height=100,
+        ))
+        return spec
+
+    return factory
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    pinned=st.booleans(),
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+    max_attempts=st.integers(min_value=1, max_value=8),
+    rooms=st.integers(min_value=2, max_value=4),
+)
+def test_forced_failure_reported(pinned, seed, max_attempts, rooms):
+    """
+    Feature: zone-generator-m0-hygiene, Property 16: Forced failures are
+    reported, never swapped (umbrella P2, pinned + exhaustion).
+
+    When every Raw_Build of a gated (dungeon) zone fails the traversability
+    gate, ``generate_validated`` raises ``GenerationFailed`` rather than ever
+    returning a broken zone — and the failure it raises tells the honest story
+    of what was tried:
+
+    * PINNED (a ``seed`` is passed): the pipeline respects the explicit request,
+      so it builds exactly once and errors out with ``pinned=True``,
+      ``attempts == 1``, and the single recorded failure carrying that EXACT
+      pinned seed — never swapped for another.
+    * UNPINNED (no ``seed``, ``max_attempts`` 1-8, a non-binding timeout): the
+      pipeline exhausts all its attempts picking fresh seeds, then reports
+      ``pinned=False``, ``timed_out=False`` and ``attempts == max_attempts``.
+
+    Validates: M0 Req 5.2, 5.6, 1.5; umbrella Req 1.6.
+    """
+    factory = _forced_fail_factory(rooms)
+
+    with fresh_dir() as out:
+        with pytest.raises(GenerationFailed) as excinfo:
+            generate_validated(
+                factory,
+                theme="dungeon",
+                zone_id="p16",
+                seed=seed if pinned else None,
+                output_dir=out,
+                write_glb=False,
+                max_attempts=max_attempts,
+                timeout_s=1e9,  # non-binding: exhaustion, never timeout
+                rng=None,
+                failure_log=None,
+            )
+
+    err = excinfo.value
+
+    if pinned:
+        assert err.pinned is True, "pinned failure not flagged pinned"
+        assert err.attempts == 1, (
+            f"pinned seed retried: attempts={err.attempts}, expected 1"
+        )
+        assert err.failures, "no failure recorded"
+        assert err.failures[0].seed == seed, (
+            f"reported seed {err.failures[0].seed} != pinned seed {seed} "
+            "(the pinned seed was swapped)"
+        )
+    else:
+        assert err.pinned is False, "unpinned failure flagged pinned"
+        assert err.timed_out is False, (
+            "exhaustion reported as a timeout (timeout was non-binding)"
+        )
+        assert err.attempts == max_attempts, (
+            f"attempts={err.attempts}, expected all {max_attempts} exhausted"
+        )
