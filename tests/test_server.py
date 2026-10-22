@@ -286,3 +286,66 @@ def test_foreign_origins_get_no_cors(origin):
         headers={"Origin": origin},
     )
     _assert_no_cors_grant(post_resp, origin)
+
+
+# ---------------------------------------------------------------------------
+# Build identity — /api/version + build_commit on generate
+# ---------------------------------------------------------------------------
+#
+# Regression guard for a stale-server debugging session: the server runs with
+# reload=False, so the UI must be able to tell which code is loaded and whether
+# the source on disk has moved on since startup.
+
+VERSION_KEYS = {
+    "commit", "short", "branch", "dirty", "started_at", "source_fingerprint",
+    "current_commit", "current_fingerprint", "stale",
+}
+
+
+def test_version_reports_loaded_build(client):
+    """/api/version returns the build identity, echoes an allowed Origin like
+    the other GET routes, and is not stale in a fresh process."""
+    origin = "http://localhost:5173"
+    resp = assert_no_wildcard(client.get("/api/version", headers={"Origin": origin}))
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == origin
+
+    body = resp.json()
+    assert VERSION_KEYS <= set(body), f"missing keys: {VERSION_KEYS - set(body)}"
+    assert isinstance(body["short"], str)
+    assert body["short"] == "unknown" or len(body["short"]) == 7
+    if body["commit"] != "unknown":
+        assert body["commit"].startswith(body["short"])
+    assert isinstance(body["dirty"], bool)
+    assert body["stale"] is False
+    assert body["current_commit"] == body["commit"]
+    assert body["current_fingerprint"] == body["source_fingerprint"]
+
+
+def test_version_stale_when_source_changes(client, monkeypatch):
+    """An edit after startup (fingerprint moves) flags the server stale."""
+    monkeypatch.setattr(app_mod, "_source_fingerprint", lambda: "edited000000")
+    body = assert_no_wildcard(client.get("/api/version")).json()
+    assert body["stale"] is True
+    assert body["current_fingerprint"] == "edited000000"
+    assert body["source_fingerprint"] == app_mod.BUILD_INFO["source_fingerprint"]
+
+
+def test_version_stale_when_head_moves(client, monkeypatch):
+    """A new commit/checkout after startup (HEAD moves) flags the server stale."""
+    monkeypatch.setattr(app_mod, "_current_commit", lambda: "f" * 40)
+    body = assert_no_wildcard(client.get("/api/version")).json()
+    assert body["stale"] is True
+    assert body["current_commit"] == "f" * 40
+
+
+def test_generate_reports_build_commit(client):
+    """The generate response carries the loaded short commit (build_commit)."""
+    resp = assert_no_wildcard(
+        client.post(
+            "/api/generate",
+            json={"theme": "dungeon", "rooms": ROOMS, "seed": PINNED_SEED},
+        )
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["build_commit"] == app_mod.BUILD_INFO["short"]

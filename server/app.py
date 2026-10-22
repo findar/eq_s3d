@@ -18,8 +18,11 @@ or:
 
 from __future__ import annotations
 
+import hashlib
+import subprocess
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -46,6 +49,75 @@ FAILURE_LOG = ROOT / "output" / "validation_failures.jsonl"  # triage feed
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 VALID_THEMES = ["dungeon", "outdoor", "city"]
+
+# ---------------------------------------------------------------------------
+# Build identity (which code is this process actually running?)
+# ---------------------------------------------------------------------------
+#
+# The server runs with reload=False, so edits/commits made after it started are
+# NOT live until a restart. BUILD_INFO is captured once, at import (= process
+# start); /api/version recomputes the same values per request and reports
+# `stale` when they differ, so the web UI can warn instead of silently showing
+# geometry from old code.
+
+REPO_ROOT = Path(__file__).resolve().parent.parent   # works in worktrees too
+# Python source the server imports; edits here change generated output.
+SOURCE_DIRS = ("ai", "analyzer", "core", "generators", "server")
+UNKNOWN = "unknown"
+
+
+def _git(*args: str) -> Optional[str]:
+    """Run a git command in the repo root; stripped stdout, or None on failure."""
+    try:
+        out = subprocess.run(
+            ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def _current_commit() -> str:
+    """Full HEAD commit hash right now ("unknown" without git)."""
+    return _git("rev-parse", "HEAD") or UNKNOWN
+
+
+def _source_fingerprint() -> str:
+    """Short hash over (relative path, mtime_ns, size) of the server's .py source.
+
+    Catches uncommitted edits made after startup, which a HEAD comparison alone
+    misses. Stat-only (no file reads), so it's cheap enough per request.
+    """
+    h = hashlib.sha1()
+    files = sorted(
+        p for d in SOURCE_DIRS for p in (REPO_ROOT / d).rglob("*.py")
+    )
+    for p in files:
+        try:
+            st = p.stat()
+        except OSError:
+            continue  # vanished between glob and stat; skip it
+        rel = p.relative_to(REPO_ROOT).as_posix()
+        h.update(f"{rel}\0{st.st_mtime_ns}\0{st.st_size}\n".encode())
+    return h.hexdigest()[:12]
+
+
+def _capture_build_info() -> dict:
+    commit = _current_commit()
+    dirty_out = _git("status", "--porcelain", "--untracked-files=no")
+    return {
+        "commit": commit,
+        "short": commit[:7] if commit != UNKNOWN else UNKNOWN,
+        "branch": _git("rev-parse", "--abbrev-ref", "HEAD") or UNKNOWN,
+        # Uncommitted changes to tracked files at startup (None -> no git).
+        "dirty": bool(dirty_out) if dirty_out is not None else False,
+        "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source_fingerprint": _source_fingerprint(),
+    }
+
+
+BUILD_INFO = _capture_build_info()
 
 # ---------------------------------------------------------------------------
 # Network binding (loopback only) and CORS
@@ -137,6 +209,9 @@ class GenerateResponse(BaseModel):
     # Traversability gate provenance (see generators/pipeline.py).
     validated: bool = False          # did the traversability gate run AND pass?
     attempts: int = 1                # builds it took (fresh-seed retries on failure)
+    # Short commit of the code this server process loaded (BUILD_INFO), so a
+    # result/screenshot can be traced to the exact code that produced it.
+    build_commit: str = UNKNOWN
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +312,7 @@ def generate(req: GenerateRequest):
         gates=len(vb.spec.gates),
         validated=vb.validated,
         attempts=vb.attempts,
+        build_commit=BUILD_INFO["short"],
     )
 
 
@@ -262,6 +338,25 @@ def get_zone_file(filename: str):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+def version():
+    """The code this process loaded at startup vs. the code on disk now.
+
+    ``stale`` is True when HEAD moved or any server-side .py file changed
+    (mtime/size) since startup — i.e. the running server needs a restart for
+    its output to match the source tree.
+    """
+    current_commit = _current_commit()
+    current_fp = _source_fingerprint()
+    return {
+        **BUILD_INFO,
+        "current_commit": current_commit,
+        "current_fingerprint": current_fp,
+        "stale": (current_commit != BUILD_INFO["commit"]
+                  or current_fp != BUILD_INFO["source_fingerprint"]),
+    }
 
 
 # ---------------------------------------------------------------------------
