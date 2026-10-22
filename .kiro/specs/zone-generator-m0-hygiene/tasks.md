@@ -588,11 +588,46 @@ Working rules for every task:
       test_zonespec_json_roundtrip HEAD -- tests/test_properties_layout.py`). The
       hash co-mingling across 10.1 / 11.1 / 5.5 must be reconciled at the
       single-writer integration step, not here.
-  - [ ] 10.2 Write the property test for connectivity and pacing roles
+  - [x] 10.2 Write the property test for connectivity and pacing roles
     - **Property 5: Layout connectivity and pacing roles** (umbrella P3, single District)
     - `test_connectivity_and_roles` over `box_themes`, n 1–30 and `semantic_inputs`.
     - Assert that the Room_Graph is connected and has exactly n rooms, that exactly one room is the entrance, and that for n ≥ 2 exactly one room is the climax and it isn't the entrance.
     - **Validates: Requirements 3.1, 1.6**
+    - **Done.** Appended `test_connectivity_and_roles` to
+      `tests/test_properties_layout.py` (after 10.1's
+      `test_zonespec_json_roundtrip`, which is untouched; reused its
+      `plan_to_spec(ZonePlan(...), seed=seed)` path and
+      `@settings(deadline=None, max_examples=scaled(100))` idiom). Verified
+      against the real code first:
+      - Role names come from `LayoutGenerator._apply_pacing`
+        (`generators/layout.py`): roles are
+        `entrance | climax | hub | deadend | standard`. **Exactly one
+        `entrance`** (the room farthest from the layout centroid). **Climax =
+        the deepest room by graph depth, assigned only when `n > 1`**
+        (`climax = ... if n > 1 else entrance`); the role loop checks
+        `i == entrance` before `i == climax`, so at `n == 1` the single room is
+        `entrance` and there is NO `climax` room — the `n >= 2` guard is
+        therefore correct and verified by the test's `else: assert climaxes == []`
+        branch.
+      - Connectivity is structurally guaranteed by `_connect_rooms`: an MST
+        (spanning tree) over all rooms plus ~12% loop edges, so the Room_Graph is
+        always one component. `n == 1` yields no corridors — a single isolated
+        node, which the test's `_connected` helper treats as connected.
+      - `pbt_helpers.room_graph(spec)` builds adjacency from
+        `corridors[*].from_room/to_room` and seeds every room id as a key, so
+        `set(adj) == set(room_ids)` and the component walk are exact.
+      - **No adjustment to the assertions was needed** — connectivity and the
+        entrance/climax counts held for every drawn input; **no counterexample
+        surfaced** (a disconnected graph or wrong role count would have been a
+        real layout bug).
+    - **Verification:** `python -m pytest tests/test_properties_layout.py -q` →
+      **2 passed** (10.1 + 10.2). Full suite `python -m pytest tests/ -q` →
+      **211 passed** (2 pre-existing unrelated warnings: starlette anyio-alias
+      deprecation, runpy re-import).
+    - **Commit:** clean single-file code commit of
+      `tests/test_properties_layout.py` is `17980cb`
+      (`git show --stat 17980cb` → 1 file, +81/-2). Tracker commit for this
+      tasks.md follows separately.
   - [ ] 10.3 Find a generated input that reaches the key-room fallback (one-off scan, not committed)
     - Scan `LayoutGenerator.generate` over seeds, n 4–8, locks 3–5 and M0_Box_Themes. Stop at the first input where some `gate.key_room_id` equals the entrance id, and record it here.
     - If no input turns up in ≥ 200k candidates, stop and report to the user. A constructed `_apply_gating` call would be a deviation that needs their approval.
