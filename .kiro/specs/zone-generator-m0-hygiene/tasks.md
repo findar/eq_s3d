@@ -1837,6 +1837,61 @@ Working rules for every task:
       - (b) Only if 13.1 changed layout or geometry: walk the dungeon sections of `docs/ACCEPTANCE.md` on the affected seeds plus 1955208177, 1516796975 and 481893615.
     - State that nothing in M0 has been verified in the live 3D viewer by the agent.
     - _Requirements: 9.5, Exit criteria_
+    - **Status: PENDING-HUMAN.** This is a hand-off awaiting the USER's live
+      browser + 3D-viewer pass. The checkbox stays unchecked on purpose (per the
+      Notes: "18.2 is carried out by the user. The agent only records the
+      checklist and its status."). The agent portion — writing this checklist and
+      marking it PENDING-HUMAN — is complete; the live verification below has NOT
+      been performed by the agent and must be done by a human.
+
+    - **IMPORTANT — nothing in M0 has been verified by the agent in the live 3D
+      viewer or a real browser.** ALL M0 verification to date was
+      analytical/structural: the automated test suite (example + property tests,
+      walkability/solvability/structural checks). Passing that suite is NECESSARY
+      but NOT SUFFICIENT (per steering: "structural tests pass ≠ done — eyeball it
+      in 3D"). This human pass is the SOLE live-3D / live-browser confirmation for
+      M0.
+
+    - **Human checklist (USER performs — do NOT mark [x] until all pass):**
+
+      - **(a) Web_App browser smoke on BOTH ports, after the task-7 CORS change.**
+        The task-7 change swapped in `LocalCORSMiddleware` (loopback + CORS). The
+        example/property tests cover it analytically, but the live cross-origin +
+        proxy behavior needs a human in a real browser.
+        - [ ] On **:5173** — serve the Web_App, generate one zone, confirm it
+          loads and renders in the browser.
+        - [ ] On **:8000** — serve the Web_App, generate one zone, confirm it
+          loads and renders in the browser.
+        - Confirm no CORS / cross-origin errors in the browser console on either
+          port, and that the generate → load round-trip works end to end.
+
+      - **(b) Dungeon 3D pass — MANDATORY because task 13.1 is TRIGGERED and
+        CHANGED layout/geometry.** 13.1's elevation grade-cap fix (both root
+        causes, `generators/layout.py`) alters dungeon `floor_z` in two regimes:
+        1. **themed dungeons with elevation OFF** — the new semantic-floor relax
+           pass now runs, so sink/raise floors move where they previously didn't.
+           Representative **affected seed 1** (themed dungeon, elevation off —
+           dungeon / n=10 / flat / `elemental_tint=lava`).
+        2. **any dungeon with elevation ON** — the tighter relax fixpoint exit
+           (`1e-4`) nudges loop-edge convergence; floors can shift < 0.01.
+           Representative **affected seed 3600** (elevated dungeon — dungeon /
+           n=12 / dramatic).
+        Walk the **DUNGEON sections of `docs/ACCEPTANCE.md`** in the live 3D
+        viewer on the affected seeds PLUS the pinned corridor seeds:
+        - [ ] **seed 1** (themed dungeon, elevation off)
+        - [ ] **seed 3600** (elevated dungeon, tighter relax)
+        - [ ] **seed 1955208177** (pinned corridor seed)
+        - [ ] **seed 1516796975** (pinned corridor seed)
+        - [ ] **seed 481893615** (pinned corridor seed)
+        For each: confirm **walkable floors** (gentle undulation OK, no pits /
+        slippery bowls), **all rooms reachable**, **clean / flush corridor
+        connections** (openings land flush, no gaps), and **no cliffs** (no
+        corridor steeper than the walkable grade cap).
+
+    - **Agent portion DONE; task overall PENDING-HUMAN** — the agent cannot
+      perform the live browser/3D work, so once this checklist + status is
+      recorded and committed, the agent side is complete. The task is NOT done
+      until the user completes the live pass above.
   - [ ] 18.3 Write the integration note (don't apply it)
     - In the final report, give the integrator:
       - the Done-table row, the "Pick up here" line, the commit hash and count
