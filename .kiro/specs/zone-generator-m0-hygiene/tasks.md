@@ -709,12 +709,41 @@ Working rules for every task:
       present in the shared index and got swept into this commit alongside
       `tests/test_properties_build.py`. All three are now tracked and correct in
       HEAD; the 11.1 file itself is `tests/test_properties_build.py`.
-  - [ ] 11.2 Write the property test for ramp subdivision
+  - [x] 11.2 Write the property test for ramp subdivision
     - **Property 11: Ramp subdivision** (umbrella P8)
     - `test_ramp_subdivision` with `build_settings(20)`, over `box_themes`, n 2–12, elevation on and verticality `moderate`/`dramatic`, through `plan_to_spec`.
     - Assert that every value in `ramp_rises(ter)` is ≤ 2.51.
     - Pin an `@example` with a corridor whose total rise exceeds 2.5 u, and assert that precondition inside the test.
     - **Validates: Requirements 4.2, 4.6, 1.5, 1.6**
+    - **Done.** Appended `test_ramp_subdivision` to `tests/test_properties_build.py`
+      (reuses 11.1's `fresh_dir`/`build_raw`/`seeds`/`room_counts` idioms, leaves
+      `test_raw_dungeon_navigable` untouched). Verified against the real code first:
+      - `ai.expand.plan_to_spec(plan, seed)` is the only path that applies plan
+        `verticality` (`ai.expand._VERTICALITY` → elevation chance + rise min/max);
+        `elevation=plan.elevation and plan.verticality != "flat"`. The test builds a
+        `ZonePlan(theme, room_count=n, verticality, elevation=True)` and drives
+        `plan_to_spec`. Verticality strategy restricted to `moderate`/`dramatic`
+        (local `st.sampled_from(["moderate","dramatic"])`); themes from
+        `tests.strategies.box_themes` (dungeon/city), n via `room_counts(2,12)`.
+      - `pbt_helpers.ramp_rises(ter)` accepts TER bytes or a `TerFile` (`_ter`
+        normalises); fed `ter_bytes` from `build_raw`. Returns per-triangle rise of
+        every upward (walkable, nz ≥ cos40°) face; assertion is `max(rises) <= 2.51`
+        (`MAX_SEG_RISE = 2.5` in `generators/geometry.py`, +0.01 tolerance).
+      - Precondition proof the subdivision path ran: measured on the spec's
+        `CorridorSpec.from_z/to_z` BEFORE geometry. Pinned
+        `@example(s=0, theme="dungeon", n=3, verticality="dramatic")` yields a
+        corridor span ~71.3 u (≫ 2.5); the test hard-asserts `max_span > 2.5` for
+        that exact tuple. Random elevated-verticality draws may roll flat
+        (elevation_chance 0.5/0.85) → legitimate vacuous pass; no `assume` is called
+        (build-property rule). On the pinned example: 126 upward faces, worst
+        per-triangle rise 2.469 u (≤ 2.51), 0 over.
+      - ANALYTICAL check only (per-triangle rise on the TER mesh), NOT a live 3D
+        viewer confirmation — flagged per `docs/ACCEPTANCE.md` / the
+        "structural tests pass ≠ done" rule.
+    - **Verification:** `tests/test_properties_build.py` → 2 passed in ~10 s; full
+      suite `python -m pytest tests/ -q` → **212 passed** in ~53 s (2 pre-existing
+      starlette/runpy deprecation warnings, unrelated to this change).
+    - **Deliverable commit:** `3c22e51`.
   - [ ] 11.3 Write the property test that locks never touch geometry
     - **Property 12: Locks never touch geometry** (umbrella P5, locks)
     - `test_locks_do_not_touch_geometry` with `build_settings(15)`, over `box_themes`, n 3–12 and locks 1–5, compared with locks 0 for the same plan and seed.
