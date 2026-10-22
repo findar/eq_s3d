@@ -1006,11 +1006,34 @@ Working rules for every task:
       suite `python -m pytest tests/ -q` → **212 passed** in ~53 s (2 pre-existing
       starlette/runpy deprecation warnings, unrelated to this change).
     - **Deliverable commit:** `3c22e51`.
-  - [ ] 11.3 Write the property test that locks never touch geometry
+  - [x] 11.3 Write the property test that locks never touch geometry
     - **Property 12: Locks never touch geometry** (umbrella P5, locks)
     - `test_locks_do_not_touch_geometry` with `build_settings(15)`, over `box_themes`, n 3–12 and locks 1–5, compared with locks 0 for the same plan and seed.
     - Assert that TER and ZON are byte-identical.
     - **Validates: Requirements 4.3, 1.5, 1.6**
+    - **Done.** Appended `test_locks_do_not_touch_geometry` to
+      `tests/test_properties_build.py` (11.1/11.2 left untouched; reuses the
+      module's `build_raw` / `fresh_dir` / `box_themes` / `plan_to_spec` /
+      `ZonePlan` idioms). `@pytest.mark.slow`, `@build_settings(15)`, over
+      `box_themes`, n (`room_counts(3, 12)`) and `locks` 1–5. For one fixed plan
+      and seed it builds twice — once with the drawn `locks` (1–5), once with
+      `locks=0` — each into its own `fresh_dir()`, and asserts the read-back TER
+      and ZON are BYTE-IDENTICAL (not the `.eqg`, whose PFS footer stamps time).
+    - **Verified against real code first:** `ZonePlan` is a dataclass with a
+      `locks: int = 0` field (clamped to [0,5] in `validate`); `plan_to_spec`
+      passes `locks=plan.locks` into `LayoutGenerator.generate`; `plan_to_spec`
+      uses the EXPLICIT `seed` arg (no fresh random is drawn when seed is given),
+      so same plan + same seed differ ONLY by `locks`. Same name built into two
+      `fresh_dir()`s is safe — `build_raw` reads the named TER/ZON members back
+      out and compares those bytes, not the archive. Property PASSES: locks never
+      changed TER or ZON for any example (no gating-into-geometry leak).
+    - **Verification:** `tests/test_properties_build.py` → 3 passed (5.57s). Full
+      suite `python -m pytest tests/ -q` → **224 passed, 2 warnings in 38.97s**
+      (the two pre-existing warnings: starlette `BlockingPortal` deprecation and
+      the runpy `server.app` warning). ANALYTICAL byte-equality check on the built
+      TER/ZON — NOT confirmed in the live 3D viewer (see docs/ACCEPTANCE.md).
+    - **Code commit:** `4edb768` (`tests/test_properties_build.py` only). Tracker
+      bookkeeping lands in the follow-up commit.
   - [ ] 11.4 Write the property test for seed determinism
     - **Property 13: Seed determinism** (umbrella P9, no map artifacts)
     - `test_seed_determinism` with `build_settings(15)`, over `spec_themes`, n 2–12, locks 0–5 and elevation.
