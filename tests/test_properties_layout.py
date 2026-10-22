@@ -38,6 +38,7 @@ from .strategies import (
     box_themes,
     verticality,
     semantic_inputs,
+    zone_plan_dicts,
 )
 
 
@@ -569,3 +570,114 @@ def test_flush_openings(seed, theme, n, elevation):
                     f"{abs(z - floor_z):.5f} u > 0.01 (seed={seed}, "
                     f"theme={theme}, n={n}, elevation={elevation})"
                 )
+
+
+# --- Property 9: ZonePlan normalisation (umbrella P12) ------------------------
+#
+# Layout-tier, no binary build and no controls path: `ZonePlan.from_dict` is pure
+# dataclass/clamp logic (`ai.schema`), so no `slow` marker and no
+# `build_settings`. Budget 100 per the design (default profile). `deadline=None`
+# for parity with the other layout-tier tests -- the work is trivial, but a cold
+# import of `ai.schema` on the first example can brush the 200 ms deadline
+# (warmup), which is timing variance, not a property failure.
+#
+# The normalisation entry is `ZonePlan.from_dict(d)`: it drops keys outside the
+# dataclass, constructs the plan from the survivors, then calls `.validate()`,
+# which clamps/filters every field in place and returns self (verified in
+# ai/schema.py). So `from_dict` IS the normalisation, and `validate()` is the
+# fixpoint step -- calling it again on an already-normalised plan must leave it
+# equal. The `zone_plan_dicts` strategy deliberately keeps "cave" in its theme
+# vocab (task 2.4) so cave->dungeon normalisation is exercised; the real
+# `validate()` maps ANY out-of-vocab theme -- "cave" included -- to "dungeon",
+# so the domain assertion below simply requires the normalised theme to be one
+# of VALID_THEMES, which covers the cave case without special-casing it.
+@settings(deadline=None, max_examples=scaled(100))
+@given(d=zone_plan_dicts)
+def test_zoneplan_normalisation(d):
+    """Feature: zone-generator-m0-hygiene, Property 9: ZonePlan normalisation.
+
+    Umbrella P12 (no controls path). For any loosely-typed dict covering every
+    `ZonePlan` field (plus junk keys), `ZonePlan.from_dict(d)` lands every field
+    inside its valid domain -- the umbrella Req 2.3/2.4/2.8 vocabularies and
+    clamp ranges:
+
+    * ``theme`` in VALID_THEMES (an out-of-vocab theme, "cave" included, maps to
+      "dungeon");
+    * ``room_count`` clamped to ``[1, 30]``; ``locks`` clamped to ``[0, 5]``;
+    * ``size`` in {small, medium, large, huge}; ``verticality`` in
+      {flat, moderate, dramatic};
+    * ``regions`` a list whose every kind is in VALID_REGION_KINDS;
+    * ``dungeon_theme`` / ``dungeon_race`` / ``elemental_tint`` each in their
+      vocabulary or the empty string;
+    * ``elevation`` a bool.
+
+    And normalisation is idempotent: a second ``validate()`` on the already-
+    normalised plan returns an equal plan (a fixpoint). `from_dict` runs
+    `validate()` once internally, so re-validating must not move any field.
+
+    If any field escapes its domain for some input, that is a REAL normalisation
+    bug in `ZonePlan.validate` -- report the counterexample and fix the clamp at
+    the root; do NOT narrow the strategy.
+
+    Validates: M0 Req 3.5; umbrella Req 1.6.
+    """
+    from ai.schema import (
+        VALID_THEMES,
+        VALID_REGION_KINDS,
+        VALID_DUNGEON_THEMES,
+        VALID_DUNGEON_RACES,
+        VALID_ELEMENTAL_TINTS,
+    )
+
+    plan = ZonePlan.from_dict(d)
+
+    # --- (1) Every field is inside its valid domain -------------------------
+    assert plan.theme in VALID_THEMES, (
+        f"theme {plan.theme!r} not in {VALID_THEMES} (input {d.get('theme')!r})"
+    )
+    assert isinstance(plan.room_count, int) and 1 <= plan.room_count <= 30, (
+        f"room_count {plan.room_count!r} outside [1, 30] "
+        f"(input {d.get('room_count')!r})"
+    )
+    assert plan.size in ("small", "medium", "large", "huge"), (
+        f"size {plan.size!r} outside its vocab (input {d.get('size')!r})"
+    )
+    assert plan.verticality in ("flat", "moderate", "dramatic"), (
+        f"verticality {plan.verticality!r} outside its vocab "
+        f"(input {d.get('verticality')!r})"
+    )
+    assert isinstance(plan.regions, list)
+    for r in plan.regions:
+        assert r in VALID_REGION_KINDS, (
+            f"region kind {r!r} not in {VALID_REGION_KINDS} "
+            f"(input regions {d.get('regions')!r})"
+        )
+    assert isinstance(plan.locks, int) and 0 <= plan.locks <= 5, (
+        f"locks {plan.locks!r} outside [0, 5] (input {d.get('locks')!r})"
+    )
+    assert plan.dungeon_theme == "" or plan.dungeon_theme in VALID_DUNGEON_THEMES, (
+        f"dungeon_theme {plan.dungeon_theme!r} not empty and not in "
+        f"{VALID_DUNGEON_THEMES} (input {d.get('dungeon_theme')!r})"
+    )
+    assert plan.dungeon_race == "" or plan.dungeon_race in VALID_DUNGEON_RACES, (
+        f"dungeon_race {plan.dungeon_race!r} not empty and not in "
+        f"{VALID_DUNGEON_RACES} (input {d.get('dungeon_race')!r})"
+    )
+    assert plan.elemental_tint == "" or plan.elemental_tint in VALID_ELEMENTAL_TINTS, (
+        f"elemental_tint {plan.elemental_tint!r} not empty and not in "
+        f"{VALID_ELEMENTAL_TINTS} (input {d.get('elemental_tint')!r})"
+    )
+    assert isinstance(plan.elevation, bool), (
+        f"elevation {plan.elevation!r} is not a bool (input {d.get('elevation')!r})"
+    )
+
+    # --- (2) Idempotence: re-normalising a normalised plan is a fixpoint ----
+    # `from_dict` already called `validate()` once; calling it again must leave
+    # every field equal. Compare through `to_dict()` so the check is field-for-
+    # field and does not depend on dataclass identity.
+    before = plan.to_dict()
+    again = plan.validate().to_dict()
+    assert again == before, (
+        f"normalisation is not idempotent: a second validate() changed the "
+        f"plan from {before!r} to {again!r} (input {d!r})"
+    )
