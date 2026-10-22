@@ -1385,7 +1385,7 @@ Working rules for every task:
       test `d47111a` (`tests/test_properties_layout.py`).
 
 - [ ] 14. Residue guards
-  - [ ] 14.1 Extend `tests/test_hygiene.py` with the residue guards
+  - [x] 14.1 Extend `tests/test_hygiene.py` with the residue guards
     - Add to the module created in 4.1. Static checks over tracked `*.py` files, excluding this module. Build the forbidden tokens by string concatenation so the module doesn't match itself. Check that:
       - `generators/field/{cave,features,mesh,sdf}.py` don't exist, no source imports them (absolute or relative, including `from .sdf`), and no `fbm_field`, `_build_organic` or `_CAVE_THEMES` token remains
       - `noise.py` still defines `_value_noise_3d` and has no `sdf` import
@@ -1396,6 +1396,48 @@ Working rules for every task:
       - `tests/test_cave.py` doesn't exist
       - `requirements.txt` has no `scikit-image`, `fast-simplification` or `flask` line and pins `hypothesis==`
     - _Requirements: 1.1, 6.1, 6.2, 6.4, 6.10, 7.1, 7.2, 8.1, 8.2_
+    - **Done.** Appended 11 residue-guard test functions to `tests/test_hygiene.py`
+      (the 4.1 baseline `test_outdoor_ter_matches_fork_point` is untouched). Every
+      forbidden token is assembled by string CONCATENATION (`"fbm"+"_field"`,
+      `"ski"+"mage"`, `"view"+"er"`, etc.) and this module is excluded from every
+      scan, so it never matches its own source even if the exclusion were dropped.
+      Tracked `*.py` files are enumerated via `git ls-files '*.py'` (minus
+      `tests/test_hygiene.py`). Import checks use AST (not substring) so the prose
+      word "viewer" in comments — which legitimately survives in `core/eqg.py`,
+      `scripts/measure_corridors.py`, `tests/test_traversability.py` — does NOT
+      trip the guard; only a real `import viewer`/`from viewer`/`import flask` or
+      `from flask` would. Guards:
+      - `test_deleted_field_modules_absent`, `test_no_import_of_deleted_field_modules`
+        (AST, absolute + relative incl. `from .sdf`), `test_no_cave_pipeline_tokens`
+        (`fbm_field`/`_build_organic`/`_CAVE_THEMES`).
+      - `test_noise_keeps_value_noise_and_drops_sdf` (AST: `_value_noise_3d` still
+        defined, no `sdf` import).
+      - `test_layout_tables_have_no_cave_key` (AST-parses the `theme_palettes`
+        material table and `colors` light table in `layout.py`; asserts keys ==
+        `{"dungeon","city","outdoor"}`, no `"cave"`).
+      - `test_no_cave_only_dependency_tokens` (`import/from skimage`,
+        `fast_simplification`, `simplify_quadric_decimation`).
+      - `test_theme_surface_is_three` (imports `ai.schema`/`server.app` and reads
+        `VALID_THEMES`; regex-parses `main.py` `--theme choices=[...]` and
+        `web/index.html` `<option value="...">`; all four sets ==
+        `{"dungeon","city","outdoor"}`).
+      - `test_viewer_directory_absent`, `test_no_viewer_or_flask_imports`
+        (flask/viewer imports via AST + `args.preview` token scan).
+      - `test_test_cave_module_absent`, `test_requirements_clean_and_pins_hypothesis`
+        (no `scikit-image`/`fast-simplification`/`flask` dep line; pins `hypothesis==`).
+    - **All guards PASS as-is — no residue found.** Verified the real tree first:
+      every deleted module absent, no forbidden token in any tracked `.py`, all
+      four theme surfaces equal the three Defined_Themes, both layout tables
+      cave-free, `requirements.txt` clean and pinning `hypothesis==6.170.5`. The
+      only `viewer`-substring hits are the English word in three comments (not
+      imports), correctly ignored by the AST import guard.
+    - **Verification:** `.\.venv\Scripts\python.exe -m pytest tests/test_hygiene.py -q`
+      → **14 passed** (3 baseline + 11 guards), 2.78 s. Full suite
+      `python -m pytest tests/ -q` → **240 passed**, 2 pre-existing unrelated
+      warnings (starlette `BlockingPortal` deprecation, runpy `server.app`), no
+      `PytestUnknownMarkWarning`, 51.22 s.
+    - **Commits:** `e6c7ae6` (code: `tests/test_hygiene.py`, 344 insertions),
+      tracker line in the follow-up commit.
 
 - [ ] 15. Checkpoint: Property_Suite complete
   - Run `python -m pytest tests/ -q`. The suite must be green with the Property_Suite included and no unknown-marker warning. Commit each property module separately. Ask the user if questions arise.
