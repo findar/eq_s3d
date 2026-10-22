@@ -33,6 +33,20 @@ export interface GenerateResult {
   source: string;              // "prompt" | "controls"
   planner?: string | null;     // "rule" | "llm"
   plan?: ZonePlan | null;
+  build_commit?: string;       // short commit of the code the server loaded
+}
+
+// /api/version — the code the server process loaded vs. what's on disk now.
+export interface VersionInfo {
+  commit: string;              // full hash loaded at startup ("unknown" w/o git)
+  short: string;               // 7-char form of `commit`
+  branch: string;
+  dirty: boolean;              // uncommitted tracked changes at startup
+  started_at: string;          // ISO UTC
+  source_fingerprint: string;  // hash of server-side .py (path, mtime, size)
+  current_commit: string;      // HEAD now
+  current_fingerprint: string; // fingerprint now
+  stale: boolean;              // HEAD or source moved since startup -> restart
 }
 
 export interface ZoneLight {
@@ -98,6 +112,12 @@ export async function generateZone(params: GenerateParams): Promise<GenerateResu
     const text = await res.text();
     throw new Error(`generate failed (${res.status}): ${text}`);
   }
+  return res.json();
+}
+
+export async function fetchVersion(): Promise<VersionInfo> {
+  const res = await fetch("/api/version", { cache: "no-store" });
+  if (!res.ok) throw new Error(`version fetch failed (${res.status})`);
   return res.json();
 }
 
