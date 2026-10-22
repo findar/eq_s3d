@@ -2071,7 +2071,8 @@ Working rules for every task:
 
       ---
 
-      - **Deliverable commit:** _recorded below once committed._
+      - **Deliverable commit:** `abd4cb8` ("M0 18.3: write the integration note
+        (hand-off, not applied)") — staged only this spec's `tasks.md`.
 
 ## Notes
 
