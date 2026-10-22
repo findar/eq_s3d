@@ -8,9 +8,11 @@
   ],
   "permissions": {
     "rules": [
-      { "capability": "all", "effect": "allow" },
-      { "capability": "fs_write", "match": [".kiro/specs/**"], "effect": "allow" },
-      { "capability": "shell", "match": ["git worktree remove*", "git reset --hard*", "git clean *"], "effect": "deny" }
+      { "capability": "fs_read", "effect": "allow" },
+      { "capability": "fs_write", "match": ["ROADMAP.md", "README.md", "tasks/README.md", "tasks/**", ".kiro/specs/**", ".git/COMMIT_EDITMSG_TMP"], "effect": "allow", "exclude": ["docs/reviews/**", "**/*.env"] },
+      { "capability": "shell", "match": ["git status*", "git diff*", "git log*", "git show*", "git branch*", "git rev-parse *", "git worktree list*", "git merge --no-ff *", "git add *", "git commit -F *", "git push origin master", "scripts*remove-worktree.ps1*", "Remove-Item *COMMIT_EDITMSG_TMP*"], "effect": "allow" },
+      { "capability": "shell", "match": ["git push *"], "effect": "ask" },
+      { "capability": "shell", "match": ["git worktree remove*", "git worktree add*", "git reset --hard*", "git clean *", "git config*", "git checkout*", "git switch*", "Remove-Item -Recurse*"], "effect": "deny" }
     ]
   },
   "toolsSettings": {
