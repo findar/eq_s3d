@@ -22,12 +22,13 @@ from ai.schema import ZonePlan
 from generators.layout import LayoutGenerator
 from generators.zone_spec import ZoneSpec
 
-from .pbt_helpers import scaled, room_graph, solvable_walk, _entrance_id
+from .pbt_helpers import scaled, room_graph, solvable_walk, run_for, _entrance_id
 from .strategies import (
     seeds,
     room_counts,
     spec_themes,
     box_themes,
+    verticality,
     semantic_inputs,
 )
 
@@ -247,4 +248,93 @@ def test_gating_solvable(seed, theme, n, locks, semantic, expect_fallback):
             "expected the key-room fallback (a gate keyed on the entrance "
             f"id {entrance_id!r}), got key rooms "
             f"{[g.key_room_id for g in gates]}"
+        )
+
+
+# Same cold-call reasoning as the tests above: a full layout for up to 30 rooms
+# with the semantic + elevation layer can brush the Default_Profile's 200 ms
+# per-example deadline on a cold call (warmup) -- timing variance, not a property
+# failure -- so disable the deadline and keep the 100-example budget (scaled by
+# the active profile, per design Req 1.3). Layout-tier only (`plan_to_spec`
+# drives the Layout_Generator, never a binary build and never geometry), so no
+# `slow` marker and no `build_settings`.
+#
+# The known suspect (per task 10.5 / 13.1) is a semantic `sink` with elevation
+# OFF. The semantic layer is drawn in full on purpose: dropping it, weakening
+# the bound, or assuming the sink case away would defeat the whole point of this
+# property, which exists to catch exactly that. If any input fails, that is a
+# REAL elevation bug to report, never a reason to loosen the assertion.
+@settings(deadline=None, max_examples=scaled(100))
+@given(
+    seed=seeds,
+    theme=box_themes,
+    n=room_counts(2, 30),
+    vert=verticality,
+    elevation=st.booleans(),
+    semantic=semantic_inputs,
+)
+def test_elevation_grade_cap(seed, theme, n, vert, elevation, semantic):
+    """Feature: zone-generator-m0-hygiene, Property 7: Elevation grade cap.
+
+    Umbrella P6. For any Zone_Spec `ai.expand.plan_to_spec` produces on a box
+    theme (dungeon/city), room counts 2-30, any verticality
+    (flat/moderate/dramatic), elevation on or off, and with non-default semantic
+    content: EVERY corridor -- tree edges AND loop (non-tree) edges alike --
+    rises no more steeply than the generator's walkable grade cap. Concretely,
+    for each corridor connecting rooms ``a`` and ``b``::
+
+        abs(from_z - to_z) <= run_for(..., a, b) * 0.5 + 0.01
+
+    where ``run_for`` calls the production ``LayoutGenerator._elevation_run`` for
+    that corridor's two rooms, ``0.5`` is ``max_grade`` (a slope of ~26.6 deg,
+    comfortably under the traversability agent's 40 deg walkable-slope cap), and
+    ``0.01`` is a float tolerance. Loop edges are explicitly in scope: a loop
+    corridor joins two rooms placed down separate BFS paths, so its own run never
+    constrained their Z gap during ``_assign_elevation`` -- the historic
+    cliff-corridor bug -- and ``_relax_elevation`` must have pulled both ends back
+    into every neighbour's walkable band. Checking every corridor, not just tree
+    edges, is what proves that relaxation held.
+
+    Validates: M0 Req 3.3; umbrella Req 1.6.
+    """
+    plan = ZonePlan(
+        name=f"grade{seed}",
+        theme=theme,
+        room_count=n,
+        elevation=elevation,
+        verticality=vert,
+        dungeon_theme=semantic["dungeon_theme"],
+        dungeon_race=semantic["dungeon_race"],
+        elemental_tint=(semantic["elemental_tint"] or ""),
+    )
+    spec = plan_to_spec(plan, seed=seed)
+
+    # Resolve each corridor's two endpoint rooms by id so the run is computed
+    # from the SAME RoomSpecs the generator used. `plan.size` (default "medium")
+    # is the footprint scale plan_to_spec applied via _SIZE_SCALE.
+    rooms_by_id = {r.id: r for r in spec.rooms}
+
+    for c in spec.corridors:
+        a = rooms_by_id.get(c.from_room)
+        b = rooms_by_id.get(c.to_room)
+        # Corridors in this layout always join two real rooms; if that ever
+        # changes the lookup guards it rather than crashing the property.
+        assert a is not None and b is not None, (
+            f"corridor {c.id} references unknown room(s) "
+            f"{c.from_room!r}/{c.to_room!r}"
+        )
+
+        run = run_for(spec, theme, n, plan.size, a, b)
+        dz = abs(c.from_z - c.to_z)
+        cap = run * 0.5 + 0.01
+
+        # If this fails it is a REAL elevation grade bug (umbrella P6) -- the
+        # corridor is a cliff steeper than the walkable cap. Report the
+        # counterexample (per task 13.1); do NOT weaken the bound.
+        assert dz <= cap, (
+            f"corridor {c.id} exceeds the grade cap: |dz|={dz:.4f} > "
+            f"run*0.5+0.01={cap:.4f} (run={run:.4f}); seed={seed}, "
+            f"theme={theme}, n={n}, verticality={vert!r}, "
+            f"elevation={elevation}, semantic={semantic}, "
+            f"rooms {c.from_room!r}->{c.to_room!r}"
         )
