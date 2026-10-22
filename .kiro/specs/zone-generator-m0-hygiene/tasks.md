@@ -543,11 +543,49 @@ Working rules for every task:
       `server.app`), no `PytestUnknownMarkWarning`. Staged only
       `tests/test_properties_core.py` for the code commit.
     - **Commit:** `4ba550e` ("M0 9.2: property test for PFS filename CRC (P14)").
-  - [ ] 9.3 Write the property test for the built TER/ZON round-trip
+  - [x] 9.3 Write the property test for the built TER/ZON round-trip
     - **Property 3: Built TER and ZON round-trip** (umbrella P15)
     - `test_ter_zon_roundtrip` with `@pytest.mark.slow` and `build_settings(20)`, over `box_themes`, n 2–12 and `semantic_inputs`.
     - Assert that `ter.to_bytes()` from `ZoneBuilder._build_geometry` equals the archived TER. Then assert field-wise equality of vertices, polygons, materials, objects, lights and regions, with floats bit-equal via `f32`.
     - **Validates: Requirements 2.3, 1.5, 1.6**
+    - **Done.** Appended `test_ter_zon_roundtrip` to
+      `tests/test_properties_core.py` (9.1 `test_pfs_roundtrip` and 9.2
+      `test_pfs_crc_matches_reference` left untouched — pure append + an
+      extended import block). `@pytest.mark.slow` + `@build_settings(20)` over
+      `box_themes` (dungeon/city), `room_counts(2, 12)` and `semantic_inputs`.
+      Build goes through `ai.expand.plan_to_spec(ZonePlan(...), seed=0x7E51)`
+      (so `dungeon_theme`/`dungeon_race`/`elemental_tint` are realised) + the
+      `build_raw` read-back; `@given` takes no `tmp_path` — the `.eqg` is written
+      into `fresh_dir()`.
+    - **Verified against the real code first (two findings):**
+      - `ZoneBuilder._build_geometry(self, name, ter_version) -> TerFile`:
+        `ZoneBuilder.build` calls it as `_build_geometry(spec.name.lower(), 2)`
+        and serialises placement via `_build_zon(f"ter_{spec.name.lower()}.ter")`,
+        so the re-derivation uses those exact arguments. `build_raw` archives the
+        TER under `ter_<name>.ter` and the ZON under `<name>.zon`.
+      - **DESIGN DEVIATION (field list):** the design/task name
+        "objects, lights and regions" as *TerFile* fields, but the real
+        `core.ter.TerFile` carries ONLY `vertices`, `polygons`, `materials`
+        (plus `name`/`magic`/`version`). `objects`, `lights` and `regions` are
+        `core.zon.ZonFile` fields — the design conflated the two binaries. The
+        property's INTENT (builder geometry+placement round-trips into the
+        archive; elemental tints realise ZON regions) is preserved by asserting
+        the round-trip on BOTH binaries: TER bytes + field-wise
+        vertices/polygons/materials, and ZON bytes + field-wise
+        models/objects/regions/lights. Every float on both sides is snapped to
+        IEEE-754 single precision via `f32` before comparison. Confirmed a
+        sweep of semantic themes (e.g. `mine_delve`, `lava_forge`) emits ZON
+        regions, so the region-comparison path is genuinely exercised.
+    - **No round-trip mismatch surfaced** — the builder's serialisation is
+      byte-stable and parses back field-identical across every example.
+    - **Verification (worktree `-Venv`):**
+      `python -m pytest tests/test_properties_core.py -q` → **3 passed**
+      (21.37 s). Full `python -m pytest tests/ -q` → **217 passed**, 2
+      pre-existing warnings (starlette `BlockingPortal` deprecation, runpy
+      `server.app`), no `PytestUnknownMarkWarning`. Exit 0 (62.23 s).
+      *Analytically verified; NOT eyeballed in the 3D viewer — no geometry
+      changed (test-only), so no 3D pass is owed here.*
+    - **Commit (staged only `tests/test_properties_core.py`):** `f9946c5`.
 
 - [ ] 10. Layout property module (`tests/test_properties_layout.py`)
   - [x] 10.1 Write the property test for the ZoneSpec JSON round-trip
