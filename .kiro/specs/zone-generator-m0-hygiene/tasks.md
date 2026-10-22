@@ -850,11 +850,42 @@ Working rules for every task:
       suite `pytest tests/ -q` green: **221 passed**.
     - **Deliverable commit:** `47373ea` — staged only
       `tests/test_properties_layout.py` (1 file, +139 −1).
-  - [ ] 10.8 Write the property test for ZonePlan normalisation
+  - [x] 10.8 Write the property test for ZonePlan normalisation
     - **Property 9: ZonePlan normalisation** (umbrella P12, no controls path)
     - `test_zoneplan_normalisation` over `zone_plan_dicts`.
     - Assert that every field of `ZonePlan.from_dict(d)` is inside its umbrella-Req 2.3/2.4/2.8 domain, and that a second `validate()` returns an equal plan.
     - **Validates: Requirements 3.5, 1.6**
+    - **Done.** Appended `test_zoneplan_normalisation` to
+      `tests/test_properties_layout.py` (added `zone_plan_dicts` to the
+      `.strategies` import; the 6 existing tests 10.1/10.2/10.4/10.5/10.6/10.7
+      are untouched). Budget `scaled(100)`, `deadline=None`, no `slow` marker
+      (pure `ai.schema` logic, no binary build, no controls path).
+    - **Real normalisation API (verified in `ai/schema.py`):** the entry is
+      `ZonePlan.from_dict(d)` — it drops keys outside the dataclass, constructs
+      the plan from the survivors, then calls `.validate()`, which clamps/filters
+      every field IN PLACE and returns self. So `from_dict` IS the normalisation
+      and `validate()` is the fixpoint step. Idempotence is asserted by calling
+      `plan.validate()` a second time and comparing `to_dict()` before/after.
+    - **Field domains asserted (the REAL `validate()` domains):** `theme` in
+      VALID_THEMES = {dungeon, outdoor, city} — any out-of-vocab theme ("cave"
+      included) maps to "dungeon", so the assertion is membership, which covers
+      the cave→dungeon case the strategy exercises (task 2.4) with no
+      special-casing; `room_count` int in [1, 30]; `locks` int in [0, 5]; `size`
+      in {small, medium, large, huge}; `verticality` in {flat, moderate,
+      dramatic}; `regions` a list with every kind in VALID_REGION_KINDS;
+      `dungeon_theme`/`dungeon_race`/`elemental_tint` each `""` or in their
+      vocab; `elevation` a bool.
+    - **Deviation note:** the design says "theme cave→dungeon"; the real
+      `validate()` is broader — it maps ANY out-of-vocab theme to "dungeon". The
+      test asserts the real (broader) domain (`theme in VALID_THEMES`), which
+      subsumes the cave case. No counterexample surfaced — no field escaped its
+      domain for any input.
+    - **Verification:** `tests/test_properties_layout.py` → **7 passed**; full
+      suite `python -m pytest tests/ -q` → **222 passed**, 2 pre-existing
+      warnings (starlette `BlockingPortal` deprecation + runpy `server.app`),
+      exit 0.
+    - **Commit:** `a716c70` ("M0 10.8: property test for ZonePlan
+      normalisation") — staged only `tests/test_properties_layout.py`.
   - [ ] 10.9 Write the property test that cave words never yield a cave theme
     - **Property 19: Cave words never yield a cave theme**
     - `test_cave_words_mean_dungeon` in `tests/test_properties_layout.py`, budget 100, over prompts containing one or more Cave_Words mixed with random filler and optional outdoor/city/dungeon keywords.
