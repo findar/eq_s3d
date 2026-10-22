@@ -313,10 +313,15 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 
     A face is standable when its geometric normal points up within the walkable
     slope cap. Two standable faces are adjacent (the agent can walk between them)
-    when they touch horizontally AND the vertical gap between them there is within
-    the step-up height. "Touch horizontally" means they share a mesh vertex, or
-    their XY bounding boxes overlap within ``adjacency_eps`` and their XY regions
-    actually intersect.
+    when their floors genuinely MEET: either they share a mesh vertex (an exact
+    weld -- one 3D point, zero step), or their XY footprints actually touch (true
+    triangle overlap, or an edge-to-edge gap within ``adjacency_eps`` by the real
+    minimum XY distance) AND their interpolated floor heights AT THAT CONTACT
+    POINT are within the step-up height. Comparing Z at the contact -- not at the
+    two centroids -- and requiring true contact rather than a per-axis
+    bounding-box clip is what keeps the gate sound: faces that merely overlap in
+    XY while offset on the other axis, or stacked at different heights, do not
+    connect.
     """
     verts = np.array([[v.x, v.y, v.z] for v in ter.vertices], dtype=np.float64)
     faces = np.array([[p.v1, p.v2, p.v3] for p in ter.polygons], dtype=np.int64)

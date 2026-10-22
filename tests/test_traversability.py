@@ -26,7 +26,8 @@ import math
 import pytest
 
 import analyzer.traverse as T
-from analyzer.traverse import AgentModel, classify_corridor, validate
+from analyzer.traverse import AgentModel, build_walk_surface, classify_corridor, validate
+from core.ter import Polygon, TerFile, Vertex
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 from generators.layout import LayoutGenerator
 from generators.builder import ZoneBuilder
@@ -184,3 +185,113 @@ class TestValidatorFlagsBreakage:
         joined = " ".join(r.reason for r in unreachable)
         assert ("step-up" in joined or "cliff ramp" in joined
                 or "walkable cap" in joined), joined
+
+
+# ---------------------------------------------------------------------------
+# Unit: footprint-contact adjacency soundness (the false-PASS this fix removes)
+# ---------------------------------------------------------------------------
+
+class TestFootprintContactAdjacency:
+    """
+    Direct guard on ``build_walk_surface``'s footprint-proximity pass. The bug
+    this fixes was a false PASS: two individually-standable (near-flat) floor
+    faces were wired together whenever their XY BOUNDING BOXES came within
+    ``adjacency_eps`` on each axis independently AND their CENTROID Z values were
+    within ``max_step_up`` -- neither of which requires the faces to actually
+    meet in 3D. The flood fill then teleported across a real gap.
+
+    These build tiny synthetic TER meshes with NO shared vertices (so only the
+    footprint pass can connect them) and assert the pass connects two faces only
+    when their floors genuinely meet. Without the true-contact + Z-at-contact
+    fix, cases 1 and 2 would be (wrongly) adjacent.
+    """
+
+    @staticmethod
+    def _tri(p0, p1, p2, base_index):
+        """One flat, upward (standable) triangle from three (x, y, z) points.
+        CCW winding in XY gives a +Z normal so the face is standable. Returns
+        (verts, polys) with vertex indices starting at ``base_index``."""
+        vs = [Vertex(*p0), Vertex(*p1), Vertex(*p2)]
+        i = base_index
+        return vs, [Polygon(i + 0, i + 1, i + 2)]
+
+    def _surface(self, tris):
+        """Build a WalkSurface from a list of triangles, each ((x,y,z) x3), each
+        a separate island (no vertices shared BETWEEN triangles, so ONLY the
+        footprint-contact pass can ever connect them)."""
+        ter = TerFile(name="synthetic")
+        for (p0, p1, p2) in tris:
+            base = len(ter.vertices)
+            vs, ps = self._tri(p0, p1, p2, base)
+            ter.vertices.extend(vs)
+            ter.polygons.extend(ps)
+        return build_walk_surface(ter, AgentModel())
+
+    def test_bbox_overlaps_both_axes_but_triangles_dont_touch_is_not_adjacent(self):
+        # The exact shape of the real false bridge (faces 2642<->132 on the
+        # 30-room seed), reduced to two triangles. Their XY BOUNDING BOXES
+        # overlap on BOTH axes -- so the OLD per-axis bbox test (and the OLD
+        # centroid-Z gate, since both are flat at z=0) WOULD wrongly bridge them
+        # -- yet the triangles themselves are ~27u apart in XY and never meet.
+        # The true-contact test must reject them.
+        #   A bbox: x[549.6,658.9] y[-998.7,-949.6]
+        #   B bbox: x[656.9,761.0] y[-1050.7,-897.6]  -> overlaps A on both axes
+        a = (549.6, -998.7, 0.0), (658.9, -998.7, 0.0), (658.9, -949.6, 0.0)
+        b = (656.9, -1050.7, 0.0), (761.0, -1050.7, 0.0), (761.0, -897.6, 0.0)
+        surf = self._surface([a, b])
+        assert 1 not in surf.adjacency.get(0, []), (
+            "triangles whose bboxes overlap on both axes but which are ~27u "
+            "apart in XY must NOT be adjacent (the real false-bridge shape)"
+        )
+
+    def test_stacked_overlap_beyond_step_up_is_not_adjacent(self):
+        # Two triangles with the SAME XY footprint stacked 20u apart in Z
+        # (>> the 3u step-up): a floor and a surface passing overhead. Must not
+        # connect.
+        pts = (0.0, 0.0), (100.0, 0.0), (0.0, 100.0)
+        a = tuple((x, y, 0.0) for (x, y) in pts)
+        b = tuple((x, y, 20.0) for (x, y) in pts)
+        surf = self._surface([a, b])
+        assert 1 not in surf.adjacency.get(0, []), (
+            "triangles stacked 20u apart in Z must not be adjacent"
+        )
+
+    def test_z_measured_at_contact_not_centroid(self):
+        # The discriminating case for the Z-at-contact change. A flat floor at
+        # z=0 (x[0,100]) and a standable ramp (10 deg) overlapping it near x=100.
+        # The ramp's CENTROID z is 2.73u (< the 3u step-up) -- so the OLD gate,
+        # which compared centroids, would WRONGLY bridge them -- but the floors'
+        # heights AT THE CONTACT POINT (x=100) differ by 5.71u (> step-up), so
+        # the new Z-at-contact test correctly refuses the connection. This is a
+        # floor and a ramp crossing overhead: not walkable between.
+        floor = (0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (0.0, 100.0, 0.0)
+        ramp = (95.0, 0.0, 6.6), (160.0, 0.0, -5.0), (95.0, 100.0, 6.6)
+        surf = self._surface([floor, ramp])
+        # Both must be standable for this to exercise the adjacency pass at all.
+        assert bool(surf.standable[0]) and bool(surf.standable[1])
+        assert 1 not in surf.adjacency.get(0, []), (
+            "floor and overhead ramp (centroids close, contact 5.7u apart) "
+            "must not be adjacent -- Z must be measured at the contact, not "
+            "at the centroids"
+        )
+
+    def test_genuine_edge_touch_same_height_is_adjacent(self):
+        # Positive control: two coplanar triangles whose edges abut within eps
+        # at the same Z -- a real flush walkable seam. Must stay connected; the
+        # fix must not over-tighten and disconnect continuous floor.
+        a = (0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (0.0, 100.0, 0.0)
+        b = (100.5, 0.0, 0.0), (100.5, 100.0, 0.0), (200.0, 0.0, 0.0)
+        surf = self._surface([a, b])
+        assert 1 in surf.adjacency.get(0, []), (
+            "coplanar triangles touching within eps must stay adjacent"
+        )
+
+    def test_overlap_small_step_within_cap_is_adjacent(self):
+        # Overlapping footprints whose floor heights at the contact differ by
+        # 2.5u (< the 3u step-up): a climbable seam. Must connect.
+        a = (0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (0.0, 100.0, 0.0)
+        b = (50.0, 0.0, 2.5), (100.0, 50.0, 2.5), (50.0, 100.0, 2.5)
+        surf = self._surface([a, b])
+        assert 1 in surf.adjacency.get(0, []), (
+            "overlapping triangles within the step-up at the contact must be adjacent"
+        )
