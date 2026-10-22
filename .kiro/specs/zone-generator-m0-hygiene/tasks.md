@@ -708,12 +708,52 @@ Working rules for every task:
     - For task 10.4: pin `@example(seed=16, theme="dungeon", room_count=5,
       locks=4, expect_fallback=True)` and assert `key_room_id == entrance_id`
       for at least one gate.
-  - [ ] 10.4 Write the property test for gating solvability, including the pinned fallback
+  - [x] 10.4 Write the property test for gating solvability, including the pinned fallback
     - **Property 6: Gating is solvable** (umbrella P4, single District)
     - `test_gating_solvable` over `box_themes`, n 3–30, locks 1–5, `semantic_inputs` and an `expect_fallback` argument (`False` for generated cases).
     - Assert `1 <= len(gates) <= locks` and that `solvable_walk` visits every room.
     - Pin the 10.3 input as `@example(..., expect_fallback=True)`. For that example, assert `key_room_id == entrance_id`.
     - **Validates: Requirements 3.2, 3.6, 1.6**
+    - **Done.** Appended `test_gating_solvable` to
+      `tests/test_properties_layout.py` (10.1 `test_zonespec_json_roundtrip` and
+      10.2 `test_connectivity_and_roles` left untouched — pure append plus two
+      extra imports: `example` from hypothesis, and `LayoutGenerator` /
+      `solvable_walk` / `_entrance_id`). Drives the SAME gated path 10.3 verified:
+      `LayoutGenerator(theme, seed=seed).generate(name, room_count=n, locks=k)`
+      (`locks > 0` runs `_apply_gating` internally). `@given` over `box_themes`,
+      `room_counts(3, 30)`, `locks` 1–5, `semantic_inputs`, and
+      `expect_fallback=st.just(False)` for generated cases.
+      `@settings(deadline=None, max_examples=scaled(100))` — layout-tier (gating
+      never builds the binary, never touches geometry per umbrella P5), so no
+      `slow` marker and no `build_settings`; deadline lifted for the same cold-call
+      warmup reason as 10.1/10.2.
+      - Assertions: `1 <= len(gates) <= locks`; and `solvable_walk(spec)` (the
+        fixpoint walk from the entrance, crossing a gated corridor only once its
+        `key_room_id` is visited) equals the full room-id set — every room reached.
+      - Pinned fallback `@example(seed=16, theme="dungeon", n=5, locks=4,
+        semantic={neutral}, expect_fallback=True)` — param names aligned to
+        `@given` (`n`, not `room_count`), neutral `semantic` so it reproduces the
+        plain `generate(name, room_count=5, locks=4)` call 10.3 scanned. For
+        `expect_fallback=True` the test additionally asserts some
+        `gate.key_room_id == entrance_id`, proving the key-room fallback path runs
+        and is still solvable.
+    - **10.3 reproduction verified independently** (one-off, not committed): a
+      fresh `LayoutGenerator("dungeon", seed=16).generate("rep", room_count=5,
+      locks=4)` yields entrance `room_0`, 4 gates
+      (`gate_0→room_1`, `gate_1/2/3→room_0`), so a gate keys off the entrance id
+      (fallback exercised), and `solvable_walk` reaches all 5 rooms.
+    - **No generated input failed solvability** — `solvable_walk` visited every
+      room across all 100 examples + the pinned case. A miss would have been a
+      real gating-solvability bug (umbrella P4); the strategy was never narrowed
+      and the assertion never weakened.
+    - **Verification (worktree `-Venv`):**
+      `.\.venv\Scripts\python.exe -m pytest tests/test_properties_layout.py -q` →
+      **3 passed** (10.1 + 10.2 + 10.4). Full `.\.venv\Scripts\python.exe -m
+      pytest tests/ -q` → **218 passed**, 2 pre-existing unrelated warnings
+      (starlette `BlockingPortal` deprecation, runpy `server.app`), exit 0
+      (61 s). *Analytically verified; test-only, no geometry changed, so no 3D
+      pass is owed here.*
+    - **Commit (staged only `tests/test_properties_layout.py`):** `116b264`.
   - [ ] 10.5 Write the property test for the elevation grade cap
     - **Property 7: Elevation grade cap** (umbrella P6)
     - `test_elevation_grade_cap` through `ai.expand.plan_to_spec` over `box_themes`, n 2–30, `verticality`, elevation and `semantic_inputs`.
