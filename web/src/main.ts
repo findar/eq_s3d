@@ -40,6 +40,9 @@ controls.onLockChange = (locked) => {
 ($("t-gates") as HTMLInputElement).addEventListener("change", (e) =>
   zoneScene.setGatesVisible((e.target as HTMLInputElement).checked)
 );
+($("t-labels") as HTMLInputElement).addEventListener("change", (e) =>
+  zoneScene.setLabelsVisible((e.target as HTMLInputElement).checked)
+);
 
 // ---- Metrics panel ----
 function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
