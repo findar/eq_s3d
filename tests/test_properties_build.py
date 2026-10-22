@@ -141,3 +141,57 @@ def test_ramp_subdivision(s, theme, n, verticality):
         f"worst per-triangle rise {worst:.4f} u > 2.51 "
         f"(max corridor span {max_span:.2f} u)"
     )
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    s=seeds,
+    theme=box_themes,
+    n=room_counts(3, 12),
+    locks=st.integers(min_value=1, max_value=5),
+)
+def test_locks_do_not_touch_geometry(s, theme, n, locks):
+    """
+    Feature: zone-generator-m0-hygiene, Property 12: Locks never touch geometry
+    (umbrella P5, locks).
+
+    Lock-and-key gating is ADVISORY metadata for a manual finishing pass — it
+    rides in the ``.zone.json`` sidecar and the EQEmu ``doors`` table, never in
+    the binary geometry. So for one fixed plan and one fixed seed, the number of
+    locked gates MUST NOT change what gets built: a build with ``locks`` in
+    [1, 5] and a build with ``locks=0`` produce the exact same mesh (TER) and
+    the exact same zone layout (ZON). This asserts the north-star "layouts are
+    suggestions ... they must not alter geometry or collision" invariant
+    directly — if gating leaked into the mesh or placement, the two builds would
+    diverge. (The ``.eqg`` bytes themselves are NOT compared: the PFS footer
+    stamps ``int(time.time())`` and would differ between two archives even when
+    their contents are identical — ``build_raw`` reads the TER/ZON members back
+    out for exactly this reason.)
+
+    NOTE: this is an ANALYTICAL byte-equality check on the built TER/ZON, not a
+    live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: M0 Req 4.3, 1.5; umbrella Req 1.6.
+    """
+    gated_plan = ZonePlan(name="lockgeo", theme=theme, room_count=n, locks=locks)
+    open_plan = ZonePlan(name="lockgeo", theme=theme, room_count=n, locks=0)
+
+    # Same name, same seed; the ONLY varied input is `locks`. plan_to_spec uses
+    # the explicit seed (no fresh random is drawn), so both specs derive from an
+    # identical RNG stream apart from gating.
+    gated_spec = plan_to_spec(gated_plan, seed=s)
+    open_spec = plan_to_spec(open_plan, seed=s)
+
+    with fresh_dir() as out_gated:
+        _r1, gated_ter, gated_zon = build_raw(gated_spec, out_gated)
+    with fresh_dir() as out_open:
+        _r2, open_ter, open_zon = build_raw(open_spec, out_open)
+
+    assert gated_ter == open_ter, (
+        f"locks changed the TER mesh (seed={s}, theme={theme}, rooms={n}, "
+        f"locks={locks}): gating leaked into geometry"
+    )
+    assert gated_zon == open_zon, (
+        f"locks changed the ZON layout (seed={s}, theme={theme}, rooms={n}, "
+        f"locks={locks}): gating leaked into placement"
+    )
