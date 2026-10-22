@@ -1714,7 +1714,7 @@ Working rules for every task:
       pattern is gitignored (`git check-ignore .kiro/agents/orchestrator.json.bak`
       matches), so no `.bak` was ever tracked and `git status` stays clean. No
       filesystem delete was needed.
-    - **Commit:** tracker-only update recorded in commit `__HASH__` (staged only
+    - **Commit:** tracker-only update recorded in commit `b1ad610` (staged only
       this spec's `tasks.md`). No `orchestrator.json` commit (no change present).
   - [ ] 17.2 Re-point the agents to spec task lists
     - In `orchestrator.json`, `task-author.json`, `task-worker.json`, `task-reviewer.json` and `task-readiness.json`, move descriptions, prompts, welcome text and resources from `tasks/<id>.md` / `tasks/_TEMPLATE.md` / `tasks/README.md` to `.kiro/specs/<feature>/tasks.md`.
