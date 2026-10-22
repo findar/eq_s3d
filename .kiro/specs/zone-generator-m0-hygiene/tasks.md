@@ -679,10 +679,35 @@ Working rules for every task:
       `tests/test_properties_layout.py` is `17980cb`
       (`git show --stat 17980cb` → 1 file, +81/-2). Tracker commit for this
       tasks.md follows separately.
-  - [ ] 10.3 Find a generated input that reaches the key-room fallback (one-off scan, not committed)
+  - [x] 10.3 Find a generated input that reaches the key-room fallback (one-off scan, not committed)
     - Scan `LayoutGenerator.generate` over seeds, n 4–8, locks 3–5 and M0_Box_Themes. Stop at the first input where some `gate.key_room_id` equals the entrance id, and record it here.
     - If no input turns up in ≥ 200k candidates, stop and report to the user. A constructed `_apply_gating` call would be a deviation that needs their approval.
     - _Requirements: 3.6_
+    - **Done.** One-off throwaway scan (temp `_scan_fallback.py`, run via the
+      worktree venv and then deleted — no code deliverable) over
+      `LayoutGenerator(theme, seed).generate(name, room_count=n, locks=k)` with
+      seeds increasing from 0, then theme in `["dungeon", "city"]`, then
+      `room_count` 4..8, then `locks` 3..5. This drives the real gated path:
+      `generate(..., locks=k)` calls `_apply_gating` internally when `locks > 0`,
+      and the entrance is the room with `role == "entrance"` (set by
+      `_apply_pacing`). The fallback is observed from the output with no spy —
+      per the design, the fallback ran iff some `gate.key_room_id` equals the
+      entrance id.
+    - **First hit (after 485 candidates scanned):**
+      - Input tuple: **`seed=16, theme="dungeon", room_count=5, locks=4`**
+      - Entrance id: **`room_0`** (the BFS root / depth-0 room)
+      - Total gates: **4** — `gate_0→room_1`, `gate_1→room_0`, `gate_2→room_0`,
+        `gate_3→room_0`.
+      - Fallback gate (first `key_room_id == entrance_id`): **`gate_1`**
+        (`corridor_id=corr_2`, `key_room_id=room_0`, `tier=1`). Gates 2 and 3
+        also fall back to `room_0`.
+    - Reproducibility confirmed: a fresh
+      `LayoutGenerator("dungeon", seed=16).generate("rep", room_count=5, locks=4)`
+      again yields entrance `room_0`, 4 gates, and `gate_1/2/3.key_room_id ==
+      room_0`.
+    - For task 10.4: pin `@example(seed=16, theme="dungeon", room_count=5,
+      locks=4, expect_fallback=True)` and assert `key_room_id == entrance_id`
+      for at least one gate.
   - [ ] 10.4 Write the property test for gating solvability, including the pinned fallback
     - **Property 6: Gating is solvable** (umbrella P4, single District)
     - `test_gating_solvable` over `box_themes`, n 3–30, locks 1–5, `semantic_inputs` and an `expect_fallback` argument (`False` for generated cases).
