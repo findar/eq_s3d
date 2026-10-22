@@ -1228,13 +1228,50 @@ Working rules for every task:
       Observed defaults: planner `rule`, provider `procedural`, `attempts == []`.
     - **Deliverable commit:** `826cfde` ("M0 12.4: add no-API default selection
       example test") — staged `tests/test_properties_pipeline.py` only.
-  - [ ] 12.5 Write the no-API prompt and CLI example test
+  - [x] 12.5 Write the no-API prompt and CLI example test
     - umbrella P16 (example, slow)
     - `test_no_api_prompt_and_cli` with `no_api_keys` + `no_network`.
     - Server path: `TestClient(server.app.app)` with `OUTPUT_DIR`/`FAILURE_LOG` → `tmp_path`. POST a prompt, then GET `glb_url`.
     - CLI path: `main.main(["generate", "p16", "--rooms", "5", "--output", str(tmp_path)])`.
     - Assert that both produce an Accepted_Build and that `attempts == []`.
     - **Validates: Requirements 5.5, 1.6**
+    - **Done.** Appended `test_no_api_prompt_and_cli` (`@pytest.mark.slow`, plain
+      example test) to `tests/test_properties_pipeline.py` — 12.1–12.4 untouched.
+      Uses `no_api_keys` + `no_network` fixtures plus `tmp_path`/`monkeypatch`
+      (fine for an example test; the function-scoped-fixture health check only
+      bites `@given` tests).
+    - **Real request schema (verified in `server/app.py`):** `/api/generate`
+      takes `GenerateRequest {prompt, theme, rooms, elevation, seed}`. A non-empty
+      `prompt` routes through the planner (`make_plan` → `plan_to_spec`), sets
+      `source="prompt"` and `planner=get_planner().name`, and ignores the explicit
+      theme/rooms. The 200 `GenerateResponse` carries `validated: bool`, `glb_url`,
+      `zone_url`, `map_url`, `source`, `planner`, `attempts`. Test POSTs
+      `{"prompt": "a dark dungeon with a few rooms"}`, asserts `source=="prompt"`,
+      `planner=="rule"` (the zero-key default), `validated is True`
+      (Accepted_Build = gate ran AND passed), then GETs `glb_url` → 200.
+      `OUTPUT_DIR`/`FAILURE_LOG` are module globals read at request time (by both
+      `generate` and `get_zone_file`), so monkeypatching
+      `server.app.OUTPUT_DIR`/`FAILURE_LOG` → `tmp_path/server` redirects both the
+      write and the fetch — matches the task-7.2 `client` fixture pattern.
+    - **Real CLI artifacts (verified in `main.py` + `builder.py`):**
+      `main.main(["generate","p16","--rooms","5","--output",str(cli_out)])`
+      (post-6.1 `main(argv)` takes the argv list) runs the default gated `dungeon`
+      theme through `generate_validated`. `ZoneBuilder.build` writes `{name}.eqg`
+      and `{name}.glb`; `cmd_generate` saves `{name}.json`. Test asserts `p16.eqg`,
+      `p16.glb`, `p16.json` all exist under `cli_out` — the CLI Accepted_Build.
+    - **attempts==[] (both paths):** the test asserts `no_network == []` after BOTH
+      paths. The TestClient's loopback socketpair transport passes through the
+      `no_network` guard (finding 4: 127.*/::1/AF_UNIX allowed), so only a
+      genuinely foreign connect would be recorded — none was. Both the
+      prompt→zone and CLI→zone flows ran with zero API keys and zero outbound
+      network.
+    - **Verification:** `tests/test_properties_pipeline.py -q` → **5 passed in
+      9.31s** (only the pre-existing starlette `BlockingPortal` deprecation
+      warning). Full suite `tests/ -q` → **229 passed in 49.00s**, zero
+      failures/errors, no `PytestUnknownMarkWarning` (the two warnings are the
+      pre-existing starlette deprecation + the runpy `server.app` note).
+    - **Commit:** `49fa586` (code: `tests/test_properties_pipeline.py`);
+      this tracker line recorded in the follow-up commit.
 
 - [ ] 13. Root-cause fixes for counterexamples (conditional)
   - [x] 13.1 Fix any counterexample at its root
