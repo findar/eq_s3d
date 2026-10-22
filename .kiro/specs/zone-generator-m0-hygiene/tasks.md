@@ -1693,9 +1693,29 @@ Working rules for every task:
       is the collision-free precondition in `test_pfs_roundtrip`.
 
 - [ ] 17. Process items (agent configuration and steering)
-  - [ ] 17.1 Resolve the uncommitted agent config and the stray backups
+  - [x] 17.1 Resolve the uncommitted agent config and the stray backups
     - Inspect the uncommitted `.kiro/agents/orchestrator.json` change. Commit it if it's intended, discard it otherwise, and record which. Delete the gitignored `.kiro/agents/*.json.bak` files.
     - _Requirements: Delivery and process (agent re-pointing)_
+    - **`orchestrator.json` — change ABSENT in this worktree; nothing to do.**
+      Checked the worktree's actual working-tree state: `git status` and
+      `git status .kiro/agents/` both report "working tree clean" — no modified,
+      staged or untracked file under `.kiro/agents/`. `git ls-files .kiro/agents/`
+      shows all five configs tracked (`orchestrator.json`, `task-author.json`,
+      `task-readiness.json`, `task-reviewer.json`, `task-worker.json`), none
+      modified. The "uncommitted orchestrator.json change" the task refers to was
+      a MAIN-checkout-only artifact: the worktree was forked from `master` at
+      fork-point `99d346a`, and an uncommitted change in MAIN does not propagate
+      into a fresh worktree. So there is nothing to commit or discard here —
+      recorded as ABSENT. (No `git restore`/`checkout`/`reset` was run against any
+      tracked file, per the git-safety rule. The re-pointing of config content is
+      17.2's job and was not started.)
+    - **`.kiro/agents/*.json.bak` — none exist; nothing to delete.**
+      `Get-ChildItem .kiro\agents -Filter *.bak` returned no files. Confirmed the
+      pattern is gitignored (`git check-ignore .kiro/agents/orchestrator.json.bak`
+      matches), so no `.bak` was ever tracked and `git status` stays clean. No
+      filesystem delete was needed.
+    - **Commit:** tracker-only update recorded in commit `__HASH__` (staged only
+      this spec's `tasks.md`). No `orchestrator.json` commit (no change present).
   - [ ] 17.2 Re-point the agents to spec task lists
     - In `orchestrator.json`, `task-author.json`, `task-worker.json`, `task-reviewer.json` and `task-readiness.json`, move descriptions, prompts, welcome text and resources from `tasks/<id>.md` / `tasks/_TEMPLATE.md` / `tasks/README.md` to `.kiro/specs/<feature>/tasks.md`.
     - Add `.kiro/specs/**` to the orchestrator's `fs_write` allow-list. In `task-author`, change `tasks/**` → `.kiro/specs/**`.
