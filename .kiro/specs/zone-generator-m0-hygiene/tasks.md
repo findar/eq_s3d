@@ -754,12 +754,26 @@ Working rules for every task:
       (61 s). *Analytically verified; test-only, no geometry changed, so no 3D
       pass is owed here.*
     - **Commit (staged only `tests/test_properties_layout.py`):** `116b264`.
-  - [ ] 10.5 Write the property test for the elevation grade cap
+  - [x] 10.5 Write the property test for the elevation grade cap
     - **Property 7: Elevation grade cap** (umbrella P6)
     - `test_elevation_grade_cap` through `ai.expand.plan_to_spec` over `box_themes`, n 2–30, `verticality`, elevation and `semantic_inputs`.
     - Assert `|from_z − to_z| <= run_for(...) * 0.5 + 0.01` for every corridor, tree and loop edges alike.
     - The known suspect here is semantic `sink` with elevation off. If it fails, follow task 13.1. Never drop semantic inputs from the strategy.
     - **Validates: Requirements 3.3, 1.6**
+    - **Done.** Added `test_elevation_grade_cap` to
+      `tests/test_properties_layout.py` exactly as specified: driven through
+      `ai.expand.plan_to_spec` over `box_themes`, `room_counts(2, 30)`, the full
+      `verticality` strategy, `st.booleans()` for elevation, and the full
+      `semantic_inputs` strategy (none dropped). For every corridor it resolves
+      the two endpoint rooms by id and asserts
+      `|from_z − to_z| <= run_for(spec, theme, n, plan.size, a, b) * 0.5 + 0.01`,
+      with `run_for` calling the production `LayoutGenerator._elevation_run`.
+      `@settings(deadline=None, max_examples=scaled(100))` — layout-tier only
+      (no binary build), so no `slow` marker.
+    - **This property caught a GENUINE production bug** (two root causes, both in
+      `generators/layout.py`), fixed under task 13.1 first; the test is NOT
+      weakened to pass. Green over 100 examples (default) and 500 (thorough).
+    - **Commit:** `d47111a` — `tests/test_properties_layout.py` only.
   - [ ] 10.6 Write the relax-conflict fallback example test
     - **Property 7: Elevation grade cap** (umbrella P6, constructed conflict case)
     - `test_relax_conflict_fallback`: set up `LayoutGenerator("dungeon", seed=0)` with `_apply_room_scale(3)` and rooms E (z 0), B (z 0) and C (z 200), each 200×200 on the X axis with 40 u gaps, and `adj` with B inserted first.
@@ -964,7 +978,7 @@ Working rules for every task:
     - **Validates: Requirements 5.5, 1.6**
 
 - [ ] 13. Root-cause fixes for counterexamples (conditional)
-  - [ ] 13.1 Fix any counterexample at its root
+  - [x] 13.1 Fix any counterexample at its root
     - Only applies if a Property_Suite test fails, during tasks 9–12 or the thorough run in 16.3. Otherwise, mark this "not triggered" here. Don't fix anything ahead of time.
     - When a property fails:
       1. Stop and record the counterexample here.
@@ -973,6 +987,106 @@ Working rules for every task:
     - A PFS CRC collision or sentinel clash is a format limit: ask the user.
     - If the fix changes layout or geometry for any seed, record the affected seeds and flag the 3D pass (task 18.2). The pass covers the dungeon sections of `docs/ACCEPTANCE.md` on those seeds plus 1955208177, 1516796975 and 481893615.
     - _Requirements: 1.7, 3.3, 3.6, 3.7_
+    - **TRIGGERED.** The 10.5 property `test_elevation_grade_cap` caught a
+      genuine production bug in the elevation grade cap (umbrella P6). TWO root
+      causes surfaced, both in `generators/layout.py`; both fixed at the root,
+      the property was NOT weakened or narrowed.
+
+    - **Counterexample 1 — semantic `sink` with elevation OFF** (the design's
+      flagged suspect; minimised + reproducible):
+      - seed=1, theme=dungeon, n=10, verticality='flat', elevation=False,
+        semantic={'dungeon_theme':'', 'dungeon_race':'', 'elemental_tint':'lava'}.
+      - Failing corridor `corr_4` (`room_1`→`room_5`): `|Δz|=20.0`,
+        `run=23.5573`, `cap=run*0.5+0.01=11.7886`. 20.0 >> 11.79 — a cliff ~70%
+        over the walkable grade cap.
+      - **Root cause:** `semantics._apply_shape` does
+        `room.floor_z += rt.sink * scale` for sink room types
+        (battle_arena/vault −20, throne +8, flooded_gallery −25, sump −30). An
+        `elemental_tint` (or `dungeon_theme`/`dungeon_race`) makes the dungeon
+        "themed", so `layout.generate` runs the semantic layer and applies those
+        biases. But `_assign_elevation` AND its `_relax_elevation` pass were
+        guarded by `if elevation:`. With elevation=False the sunk/raised floors
+        are never relaxed, so a sunk room next to a flat room is a cliff corridor
+        steeper than `max_grade` (0.5). This is the historic cliff-corridor
+        failure mode, now reachable with elevation OFF via the semantic sink path.
+      - **Fix (design option (a), recommended):** when the layout is `themed`,
+        run the relax pass over the graph even with elevation off — new
+        `_relax_semantic_floors(rooms, edges, entrance)` builds the same
+        adjacency `_assign_elevation` uses and reuses the proven
+        `_relax_elevation` clamp (no random rises). The sink CHARACTER survives
+        where the run can carry it (post-fix corr_4 floors still differ: 8.0 /
+        8.221 / 11.779) while every corridor stays inside the cap. Did NOT drop
+        sink when elevation is off (option (b)) — that would silently discard
+        realised content (umbrella P5 wants it kept).
+
+    - **Counterexample 2 — relax loop-exit residual** (the design's "Relax
+      conflict midpoint" suspect, exit-tolerance variant; surfaced on the next
+      Hypothesis example after fix 1):
+      - seed=3600, theme=dungeon, n=12, verticality='dramatic', elevation=True,
+        semantic all-empty (`elemental_tint=None`).
+      - Failing corridor `corr_2` (`room_6`→`room_9`): `|Δz|=12.3796`,
+        `cap=12.3718` — over by 0.0078 (also corr_3/4/7, max overshoot 0.0078).
+      - **Root cause:** `_relax_elevation` is a Gauss-Seidel sweep; exiting at
+        `moved < 0.01` can leave a room up to ~0.01 off-band on the final pass
+        (a neighbour clamped earlier in the same sweep moved after it was read),
+        pushing the odd corridor a few thousandths past `run*max_grade + 0.01`.
+      - **Fix (design: "Tighten the exit"):** changed the fixpoint exit from
+        `moved < 0.01` to `moved < 1e-4`. The cap's own 0.01 tolerance is NOT
+        widened.
+
+    - **Files / functions changed** (`generators/layout.py` only; `semantics.py`
+      untouched):
+      - `LayoutGenerator.generate` — added `elif themed:` branch calling
+        `_relax_semantic_floors` when elevation is off.
+      - `LayoutGenerator._relax_semantic_floors` — NEW helper.
+      - `LayoutGenerator._relax_elevation` — exit tolerance `0.01` → `1e-4`
+        (+ docstring).
+
+    - **Verification:**
+      - `test_properties_layout.py` green — 100 examples default, 500 thorough
+        (incl. `test_elevation_grade_cap`).
+      - Counterexample 1 reproduced and confirmed resolved: all 10 corridors of
+        seed=1/dungeon/n=10/flat/elevation=False/tint=lava now satisfy the cap
+        (worst dz/cap ratio 0.999).
+      - **Outdoor TER baseline regression guard:** `tests/test_hygiene.py` →
+        `test_outdoor_ter_matches_fork_point` PASSES unchanged (3/3). Outdoor is
+        not themed/sink-biased and its floors already converged below 1e-4, so
+        the fix did not reach the outdoor path.
+      - Full suite `python -m pytest tests/ -q` → **219 passed**, 2 pre-existing
+        warnings (starlette `BlockingPortal`, runpy `server.app`).
+      - Pinned corridor seeds 1955208177 / 1516796975 / 481893615 are exercised
+        by `test_generators.py` + `test_traversability.py` + `test_pipeline.py`
+        and remained green in the full suite.
+
+    - **GEOMETRY / LAYOUT CHANGE — 3D pass required (task 18.2(b)).** This fix
+      changes dungeon `floor_z` geometry in two regimes:
+      1. **themed dungeons with elevation OFF** (any `dungeon_theme` /
+         `dungeon_race` / non-None `elemental_tint`) — the new relax pass now
+         runs, so sink/raise floors move (previously they didn't). Affected
+         conditions, not a fixed seed list: ANY themed box-theme dungeon built
+         with elevation off. Representative affected seed: **1** (the recorded
+         counterexample, dungeon/n=10/flat/tint=lava).
+      2. **any dungeon with elevation ON** — the tighter relax exit (1e-4) nudges
+         loop-edge convergence, so floors can shift by < 0.01 from before.
+         Representative affected seed: **3600** (dungeon/n=12/dramatic).
+      - **Task 18.2(b) must walk the dungeon sections of `docs/ACCEPTANCE.md` on
+        the affected seeds (1, 3600) PLUS the standing corridor seeds
+        1955208177, 1516796975, 481893615.**
+      - **NOT verified in the live 3D viewer by the agent** — structural/
+        walkability tests pass (necessary, not sufficient per steering). A human
+        must eyeball the themed-sink dungeons and the pinned seeds in 3D.
+
+    - **Deviation from 13.1 step 2 (`@example(...).via("discovered failure")`
+      pin):** not added to the test. The parent dispatch was explicit — *do NOT
+      edit the 10.5 test to make it pass; only the generator* — and the test is
+      green and deterministic (default profile is `derandomize=True`) without
+      pins. Both counterexamples are recorded here and in the fix commit message
+      `0e3799a`, so the regression history is preserved. If the pins are wanted
+      as literal `@example` decorators, that is a one-line-each follow-up that
+      does not change behaviour.
+
+    - **Commits:** generator fix `0e3799a` (`generators/layout.py`); property
+      test `d47111a` (`tests/test_properties_layout.py`).
 
 - [ ] 14. Residue guards
   - [ ] 14.1 Extend `tests/test_hygiene.py` with the residue guards
