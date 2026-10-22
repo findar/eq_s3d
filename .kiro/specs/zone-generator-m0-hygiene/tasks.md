@@ -1829,7 +1829,8 @@ Working rules for every task:
       same workflow). No fresh dedicated orchestrator run of a further remaining
       task was needed: 17.3 and 18.1 are themselves the post-re-pointing
       end-to-end runs against this spec's tasks.md, so no extra work was invented.
-    - **Tracker commit (this update):** &lt;filled by the commit below&gt;
+    - **Tracker commit (this update, staged only this spec's tasks.md):**
+      `8715d7a480c60d0bc9d42871cda4fd066d31ce9d`.
   - [ ] 18.2 Record the human pass hand-off (performed by the user)
     - Write the human checklist here and mark it PENDING-HUMAN:
       - (a) Smoke the Web_App on :5173 and on :8000 after the CORS change: generate one zone and load it.
