@@ -811,12 +811,45 @@ Working rules for every task:
     - **Commit:** `d2f88656faf630831622574f58435be9c50d2d32` ("M0 10.6: add
       relax-conflict fallback example test") — staged only
       `tests/test_properties_layout.py` (1 file, +93).
-  - [ ] 10.7 Write the property test for flush openings
+  - [x] 10.7 Write the property test for flush openings
     - **Property 8: Flush openings** (umbrella P7)
     - `test_flush_openings` with a budget of `scaled(50)`, over `box_themes`, n 2–12 and elevation, using `geometry.build_mesh(spec).to_ter(...)` in memory.
     - Assert that `from_z`/`to_z` equal the rooms' `floor_z`.
     - Assert that every `opening_floor_z` value under `(from_x, from_y)` and `(to_x, to_y)` lies within 0.01 u of that room's `floor_z`.
     - **Validates: Requirements 3.4, 1.6**
+    - **Done.** `test_flush_openings` added to `tests/test_properties_layout.py`,
+      `@settings(deadline=None, max_examples=scaled(50))` over `seeds`,
+      `box_themes`, `room_counts(2, 12)` and `elevation`. Builds the Box_Backend
+      mesh in memory via `build_mesh(spec).to_ter(...)` — no `ZoneBuilder`, no
+      `.eqg`, so no `slow`/`build_settings`. Property_Docstring: "Feature:
+      zone-generator-m0-hygiene, Property 8: Flush openings" (umbrella P7),
+      "Validates: M0 Req 3.4; umbrella Req 1.6". Analytically verified, NOT
+      eyeballed in the 3D viewer.
+    - **Band-artifact finding (why the first run stopped):** with `band=c.height`
+      (≈97 u) the strict-flush inner assertion tripped on one opening of seed=1 /
+      dungeon / n=8 / elevation=True (corr_6). Diagnosis: NOT a flush bug. At
+      every opening `from_z`/`to_z` equalled the room `floor_z` exactly AND a
+      flush floor face (|z−floor_z| ≤ 0.01) was present. The only faces tripping
+      the assertion were the SAME Z-corridor's legitimately-elevated far leg
+      (a walkable ramp within the grade cap) overhanging the opening XY — swept
+      into the probe because the band spanned the whole corridor-height column.
+    - **Decision (design-faithful, invariant unchanged):** the helper
+      `opening_floor_z(ter, x, y, z_ref, band)` has `band` precisely to scope the
+      probe to the SEAM. Changed both calls from `band=c.height` to
+      `band=MAX_SEG_RISE` (2.5 u, imported from `generators.geometry`, the
+      step-up / per-segment-rise limit). The `z_ref ± band` window is exactly what
+      the design expresses; a real step at the seam is ≤ 2.5 u off and is STILL
+      caught by the strict **0.01 u** assertion (preserved verbatim), while a
+      Z-corridor's distant walkable far end is correctly excluded. Correct probe
+      scoping, not a loosened assertion. Assertion (1) (`from_z`/`to_z` ==
+      `floor_z`, exact), the non-empty-probe assertion, and the 0.01 u strictness
+      are all unchanged.
+    - **Verification:** `pytest tests/test_properties_layout.py -q` green (6
+      passed). The previously-failing case (seed=1, dungeon, n=8, elevation=True)
+      re-run explicitly — corr_6 present and now passes with the tight band. Full
+      suite `pytest tests/ -q` green: **221 passed**.
+    - **Deliverable commit:** `47373ea` — staged only
+      `tests/test_properties_layout.py` (1 file, +139 −1).
   - [ ] 10.8 Write the property test for ZonePlan normalisation
     - **Property 9: ZonePlan normalisation** (umbrella P12, no controls path)
     - `test_zoneplan_normalisation` over `zone_plan_dicts`.
