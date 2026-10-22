@@ -50,8 +50,8 @@ the requirements.
 - **Local_Frontend_Origin**: the configured origin of the frontend build or preview served locally (default: the frontend's local port on 127.0.0.1/localhost).
 - **CLI**: the `main.py` command-line entry point; it has no prompt mode (controls only).
 - **Planner**: the component that turns a prompt or a control set into a Zone_Plan; rule-based by default, LLM-backed when a key is configured.
-- **Zone_Plan**: the small declarative plan (zone type, room count, size, verticality, locks, topology, district switch and proposals, purpose, builder, inhabitants, condition, element, Target_Shortname, …) produced by the Planner.
-- **Zone_Spec**: the intermediate representation of a zone (zone type, Style_Profile, geometry style, rooms, corridors, lights, regions, gates, districts, materials, safe point, seed, shortname); everything downstream consumes it.
+- **Zone_Plan**: the small declarative plan (zone type, room count, size, verticality, locks, topology, district switch and proposals, purpose, builder, inhabitants, condition, element, …) produced by the Planner. A Zone_Plan never carries a Target_Shortname.
+- **Zone_Spec**: the intermediate representation of a zone (zone type, Style_Profile, geometry style, rooms, corridors, lights, regions, gates, districts, materials, safe point, seed); everything downstream consumes it.
 - **Layout_Generator**: the component that expands a Zone_Plan into a Zone_Spec (TinyKeep layout, topology, pacing, districts, semantics, elevation, corridors, gating).
 - **Room_Graph**: the graph whose nodes are Zone_Spec rooms and whose edges are corridors (`from_room`/`to_room`).
 - **Pacing_Role**: a room label in {entrance, hub, deadend, climax, standard} derived from the Room_Graph.
@@ -82,24 +82,26 @@ the requirements.
 - **Format_Checker**: the Tier-1 RoF2 format validator run on every built `.eqg`.
 - **Liquid_Surface_Material**: a material whose polygons form the top surface of a water, lava or slime region; the only materials allowed passable polygons.
 - **Known_Zone_List**: the list of RoF2 zone short names with long name, EQEmu zone id and client container type, bundled with the tool and optionally marked against an EQ_Install.
-- **Target_Shortname**: the existing RoF2 zone short name a generated zone takes over; every artifact is named for it (written `<short>` below).
-- **Default_Target**: the Known_Zone_List entry used when no Target_Shortname is given.
+- **Build_Name**: the lowercase name every file of a generated build carries (written `<name>` below): the build's zone id (`gen_<ts>_<hex>`), or the CLI's positional name; ASCII letters, digits and `_` only.
+- **Target_Shortname**: the existing RoF2 zone short name an Export takes over, chosen only when the Export is requested, never at generation (written `<short>` below).
+- **Default_Target**: the Known_Zone_List entry used when an Export request gives no Target_Shortname.
+- **Export**: the step that turns an Accepted_Build into a takeover copy named for a Target_Shortname (renamed archive, maps and Sidecar, plus the SQL script and bundle), written to `<build dir>/export/<short>/`; the build's own files are never changed.
 - **EQ_Install**: a local RoF2 client folder configured through `EQ_PATH`; read-only for the Zone_Generator.
 - **Output_Directory**: the directory the Zone_Generator writes into (`output/` by default, or the CLI `--output` path).
 - **Build_File_Allow_List**: the file extensions the Server serves from a build directory: `.eqg`, `.glb`, `.zone.json`, `.map.svg`, `.png`, `.sql`, `.txt`, `.zip`.
-- **Sidecar**: the `<short>.zone.json` advisory file written next to each build.
-- **SQL_Exporter**: the Tier-2 component producing `<short>.sql` for an EQEmu server.
+- **Sidecar**: the `<name>.zone.json` advisory file written next to each build (an Export writes `<short>.zone.json`).
+- **SQL_Exporter**: the Tier-2 component producing `<short>.sql` for an EQEmu server as part of an Export.
 - **Outline_Extractor**: the component that extracts wall/ledge polylines and depth bands from a built TER mesh.
 - **Depth_Band**: one of at most 4 vertical layers the Outline_Extractor assigns outline polylines to.
 - **Main_Band**: the Depth_Band containing the safe point's floor.
-- **EQ_Map_Writer**: the component that writes EverQuest in-client map files (`maps/<short>.txt`, `<short>_1..3.txt`).
+- **EQ_Map_Writer**: the component that writes EverQuest in-client map files (`maps/<name>.txt`, `<name>_1..3.txt`; renamed to `<short>` by an Export).
 - **Map_Parser**: the reader for the EQ map line grammar (`L …` lines and `P …` labels).
-- **Map_Viewer**: the top-down SVG renderer (`<short>.map.svg`).
+- **Map_Viewer**: the top-down SVG renderer (`<name>.map.svg`).
 - **Style_Profile**: measurements taken from real Classic–PoP zones (`styles/<profile>.json`); a Zone_Spec's Style_Profile is its Zone_Type's profile, or the `cave` profile when its Purpose (single-District zone, or District 0) is `cave`.
 - **Conformance_Meter**: the analyzer comparing a built zone's measured metrics with its Zone_Spec's Style_Profile.
 - **Texture_Generator**: the component producing diffuse and normal-map textures per material (procedural by default, AI provider optional).
 - **Normal_Map**: a tangent-space normal texture stored as a separate DDS in the `.eqg` and referenced by the material property `e_TextureNormal0`.
-- **Preview**: the `<short>.glb` file the Web_App renders.
+- **Preview**: the `<name>.glb` file the Web_App renders.
 - **Quality_Meter**: the component computing a QualityReport (metrics, failures, out-of-band list, score) from a Zone_Spec.
 - **Quality_Bands**: per-metric inclusive target ranges keyed by zone type, topology, room count and verticality.
 - **Quality_Degraded**: the state of a returned build whose QualityReport failed; carries a reason in {`quality_degraded`, `quality_outside_bands_pinned`, `edit_outside_bands`}.
@@ -123,9 +125,9 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. WHEN the user activates "Generate from description", THE Web_App SHALL send a generate request with `mode` = `prompt` carrying the prompt text, the seed and the Target_Shortname.
-2. WHEN the user activates "Generate from controls", THE Web_App SHALL send a generate request with `mode` = `controls` carrying the Controls panel values, the seed and the Target_Shortname.
-3. WHEN a generate request has `mode` = `prompt`, THE Server SHALL build the Zone_Plan from the prompt text through the Planner, SHALL take only the seed and Target_Shortname from request fields outside the prompt, and SHALL ignore every other control field.
+1. WHEN the user activates "Generate from description", THE Web_App SHALL send a generate request with `mode` = `prompt` carrying the prompt text and the seed.
+2. WHEN the user activates "Generate from controls", THE Web_App SHALL send a generate request with `mode` = `controls` carrying the Controls panel values and the seed.
+3. WHEN a generate request has `mode` = `prompt`, THE Server SHALL build the Zone_Plan from the prompt text through the Planner, SHALL take only the seed from request fields outside the prompt, and SHALL ignore every other control field.
 4. WHEN a generate request has `mode` = `controls`, THE Server SHALL build the Zone_Plan from the control values and SHALL ignore any prompt text.
 5. WHEN a generate request omits `mode` and carries a non-empty prompt, THE Server SHALL handle the request as `mode` = `prompt`.
 6. WHEN a generate request omits `mode` and carries an empty or absent prompt, THE Server SHALL handle the request as `mode` = `controls`, mapping the legacy flat fields (`theme` or `zone_type`, `rooms`, `elevation`, `seed`) to control values.
@@ -142,8 +144,8 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. THE Web_App Controls panel SHALL expose zone type, room count (bounded 1–30), size, verticality, locks (bounded 0–5), topology, district switch, purpose, builder, inhabitants, condition (up to two values), element, seed and Target_Shortname, and SHALL send a blank seed as "no seed" so that the Server draws a Fresh_Seed.
-2. THE CLI SHALL accept zone type, room count, size, verticality, locks, topology, district switch, seed and Target_Shortname as options.
+1. THE Web_App Controls panel SHALL expose zone type, room count (bounded 1–30), size, verticality, locks (bounded 0–5), topology, district switch, purpose, builder, inhabitants, condition (up to two values), element and seed, and SHALL send a blank seed as "no seed" so that the Server draws a Fresh_Seed.
+2. THE CLI SHALL accept zone type, room count, size, verticality, locks, topology, district switch and seed as options.
 3. WHEN a Zone_Plan is built from any input, THE Planner SHALL truncate room count and locks to integers and clamp each to its nearest bound (room count 1–30, locks 0–5).
 4. WHEN a Zone_Plan is built from a dictionary, THE Planner SHALL drop keys outside the Zone_Plan schema.
 5. WHEN an already-normalised Zone_Plan is normalised again, THE Planner SHALL return an equal Zone_Plan.
@@ -232,9 +234,9 @@ the requirements.
 
 (The Preview of a natural-styled build equals its collision mesh under Requirement 17.6.)
 
-### Requirement 8: Short-name takeover install model
+### Requirement 8: Export-time short-name takeover
 
-**User Story:** As a zone author, I want to choose which existing RoF2 zone my generated zone replaces and get files already named for it, so that installing is a copy, not a rename exercise.
+**User Story:** As a zone author, I want to choose which existing RoF2 zone a finished build replaces when I export it, and get files already named for that zone, so that generating stays independent of installing and installing is a copy, not a rename exercise.
 
 #### Acceptance Criteria
 
@@ -242,17 +244,16 @@ the requirements.
 2. WHERE an EQ_Install is configured, THE Known_Zone_List SHALL set `in_install` for each short name whose zone archive is present in the EQ_Install, excluding companion archives (`*_obj*`, `*_chr*`, `*_lit`, `*_assets`, `gequip*`, `global*`), and SHALL add no short name absent from the bundled list.
 3. IF no EQ_Install is configured or the configured path is unreadable, THEN THE Known_Zone_List SHALL serve the bundled list with `in_install` false for every entry.
 4. THE Server SHALL return the Known_Zone_List entries (`shortname`, `long_name`, `container`, `in_install`) and the Default_Target at `GET /api/shortnames`.
-5. THE Web_App SHALL show a Target_Shortname picker beside both Generate actions that filters by case-insensitive substring on short or long name, lists `in_install` entries first (alphabetical within each group), preselects the Default_Target, and shows a note stating that installing replaces that zone's client files and server rows and that the tool writes only to the Output_Directory.
-6. IF the Target_Shortname is absent, empty or whitespace-only, THEN THE Zone_Generator SHALL use the Default_Target.
-7. IF a controls-mode request names a Target_Shortname outside the Known_Zone_List, THEN THE Server SHALL respond HTTP 400 naming it and up to 5 closest known names, before any build and writing no file.
-8. IF a prompt-derived Zone_Plan carries a Target_Shortname outside the Known_Zone_List, THEN THE Planner SHALL substitute the Default_Target and record a `shortname_defaulted` warning.
-9. WHEN a prompt contains a Known_Zone_List short name or exact long name as a whole word (case-insensitive), THE Planner SHALL set the Target_Shortname to that entry; WHEN the prompt contains none, THE Planner SHALL leave the Target_Shortname empty; WHEN the prompt contains two or more, THE Planner SHALL use the first and record a `shortname_ambiguous` warning.
-10. THE Zone_Builder SHALL name the archive `<short>.eqg`, its terrain and zone entries `ter_<short>.ter` and `<short>.zon`, and the ZON's first model reference `TER_<SHORT>.TER`.
-11. THE Zone_Generator SHALL name every other artifact of a build for the Target_Shortname: `<short>.glb`, `<short>.zone.json` (whose `shortname` field equals the Target_Shortname), `<short>.map.svg`, `maps/<short>.txt` and `maps/<short>_1.txt`…`_3.txt`, `<short>.sql` and `<short>.bundle.zip`.
-12. THE Zone_Generator SHALL write each build into a directory under the Output_Directory unique per zone id and version, so that a second build for the same Target_Shortname overwrites no file of an earlier build.
-13. THE Default_Target SHALL be the Known_Zone_List entry `arena` (a low-traffic zone with no progression, flag or key dependency), identical across the Server, CLI and Web_App and returned by `GET /api/shortnames`. *(Note: the end user may manually rename the generated files to install over a different short name; whether the client and server accept such a manual rename is confirmed in a follow-up, the M6 in-engine smoke load, not by this requirement.)*
-14. IF a CLI invocation names a Target_Shortname outside the Known_Zone_List, THEN THE CLI SHALL print an error naming it and up to 5 closest known names and exit with status 2, writing no file.
-15. THE Zone_Generator SHALL match Target_Shortnames case-insensitively and SHALL use the lowercase form in every `<short>` artifact name, with `TER_<SHORT>.TER` the only uppercase form.
+5. THE Web_App SHALL show a Target_Shortname picker in the Export action of the Artifacts panel (not beside the Generate actions) that filters by case-insensitive substring on short or long name, lists `in_install` entries first (alphabetical within each group), preselects the Default_Target, and shows a note stating that installing replaces that zone's client files and server rows and that the tool writes only to the Output_Directory.
+6. THE Zone_Generator SHALL take no Target_Shortname from a prompt, a Zone_Plan, a Controls panel value or a generate request, so that a build's geometry, Zone_Spec and files are independent of any later Export.
+7. IF an Export request's Target_Shortname is absent, empty or whitespace-only, THEN THE Zone_Generator SHALL use the Default_Target.
+8. IF an Export request names a Target_Shortname outside the Known_Zone_List, THEN THE Server SHALL respond HTTP 400 naming it and up to 5 closest known names, writing no file; IF a CLI export names one, THEN THE CLI SHALL print the same error and exit with status 2, writing no file.
+9. THE Zone_Builder SHALL name a build's archive `<name>.eqg`, its terrain and zone entries `ter_<name>.ter` and `<name>.zon`, the ZON's first model reference `TER_<NAME>.TER`, and its other artifacts `<name>.glb`, `<name>.zone.json` (whose `name` field equals the Build_Name), `<name>.map.svg`, `maps/<name>.txt` and `maps/<name>_1.txt`…`_3.txt`.
+10. WHEN an Export is requested for an Accepted_Build and a Target_Shortname, THE Zone_Generator SHALL write into `<build dir>/export/<short>/` an archive `<short>.eqg` whose entries are those of `<name>.eqg` with `ter_<name>.ter` and `<name>.zon` renamed to `ter_<short>.ter` and `<short>.zon`, the ZON's first model reference set to `TER_<SHORT>.TER`, every entry CRC recomputed for its new name and every other entry byte-identical; the map files renamed to `maps/<short>.txt` … `_3.txt` with identical content; `<short>.zone.json` carrying `shortname` = Target_Shortname; and the SQL script and bundle of Requirement 10.
+11. FOR ALL Accepted_Builds and Target_Shortnames, reading back the exported archive SHALL yield the same vertices, polygons, materials, lights and regions as the build's own archive (an Export renames, it never rebuilds).
+12. THE Zone_Generator SHALL write each build into a directory under the Output_Directory unique per zone id and version, and SHALL leave every file of the build unchanged by any Export, so that exporting one build to several Target_Shortnames overwrites no file of the build or of another Export.
+13. THE Default_Target SHALL be the Known_Zone_List entry `arena` (a low-traffic zone with no progression, flag or key dependency), identical across the Server, CLI and Web_App and returned by `GET /api/shortnames`.
+14. THE Zone_Generator SHALL match Target_Shortnames case-insensitively and SHALL use the lowercase form in every `<short>` artifact name, with `TER_<SHORT>.TER` the only uppercase form.
 
 ### Requirement 9: Tier-1 RoF2 format check
 
@@ -261,12 +262,12 @@ the requirements.
 #### Acceptance Criteria
 
 1. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that the archive parses, that every entry decompresses to its recorded size, and that every entry's stored CRC equals the EQ filename CRC of its name.
-2. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that `ter_<short>.ter` and `<short>.zon` are present, that both re-serialise byte-identically after being read, and that the ZON's first model reference is `TER_<SHORT>.TER`.
+2. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that `ter_<name>.ter` and `<name>.zon` are present, that both re-serialise byte-identically after being read, and that the ZON's first model reference is `TER_<NAME>.TER`.
 3. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that every polygon's material index lies in 0 to (material count − 1), rejecting −1, and that every material's diffuse texture is present in the archive and decodes as a DDS with power-of-two width and height.
 4. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that every material carrying `e_TextureNormal0` names a file present in the archive that decodes as a DDS with the same width and height as that material's diffuse texture.
 5. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that every polygon on a material other than a Liquid_Surface_Material is collidable, that every passable polygon uses a Liquid_Surface_Material, and that at least one polygon is collidable.
 6. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that at least one standable face lies 0 to 10 units (inclusive) below the safe point in Z and within 50 units of it in XY, and that every vertex coordinate is finite with magnitude below 30000.
-7. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that the Target_Shortname is in the Known_Zone_List and that the archive file name, its TER and ZON entry names, the ZON model reference and the Sidecar `shortname` all use the same Target_Shortname.
+7. WHEN the Pipeline builds a zone, THE Format_Checker SHALL verify that the archive file name, its TER and ZON entry names, the ZON model reference and the Sidecar `name` all use the same Build_Name; WHEN an Export is written, THE Format_Checker SHALL run criteria 1–6 on the exported archive and SHALL verify that the Target_Shortname is in the Known_Zone_List and that the exported archive name, its TER and ZON entry names, the ZON model reference and the exported Sidecar `shortname` all use that Target_Shortname, writing no SQL or bundle when it fails.
 8. THE Format_Checker SHALL report a pass only when every check in criteria 1–7 passes.
 9. FOR every zone type in Enabled_Zone_Types, either geometry style of a dungeon (`built` or `natural`) and any seed, THE Zone_Builder SHALL produce a Raw_Build that passes the Format_Checker.
 10. WHEN a check fails, THE Format_Checker SHALL report one message per failed check naming the check and the offending entry, material, polygon or value.
@@ -279,17 +280,17 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. WHEN an Accepted_Build is produced, THE SQL_Exporter SHALL write `<short>.sql` into the Output_Directory containing exactly one `UPDATE zone … WHERE short_name = '<short>' AND version = 0` that sets safe x, y and z to the Zone_Spec safe point, no `INSERT INTO zone` statement and no statement that changes the zone id.
+1. WHEN an Export is written, THE SQL_Exporter SHALL write `<short>.sql` into the Export directory containing exactly one `UPDATE zone … WHERE short_name = '<short>' AND version = 0` that sets safe x, y and z to the Zone_Spec safe point, no `INSERT INTO zone` statement and no statement that changes the zone id.
 2. THE SQL_Exporter SHALL emit one `DELETE FROM doors` scoped to the Target_Shortname and version 0, followed by one `doors` insert per Gate (zero when there are no Gates) whose position equals that Gate's lock position, with door ids unique within the Target_Shortname.
 3. WHERE spawn cleanup is enabled (an export option in the Web_App and CLI, default off, recorded in the Sidecar), THE SQL_Exporter SHALL additionally emit deletes of the Target_Shortname's `spawn2`, `grid`, `grid_entries` and `ground_spawns` rows for version 0; WHILE spawn cleanup is disabled, THE SQL_Exporter SHALL emit no statement referencing those tables.
-4. IF the Target_Shortname is not in the Known_Zone_List or has no EQEmu zone id, THEN THE SQL_Exporter SHALL write no `<short>.sql`, leave any existing one untouched and report an error naming the short name, and THE Pipeline SHALL still accept the build, skipping the SQL and bundle with a `sql_export_skipped` warning.
+4. IF the Target_Shortname is not in the Known_Zone_List or has no EQEmu zone id, THEN THE SQL_Exporter SHALL write no `<short>.sql`, leave any existing one untouched and report an error naming the short name, and THE Export SHALL still write its renamed archive, maps and Sidecar, skipping the SQL and bundle with a `sql_export_skipped` warning.
 5. WHEN the script is applied once, or twice in a row, to a database of the pinned EQEmu schema (version fixed in the M6 milestone spec) containing stock rows for the Target_Shortname and other zones, THE script SHALL leave exactly one `zone` row for the Target_Shortname with its original zone id and the generated safe point, only the generated doors for that short name, and every other short name's rows unchanged.
 6. THE SQL_Exporter SHALL write into statements only finite numeric values and short names taken from the Known_Zone_List; IF a value is non-finite, THEN THE SQL_Exporter SHALL write no `.sql` and report an error naming the field.
 7. THE SQL_Exporter SHALL begin the script with a header of SQL comment lines only, naming the Target_Shortname and zone id and instructing the user to back up the affected rows before applying it.
 8. THE Zone_Generator SHALL deliver the SQL script only as a file in the Output_Directory, opening no connection to any database and changing no database.
-9. WHEN the bundle for an Accepted_Build is requested, THE Server SHALL serve `<short>.bundle.zip` containing `<short>.eqg`, the `maps/` files, `<short>.sql`, `<short>.zone.json` and an `INSTALL.txt` describing the manual steps: back up the stock client files and server rows, move the stock archives aside, copy the generated files in, apply the SQL.
+9. WHEN the bundle for an Export is requested, THE Server SHALL serve `<short>.bundle.zip` containing `<short>.eqg`, the `maps/` files, `<short>.sql`, `<short>.zone.json` and an `INSTALL.txt` describing the manual steps: back up the stock client files and server rows, move the stock archives aside, copy the generated files in, apply the SQL.
 10. THE SQL_Exporter SHALL wrap every data-changing statement of the script in a single transaction.
-11. IF a bundle is requested for a nonexistent build or for a build without `<short>.sql`, THEN THE Server SHALL produce no archive and report an error naming the missing build or file.
+11. IF a bundle is requested for a nonexistent build or Export, or for an Export without `<short>.sql`, THEN THE Server SHALL produce no archive and report an error naming the missing build or file.
 
 ### Requirement 11: Format and IR round-trips
 
@@ -301,7 +302,7 @@ the requirements.
 2. THE Zone_Generator SHALL compute PFS filename CRCs case-sensitively as the MSB-first CRC with polynomial 0x04C11DB7 and initial value 0 over the name bytes as stored followed by one NUL byte.
 3. FOR ALL TER and ZON files written by the Zone_Builder, reading back the written bytes SHALL yield the same vertices, polygons (indices, material index and flags), materials (name, shader and every property), lights and regions, equal at on-disk field precision (float32 values compared exactly).
 4. FOR ALL Zone_Specs produced by the Layout_Generator or the Edit_Engine, serialising to JSON and loading back SHALL produce a dictionary equal to the original.
-5. WHEN a Zone_Spec dictionary lacking newer fields (`shortname`, `topology`, `geometry_style`, `districts`, corridor `id` and `threshold`, `district_purpose`, material `normal_texture`) is loaded, THE Zone_Generator SHALL fill those fields with their documented defaults (`shortname` → the Default_Target, `geometry_style` → `built`), leave present fields unchanged and ignore unknown extra keys.
+5. WHEN a Zone_Spec dictionary lacking newer fields (`topology`, `geometry_style`, `districts`, corridor `id` and `threshold`, `district_purpose`, material `normal_texture`) is loaded, THE Zone_Generator SHALL fill those fields with their documented defaults (`geometry_style` → `built`), leave present fields unchanged and ignore unknown extra keys (including a legacy `shortname`, which is dropped).
 6. THE Zone_Generator SHALL read geometry (vertices, triangles and texture names) from `.s3d` zones (old- and new-format WLD) and from `.eqg` zones for analysis.
 7. THE Zone_Builder SHALL write every generated zone as `.eqg`.
 8. IF a PFS or WLD file has an unrecognised magic or an unsupported version, THEN THE Zone_Generator SHALL raise an error naming the file kind and the bad value and return no partial data.
@@ -332,7 +333,7 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. WHEN an Accepted_Build is produced, THE EQ_Map_Writer SHALL write one file per Depth_Band: the Main_Band to `maps/<short>.txt` and the remaining bands to `maps/<short>_1.txt` through `maps/<short>_3.txt` in ascending order of median floor Z, writing no file for a missing band.
+1. WHEN an Accepted_Build is produced, THE EQ_Map_Writer SHALL write one file per Depth_Band: the Main_Band to `maps/<name>.txt` and the remaining bands to `maps/<name>_1.txt` through `maps/<name>_3.txt` in ascending order of median floor Z, writing no file for a missing band.
 2. THE EQ_Map_Writer SHALL write one record per line, line records as `L x1, y1, z1, x2, y2, z2, r, g, b` and label records as `P x, y, z, r, g, b, size, text`, with coordinates to exactly 4 decimal places, integer colour channels 0–255, size ∈ {1, 2, 3}, non-empty label text, and spaces in label text written as `_`.
 3. THE Map_Parser SHALL parse `L` and `P` records of that grammar into map layers, accepting records with or without a space after each comma, keeping everything after the seventh comma of a `P` record (commas included) as label text, and ignoring blank lines.
 4. FOR ALL map layers, parsing the EQ_Map_Writer's formatted text SHALL yield a layer with the same record counts and order, coordinates within 0.00005, identical colours and sizes, and label text equal to the original with spaces replaced by `_` (round-trip property).
@@ -354,8 +355,8 @@ the requirements.
 2. WHEN no outline is supplied, THE Map_Viewer SHALL produce output byte-identical to the schematic-only rendering.
 3. IF a Raw_Build is rejected, THEN THE Pipeline SHALL leave no map SVG or EQ map file of that Raw_Build in the Output_Directory.
 4. WHEN an Accepted_Build is returned, THE Web_App Artifacts panel SHALL display that build's map SVG, replacing any earlier one.
-5. WHEN `GET /api/zones/{zone_id}/{version}/{filename}` names an existing file in that build's directory, THE Server SHALL serve the file's bytes unchanged, where `{filename}` may be `maps/<short>.txt`.
-6. THE Web_App Artifacts panel SHALL offer, for the current cursor version, downloads of the map SVG, a PNG rendered in the browser from that SVG at 2× its viewBox, each EQ map `.txt` file, `<short>.eqg`, `<short>.sql` and the bundle `.zip`.
+5. WHEN `GET /api/zones/{zone_id}/{version}/{filename}` names an existing file in that build's directory, THE Server SHALL serve the file's bytes unchanged, where `{filename}` may be `maps/<name>.txt` or an Export path `export/<short>/<file>`.
+6. THE Web_App Artifacts panel SHALL offer, for the current cursor version, downloads of the map SVG, a PNG rendered in the browser from that SVG at 2× its viewBox, each EQ map `.txt` file and `<name>.eqg`, plus an Export action (Requirement 8.5) after which it offers that Export's `<short>.eqg`, `<short>.sql` and bundle `.zip`.
 7. IF a build-file request passes the checks of Requirement 30.10 but names no existing file in that build's directory, THEN THE Server SHALL respond HTTP 404 with no file content.
 8. IF an artifact fails to load, THEN THE Web_App Artifacts panel SHALL mark that artifact unavailable and keep the other artifacts usable.
 
@@ -548,7 +549,7 @@ the requirements.
 
 #### Acceptance Criteria
 
-1. WHEN two independent runs receive the same Zone_Plan, Pinned_Seed, Target_Shortname and arguments for any zone type in Enabled_Zone_Types (dungeons in either geometry style), THE Zone_Generator SHALL produce equal Zone_Spec dictionaries and byte-identical TER, ZON, `<short>.map.svg` and EQ map files (`.eqg` and `.glb` are not required to be byte-identical).
+1. WHEN two independent runs receive the same Zone_Plan, Pinned_Seed, Build_Name and arguments for any zone type in Enabled_Zone_Types (dungeons in either geometry style), THE Zone_Generator SHALL produce equal Zone_Spec dictionaries and byte-identical TER, ZON, `<name>.map.svg` and EQ map files (`.eqg` and `.glb` are not required to be byte-identical).
 2. WHEN a generation is requested without a seed, THE Pipeline SHALL draw a Fresh_Seed in 0–2,147,483,647 for that call, such that three consecutive unpinned calls with identical inputs do not all share one seed.
 3. THE Server SHALL include in each generate response the seed of the Accepted_Build (the seed actually built after any retries).
 4. WHILE a seed is pinned, THE Pipeline SHALL build only that Pinned_Seed and draw no Fresh_Seed for any retry.
@@ -661,8 +662,8 @@ Milestones and properties refer to `design.md` (Delivery plan; Correctness Prope
 | 5 Walkable connections | P-B | M0 | P6, P7, P8 |
 | 6 Wilderness terrain alignment | P-B | M1 | P1, P18 |
 | 7 Natural, connected caves | P-B | M1 (park), M5 | P1 (cave) |
-| 8 Short-name takeover | P-C | M1 (M6 for bundle) | P41 |
-| 9 Tier-1 format check | P-C | M1 (normals check M3) | P20, P40, P41 |
+| 8 Export-time short-name takeover | P-C | M6 | P41 |
+| 9 Tier-1 format check | P-C | M1 (normals check M3, Export checks M6) | P20, P40, P41 |
 | 10 Tier-2 SQL export | P-C | M6 | P37 |
 | 11 Format and IR round-trips | P-C | M0 | P11, P13, P14, P15 |
 | 12 Mesh-derived outline | P-D | M2 | P21, P22 |

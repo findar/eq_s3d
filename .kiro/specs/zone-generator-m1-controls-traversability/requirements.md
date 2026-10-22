@@ -10,15 +10,15 @@ of restating it: "Req X.Y" below means zone-generator Requirement X.Y, and "Pn"
 means umbrella design Correctness Property n.
 
 M1 makes the browser a first-class, two-mode generator and makes every zone type
-the UI offers genuinely walkable, with a Tier-1 format check in the build path and a
-short-name takeover install model. Per the umbrella traceability table, M1
+the UI offers genuinely walkable, with a Tier-1 format check in the build path and
+every build named and filed consistently. Per the umbrella traceability table, M1
 delivers these requirement slices:
 
 - **Req 1** — Explicit generation modes (prompt vs controls, each its own
   Generate action; the CLI stays controls-only).
 - **Req 2 (geometry-control slice)** — Control coverage and plan
   normalisation: M1 exposes the controls that change generated geometry today
-  (zone type, room count, size, verticality, locks, seed, Target_Shortname);
+  (zone type, room count, size, verticality, locks, seed);
   the content-layer and district controls wait for M3, where they first drive
   generation. Normalisation of every plan field applies now. *(P12.)*
 - **Req 3** — Zone type availability (offer only Enabled_Zone_Types; gate by
@@ -31,9 +31,11 @@ delivers these requirement slices:
 - **Req 7 (park slice only)** — keep the Zone_Generator free of any cave zone
   type or separate cave pipeline (Req 7.11); the Natural_Style transform itself
   is M5, not M1.
-- **Req 8** — Short-name takeover install model (`target_shortname` end to end,
-  the Known_Zone_List, the `/api/shortnames` picker; the bundle `.zip` is M6).
-  *(P41.)*
+- **Req 8 (build-naming slice: 8.6, 8.9, 8.12)** — generation takes no
+  Target_Shortname; every build file is named by its Build_Name in a per-build
+  directory. The short-name takeover itself (Known_Zone_List, picker,
+  rename-only Export) moved to M6 with the SQL export (umbrella design
+  decision 20). *(P41, Build_Name form.)*
 - **Req 9** — Tier-1 RoF2 format check in the Pipeline (the normal-map check in
   9.4 is deferred to M3 with normal maps). *(P20, P40, P41.)*
 - **Req 31** — File-system confinement (the tool writes only inside the
@@ -71,6 +73,10 @@ build is available so the flat case can be generated and verified directly.
   `inhabitants`, `elemental_tint` → `element`, `semantic_type` → `room_type`) —
   all M3. Those fields still normalise in M1 (Req 2.8) under their current names.
 - Mapping Zone_Type and Enclosure onto the EQ `ztype`, sky and outdoor flags (M6).
+- The Known_Zone_List, `/api/shortnames`, the Target_Shortname picker, the
+  Export re-pack and the Export format checks (Req 8 remainder, 9.7 second
+  half) — M6, where the target is chosen alongside the SQL (umbrella design
+  decision 20). No Target_Shortname field is added anywhere in M1.
 - The normal-map format check (Req 9.4), districts, topology, the quality gate
   (umbrella M3), and the Tier-2 SQL export / bundle (Req 10, M6).
 
@@ -112,8 +118,7 @@ Umbrella glossary terms are used unchanged, notably Zone_Generator, Server, CLI,
 Web_App, Planner, Zone_Plan, Zone_Spec, Layout_Generator, Zone_Builder,
 Geometry_Backend, Box_Backend, Terrain_Backend, Pipeline, Raw_Build,
 Accepted_Build, Traversal_Validator, Format_Checker, Zone_Type,
-Defined_Zone_Types, Enabled_Zone_Types, Gated_Zone_Type, Enclosure, Room_Graph, Target_Shortname, Known_Zone_List,
-Default_Target, Fresh_Seed, Pinned_Seed, Sidecar and Output_Directory. New terms
+Defined_Zone_Types, Enabled_Zone_Types, Gated_Zone_Type, Enclosure, Room_Graph, Build_Name, Fresh_Seed, Pinned_Seed, Sidecar and Output_Directory. New terms
 introduced by this spec are defined where first used.
 
 ## Requirements
@@ -160,10 +165,10 @@ a zone without surprises.
 #### Acceptance Criteria
 
 1. THE Web_App Controls panel SHALL expose zone type, room count (1–30), size,
-   verticality (including `flat`), locks (0–5), seed and Target_Shortname, and
+   verticality (including `flat`), locks (0–5) and seed, and
    SHALL send a blank seed as "no seed" (Req 2.1, geometry-control slice).
 2. THE CLI SHALL accept zone type, room count, size, verticality, locks, seed
-   and Target_Shortname as options and build every plan through the controls
+   as options and build every plan through the controls
    path (Req 2.2 slice, Req 1.9).
 3. THE Web_App and CLI SHALL NOT yet expose topology, the district switch,
    Purpose, Builder, Inhabitants, Condition or Element (deferred to M3, where
@@ -302,32 +307,30 @@ as a dungeon Purpose (M3) and the natural style (M5), not a parallel path.
    cave geometry pipeline (Req 7.11). (M0 removed the pipeline; M1 keeps it
    absent as the backend registry and zone-type surface change.)
 
-### Requirement 8: Short-name takeover install model
+### Requirement 8: Build naming and per-build directories
 
-Implements zone-generator Requirement 8 (the M6 bundle `.zip` excepted).
+Implements zone-generator Requirement 8, criteria 8.6, 8.9 and 8.12 only (the
+Known_Zone_List, picker and Export are M6, umbrella design decision 20).
 
-**User Story:** As a zone author, I want to choose which existing RoF2 zone my
-generated zone replaces and get files already named for it, so that installing is
-a copy, not a rename exercise.
+**User Story:** As a zone author, I want every build's files named
+consistently and kept in their own folder, and no install target chosen until
+I export, so that generating never commits me to replacing a zone.
 
 #### Acceptance Criteria
 
-1. THE Known_Zone_List SHALL provide each known RoF2 short name's long name,
-   EQEmu zone id, container type and `in_install` flag per Req 8.1–8.3, sourced
-   from a bundled list and marked against the EQ_Install when configured.
-2. THE Server SHALL serve the list and the Default_Target at
-   `GET /api/shortnames` (Req 8.4); THE Web_App SHALL show the Target_Shortname
-   picker beside both Generate actions with the filtering, ordering, default and
-   install note of Req 8.5.
-3. THE Zone_Generator SHALL resolve the Target_Shortname per Req 8.6–8.9 and
-   8.14 (default when blank; HTTP 400 / CLI exit 2 for an unknown controls/CLI
-   name; planner defaulting and prompt detection), the Default_Target being
-   `arena` (Req 8.13).
-4. THE Zone_Builder SHALL name the archive and its TER/ZON entries and model
-   reference per Req 8.10 and every other build artifact per Req 8.11, into a
-   per-zone-id-and-version directory (Req 8.12), using the lowercase short name
-   everywhere except `TER_<SHORT>.TER` (Req 8.15, P41). The `.bundle.zip` named
-   in Req 8.11 is produced in M6, not M1.
+1. THE Zone_Generator SHALL take no Target_Shortname from a prompt, a
+   Zone_Plan, a Controls panel value, a CLI option or a generate request, and
+   SHALL add no target field to the Zone_Plan, Zone_Spec or request body
+   (Req 8.6).
+2. THE Zone_Builder SHALL name a build's archive `<name>.eqg`, its entries
+   `ter_<name>.ter` and `<name>.zon`, the ZON's first model reference
+   `TER_<NAME>.TER`, and its other artifacts `<name>.glb`, `<name>.zone.json`
+   (with `name` equal to the Build_Name) and `<name>.map.svg`, where the
+   Build_Name is the lowercase zone id from the Server or the lowercase CLI
+   name (Req 8.9; the map `.txt` files are M2).
+3. THE Zone_Generator SHALL write each Accepted_Build into
+   `<Output_Directory>/<zone id>/v<version>/`, so that no build overwrites a
+   file of another (Req 8.12); M1 always writes `v1`.
 
 ### Requirement 9: Tier-1 RoF2 format check in the pipeline
 
@@ -342,7 +345,8 @@ rules the RoF2 client relies on, so that a file the tool hands me is loadable.
 1. THE Format_Checker SHALL run in the Pipeline on every build and verify the
    archive, TER/ZON round-trip and model reference, material indices and diffuse
    DDS, collision policy, safe-point standable face and finite coordinates, and
-   the Target_Shortname name agreement — Req 9.1–9.3 and 9.5–9.7.
+   Build_Name agreement across the archive name, entry names, model reference
+   and Sidecar `name` — Req 9.1–9.3, 9.5, 9.6 and the build half of 9.7.
 2. THE Pipeline SHALL treat the Format_Checker as a hard gate alongside the
    Traversal_Validator (Req 4.4): a build of a Gated_Zone_Type is returned only after
    both pass, with the same retry/exhaustion behaviour, and the Format_Checker
@@ -423,8 +427,8 @@ types that depend on it are gated:
    wilderness; `/api/zone_types` reflects the sweep result.
 5. **Controls + modes (Requirements 1, 2).** `ZonePlan.from_controls`, the
    explicit `mode`, the two Generate actions and the geometry-control panel.
-6. **Short names + format gate (Requirements 8, 9, 10).** The
-   Known_Zone_List, the picker, `<short>.*` naming, `rof2check` in the pipeline,
+6. **Build naming + format gate + confinement (Requirements 8, 9, 10).**
+   `<name>.*` naming in per-build directories, `rof2check` in the pipeline,
    and confinement.
 
 Waves 2, 5 and 6 touch `server/app.py`, `ai/expand.py` and `generators/pipeline.py`
@@ -442,8 +446,8 @@ M1 exits only when:
    actions do what they say; **every offered zone type (dungeon, city,
    wilderness) walks end to end in the viewer**, including flat and elevated 30-room
    dungeons and the seeds from the M0 pass (`1949459644`, `1510177507`);
-   wilderness rooms sit on their pads; the short-name picker lists the install's zones and
-   the downloaded files carry the chosen short name. Structural tests are
+   wilderness rooms sit on their pads; the downloaded files carry the build's
+   name consistently. Structural tests are
    necessary but not sufficient — the connectivity and terrain claims are
    confirmed in 3D.
 4. Any root-cause fix that changed geometry records the affected seeds for the
