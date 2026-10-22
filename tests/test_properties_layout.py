@@ -14,14 +14,15 @@ from __future__ import annotations
 
 import json
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
+from generators.layout import LayoutGenerator
 from generators.zone_spec import ZoneSpec
 
-from .pbt_helpers import scaled, room_graph
+from .pbt_helpers import scaled, room_graph, solvable_walk, _entrance_id
 from .strategies import (
     seeds,
     room_counts,
@@ -152,3 +153,98 @@ def test_connectivity_and_roles(seed, theme, n, semantic):
         assert climaxes[0].id != entrances[0].id
     else:
         assert climaxes == []
+
+# Same cold-call reasoning as the two tests above: a full gated layout for up to
+# 30 rooms with the semantic layer can brush the Default_Profile's 200 ms
+# per-example deadline on a cold call (warmup) -- timing variance, not a property
+# failure -- so disable the deadline and keep the 100-example budget (scaled by
+# the active profile). Layout-tier only (gating never builds the binary and
+# never touches geometry, per umbrella P5), so no `slow` marker and no
+# `build_settings`. This drives the SAME gated path task 10.3 verified:
+# `LayoutGenerator(theme, seed=s).generate(name, room_count=n, locks=k)` runs
+# `_apply_gating` internally when locks > 0.
+#
+# The pinned `@example` is the input task 10.3 found by scanning the real
+# generator (the first case where a gate's key_room_id lands on the entrance id,
+# i.e. the key-room FALLBACK path): seed=16, dungeon, 5 rooms, 4 locks. For that
+# case (expect_fallback=True) the test additionally asserts that at least one
+# gate.key_room_id == the entrance id, proving the fallback is exercised and the
+# keyed dungeon is still solvable from the entrance.
+# The pinned 10.3 input. Its param names match `@given` (`n` for the room
+# count), and it carries a neutral `semantic` (empty theme/race, no tint) so it
+# reproduces the plain `generate(name, room_count=5, locks=4)` call 10.3 scanned
+# -- the case where a gate's key_room_id lands on the entrance id.
+@settings(deadline=None, max_examples=scaled(100))
+@example(
+    seed=16,
+    theme="dungeon",
+    n=5,
+    locks=4,
+    semantic={"dungeon_theme": "", "dungeon_race": "", "elemental_tint": None},
+    expect_fallback=True,
+)
+@given(
+    seed=seeds,
+    theme=box_themes,
+    n=room_counts(3, 30),
+    locks=st.integers(min_value=1, max_value=5),
+    semantic=semantic_inputs,
+    expect_fallback=st.just(False),
+)
+def test_gating_solvable(seed, theme, n, locks, semantic, expect_fallback):
+    """Feature: zone-generator-m0-hygiene, Property 6: Gating is solvable.
+
+    Umbrella P4 (single District). For any keyed dungeon the Layout_Generator
+    produces on a box theme (dungeon/city), room counts 3-30, 1-5 locks, with
+    non-default semantic fields: the gate set is non-empty and no larger than
+    the requested lock count (``1 <= len(gates) <= locks``), and a fixpoint walk
+    from the entrance -- crossing a gated corridor only once its key room has
+    been reached -- visits EVERY room. That is the gating invariant: every key
+    sits on the path before its own lock, so the keyed dungeon is always
+    solvable.
+
+    The pinned ``@example`` (seed 16 / dungeon / 5 rooms / 4 locks) is the input
+    task 10.3 found that drives the key-room FALLBACK: at least one gate keys off
+    the entrance room itself. For that case (``expect_fallback=True``) the test
+    also asserts ``key_room_id == entrance_id`` for some gate, so the fallback
+    path is covered and shown to remain solvable.
+
+    Validates: M0 Req 3.2, 3.6; umbrella Req 1.6.
+    """
+    # Same gated path task 10.3 verified: locks > 0 triggers `_apply_gating`.
+    spec = LayoutGenerator(theme, seed=seed).generate(
+        name=f"gate{seed}",
+        room_count=n,
+        locks=locks,
+        dungeon_theme=semantic["dungeon_theme"],
+        dungeon_race=semantic["dungeon_race"],
+        elemental_tint=(semantic["elemental_tint"] or ""),
+    )
+
+    # A keyed dungeon has at least one gate and never more than the requested
+    # number of locks.
+    gates = spec.gates
+    assert 1 <= len(gates) <= locks
+
+    # The gating invariant: every room is reachable from the entrance, crossing
+    # each gated corridor only after its key room has been visited. If this ever
+    # fails for a generated input it is a REAL gating-solvability bug (umbrella
+    # P4), never a reason to weaken the assertion.
+    entrance_id = _entrance_id(spec)
+    visited = solvable_walk(spec)
+    room_ids = {r.id for r in spec.rooms}
+    assert visited == room_ids, (
+        f"gating not solvable: unreached rooms "
+        f"{sorted(room_ids - visited)} (seed={seed}, theme={theme}, "
+        f"n={n}, locks={locks})"
+    )
+
+    # The pinned fallback case: prove the key-room fallback path is exercised --
+    # at least one gate keys off the entrance room itself -- and that the
+    # dungeon is still solvable (asserted above).
+    if expect_fallback:
+        assert any(g.key_room_id == entrance_id for g in gates), (
+            "expected the key-room fallback (a gate keyed on the entrance "
+            f"id {entrance_id!r}), got key rooms "
+            f"{[g.key_room_id for g in gates]}"
+        )
