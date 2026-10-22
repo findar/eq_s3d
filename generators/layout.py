@@ -221,6 +221,17 @@ class LayoutGenerator:
 
         if elevation:
             self._assign_elevation(rooms, edges, entrance)
+        elif themed:
+            # Elevation is off, but the semantic layer perturbed floor_z (sunk
+            # arenas / sumps, raised thrones). Those biased floors never went
+            # through _assign_elevation, so a sunk room next to a flat one over
+            # a short run is a corridor steeper than max_grade — the historic
+            # cliff-corridor failure mode, reachable with elevation OFF via the
+            # semantic sink path. Run the relax pass alone (no random rises): it
+            # pulls every room into its neighbours' walkable Z bands, so the
+            # sink CHARACTER survives wherever the run can carry it while every
+            # corridor stays within the grade cap.
+            self._relax_semantic_floors(rooms, edges, entrance)
 
         for i, room in enumerate(rooms):
             spec.rooms.append(room)
@@ -625,6 +636,23 @@ class LayoutGenerator:
         # or loop — ends up walkable.
         self._relax_elevation(rooms, adj, entrance)
 
+    def _relax_semantic_floors(self, rooms: List[RoomSpec],
+                               edges: List[Tuple[int, int]],
+                               entrance: int = 0) -> None:
+        """
+        Relax semantic sink/raise floor biases into walkable bands WITHOUT the
+        BFS random-rise pass. Used when elevation is off but the semantic layer
+        moved floor_z: builds the same adjacency _assign_elevation uses and runs
+        the proven _relax_elevation clamp so every corridor satisfies the grade
+        cap while the sink character survives where the run can carry it.
+        """
+        from collections import defaultdict
+        adj = defaultdict(list)
+        for i, j in edges:
+            adj[i].append(j)
+            adj[j].append(i)
+        self._relax_elevation(rooms, adj, entrance)
+
     def _relax_elevation(self, rooms: List[RoomSpec], adj, entrance: int,
                          iterations: int = 200) -> None:
         """
@@ -633,6 +661,14 @@ class LayoutGenerator:
         A room already inside every band doesn't move, so consistent verticality
         is preserved; only cliffs get compressed. The entrance stays fixed as
         the Z reference. Converges because each pass is a clamp toward feasibility.
+
+        The pass is Gauss-Seidel: a room clamped against a neighbour read earlier
+        in the SAME sweep can leave that neighbour a hair off-band, so the exit
+        must settle well below the per-corridor cap's 0.01 tolerance. Exiting at
+        `moved < 0.01` left a residual that pushed the occasional corridor a few
+        thousandths past `run * max_grade + 0.01` (seed 3600, corr_2). Tighten the
+        fixpoint to `moved < 1e-4` so the band constraint holds inside tolerance
+        on every edge. (The cap's 0.01 tolerance itself is never widened.)
         """
         for _ in range(iterations):
             moved = 0.0
@@ -651,7 +687,7 @@ class LayoutGenerator:
                     newz = (lo + hi) / 2
                 moved = max(moved, abs(newz - rooms[i].floor_z))
                 rooms[i].floor_z = newz
-            if moved < 0.01:
+            if moved < 1e-4:
                 break
 
     def _route_legs(self, a: RoomSpec, b: RoomSpec) -> List[float]:
