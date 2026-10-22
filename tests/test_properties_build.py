@@ -195,3 +195,81 @@ def test_locks_do_not_touch_geometry(s, theme, n, locks):
         f"locks changed the ZON layout (seed={s}, theme={theme}, rooms={n}, "
         f"locks={locks}): gating leaked into placement"
     )
+
+from tests.strategies import spec_themes
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    s=seeds,
+    theme=spec_themes,
+    n=room_counts(2, 12),
+    locks=st.integers(min_value=0, max_value=5),
+    elevation=st.booleans(),
+)
+def test_seed_determinism(s, theme, n, locks, elevation):
+    """
+    Feature: zone-generator-m0-hygiene, Property 13: Seed determinism
+    (umbrella P9, no map artifacts).
+
+    The same inputs (same name, same explicit seed, same plan) run through
+    ``plan_to_spec`` + ``build_raw`` twice MUST produce the same zone. Given an
+    explicit seed, ``plan_to_spec`` draws no fresh random (it only falls back to
+    ``random.randint`` when ``seed is None``), so the whole layout/geometry/
+    placement pipeline is a pure function of (plan, seed). This property asserts
+    that directly: two independent passes into two separate ``fresh_dir()``s
+    yield EQUAL ``ZoneSpec`` dicts and BYTE-IDENTICAL TER (geometry) and ZON
+    (placement). This is the "same inputs reproduce the same zone" bar the
+    north-star "randomness is a feature" rule depends on (a pinned seed must
+    replay exactly).
+
+    Scope note: TER/ZON only — NOT the ``.eqg`` bytes (the PFS footer stamps
+    ``int(time.time())`` and would differ between two archives) and NOT any
+    texture / ``.glb`` output (procedural texture seeds use a salted ``hash()``
+    that can vary across processes; see lessons-learned). ``build_raw`` reads
+    the TER/ZON members back out of the archive for exactly this reason, so the
+    comparison is unaffected by texture salting. Geometry + placement are what
+    seed determinism governs, and that is what is compared here.
+
+    NOTE: this is an ANALYTICAL byte-equality check on the built TER/ZON, not a
+    live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: M0 Req 4.4, 1.5; umbrella Req 1.6.
+    """
+    plan = ZonePlan(
+        name="seeddet",
+        theme=theme,
+        room_count=n,
+        locks=locks,
+        elevation=elevation,
+        verticality="moderate",
+    )
+
+    # Two passes, SAME name + SAME explicit seed, into separate output dirs.
+    # plan_to_spec with an explicit seed draws no fresh random, so both specs
+    # derive from an identical RNG stream.
+    spec1 = plan_to_spec(plan, seed=s)
+    spec2 = plan_to_spec(plan, seed=s)
+
+    assert spec1.to_dict() == spec2.to_dict(), (
+        f"same-seed ZoneSpec dicts diverged "
+        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"elevation={elevation}): non-deterministic spec"
+    )
+
+    with fresh_dir() as out1:
+        _r1, ter1, zon1 = build_raw(spec1, out1)
+    with fresh_dir() as out2:
+        _r2, ter2, zon2 = build_raw(spec2, out2)
+
+    assert ter1 == ter2, (
+        f"same-seed TER meshes diverged "
+        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"elevation={elevation}): non-deterministic geometry"
+    )
+    assert zon1 == zon2, (
+        f"same-seed ZON layouts diverged "
+        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"elevation={elevation}): non-deterministic placement"
+    )
