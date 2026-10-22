@@ -18,6 +18,7 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from ai.expand import plan_to_spec
+from ai.rule_planner import RulePlanner, _THEME_WORDS
 from ai.schema import ZonePlan
 from generators.geometry import MAX_SEG_RISE, build_mesh
 from generators.layout import LayoutGenerator
@@ -39,6 +40,8 @@ from .strategies import (
     verticality,
     semantic_inputs,
     zone_plan_dicts,
+    CAVE_WORDS,
+    DEFINED_THEMES,
 )
 
 
@@ -681,3 +684,110 @@ def test_zoneplan_normalisation(d):
         f"normalisation is not idempotent: a second validate() changed the "
         f"plan from {before!r} to {again!r} (input {d!r})"
     )
+
+
+# --- Property 19: Cave words never yield a cave theme (M0-only) ---------------
+#
+# Layout-tier, no binary build: `RulePlanner().plan(prompt)` is pure keyword
+# scoring (`ai.rule_planner`), so no `slow` marker and no `build_settings`.
+# Budget 100 per the design (default profile, scaled by the active profile).
+# `deadline=None` for parity with the other layout-tier tests -- the work is
+# trivial, but a cold import of `ai.rule_planner` on the first example can brush
+# the 200 ms deadline (warmup), which is timing variance, not a property failure.
+#
+# `cave_prompts` builds a prompt that ALWAYS contains >= 1 Cave_Word
+# (`CAVE_WORDS`), mixes in `st.text()` filler, and optionally salts in 0-3 words
+# drawn from the OTHER `_THEME_WORDS` buckets (the outdoor/city words plus the
+# non-cave dungeon words), then shuffles every token into a single string. The
+# cave words were folded into the dungeon bucket post-5.2, so a cave word
+# contributes to the dungeon score exactly as the planner counts it.
+#
+# The strictly-greater premise is computed IN THE TEST by mirroring the
+# planner's scoring verbatim: `sum(prompt_lower.count(w) for w in bucket)` for
+# each of the dungeon / outdoor / city buckets of `_THEME_WORDS` -- the same
+# `str.count` substring counting `RulePlanner._match_theme` uses. When the
+# dungeon score is strictly greater than BOTH the outdoor and city scores, the
+# theme must be `dungeon`; otherwise (ties, or outdoor/city outscoring) we only
+# assert theme in Defined_Themes, because the planner's tie rule -- unchanged in
+# M0 -- lets outdoor/city win ties, and over-constraining ties would be wrong.
+_OTHER_THEME_WORDS = sorted(
+    {
+        w
+        for bucket, words in _THEME_WORDS.items()
+        for w in words
+        if w not in set(CAVE_WORDS)
+    }
+)
+
+
+@st.composite
+def cave_prompts(draw) -> str:
+    """A prompt that always carries >= 1 Cave_Word, plus filler and optional
+    other-bucket salt, shuffled into one string."""
+    cave_picks = draw(
+        st.lists(st.sampled_from(CAVE_WORDS), min_size=1, max_size=3)
+    )
+    other_picks = draw(
+        st.lists(st.sampled_from(_OTHER_THEME_WORDS), min_size=0, max_size=3)
+    )
+    filler = draw(st.text(max_size=40))
+    tokens = cave_picks + other_picks + ([filler] if filler else [])
+    order = draw(st.permutations(tokens))
+    return " ".join(order)
+
+
+def _bucket_score(text_lower: str, bucket: list) -> int:
+    """Mirror `RulePlanner._match_theme` scoring: substring `str.count` per
+    bucket word, summed."""
+    return sum(text_lower.count(w) for w in bucket)
+
+
+@settings(deadline=None, max_examples=scaled(100))
+@given(prompt=cave_prompts())
+def test_cave_words_mean_dungeon(prompt):
+    """Feature: zone-generator-m0-hygiene, Property 19: Cave words never yield a cave theme (M0-only).
+
+    For any prompt containing one or more Cave_Words (mixed with random filler
+    and, optionally, outdoor/city/dungeon keywords), the rule planner's chosen
+    theme is always one of the Defined_Themes {dungeon, outdoor, city} and NEVER
+    "cave" -- the cave theme was removed from the surface in M0, and the cave
+    words were folded into the dungeon bucket. Beyond that, the theme EQUALS
+    "dungeon" whenever the prompt's dungeon-bucket score (Cave_Words included,
+    counted with `str.count` exactly as `RulePlanner._match_theme` does) is
+    STRICTLY GREATER than both its outdoor score and its city score. When the
+    dungeon score is not strictly greater (a tie, or outdoor/city outscoring),
+    only the Defined_Themes membership is asserted: the planner's tie rule is
+    unchanged in M0 and outdoor/city win ties, so over-constraining ties would
+    be wrong.
+
+    The dungeon/outdoor/city scores are computed in the test directly from
+    `ai.rule_planner._THEME_WORDS`, mirroring the planner's substring counting,
+    which is the design's "scores computed in the test from `_THEME_WORDS` for
+    the strictly greater premise". If a cave-word prompt ever yields "cave" (or
+    any out-of-domain theme), or the strictly-greater-dungeon premise fails to
+    give "dungeon", that is a REAL planner bug -- report the counterexample and
+    fix the planner at the root; do NOT narrow the strategy.
+
+    Validates: M0 Req 6.5.
+    """
+    theme = RulePlanner().plan(prompt).theme
+
+    # (1) The theme is always a Defined_Theme and never "cave".
+    assert theme in DEFINED_THEMES, (
+        f"planner theme {theme!r} not in Defined_Themes {DEFINED_THEMES} "
+        f"for prompt {prompt!r}"
+    )
+
+    # (2) Strictly-greater dungeon score -> theme must be dungeon. Scores are
+    # computed here from _THEME_WORDS with the planner's own str.count scoring.
+    text_lower = prompt.lower()
+    dungeon_score = _bucket_score(text_lower, _THEME_WORDS["dungeon"])
+    outdoor_score = _bucket_score(text_lower, _THEME_WORDS["outdoor"])
+    city_score = _bucket_score(text_lower, _THEME_WORDS["city"])
+
+    if dungeon_score > outdoor_score and dungeon_score > city_score:
+        assert theme == "dungeon", (
+            f"dungeon score {dungeon_score} strictly beats outdoor "
+            f"{outdoor_score} and city {city_score}, but planner chose "
+            f"{theme!r} for prompt {prompt!r}"
+        )
