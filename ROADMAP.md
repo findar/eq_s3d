@@ -4,40 +4,48 @@ The authoritative list of what's done, what's next, and known gaps. The README
 carries the narrative "what it does / how it works"; this file is the tracker.
 Keep it in sync when work lands (check items off, move them, note the commit).
 
-Last updated: content layer Step 1 landed; test suite green. See "Next".
+Last updated: M0 (hygiene + PBT harness) landed and passed its human pass.
+The ordered plan now lives in the umbrella spec's Delivery plan
+(`.kiro/specs/zone-generator/design.md`), milestones M1–M6.
 
 ---
 
 ## ▶ Pick up here (next session)
 
-**Cave generation is shelved for now.** Despite the automated connectivity tests
-passing, a human 3D check still shows caves rendering as isolated solid blobs
-(disconnected chambers, stray region volumes). The automated tests and the
-rendered result disagree — a known gap. Rather than keep chasing the current
-cave backend, we're **parking it** and will rebuild it later with a better
-architecture (see "Cave = cavified dungeon layout" below). The `cave` theme is
-not trustworthy until then; focus on the **dungeon (box) backend**, which works.
+**M0 — hygiene + PBT harness is DONE** (merge `b0d412f`, 98 branch commits
+since `99d346a`; human pass complete). It added a Hypothesis property suite,
+deleted the broken cave pipeline and the `cave` theme, removed the legacy Flask
+viewer, bound the server to loopback with explicit CORS, and fixed the
+elevation grade-cap bug the properties found. The human pass also turned up an
+unsound traversability gate (fixed), and added room-id labels and a stale-code
+banner to the viewer. Suite: 249 passed at the branch tip.
 
-**Content layer — Step 1 (single-district themes) is DONE.** Dungeon rooms now
-get a semantic type from an archetype × race × elemental-tint theme (realised
-into shape/region/light/palette; props/encounters/boss carried as suggestions).
-See "Next" #1 and the design in `docs/RESEARCH.md`.
+**Planning moved to Kiro specs.** The umbrella spec `.kiro/specs/zone-generator/`
+(requirements + design) describes the target system, and its Delivery plan
+orders the work as milestones M0–M6. Each milestone gets its own spec,
+`.kiro/specs/zone-generator-mN-<name>/`, which owns its `tasks.md`. The `tasks/`
+board is now history; new work doesn't go there. "Next" below is kept for its
+detail, but the Delivery plan is the ordering.
 
-**Suggested next step:** the content layer's **Step 2 — districts** (multi-area
-zones): partition the room graph into contiguous sub-themed districts
-(auto-split large zones, with an off switch), per-district climaxes, and gated
-thresholds between districts. Design + decisions are in `docs/RESEARCH.md`
-("Multi-area zones — districts").
+**Suggested next step: M1 — Controls + all-theme traversability + format gate**
+(pillars P-A, P-B and P-C Tier 1). Stand up `.kiro/specs/zone-generator-m1-*`
+first, and carry these into its scope:
+- **Large-zone connectivity.** The build-level navigability properties only
+  draw 2–12 rooms; the disconnected corridors reported in the M0 pass were all
+  on 30-room dungeons. Raise the range, and add a corridor-floor continuity
+  property (every corridor floor runs unbroken from opening to opening). The
+  gate checks that every room is reachable, not that every corridor lands.
+- **Flat first, then elevation** (user decision). Prove flat dungeons connected,
+  then harden elevation ramps on top. Add a flat / no-elevation toggle to the
+  controls.
+- **Angled corridors** are wanted, but they change the umbrella's axis-aligned
+  routing requirement. Do them as an umbrella amendment once flat connectivity
+  is green, not inside the fix.
 
-**Priorities:** content layer Step 2 (districts) → refinement → SQL export →
-(revisit) cave rebuild. Re-sequencing reasoning is under "Next".
-
-**Needs a 3D eyeball (Step 1):** the structural tests pass, but per the cave
-lesson that is necessary-not-sufficient. Before Step 2, confirm in the viewer
-that themed rooms read as distinct places — processional throne/ritual halls,
-tight prison cells, sunken flooded rooms with water regions sitting in the
-floor, forge rooms glowing with lava — and that the per-room palette variants
-and lighting mood are visibly different between themes. See `docs/ACCEPTANCE.md`.
+**Restart the server after pulling.** It runs without auto-reload and keeps
+serving the code it started with. The side panel shows `server <hash> · web
+<hash>` and a banner when the server is stale or the frontend build doesn't
+match.
 
 **Validate major changes** with the acceptance checklist in
 [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md). Proc-gen approach investigations and
@@ -56,8 +64,8 @@ their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 | Geometry (Phase 2) | Box rooms/corridors; inward walls; planar UVs |
 | Elevation (Phase 2.5) | Multi-level layout; ramp & staircase corridors |
 | Web app | FastAPI + Vite/Three.js; generate + first-person walk + overlays + seed input (reproduce a zone) |
-| Organic caves | SDF + marching cubes; noise-roughened walls; multi-lobe chambers; winding tunnels |
-| Walkable floors + features | Flat-bottomed domes; stalactites/stalagmites/pillars |
+| ~~Organic caves~~ | Removed in M0 (rendered as disconnected blobs). Caves return as a dungeon archetype (M3) and the natural geometry style (M5) |
+| ~~Walkable floors + features~~ | Cave-only; removed in M0 with the cave pipeline (lessons kept in steering for M5) |
 | Outdoor terrain | Heightfield + erosion; walkable rolling hills |
 | Textures | Procedural seamless (no API) + AI provider drop-in |
 | Prompt planning (Phase 3) | Rule planner (no API) + LLM drop-in; expand → ZoneSpec |
@@ -68,13 +76,22 @@ their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 | Gating | Optional lock-and-key suggestions, solvability-guaranteed |
 | Top-down map | SVG floor-plan sidecar + web modal |
 | Corridor connection fix | Z/L/straight routing meets both wall openings flush; elevation grade-capped and carried by subdivided (walkable) ramps |
-| Cave connectivity fix | Tunnels join chambers into one watertight cave; floor winding fixed (no see-through); noise specks removed |
+| ~~Cave connectivity fix~~ | Removed in M0 with the cave pipeline |
 | Acceptance checklist | `docs/ACCEPTANCE.md` — manual UAT for validating major changes |
 | Content layer — Step 1 | Dungeon semantic themes: archetype × race × tint; per-room type, shape/region/light/palette realization; props/encounter/boss as suggestions; surfaced in viewer panel + top-down map |
+| M0 — Hygiene + PBT harness | Hypothesis property suite (P1–P16 + CORS; `slow` marker; derandomised default and 5× `thorough` profiles); cave pipeline, `cave` theme and legacy Flask viewer deleted; loopback bind + explicit CORS; elevation grade-cap root-cause fix; agents and steering re-pointed at spec `tasks.md`. Merge `b0d412f` |
+| Traversability gate soundness | `analyzer/traverse` connects floor faces only on true triangle contact at matching floor height; bounding-box overlap + centroid Z had bridged real gaps |
+| Viewer room-id labels | `room_N` floats over each room in 3D and is printed in each map box, so a reported room can be named |
+| Build identity | `/api/version`; side panel shows server and web build commits with a stale-code banner; generate responses carry `build_commit` |
 
 ---
 
 ## Next — ordered priorities
+
+> **Superseded by the umbrella Delivery plan** (`.kiro/specs/zone-generator/design.md`).
+> There, districts (content Step 2) are M3, iterative refinement is M4 and the
+> SQL export is M6, with M1 (controls + traversability + format gate) and M2
+> (true-layout artifacts) first. The items below are kept for their detail.
 
 Rationale for this order: the north-star is "indistinguishable from hand-crafted"
 with the layout as a starting point for a manual pass. Making rooms *theme-coherent*
@@ -111,8 +128,9 @@ districts"). Split into two steps:
   fortress + warren). Auto-split large zones (≥8 → 2, ≥14 → 3) with an off
   switch; **per-district climaxes** (multiple boss rooms allowed); a district
   **relationship** tag (sequential / factional / abandoned-vs-active). Renders
-  district boundaries on the map/viewer. `RoomSpec.district` and a
-  `ZoneSpec.districts` list already exist as placeholders.
+  district boundaries on the map/viewer. `RoomSpec.district` exists as a
+  placeholder; a `ZoneSpec.districts` list does not exist yet (it arrives with
+  the district work in M3).
 
 - **Explicitly NOT doing:** placing prop MODs. A room *is* a theme-conforming
   empty space with written suggestions, not furnished geometry.
@@ -155,11 +173,15 @@ particular are a cheap, high-impact quick win.)
       the formerly-broken elevation seeds, which now walk 9/9 after
       `corridor-connection` landed). It's the objective gate those fixes pass.
       Code in
-      `analyzer/traverse.py`. *Known limit: outdoor/cave not swept — their
-      heightfield/organic meshes are generated in a different coordinate frame
-      than the room graph (terrain starts at origin going +X/+Y rather than
-      centred on the rooms), so room-footprint mapping isn't meaningful for them
-      yet. Logged in Known issues.* Tracked as `tasks/traversability-validator.md`.
+      `analyzer/traverse.py`. *Known limit: outdoor not swept — its heightfield
+      mesh is generated in a different coordinate frame than the room graph
+      (terrain starts at origin going +X/+Y rather than centred on the rooms), so
+      room-footprint mapping isn't meaningful for it yet. Logged in Known
+      issues.* *M0 correction: the adjacency test was unsound (bounding-box
+      overlap + centroid Z bridged real gaps), so earlier "walks 9/9" results
+      were optimistic. It now requires true triangle contact at matching floor
+      height, and the suite re-ran green.* Tracked as
+      `tasks/traversability-validator.md`.
 - [x] **Validator gates the pipeline** — ✅ **Done (dungeon/box backend).** The
       validator now runs in the hot path, not just on demand: a shared
       `generators.pipeline.generate_validated(...)` helper builds → validates →
@@ -170,9 +192,9 @@ particular are a cheap, high-impact quick win.)
       503 instead of a broken GLB. Every rejected attempt is appended to
       `output/validation_failures.jsonl` (seed + theme + per-room reasons) as the
       triage feed for `corridor-connection`. Gating is dungeon-only for now;
-      outdoor/cave pass through **ungated** (their coordinate-frame mismatch would
-      false-fail every zone — see Known issues), extended to cave once
-      `cave-cavify-dungeon` lands. A pinned seed that fails errors out (never a
+      city and outdoor pass through **ungated** (gating them is M1; outdoor's
+      coordinate-frame mismatch would false-fail every zone — see Known issues).
+      A pinned seed that fails errors out (never a
       silent seed swap); `main.py generate --no-validate` bypasses the gate for
       debugging broken seeds. Tracked as `tasks/validate-in-pipeline.md`.
 - [ ] **Multi-level / stacked-floor dungeons** — today's box layout is 2.5D:
@@ -183,17 +205,15 @@ particular are a cheap, high-impact quick win.)
       connectors (stairwells/shafts) — behind a "levels" control, so a zone can
       be a tower or a deep vertical dungeon. Follows `corridor-connection`
       (vertical connectors reuse its stair helper) and is gated by the
-      traversability validator. Tracked as `tasks/multi-level-dungeon.md`.
-- [ ] **Cave rebuild — "cavify the dungeon layout"** *(shelved; revisit after the
-      ordered priorities)* — scrap the current cave backend's independent spatial
-      derivation; instead take the box/dungeon layout (already correct + connected)
-      and apply an organic-styling transform. Fixes the disconnected-blob class of
-      bug by construction. The `cave` theme is untrustworthy until this lands —
-      use `dungeon`. See the design note "Cave = cavified dungeon layout". Now
-      broken into two task files: `tasks/cave-backend-refactor.md` (park the
-      broken backend + isolate cave logic behind a geometry-backend seam) then
-      `tasks/cave-cavify-dungeon.md` (build the cavify transform; gated on the
-      traversability validator passing the cavified mesh).
+      traversability validator. Becomes the follow-on spec `multi-level-dungeon`
+      after M3 (umbrella design, "Scope of open task files"); scoping lives in
+      `tasks/multi-level-dungeon.md` until then.
+- [x] **Cave rebuild — "cavify the dungeon layout"** — superseded. M0 deleted the
+      broken cave pipeline and the `cave` theme outright. Caves return as a
+      dungeon archetype built by the box backend (umbrella M3) and as the
+      optional natural geometry style that reshapes a validated box layout (M5).
+      `tasks/cave-backend-refactor.md` is absorbed by M0 and
+      `tasks/cave-cavify-dungeon.md` by M5.
 - [ ] **Doorway-fit for gates** — catalogue the RoF2 door models used for doorways
       and their world-space footprints by theme (swinging wood/stone, portcullis,
       double doors, archway frames), then snap gated corridor openings to a chosen
@@ -203,13 +223,14 @@ particular are a cheap, high-impact quick win.)
   - [ ] Outdoor + water: a water plane at fixed Z, terrain sloped beneath it for a
         shoreline/lakebed, and an `AWT_` region so the client treats it as swimmable.
         Terrain backend needs a "water level" + shoreline shaping.
-  - [ ] Cave-mouth-in-hillside: compose the SDF cave + heightfield terrain backends
-        into one TER. Strongest argument for unifying both onto a single
-        density-field representation (terrain as an SDF too).
+  - [ ] Cave-mouth-in-hillside: compose a cave with heightfield terrain in one
+        TER. The SDF cave backend this relied on was removed in M0; revisit once
+        the M5 natural geometry style exists.
 - [ ] **Outdoor rooms as real places** — outdoor "rooms" currently only set terrain
       bounds; make them clearings, lookouts, etc.
 - [ ] **Procedural normal maps** — textures are diffuse-only; real zones use the
-      `e_TextureNormal0` material slot. No-API, high visual impact.
+      `e_TextureNormal0` material slot. No-API, high visual impact. Scheduled
+      in umbrella M3.
 - [ ] **Doorway-fit** also gates a real door export (listed above); it depends on
       the catalogue of RoF2 door models.
 
@@ -217,15 +238,11 @@ particular are a cheap, high-impact quick win.)
 
 ## Known issues / smaller fixes
 
-- [ ] **Cave theme broken in 3D despite passing tests** — chambers render as
-      isolated solid blobs with stray region volumes, even though the automated
-      connectivity tests (`TestCaveConnectivity`) report a single watertight
-      component. The tests and the rendered result disagree, so the tests are NOT
-      a faithful acceptance gate for caves — trust the 3D viewer. Being addressed
-      by the "cavify the dungeon layout" rebuild, not a patch. Use `dungeon` until
-      then. (This mismatch is itself a lesson: automated structural checks can
-      pass while the viewer shows something wrong — validate major geometry
-      changes in 3D per `docs/ACCEPTANCE.md`.)
+- [x] **Cave theme broken in 3D despite passing tests** — resolved by removal:
+      M0 deleted the cave pipeline and the `cave` theme, and cave prompts now
+      build a `dungeon`. The lesson stands: automated structural checks can pass
+      while the viewer shows something wrong, so validate major geometry changes
+      in 3D per `docs/ACCEPTANCE.md`.
 - [x] **Corridors between same-axis room pairs mis-connect, esp. with elevation**
       — ✅ **Fixed.** When two rooms faced each other on parallel walls (both
       E↔W or both N↔S — the common case), the single-corner L-bend forced one
@@ -238,16 +255,17 @@ particular are a cheap, high-impact quick win.)
       0.5 ≈ 26.6°, with loop-edge relaxation) and carried by **subdivided ramps**
       so the per-triangle traversability agent (step-up ~3u) can climb them — a
       single-quad ramp read as a cliff regardless of slope. `analyzer.traverse`
-      passes 9/9 on the reported seeds and across a 160-zone + 100-themed sweep.
-      Delivered by `tasks/corridor-connection.md`.
-- [ ] **Outdoor/cave mesh vs room graph are in different coordinate frames** —
+      passes 9/9 on the reported seeds and across a 160-zone + 100-themed sweep
+      (measured with the gate later found unsound; the suite re-ran green after
+      the M0 fix). Delivered by `tasks/corridor-connection.md`.
+- [ ] **Outdoor mesh vs room graph are in different coordinate frames** —
       surfaced while building the traversability validator. The heightfield
       terrain mesh places vertices at `x = i*res` (origin → +X/+Y), while the
       room graph is centred near the origin (negative coords common), so the
-      terrain isn't actually under its rooms. Same mismatch for the organic cave
-      backend. Consequence: the validator can't map room footprints onto those
-      meshes, so outdoor/cave navigability stays manual for now. Fix direction:
-      offset/centre the terrain (and cave) mesh onto the room-graph frame so
+      terrain isn't actually under its rooms. Consequence: the validator can't
+      map room footprints onto that mesh, so outdoor navigability stays manual
+      for now. Fix direction (umbrella M1): offset/centre the terrain mesh onto
+      the room-graph frame so
       world positions agree. (`generators/field/terrain.py::_heightfield_to_ter`.)
 - [ ] **Race scale values are relative placeholders** — the content layer's
       per-race size multipliers (`giant` 2.2×, `froglok` 0.9×, …, in
@@ -266,6 +284,27 @@ particular are a cheap, high-impact quick win.)
       vegetation yet.
 - [ ] Web bundle is a single ~570 kB chunk (Vite warns > 500 kB). Cosmetic; could
       code-split Three.js if it ever matters.
+- [ ] **Build-level properties don't cover large zones** — the navigability,
+      ramp and determinism properties draw 2–12 rooms, but users generate up to
+      30. The disconnected-corridor reports in the M0 pass were all on 30-room
+      zones (they cleared after a server restart). Raise the range and add a
+      corridor-floor continuity property in M1.
+- [ ] **Server doesn't auto-reload** — `python -m server.app` runs with
+      `reload=False`, so it serves the code it started with. Restart after
+      pulling or editing. The viewer shows the server and web commits and a
+      stale-code banner (`/api/version`).
+- [ ] **Elevation-on overwrites the semantic sink/raise** — with elevation on,
+      `_assign_elevation` re-derives every `floor_z` and discards the content
+      layer's `sink` bias (M0 fixed only the elevation-off path). Content-layer
+      follow-up.
+- [ ] **Procedural texture seeds use salted `hash()`** —
+      `generators/textures/procedural._seed_from` isn't stable across processes
+      (PYTHONHASHSEED), so textures aren't reproducible run to run. The
+      determinism properties compare TER/ZON only for this reason.
+- [ ] **Shared Python env drifts from the pins** — the global interpreter had
+      `fastapi 0.143.1` / `starlette 1.8.0` instead of the pinned `0.115.6` /
+      `0.41.3`, and lacked `hypothesis` / `httpx`. The CORS override depends on
+      starlette internals, so run `pip install -r requirements.txt`.
 
 ---
 
@@ -275,6 +314,7 @@ Recording these so they aren't re-proposed:
 
 - **Cave mesh decimation** — quadric decimation collapses the flat walkable floor
   into a few steep triangles. Poly count is controlled via `voxel` size instead.
+  (Kept as guidance for the M5 natural style; the cave mesh was removed in M0.)
 - **Multi-key gating models (fragments / master key)** — the requested case was
   *independent* locks, which the N-separate-gates model already covers.
 - **Baking doors into the `.ter`** — a door welded into the mesh is a door-shaped
@@ -299,17 +339,18 @@ Recording these so they aren't re-proposed:
 | **2** | Procedural geometry — rooms, corridors, lighting, regions | ✅ Done |
 | **2.5** | Elevation — multi-level layout, ramp & staircase corridors | ✅ Done |
 | **web** | Browser app — dropdown generate + first-person walk + overlays | ✅ Done |
-| **organic** | Cave geometry — SDF + marching cubes | ⚠ Shelved (broken in 3D; rebuild as cavified dungeon layout) |
-| **organic+** | Walkable floors + natural features (stalactites/pillars) | ✅ Done |
+| **organic** | Cave geometry — SDF + marching cubes | ✗ Removed in M0 (caves return as an M3 archetype + M5 natural style) |
+| **organic+** | Walkable floors + natural features (stalactites/pillars) | ✗ Removed in M0 with the cave pipeline |
 | **terrain** | Outdoor heightfield terrain — eroded, walkable rolling hills | ✅ Done |
 | **textures** | Procedural seamless textures (no API) + AI provider drop-in | ✅ Done |
 | **3** | Prompt-driven generation — rule planner (no API) + LLM drop-in | ✅ Done |
 | **layout** | TinyKeep room-graph — scatter/separate/Delaunay/MST + loops | ✅ Done |
 | **pacing** | Room roles & depth — entrance/hub/dead-end/climax, biased geometry & lighting | ✅ Done |
 | **gating** | Lock-and-key suggestions (optional, keyed dungeons), solvability-guaranteed | ✅ Done |
-| **content** | Theme-conforming rooms + suggestions (no prop placement) | ◑ Step 1 done (single-district themes); Step 2 (districts) next |
-| **refine** | Iterative chat loop + partial regeneration | ⏳ |
-| **export** | EQEmu SQL export + in-engine validation (capstone) | ⏳ |
+| **content** | Theme-conforming rooms + suggestions (no prop placement) | ◑ Step 1 done; Step 2 (districts) → umbrella M3 |
+| **refine** | Iterative chat loop + partial regeneration | ⏳ umbrella M4 |
+| **export** | EQEmu SQL export + in-engine validation (capstone) | ⏳ umbrella M6 |
+| **M0** | Hygiene + PBT harness — the first umbrella milestone; later work is M1–M6 | ✅ Done |
 
 ---
 
@@ -375,9 +416,13 @@ a genuine cross-axis pair — meeting both openings flush at each room's floor.
 Elevation grade is capped to a walkable slope and the ramp mesh is subdivided so
 it's climbable by the traversability agent.
 
-### Organic caves + features
+### Organic caves + features (removed in M0)
 
-`cave` theme uses a density-field backend: solid rock → carve chambers
+*Historical. M0 deleted this backend because it rendered as disconnected
+blobs in 3D despite passing tests. Its hard-won facts are kept in
+`.kiro/steering/lessons-learned.md` as guidance for the M5 natural style.*
+
+The `cave` theme used a density-field backend: solid rock → carve chambers
 (irregular multi-lobe blobs) and tunnels (winding capsule chains) → FBM wall
 noise → marching cubes → single watertight mesh. Floors stay walkable
 (flat-bottomed domes, floor-tapered one-sided noise, re-intersected with the
@@ -406,7 +451,11 @@ first-person viewer (`web/`): WASD at EQ scale, pointer-lock look, a seed input
 toggleable overlays (wire/lights/regions/gates), top-down SVG map modal, live
 metrics panel. Single-command dev launcher (`web/dev.mjs`). Seeds reproduce
 deterministically across all themes — geometry is seeded from the user seed
-(carried on `ZoneSpec.seed`), not a hash of the timestamped zone name.
+(carried on `ZoneSpec.seed`), not a hash of the timestamped zone name. Since
+M0 the server binds `127.0.0.1` with an explicit CORS origin list, the legacy
+Flask viewer and `main.py preview` are gone, rooms show `room_N` labels in 3D
+and on the map, and the side panel shows the server and web build commits
+with a warning when either is stale.
 
 ### Prompt-driven generation
 
@@ -422,6 +471,23 @@ graph elevation → wall-to-wall corridors). Pacing analyses the graph for roles
 progression is visible. Gating optionally places lock-and-key *suggestions* on
 deep tree edges with keys reachable earlier (solvability guaranteed). Pacing and
 gating ride in the sidecar — advisory metadata, never baked into geometry.
+
+### M0 — Hygiene + PBT harness
+
+Spec: `.kiro/specs/zone-generator-m0-hygiene/`. A Hypothesis property suite
+(`tests/test_properties_*.py`, shared `strategies.py` / `pbt_helpers.py`; the
+default profile is derandomised so runs repeat, and `--hypothesis-profile=thorough`
+runs 5× the examples randomised) pins the invariants the generator relies on:
+PFS and TER/ZON round-trips, layout connectivity and gating solvability, the
+elevation grade cap, flush openings, ramp subdivision, seed determinism, the
+validation gate's behaviour and the no-API defaults. Two root-cause fixes came
+out of it: the elevation relax pass now also runs on themed dungeons with
+elevation off, and the relax fixpoint converges tightly enough that loop edges
+stay under the grade cap. One format limit was accepted: PFS keys files by a
+32-bit CRC, so two names with the same CRC can't share an archive; real zones
+use a fixed set of names, so the round-trip property excludes colliding sets.
+The human pass found the traversability gate's adjacency test was unsound. It
+was fixed, and room-id labels and a stale-code banner were added to the viewer.
 
 ---
 
@@ -477,7 +543,11 @@ verifying against our readers before writing the export.
   theme, then snap gated openings to a chosen door type and record its model name
   on the `GateSpec`.
 
-### Cave = cavified dungeon layout (planned rebuild)
+### Cave = cavified dungeon layout (superseded in M0)
+
+*Superseded: M0 deleted the cave pipeline. The idea below lives on in the
+umbrella spec as the `cave` dungeon archetype (M3) and the natural geometry
+style (M5), which reshapes a validated box layout under the same gate.*
 
 The current cave backend re-derives its own spatial structure (chambers from
 rooms, tunnels from corridors, with fragile endpoint-matching), and it keeps
@@ -500,7 +570,7 @@ construction. Open design question: whether to cavify at the mesh level (deform
 the box mesh) or re-voxelise the box layout into an SDF and re-mesh — the latter
 is closer to what we have and composes with the terrain-as-SDF idea below.
 
-Until this rebuild lands, the `cave` theme is not trustworthy; use `dungeon`.
+The `cave` theme no longer exists; cave prompts build a `dungeon`.
 
 ### Water and mixed-environment zones
 
@@ -509,7 +579,8 @@ Until this rebuild lands, the `cave` theme is not trustworthy; use `dungeon`.
   Terrain backend needs a water level + shoreline shaping.
 - **Cave-mouth-in-hillside** — compose SDF cave + heightfield terrain into one
   TER. Strongest argument for unifying both onto a single density-field
-  representation (terrain as an SDF too).
+  representation (terrain as an SDF too). The SDF cave backend was removed in
+  M0; revisit with M5.
 
 ### Content / semantic layer — making rooms *interesting* (candidate for after Phase 4)
 

@@ -1,6 +1,7 @@
 # TASK: cave-backend-refactor
 
-Status: not-started        <!-- not-started | in-progress | blocked | done -->
+Status: absorbed        <!-- not-started | in-progress | blocked | done | absorbed -->
+Absorbed by: M0 — the cave pipeline and theme were deleted outright; nothing to park or refactor (umbrella design, "Scope of open task files").
 Epic: Cave rebuild ("cavify the dungeon layout") — part 1 of 2. Park the
       independent cave backend so it stops producing untrustworthy output, and
       isolate the cave-specific code behind a clean seam so the replacement

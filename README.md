@@ -9,20 +9,23 @@ The output is meant as a **starting point for a manual authoring pass**, not a
 finished zone: layouts, pacing, and lock/key placement are generated as
 suggestions you can accept, move, or ignore.
 
-> **Project status and roadmap:** see **[`ROADMAP.md`](ROADMAP.md)**.
+> **Project status and roadmap:** see **[`ROADMAP.md`](ROADMAP.md)**. The
+> target design and per-milestone specs live in `.kiro/specs/`.
 
 ---
 
 ## Features
 
-- **Prompt-driven generation** — describe a zone ("a big flooded cave with lots
+- **Prompt-driven generation** — describe a zone ("a flooded temple with lots
   of chambers") and get a playable layout. Works with no API key via a built-in
   rule planner; an LLM planner is an optional drop-in.
-- **Natural, era-accurate geometry** — organic caves (SDF + marching cubes),
-  eroded outdoor terrain, and box dungeons/cities, sized and detailed to match
-  the Classic–Planes-of-Power look.
+- **Era-accurate geometry** — box dungeons and cities plus eroded outdoor
+  terrain, sized and detailed to match the Classic–Planes-of-Power look. Every
+  dungeon is checked walkable end to end before it's returned.
 - **Walk it in the browser** — a first-person Three.js viewer with WASD movement
-  at EQ scale, a top-down map, and toggleable light/region/gate overlays.
+  at EQ scale, a top-down map, room-id labels, and toggleable light/region/gate
+  overlays. The side panel shows which server and frontend build are running
+  and warns when either is stale.
 - **Composed layouts** — a TinyKeep-style room graph with pacing (entrance / hub
   / climax / dead-end) and optional, solvability-guaranteed lock-and-key gating.
 - **Theme-conforming rooms (dungeon)** — a content layer gives each room a
@@ -47,9 +50,10 @@ Prompt → Planner → ZoneSpec → ┬─ Geometry (TER)
                               PFS packer → .eqg  +  .glb (browser preview)
 ```
 
-The **ZoneSpec** is a serialisable JSON intermediate; a geometry backend (box,
-organic cave, or heightfield terrain) is chosen by theme. See `ROADMAP.md` for
-the design detail behind each stage.
+The **ZoneSpec** is a serialisable JSON intermediate; a geometry backend (box
+for dungeons and cities, heightfield terrain for outdoor) is chosen by theme. The
+full target design is the umbrella spec in `.kiro/specs/zone-generator/`; see
+`ROADMAP.md` for status.
 
 ---
 
@@ -97,9 +101,12 @@ Production build (served entirely by the Python backend, no Node needed to run):
 
 ```bash
 cd web && npm run build
-python -m uvicorn server.app:app --port 8000
+python -m server.app          # binds 127.0.0.1:8000
 #    → open http://localhost:8000
 ```
+
+The server doesn't auto-reload: restart it after pulling or editing code. If
+it's stale, the viewer's side panel shows a warning banner.
 
 ### Command line
 
@@ -117,8 +124,8 @@ and retries on a fresh seed until one passes (bounded by an attempt cap and a
 timeout). A pinned `--seed` that fails errors out rather than shipping a broken
 zone; rejected attempts are logged to `output/validation_failures.jsonl`. Pass
 `--no-validate` to build an invalid zone anyway (for debugging a broken seed).
-Outdoor/cave are ungated for now (their mesh is in a different coordinate frame
-— see ROADMAP Known issues).
+City and outdoor are ungated for now (outdoor's mesh is in a different
+coordinate frame — see ROADMAP Known issues).
 
 ### Inspect a zone against the style profile
 
@@ -142,7 +149,9 @@ Pre-built RoF2 profiles are already included in the repo.
 ### Run the tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q                                   # full suite
+python -m pytest tests/ -q -m "not slow"                     # skip build-level properties
+python -m pytest tests/ -q --hypothesis-profile=thorough    # 5x randomised property runs
 ```
 
 ---
@@ -153,7 +162,7 @@ python -m pytest tests/ -q
 core/       Binary I/O: PFS container, TER terrain, ZON placement, WLD reader
 analyzer/   Extract style metrics from existing EQ zones; terminal inspector
 generators/ ZoneSpec (IR), geometry backends, layout, textures, top-down map
-  field/      Organic cave (SDF + marching cubes) and heightfield terrain
+  field/      Heightfield terrain (outdoor) and value noise
   textures/   Procedural (default) and AI texture providers
 ai/         Prompt → ZonePlan → ZoneSpec (rule planner default, LLM drop-in)
 server/     FastAPI backend wrapping the generators for the web UI

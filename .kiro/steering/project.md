@@ -33,7 +33,7 @@ output is a starting point for a human authoring pass, not a finished zone.
 - `analyzer/` — extract style metrics; `inspect.py`, `style_builder.py`
 - `generators/` — `zone_spec.py` (the IR), `geometry.py` (box backend),
   `layout.py` (TinyKeep + pacing + gating), `builder.py` (orchestrator),
-  `mapview.py` (top-down SVG), `field/` (SDF cave + terrain + noise + mesh),
+  `mapview.py` (top-down SVG), `field/` (heightfield terrain + value noise),
   `textures/` (procedural + AI)
 - `ai/` — `schema.py`, `rule_planner.py`, `llm_planner.py`, `expand.py`, `planner.py`
 - `server/` — FastAPI backend (`app.py`)
@@ -45,8 +45,8 @@ output is a starting point for a human authoring pass, not a finished zone.
 
 - The **ZoneSpec** (`generators/zone_spec.py`) is the IR everything flows
   through: planner → ZoneSpec → geometry/textures/placement → `.eqg` + `.glb`.
-- Geometry backends are selected by theme in `builder.py`: box (dungeon/city),
-  organic cave (cave), heightfield terrain (outdoor). All consume the same
+- Geometry backends are selected by theme in `builder.py`: box (dungeon/city)
+  and heightfield terrain (outdoor). All consume the same
   layout output unchanged — keep it that way.
 - **Z is up** (EverQuest convention). Three.js defaults to Y-up; the web camera
   is configured for Z-up on purpose.

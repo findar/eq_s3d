@@ -1,6 +1,7 @@
 # TASK: cave-cavify-dungeon
 
-Status: not-started        <!-- not-started | in-progress | blocked | done -->
+Status: absorbed        <!-- not-started | in-progress | blocked | done | absorbed -->
+Absorbed by: umbrella M5 — "cavify the dungeon layout" becomes the natural geometry style for any dungeon archetype (umbrella design, "Scope of open task files").
 Epic: Cave rebuild ("cavify the dungeon layout") — part 2 of 2. Rebuild the
       `cave` theme as an organic-styling transform of the validated box/dungeon
       geometry, so connectivity is established once (by the backend that gets it

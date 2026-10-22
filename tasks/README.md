@@ -1,38 +1,39 @@
 # Tasks
 
-The **tactical** task board: one file per task, each with subtasks, acceptance
-criteria, and deliverables. This is the tier below `ROADMAP.md` (which tracks
-epics/priorities). An agent working a task opens its file, updates the checkboxes
-and status as it goes, and records commit hashes under Deliverables.
+> **This board is history.** Kiro specs replace it (umbrella design,
+> "Planning Model"): new work goes in `.kiro/specs/<feature>/tasks.md`, under a
+> milestone spec of `.kiro/specs/zone-generator/`. Done task files stay here as
+> a record. Open ones are absorbed into a milestone or become a follow-on spec
+> (umbrella design, "Scope of open task files"), and are retired when that
+> milestone lands. This index is kept until nothing open remains.
 
-- New task → copy `_TEMPLATE.md` to `tasks/<task-id>.md`, fill it in, add a row below.
+One file per task, each with subtasks, acceptance criteria and deliverables.
+
+- `Status` values: `not-started` · `in-progress` · `blocked` · `done` ·
+  `absorbed` (the work moved into a milestone spec).
 - Keep this index's status column in sync with each task file's `Status:` line.
-- `Status` values: `not-started` · `in-progress` · `blocked` · `done`.
-- Done tasks stay here for history (don't delete), status `done`.
 
-See also: `ROADMAP.md` (why / priority order), `docs/ACCEPTANCE.md` (how to
-validate), `docs/RESEARCH.md` (decisions & investigations).
+See also: `ROADMAP.md` (status and priorities), `docs/ACCEPTANCE.md` (how to
+validate), `docs/RESEARCH.md` (decisions and investigations).
 
 ## Board
 
-| Task | Status | Epic |
-|------|--------|------|
-| [content-layer-dungeon](content-layer-dungeon.md) | in-progress | Content / semantic layer — Step 1 built; navigability measured and sound (corridor-connection landed); aesthetic 3D eyeball + Step 2 districts remain |
-| [corridor-connection](corridor-connection.md) | done | Box-backend geometry correctness — same-axis room pairs now route a 3-segment Z-corridor (ramps + stairs); elevation grade-capped and carried by subdivided walkable ramps (unwalkable cliffs / oversized steps fixed) |
-| [traversability-validator](traversability-validator.md) | done | Validation tooling — automated "can a player reach every room?" mesh walk (dungeon/box backend); CLI + seed-sweep suite. Outdoor/cave deferred (mesh/graph coord-frame mismatch). Pending one 3D eyeball |
-| [cave-backend-refactor](cave-backend-refactor.md) | not-started | Cave rebuild (1/2) — park the broken independent cave backend and isolate cave-specific logic behind a clean geometry-backend seam; no new capability |
-| [cave-cavify-dungeon](cave-cavify-dungeon.md) | not-started | Cave rebuild (2/2) — rebuild `cave` as an organic-styling transform of the validated box/dungeon geometry; must pass the traversability validator |
-| [web-seed-input](web-seed-input.md) | done | Web viewer UX — seed input + "⟳ reproduce" shipped so a human can reproduce/walk a specific seed in 3D. Also fixed a determinism bug (cave/outdoor were seeded from the timestamped name, not the seed). Pending one human 3D spot-check |
-| [web-controls-generate](web-controls-generate.md) | not-started | Web viewer UX — grow the "Controls" panel into a first-class manual driver with its own Generate button (always generates from control fields), so the control-driven path is obviously independent of the prompt box |
-| [validate-in-pipeline](validate-in-pipeline.md) | done | Validation tooling — traversability validator baked into generate (server + CLI) via a shared generate-validate-retry helper with timeout + structured failure logging; an invalid zone is never served |
-| [multi-level-dungeon](multi-level-dungeon.md) | not-started | Box-backend verticality — true stacked floors (rooms directly above each other + vertical connectors) driven by a "levels" control. New capability; follows corridor-connection, gated by the traversability validator |
+| Task | Status | Where it goes | Epic |
+|------|--------|---------------|------|
+| [content-layer-dungeon](content-layer-dungeon.md) | done | — | Content layer Step 1: single-district dungeon themes (archetype × race × tint) |
+| [corridor-connection](corridor-connection.md) | done | — | Box-backend geometry correctness: Z/L/straight corridor routing, grade-capped elevation on subdivided ramps. Validated under the gate later found unsound; the suite re-ran green after the M0 fix |
+| [traversability-validator](traversability-validator.md) | done | — | Automated "can a player reach every room?" mesh walk. Adjacency made sound in M0 |
+| [validate-in-pipeline](validate-in-pipeline.md) | done | — | Validator gates generate (server + CLI) with fresh-seed retry, timeout and failure log |
+| [web-seed-input](web-seed-input.md) | done | — | Seed input + "reproduce" in the viewer; seed-determinism fix |
+| [cave-backend-refactor](cave-backend-refactor.md) | absorbed | M0 | Cave rebuild part 1: superseded, the cave pipeline was deleted outright |
+| [cave-cavify-dungeon](cave-cavify-dungeon.md) | absorbed | M5 | Cave rebuild part 2: becomes the natural geometry style |
+| [web-controls-generate](web-controls-generate.md) | not-started | M1 | Controls panel as a first-class driver with its own Generate button |
+| [eq-map-export](eq-map-export.md) | not-started | M2 | In-client EQ map files from the real mesh |
+| [web-svg-mesh-outline](web-svg-mesh-outline.md) | not-started | M2 | Mesh-traced outline layer on the web map (shares the extractor) |
+| [content-layer-districts](content-layer-districts.md) | not-started | M3 | Content layer Step 2: districts |
+| [layout-topology-control](layout-topology-control.md) | not-started | M3 | Topology lever in `_connect_rooms` |
+| [multi-level-dungeon](multi-level-dungeon.md) | not-started | follow-on spec, after M3 | True stacked floors with vertical connectors |
+| [layout-oneway-connections](layout-oneway-connections.md) | not-started | follow-on spec, after M6 | Directed (one-way) connections |
 
-## Backlog (not yet broken into task files)
-
-Pulled from ROADMAP "Next" / design-captured; promote to a task file when started.
-
-- Iterative refinement (chat loop + partial regen) — ROADMAP "Next" #2
-- EQEmu SQL export + in-engine validation — ROADMAP "Next" #3 (capstone)
-- Cave rebuild — "cavify the dungeon layout" (shelved; after the ordered priorities)
-- Doorway-fit for gates; water/mixed-environment zones; outdoor rooms as places;
-  procedural normal maps
+The former backlog (refinement, SQL export, doorway-fit, water zones, normal
+maps) is now planned in the umbrella Delivery plan and tracked in `ROADMAP.md`.
