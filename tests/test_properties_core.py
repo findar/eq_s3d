@@ -21,7 +21,7 @@ import random
 import zlib
 
 import pytest
-from hypothesis import event, example, given, settings
+from hypothesis import assume, event, example, given, settings
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
@@ -80,6 +80,42 @@ def _bulk_example(n: int, name_len: int, seed: int = 0) -> dict:
 _BULK_600x60 = _bulk_example(600, 60)
 
 
+# ---------------------------------------------------------------------------
+# PFS filename-CRC collision — a FORMAT LIMIT, not a code bug (user decision,
+# option (a)).
+#
+# The PFS container keys every file by EQ's 32-bit filename CRC
+# (`core.pfs._filename_crc32`): one directory slot per CRC value. Two DISTINCT
+# names that hash to the same CRC therefore cannot coexist in one archive — the
+# second overwrites the first, so the round-trip drops one name. This is a
+# property of the on-disk format, not of our writer; there is no code change
+# that lets two CRC-colliding names survive in a single PFS archive.
+#
+# The thorough-profile run surfaced such a collision in the adversarial
+# ~60-random-name set. Real EverQuest zones use a small FIXED set of controlled
+# filenames that never collide, so the physically-unstorable colliding case is
+# not a scenario the format can represent. Per the user's decision the
+# round-trip property is scoped to collision-free name sets (see the `assume`
+# guard at the top of `test_pfs_roundtrip`). This EXCLUDES an input the format
+# cannot represent — it is NOT a narrowing of the name alphabet (the
+# `pfs_entries` strategy in tests/strategies.py keeps its full alphabet).
+#
+# A concrete collision pair, demonstrated below so the format limit is real and
+# checkable: both names below hash to CRC 0x23a58563 under the production
+# `_filename_crc32`, so a PfsArchive containing both collapses to one file.
+_PFS_CRC_COLLISION_A = "R,YF%a"
+_PFS_CRC_COLLISION_B = "po}(]x19"
+assert (
+    _filename_crc32(_PFS_CRC_COLLISION_A)
+    == _filename_crc32(_PFS_CRC_COLLISION_B)
+    == 0x23A58563
+), (
+    "expected the documented PFS filename-CRC collision pair to share CRC "
+    "0x23a58563 under the production _filename_crc32 (format limit — one slot "
+    "per 32-bit CRC)"
+)
+
+
 # deadline=None: a large archive (up to 2000 entries, and the pinned ~39 KB
 # multi-chunk name-block @example) takes a few hundred ms to serialize+parse.
 # That cost scales with entry count and is not a correctness signal, so the
@@ -100,7 +136,21 @@ def test_pfs_roundtrip(entries):
 
     The pinned @example (600 names of length 60, a ~39 KB name block) also
     exercises the multi-chunk deflate path through the name block.
+
+    Collision-free precondition (format limit, user decision — see the module
+    comment above): the PFS container keys files by the 32-bit filename CRC, one
+    slot per CRC value, so two distinct names sharing a CRC cannot coexist in one
+    archive. We compute the CRCs with the REAL production `_filename_crc32` (the
+    function the archive itself keys by — not `tests.pbt_helpers.ref_crc`) and
+    `assume` away any drawn set with an intra-set CRC collision. That input is
+    physically unstorable in the on-disk format, so excluding it is NOT a
+    narrowing of the name space; the property holds for every archive the format
+    can actually represent.
     """
+    names = list(entries)
+    crcs = [_filename_crc32(name) for name in names]
+    assume(len(set(crcs)) == len(names))
+
     arc = PfsArchive()
     for name, data in entries.items():
         arc.add(name, data)
