@@ -886,11 +886,48 @@ Working rules for every task:
       exit 0.
     - **Commit:** `a716c70` ("M0 10.8: property test for ZonePlan
       normalisation") — staged only `tests/test_properties_layout.py`.
-  - [ ] 10.9 Write the property test that cave words never yield a cave theme
+  - [x] 10.9 Write the property test that cave words never yield a cave theme
     - **Property 19: Cave words never yield a cave theme**
     - `test_cave_words_mean_dungeon` in `tests/test_properties_layout.py`, budget 100, over prompts containing one or more Cave_Words mixed with random filler and optional outdoor/city/dungeon keywords.
     - Assert that `RulePlanner().plan(prompt).theme` is in the Defined_Themes, and equals `dungeon` whenever the dungeon-bucket score (computed in the test from `_THEME_WORDS` with `str.count`) is strictly greater than the outdoor and city scores. Include a Property_Docstring.
     - **Validates: Requirements 6.5**
+    - **Done.** Appended `test_cave_words_mean_dungeon` to
+      `tests/test_properties_layout.py` (10.1/10.2/10.4–10.8 left untouched).
+      Added a module-level `cave_prompts` composite strategy: it always draws
+      1–3 words from `tests.strategies.CAVE_WORDS`, optionally salts 0–3 words
+      from the OTHER `_THEME_WORDS` buckets (`_OTHER_THEME_WORDS` = every outdoor
+      / city word plus the non-cave dungeon words), adds an `st.text()` filler,
+      and shuffles all tokens into one prompt string via `st.permutations`.
+      Budget `scaled(100)`, `deadline=None` (layout-tier, no build, no `slow`).
+    - **Verified against the real code first:**
+      - `RulePlanner().plan(prompt).theme` is the API; `RulePlanner` and
+        `_THEME_WORDS` imported from `ai.rule_planner`.
+      - `_THEME_WORDS` buckets (post-5.2): `outdoor` = [outdoor, forest, field,
+        meadow, hills, plains, valley, mountain, wilderness, swamp, desert,
+        coast]; `city` = [city, town, village, market, bazaar, streets, plaza];
+        `dungeon` = [dungeon, crypt, catacomb, ruin, temple, keep, fortress,
+        lair, stronghold, vault, **cave, cavern, grotto, tunnel, underground,
+        mine**]. Confirmed the five cave words are folded into the dungeon bucket.
+      - `_match_theme` scores each bucket as `sum(text.count(w) for w in words)`
+        over `prompt.lower()` — i.e. `str.count` substring counting — and keeps
+        the first bucket with a strictly-greater score (strict `>` tie rule,
+        default `dungeon`). The test mirrors this exactly in `_bucket_score`, so
+        the strictly-greater premise is computed the same way the planner scores.
+    - **Assertions:** (1) `theme in DEFINED_THEMES` (`{dungeon, city, outdoor}`,
+      never `cave`) for every prompt; (2) when the test-computed dungeon score is
+      strictly greater than BOTH the outdoor and city scores, `theme == "dungeon"`.
+      Ties / outdoor-or-city-outscoring only assert Defined_Themes membership
+      (tie rule unchanged; outdoor/city win ties — not over-constrained).
+    - **Verification (worktree `-Venv`):**
+      `python -m pytest tests/test_properties_layout.py -q` → **8 passed** (the
+      new test + 10.1/10.2/10.4–10.8). Full suite `python -m pytest tests/ -q` →
+      **223 passed**, 2 pre-existing warnings (starlette `BlockingPortal`
+      deprecation + runpy `server.app`), exit 0. No cave-word prompt yielded a
+      "cave" or other non-Defined theme, and no strictly-greater-dungeon prompt
+      failed to resolve to `dungeon` across the full 100-example budget — no
+      planner bug surfaced.
+    - **Commit:** `a7d7c1f` ("M0 10.9: Property 19 cave words never yield a cave
+      theme") — staged only `tests/test_properties_layout.py`.
 
 - [ ] 11. Build property module (`tests/test_properties_build.py`, all `@pytest.mark.slow` with `build_settings`)
   - [x] 11.1 Write the property test for raw dungeon navigability
