@@ -66,6 +66,16 @@ Working rules for every task:
     - On the fork-point code, time `analyzer.traverse.validate` for a 12-room dungeon, a 30-room dungeon and a 6-room outdoor zone (seed 7). Record the three times (design finding 4: ≈ 2.1 s, 3.4 s, 118 s).
     - Run `python -m pytest tests/ -q` 3 times, deleting `.hypothesis/` before each run. Record the median: it is the M0-exit baseline for the "+120 s" budget lever.
     - _Requirements: 5.1_
+    - **Deliverables:**
+      - Fork-point commit (branch `agent/m1-connectivity` forked from `master`): `5dabd2145d6543cd9e7ae8a661bd8015329b33e9`.
+      - `analyzer.traverse.validate` timings on the fork-point code (seed 7, validate call only, build excluded):
+        - 12-room dungeon: **1.54 s** (design finding 4 est. ≈ 2.1 s; 12/12 rooms reachable, 588/1080 standable faces).
+        - 30-room dungeon: **3.19 s** (est. ≈ 3.4 s; 30/30 rooms reachable, 2168/4076 standable faces).
+        - 6-room outdoor zone: **72.85 s** (est. ≈ 118 s; 4/6 rooms reachable — heightfield frame differs from the room graph, so room-footprint mapping is not meaningful outdoors yet, per `tests/test_traversability.py`; 54339/54340 standable faces). Timings are machine-dependent; the shape matches finding 4 (dungeon seconds, outdoor >1 min).
+      - M0-exit suite baseline — `python -m pytest tests/ -q`, `.hypothesis/` deleted before each run, 249 passed each time:
+        - Run 1: 88.21 s · Run 2: 88.88 s · Run 3: 87.17 s (pytest-reported).
+        - **Median: 88.21 s** — the baseline for the "+120 s" budget lever (checkpoints 7.1 / 9.2).
+      - Env note: the shared global Python env was missing `hypothesis==6.170.5` and `httpx==0.28.1` (both pinned in `requirements.txt`); installed to run the suite. No `requirements.txt` change.
   - [ ] 1.2 Capture the routing-refactor hashes and the Decision 13 "before" layouts
     - With a throwaway script outside the repo (not committed), on the fork-point code, build TER bytes for dungeon and city × seeds 7 / 1955208177 / 1516796975 / 481893615 × rooms 12 and 30 × elevation on and off (32 builds). Record each `sha256(ter_bytes)` here.
     - Reproduce the M0 human-pass inputs: `RulePlanner().plan("create a dungeon with 30 rooms")` with seed 1949459644 and `RulePlanner().plan("a dungeon with 30 rooms and long halls")` with seed 1510177507, through `plan_to_spec` + `ZoneBuilder`. Record for each: room count, corridor count, the number of corridors that cross a third room and of corridor pairs that cross (finding 2 method), and the `.map.svg` path. These are the "before" half of Decision 13.
