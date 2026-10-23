@@ -182,7 +182,8 @@ Working rules for every task:
         - `python -m pytest tests/test_properties_core.py -q` → **4 passed** (50.40 s).
         - `python -m pytest tests/ -q` → **250 passed** (194.97 s) — +1 over the fork-point 249 (the new property); the two warnings are pre-existing and unrelated.
       - Touched only `tests/test_properties_core.py` and this `tasks.md` entry.
-      - NOT verified in the live 3D viewer — this is an analytical equivalence over two validator implementations on the built mesh, not geometry (see `docs/ACCEPTANCE.md`). Commit hash recorded below once committed.
+      - NOT verified in the live 3D viewer — this is an analytical equivalence over two validator implementations on the built mesh, not geometry (see `docs/ACCEPTANCE.md`).
+      - Commit: `88c073e` (this `tasks.md` self-reference line is added in a follow-up amend-free edit; the content commit is `88c073e`).
 
 - [ ] 3. Route every corridor through one function
   - [ ] 3.1 Add `generators/routing.py` and switch both callers to it (byte-identical)
