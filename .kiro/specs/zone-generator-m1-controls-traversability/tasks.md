@@ -221,7 +221,7 @@ Working rules for every task:
       - **No root-cause bug found:** the equality held on every drawn example and the pinned `@example(theme="dungeon", n=2, vert="flat", s=0)` with no divergence, exactly as Decision 15 predicts — so no fix to `analyzer/traverse.py` and no `Regression_Example` was needed. If a future seed ever diverges, the counterexample is pinned as `@example(...).via("discovered failure")` and the continuity flood fixed at the root.
       - Verification: `python -m pytest tests/test_properties_core.py -q` → **4 passed** (91 s); `python -m pytest tests/ -q` → **250 passed** (131 s), matching the 250-passed wave-1 baseline.
       - Analytical equivalence over two validator implementations on the built mesh; not a live 3D viewer confirmation (per docs/ACCEPTANCE.md).
-      - Commit: `__PENDING__`.
+      - Commit: `4280d56`.
   - [ ] 4.3 Add constructed example tests for continuity
     - In `tests/test_traversability.py`, hand-built specs: a corridor whose route runs through a third room reports `crosses room <id>`; a corridor with a missing floor segment reports `gap`; two unrelated corridors crossing at the same height conflict; the same pair separated in Z by more than the clearance does not.
     - _Requirements: 5.2_
