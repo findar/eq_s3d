@@ -109,6 +109,78 @@ def test_raw_navigable(case):
     )
 
 
+@pytest.mark.slow
+@pytest.mark.xfail(
+    reason="flat continuity failures fixed in task 6.5 (temporary scaffold; "
+    "6.5 MUST remove this xfail and make test_corridor_continuity pass "
+    "strictly flat)",
+    strict=False,
+)
+@build_settings(15)
+@example(case=_flat_human_case(M0_HUMAN_PASS[0])).via("M0 human pass")
+@example(case=_flat_human_case(M0_HUMAN_PASS[1])).via("M0 human pass")
+@given(case=_raw_navigable_cases())
+def test_corridor_continuity(case):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 10: Corridor
+    floor continuity (M1-P1), flat.
+
+    Every corridor on a raw box zone (dungeon or city) built with no validation
+    gate (``ZonePlan`` -> ``ai.expand.plan_to_spec`` -> ``build_raw``) has
+    CONTINUOUS walkable floor from its ``from_room`` to its ``to_room`` WITHIN
+    the corridor's own region (its route footprint grown by the agent's
+    adjacency tolerance, plus the two rooms' footprints, minus every OTHER
+    room's footprint), and no two corridors conflict in Z. This is the
+    corridor-level half of the north-star "every room reachable on foot" MUST:
+    ``test_raw_navigable`` (task 6.2) proves rooms are reachable *somehow*; this
+    proves the reachability runs THROUGH each corridor's own tube rather than by
+    cutting through a third room's collidable geometry (reason
+    ``"crosses room <id>"``) or by two corridor tubes passing too close to each
+    other (a Z conflict, design decision 12/16).
+
+    SAME domain and examples as ``test_raw_navigable`` (task 6.2): box zone
+    types (``box_themes``), the full M1 large-zone range (``room_counts_wide``,
+    up to 30 rooms, Req 5.1), built through ``ai.expand.plan_to_spec`` under the
+    flat-first pass (``flat_only``; elevation draws return in task 8.1), budget
+    15. Both ``M0_HUMAN_PASS`` inputs are pinned re-planned flat as ``@example``s
+    (the 30-room dungeons a human signed off on at the M0 3D pass).
+
+    The verdict is read from ``analyzer.traverse.validate(..,
+    check_corridors=True)``: every ``CorridorResult.connected`` must be True and
+    there must be no conflicts (equivalently, ``report.corridors_passed``). On
+    failure the message iterates ``report.corridors`` / ``report.conflicts`` and
+    prints each failing corridor's id, endpoints and reason so the exact failure
+    class (gap / crosses room / conflict) and seed are visible.
+
+    NOTE: this is an ANALYTICAL check (corridor floor continuity on the real TER
+    walk surface), not a live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: Requirements 5.2, 5.3; M1-P1.
+    """
+    spec, label = case
+    with fresh_dir() as out:
+        result, _ter_bytes, _zon_bytes = build_raw(spec, out)
+        report = T.validate(result.eqg_path, spec=spec, check_corridors=True)
+
+    if not report.corridors_passed:
+        broken = [c for c in report.corridors if not c.connected]
+        detail_lines = [
+            f"  {c.corridor_id} {c.from_room}->{c.to_room}: "
+            f"{c.reason or 'not connected'}"
+            for c in broken
+        ]
+        conflict_lines = [
+            f"  CONFLICT {ci} <-> {cj}" for ci, cj in report.conflicts
+        ]
+        detail = "\n".join(detail_lines + conflict_lines) or "  (no detail)"
+        pytest.fail(
+            f"corridor floor continuity failed ({label}):\n"
+            f"  {len(broken)}/{len(report.corridors)} corridors not connected, "
+            f"{len(report.conflicts)} conflict(s)\n"
+            f"{detail}"
+        )
+
+
 from tests.pbt_helpers import ramp_rises
 
 #: Verticality that actually elevates corridors (``flat`` would make the ramp
