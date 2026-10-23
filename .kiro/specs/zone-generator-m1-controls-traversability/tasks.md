@@ -185,12 +185,19 @@ Working rules for every task:
       - NOT verified in the live 3D viewer — this is an analytical equivalence over two validator implementations on the built mesh, not geometry (see `docs/ACCEPTANCE.md`).
       - Commit: `88c073e` (this `tasks.md` self-reference line is added in a follow-up amend-free edit; the content commit is `88c073e`).
 
-- [ ] 3. Route every corridor through one function
-  - [ ] 3.1 Add `generators/routing.py` and switch both callers to it (byte-identical)
+- [x] 3. Route every corridor through one function
+  - [x] 3.1 Add `generators/routing.py` and switch both callers to it (byte-identical)
     - Implement `Route`, `plan_route(from_xy, to_xy, exit_from_x, exit_to_x, hw, steps)`, `corridor_route(cor, rooms)` and `route_footprint(route, hw)` per the design. Make `MeshBuilder.add_corridor` (`generators/geometry.py`) and `LayoutGenerator._route_legs` (`generators/layout.py`) call it; `_emit_route` keeps its body.
     - Re-run the 1.2 throwaway script on the refactor and confirm all 32 TER hashes are identical. Record the before/after hashes and the result in Deliverables. Don't commit the script or a hash test (wave-1 fixes are meant to move geometry).
     - Done when the suite is green and all 32 hashes match.
     - _Requirements: 5.5_
+    - **Deliverables:**
+      - `generators/routing.py` (new) — `Route` (frozen dataclass: `waypoints`, `axes`, `carry`, `kind`), `plan_route(from_xy, to_xy, exit_from_x, exit_to_x, hw, steps)`, `corridor_route(cor, rooms)` and `route_footprint(route, hw)`. `plan_route` holds the former inline straight / Z / L decision and the staircase carry rule verbatim; `carry == -1` means "carry the longest leg" (what `_emit_route` spells as `carry=None`). `route_footprint` returns `(x0, y0, x1, y1)` rects — one per leg grown by `hw`, plus an `hw`-square at each interior corner — ready for the continuity/terrain consumers in tasks 4 and 13.
+      - `generators/geometry.py::MeshBuilder.add_corridor` now calls `corridor_route(cor, {r.id: r for r in spec.rooms})` and passes `route.waypoints`/`route.axes` (and `carry=None` when `route.carry < 0`) into `_emit_route`, which is unchanged. The ~70 lines of inline routing logic were deleted (replaced by the shared call); the explanatory docstring is kept.
+      - `generators/layout.py::LayoutGenerator._route_legs` now plans through `plan_route((fx, fy), (tx, ty), primary_x, primary_x, corridor_width/2, steps=0)` and measures each leg along its own axis (`axes[k]`), which reproduces the former per-leg lengths exactly (a straight leg's sub-slack cross offset is still not counted). `_elevation_run` is unchanged and still reads the jog of a Z route.
+      - **Byte-identity check (pure extraction, no behaviour change):** re-ran the task-1.2 throwaway capture (`LayoutGenerator(theme, seed).generate(name, rooms, elevation)` → `ZoneBuilder(spec)._build_geometry(name, 2).to_bytes()` → `sha256`) over dungeon and city × seeds 7 / 1955208177 / 1516796975 / 481893615 × rooms 12 / 30 × elevation on/off. **All 32 "after" hashes equal the 32 task-1.2 "before" hashes** (including the seed-1516796975 rooms-12 elevation-on == elevation-off pair). The script lived at `F:\Dev Projects\_m1_task31_tmp\verify_hashes.py` (outside the repo) and is not committed; no hash test committed either, per the task note (wave-1 fixes are meant to move geometry).
+      - `python -m pytest tests/ -q`: **250 passed** (126.34 s). Suite green and all 32 hashes match.
+      - Not verified in the live 3D viewer — this is a pure extraction proven byte-identical, so no geometry moved; the existing 3D passes still apply.
 
 - [ ] 4. Corridor floor continuity and corridor conflicts
   - [ ] 4.1 Implement `corridor_continuity` and the conflict check in `analyzer/traverse.py`

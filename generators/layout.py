@@ -26,6 +26,7 @@ from .zone_spec import (
     GateSpec,
 )
 from . import semantics
+from .routing import plan_route
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -700,17 +701,23 @@ class LayoutGenerator:
         """
         fx, fy = self._wall_point(a, b)
         tx, ty = self._wall_point(b, a)
-        dx, dy = tx - fx, ty - fy
+        # Route through the shared planner so the legs we measure match the
+        # geometry actually built. The exit axes come from the room-centre
+        # delta, exactly as _wall_point cut the walls. Corridors here always
+        # record both rooms, so corridor_route would resolve the same axes;
+        # planning directly off the wall points keeps this independent of a
+        # CorridorSpec (the corridor is not built yet when this is called).
         primary_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
-        hw = self.corridor_width / 2
-        cross_off = abs(dy) if primary_x else abs(dx)
-        if cross_off <= max(2.0, hw * 0.5):
-            return [abs(dx) if primary_x else abs(dy)]
-        if primary_x:
-            mid = (fx + tx) / 2
-            return [abs(mid - fx), abs(ty - fy), abs(tx - mid)]
-        mid = (fy + ty) / 2
-        return [abs(mid - fy), abs(tx - fx), abs(ty - mid)]
+        route = plan_route(
+            (fx, fy), (tx, ty), primary_x, primary_x,
+            self.corridor_width / 2, steps=0)
+        wps, axes = route.waypoints, route.axes
+        # Each leg runs along a single axis; measure only that axis's delta (a
+        # straight leg carries a sub-slack cross offset we must not count, to
+        # match the former _route_legs exactly).
+        return [abs(wps[k + 1][0] - wps[k][0]) if axes[k]
+                else abs(wps[k + 1][1] - wps[k][1])
+                for k in range(len(wps) - 1)]
 
     def _elevation_run(self, a: RoomSpec, b: RoomSpec) -> float:
         """
