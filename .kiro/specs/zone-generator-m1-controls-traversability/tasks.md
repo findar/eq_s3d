@@ -76,10 +76,57 @@ Working rules for every task:
         - Run 1: 88.21 s · Run 2: 88.88 s · Run 3: 87.17 s (pytest-reported).
         - **Median: 88.21 s** — the baseline for the "+120 s" budget lever (checkpoints 7.1 / 9.2).
       - Env note: the shared global Python env was missing `hypothesis==6.170.5` and `httpx==0.28.1` (both pinned in `requirements.txt`); installed to run the suite. No `requirements.txt` change.
-  - [ ] 1.2 Capture the routing-refactor hashes and the Decision 13 "before" layouts
+  - [x] 1.2 Capture the routing-refactor hashes and the Decision 13 "before" layouts
     - With a throwaway script outside the repo (not committed), on the fork-point code, build TER bytes for dungeon and city × seeds 7 / 1955208177 / 1516796975 / 481893615 × rooms 12 and 30 × elevation on and off (32 builds). Record each `sha256(ter_bytes)` here.
     - Reproduce the M0 human-pass inputs: `RulePlanner().plan("create a dungeon with 30 rooms")` with seed 1949459644 and `RulePlanner().plan("a dungeon with 30 rooms and long halls")` with seed 1510177507, through `plan_to_spec` + `ZoneBuilder`. Record for each: room count, corridor count, the number of corridors that cross a third room and of corridor pairs that cross (finding 2 method), and the `.map.svg` path. These are the "before" half of Decision 13.
     - _Requirements: 5.5_
+    - **Deliverables (task 1.2 — baselines captured on the fork point `5dabd21`; throwaway script run from the worktree, not committed):**
+      - **Part A — 32 fork-point TER `sha256` hashes** (built via `LayoutGenerator(theme, seed).generate(name, room_count, elevation)` → `ZoneBuilder._build_geometry(name, 2).to_bytes()`). These are the invariant task 3.1 (routing refactor) must reproduce byte-for-byte:
+
+        | zone_type | seed | rooms | elevation | sha256 | bytes |
+        |-----------|------|-------|-----------|--------|-------|
+        | dungeon | 7 | 12 | on | `0bee542a602a38df21bf0c7ac2fe4194bd1033d87a73d0d8d425d9734dc7992a` | 90913 |
+        | dungeon | 7 | 12 | off | `06f8ffe93c4334a38e7b6f110c21252909c7f8e6d93a23dc818fbf9110bbc199` | 40513 |
+        | dungeon | 7 | 30 | on | `2f72ffb2ea49ad4be2e0b1c579f931319481d3efad64832a6c9305986dffceb9` | 342577 |
+        | dungeon | 7 | 30 | off | `5f96ae60b81bb398cef4fdcee12e5f35cad15121f66e9cf23c3b19627ff9fac7` | 105361 |
+        | dungeon | 1955208177 | 12 | on | `6af79c54b16fc37bfb7b294b3d956ee0ee8236fd08cd591e6159c51dcccce399` | 93937 |
+        | dungeon | 1955208177 | 12 | off | `b5ca79259a6077b358a8936310caa40fd7b178400a253aa21229356ebdc1bd40` | 40849 |
+        | dungeon | 1955208177 | 30 | on | `0577491f26ea10d90a44c42195cf1d4430b4a9858b74e38310fb2f4651dad6a8` | 266641 |
+        | dungeon | 1955208177 | 30 | off | `90c48d9cecc670ba2bae58dd5886c5ba5007dcb40ae263bb6f26b5734f871cf5` | 100657 |
+        | dungeon | 1516796975 | 12 | on | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 |
+        | dungeon | 1516796975 | 12 | off | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 |
+        | dungeon | 1516796975 | 30 | on | `c2199b14fbe89f96334c7c8206760dd4c2cf93928cf0891f5ff8c024dc6610d8` | 233545 |
+        | dungeon | 1516796975 | 30 | off | `7677abf27e74fc88381f1c1666689f9d8174d7b0c688d23cf42d936d892bc631` | 107209 |
+        | dungeon | 481893615 | 12 | on | `0486b96622c2e51c74ed36b291a1c6ec08d3c9fed7e3611c5a868b929d18a39c` | 73609 |
+        | dungeon | 481893615 | 12 | off | `8a071084e94fadf644623ade5e3b82299558332baf13f9f0400a29d4392aba35` | 36649 |
+        | dungeon | 481893615 | 30 | on | `1813014354537faaf36f2c833b356fd796cbbfd3844c078a4346dbcb198ab825` | 327121 |
+        | dungeon | 481893615 | 30 | off | `599d62c7c0ee4549918c96624c910b1aae403c7d096a6f912b15da4feac8c630` | 102673 |
+        | city | 7 | 12 | on | `bad45473dda32b15e0f40b5562c5cbb5ed89ffb12838375e75f191af4220356f` | 94273 |
+        | city | 7 | 12 | off | `0df8ef526cf5bfd0b0a30cd04d3c2409edbd53b6b4feb3305214293dc54e4877` | 40513 |
+        | city | 7 | 30 | on | `60a548460534a2767be4e7cca7d24b54101889b95ac4da31ddf3603d945b3415` | 312841 |
+        | city | 7 | 30 | off | `a194ed7a5b04eb4cf9ff7fab0a5f11d15d59a1793cb118c6955a9b19de34ad41` | 107209 |
+        | city | 1955208177 | 12 | on | `31c9e4b082f6edf58e2576c6c29310fac9e5846a37b6c06f541fce4ca2cbabb5` | 95281 |
+        | city | 1955208177 | 12 | off | `a0e78a9a3567074219334cac9db7d8ec42e7bfa1bfe7154467e5a678d811554f` | 40849 |
+        | city | 1955208177 | 30 | on | `83d1ad7ea0dc1e14b58cdbe48e5ec6a729c6ac1df2449ae6568115edbee668fd` | 290161 |
+        | city | 1955208177 | 30 | off | `4cb18c35022829365f72e3e2b3c01e9c4bad5c8acc0a0b48d0813f382fa7cec4` | 102673 |
+        | city | 1516796975 | 12 | on | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 |
+        | city | 1516796975 | 12 | off | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 |
+        | city | 1516796975 | 30 | on | `69fb5e6ccf29a2ed7cad94116ed2f9b378232031d9e494f671813e6c6bb6212c` | 257065 |
+        | city | 1516796975 | 30 | off | `3160cf9d56137f031033abeeb6f848253f541acd2a7a18110700374d32a43d9b` | 101161 |
+        | city | 481893615 | 12 | on | `a972d0a36ae4050a316bb948d29d4cfb1a99a133720fe1860f06915d866424d4` | 76297 |
+        | city | 481893615 | 12 | off | `efed6bea33da390370966c6a66c67b5fd1eb4a85b46c8302a0a23643573bb23e` | 36649 |
+        | city | 481893615 | 30 | on | `25d29c69592995c5da0938768dba5e313e7107313a363e846351f603d36106ad` | 283441 |
+        | city | 481893615 | 30 | off | `0ff8ada3f3359e19b6049b507b8968a8b34e2f7ba868f7a239824ac01c4c6d6a` | 102673 |
+
+      - Note: at seed `1516796975`, rooms 12, the elevation-on and elevation-off builds hash identically (dungeon `9dcb91bc…`, city `79f180cf…`). On the fork point that seed's elevation draw yields a flat graph at 12 rooms, so the two builds are byte-identical — a real fork-point fact, recorded as observed (not a capture error). All 30 other pairs differ.
+      - **Part B — Decision 13 "before" layouts** (`RulePlanner().plan(prompt)` → `plan_to_spec(plan, seed)` → `ZoneBuilder.build`). Finding-2 crossing method: each corridor leg (reproduced from `MeshBuilder.add_corridor`'s straight/Z/L waypoint logic) approximated as its axis-aligned rectangle grown by half-width; a crossing is counted when the overlap min-dimension into a non-endpoint room (or the other corridor's legs, for pairs) exceeds 10 u:
+
+        | prompt | seed | name | rooms | corridors | third-room crossings | crossing corridors | corridor-pair crossings | crossing pairs | .map.svg |
+        |--------|------|------|-------|-----------|----------------------|--------------------|-------------------------|----------------|----------|
+        | `create a dungeon with 30 rooms` | 1949459644 | m0_before_0 | 30 | 34 | 1 | `corr_31` | 0 | — | `output/m0_before_0.map.svg` |
+        | `a dungeon with 30 rooms and long halls` | 1510177507 | m0_before_1 | 30 | 34 | 1 | `corr_29` | 0 | — | `output/m0_before_1.map.svg` |
+
+      - These are the "before" half of Decision 13. Task 3.1 compares the 32 Part-A hashes against the refactor (must match); task 9.1 rebuilds the two Part-B inputs on the branch head and records the "after" numbers next to these. The throwaway capture script lived at `F:\Dev Projects\_m1_task12_tmp\capture_baselines.py` (outside the repo) and is not committed; the `output/m0_before_*.map.svg` previews are per-worktree `output/` artifacts and are gitignored.
 
 - [ ] 2. Speed up the walk surface without changing reachability
   - [ ] 2.1 Add the fork-point reference validator
