@@ -200,11 +200,17 @@ Working rules for every task:
       - Not verified in the live 3D viewer — this is a pure extraction proven byte-identical, so no geometry moved; the existing 3D passes still apply.
 
 - [ ] 4. Corridor floor continuity and corridor conflicts
-  - [ ] 4.1 Implement `corridor_continuity` and the conflict check in `analyzer/traverse.py`
+  - [x] 4.1 Implement `corridor_continuity` and the conflict check in `analyzer/traverse.py`
     - Add `CorridorResult` and `corridor_continuity(surf, spec, agent)` per the design's five steps: region = route footprint (grown by `agent.adjacency_eps`) ∪ both room footprints, minus every other room's footprint; flood restricted to the region's standable faces; `reason` in `""`, `"no floor in from_room"`, `"no floor in to_room"`, `"gap"`, `"crosses room <id>"`.
     - Add the corridor–corridor conflict check (Decision 12): two corridors that share no room conflict when their route footprints intersect in XY **and** their walkable floors over the intersection are closer in Z than the clearance. Use the clearance and reporting shape of design Decision 16; a pair separated by at least the clearance is not a conflict, so a future bridge kind is exempt by construction.
     - `validate(..., check_corridors=False)` fills `TraversalReport.corridors` (and the conflict list) when asked; add `TraversalReport.corridors_passed` (all connected and no conflicts; `True` when not checked). `TraversalReport.passed` keeps its meaning.
     - _Requirements: 5.2_
+    - **Deliverables:**
+      - `analyzer/traverse.py`: added `CorridorResult` (corridor_id, from_room, to_room, connected, reason); `TraversalReport` gained `corridors`, `conflicts`, `checked_corridors` fields and a `corridors_passed` property (`True` when not checked — so `passed` is untouched for `check_corridors=False`). Implemented `corridor_continuity(surf, spec, agent)` (five-step region/flood with third-room exclusion and `crosses room <id>` diagnosis) and `corridor_conflicts(surf, spec, agent)` (Decision 12/16 Z-clearance check: clearance = `min(both heights)+1`, floored at `agent.player_height`; shared-room pairs exempt; reported as `conflicts with corridor <id>`). Per Decision 15 continuity recomputes seam contacts locally over the region faces (`_local_adjacency`) and never uses the pruned `surf.adjacency`.
+      - `validate(..., check_corridors=False)` gained the flag; default keeps existing behaviour byte-for-byte (verified: room `reachable` results identical with the flag off/on on dungeon seed 6). CLI gained `--check-corridors`.
+      - Suite green: `python -m pytest tests/ -q` → 250 passed (unchanged from the fork-point baseline), confirming no change to existing `validate` behaviour. Property/example tests exercising the new functions are tasks 4.2/4.3.
+      - Smoke check: dungeon seed 6, 12 rooms → `check_corridors=True` finds `corr_12` `crosses room room_3` (matches design finding 2: a small fraction of corridors cross a third room on the fork-point layout; wave-1 root fixes in task 6.5/8.3 address it).
+      - Commit: <hash recorded below>.
   - [ ] 4.2 Extend the Property 13 test to continuity results
     - In `test_walk_surface_equivalence`, also assert that `corridor_continuity` gives equal results (including conflicts) on the optimised and reference surfaces.
     - Design Decision 15: `corridor_continuity` computes seam contacts locally for its region's faces and never uses the pruned adjacency, so the results must match; a mismatch is a bug in the continuity flood, not the property.
