@@ -303,7 +303,7 @@ Working rules for every task:
         - `python -m pytest tests/ -q` → **254 passed** (137.37 s) — matches the baseline (the rename keeps the test count flat).
       - Touched only `tests/test_properties_build.py` and this `tasks.md` entry.
       - NOT verified in the live 3D viewer — this is the analytical per-triangle walk surface over the built mesh, not a geometry change (see `docs/ACCEPTANCE.md`); the flat 30-room 3D pass is the human-gated task 7.2.
-      - Commit: `__PENDING__` (recorded in the follow-up self-reference edit).
+      - Commit: `e012ba5` (test + this `tasks.md` entry; this self-reference line is added in a follow-up edit).
   - [ ] 6.3 Write property test for Property 10: Corridor floor continuity (M1-P1), flat
     - New `test_properties_build.py::test_corridor_continuity`, same domain and examples as 6.2, budget 15. Assert every `CorridorResult.connected` and no conflicts, printing failing corridor ids and reasons.
     - **Validates: Requirements 5.2, 5.3**
