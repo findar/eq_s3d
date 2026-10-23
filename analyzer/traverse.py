@@ -187,6 +187,13 @@ class WalkSurface:
     centroids: np.ndarray         # (F, 3)
     standable: np.ndarray         # (F,) bool
     adjacency: Dict[int, List[int]]   # standable face -> neighbouring standable faces
+    # (F,) int: connected-component root (a standable face index) per standable
+    # face; -1 for non-standable faces. Populated by ``build_walk_surface`` from
+    # the union-find it keeps while wiring adjacency, so two standable faces are
+    # in the same walkable component iff ``component[i] == component[j]``. This
+    # is exactly the partition ``flood_reachable`` would recover, exposed once
+    # instead of reflooded.
+    component: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +335,7 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 
     if len(faces) == 0:
         return WalkSurface(verts, faces, np.zeros((0, 3)), np.zeros((0, 3)),
-                           np.zeros(0, bool), {})
+                           np.zeros(0, bool), {}, np.zeros(0, np.int64))
 
     a = verts[faces[:, 0]]
     b = verts[faces[:, 1]]
@@ -349,13 +356,50 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     std_idx = np.nonzero(standable)[0]
 
     # ---- Adjacency ----------------------------------------------------------
+    # The walk surface is a graph whose nodes are standable faces; reachability
+    # (``flood_reachable``) only cares about its CONNECTED COMPONENTS. So we keep
+    # a union-find over standable faces alongside the adjacency lists: every
+    # accepted edge is both recorded (so continuity floods can walk it) and
+    # unioned (so the components stay current). The one thing the union-find buys
+    # us for speed is a licence to DROP REDUNDANT EDGES -- an edge between two
+    # faces already in the same component changes no component, so the expensive
+    # seam contact test for such a pair can be skipped. Components, and therefore
+    # ``flood_reachable`` from any face, are identical to the pre-speedup code;
+    # only redundant seam edges are dropped (proved by M1-P4, task 2.3).
+    #
+    # Union-find indexed by POSITION in ``std_idx`` (0..S-1), not by face id, so
+    # the parent/rank arrays stay small and dense.
+    S = len(std_idx)
+    pos_of = {int(fi): k for k, fi in enumerate(std_idx)}
+    parent = np.arange(S, dtype=np.int64)
+    rank = np.zeros(S, dtype=np.int64)
+
+    def _find(x: int) -> int:
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        # Path compression.
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def _union(x: int, y: int) -> None:
+        rx, ry = _find(x), _find(y)
+        if rx == ry:
+            return
+        if rank[rx] < rank[ry]:
+            rx, ry = ry, rx
+        parent[ry] = rx
+        if rank[rx] == rank[ry]:
+            rank[rx] += 1
+
     # 1) Shared-vertex adjacency (cheap, exact mesh connectivity).
     vert_to_faces: Dict[int, List[int]] = {}
     for fi in std_idx:
         for vi in faces[fi]:
             vert_to_faces.setdefault(int(vi), []).append(int(fi))
 
-    adjacency: Dict[int, List[int]] = {int(fi): set() for fi in std_idx}
+    adjacency: Dict[int, set] = {int(fi): set() for fi in std_idx}
 
     # Two faces that share a mesh vertex (same index) meet EXACTLY at that
     # vertex in 3D -- they already agree in Z there (it is one point), so the
@@ -363,8 +407,19 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     # vertex-based form of the step check: a welded seam has no step to clear,
     # so the old centroid-Z gate here was a spurious proxy that could wrongly
     # cut a legitimately-welded pair of standable faces. We keep this pass as the
-    # exact mesh-connectivity backbone and drop the centroid test.
+    # exact mesh-connectivity backbone and drop the centroid test. Union as we go
+    # so the seam pass can see the weld components already formed here.
     for vi, flist in vert_to_faces.items():
+        f0 = flist[0]
+        for k in range(1, len(flist)):
+            fk = flist[k]
+            adjacency[f0].add(fk)
+            adjacency[fk].add(f0)
+            # The star edges f0--fk above plus the all-pairs edges below are the
+            # same undirected edge set the reference records (a vertex's faces
+            # are a clique); recording the clique keeps the stored adjacency
+            # byte-identical to the reference. The union only needs the star.
+            _union(pos_of[f0], pos_of[fk])
         for i in range(len(flist)):
             for j in range(i + 1, len(flist)):
                 fi, fj = flist[i], flist[j]
@@ -386,21 +441,71 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     fxy_min = np.minimum(np.minimum(a, b), c)[:, :2]
     fxy_max = np.maximum(np.maximum(a, b), c)[:, :2]
 
+    # Weld components after the shared-vertex pass. A seam edge can only MERGE
+    # two faces that sit in DIFFERENT weld components (same-component pairs are
+    # redundant and skipped below), and a merging edge requires true XY contact
+    # within eps -- which forces the two faces' weld-component XY bounding boxes
+    # to overlap within eps. So a face whose entire weld component's bbox is
+    # isolated (touches no other component's bbox within eps) can never be an
+    # endpoint of a component-changing edge, and is dropped from the seam
+    # candidates. A terrain is a single weld component, so EVERY face is
+    # isolated and the seam pass is empty (design: "a terrain is one weld
+    # component, so its seam pass is empty").
+    weld_root = np.array([_find(k) for k in range(S)], dtype=np.int64)
+    comp_min: Dict[int, np.ndarray] = {}
+    comp_max: Dict[int, np.ndarray] = {}
+    for k, fi in enumerate(std_idx):
+        r = int(weld_root[k])
+        lo = fxy_min[fi]
+        hi = fxy_max[fi]
+        if r not in comp_min:
+            comp_min[r] = lo.copy()
+            comp_max[r] = hi.copy()
+        else:
+            np.minimum(comp_min[r], lo, out=comp_min[r])
+            np.maximum(comp_max[r], hi, out=comp_max[r])
+
+    roots = list(comp_min.keys())
+    if len(roots) <= 1:
+        # One weld component (e.g. terrain): nothing can merge. Seam pass empty.
+        touches_other = {}
+    else:
+        rmin = np.array([comp_min[r] for r in roots])          # (C, 2)
+        rmax = np.array([comp_max[r] for r in roots])          # (C, 2)
+        touches_other = {}
+        for ri, r in enumerate(roots):
+            # bbox(r) within eps of bbox(other) on both axes, for any other.
+            near = (
+                (rmin[:, 0] - eps <= rmax[ri, 0]) & (rmax[:, 0] + eps >= rmin[ri, 0]) &
+                (rmin[:, 1] - eps <= rmax[ri, 1]) & (rmax[:, 1] + eps >= rmin[ri, 1])
+            )
+            near[ri] = False
+            touches_other[r] = bool(near.any())
+
+    # Only faces in a component that touches another component feed the grid.
+    if touches_other:
+        seam_pos = np.array(
+            [k for k in range(S) if touches_other.get(int(weld_root[k]), False)],
+            dtype=np.int64,
+        )
+    else:
+        seam_pos = np.zeros(0, np.int64)
+    seam_faces = std_idx[seam_pos] if len(seam_pos) else np.zeros(0, np.int64)
+
     cell = max(eps * 4.0, 16.0)
     grid: Dict[Tuple[int, int], List[int]] = {}
 
-    def _cells_for(fi: int):
-        lo = fxy_min[fi] - eps
-        hi = fxy_max[fi] + eps
-        cx0, cy0 = int(math.floor(lo[0] / cell)), int(math.floor(lo[1] / cell))
-        cx1, cy1 = int(math.floor(hi[0] / cell)), int(math.floor(hi[1] / cell))
-        for cx in range(cx0, cx1 + 1):
-            for cy in range(cy0, cy1 + 1):
-                yield (cx, cy)
-
-    for fi in std_idx:
-        for key in _cells_for(int(fi)):
-            grid.setdefault(key, []).append(int(fi))
+    if len(seam_faces):
+        # Vectorised cell ranges per face: floor((bbox +/- eps) / cell).
+        lo_all = (fxy_min[seam_faces] - eps) / cell
+        hi_all = (fxy_max[seam_faces] + eps) / cell
+        c_lo = np.floor(lo_all).astype(np.int64)   # (n, 2)
+        c_hi = np.floor(hi_all).astype(np.int64)   # (n, 2)
+        for n, fi in enumerate(seam_faces):
+            fi_i = int(fi)
+            for cx in range(c_lo[n, 0], c_hi[n, 0] + 1):
+                for cy in range(c_lo[n, 1], c_hi[n, 1] + 1):
+                    grid.setdefault((cx, cy), []).append(fi_i)
 
     def _bbox_near(fi: int, fj: int) -> bool:
         # Cheap reject before the exact test: XY bounding boxes within eps.
@@ -411,10 +516,25 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 
     seen_pairs: set = set()
     for key, flist in grid.items():
+        if len(flist) < 2:
+            # A cell holding a single face can produce no pair; skip it.
+            continue
+        # Skip a cell whose faces all share one weld component: every in-cell
+        # pair is same-component (redundant) and would be skipped below anyway,
+        # so the per-cell pair loop produces no edge. (Design: "skip the
+        # per-cell pair loop for cells holding one component.")
+        if len({int(weld_root[pos_of[f]]) for f in flist}) == 1:
+            continue
         for i in range(len(flist)):
             for j in range(i + 1, len(flist)):
                 fi, fj = flist[i], flist[j]
                 if fj in adjacency[fi]:
+                    continue
+                # Redundant-edge skip: already in the same component, so this
+                # edge (accepted or not) changes nothing. Skip BEFORE the
+                # expensive contact test. This is the whole speed-up and it
+                # cannot change components.
+                if _find(pos_of[fi]) == _find(pos_of[fj]):
                     continue
                 pk = (fi, fj) if fi < fj else (fj, fi)
                 if pk in seen_pairs:
@@ -432,9 +552,20 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
                 if abs(zi - zj) <= agent.max_step_up:
                     adjacency[fi].add(fj)
                     adjacency[fj].add(fi)
+                    _union(pos_of[fi], pos_of[fj])
 
     adjacency_lists = {k: sorted(v) for k, v in adjacency.items()}
-    return WalkSurface(verts, faces, normals, centroids, standable, adjacency_lists)
+
+    # Component root per standable face (a face index), -1 elsewhere. Resolve to
+    # the representative face id so callers can group faces by component without
+    # re-flooding.
+    component = np.full(len(faces), -1, dtype=np.int64)
+    if S:
+        roots_pos = np.array([_find(k) for k in range(S)], dtype=np.int64)
+        component[std_idx] = std_idx[roots_pos]
+
+    return WalkSurface(verts, faces, normals, centroids, standable,
+                       adjacency_lists, component)
 
 
 # ---------------------------------------------------------------------------
