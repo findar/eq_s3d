@@ -231,10 +231,45 @@ Working rules for every task:
     - Deliverables: `analyzer/traverse.py`, `tests/test_traversability.py`. Commit: `328ca66`.
 
 - [ ] 5. Measure before fixing
-  - [ ] 5.1 Add and run `scripts/sweep_connectivity.py`
+  - [x] 5.1 Add and run `scripts/sweep_connectivity.py`
     - New committed script: dungeon and city × rooms 12 / 20 / 30 × flat and elevation × 200 seeds, built through `plan_to_spec` + `ZoneBuilder` + `validate(check_corridors=True)`. Report counts and seeds per failure class: `gap`, `crosses room`, `no floor`, inverted stub (`fx` past `tx`, computed from the spec), corridor–corridor conflict, plus P1 failures.
     - Record the per-class table and representative seeds here before any fix. No fix lands in this task.
     - _Requirements: 5.2, 5.3, 5.4_
+    - **Deliverables.** `scripts/sweep_connectivity.py` (committed `3e6c361`). Suite green before the commit: `254 passed`. Full sweep run on branch head `3e6c361` (post-4.3, so conflict counts reflect the corrected Z-separated check): **2400 builds** = dungeon + city × rooms 12/20/30 × flat + elevation × seeds 1–200. All cells completed with no build errors. Command: `python -m scripts.sweep_connectivity --seeds 200`.
+    - **Per-class totals (builds exhibiting the class; one build can hit several):**
+
+      | class | count | notes |
+      |-------|------:|-------|
+      | `gap` | 0 | never fired — every continuity failure resolves to the more specific `crosses room` |
+      | `crosses room` | 1243 | dominant class; present in every cell, grows with room count |
+      | `no floor` | 0 | never fired |
+      | inverted stub (`fx` past `tx`, from spec) | 252 | spec-level: identical seed set in a cell's flat and elevation halves |
+      | corridor–corridor conflict | 279 | present in every cell |
+      | unreachable (P1) | 91 | **elevation-only** — zero in every flat cell |
+
+    - **Per-cell breakdown** (`zone_type/rooms/verticality` → count per class):
+
+      | cell | gap | crosses room | no floor | inverted stub | conflict | unreachable |
+      |------|----:|----:|----:|----:|----:|----:|
+      | dungeon/12/flat | 0 | 55 | 0 | 11 | 11 | 0 |
+      | dungeon/12/elevation | 0 | 73 | 0 | 11 | 10 | 19 |
+      | dungeon/20/flat | 0 | 100 | 0 | 16 | 22 | 0 |
+      | dungeon/20/elevation | 0 | 120 | 0 | 16 | 19 | 17 |
+      | dungeon/30/flat | 0 | 116 | 0 | 31 | 39 | 0 |
+      | dungeon/30/elevation | 0 | 146 | 0 | 31 | 37 | 28 |
+      | city/12/flat | 0 | 55 | 0 | 12 | 11 | 0 |
+      | city/12/elevation | 0 | 73 | 0 | 12 | 11 | 9 |
+      | city/20/flat | 0 | 100 | 0 | 16 | 22 | 0 |
+      | city/20/elevation | 0 | 120 | 0 | 16 | 20 | 7 |
+      | city/30/flat | 0 | 129 | 0 | 40 | 39 | 0 |
+      | city/30/elevation | 0 | 156 | 0 | 40 | 38 | 11 |
+
+    - **Representative seeds per class** (`zone_type/rooms/verticality:seed`; full lists in the run output, `sweep_full_output.txt`, not committed):
+      - `crosses room`: dungeon/12/flat:6, 10, 11, 13, 15, 16, 18, 19, 20, 23; dungeon/30/flat:5, 8, 9; city/30/flat:1, 2, 4, 5, 8, 9. (1243 total, all cells.)
+      - inverted stub: dungeon/12/flat:27, 74, 96, 101, 109, 121, 170, 171, 177, 181, 199 (and the same 11 in dungeon/12/elevation); dungeon/20/flat:3, 12, 26, 27, 33, 36, 68, 82, 85, 90; city/30/flat:... (252 total; per-cell flat and elevation seed sets are identical — spec-level, not verticality-dependent).
+      - corridor–corridor conflict: dungeon/12/flat:16, 20, 22, 33, 40, 42, 78, 82, 116, 182, 189 (same 11 in dungeon/12/elevation minus one); dungeon/20/flat:8, 10, 17, 21, 32, 38, 44, 51, 58, 66. (279 total, all cells.)
+      - unreachable (P1): dungeon/12/elevation:5, 18, 24, 25, 30, 46, 74, 75, 122, 126, 129, 133, 156, 174, 179, 183, 185, 198, 200; dungeon/20/elevation:3, 19, 31, 39, 72, 75, 80, 107, 114, 117; dungeon/30/elevation:3, 14, 23, 30. (91 total; **every seed is in an elevation cell — none in any flat cell**.)
+    - **Read for the fixes (6.5 flat, 8.3 elevation).** Flat failure classes to close in 6.5: `crosses room` (1243), inverted stub (252), conflict (279). The elevation half adds P1 `unreachable` (91, elevation-only) for 8.3; `crosses room`/inverted-stub/conflict counts barely move between a cell's flat and elevation halves (inverted-stub counts are identical, confirming it is a spec-geometry class the verticality draw doesn't touch), so the inverted-stub and third-room fixes in 6.5 should carry into elevation and 8.3 is expected to be mostly the carry-leg/P1 residue. `gap` and `no floor` never fired, so no fix targets them. No fix landed in this task.
 
 - [ ] 6. Flat first: widen the properties and fix flat failures at the root
   - [ ] 6.1 Add the wave-1 strategies and constants
