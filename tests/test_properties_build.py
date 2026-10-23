@@ -14,52 +14,101 @@ Correctness Properties 10-14.
 from __future__ import annotations
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 import analyzer.traverse as T
 from generators.layout import LayoutGenerator
 
-from tests.strategies import seeds, room_counts
-from tests.pbt_helpers import build_settings, build_raw, fresh_dir
+from ai.schema import ZonePlan
+from ai.expand import plan_to_spec
+from tests.strategies import seeds, room_counts, room_counts_wide, box_themes, flat_only
+from tests.pbt_helpers import (
+    build_settings,
+    build_raw,
+    fresh_dir,
+    M0_HUMAN_PASS,
+    m0_human_spec,
+)
+
+
+@st.composite
+def _raw_navigable_cases(draw):
+    """
+    A ``(spec, label)`` case for Property 1, built through the real plan path.
+
+    Draws a box zone type (``dungeon``/``city``), a wide room count (biased so
+    the large-zone band is hit about half the time, Req 5.1) and flat
+    verticality (the flat-first pass, task 6.2 — elevation draws return in task
+    8.1), then expands a ``ZonePlan`` through ``ai.expand.plan_to_spec`` — the
+    same path the pipeline uses — so a passing property exercises an input the
+    production path can genuinely see. ``label`` carries the drawn parameters so
+    a failure prints them.
+    """
+    s = draw(seeds)
+    theme = draw(box_themes)
+    n = draw(room_counts_wide)
+    verticality = draw(flat_only)
+    plan = ZonePlan(
+        name="navraw",
+        theme=theme,
+        room_count=n,
+        verticality=verticality,
+        elevation=verticality != "flat",
+    )
+    spec = plan_to_spec(plan, seed=s)
+    label = f"seed={s}, zone_type={theme}, rooms={n}, verticality={verticality}"
+    return spec, label
+
+
+def _flat_human_case(entry):
+    """An ``M0_HUMAN_PASS`` entry re-planned flat, as a ``(spec, label)`` case."""
+    spec = m0_human_spec(entry, verticality="flat")
+    prompt, seed = entry
+    label = f"M0 human pass (flat): {prompt!r} seed={seed}"
+    return spec, label
 
 
 @pytest.mark.slow
-@build_settings(20)
-@given(s=seeds, n=room_counts(2, 12), elevation=st.booleans())
-def test_raw_dungeon_navigable(s, n, elevation):
+@build_settings(15)
+@example(case=_flat_human_case(M0_HUMAN_PASS[0])).via("M0 human pass")
+@example(case=_flat_human_case(M0_HUMAN_PASS[1])).via("M0 human pass")
+@given(case=_raw_navigable_cases())
+def test_raw_navigable(case):
     """
-    Feature: zone-generator-m0-hygiene, Property 10: Raw dungeon builds are
-    navigable (umbrella P1, dungeon).
+    Feature: zone-generator-m1-controls-traversability, Property 1: Raw builds
+    are navigable (umbrella P1), flat.
 
-    A raw dungeon zone built with no validation gate (``LayoutGenerator`` ->
-    ``build_raw``) walks end to end on its real generated TER mesh: the
-    traversability validator reaches every room from the entrance safe point.
-    This is the analytical navigability bar from ``analyzer.traverse`` — the
-    per-triangle walk surface the north-star "every room reachable on foot" MUST
-    is measured on. Builder exceptions propagate as failures; this property
-    never ``assume``s an input away (design Req 4.1).
+    A raw box zone (dungeon or city) built with no validation gate
+    (``ZonePlan`` -> ``ai.expand.plan_to_spec`` -> ``build_raw``) walks end to
+    end on its real generated TER mesh: the traversability validator reaches
+    every room from the entrance safe point. This is the analytical
+    navigability bar from ``analyzer.traverse`` — the per-triangle walk surface
+    the north-star "every room reachable on foot" MUST is measured on — now
+    widened from M0's dungeon-only, ≤ 12-room domain to BOTH box zone types
+    across the full M1 large-zone range (``room_counts_wide``, up to 30 rooms,
+    Req 5.1) under the flat-first pass (``flat_only``; elevation draws return in
+    task 8.1, Req 5.3). The two ``M0_HUMAN_PASS`` inputs — the 30-room dungeons
+    a human signed off on at the M0 3D pass — are pinned re-planned flat as
+    ``@example``s so the wave-1 fixes are proven to keep those known-good zones
+    navigable (Req 5.3). Builder exceptions propagate as failures; this property
+    never ``assume``s an input away (Req 4.1).
 
-    Validates: M0 Req 4.1, 1.5; umbrella P1.
+    NOTE: this is an ANALYTICAL check (the per-triangle walk surface on the real
+    TER mesh), not a live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: Requirements 4.1, 5.1, 5.3; umbrella P1.
     """
-    spec = LayoutGenerator(theme="dungeon", seed=s).generate(
-        "navdun", room_count=n, elevation=elevation
-    )
+    spec, label = case
     with fresh_dir() as out:
         result, _ter_bytes, _zon_bytes = build_raw(spec, out)
         report = T.validate(result.eqg_path, spec=spec)
 
     assert report.passed, (
-        f"non-navigable dungeon (seed={s}, rooms={n}, elevation={elevation}):\n"
-        f"{report.summary()}"
+        f"non-navigable box zone ({label}):\n{report.summary()}"
     )
 
 
-from hypothesis import example
-
-from ai.schema import ZonePlan
-from ai.expand import plan_to_spec
-from tests.strategies import box_themes
 from tests.pbt_helpers import ramp_rises
 
 #: Verticality that actually elevates corridors (``flat`` would make the ramp

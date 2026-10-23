@@ -287,10 +287,23 @@ Working rules for every task:
       - `python -m pytest tests/ -q`: **254 passed** (130.70 s) — equal to the stated baseline; the new imports don't break collection. (Two pre-existing unrelated warnings.)
       - Touched only `tests/strategies.py`, `tests/pbt_helpers.py` and this `tasks.md` entry.
       - Commit: `c9c5264`.
-  - [ ] 6.2 Write property test for Property 1: Raw builds are navigable (umbrella P1), flat
+  - [x] 6.2 Write property test for Property 1: Raw builds are navigable (umbrella P1), flat
     - Rename `test_properties_build.py::test_raw_dungeon_navigable` to `test_raw_navigable`. Draw box zone types, `room_counts_wide` and `flat_only`, building through `plan_to_spec`; budget 15. Pin both `M0_HUMAN_PASS` inputs re-planned flat with `@example(...).via("M0 human pass")`.
     - Done when green with no weakened assertion.
     - **Validates: Requirements 4.1, 5.1, 5.3**
+    - **Deliverables:**
+      - `tests/test_properties_build.py::test_raw_navigable` — renamed from `test_raw_dungeon_navigable` and widened to Property 1 (umbrella P1), flat. Docstring begins `Feature: zone-generator-m1-controls-traversability, Property 1: Raw builds are navigable (umbrella P1), flat` and lists **Requirements 4.1, 5.1, 5.3; umbrella P1**.
+      - Built through the real plan path (not `LayoutGenerator` directly): a new `@st.composite` strategy `_raw_navigable_cases` draws `box_themes` (dungeon/city), `room_counts_wide` (the biased 2–12 ∪ 13–30 wide range, so the large-zone band is hit ~half the time, Req 5.1) and `flat_only`, assembles a `ZonePlan` and expands it via `ai.expand.plan_to_spec` — the same path the pipeline uses. The strategy returns a `(spec, label)` pair so a failure prints the drawn seed / zone_type / rooms / verticality; nothing is attached to the `ZoneSpec` itself (so `to_dict()`-based tests elsewhere are unaffected). `@build_settings(15)`.
+      - **Both `M0_HUMAN_PASS` inputs pinned re-planned flat** as `@example(case=_flat_human_case(...)).via("M0 human pass")` — `_flat_human_case` uses the task-6.1 `m0_human_spec(entry, verticality="flat")` helper (flat override → `plan.verticality="flat"`, `plan.elevation=False`), so the two 30-room dungeons a human signed off on at the M0 3D pass are proven to stay navigable under the flat-first pass (Req 5.3).
+      - **No weakened assertion:** the body still asserts `report.passed` on `analyzer.traverse.validate(result.eqg_path, spec=spec)` over the real built TER, builder exceptions propagate (no `assume`), and the flat-first domain change only widens inputs. The sweep (task 5.1) found zero P1-unreachable failures in flat cells, so no root-cause fix was needed and there is no counterexample to pin as a Regression_Example.
+      - Elevation is explicitly NOT drawn here — `flat_only` only — matching the task: elevation draws return in task 8.1.
+      - **Verify (this machine; default profile):**
+        - `python -m pytest tests/test_properties_build.py::test_raw_navigable -q` → **1 passed** (15.13 s).
+        - `python -m pytest tests/test_properties_build.py -q` → **5 passed** (20.37 s).
+        - `python -m pytest tests/ -q` → **254 passed** (137.37 s) — matches the baseline (the rename keeps the test count flat).
+      - Touched only `tests/test_properties_build.py` and this `tasks.md` entry.
+      - NOT verified in the live 3D viewer — this is the analytical per-triangle walk surface over the built mesh, not a geometry change (see `docs/ACCEPTANCE.md`); the flat 30-room 3D pass is the human-gated task 7.2.
+      - Commit: `__PENDING__` (recorded in the follow-up self-reference edit).
   - [ ] 6.3 Write property test for Property 10: Corridor floor continuity (M1-P1), flat
     - New `test_properties_build.py::test_corridor_continuity`, same domain and examples as 6.2, budget 15. Assert every `CorridorResult.connected` and no conflicts, printing failing corridor ids and reasons.
     - **Validates: Requirements 5.2, 5.3**
