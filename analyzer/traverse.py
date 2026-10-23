@@ -952,23 +952,88 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
     return results
 
 
+def _route_floor_z_at(route, cor: CorridorSpec, x: float, y: float) -> float:
+    """Expected floor height of ``cor``'s own tube at the XY point ``(x, y)``.
+
+    Mirrors the geometry builder's carry-leg rule (``MeshBuilder._emit_route``):
+    the entire rise is confined to leg ``carry`` (defaulting to the longest leg),
+    every leg before it sits flat at ``from_z`` and every leg after at ``to_z``.
+    We find the route leg whose segment is nearest ``(x, y)`` in XY and return
+    that leg's floor height, interpolating along the carry leg. This lets
+    :func:`_corridor_floor_z` tell this corridor's own floor apart from a second
+    corridor crossing its footprint at a different height.
+    """
+    wps = route.waypoints
+    n_legs = len(wps) - 1
+    if n_legs <= 0:
+        return float(cor.from_z)
+    carry = route.carry
+    if carry is None or carry < 0:
+        # Builder default: the longest leg carries the rise.
+        def _leg_len(k: int) -> float:
+            (ax, ay), (bx, by) = wps[k], wps[k + 1]
+            return abs(bx - ax) + abs(by - ay)
+        carry = max(range(n_legs), key=_leg_len)
+
+    # Per-waypoint floor heights: from_z up to the carry leg, to_z after it.
+    zs = [cor.from_z if i <= carry else cor.to_z for i in range(len(wps))]
+
+    # Nearest leg to (x, y); interpolate within that leg by arc fraction.
+    best_d = float("inf")
+    best_z = float(cor.from_z)
+    for k in range(n_legs):
+        ax, ay = wps[k]
+        bx, by = wps[k + 1]
+        dx, dy = bx - ax, by - ay
+        seg2 = dx * dx + dy * dy
+        if seg2 <= 1e-12:
+            t = 0.0
+        else:
+            t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / seg2))
+        px, py = ax + t * dx, ay + t * dy
+        d = (x - px) ** 2 + (y - py) ** 2
+        if d < best_d:
+            best_d = d
+            best_z = zs[k] + t * (zs[k + 1] - zs[k])
+    return float(best_z)
+
+
 def _corridor_floor_z(surf: WalkSurface, cor: CorridorSpec,
                       agent: AgentModel) -> Dict[Tuple[int, int], List[float]]:
-    """Bucket a corridor's walkable floor heights by a coarse XY grid cell.
+    """Bucket a corridor's OWN walkable floor heights by a coarse XY grid cell.
 
     The region is the corridor's own route footprint (no room footprints, so two
     corridors are compared only where their TUBES overlap, not where they share a
     room). Returns ``{(cx, cy): [z, …]}`` keyed by a floor-cell index, so two
     corridors can be compared cell-by-cell over the XY intersection.
+
+    Crucially, the region footprint is an XY test, so where a SECOND corridor
+    crosses this one it drops its own floor (and ceiling) faces into this
+    corridor's footprint too. Keeping those would merge the two corridors' Z
+    ranges and make every overlapping pair "conflict" regardless of how far apart
+    they sit in Z — defeating design decision 16's clearance exemption. So we
+    keep only faces that belong to THIS corridor's own tube: a face whose
+    centroid Z lies within the tube (from its expected floor at that XY up to the
+    floor + the corridor's height, with ``max_step_up`` slack). A crossing
+    corridor passing over (above the ceiling) or under (below the floor) is
+    excluded, so a pair separated by at least the clearance shares no floor in
+    any cell and is correctly NOT a conflict.
     """
     hw = cor.width / 2
     route = corridor_route(cor, {})  # point-based route; rooms not needed for XY
     rects = route_footprint(route, hw)
     faces = _region_faces(surf, rects, [])
     cell = max(agent.adjacency_eps * 4.0, 16.0)
+    slack = agent.max_step_up
     buckets: Dict[Tuple[int, int], List[float]] = {}
     for f in faces:
         c = surf.centroids[f]
+        floor_z = _route_floor_z_at(route, cor, float(c[0]), float(c[1]))
+        # Only this corridor's own tube: floor (minus a step) up through the
+        # clearance (plus a step). Crossing corridors at a separated height fall
+        # outside this band and are dropped.
+        if not (floor_z - slack <= c[2] <= floor_z + cor.height + slack):
+            continue
         key = (int(math.floor(c[0] / cell)), int(math.floor(c[1] / cell)))
         buckets.setdefault(key, []).append(float(c[2]))
     return buckets

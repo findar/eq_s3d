@@ -222,9 +222,13 @@ Working rules for every task:
       - Verification: `python -m pytest tests/test_properties_core.py -q` → **4 passed** (91 s); `python -m pytest tests/ -q` → **250 passed** (131 s), matching the 250-passed wave-1 baseline.
       - Analytical equivalence over two validator implementations on the built mesh; not a live 3D viewer confirmation (per docs/ACCEPTANCE.md).
       - Commit: `4280d56`.
-  - [ ] 4.3 Add constructed example tests for continuity
+  - [x] 4.3 Add constructed example tests for continuity
     - In `tests/test_traversability.py`, hand-built specs: a corridor whose route runs through a third room reports `crosses room <id>`; a corridor with a missing floor segment reports `gap`; two unrelated corridors crossing at the same height conflict; the same pair separated in Z by more than the clearance does not.
     - _Requirements: 5.2_
+    - Done. New `TestCorridorContinuityExamples` in `tests/test_traversability.py` (4 deterministic example tests, built through `ZoneBuilder` on the real box-backend TER, no seeds): `crosses room c`, `gap` (over-steep ramp), same-height overlap → conflict, +200u Z-separated overlap → no conflict.
+    - Root-cause fix in `analyzer/traverse.py::_corridor_floor_z` (+ new `_route_floor_z_at` helper): the Z-separated example exposed that the conflict check bucketed EVERY standable face in a corridor's XY footprint, so where a second corridor overlapped it dropped its own (differently-heighted) floor/ceiling into this corridor's bucket. That merged the two Z ranges and made any overlapping pair conflict regardless of separation — defeating design Decision 16's clearance exemption. Now each corridor keeps only faces inside its OWN tube (within `[floor−step, floor+height+step]` of its route floor at that XY), so a pair separated past the clearance correctly shares no floor and is not a conflict. Applied identically to optimised + reference surfaces, so Property 13 (4.2) opt==ref agreement is unaffected.
+    - Verify: `python -m pytest tests/test_traversability.py -q` → 26 passed; `python -m pytest tests/ -q` → 254 passed (250 baseline + 4 new), 0 failures.
+    - Deliverables: `analyzer/traverse.py`, `tests/test_traversability.py`. Commit: `<pending>`.
 
 - [ ] 5. Measure before fixing
   - [ ] 5.1 Add and run `scripts/sweep_connectivity.py`
