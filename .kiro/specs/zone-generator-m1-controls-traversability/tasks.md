@@ -167,10 +167,22 @@ Working rules for every task:
       - `python -m pytest tests/ -q`: **249 passed** (85.80 s) — matches the fork-point baseline.
       - Commit: `64713cf` (code). The equivalence/timing proof used throwaway scripts outside the repo (`%TEMP%\t22_*.py`), not committed.
       - NOT verified in the live 3D viewer (this task changes only the analytical validator, not geometry); task 2.3 adds the `test_walk_surface_equivalence` property that pins this equivalence in the suite.
-  - [ ] 2.3 Write property test for Property 13: The faster walk surface has the same reachability (M1-P4)
+  - [x] 2.3 Write property test for Property 13: The faster walk surface has the same reachability (M1-P4)
     - `tests/test_properties_core.py::test_walk_surface_equivalence`, `slow`, budget 10, over box zone types, n 2–30 and all verticalities (wilderness 2–6 is added in 13.7).
     - Assert that the optimised and reference walk surfaces have the same standable faces in the same connected components, that `flood_reachable` agrees from every start face, and that every `TraversalReport` room result is equal. (Continuity equality is added in 4.2.)
     - **Validates: Requirements 4.1, 5.2**
+    - **Deliverables:**
+      - `tests/test_properties_core.py::test_walk_surface_equivalence` — new `@pytest.mark.slow` / `@build_settings(10)` property. Draws `box_themes` (dungeon/city), `room_counts(2, 30)`, the `verticality` strategy (flat/moderate/dramatic) and `seeds`; builds through `ZonePlan` → `plan_to_spec` → `build_raw` with `elevation=(vert != "flat")` so moderate/dramatic actually elevate corridors. **Box only** — wilderness n 2–6 is left for task 13.7 as the task says; continuity equality is left for task 4.2.
+      - Docstring begins `Feature: zone-generator-m1-controls-traversability, Property 13: The faster walk surface has the same reachability`, names the M1 tag **M1-P4**, and lists **Requirements 4.1, 5.2**.
+      - Builds the optimised surface via `analyzer.traverse.build_walk_surface` and the reference via `tests.reference_traverse.build_walk_surface` on the **same** loaded TER (`T.load_ter_from_eqg`), then asserts: (1) identical `standable` masks; (2) identical connected-component partitions derived from each surface's `adjacency` (canonical frozenset-of-frozensets) **and** the optimised surface's new `component` array agrees with its own adjacency flood; (3) `flood_reachable` returns the identical reachable set from **every** standable start face on both surfaces; (4) every per-room `TraversalReport` result is equal — live `analyzer.traverse.validate` vs `tests.reference_traverse.reference_room_results` on the reference surface for the same spec (room_id, role, reachable, floor_faces, reached_faces, reason).
+      - Uses existing infra only: `tests/conftest.py` profiles, `tests/pbt_helpers.py` (`build_settings`, `build_raw`, `fresh_dir`), `tests/strategies.py` (`box_themes`, `room_counts`, `verticality`, `seeds`). `tests/reference_traverse.py` used, **not edited**.
+      - **No speed-up bug found.** Task 2.2's union-find equivalence held across every example drawn — standable sets, component partitions, `flood_reachable` from every face, and all per-room results matched the frozen reference. No root-cause fix to `analyzer/traverse.py` was needed, so there is no discovered-failure counterexample to pin; the single `@example(theme="dungeon", n=2, vert="flat", s=0)` is an anchor (noted in a code comment as the slot to replace with `@example(...).via("discovered failure")` if 2.2 ever regresses). `analyzer/traverse.py` was **not** modified by this task.
+      - **Verify (this machine; default profile, budget 10):**
+        - `python -m pytest tests/test_properties_core.py::test_walk_surface_equivalence -q` → **1 passed** (41.26 s).
+        - `python -m pytest tests/test_properties_core.py -q` → **4 passed** (50.40 s).
+        - `python -m pytest tests/ -q` → **250 passed** (194.97 s) — +1 over the fork-point 249 (the new property); the two warnings are pre-existing and unrelated.
+      - Touched only `tests/test_properties_core.py` and this `tasks.md` entry.
+      - NOT verified in the live 3D viewer — this is an analytical equivalence over two validator implementations on the built mesh, not geometry (see `docs/ACCEPTANCE.md`). Commit hash recorded below once committed.
 
 - [ ] 3. Route every corridor through one function
   - [ ] 3.1 Add `generators/routing.py` and switch both callers to it (byte-identical)

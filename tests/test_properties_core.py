@@ -13,6 +13,10 @@ Properties in this module:
   * P13 — PFS archive round-trip (this file's ``test_pfs_roundtrip``)
   * P14 — PFS filename CRC matches the reference (``test_pfs_crc_matches_reference``)
   * P15 — built TER/ZON round-trip (``test_ter_zon_roundtrip``)
+
+M1 property added here (``.kiro/specs/zone-generator-m1-controls-traversability``):
+  * M1-P4 — the faster walk surface has the same reachability as the fork-point
+    reference (``test_walk_surface_equivalence``).
 """
 
 from __future__ import annotations
@@ -43,7 +47,9 @@ from tests.strategies import (
     pfs_entries,
     pfs_names,
     room_counts,
+    seeds,
     semantic_inputs,
+    verticality,
 )
 
 
@@ -415,4 +421,216 @@ def test_ter_zon_roundtrip(theme, n, semantic):
     parsed_zon = ZonFile.from_bytes(zon_bytes)
     assert _zon_fields(re_zon) == _zon_fields(parsed_zon), (
         "ZON models/objects/regions/lights differ after round-trip"
+    )
+
+# ---------------------------------------------------------------------------
+# M1 Property 13 (M1-P4): the faster walk surface has the same reachability.
+#
+# Task 2.2 rewrote ``analyzer.traverse.build_walk_surface`` with a union-find
+# that drops REDUNDANT seam edges (edges between faces already in the same
+# component) to skip the expensive ``_tri_tri_xy_contact`` test, plus two
+# component-preserving candidate cuts. The claim is that this changes SPEED
+# only: the standable set, the connected-component partition, and therefore
+# every reachability answer are identical to the fork-point code. This property
+# proves that against ``tests/reference_traverse.py`` — the frozen fork-point
+# copy — on a real built mesh, which is the ONLY honest check (the optimised and
+# reference modules compute the same thing two different ways).
+#
+# Imports are local to this block so the M0 part of the module stays unchanged.
+# ---------------------------------------------------------------------------
+
+import numpy as np
+
+import analyzer.traverse as T
+import tests.reference_traverse as RT
+from generators.layout import LayoutGenerator
+
+
+def _components_from_adjacency(surf) -> frozenset:
+    """
+    Connected-component partition of a walk surface, derived purely from its
+    ``adjacency`` lists (so it works for BOTH the optimised surface and the
+    frozen reference, which has no ``component`` array). Returns a frozenset of
+    frozensets of standable face ids — a canonical, order-independent value two
+    surfaces can be compared by directly.
+    """
+    std_idx = [int(f) for f in np.nonzero(surf.standable)[0]]
+    seen: set = set()
+    comps = []
+    for start in std_idx:
+        if start in seen:
+            continue
+        # BFS over adjacency from this unseen face.
+        stack = [start]
+        seen.add(start)
+        comp = {start}
+        while stack:
+            f = stack.pop()
+            for nb in surf.adjacency.get(f, ()):
+                if nb not in seen:
+                    seen.add(nb)
+                    comp.add(nb)
+                    stack.append(nb)
+        comps.append(frozenset(comp))
+    return frozenset(comps)
+
+
+def _components_from_component_array(surf) -> frozenset:
+    """
+    Connected-component partition read off the optimised surface's ``component``
+    array (root per standable face, -1 elsewhere). Returns the same canonical
+    frozenset-of-frozensets shape as ``_components_from_adjacency`` so the two
+    can be asserted equal — i.e. the exposed ``component`` array agrees with what
+    a flood over the surface's own adjacency recovers.
+    """
+    comp = surf.component
+    std_idx = np.nonzero(surf.standable)[0]
+    by_root: dict = {}
+    for f in std_idx:
+        by_root.setdefault(int(comp[f]), set()).add(int(f))
+    return frozenset(frozenset(v) for v in by_root.values())
+
+
+def _room_result_tuples(report) -> list:
+    """A ``TraversalReport``'s per-room results as comparable tuples."""
+    return [
+        (r.room_id, r.role, r.reachable, r.floor_faces, r.reached_faces, r.reason)
+        for r in report.rooms
+    ]
+
+
+@pytest.mark.slow
+@build_settings(10)
+# Regression anchor: the first box build this property exercised end to end
+# (dungeon, 2 rooms, flat). No speed-up divergence has been found, so this is an
+# anchor example rather than a pinned counterexample; if 2.2's union-find ever
+# regresses, replace this with the discovered seed via
+# ``@example(...).via("discovered failure")``.
+@example(theme="dungeon", n=2, vert="flat", s=0)
+@given(
+    theme=box_themes,
+    n=room_counts(2, 30),
+    vert=verticality,
+    s=seeds,
+)
+def test_walk_surface_equivalence(theme, n, vert, s):
+    """Feature: zone-generator-m1-controls-traversability, Property 13: The faster walk surface has the same reachability.
+
+    M1-P4. Validates: Requirements 4.1, 5.2.
+
+    For any box zone type (dungeon/city), 2-30 rooms and any verticality
+    (flat/moderate/dramatic), the optimised ``analyzer.traverse.build_walk_surface``
+    and the frozen fork-point reference ``tests.reference_traverse.build_walk_surface``
+    produce walk surfaces that are reachability-equivalent on the same built TER
+    mesh:
+
+      1. **Same standable faces** — the two ``standable`` masks are identical, so
+         the union-find speed-up did not change which triangles the agent can
+         stand on.
+      2. **Same connected components** — the component partition derived from the
+         optimised surface's ``adjacency`` equals the one derived from the
+         reference's ``adjacency`` (canonical frozenset-of-frozensets). The
+         optimised surface's new ``component`` array is ALSO asserted to agree
+         with its own adjacency flood, so the exposed partition is trustworthy
+         and not just an internal artefact. Dropping redundant seam edges can
+         thin an adjacency LIST but can never split or merge a component, which
+         is exactly what this checks.
+      3. **``flood_reachable`` agrees from every start face** — for every
+         standable face, the reachable set on the optimised surface equals the
+         reachable set on the reference surface. (Components being equal implies
+         this; asserting it from every start face is the direct reachability
+         statement Requirement 5.2 names.)
+      4. **Every ``TraversalReport`` room result is equal** — the live
+         ``analyzer.traverse.validate`` room results on this mesh equal the
+         fork-point per-room results reproduced by
+         ``tests.reference_traverse.reference_room_results`` on the reference
+         surface for the same spec (room-for-room: reachable, floor_faces,
+         reached_faces, reason).
+
+    A failure here is a real bug in the task 2.2 speed-up (an edge that should
+    have been kept was dropped, splitting a component, or a candidate cut
+    discarded a genuine cross-component contact). It is fixed at the root in
+    ``analyzer/traverse.py`` — never by weakening an assertion — and the
+    counterexample is pinned above as ``@example(...).via("discovered failure")``.
+
+    Build-level property: ``@pytest.mark.slow`` + ``build_settings(10)``. Box
+    zone types only; wilderness n 2-6 is added in task 13.7 and corridor
+    continuity equality in task 4.2 (design Property 13 covers both; this test
+    is the wave-1 slice).
+
+    NOTE: this is an ANALYTICAL equivalence over two validator implementations on
+    the built mesh, not a live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+    """
+    # Build a box zone with the drawn verticality. plan_to_spec is the only path
+    # that applies plan `verticality`; elevation=True lets moderate/dramatic
+    # actually elevate corridors (flat stays flat regardless).
+    plan = ZonePlan(
+        name="wseq",
+        theme=theme,
+        room_count=n,
+        verticality=vert,
+        elevation=(vert != "flat"),
+    )
+    spec = plan_to_spec(plan, seed=s)
+
+    agent = T.AgentModel()
+    ref_agent = RT.AgentModel()
+
+    with fresh_dir() as out:
+        result, _ter_bytes, _zon_bytes = build_raw(spec, out)
+        ter, _zone_name = T.load_ter_from_eqg(result.eqg_path)
+
+        opt_surf = T.build_walk_surface(ter, agent)
+        ref_surf = RT.build_walk_surface(ter, ref_agent)
+
+        # Live optimised per-room results (validate builds its own optimised
+        # surface from the same .eqg).
+        live_report = T.validate(result.eqg_path, spec=spec, agent=agent)
+
+    ctx = f"(theme={theme}, rooms={n}, verticality={vert}, seed={s})"
+
+    # 1) Same standable faces.
+    assert np.array_equal(opt_surf.standable, ref_surf.standable), (
+        f"standable mask differs between optimised and reference surface {ctx}: "
+        f"opt={int(opt_surf.standable.sum())} standable, "
+        f"ref={int(ref_surf.standable.sum())} standable"
+    )
+
+    # 2) Same connected components (from adjacency, both surfaces).
+    opt_comps = _components_from_adjacency(opt_surf)
+    ref_comps = _components_from_adjacency(ref_surf)
+    assert opt_comps == ref_comps, (
+        f"connected-component partition differs between optimised and reference "
+        f"surface {ctx}: opt has {len(opt_comps)} components, "
+        f"ref has {len(ref_comps)} — the union-find speed-up split or merged a "
+        f"component (a non-redundant edge was dropped)"
+    )
+    # The exposed `component` array must match the optimised surface's own
+    # adjacency flood — the partition callers read is the real one.
+    arr_comps = _components_from_component_array(opt_surf)
+    assert arr_comps == opt_comps, (
+        f"optimised surface's `component` array disagrees with its adjacency "
+        f"flood {ctx}: the exposed component partition is not the walkable one"
+    )
+
+    # 3) flood_reachable agrees from EVERY start face.
+    std_idx = [int(f) for f in np.nonzero(opt_surf.standable)[0]]
+    for f in std_idx:
+        opt_reach = T.flood_reachable(opt_surf, f)
+        ref_reach = RT.flood_reachable(ref_surf, f)
+        assert opt_reach == ref_reach, (
+            f"flood_reachable differs from start face {f} {ctx}: "
+            f"opt reached {len(opt_reach)} faces, ref reached {len(ref_reach)} "
+            f"(symmetric diff {len(opt_reach ^ ref_reach)})"
+        )
+
+    # 4) Every TraversalReport room result equal (live optimised validate vs the
+    #    fork-point per-room loop on the reference surface, same spec+mesh).
+    ref_report = RT.reference_room_results(ref_surf, spec, zone_name="reference",
+                                           agent=ref_agent)
+    assert _room_result_tuples(live_report) == _room_result_tuples(ref_report), (
+        f"per-room TraversalReport results differ between optimised validate and "
+        f"the fork-point reference {ctx}:\n"
+        f"  optimised: {_room_result_tuples(live_report)}\n"
+        f"  reference: {_room_result_tuples(ref_report)}"
     )
