@@ -35,6 +35,7 @@ from .pbt_helpers import (
 from .strategies import (
     seeds,
     room_counts,
+    room_counts_wide,
     spec_themes,
     box_themes,
     verticality,
@@ -445,14 +446,19 @@ def test_relax_conflict_fallback():
             )
 
 
-# --- Property 8: Flush openings (umbrella P7) ---------------------------------
+# --- Property 3: Flush openings (umbrella P7) ---------------------------------
+#
+# Widened in M1 (task 6.4) to `room_counts_wide` (2-30, biased ~half into the
+# big-zone band) with elevation OFF -- the "flat first" pass proves flush
+# openings hold across the large-zone range before the elevation draw returns in
+# task 8.2.
 #
 # Budget scaled(50): the design pins 50, bounded by mesh cost -- this builds the
 # Box_Backend mesh in memory for every example (no binary archive), which is
 # heavier than the pure-spec layout properties above, so the per-test budget is
 # halved relative to them. Still layout/geometry only (no ZoneBuilder, no .eqg),
 # so no `slow` marker and no `build_settings`; `deadline=None` because the
-# in-memory mesh build for up to 12 rooms can brush the Default_Profile's 200 ms
+# in-memory mesh build for up to 30 rooms can brush the Default_Profile's 200 ms
 # per-example deadline on a cold call (import/JIT warmup) -- timing variance, not
 # a property failure.
 #
@@ -477,14 +483,15 @@ def test_relax_conflict_fallback():
 @given(
     seed=seeds,
     theme=box_themes,
-    n=room_counts(2, 12),
-    elevation=st.booleans(),
+    n=room_counts_wide,
 )
-def test_flush_openings(seed, theme, n, elevation):
-    """Feature: zone-generator-m0-hygiene, Property 8: Flush openings.
+def test_flush_openings(seed, theme, n):
+    """Feature: zone-generator-m1-controls-traversability, Property 3: Flush openings.
 
-    Umbrella P7. For any seed, box theme (dungeon/city), room count 2-12 and
-    elevation flag, every corridor meets both its rooms flush at the floor:
+    Umbrella P7. For any seed, box theme (dungeon/city) and room count across
+    the M1 large-zone range (2-30, ``room_counts_wide``), with elevation OFF
+    (flat -- the elevation draw returns in task 8.2), every corridor meets both
+    its rooms flush at the floor:
 
     1. The corridor's ``from_z`` / ``to_z`` EQUAL the respective rooms'
        ``floor_z`` -- the opening is cut at the room floor, never above or below
@@ -507,13 +514,15 @@ def test_flush_openings(seed, theme, n, elevation):
     flush at the floor); report the counterexample and fix the geometry at the
     root -- do NOT widen the 0.01 u band or narrow the strategy.
 
-    Validates: M0 Req 3.4; umbrella Req 1.6.
+    Validates: Requirements 5.1, 5.5.
     """
+    # Elevation OFF for the M1 flat-first pass (task 6.4); the elevation draw
+    # returns in task 8.2.
     plan = ZonePlan(
         name=f"flush{seed}",
         theme=theme,
         room_count=n,
-        elevation=elevation,
+        elevation=False,
     )
     spec = plan_to_spec(plan, seed=seed)
 
@@ -538,12 +547,12 @@ def test_flush_openings(seed, theme, n, elevation):
         assert c.from_z == from_room.floor_z, (
             f"corridor {c.id} from_z {c.from_z!r} != from_room floor_z "
             f"{from_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
-            f"elevation={elevation})"
+            f"elevation=False)"
         )
         assert c.to_z == to_room.floor_z, (
             f"corridor {c.id} to_z {c.to_z!r} != to_room floor_z "
             f"{to_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
-            f"elevation={elevation})"
+            f"elevation=False)"
         )
 
         # (2) Every upward face under each opening point, within MAX_SEG_RISE
@@ -564,14 +573,14 @@ def test_flush_openings(seed, theme, n, elevation):
                 f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) found no "
                 f"upward floor face within {MAX_SEG_RISE} u of floor_z "
                 f"{floor_z:.3f} (seed={seed}, theme={theme}, n={n}, "
-                f"elevation={elevation})"
+                f"elevation=False)"
             )
             for z in zs:
                 assert abs(z - floor_z) <= 0.01, (
                     f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) has a "
                     f"floor face at z={z:.5f}, off floor_z {floor_z:.3f} by "
                     f"{abs(z - floor_z):.5f} u > 0.01 (seed={seed}, "
-                    f"theme={theme}, n={n}, elevation={elevation})"
+                    f"theme={theme}, n={n}, elevation=False)"
                 )
 
 

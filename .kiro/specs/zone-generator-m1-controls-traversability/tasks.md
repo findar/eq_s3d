@@ -307,9 +307,19 @@ Working rules for every task:
   - [ ] 6.3 Write property test for Property 10: Corridor floor continuity (M1-P1), flat
     - New `test_properties_build.py::test_corridor_continuity`, same domain and examples as 6.2, budget 15. Assert every `CorridorResult.connected` and no conflicts, printing failing corridor ids and reasons.
     - **Validates: Requirements 5.2, 5.3**
-  - [ ] 6.4 Write property test for Property 3: Flush openings through 30 rooms (umbrella P7), flat
+  - [x] 6.4 Write property test for Property 3: Flush openings through 30 rooms (umbrella P7), flat
     - Widen `test_properties_layout.py::test_flush_openings` to `room_counts_wide` with elevation off (elevation draws return in 8.2). Budget stays 50.
     - **Validates: Requirements 5.1, 5.5**
+    - **Deliverables:**
+      - `tests/test_properties_layout.py::test_flush_openings` widened: the `@given` draw now uses `n=room_counts_wide` (the task-6.1 strategy, 2-30 biased ~half into the 13-30 band) and the `elevation=st.booleans()` draw is **removed** — the plan is built with `elevation=False` (flat-first; the elevation draw returns in task 8.2). Budget unchanged at `scaled(50)` (`@settings(deadline=None, max_examples=scaled(50))`), `deadline=None` kept, still layout/geometry-tier (no `slow`, no `build_settings`). Added `room_counts_wide` to the `from .strategies import (...)` block.
+      - Docstring retains the Property/umbrella/requirement format: now `Feature: zone-generator-m1-controls-traversability, Property 3: Flush openings`, names **umbrella P7**, and ends `Validates: Requirements 5.1, 5.5`. The leading comment header updated to `Property 3`, noting the M1 widening (task 6.4) and the flat/elevation-off pass; the "up to 12 rooms" deadline note updated to "up to 30 rooms". The three assertion messages that printed `elevation={elevation}` now print `elevation=False` (the draw is gone). The two-step assertions (opening Z equals floor_z; every upward seam face within `MAX_SEG_RISE` is within 0.01 u of floor_z, non-empty probe) are **unchanged** — no assertion weakened, no strategy narrowed.
+      - **No failure surfaced.** The widened property passed across the full 2-30 range with elevation off — flush-openings (P7) alignment held, so the sweep's "crosses room" / "inverted stub" classes did not manifest as a P7 opening-misalignment here (they are a continuity/routing concern that task 6.3's `test_corridor_continuity` and the 6.5 fixes own). No root fix to `generators/layout.py` or `generators/geometry.py` was needed and no counterexample to pin. The existing single anchor `@given` draw stands; if 6.5's routing fixes ever move a flat opening off the floor, pin it here as `@example(...).via("discovered failure")`.
+      - **Verify (this machine):**
+        - `python -m pytest tests/test_properties_layout.py -q` → **8 passed** (29.01 s).
+        - `python -m pytest tests/ -q` → **254 passed** (156.49 s) — matches the 254-passed baseline; the two warnings are pre-existing (`starlette.testclient`/`runpy`) and unrelated.
+      - Touched only `tests/test_properties_layout.py` and this `tasks.md` entry.
+      - NOT verified in the live 3D viewer — this is an analytical geometry property over the in-memory Box_Backend mesh (no `.eqg`), not a render change; the flat 30-room 3D pass is task 7.2 (HUMAN-GATED).
+      - Commit: `<filled after commit>`.
   - [ ] 6.5 Fix flat failure classes at the root
     - Take each failure class 5.1 and 6.2–6.4 found, in turn, and fix it in `generators/layout.py` / `generators/geometry.py` / `generators/routing.py`, choosing from the design's suspect table only after measuring (e.g. inverted stub → choose the wall by footprint separation in `_wall_point`, mirrored in `plan_route`; third-room crossing → split the edge A–B into A–C–B in `_connect_rooms`; corridor conflicts → the same).
     - One commit per class, each with its Regression_Example(s). Re-run `scripts/sweep_connectivity.py` (flat) after each and record the per-class counts and the seeds whose geometry moved.
