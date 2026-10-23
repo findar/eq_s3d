@@ -499,6 +499,14 @@ def _room_result_tuples(report) -> list:
     ]
 
 
+def _corridor_result_tuples(results) -> list:
+    """A list of ``CorridorResult``s as comparable tuples (order preserved)."""
+    return [
+        (c.corridor_id, c.from_room, c.to_room, c.connected, c.reason)
+        for c in results
+    ]
+
+
 @pytest.mark.slow
 @build_settings(10)
 # Regression anchor: the first box build this property exercised end to end
@@ -546,6 +554,17 @@ def test_walk_surface_equivalence(theme, n, vert, s):
          ``tests.reference_traverse.reference_room_results`` on the reference
          surface for the same spec (room-for-room: reachable, floor_faces,
          reached_faces, reason).
+      5. **``corridor_continuity`` and ``corridor_conflicts`` agree on both
+         surfaces** (task 4.2, design Decision 15) — running the SAME
+         ``analyzer.traverse.corridor_continuity`` over the optimised surface and
+         over the frozen fork-point reference surface (each passed as ``surf``)
+         gives identical ``CorridorResult`` lists (ids, rooms, ``connected``,
+         ``reason``), and ``corridor_conflicts`` gives identical conflict pairs.
+         ``corridor_continuity`` recomputes seam contacts LOCALLY for its
+         region's faces and never reads ``surf.adjacency`` or ``surf.component``
+         — the only fields the speed-up changed — so the two surfaces must agree.
+         A mismatch is a bug in the continuity flood (fixed at the root in
+         ``analyzer/traverse.py``), not in this property.
 
     A failure here is a real bug in the task 2.2 speed-up (an edge that should
     have been kept was dropped, splitting a component, or a candidate cut
@@ -554,9 +573,9 @@ def test_walk_surface_equivalence(theme, n, vert, s):
     counterexample is pinned above as ``@example(...).via("discovered failure")``.
 
     Build-level property: ``@pytest.mark.slow`` + ``build_settings(10)``. Box
-    zone types only; wilderness n 2-6 is added in task 13.7 and corridor
-    continuity equality in task 4.2 (design Property 13 covers both; this test
-    is the wave-1 slice).
+    zone types only; wilderness n 2-6 is added in task 13.7. Corridor continuity
+    + conflict equality (point 5) was added in task 4.2 (design Property 13
+    covers both the reachability and continuity slices).
 
     NOTE: this is an ANALYTICAL equivalence over two validator implementations on
     the built mesh, not a live 3D viewer confirmation — see docs/ACCEPTANCE.md.
@@ -633,4 +652,33 @@ def test_walk_surface_equivalence(theme, n, vert, s):
         f"the fork-point reference {ctx}:\n"
         f"  optimised: {_room_result_tuples(live_report)}\n"
         f"  reference: {_room_result_tuples(ref_report)}"
+    )
+
+    # 5) corridor_continuity + corridor_conflicts agree on both surfaces (task
+    #    4.2, design Decision 15). corridor_continuity recomputes seam contacts
+    #    LOCALLY for its region's faces (via _local_adjacency) and never reads
+    #    surf.adjacency or surf.component — the only fields the speed-up changed.
+    #    So running the SAME analyzer.traverse.corridor_continuity over the
+    #    optimised surface and over the frozen fork-point reference surface (both
+    #    as the `surf` argument) must give identical CorridorResult lists, and
+    #    corridor_conflicts (which only reads standable/centroids via
+    #    _region_faces) must give identical conflict pairs. A mismatch is a bug
+    #    in the continuity flood, not in this property — fix it at the root in
+    #    analyzer/traverse.py.
+    opt_corr = T.corridor_continuity(opt_surf, spec, agent)
+    ref_corr = T.corridor_continuity(ref_surf, spec, ref_agent)
+    assert _corridor_result_tuples(opt_corr) == _corridor_result_tuples(ref_corr), (
+        f"corridor_continuity results differ between optimised and reference "
+        f"surface {ctx}:\n"
+        f"  optimised: {_corridor_result_tuples(opt_corr)}\n"
+        f"  reference: {_corridor_result_tuples(ref_corr)}\n"
+        f"  — the continuity flood read a field the speed-up changed (bug in "
+        f"analyzer/traverse.py, not the property)"
+    )
+
+    opt_conf = T.corridor_conflicts(opt_surf, spec, agent)
+    ref_conf = T.corridor_conflicts(ref_surf, spec, ref_agent)
+    assert opt_conf == ref_conf, (
+        f"corridor_conflicts differ between optimised and reference surface "
+        f"{ctx}: opt={opt_conf} ref={ref_conf}"
     )

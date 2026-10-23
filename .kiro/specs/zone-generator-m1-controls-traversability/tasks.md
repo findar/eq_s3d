@@ -211,10 +211,17 @@ Working rules for every task:
       - Suite green: `python -m pytest tests/ -q` → 250 passed (unchanged from the fork-point baseline), confirming no change to existing `validate` behaviour. Property/example tests exercising the new functions are tasks 4.2/4.3.
       - Smoke check: dungeon seed 6, 12 rooms → `check_corridors=True` finds `corr_12` `crosses room room_3` (matches design finding 2: a small fraction of corridors cross a third room on the fork-point layout; wave-1 root fixes in task 6.5/8.3 address it).
       - Commit: `abffa6a`.
-  - [ ] 4.2 Extend the Property 13 test to continuity results
+  - [x] 4.2 Extend the Property 13 test to continuity results
     - In `test_walk_surface_equivalence`, also assert that `corridor_continuity` gives equal results (including conflicts) on the optimised and reference surfaces.
     - Design Decision 15: `corridor_continuity` computes seam contacts locally for its region's faces and never uses the pruned adjacency, so the results must match; a mismatch is a bug in the continuity flood, not the property.
     - **Validates: Requirements 4.1, 5.2**
+    - **Deliverables:**
+      - `tests/test_properties_core.py::test_walk_surface_equivalence`: added check (5) — run `analyzer.traverse.corridor_continuity` over BOTH the optimised `build_walk_surface` surface AND the frozen fork-point reference surface (`tests.reference_traverse.build_walk_surface`), each passed as the `surf` argument, and assert the `CorridorResult` lists are equal (corridor_id, from_room, to_room, connected, reason), via the new `_corridor_result_tuples` helper. Also assert `analyzer.traverse.corridor_conflicts` gives identical conflict-pair lists on both surfaces. Per Decision 15, `corridor_continuity`/`corridor_conflicts` recompute seam contacts locally (`_local_adjacency` / `_region_faces`) and read only `standable`/`centroids`/`verts`/`faces` — never `surf.adjacency` or `surf.component`, the only fields the task-2.2 speed-up changed — so the two surfaces must agree. The frozen reference `WalkSurface` (which has no `component` field) is accepted by duck typing because neither function reads it.
+      - `tests/reference_traverse.py` NOT edited (it is the frozen fork-point copy and has no `corridor_continuity`, as the task notes).
+      - **No root-cause bug found:** the equality held on every drawn example and the pinned `@example(theme="dungeon", n=2, vert="flat", s=0)` with no divergence, exactly as Decision 15 predicts — so no fix to `analyzer/traverse.py` and no `Regression_Example` was needed. If a future seed ever diverges, the counterexample is pinned as `@example(...).via("discovered failure")` and the continuity flood fixed at the root.
+      - Verification: `python -m pytest tests/test_properties_core.py -q` → **4 passed** (91 s); `python -m pytest tests/ -q` → **250 passed** (131 s), matching the 250-passed wave-1 baseline.
+      - Analytical equivalence over two validator implementations on the built mesh; not a live 3D viewer confirmation (per docs/ACCEPTANCE.md).
+      - Commit: `__PENDING__`.
   - [ ] 4.3 Add constructed example tests for continuity
     - In `tests/test_traversability.py`, hand-built specs: a corridor whose route runs through a third room reports `crosses room <id>`; a corridor with a missing floor segment reports `gap`; two unrelated corridors crossing at the same height conflict; the same pair separated in Z by more than the clearance does not.
     - _Requirements: 5.2_
