@@ -210,7 +210,7 @@ Working rules for every task:
       - `validate(..., check_corridors=False)` gained the flag; default keeps existing behaviour byte-for-byte (verified: room `reachable` results identical with the flag off/on on dungeon seed 6). CLI gained `--check-corridors`.
       - Suite green: `python -m pytest tests/ -q` → 250 passed (unchanged from the fork-point baseline), confirming no change to existing `validate` behaviour. Property/example tests exercising the new functions are tasks 4.2/4.3.
       - Smoke check: dungeon seed 6, 12 rooms → `check_corridors=True` finds `corr_12` `crosses room room_3` (matches design finding 2: a small fraction of corridors cross a third room on the fork-point layout; wave-1 root fixes in task 6.5/8.3 address it).
-      - Commit: <hash recorded below>.
+      - Commit: `abffa6a`.
   - [ ] 4.2 Extend the Property 13 test to continuity results
     - In `test_walk_surface_equivalence`, also assert that `corridor_continuity` gives equal results (including conflicts) on the optimised and reference surfaces.
     - Design Decision 15: `corridor_continuity` computes seam contacts locally for its region's faces and never uses the pruned adjacency, so the results must match; a mismatch is a bug in the continuity flood, not the property.
