@@ -129,10 +129,19 @@ Working rules for every task:
       - These are the "before" half of Decision 13. Task 3.1 compares the 32 Part-A hashes against the refactor (must match); task 9.1 rebuilds the two Part-B inputs on the branch head and records the "after" numbers next to these. The throwaway capture script lived at `F:\Dev Projects\_m1_task12_tmp\capture_baselines.py` (outside the repo) and is not committed; the `output/m0_before_*.map.svg` previews are per-worktree `output/` artifacts and are gitignored.
 
 - [ ] 2. Speed up the walk surface without changing reachability
-  - [ ] 2.1 Add the fork-point reference validator
+  - [x] 2.1 Add the fork-point reference validator
     - Create `tests/reference_traverse.py`: a verbatim copy of the fork-point `build_walk_surface`, `flood_reachable` and the helpers they call from `analyzer/traverse.py`, with a header comment naming the fork-point commit and saying it is test-only and never edited.
     - Done when it imports standalone and reproduces the fork-point `validate` room results on one dungeon build.
     - _Requirements: 5.2_
+    - **Deliverables:**
+      - `tests/reference_traverse.py` — frozen copy forked at the task's fork-point commit `5dabd2145d6543cd9e7ae8a661bd8015329b33e9`. Confirmed byte-identical: `git diff --stat 5dabd21 HEAD -- analyzer/traverse.py` is empty, so the current `analyzer/traverse.py` still IS the fork-point source (copied now, before the 2.2 union-find speed-up).
+      - Copied verbatim: `AgentModel`, `RoomResult`, `TraversalReport`, `WalkSurface`, the XY-contact helpers (`_point_in_tri_xy`, `_seg_seg_closest_xy`, `_tri_tri_xy_contact`, `_plane_z_at`), `build_walk_surface`, `flood_reachable`, `_nearest_standable_face`, `_faces_in_room` (+ `FLOOR_Z_TOL`), and the reachability diagnosis helpers (`classify_corridor`, `_diagnose_via_graph`, `_diagnose_unreachable`). Added one non-verbatim helper, `reference_room_results(surf, spec, ...)`, that reproduces the fork-point `validate` per-room loop from a pre-built surface (so 2.3 can compare room results on one mesh); it has no production dependency and is clearly marked as the only non-copied piece.
+      - Header comment names the fork-point commit and states the file is test-only and never edited.
+      - Verified: `python -c "import tests.reference_traverse"` imports standalone (no dependency on `analyzer/traverse.py`). On a 12-room dungeon (`ZonePlan(theme="dungeon", room_count=12)`, seed 7): the reference surface's `standable` mask and `adjacency` are identical to the live `analyzer.traverse.build_walk_surface`, and every per-room `RoomResult` field (`reachable`, `floor_faces`, `reached_faces`, `reason`) equals the live `validate` result (12/12 rooms reachable). Verification used a throwaway script outside the repo (not committed).
+      - Did NOT touch `analyzer/traverse.py` (that is task 2.2, concurrent on the same file). This task touched only `tests/reference_traverse.py` and this `tasks.md` entry.
+      - `python -m pytest tests/ -q`: **249 passed** (88.04 s).
+      - Note: the concurrent task-1.2 commit on this branch had swept this entry's edit into its own commit; split back out so task 2.1 is its own self-contained commit (task-1.2 content preserved byte-for-byte).
+      - Commit: `66dde7bc6696ba09280f13d1fae57f2d922f6f1e` (the hash the Deliverables line references is this task's content commit; a final `--amend` that rewrites only this self-reference line is intentionally not chased further).
   - [ ] 2.2 Implement the union-find speed-up in `analyzer/traverse.py`
     - `build_walk_surface`: keep a union-find over standable faces; the shared-vertex pass unions as it adds edges; the seam pass skips a candidate pair when `find(fi) == find(fj)` before calling `_tri_tri_xy_contact`, and unions on every accepted edge.
     - Restrict seam candidates to faces whose weld component touches another component's XY bounding box; vectorise `_cells_for` with numpy; skip the per-cell pair loop for cells holding one component.
