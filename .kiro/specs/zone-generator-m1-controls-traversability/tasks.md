@@ -319,7 +319,7 @@ Working rules for every task:
         - `python -m pytest tests/ -q` → **254 passed** (156.49 s) — matches the 254-passed baseline; the two warnings are pre-existing (`starlette.testclient`/`runpy`) and unrelated.
       - Touched only `tests/test_properties_layout.py` and this `tasks.md` entry.
       - NOT verified in the live 3D viewer — this is an analytical geometry property over the in-memory Box_Backend mesh (no `.eqg`), not a render change; the flat 30-room 3D pass is task 7.2 (HUMAN-GATED).
-      - Commit: `<filled after commit>`.
+      - Commit: `6eb5a4f` (test + this `tasks.md` entry; this self-reference line is added in a follow-up edit).
   - [ ] 6.5 Fix flat failure classes at the root
     - Take each failure class 5.1 and 6.2–6.4 found, in turn, and fix it in `generators/layout.py` / `generators/geometry.py` / `generators/routing.py`, choosing from the design's suspect table only after measuring (e.g. inverted stub → choose the wall by footprint separation in `_wall_point`, mirrored in `plan_route`; third-room crossing → split the edge A–B into A–C–B in `_connect_rooms`; corridor conflicts → the same).
     - One commit per class, each with its Regression_Example(s). Re-run `scripts/sweep_connectivity.py` (flat) after each and record the per-class counts and the seeds whose geometry moved.
