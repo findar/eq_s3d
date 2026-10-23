@@ -30,6 +30,8 @@ from core.ter import TerFile
 from generators.builder import ZoneBuilder
 from generators.layout import LayoutGenerator
 import ai.expand as _expand
+from ai.expand import plan_to_spec
+from ai.rule_planner import RulePlanner
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +101,40 @@ def build_raw(spec, out) -> Tuple[object, bytes, bytes]:
     assert ter_bytes is not None, f"ter_{name}.ter missing from {result.eqg_path}"
     assert zon_bytes is not None, f"{name}.zon missing from {result.eqg_path}"
     return result, ter_bytes, zon_bytes
+
+
+# ---------------------------------------------------------------------------
+# M0 human-pass reproduction (Decision 13)
+# ---------------------------------------------------------------------------
+
+#: The two (prompt, seed) inputs a human signed off on at the M0 3D pass. The
+#: wave-1 navigability / continuity properties pin these as ``@example``s so the
+#: M1 fixes are proven to keep the known-good zones navigable (Req 5.3).
+M0_HUMAN_PASS = (
+    ("create a dungeon with 30 rooms", 1949459644),
+    ("a dungeon with 30 rooms and long halls", 1510177507),
+)
+
+
+def m0_human_spec(entry, verticality=None):
+    """
+    Turn an ``M0_HUMAN_PASS`` entry into a ``ZoneSpec`` the same way the pipeline
+    does: ``RulePlanner().plan(prompt)`` -> ``plan_to_spec(plan, seed)``.
+
+    ``entry`` is a ``(prompt, seed)`` pair. ``verticality`` optionally overrides
+    the plan's verticality before expansion (e.g. ``"flat"`` to re-plan a
+    known-good zone with no elevation, per the flat-first pass); when ``None``
+    the plan's own verticality is kept. The override also sets ``plan.elevation``
+    consistently (flat => off, otherwise on), matching the rule-planner's own
+    ``elevation = verticality != "flat"`` invariant so ``plan_to_spec`` sees a
+    coherent plan.
+    """
+    prompt, seed = entry
+    plan = RulePlanner().plan(prompt)
+    if verticality is not None:
+        plan.verticality = verticality
+        plan.elevation = verticality != "flat"
+    return plan_to_spec(plan, seed)
 
 
 # ---------------------------------------------------------------------------

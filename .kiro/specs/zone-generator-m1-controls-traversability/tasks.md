@@ -272,10 +272,21 @@ Working rules for every task:
     - **Read for the fixes (6.5 flat, 8.3 elevation).** Flat failure classes to close in 6.5: `crosses room` (1243), inverted stub (252), conflict (279). The elevation half adds P1 `unreachable` (91, elevation-only) for 8.3; `crosses room`/inverted-stub/conflict counts barely move between a cell's flat and elevation halves (inverted-stub counts are identical, confirming it is a spec-geometry class the verticality draw doesn't touch), so the inverted-stub and third-room fixes in 6.5 should carry into elevation and 8.3 is expected to be mostly the carry-leg/P1 residue. `gap` and `no floor` never fired, so no fix targets them. No fix landed in this task.
 
 - [ ] 6. Flat first: widen the properties and fix flat failures at the root
-  - [ ] 6.1 Add the wave-1 strategies and constants
+  - [x] 6.1 Add the wave-1 strategies and constants
     - `tests/strategies.py`: `room_counts_wide = st.one_of(st.integers(2, 12), st.integers(13, 30))`, `flat_only = st.just("flat")`, `verticality_all`.
     - Add `M0_HUMAN_PASS = (("create a dungeon with 30 rooms", 1949459644), ("a dungeon with 30 rooms and long halls", 1510177507))` to `tests/pbt_helpers.py`, plus a helper that turns an entry into a spec through `RulePlanner` + `plan_to_spec`, with an optional verticality override.
     - _Requirements: 5.1, 5.3_
+    - **Deliverables:**
+      - `tests/strategies.py` — added three module-level strategies next to `room_counts`/`verticality`/`box_themes`, matching the existing docstring-comment convention:
+        - `room_counts_wide = st.one_of(st.integers(2, 12), st.integers(13, 30))` — the two `one_of` branches get roughly equal weight, so ~half the draws land in the `[13, 30]` big-zone band (Req 5.1).
+        - `flat_only = st.just("flat")` — the flat-first pass (6.2/6.3).
+        - `verticality_all = st.sampled_from(["flat", "moderate", "dramatic"])` — the all-verticality pass (task 8); same domain as the existing `verticality`, named separately so call sites read intent.
+      - `tests/pbt_helpers.py` — added `M0_HUMAN_PASS = (("create a dungeon with 30 rooms", 1949459644), ("a dungeon with 30 rooms and long halls", 1510177507))` and the helper `m0_human_spec(entry, verticality=None)`. The helper does `RulePlanner().plan(prompt)` -> optional `plan.verticality`/`plan.elevation` override -> `plan_to_spec(plan, seed)`, mirroring the pipeline. The override keeps the rule-planner's `elevation = verticality != "flat"` invariant (flat => off) so `plan_to_spec`'s `elevation and verticality != "flat"` check sees a coherent plan. Added imports `from ai.expand import plan_to_spec` and `from ai.rule_planner import RulePlanner`.
+      - This task ONLY adds strategies + helpers; no property test written (those are 6.2–6.4), so nothing new runs under collection beyond the import.
+      - Sanity check (throwaway, not committed): the new names import; `m0_human_spec(M0_HUMAN_PASS[0], verticality="flat")` and `m0_human_spec(M0_HUMAN_PASS[1])` each build a 30-room spec.
+      - `python -m pytest tests/ -q`: **254 passed** (130.70 s) — equal to the stated baseline; the new imports don't break collection. (Two pre-existing unrelated warnings.)
+      - Touched only `tests/strategies.py`, `tests/pbt_helpers.py` and this `tasks.md` entry.
+      - Commit: `c9c5264`.
   - [ ] 6.2 Write property test for Property 1: Raw builds are navigable (umbrella P1), flat
     - Rename `test_properties_build.py::test_raw_dungeon_navigable` to `test_raw_navigable`. Draw box zone types, `room_counts_wide` and `flat_only`, building through `plan_to_spec`; budget 15. Pin both `M0_HUMAN_PASS` inputs re-planned flat with `@example(...).via("M0 human pass")`.
     - Done when green with no weakened assertion.
