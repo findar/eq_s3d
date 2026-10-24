@@ -393,10 +393,46 @@ Working rules for every task:
       - Verified the two shared-cache tests independently: `python -m pytest tests/test_properties_build.py::test_raw_navigable ::test_corridor_continuity -q` → **2 passed** (49.7 s together, vs ~122 s of separate call time before sharing).
       - NOT a live 3D viewer change — this task runs the suite and tunes the test-time build cache; it touches no geometry. (The flat 30-room 3D pass is the human-gated task 7.2.)
       - Touched only `tests/pbt_helpers.py`, `tests/test_properties_build.py` and this `tasks.md` entry. Commit: `eb90b86` (lever 1 + measurements + this entry; this self-reference hash line is the only thing added in a trailing tracker edit).
-  - [ ] 7.2 **HUMAN-GATED:** flat 30-room 3D pass
-    - Write this checklist here and mark it PENDING-HUMAN. The user, in the live viewer with Elevation unchecked: flat 30-room dungeons (and one city) walk end to end; every corridor meets both its rooms; no corridor runs through a room or another corridor; checked on `M0_HUMAN_PASS` seeds 1949459644 and 1510177507 re-planned flat and on every seed a 6.5 fix moved.
+  - [ ] 7.2 **HUMAN-GATED:** flat 30-room 3D pass — **PENDING-HUMAN**
+    - The user, in the live viewer with **Elevation UNCHECKED**: flat 30-room dungeons (and one city) walk end to end; every corridor meets both its rooms; no corridor runs through a room or another corridor; checked on `M0_HUMAN_PASS` seeds 1949459644 and 1510177507 re-planned flat and on every seed a 6.5 fix moved.
     - No elevation draw (task 8) lands until the user signs this off.
     - _Requirements: 5.3_
+    - **Status: PENDING-HUMAN — the agent wrote the checklist below; it does NOT tick this box. The user signs it off in the live 3D viewer. Leave the checkbox `[ ]` until the user confirms.**
+    - **HUMAN-PASS CHECKLIST (flat, Elevation UNCHECKED)**
+
+      Before you start:
+      - Make sure the Server is running **the wave-1 branch head**. Open `/api/version` and confirm `stale` is `false` (HEAD moved / uncommitted edits since start show as `stale: true` — restart the Server first). The 6.5 fixes are commits `1ba4db4`, `20760a5`, `93509ef`, `da05a84`; this pass only means anything on code that includes them.
+      - In the viewer, **UNCHECK Elevation** for every build in this pass. Everything here is the flat domain; the elevated 30-room pass is the separate human-gated task 9.3.
+      - Per build, confirm the panel's `build_commit` matches the branch head so you know you're eyeballing the fixed geometry.
+
+      What to confirm on EVERY build below (the three continuity bars):
+      1. **Walks end to end.** Spawn in and walk the whole zone — you can reach every room on foot. No room is a floating island; nothing requires a jump the flat agent can't make.
+      2. **Every corridor meets BOTH its rooms.** Each corridor's two ends land flush inside the room openings at both ends — no gap, no lip, no corridor that dead-ends short of a room.
+      3. **No corridor passes THROUGH a room or another corridor.** No corridor tube clips across the interior of a third room (the A→C→B split should have rerouted those), and no two unrelated corridors cross/overlap at the same height (the loop-edge drop should have removed those).
+
+      A — The two M0_HUMAN_PASS inputs, re-planned FLAT (do these first; they're the ones a human signed off at M0 and the task calls out by seed). Tick `( )` → `(x)` as you confirm each:
+      - `( )` `create a dungeon with 30 rooms`, **seed 1949459644**, Elevation UNCHECKED. (Prompt-driven: paste the prompt, pin the seed; the flat plan drops elevation.) On the M0 "before" layout this build had `corr_31` (`room_5 → room_19`) crossing `room_29`; after the 6.5 split that third-room crossing must be gone — confirm no corridor runs through a room, then walk it end to end.
+      - `( )` `a dungeon with 30 rooms and long halls`, **seed 1510177507**, Elevation UNCHECKED. On the M0 "before" layout this had `corr_29` (`room_6 → room_8`) crossing `room_19`; confirm that crossing is gone, corridors meet both rooms, walks end to end.
+
+      B — The small enumerated loop-edge-drop set (commit `93509ef` — eyeball these directly; they are the conflict-drop seeds, the exact builds where a removable loop edge was dropped to clear a corridor–corridor conflict). Generate each **flat (Elevation UNCHECKED)** via the controls with the zone type / room count / seed shown, and check the three bars — especially bar 3 (no two corridors crossing at the same height, since that's what the drop fixed) and bar 1 (walks end to end, since dropping a loop edge must not strand a room):
+      - Dungeon, 12 rooms: `( )` seed 22  `( )` seed 189
+      - Dungeon, 20 rooms: `( )` seed 195
+      - Dungeon, 30 rooms: `( )` seed 2  `( )` seed 41  `( )` seed 64  `( )` seed 110  `( )` seed 159  `( )` seed 160  `( )` seed 173
+      - City, 12 rooms: `( )` seed 22  `( )` seed 189
+      - City, 20 rooms: `( )` seed 195
+      - City, 30 rooms: `( )` seed 41  `( )` seed 64  `( )` seed 93  `( )` seed 110  `( )` seed 159  `( )` seed 160
+
+      C — The crosses-room split set (commit `20760a5`), the dominant mover: geometry moved on **765** of the 1200 flat builds (756 by the A→C→B crosses-room split, 19 by the loop-edge drop in B; union 765 — a one-time M1 seed break, Decision 13). The full 765-seed list is reproducible from the 6.5 recorder but was not committed, so it's impractical to tick every one. Instead, **spot-check a representative spread** across the split domain, all **flat (Elevation UNCHECKED)**, confirming the three bars (bar 3 is the point here — the third-room crossing must be gone):
+      - `( )` Dungeon, 30 rooms, a handful of seeds in 1–200 (e.g. 5, 8, 9 — early seeds the sweep flagged as `crosses room`).
+      - `( )` City, 30 rooms, a handful of seeds in 1–200 (e.g. 1, 2, 4, 5, 8, 9).
+      - `( )` Dungeon, 12 rooms, a few seeds (e.g. 6, 10, 11) — confirm the fix holds at small room counts too.
+      - `( )` The four pinned gate/conflict regression seeds, flat: dungeon/12 seed 22, dungeon/30 seed 2, dungeon/20 seed 143, dungeon/30 seed 114 (143/114 were false-positive conflicts the gate fix `da05a84` cleared — confirm these walk and have no genuine crossing).
+
+      D — At least **one city** walks end to end (bar 1), flat — covered by the city builds in B/C above; if you want a clean extra, generate City, 30 rooms, any seed, Elevation UNCHECKED, and walk it.
+
+      Sign-off:
+      - `( )` When every build above satisfies all three bars, the user ticks the `7.2` checkbox. **The agent must NOT tick it.** Until then this stays `[ ]` PENDING-HUMAN, and **no task-8 elevation draw lands.**
+      - If any build fails a bar, note the zone type / room count / seed and the failing bar; that's a real geometry/continuity bug for a root fix (not a test to loosen), and task 8 stays blocked.
 
 - [ ] 8. Then elevation: widen to all verticalities and fix at the root
   - [ ] 8.1 Extend the Property 1 and Property 10 tests to all verticalities
