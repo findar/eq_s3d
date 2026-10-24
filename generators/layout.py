@@ -252,14 +252,18 @@ class LayoutGenerator:
         # adjacency: the new A–C / C–B edges join rooms whose heights were set
         # against the OLD graph, so a split could otherwise leave a cliff. On a
         # flat zone every floor_z is 0 and the relax is a no-op.
-        if self._resolve_crossings(rooms, edges):
-            if elevation or themed:
-                from collections import defaultdict
-                adj = defaultdict(list)
-                for i, j in edges:
-                    adj[i].append(j)
-                    adj[j].append(i)
-                self._relax_elevation(rooms, adj, entrance)
+        graph_changed = self._resolve_crossings(rooms, edges)
+        # Drop a loop edge from any pair of corridors that would cross too close
+        # in Z (the residual open-space conflict class the through-room split
+        # can't reach). Only loop edges fall, so the graph stays connected.
+        graph_changed = self._resolve_conflicts(rooms, edges) or graph_changed
+        if graph_changed and (elevation or themed):
+            from collections import defaultdict
+            adj = defaultdict(list)
+            for i, j in edges:
+                adj[i].append(j)
+                adj[j].append(i)
+            self._relax_elevation(rooms, adj, entrance)
 
         self._build_corridors(spec, rooms, edges)
 
@@ -696,6 +700,115 @@ class LayoutGenerator:
         if changed:
             edges[:] = resolved
         return changed
+
+    def _resolve_conflicts(self, rooms: List[RoomSpec],
+                           edges: List[Tuple[int, int]]) -> bool:
+        """Drop a loop edge from any pair of corridors that cross too close in Z.
+
+        Design suspect-table conflict row / option (b): two corridors that share
+        no room and whose route footprints overlap in XY while their floors sit
+        within the clearance (design decision 12/16) conflict — on a flat zone,
+        any two tubes crossing at the same height. The through-room split
+        (`_resolve_crossings`) removes most of these, but a pair that crosses in
+        OPEN space (neither passing through a room) survives. Every surviving
+        conflict pair has at least one REMOVABLE loop (non-tree) edge — dropping
+        it never disconnects the graph (both endpoints stay reachable by another
+        path), which is why the MST backbone is kept and only loop edges fall.
+
+        Runs after `_resolve_crossings` on the final geometry. A dropped edge can
+        clear several conflicts at once, so it re-detects after each drop.
+        Returns True if any edge was removed (the caller re-relaxes elevation).
+        """
+        hw = self.corridor_width / 2
+
+        def route_for(i: int, j: int):
+            a, b = rooms[i], rooms[j]
+            fx, fy = self._wall_point(a, b)
+            tx, ty = self._wall_point(b, a)
+            return plan_route((fx, fy), (tx, ty),
+                              self._exit_axis_x(a, b), self._exit_axis_x(b, a),
+                              hw, steps=0)
+
+        def leg_rects(route):
+            wps = route.waypoints
+            rects = []
+            for k in range(len(wps) - 1):
+                (x0, y0), (x1, y1) = wps[k], wps[k + 1]
+                rects.append((min(x0, x1) - hw, min(y0, y1) - hw,
+                              max(x0, x1) + hw, max(y0, y1) + hw))
+            return rects
+
+        def overlaps(ra, rb) -> bool:
+            for (ax0, ay0, ax1, ay1) in ra:
+                for (bx0, by0, bx1, by1) in rb:
+                    if ax0 <= bx1 and bx0 <= ax1 and ay0 <= by1 and by0 <= ay1:
+                        return True
+            return False
+
+        def is_removable(idx: int, es: List[Tuple[int, int]]) -> bool:
+            """True when edge es[idx] is a loop edge: its two endpoints stay
+            connected after removing it (so dropping it keeps the graph whole)."""
+            ei, ej = es[idx]
+            parent = list(range(len(rooms)))
+
+            def find(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            for k, (u, v) in enumerate(es):
+                if k == idx:
+                    continue
+                ru, rv = find(u), find(v)
+                if ru != rv:
+                    parent[ru] = rv
+            return find(ei) == find(ej)
+
+        # Clearance (matches analyzer.traverse.corridor_conflicts: the lower
+        # corridor's height + 1 u, floored at ~player height). Flat floors are
+        # all equal so any footprint overlap is within clearance; for elevation
+        # the carry-leg detail is validated on the mesh — here the endpoint Z
+        # band is a conservative proxy that still only ever drops loop edges.
+        clearance = max(self.corridor_height + 1.0, 6.0)
+
+        removed_any = False
+        safety = len(edges) + 4
+        while safety > 0:
+            safety -= 1
+            routes = [route_for(i, j) for (i, j) in edges]
+            rects = [leg_rects(rt) for rt in routes]
+            zlo = [min(rooms[i].floor_z, rooms[j].floor_z) for (i, j) in edges]
+            zhi = [max(rooms[i].floor_z, rooms[j].floor_z) for (i, j) in edges]
+
+            drop = None
+            for a in range(len(edges)):
+                ia, ja = edges[a]
+                for b in range(a + 1, len(edges)):
+                    ib, jb = edges[b]
+                    if {ia, ja} & {ib, jb}:
+                        continue  # share a room → allowed to meet
+                    # Z bands must come within the clearance to conflict.
+                    if zlo[a] - clearance > zhi[b] or zlo[b] - clearance > zhi[a]:
+                        continue
+                    if not overlaps(rects[a], rects[b]):
+                        continue
+                    # Conflict: drop whichever of the two is a removable loop.
+                    if is_removable(a, edges):
+                        drop = a
+                    elif is_removable(b, edges):
+                        drop = b
+                    if drop is not None:
+                        break
+                if drop is not None:
+                    break
+
+            if drop is None:
+                break
+            del edges[drop]
+            removed_any = True
+
+        return removed_any
 
     def _delaunay_edges(self, pts: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
         """Delaunay triangulation edges via scipy; empty list on failure."""
