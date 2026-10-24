@@ -553,9 +553,39 @@ Working rules for every task:
       Sign-off:
       - `( )` When every build above satisfies all three bars, the user ticks the `9.3` checkbox. **The agent must NOT tick it.** Until then this stays `[ ]` PENDING-HUMAN, and **wave 1 does not close.**
       - If any build fails a bar, note the zone type / room count / seed / verticality and the failing bar; that's a real geometry bug for a root fix (not a test to loosen), and wave 1 stays open.
-  - [ ] 9.4 Write the wave-1 integration note (don't apply it)
+  - [x] 9.4 Write the wave-1 integration note (don't apply it)
     - Done-table row, "Pick up here" line, commit hash and count, and the moved-seed list from 9.1. Wave 2 starts only after the merge to `master`.
     - _Requirements: 5.4_
+    - **Deliverables — WAVE-1 INTEGRATION NOTE (assembled here, NOT applied).** This note is for the single-writer integration step run from the MAIN checkout after `agent/m1-connectivity` merges to `master`; it is NOT written into `ROADMAP.md`, `README.md` or `tasks/README.md` by this task (per tracker ownership). Assembled from the wave-1 Deliverables in this file (1.1, 1.2, 6.5, 8.3, 9.1, 9.2, 9.3).
+
+      - **Done-table row** (for ROADMAP's Done table):
+        > **M1 wave 1 — large-zone connectivity (Requirement 5).** Faster walk surface (union-find; 6-room outdoor validate 118 s → <1 s, equivalence proven vs a frozen fork-point reference — M1-P4); all corridors routed through one function (`generators/routing.py`, proven byte-identical over 32 TER captures); corridor floor-continuity + corridor–corridor conflict checks added to the validator (Decision 12/16); flat AND elevation connectivity proven through 30 rooms (box zone types, all verticalities); both wave-1 3D passes (flat 7.2, elevated 9.3) signed off. Head `<HEAD after this commit>`; 39 commits since the wave-1 fork point `5dabd21`.
+
+      - **"Pick up here" line** (for ROADMAP):
+        > Pick up here: wave 1 (large-zone connectivity) is merged. Next is **wave 2 — zone-type rename** (`agent/m1-rename`, tasks 10.x: `theme` → `zone_type`, `outdoor` → `wilderness`). Wave 2 starts ONLY after this branch merges to `master` (waves are serialized; see the wave table). Flag carried forward: the Default_Run suite is over the +120 s budget ceiling — see the budget flag below; the only effective lever is a wave-3 item.
+
+      - **Commit hash and count.**
+        - Branch head (after this note commit): `<HEAD after this commit>` — see the trailing "Commit:" line; the content hash recorded there is the branch head to merge.
+        - Fork point (branch `agent/m1-connectivity` forked from `master`, task 1.1): `5dabd2145d6543cd9e7ae8a661bd8015329b33e9` (`5dabd21`).
+        - Commits on `agent/m1-connectivity` since the fork point, INCLUDING this note commit: **39** (`git rev-list --count 5dabd21..HEAD` = 38 before this commit, +1 for this note = 39).
+
+      - **Moved-seed list (one-time M1 seed break, Decision 13; from task 9.1).**
+        - **Flat (task 6.5): geometry moved on 765 of the 1200 flat builds** (dungeon + city × rooms 12/20/30 × 200 seeds/cell):
+          - 756 by the crosses-room A→C→B split (`20760a5`, the dominant mover — ~63% of flat builds get at least one split). Full 765-seed list reproducible from the 6.5 throwaway recorder; not committed (per the task note, sweep/measurement scripts aren't committed).
+          - 19 by the loop-edge conflict drop (`93509ef`), enumerated: dungeon/12: 22, 189; dungeon/20: 195; dungeon/30: 2, 41, 64, 110, 159, 160, 173; city/12: 22, 189; city/20: 195; city/30: 41, 64, 93, 110, 159, 160.
+          - Union of the two sets = **765**.
+          - The inverted-stub wall-choice change (`1ba4db4`) also shifts corridor endpoints wherever the better-separated axis differs from the old centre-delta axis; subsumed in the 765 broad set.
+          - The gate-route false-positive fix (`da05a84`) moved **zero** geometry (measurement-only).
+        - **Elevation (task 8.3): ZERO seeds moved.** Both elevation root fixes are non-geometry: PART 1 (`5afd5ff`) validator-only (`analyzer/traverse.py::_nearest_standable_face`); PART 2 (`20e43e0`) probe-only (`tests/pbt_helpers.py::opening_floor_z` + the `test_flush_openings` call site). No `generators/` change, so no mesh output changed.
+        - **Combined moved-seed total: 765 flat builds (all from 6.5); 0 from 8.3.**
+        - **Decision 13 one-time seed-break statement:** this is a one-time M1 seed break. Pinned seeds saved before M1 are NOT expected to reproduce their earlier geometry on wave-1 head; this is expected and accepted (Decision 13), not a regression.
+
+      - **Budget flag (from task 9.2) — carry to the wave-3 owner.** Default_Run median is **348.17 s** (3 runs: 348.17 / 342.66 / 351.80 s), vs the task-1.1 M0-exit baseline **88.21 s** and the **+120 s ceiling (208.21 s)** → **~+140 s OVER the ceiling; budget cap HIT.** The growth is the elevation work (8.1/8.2/8.3) widening the build+traverse properties to all three verticalities, plus the pinned 30-room regression `@example`s that run every time. Lever 1 (shared P1/M1-P1 build cache) was already applied (7.1). Lever 3 (thin the random 30-room draws) was tried and is ineffective (median unchanged ~356 s) because the cost is the pinned examples + all-verticality traverse, not the random draws, so it was NOT kept. **The only effective lever is lever 2 (wilderness budgets), which is not available until wave 3** — flag for the wave-3 owner: the Default_Run budget needs lever 2 (or a cheaper traverse on the elevation properties) to come back under +120 s; it cannot be recovered from within wave 1.
+
+      - **Parked bug:** none recorded. No parked "intersecting corridors on the elevated path" note (seed 105770060 or otherwise) is present in this wave-1 tasks.md — the 9.3 elevated 3D pass checklist records no parked/non-blocking bug. If the user holds such a note externally, it is not in this tracker; nothing to carry here.
+
+      - Touched ONLY this `tasks.md` 9.4 entry. Did NOT edit `ROADMAP.md`, `README.md` or `tasks/README.md` (those are applied in the single-writer integration step from the MAIN checkout). No code, no tests, no sweep.
+      - Commit: `<HEAD after this commit>` (this note; the branch head to merge).
 
 ### Wave 2 — Zone-type rename (Requirement 11)
 
