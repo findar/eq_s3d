@@ -770,9 +770,63 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **259 passed** (373.92 s) — +1 over the 258 baseline (the new property); the two warnings are pre-existing and unrelated.
       - Touched only `tests/test_properties_layout.py`, `tests/strategies.py` and this `tasks.md` entry. No geometry, no production code, no frontend — so nothing to eyeball in the 3D viewer (this is an analytical load-boundary property, per `docs/ACCEPTANCE.md`).
       - Commit: `6c7e5e3` (code + strategy + this entry; a follow-up edit fills this self-reference hash).
-  - [ ] 10.11 Confirm the rename moved no geometry
+  - [x] 10.11 Confirm the rename moved no geometry
     - Re-run the 10.1 script on the branch head; all 35 hashes must match. Record them in Deliverables. `test_outdoor_ter_matches_fork_point` still passes unchanged.
     - _Requirements: 11.1_
+    - **Deliverables (task 10.11 — wave-2 "after" baselines re-captured on branch head `a3cba26`, which includes the full rename 10.3–10.10; throwaway capture script run from the worktree, not committed):**
+      - Re-ran the SAME capture the task-10.1 script did (same vocabulary: box via positional `LayoutGenerator(zone_type, seed).generate(name, room_count, elevation)` → `ZoneBuilder(spec)._build_geometry(name, 2).to_bytes()` → `sha256`; outdoor via the retained legacy positional `LayoutGenerator("outdoor", seed).generate(f"ob{seed}", room_count=6)` → `build_raw(spec, tmp)` → `sha256`). The legacy positional `"outdoor"` canonicalises to `wilderness` in the new constructor and produces the identical build. Branch-head commit at capture: `a3cba26262401d2aedcf06715f0770b101da0499`.
+      - **RESULT: ALL 35/35 hashes MATCH the 10.1 "before" baselines exactly** — the rename moved no geometry (Decision 13 invariant holds). Compared programmatically against the 10.1 Deliverables values embedded in the throwaway script.
+      - **Part A — 32 box TER `sha256` (after); each equals the 10.1 "before" value:**
+
+        | zone_type | seed | rooms | elevation | sha256 | bytes | match |
+        |-----------|------|-------|-----------|--------|-------|-------|
+        | dungeon | 7 | 12 | on | `0bee542a602a38df21bf0c7ac2fe4194bd1033d87a73d0d8d425d9734dc7992a` | 90913 | ✓ |
+        | dungeon | 7 | 12 | off | `06f8ffe93c4334a38e7b6f110c21252909c7f8e6d93a23dc818fbf9110bbc199` | 40513 | ✓ |
+        | dungeon | 7 | 30 | on | `ae48d9c57c360dc610ec45db732a50041ab236bebc0bb7c7146b0fe60927b243` | 342409 | ✓ |
+        | dungeon | 7 | 30 | off | `5a5883671d5f42a7191d737b6a9fe5fa34f0e9586bc458e59570b73351563158` | 105193 | ✓ |
+        | dungeon | 1955208177 | 12 | on | `4230006dc9f080fc717cde1ea152abc9bdbe31df8410345febc5950148983ef6` | 85201 | ✓ |
+        | dungeon | 1955208177 | 12 | off | `881b9144f6031b34121b9e31a3bf2aa7f6a9d7072cc5739b8f5f9fb38cd2ddd6` | 38161 | ✓ |
+        | dungeon | 1955208177 | 30 | on | `f4bb948359992643b2b88e5f29d863e850d5c97f792984fc72cc89d7d64bb9c4` | 266809 | ✓ |
+        | dungeon | 1955208177 | 30 | off | `ebe1bb9f079fb0982eb7db9f465b6981fdd8a02f8fb1e1883773b83ffe8330e0` | 100825 | ✓ |
+        | dungeon | 1516796975 | 12 | on | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 | ✓ |
+        | dungeon | 1516796975 | 12 | off | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 | ✓ |
+        | dungeon | 1516796975 | 30 | on | `c3973c65f29692fe8d995af6c6d18fbf14ef1daeee0bfc5987ac409a6d7f0bcb` | 233713 | ✓ |
+        | dungeon | 1516796975 | 30 | off | `92fd0b18446db35c9d2356c6ea3ce3a6c62a4fe50a32da5c883524a0aa71587d` | 107377 | ✓ |
+        | dungeon | 481893615 | 12 | on | `191b9b9a985c0952e097e5f3689e28208ef6deaa2269bf2c182b330ae54f198b` | 72097 | ✓ |
+        | dungeon | 481893615 | 12 | off | `a394bad9c992e634f4cbd4ae8ce7f7f1905c191e455f03bf15ca30a5f58d3f76` | 36481 | ✓ |
+        | dungeon | 481893615 | 30 | on | `1813014354537faaf36f2c833b356fd796cbbfd3844c078a4346dbcb198ab825` | 327121 | ✓ |
+        | dungeon | 481893615 | 30 | off | `599d62c7c0ee4549918c96624c910b1aae403c7d096a6f912b15da4feac8c630` | 102673 | ✓ |
+        | city | 7 | 12 | on | `bad45473dda32b15e0f40b5562c5cbb5ed89ffb12838375e75f191af4220356f` | 94273 | ✓ |
+        | city | 7 | 12 | off | `0df8ef526cf5bfd0b0a30cd04d3c2409edbd53b6b4feb3305214293dc54e4877` | 40513 | ✓ |
+        | city | 7 | 30 | on | `a92867f73c5be41c6694226a06a4a6a7373ba300cea1428f470172a8df02b421` | 312841 | ✓ |
+        | city | 7 | 30 | off | `6093738555214134a3aaa4fed6e70eb59f58bfec38e536856f5904870fb473a4` | 107209 | ✓ |
+        | city | 1955208177 | 12 | on | `30022398dd434eae6af3dc648b7c3e9a2497e5f1f462be9b614af47827c99b3b` | 86545 | ✓ |
+        | city | 1955208177 | 12 | off | `f480b2373ebd3e8ac7207d74d6b58b266443f2be1b8223ab3b76027f7ab34f9b` | 38161 | ✓ |
+        | city | 1955208177 | 30 | on | `a1a208e468bf6fdc8310965c94747703d54a66b0b3c1fa105b3238a3b7590f1e` | 290329 | ✓ |
+        | city | 1955208177 | 30 | off | `d1cc504ed8b589778b2bdd8136a038537419047de34d3c98ac9f268402a0c05b` | 102841 | ✓ |
+        | city | 1516796975 | 12 | on | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 | ✓ |
+        | city | 1516796975 | 12 | off | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 | ✓ |
+        | city | 1516796975 | 30 | on | `827e137d1a24f7cd516112e6b485735c7102c08d280faf0c5fded6396759ab30` | 243793 | ✓ |
+        | city | 1516796975 | 30 | off | `2624b05e39f20316da01d7d10f0e275a7932542f3a5a9faf208f2dd4cbec4158` | 101329 | ✓ |
+        | city | 481893615 | 12 | on | `e47192e2dab221f312c1c6968da05a96c8643958e764c2518d6206487714dd5e` | 74113 | ✓ |
+        | city | 481893615 | 12 | off | `3d5284022c87dca21d5d009b4407b637ac3573e952f235acff90a330905861ed` | 36481 | ✓ |
+        | city | 481893615 | 30 | on | `25d29c69592995c5da0938768dba5e313e7107313a363e846351f603d36106ad` | 283441 | ✓ |
+        | city | 481893615 | 30 | off | `0ff8ada3f3359e19b6049b507b8968a8b34e2f7ba868f7a239824ac01c4c6d6a` | 102673 | ✓ |
+
+      - Same byte-identical pairs at seed `1516796975`, 12 rooms (dungeon `9dcb91bc…`, city `79f180cf…`) observed on the after-capture too — that seed's 12-room elevation draw yields a flat graph, so elevation on/off are identical; all 30 other box pairs differ. Unchanged from 10.1.
+      - **Part B — 3 outdoor/wilderness TER `sha256` (after), 6 rooms; each equals the 10.1 "before" value and the `OUTDOOR_BASELINE` literal:**
+
+        | zone_type | seed | rooms | sha256 | bytes | match |
+        |-----------|------|-------|--------|-------|-------|
+        | outdoor | 7 | 6 | `b3a852e7aa944bb982cfb7c7811b227c55a65305559ee1c16c393e9295b2e80d` | 1967225 | ✓ |
+        | outdoor | 1955208177 | 6 | `638272f9fc80a96d2e0ec6622c4bfd509e4c55d71c0c7736dfb8957fd05b5da1` | 2003513 | ✓ |
+        | outdoor | 2147483647 | 6 | `e51045058d3b5b3141947588004eb45bd185edab28a7dec1b718ccde7786a1e7` | 2370473 | ✓ |
+
+      - `python -m pytest tests/test_hygiene.py -q`: **15 passed** (5.04 s) — `test_outdoor_ter_matches_fork_point` (×3) passes unchanged.
+      - `python -m pytest tests/ -q`: **259 passed** (379.66 s) — matches the 259 baseline. (Two pre-existing unrelated warnings.)
+      - The throwaway capture-and-compare script lived at `F:\Dev Projects\_m1_task1011_tmp\capture_after.py` (outside the repo) and is not committed.
+      - Commit: `5cfd1ee` (this `tasks.md` entry only; self-reference hash filled by a follow-up amend).
+      - Touched only this `tasks.md` entry — no code, no `ROADMAP.md`/`README.md`/`tasks/README.md`.
 
 - [ ] 11. Checkpoint: wave 2 closed
   - Suite green; frontend builds; 10.11 hashes match. Write the wave-2 integration note (Done-table row, "Pick up here" line, commit hash and count). Ask the user if questions arise.
