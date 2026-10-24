@@ -559,13 +559,13 @@ Working rules for every task:
     - **Deliverables — WAVE-1 INTEGRATION NOTE (assembled here, NOT applied).** This note is for the single-writer integration step run from the MAIN checkout after `agent/m1-connectivity` merges to `master`; it is NOT written into `ROADMAP.md`, `README.md` or `tasks/README.md` by this task (per tracker ownership). Assembled from the wave-1 Deliverables in this file (1.1, 1.2, 6.5, 8.3, 9.1, 9.2, 9.3).
 
       - **Done-table row** (for ROADMAP's Done table):
-        > **M1 wave 1 — large-zone connectivity (Requirement 5).** Faster walk surface (union-find; 6-room outdoor validate 118 s → <1 s, equivalence proven vs a frozen fork-point reference — M1-P4); all corridors routed through one function (`generators/routing.py`, proven byte-identical over 32 TER captures); corridor floor-continuity + corridor–corridor conflict checks added to the validator (Decision 12/16); flat AND elevation connectivity proven through 30 rooms (box zone types, all verticalities); both wave-1 3D passes (flat 7.2, elevated 9.3) signed off. Head `<HEAD after this commit>`; 39 commits since the wave-1 fork point `5dabd21`.
+        > **M1 wave 1 — large-zone connectivity (Requirement 5).** Faster walk surface (union-find; 6-room outdoor validate 118 s → <1 s, equivalence proven vs a frozen fork-point reference — M1-P4); all corridors routed through one function (`generators/routing.py`, proven byte-identical over 32 TER captures); corridor floor-continuity + corridor–corridor conflict checks added to the validator (Decision 12/16); flat AND elevation connectivity proven through 30 rooms (box zone types, all verticalities); both wave-1 3D passes (flat 7.2, elevated 9.3) signed off. Head `c314703`; 39 commits since the wave-1 fork point `5dabd21`.
 
       - **"Pick up here" line** (for ROADMAP):
         > Pick up here: wave 1 (large-zone connectivity) is merged. Next is **wave 2 — zone-type rename** (`agent/m1-rename`, tasks 10.x: `theme` → `zone_type`, `outdoor` → `wilderness`). Wave 2 starts ONLY after this branch merges to `master` (waves are serialized; see the wave table). Flag carried forward: the Default_Run suite is over the +120 s budget ceiling — see the budget flag below; the only effective lever is a wave-3 item.
 
       - **Commit hash and count.**
-        - Branch head (after this note commit): `<HEAD after this commit>` — see the trailing "Commit:" line; the content hash recorded there is the branch head to merge.
+        - Branch head (after this note commit): `c314703` — see the trailing "Commit:" line; the content hash recorded there is the branch head to merge.
         - Fork point (branch `agent/m1-connectivity` forked from `master`, task 1.1): `5dabd2145d6543cd9e7ae8a661bd8015329b33e9` (`5dabd21`).
         - Commits on `agent/m1-connectivity` since the fork point, INCLUDING this note commit: **39** (`git rev-list --count 5dabd21..HEAD` = 38 before this commit, +1 for this note = 39).
 
@@ -585,7 +585,7 @@ Working rules for every task:
       - **Parked bug:** none recorded. No parked "intersecting corridors on the elevated path" note (seed 105770060 or otherwise) is present in this wave-1 tasks.md — the 9.3 elevated 3D pass checklist records no parked/non-blocking bug. If the user holds such a note externally, it is not in this tracker; nothing to carry here.
 
       - Touched ONLY this `tasks.md` 9.4 entry. Did NOT edit `ROADMAP.md`, `README.md` or `tasks/README.md` (those are applied in the single-writer integration step from the MAIN checkout). No code, no tests, no sweep.
-      - Commit: `<HEAD after this commit>` (this note; the branch head to merge).
+      - Commit: `c314703` (this note; the branch head to merge).
 
 ### Wave 2 — Zone-type rename (Requirement 11)
 
