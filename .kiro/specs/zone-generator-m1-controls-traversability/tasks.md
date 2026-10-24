@@ -590,9 +590,61 @@ Working rules for every task:
 ### Wave 2 — Zone-type rename (Requirement 11)
 
 - [ ] 10. Rename `theme` → `zone_type` and `outdoor` → `wilderness`
-  - [ ] 10.1 Create the worktree and capture the "before" hashes
+  - [x] 10.1 Create the worktree and capture the "before" hashes
     - `./scripts/new-worktree.ps1 -Branch agent/m1-rename`. With the 1.2 throwaway script, record the 32 box TER hashes plus outdoor seeds 7 / 1955208177 / 2147483647 at 6 rooms on the fork point of this wave.
     - _Requirements: 11.1_
+    - **Deliverables (task 10.1 — wave-2 "before" baselines captured on the fork point `5705ce4`; throwaway capture script run from the worktree, not committed):**
+      - Worktree created with `./scripts/new-worktree.ps1 -Branch agent/m1-rename` at `F:\Dev Projects\eq_s3d-worktrees\agent-m1-rename`. **Fork-point commit (branch `agent/m1-rename` forked from `master`): `5705ce499b62a0f4bb1785ebfa20c5d7411e7f97`.** Staying in this worktree for all of wave 2.
+      - These 35 sha256 TER hashes are the "before" half of the Decision 13 invariant. Task 10.11 re-captures on the branch head; all 35 must match (the rename must move no geometry).
+      - **Part A — 32 box TER `sha256` hashes** (captured exactly as task 1.2 Part A: `LayoutGenerator(theme, seed).generate(name, room_count, elevation)` → `ZoneBuilder(spec)._build_geometry(name, 2).to_bytes()` → `sha256`). Freshly captured on *this* wave's fork point `5705ce4` (which includes the wave-1 geometry fixes), so some values differ from the task-1.2 values captured on `5dabd21` — expected and correct; 10.11 compares against *these*:
+
+        | zone_type | seed | rooms | elevation | sha256 | bytes |
+        |-----------|------|-------|-----------|--------|-------|
+        | dungeon | 7 | 12 | on | `0bee542a602a38df21bf0c7ac2fe4194bd1033d87a73d0d8d425d9734dc7992a` | 90913 |
+        | dungeon | 7 | 12 | off | `06f8ffe93c4334a38e7b6f110c21252909c7f8e6d93a23dc818fbf9110bbc199` | 40513 |
+        | dungeon | 7 | 30 | on | `ae48d9c57c360dc610ec45db732a50041ab236bebc0bb7c7146b0fe60927b243` | 342409 |
+        | dungeon | 7 | 30 | off | `5a5883671d5f42a7191d737b6a9fe5fa34f0e9586bc458e59570b73351563158` | 105193 |
+        | dungeon | 1955208177 | 12 | on | `4230006dc9f080fc717cde1ea152abc9bdbe31df8410345febc5950148983ef6` | 85201 |
+        | dungeon | 1955208177 | 12 | off | `881b9144f6031b34121b9e31a3bf2aa7f6a9d7072cc5739b8f5f9fb38cd2ddd6` | 38161 |
+        | dungeon | 1955208177 | 30 | on | `f4bb948359992643b2b88e5f29d863e850d5c97f792984fc72cc89d7d64bb9c4` | 266809 |
+        | dungeon | 1955208177 | 30 | off | `ebe1bb9f079fb0982eb7db9f465b6981fdd8a02f8fb1e1883773b83ffe8330e0` | 100825 |
+        | dungeon | 1516796975 | 12 | on | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 |
+        | dungeon | 1516796975 | 12 | off | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 |
+        | dungeon | 1516796975 | 30 | on | `c3973c65f29692fe8d995af6c6d18fbf14ef1daeee0bfc5987ac409a6d7f0bcb` | 233713 |
+        | dungeon | 1516796975 | 30 | off | `92fd0b18446db35c9d2356c6ea3ce3a6c62a4fe50a32da5c883524a0aa71587d` | 107377 |
+        | dungeon | 481893615 | 12 | on | `191b9b9a985c0952e097e5f3689e28208ef6deaa2269bf2c182b330ae54f198b` | 72097 |
+        | dungeon | 481893615 | 12 | off | `a394bad9c992e634f4cbd4ae8ce7f7f1905c191e455f03bf15ca30a5f58d3f76` | 36481 |
+        | dungeon | 481893615 | 30 | on | `1813014354537faaf36f2c833b356fd796cbbfd3844c078a4346dbcb198ab825` | 327121 |
+        | dungeon | 481893615 | 30 | off | `599d62c7c0ee4549918c96624c910b1aae403c7d096a6f912b15da4feac8c630` | 102673 |
+        | city | 7 | 12 | on | `bad45473dda32b15e0f40b5562c5cbb5ed89ffb12838375e75f191af4220356f` | 94273 |
+        | city | 7 | 12 | off | `0df8ef526cf5bfd0b0a30cd04d3c2409edbd53b6b4feb3305214293dc54e4877` | 40513 |
+        | city | 7 | 30 | on | `a92867f73c5be41c6694226a06a4a6a7373ba300cea1428f470172a8df02b421` | 312841 |
+        | city | 7 | 30 | off | `6093738555214134a3aaa4fed6e70eb59f58bfec38e536856f5904870fb473a4` | 107209 |
+        | city | 1955208177 | 12 | on | `30022398dd434eae6af3dc648b7c3e9a2497e5f1f462be9b614af47827c99b3b` | 86545 |
+        | city | 1955208177 | 12 | off | `f480b2373ebd3e8ac7207d74d6b58b266443f2be1b8223ab3b76027f7ab34f9b` | 38161 |
+        | city | 1955208177 | 30 | on | `a1a208e468bf6fdc8310965c94747703d54a66b0b3c1fa105b3238a3b7590f1e` | 290329 |
+        | city | 1955208177 | 30 | off | `d1cc504ed8b589778b2bdd8136a038537419047de34d3c98ac9f268402a0c05b` | 102841 |
+        | city | 1516796975 | 12 | on | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 |
+        | city | 1516796975 | 12 | off | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 |
+        | city | 1516796975 | 30 | on | `827e137d1a24f7cd516112e6b485735c7102c08d280faf0c5fded6396759ab30` | 243793 |
+        | city | 1516796975 | 30 | off | `2624b05e39f20316da01d7d10f0e275a7932542f3a5a9faf208f2dd4cbec4158` | 101329 |
+        | city | 481893615 | 12 | on | `e47192e2dab221f312c1c6968da05a96c8643958e764c2518d6206487714dd5e` | 74113 |
+        | city | 481893615 | 12 | off | `3d5284022c87dca21d5d009b4407b637ac3573e952f235acff90a330905861ed` | 36481 |
+        | city | 481893615 | 30 | on | `25d29c69592995c5da0938768dba5e313e7107313a363e846351f603d36106ad` | 283441 |
+        | city | 481893615 | 30 | off | `0ff8ada3f3359e19b6049b507b8968a8b34e2f7ba868f7a239824ac01c4c6d6a` | 102673 |
+
+      - Note: at seed `1516796975`, rooms 12, the elevation-on and elevation-off box builds hash identically (dungeon and city both `9dcb91bc…` / `79f180cf…`). Same observed fork-point fact as task 1.2: that seed's 12-room elevation draw yields a flat graph, so the two builds are byte-identical. All 30 other box pairs differ.
+      - **Part B — 3 outdoor TER `sha256` hashes at 6 rooms** (captured exactly as `tests/test_hygiene.py::test_outdoor_ter_matches_fork_point`: `LayoutGenerator("outdoor", seed).generate(f"ob{seed}", room_count=6)` → `build_raw(spec, tmp)` → `sha256(ter_bytes)`). All three equal the existing `OUTDOOR_BASELINE` literals in that test (which passes on this fork point), confirming the capture:
+
+        | zone_type | seed | rooms | sha256 | bytes |
+        |-----------|------|-------|--------|-------|
+        | outdoor | 7 | 6 | `b3a852e7aa944bb982cfb7c7811b227c55a65305559ee1c16c393e9295b2e80d` | 1967225 |
+        | outdoor | 1955208177 | 6 | `638272f9fc80a96d2e0ec6622c4bfd509e4c55d71c0c7736dfb8957fd05b5da1` | 2003513 |
+        | outdoor | 2147483647 | 6 | `e51045058d3b5b3141947588004eb45bd185edab28a7dec1b718ccde7786a1e7` | 2370473 |
+
+      - The throwaway capture script lived at `F:\Dev Projects\_m1_task101_tmp\capture_before.py` (outside the repo) and is not committed. No hash test committed in this wave; task 10.11 re-runs the same capture on the branch head and `test_outdoor_ter_matches_fork_point` continues to guard the 3 outdoor values.
+      - `python -m pytest tests/ -q`: **255 passed** (346.32 s) on the fork point. (The two warnings are pre-existing and unrelated.)
+      - Touched only this `tasks.md` entry — no code, no `ROADMAP.md`/`README.md`/`tasks/README.md`.
   - [ ] 10.2 Add `generators/zone_types.py`
     - `DEFINED_ZONE_TYPES`, `DEFAULT_ZONE_TYPE`, `LEGACY_ZONE_TYPE_VALUES`, `STYLE_PROFILE` (`wilderness` → `outdoor`), `canonical_zone_type`, `read_zone_type` per the design. No Enabled set yet (wave 4).
     - _Requirements: 11.1, 11.2_
