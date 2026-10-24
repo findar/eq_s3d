@@ -663,7 +663,7 @@ Working rules for every task:
         - `python -m pytest tests/ -q`: **255 passed** (341.18 s) — matches the wave-2 fork-point baseline (task 10.1: 255 passed); the new unused module breaks nothing. The two warnings are pre-existing and unrelated.
       - Not wired into any caller yet — it is consumed starting at 10.3 (plan/planner), 10.4 (spec/layout/builder/pipeline), etc. Nothing to verify in the live 3D viewer (pure vocabulary module, no geometry).
       - Touched only `generators/zone_types.py` and this `tasks.md` entry — no `ROADMAP.md`/`README.md`/`tasks/README.md`.
-      - Commit: `__PENDING__`.
+      - Commit: `62784be` (module + this `tasks.md` entry; the Deliverables commit-hash line itself is this self-reference, left as captured — not chased with a follow-up amend).
   - [ ] 10.3 Rename the plan and planner surface
     - `ai/schema.py`: `VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)`, `ZonePlan.zone_type`, schema key `zone_type`; `from_dict`/`validate()` read `read_zone_type` → `canonical_zone_type` → `dungeon` if undefined. `ai/rule_planner.py`: `_ZONE_TYPE_WORDS` keyed `wilderness` (word list unchanged), `_match_zone_type`, same scoring and tie rule. `ai/llm_planner.py`: prompt text and enum. `ai/expand.py`: `LayoutGenerator(zone_type=...)`, `style_profile = STYLE_PROFILE[plan.zone_type]`.
     - Content fields keep their names (Req 11.6). 10.3–10.8 may land as one commit if splitting would leave the suite red; say so in the message.
