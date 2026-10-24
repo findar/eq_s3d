@@ -106,6 +106,7 @@ _unknown_keys = st.text(min_size=1, max_size=12).filter(
     lambda k: k
     not in {
         "name",
+        "zone_type",
         "theme",
         "room_count",
         "size",
@@ -122,13 +123,25 @@ _unknown_keys = st.text(min_size=1, max_size=12).filter(
 )
 
 #: Loosely-typed dicts covering every ``ZonePlan`` field (plus junk keys), used
-#: to prove normalisation lands every field in its valid domain (Property 12).
+#: to prove normalisation lands every field in its valid domain (Property 12)
+#: and the legacy-vocabulary load round-trip (M1-P3, task 10.10).
+#:
+#: The zone type can be keyed the NEW way (``zone_type``) or the LEGACY way
+#: (``theme``), or both. Task 10.9 left this strategy emitting only the legacy
+#: ``theme`` key and deferred ``zone_type`` to task 10.10; both are optional
+#: here, so a drawn dict may carry ``zone_type`` alone, ``theme`` alone, both
+#: (possibly disagreeing — the load boundary must let ``zone_type`` win), or
+#: neither (the default applies). ``theme`` draws the legacy value set (which
+#: includes ``outdoor`` and the removed ``cave``); ``zone_type`` draws the
+#: current ``DEFINED_ZONE_TYPES`` plus the legacy ``outdoor`` so the mapping is
+#: exercised from both keys.
 zone_plan_dicts = st.builds(
     lambda base, extra: {**base, **extra},
     st.fixed_dictionaries(
         {},
         optional={
             "name": st.text(),
+            "zone_type": _vocab_field(sorted(DEFINED_ZONE_TYPES) + ["outdoor"]),
             "theme": _vocab_field(["dungeon", "outdoor", "cave", "city"]),
             "room_count": st.integers(),
             "size": _vocab_field(["small", "medium", "large", "huge"]),

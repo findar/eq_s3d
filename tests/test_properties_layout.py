@@ -843,3 +843,152 @@ def test_cave_words_mean_dungeon(prompt):
             f"{outdoor_score} and city {city_score}, but planner chose "
             f"{zone_type!r} for prompt {prompt!r}"
         )
+
+
+# --- Property 12: Legacy vocabulary load round-trip (M1-P3) ------------------
+#
+# Layout-tier: `ZonePlan.from_dict` / `ZoneSpec.from_dict` are pure dataclass +
+# `canonical_zone_type` / `read_zone_type` logic (`ai.schema`,
+# `generators.zone_spec`, `generators.zone_types`), and `plan_to_spec` drives
+# the LayoutGenerator -- no binary build and no geometry -- so no `slow` marker
+# and no `build_settings`. Budget 100 per the task (default profile, scaled by
+# the active profile via `scaled`). `deadline=None` for parity with the other
+# layout-tier tests: the full layout for up to 30 rooms can brush the
+# Default_Profile's 200 ms deadline on a cold call (import/JIT warmup), which is
+# timing variance, not a property failure.
+#
+# The load boundaries this pins -- `from_dict` reading the legacy `theme` key
+# and `outdoor` value, and `zone_type` winning when both keys are present --
+# are already implemented (tasks 10.3 / 10.4, confirmed by 10.9). This property
+# PINS that behaviour across all three zone types. If it fails, it is a REAL bug
+# in `from_dict` / `canonical_zone_type` -- fix it at the root (never weaken the
+# assertion) and pin the counterexample as a Regression_Example via
+# `@example(...).via("discovered failure")`.
+@settings(deadline=None, max_examples=scaled(100))
+@given(
+    seed=seeds,
+    zone_type=spec_zone_types,
+    n=room_counts(1, 30),
+    elevation=st.booleans(),
+    semantic=semantic_inputs,
+)
+def test_legacy_vocabulary_round_trip(seed, zone_type, n, elevation, semantic):
+    """Feature: zone-generator-m1-controls-traversability, Property 12: Legacy vocabulary load round-trip.
+
+    M1-P3. For a plan loaded via ``ZonePlan.from_dict`` and a spec expanded via
+    ``ai.expand.plan_to_spec`` on each of the three canonical zone types
+    (dungeon, city, wilderness -- ``spec_zone_types``), the current vocabulary
+    serialises and reloads losslessly through the LEGACY vocabulary:
+
+    1. ``to_dict()`` -- for both the plan and the spec -- contains a
+       ``zone_type`` key, contains NO legacy ``theme`` key anywhere, and
+       contains NO ``outdoor`` value anywhere (the open-air type is spelled
+       ``wilderness`` on the way out; ``outdoor`` only ever appears as an input).
+    2. Renaming the serialised ``zone_type`` key back to the legacy ``theme``
+       key (and, for wilderness, the value ``wilderness`` back to the legacy
+       ``outdoor``) and reloading via ``from_dict`` yields a canonical
+       ``zone_type`` EQUAL to the original -- the forward round-trip through the
+       legacy vocabulary is lossless.
+    3. When BOTH a ``zone_type`` key and a ``theme`` key are present and they
+       name DIFFERENT zone types, the loader honours ``zone_type`` (the current
+       key wins over the legacy key).
+
+    All three checks run against both the plan (``ZonePlan``) and the spec
+    (``ZoneSpec``) load boundaries. A failure is a REAL bug in ``from_dict`` /
+    ``canonical_zone_type`` (the legacy-mapping or the key-precedence rule), to
+    be fixed at the root and pinned as a Regression_Example -- never a reason to
+    weaken the assertion or narrow the strategy.
+
+    Validates: Requirements 11.1, 11.2, 11.5.
+    """
+    # The legacy spelling of each canonical zone type on the LOAD side. Only the
+    # open-air type was renamed (outdoor -> wilderness); the others are their own
+    # legacy value. This is the value a legacy `theme`-keyed dict would carry.
+    legacy_value = {"dungeon": "dungeon", "city": "city", "wilderness": "outdoor"}
+    legacy = legacy_value[zone_type]
+
+    # Build a plan for this zone type (loaded through the new `zone_type` key)
+    # and expand it to a spec. The semantic layer is drawn in full so the
+    # content block travels through both serialisers alongside the zone type.
+    plan = ZonePlan.from_dict(
+        {
+            "name": f"leg{seed}",
+            "zone_type": zone_type,
+            "room_count": n,
+            "elevation": elevation,
+            "dungeon_theme": semantic["dungeon_theme"],
+            "dungeon_race": semantic["dungeon_race"],
+            "elemental_tint": (semantic["elemental_tint"] or ""),
+        }
+    )
+    assert plan.zone_type == zone_type
+    spec = plan_to_spec(plan, seed=seed)
+    assert spec.zone_type == zone_type
+
+    plan_d = plan.to_dict()
+    spec_d = spec.to_dict()
+
+    # --- (1) to_dict() carries zone_type, never `theme`, never `outdoor` -----
+    for label, d in (("plan", plan_d), ("spec", spec_d)):
+        assert "zone_type" in d, (
+            f"{label}.to_dict() is missing the 'zone_type' key: {d!r}"
+        )
+        assert d["zone_type"] == zone_type, (
+            f"{label}.to_dict()['zone_type'] {d['zone_type']!r} != {zone_type!r}"
+        )
+        # No legacy `theme` key anywhere in the serialised dict (top level is
+        # where the zone type lives; the content block keeps its own names).
+        assert "theme" not in d, (
+            f"{label}.to_dict() still carries a legacy 'theme' key: {d!r}"
+        )
+        # The legacy open-air VALUE must never be emitted as the zone type:
+        # wilderness is the only way out, `outdoor` is only ever an input. Scan
+        # every top-level value EXCEPT `style_profile`, which legitimately names
+        # the measured profile file `styles/outdoor.json` -- `style_profile` is
+        # provenance (a profile name), not the zone-type vocabulary, and the
+        # file deliberately keeps the `outdoor` name (generators/zone_types.py
+        # STYLE_PROFILE: wilderness -> "outdoor").
+        zone_type_values = {
+            k: v for k, v in d.items() if k != "style_profile"
+        }.values()
+        assert "outdoor" not in zone_type_values, (
+            f"{label}.to_dict() emits a legacy 'outdoor' value outside "
+            f"style_profile: {d!r}"
+        )
+
+    # --- (2) Forward round-trip THROUGH the legacy vocabulary is lossless ----
+    # Rename the serialised `zone_type` key to the legacy `theme` key and map the
+    # value back to its legacy spelling, then reload. The loader must recover the
+    # same canonical zone type.
+    for label, d, loader, read in (
+        ("plan", plan_d, ZonePlan.from_dict, lambda o: o.zone_type),
+        ("spec", spec_d, ZoneSpec.from_dict, lambda o: o.zone_type),
+    ):
+        legacy_d = dict(d)
+        legacy_d.pop("zone_type")
+        legacy_d["theme"] = legacy
+        recovered = read(loader(legacy_d))
+        assert recovered == zone_type, (
+            f"{label} legacy round-trip lost the zone type: reloaded "
+            f"theme={legacy!r} -> {recovered!r}, expected {zone_type!r}"
+        )
+
+    # --- (3) When both keys are present and differ, `zone_type` wins ---------
+    # Pick a DIFFERENT canonical zone type and plant it in the legacy `theme`
+    # key alongside the correct `zone_type`. The loader must honour `zone_type`.
+    others = [z for z in DEFINED_ZONE_TYPES if z != zone_type]
+    for other in others:
+        other_legacy = legacy_value[other]
+        for label, d, loader, read in (
+            ("plan", plan_d, ZonePlan.from_dict, lambda o: o.zone_type),
+            ("spec", spec_d, ZoneSpec.from_dict, lambda o: o.zone_type),
+        ):
+            both = dict(d)
+            both["zone_type"] = zone_type
+            both["theme"] = other_legacy  # legacy key naming a DIFFERENT type
+            won = read(loader(both))
+            assert won == zone_type, (
+                f"{label}: with zone_type={zone_type!r} and legacy "
+                f"theme={other_legacy!r} both present, loader chose {won!r} -- "
+                f"zone_type must win"
+            )
