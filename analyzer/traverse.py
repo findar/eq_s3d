@@ -894,6 +894,77 @@ def _flood_subset(adj: Dict[int, List[int]], start: set) -> set:
     return reached
 
 
+def _route_penetration_span(route, rect: Rect) -> float:
+    """Longest run of ``route``'s CENTRELINE inside ``rect`` (any leg).
+
+    Liang-Barsky clip of each leg segment against the rectangle; the result is
+    the clipped leg's length. Mirrors ``LayoutGenerator._resolve_crossings``'s
+    ``_seg_enters_rect`` span measure EXACTLY, so the validator and the layout
+    agree on what "the corridor cuts through this room" means.
+    """
+    best = 0.0
+    wps = route.waypoints
+    rx0, ry0, rx1, ry1 = rect
+    for k in range(len(wps) - 1):
+        (x0, y0), (x1, y1) = wps[k], wps[k + 1]
+        dx, dy = x1 - x0, y1 - y0
+        t0, t1 = 0.0, 1.0
+        ok = True
+        for p, q in ((-dx, x0 - rx0), (dx, rx1 - x0),
+                     (-dy, y0 - ry0), (dy, ry1 - y0)):
+            if abs(p) < 1e-9:
+                if q < 0:
+                    ok = False
+                    break
+                continue
+            t = q / p
+            if p < 0:
+                if t > t1:
+                    ok = False
+                    break
+                if t > t0:
+                    t0 = t
+            else:
+                if t < t0:
+                    ok = False
+                    break
+                if t < t1:
+                    t1 = t
+        if not ok or t1 <= t0:
+            continue
+        span = ((dx * (t1 - t0)) ** 2 + (dy * (t1 - t0)) ** 2) ** 0.5
+        best = max(best, span)
+    return best
+
+
+def _genuinely_crossed_rooms(route, hw: float, spec: ZoneSpec,
+                             cor: CorridorSpec, eps: float) -> List[str]:
+    """Ids of rooms the corridor's CENTRELINE genuinely cuts through.
+
+    "Genuinely" means the same bar ``LayoutGenerator._resolve_crossings`` uses
+    to decide a route needs splitting: the centreline's clipped run inside the
+    room (shrunk by ``eps`` so a leg merely running ALONG a wall face is not
+    counted) exceeds one corridor width (``hw``). A corridor that only grazes a
+    room's corner (span <= hw) is deliberately left unsplit by the layout, so
+    the validator must NOT treat that graze as a crossing -- excluding such a
+    room from the continuity region would sever the corridor's OWN floor where
+    it legitimately runs beside the room (seed 8, dungeon, 30 rooms, dramatic,
+    corr_5 grazing room_8 by ~23 u < hw 24.5: connected in the full mesh, but
+    the old any-overlap exclusion cut its region and mislabelled it a crossing).
+    """
+    out: List[str] = []
+    for r in spec.rooms:
+        if r.id in (cor.from_room, cor.to_room):
+            continue
+        rfp = _room_footprint(r)
+        shrunk = (rfp[0] + eps, rfp[1] + eps, rfp[2] - eps, rfp[3] - eps)
+        if shrunk[0] > shrunk[2] or shrunk[1] > shrunk[3]:
+            shrunk = rfp
+        if _route_penetration_span(route, shrunk) > hw:
+            out.append(r.id)
+    return out
+
+
 def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
                         agent: AgentModel) -> List[CorridorResult]:
     """Per-corridor floor-continuity verdicts (Requirement 5.2).
@@ -933,8 +1004,16 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         fp_a = _room_footprint(a)
         fp_b = _room_footprint(b)
         include = leg_rects + [fp_a, fp_b]
+        # Exclude only the rooms the corridor's centreline GENUINELY cuts through
+        # (span > hw) -- the same bar ``_resolve_crossings`` splits on. A room
+        # the corridor merely grazes (span <= hw, left unsplit by the layout on
+        # purpose) is NOT excluded, so subtracting it can't sever the corridor's
+        # own floor where it legitimately runs beside that room.
+        crossed_ids = set(_genuinely_crossed_rooms(
+            route, hw, spec, cor, agent.adjacency_eps))
         exclude = [_room_footprint(r) for r in spec.rooms
-                   if r.id not in (cor.from_room, cor.to_room)]
+                   if r.id not in (cor.from_room, cor.to_room)
+                   and r.id in crossed_ids]
 
         region_faces = _region_faces(surf, include, exclude)
         faces_set = {int(f) for f in region_faces}
@@ -956,27 +1035,12 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
             else:
                 reason = "gap"
 
-        # A third-room crossing is the more specific diagnosis when a leg
-        # actually penetrates another room. ``route_footprint`` grows legs by
-        # ``hw + eps``; penetration is measured against the raw room rects.
-        if not connected:
-            raw_legs = route_footprint(route, hw)
-            crossed = None
-            for r in spec.rooms:
-                if r.id in (cor.from_room, cor.to_room):
-                    continue
-                rfp = _room_footprint(r)
-                # Shrink the room rect by eps so a leg merely grazing the wall
-                # isn't counted; penetration deeper than eps is a real crossing.
-                shrunk = (rfp[0] + agent.adjacency_eps, rfp[1] + agent.adjacency_eps,
-                          rfp[2] - agent.adjacency_eps, rfp[3] - agent.adjacency_eps)
-                if shrunk[0] > shrunk[2] or shrunk[1] > shrunk[3]:
-                    shrunk = rfp
-                if any(_rects_overlap(leg, shrunk) for leg in raw_legs):
-                    crossed = r.id
-                    break
-            if crossed is not None:
-                reason = f"crosses room {crossed}"
+        # A third-room crossing is the more specific diagnosis when the route
+        # GENUINELY cuts through another room (centreline span > hw -- the same
+        # bar the layout splits on, so detection and prevention agree). A mere
+        # corner graze is not a crossing and leaves the gap diagnosis in place.
+        if not connected and crossed_ids:
+            reason = f"crosses room {sorted(crossed_ids)[0]}"
 
         results.append(CorridorResult(
             cor.id, cor.from_room, cor.to_room, connected, reason))
