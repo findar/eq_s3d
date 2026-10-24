@@ -26,6 +26,7 @@ from tests.strategies import seeds, room_counts, room_counts_wide, box_themes, f
 from tests.pbt_helpers import (
     build_settings,
     build_raw,
+    build_and_validate_raw,
     fresh_dir,
     M0_HUMAN_PASS,
     m0_human_spec,
@@ -35,7 +36,8 @@ from tests.pbt_helpers import (
 @st.composite
 def _raw_navigable_cases(draw):
     """
-    A ``(spec, label)`` case for Property 1, built through the real plan path.
+    A ``(spec, label, key)`` case for Property 1, built through the real plan
+    path.
 
     Draws a box zone type (``dungeon``/``city``), a wide room count (biased so
     the large-zone band is hit about half the time, Req 5.1) and flat
@@ -43,7 +45,11 @@ def _raw_navigable_cases(draw):
     8.1), then expands a ``ZonePlan`` through ``ai.expand.plan_to_spec`` — the
     same path the pipeline uses — so a passing property exercises an input the
     production path can genuinely see. ``label`` carries the drawn parameters so
-    a failure prints them.
+    a failure prints them; ``key`` is the stable ``(zone_type, seed, n,
+    verticality)`` cache key for the shared P1/M1-P1 build (design budget lever
+    1) — ``test_raw_navigable`` and ``test_corridor_continuity`` draw the same
+    cases in the same order, so the two tests key identically and share one
+    build.
     """
     s = draw(seeds)
     theme = draw(box_themes)
@@ -58,19 +64,22 @@ def _raw_navigable_cases(draw):
     )
     spec = plan_to_spec(plan, seed=s)
     label = f"seed={s}, zone_type={theme}, rooms={n}, verticality={verticality}"
-    return spec, label
+    key = (theme, s, n, verticality)
+    return spec, label, key
 
 
 def _flat_human_case(entry):
-    """An ``M0_HUMAN_PASS`` entry re-planned flat, as a ``(spec, label)`` case."""
+    """An ``M0_HUMAN_PASS`` entry re-planned flat, as a ``(spec, label, key)``
+    case."""
     spec = m0_human_spec(entry, verticality="flat")
     prompt, seed = entry
     label = f"M0 human pass (flat): {prompt!r} seed={seed}"
-    return spec, label
+    key = ("m0_human_flat", prompt, seed)
+    return spec, label, key
 
 
 def _flat_seed_case(theme, n, seed):
-    """A flat ``(spec, label)`` case for a pinned regression seed.
+    """A flat ``(spec, label, key)`` case for a pinned regression seed.
 
     Built the same way ``_raw_navigable_cases`` builds its draws (``ZonePlan``
     -> ``plan_to_spec``, flat), so a pinned seed reproduces exactly the layout
@@ -85,7 +94,8 @@ def _flat_seed_case(theme, n, seed):
     )
     spec = plan_to_spec(plan, seed=seed)
     label = f"regression seed={seed}, zone_type={theme}, rooms={n}, verticality=flat"
-    return spec, label
+    key = (theme, seed, n, "flat")
+    return spec, label, key
 
 
 @pytest.mark.slow
@@ -118,10 +128,13 @@ def test_raw_navigable(case):
 
     Validates: Requirements 4.1, 5.1, 5.3; umbrella P1.
     """
-    spec, label = case
-    with fresh_dir() as out:
-        result, _ter_bytes, _zon_bytes = build_raw(spec, out)
-        report = T.validate(result.eqg_path, spec=spec)
+    spec, label, key = case
+    # Shared P1/M1-P1 build (design budget lever 1): build + validate once per
+    # case, memoised; test_corridor_continuity reuses this same report. The
+    # corridor check is a superset — report.passed is the same verdict a
+    # check_corridors=False validate would give (Req 4.1) — so P1's assertion is
+    # unchanged.
+    report = build_and_validate_raw(spec, key)
 
     assert report.passed, (
         f"non-navigable box zone ({label}):\n{report.summary()}"
@@ -176,10 +189,11 @@ def test_corridor_continuity(case):
 
     Validates: Requirements 5.2, 5.3; M1-P1.
     """
-    spec, label = case
-    with fresh_dir() as out:
-        result, _ter_bytes, _zon_bytes = build_raw(spec, out)
-        report = T.validate(result.eqg_path, spec=spec, check_corridors=True)
+    spec, label, key = case
+    # Shared P1/M1-P1 build (design budget lever 1): reuse the report
+    # test_raw_navigable built for this same case (validated with
+    # check_corridors=True, so the corridor verdict is populated).
+    report = build_and_validate_raw(spec, key)
 
     if not report.corridors_passed:
         broken = [c for c in report.corridors if not c.connected]
