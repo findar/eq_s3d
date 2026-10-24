@@ -643,15 +643,35 @@ def test_walk_surface_equivalence(theme, n, vert, s):
             f"(symmetric diff {len(opt_reach ^ ref_reach)})"
         )
 
-    # 4) Every TraversalReport room result equal (live optimised validate vs the
-    #    fork-point per-room loop on the reference surface, same spec+mesh).
-    ref_report = RT.reference_room_results(ref_surf, spec, zone_name="reference",
-                                           agent=ref_agent)
-    assert _room_result_tuples(live_report) == _room_result_tuples(ref_report), (
-        f"per-room TraversalReport results differ between optimised validate and "
-        f"the fork-point reference {ctx}:\n"
-        f"  optimised: {_room_result_tuples(live_report)}\n"
-        f"  reference: {_room_result_tuples(ref_report)}"
+    # 4) The two surfaces agree on per-room reachability FROM THE SAME START.
+    #    M1-P4 is about the faster `build_walk_surface`, not the start-face
+    #    picker: points 1-3 already prove the optimised and reference surfaces
+    #    have identical standable faces, identical components and identical
+    #    `flood_reachable` from EVERY start face, so flooding both from one
+    #    shared seed face must give identical per-room reached-face sets. We
+    #    flood each surface from the LIVE validate's chosen seed face (task 8.3
+    #    fixed `_nearest_standable_face` to stand on the floor UNDER the safe
+    #    point; the frozen fork-point reference still carries the old picker, so
+    #    calling `reference_room_results` — which re-picks with the old rule —
+    #    would conflate that picker fix with the surface question this property
+    #    actually governs). Mapping faces to rooms uses the reference's frozen
+    #    `_faces_in_room` on each surface so the comparison is the surfaces'.
+    seed_face = live_report.seed_face
+    opt_reached = RT.flood_reachable(opt_surf, seed_face) if seed_face is not None else set()
+    ref_reached = RT.flood_reachable(ref_surf, seed_face) if seed_face is not None else set()
+    opt_room_reach = {
+        r.id: sorted(int(f) for f in RT._faces_in_room(opt_surf, r) if int(f) in opt_reached)
+        for r in spec.rooms
+    }
+    ref_room_reach = {
+        r.id: sorted(int(f) for f in RT._faces_in_room(ref_surf, r) if int(f) in ref_reached)
+        for r in spec.rooms
+    }
+    assert opt_room_reach == ref_room_reach, (
+        f"per-room reached faces differ between optimised and reference surface "
+        f"flooded from the same seed face {seed_face} {ctx}:\n"
+        f"  optimised: {opt_room_reach}\n"
+        f"  reference: {ref_room_reach}"
     )
 
     # 5) corridor_continuity + corridor_conflicts agree on both surfaces (task

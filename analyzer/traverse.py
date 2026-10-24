@@ -642,20 +642,52 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 def _nearest_standable_face(surf: WalkSurface, point: np.ndarray,
                             xy_radius: float) -> Optional[int]:
     """
-    Pick the standable face to start the walk from: the one whose footprint
-    contains (or is nearest, within xy_radius) the safe point in XY, preferring
-    the face whose centroid Z is closest to the safe point's Z (stand on the
-    floor at that spot, not a surface far above/below it).
+    Pick the standable face to start the walk from: the floor the player stands
+    on at the safe point. The safe point is placed deliberately AT the entrance
+    room centre (``entrance.center + (0, 0, 5)``), so the correct start face is
+    the floor directly BENEATH it — the face whose XY projection CONTAINS the
+    point — and, when several stacked faces contain it (a box dungeon where a
+    corridor ramps up over the entrance floor), the one whose surface Z at that
+    point is closest to the safe point's Z.
+
+    The containment pass is what makes this correct on the elevation path. A
+    plain "within ``xy_radius``, minimise |Δz|" rule (the historic behaviour,
+    kept below only as a fallback) can prefer a DISTANT corridor face whose Z
+    merely happens to sit nearer the safe point over the entrance's OWN floor
+    directly under the safe point — stranding the whole flood on a tiny
+    disconnected component and reporting every room unreachable even though the
+    zone is fully connected from its real entrance floor (seed 2985, dungeon,
+    26 rooms, dramatic: the entrance floor at z=0 floods to every room, but a
+    ramp face ~370u away at z≈5.5 won the old |Δz| race against z=5 and reached
+    almost nothing). Standing on the floor UNDER the spawn point, not the
+    nearest-in-Z surface anywhere nearby, is the fix.
     """
     std_idx = np.nonzero(surf.standable)[0]
     if len(std_idx) == 0:
         return None
+
+    # Preferred: the floor directly beneath the safe point — a face whose XY
+    # projection contains it. Among those stacked faces, stand on the one whose
+    # interpolated surface Z at the point is closest to the safe point's Z.
+    containing: List[int] = []
+    containing_z: List[float] = []
+    for fi in std_idx:
+        tri = surf.verts[surf.faces[fi]]
+        if _point_in_tri_xy(point[0], point[1], tri):
+            containing.append(int(fi))
+            containing_z.append(_plane_z_at(tri, point[0], point[1]))
+    if containing:
+        dz = np.abs(np.asarray(containing_z) - point[2])
+        return int(containing[int(np.argmin(dz))])
+
+    # Fallback (no face underfoot — e.g. a safe point placed off any floor):
+    # the nearest face in XY within the radius, breaking ties by |Δz|; failing
+    # that, the globally nearest in XY.
     cen = surf.centroids[std_idx]
     dxy = np.linalg.norm(cen[:, :2] - point[:2], axis=1)
     within = dxy <= xy_radius
     cand = std_idx[within]
     if len(cand) == 0:
-        # fall back to globally nearest in XY
         return int(std_idx[int(np.argmin(dxy))])
     cz = surf.centroids[cand]
     dz = np.abs(cz[:, 2] - point[2])
