@@ -295,3 +295,159 @@ class TestFootprintContactAdjacency:
         assert 1 in surf.adjacency.get(0, []), (
             "overlapping triangles within the step-up at the contact must be adjacent"
         )
+
+
+# ---------------------------------------------------------------------------
+# Constructed examples: corridor floor continuity + corridor conflicts
+# ---------------------------------------------------------------------------
+
+class TestCorridorContinuityExamples:
+    """
+    Hand-built specs that trigger each ``corridor_continuity`` /
+    ``corridor_conflicts`` failure class exactly once, deterministically — the
+    example-test counterpart to the property test in
+    ``test_properties_core.py`` (M1-P4). Each spec is built through the box
+    backend (``ZoneBuilder``) so the check runs on the REAL generated TER mesh,
+    not on a synthetic graph; the walk surface is then handed straight to
+    ``corridor_continuity`` / ``corridor_conflicts`` (Requirement 5.2).
+
+    No randomness, no seeds: the geometry is fully determined by the hand-made
+    room/corridor coordinates, so a failure here is a real regression in the
+    continuity flood or the conflict check, never a flaky draw.
+    """
+
+    @staticmethod
+    def _walk_surface(spec, tmp_path):
+        """Build ``spec`` through the box backend and return its walk surface."""
+        result = ZoneBuilder(spec).build(output_dir=str(tmp_path), write_glb=False)
+        ter, _ = T.load_ter_from_eqg(result.eqg_path)
+        return build_walk_surface(ter, AgentModel())
+
+    @staticmethod
+    def _result_for(results, corridor_id):
+        return next(r for r in results if r.corridor_id == corridor_id)
+
+    # -- 1. route through a third room → "crosses room <id>" ----------------
+    def test_corridor_through_third_room_reports_crosses(self, tmp_path):
+        # A --- C --- B are collinear on X at z=0; the single corridor from A to
+        # B runs STRAIGHT through C's footprint. The continuity region removes
+        # C's footprint, so the far room is reachable only by cutting through C
+        # (through its collidable walls — a path no player has). The check must
+        # refuse it AND name the third room.
+        spec = ZoneSpec(name="xroom", theme="dungeon")
+        a = RoomSpec("a", center_x=-400, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=100)
+        a.role = "entrance"; a.open_walls = ["E"]
+        c = RoomSpec("c", center_x=0, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=100)
+        c.open_walls = ["E", "W"]
+        b = RoomSpec("b", center_x=400, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=100)
+        b.open_walls = ["W"]
+        spec.rooms = [a, c, b]
+        # from A's east wall (x=-300) to B's west wall (x=300): a straight leg
+        # along X at y=0, width 200 — its footprint covers C (x in [-100,100]).
+        spec.corridors.append(CorridorSpec(
+            "corr_ab", from_x=-300, from_y=0, to_x=300, to_y=0,
+            from_z=0.0, to_z=0.0, width=200, height=90,
+            from_room="a", to_room="b"))
+        spec.safe_point = (-400.0, 0.0, 5.0)
+
+        surf = self._walk_surface(spec, tmp_path)
+        results = T.corridor_continuity(surf, spec, AgentModel())
+        res = self._result_for(results, "corr_ab")
+        assert not res.connected, "a corridor cutting through room c must not be connected"
+        assert res.reason == "crosses room c", res.reason
+
+    # -- 2. missing floor segment → "gap" -----------------------------------
+    def test_corridor_with_missing_floor_reports_gap(self, tmp_path):
+        # Two rooms joined by a single over-steep ramp (150u rise over a ~100u
+        # run ≈ 56° >> the 40° walkable cap). Both rooms have standable floor,
+        # but the ramp's own faces are unwalkable, so the region has NO walkable
+        # path between the two floors — a gap in the corridor floor. No third
+        # room exists, so the diagnosis is the generic "gap".
+        spec = ZoneSpec(name="gapramp", theme="dungeon")
+        a = RoomSpec("a", center_x=0, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=100)
+        a.role = "entrance"; a.open_walls = ["N"]
+        b = RoomSpec("b", center_x=0, center_y=300, floor_z=150.0,
+                     width=200, depth=200, height=100)
+        b.open_walls = ["S"]
+        spec.rooms = [a, b]
+        spec.corridors.append(CorridorSpec(
+            "corr_ab", from_x=0, from_y=100, to_x=0, to_y=200,
+            from_z=0.0, to_z=150.0, width=50, height=90,
+            from_room="a", to_room="b"))
+        spec.safe_point = (0.0, 0.0, 5.0)
+
+        surf = self._walk_surface(spec, tmp_path)
+        results = T.corridor_continuity(surf, spec, AgentModel())
+        res = self._result_for(results, "corr_ab")
+        assert not res.connected, "an over-steep ramp leaves no walkable floor path"
+        assert res.reason == "gap", res.reason
+
+    # -- 3. two unrelated corridors over the same floor space → conflict ----
+    def test_crossing_corridors_same_height_conflict(self, tmp_path):
+        # Two corridors that join DIFFERENT room pairs (so they share no room)
+        # but run over the same stretch of floor at the SAME height: their route
+        # footprints overlap in XY and their walkable floors over the overlap sit
+        # within the clearance. One tube passes straight through the other — a
+        # conflict (Decision 12/16).
+        spec = self._crossing_spec(cd_floor_z=0.0)
+        surf = self._walk_surface(spec, tmp_path)
+        conflicts = T.corridor_conflicts(surf, spec, AgentModel())
+        assert ("corr_ab", "corr_cd") in conflicts, conflicts
+
+    # -- 4. same pair separated in Z beyond the clearance → NO conflict ------
+    def test_crossing_corridors_separated_in_z_do_not_conflict(self, tmp_path):
+        # The identical XY overlap, but corr_cd (and its rooms) sit 200u higher
+        # in Z. The clearance is max(min(h_ab, h_cd) + 1, player_height) ≈ 51u,
+        # and 200u >> 51u, so one tube clears the other: NOT a conflict (a future
+        # open bridge kind that spans over another corridor at a separated height
+        # is exempt by construction, not by a special case).
+        spec = self._crossing_spec(cd_floor_z=200.0)
+        surf = self._walk_surface(spec, tmp_path)
+        conflicts = T.corridor_conflicts(surf, spec, AgentModel())
+        assert ("corr_ab", "corr_cd") not in conflicts, conflicts
+
+    @staticmethod
+    def _crossing_spec(cd_floor_z):
+        """Two unrelated corridors that run over the same stretch of floor.
+
+        Both ``corr_ab`` and ``corr_cd`` run W↔E along X at y=0 over an
+        overlapping X range, joining two DIFFERENT room pairs (A–B and C–D), so
+        they share no room. ``corr_ab`` sits at z=0; ``corr_cd`` and its rooms
+        sit at ``cd_floor_z``. A flat corridor's floor is a single quad whose
+        face centroids fall near its ends, so collinear overlap (rather than a
+        perpendicular T) is what guarantees both corridors drop floor-face
+        centroids into the SAME coarse cells — the condition the conflict check
+        compares Z over. Raising ``cd_floor_z`` well past the clearance lifts
+        corr_cd's whole tube out of corr_ab's floor band, so the shared cells no
+        longer hold floors within the clearance.
+        """
+        spec = ZoneSpec(name=f"cross{int(cd_floor_z)}", theme="dungeon")
+        # Pair A–B at z=0.
+        a = RoomSpec("a", center_x=-500, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=100)
+        a.role = "entrance"; a.open_walls = ["E"]
+        b = RoomSpec("b", center_x=500, center_y=0, floor_z=0.0,
+                     width=200, depth=200, height=100)
+        b.open_walls = ["W"]
+        # Pair C–D at cd_floor_z, over the same XY run as A–B.
+        c = RoomSpec("c", center_x=-500, center_y=0, floor_z=cd_floor_z,
+                     width=200, depth=200, height=100)
+        c.open_walls = ["E"]
+        d = RoomSpec("d", center_x=500, center_y=0, floor_z=cd_floor_z,
+                     width=200, depth=200, height=100)
+        d.open_walls = ["W"]
+        spec.rooms = [a, b, c, d]
+        spec.corridors.append(CorridorSpec(
+            "corr_ab", from_x=-400, from_y=0, to_x=400, to_y=0,
+            from_z=0.0, to_z=0.0, width=50, height=50,
+            from_room="a", to_room="b"))
+        spec.corridors.append(CorridorSpec(
+            "corr_cd", from_x=-400, from_y=0, to_x=400, to_y=0,
+            from_z=cd_floor_z, to_z=cd_floor_z, width=50, height=50,
+            from_room="c", to_room="d"))
+        spec.safe_point = (-500.0, 0.0, 5.0)
+        return spec

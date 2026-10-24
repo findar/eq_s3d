@@ -14,52 +14,265 @@ Correctness Properties 10-14.
 from __future__ import annotations
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 import analyzer.traverse as T
 from generators.layout import LayoutGenerator
 
-from tests.strategies import seeds, room_counts
-from tests.pbt_helpers import build_settings, build_raw, fresh_dir
+from ai.schema import ZonePlan
+from ai.expand import plan_to_spec
+from tests.strategies import (
+    seeds,
+    room_counts,
+    room_counts_wide,
+    box_themes,
+    verticality_all,
+)
+from tests.pbt_helpers import (
+    build_settings,
+    build_raw,
+    build_and_validate_raw,
+    fresh_dir,
+    M0_HUMAN_PASS,
+    m0_human_spec,
+)
+
+
+@st.composite
+def _raw_navigable_cases(draw):
+    """
+    A ``(spec, label, key)`` case for Property 1, built through the real plan
+    path.
+
+    Draws a box zone type (``dungeon``/``city``), a wide room count (biased so
+    the large-zone band is hit about half the time, Req 5.1) and a verticality
+    across the full domain (``verticality_all``: flat / moderate / dramatic —
+    the elevation pass, task 8.1, now that the flat-first pass is signed off),
+    then expands a ``ZonePlan`` through ``ai.expand.plan_to_spec`` — the same
+    path the pipeline uses — so a passing property exercises an input the
+    production path can genuinely see. ``elevation`` is set consistently
+    (flat => off, otherwise on) so moderate/dramatic actually elevate corridors
+    (Req 5.4). ``label`` carries the drawn parameters so a failure prints them;
+    ``key`` is the stable ``(zone_type, seed, n, verticality)`` cache key for
+    the shared P1/M1-P1 build (design budget lever 1) — ``test_raw_navigable``
+    and ``test_corridor_continuity`` draw the same cases in the same order, so
+    the two tests key identically and share one build.
+    """
+    s = draw(seeds)
+    theme = draw(box_themes)
+    n = draw(room_counts_wide)
+    verticality = draw(verticality_all)
+    plan = ZonePlan(
+        name="navraw",
+        theme=theme,
+        room_count=n,
+        verticality=verticality,
+        elevation=verticality != "flat",
+    )
+    spec = plan_to_spec(plan, seed=s)
+    label = f"seed={s}, zone_type={theme}, rooms={n}, verticality={verticality}"
+    key = (theme, s, n, verticality)
+    return spec, label, key
+
+
+def _flat_human_case(entry):
+    """An ``M0_HUMAN_PASS`` entry re-planned flat, as a ``(spec, label, key)``
+    case."""
+    spec = m0_human_spec(entry, verticality="flat")
+    prompt, seed = entry
+    label = f"M0 human pass (flat): {prompt!r} seed={seed}"
+    key = ("m0_human_flat", prompt, seed)
+    return spec, label, key
+
+
+def _human_case(entry):
+    """An ``M0_HUMAN_PASS`` entry re-planned with its OWN plan verticality (no
+    flat override), as a ``(spec, label, key)`` case.
+
+    This is the elevation pass's half of Decision 13: the same 30-room dungeons
+    the human signed off on at the M0 3D pass, built as the rule planner would
+    actually plan them (whatever verticality the prompt implies), so the wave-1
+    fixes are proven to keep the known-good zones navigable with elevation on —
+    not only when re-flattened. Keyed separately from the flat human case so the
+    shared build cache never collides the two.
+    """
+    spec = m0_human_spec(entry, verticality=None)
+    prompt, seed = entry
+    label = f"M0 human pass: {prompt!r} seed={seed}"
+    key = ("m0_human", prompt, seed)
+    return spec, label, key
+
+
+def _flat_seed_case(theme, n, seed):
+    """A flat ``(spec, label, key)`` case for a pinned regression seed.
+
+    Built the same way ``_raw_navigable_cases`` builds its draws (``ZonePlan``
+    -> ``plan_to_spec``, flat), so a pinned seed reproduces exactly the layout
+    the connectivity sweep surfaced as a failure.
+    """
+    plan = ZonePlan(
+        name="navraw",
+        theme=theme,
+        room_count=n,
+        verticality="flat",
+        elevation=False,
+    )
+    spec = plan_to_spec(plan, seed=seed)
+    label = f"regression seed={seed}, zone_type={theme}, rooms={n}, verticality=flat"
+    key = (theme, seed, n, "flat")
+    return spec, label, key
+
+
+def _seed_case(theme, n, seed, verticality):
+    """A ``(spec, label, key)`` case for a pinned regression seed at a given
+    verticality.
+
+    Built the same way ``_raw_navigable_cases`` builds its draws (``ZonePlan``
+    -> ``plan_to_spec``, elevation on for non-flat), so a pinned elevation seed
+    reproduces exactly the layout the connectivity sweep surfaced as a failure.
+    """
+    plan = ZonePlan(
+        name="navraw",
+        theme=theme,
+        room_count=n,
+        verticality=verticality,
+        elevation=verticality != "flat",
+    )
+    spec = plan_to_spec(plan, seed=seed)
+    label = (f"regression seed={seed}, zone_type={theme}, rooms={n}, "
+             f"verticality={verticality}")
+    key = (theme, seed, n, verticality)
+    return spec, label, key
 
 
 @pytest.mark.slow
-@build_settings(20)
-@given(s=seeds, n=room_counts(2, 12), elevation=st.booleans())
-def test_raw_dungeon_navigable(s, n, elevation):
+@build_settings(15)
+@example(case=_flat_human_case(M0_HUMAN_PASS[0])).via("M0 human pass (flat)")
+@example(case=_flat_human_case(M0_HUMAN_PASS[1])).via("M0 human pass (flat)")
+@example(case=_human_case(M0_HUMAN_PASS[0])).via("M0 human pass")
+@example(case=_human_case(M0_HUMAN_PASS[1])).via("M0 human pass")
+@example(case=_seed_case("dungeon", 26, 2985, "dramatic")).via("discovered failure")
+@given(case=_raw_navigable_cases())
+def test_raw_navigable(case):
     """
-    Feature: zone-generator-m0-hygiene, Property 10: Raw dungeon builds are
-    navigable (umbrella P1, dungeon).
+    Feature: zone-generator-m1-controls-traversability, Property 1: Raw builds
+    are navigable (umbrella P1), all verticalities.
 
-    A raw dungeon zone built with no validation gate (``LayoutGenerator`` ->
-    ``build_raw``) walks end to end on its real generated TER mesh: the
-    traversability validator reaches every room from the entrance safe point.
-    This is the analytical navigability bar from ``analyzer.traverse`` — the
-    per-triangle walk surface the north-star "every room reachable on foot" MUST
-    is measured on. Builder exceptions propagate as failures; this property
-    never ``assume``s an input away (design Req 4.1).
+    A raw box zone (dungeon or city) built with no validation gate
+    (``ZonePlan`` -> ``ai.expand.plan_to_spec`` -> ``build_raw``) walks end to
+    end on its real generated TER mesh: the traversability validator reaches
+    every room from the entrance safe point. This is the analytical
+    navigability bar from ``analyzer.traverse`` — the per-triangle walk surface
+    the north-star "every room reachable on foot" MUST is measured on — now
+    widened from M0's dungeon-only, ≤ 12-room domain to BOTH box zone types
+    across the full M1 large-zone range (``room_counts_wide``, up to 30 rooms,
+    Req 5.1) over ALL verticalities (``verticality_all``: flat / moderate /
+    dramatic — the elevation pass, task 8.1; elevation is set consistently so
+    moderate/dramatic actually raise corridors, Req 5.4). Both ``M0_HUMAN_PASS``
+    inputs — the 30-room dungeons a human signed off on at the M0 3D pass — are
+    pinned TWICE as ``@example``s: once re-planned flat and once with their own
+    plan verticality (no override), so the wave-1 fixes are proven to keep those
+    known-good zones navigable both flat and with elevation on (Req 5.3).
+    Builder exceptions propagate as failures; this property never ``assume``s an
+    input away (Req 4.1).
 
-    Validates: M0 Req 4.1, 1.5; umbrella P1.
+    NOTE: this is an ANALYTICAL check (the per-triangle walk surface on the real
+    TER mesh), not a live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: Requirements 4.1, 5.1, 5.2, 5.4; umbrella P1.
     """
-    spec = LayoutGenerator(theme="dungeon", seed=s).generate(
-        "navdun", room_count=n, elevation=elevation
-    )
-    with fresh_dir() as out:
-        result, _ter_bytes, _zon_bytes = build_raw(spec, out)
-        report = T.validate(result.eqg_path, spec=spec)
+    spec, label, key = case
+    # Shared P1/M1-P1 build (design budget lever 1): build + validate once per
+    # case, memoised; test_corridor_continuity reuses this same report. The
+    # corridor check is a superset — report.passed is the same verdict a
+    # check_corridors=False validate would give (Req 4.1) — so P1's assertion is
+    # unchanged.
+    report = build_and_validate_raw(spec, key)
 
     assert report.passed, (
-        f"non-navigable dungeon (seed={s}, rooms={n}, elevation={elevation}):\n"
-        f"{report.summary()}"
+        f"non-navigable box zone ({label}):\n{report.summary()}"
     )
 
 
-from hypothesis import example
+@pytest.mark.slow
+@build_settings(15)
+@example(case=_flat_human_case(M0_HUMAN_PASS[0])).via("M0 human pass (flat)")
+@example(case=_flat_human_case(M0_HUMAN_PASS[1])).via("M0 human pass (flat)")
+@example(case=_human_case(M0_HUMAN_PASS[0])).via("M0 human pass")
+@example(case=_human_case(M0_HUMAN_PASS[1])).via("M0 human pass")
+@example(case=_flat_seed_case("dungeon", 12, 27)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 12, 6)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 12, 22)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 30, 2)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 20, 143)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 30, 114)).via("discovered failure")
+@example(case=_seed_case("dungeon", 30, 8, "dramatic")).via("discovered failure")
+@given(case=_raw_navigable_cases())
+def test_corridor_continuity(case):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 10: Corridor
+    floor continuity (M1-P1), all verticalities.
 
-from ai.schema import ZonePlan
-from ai.expand import plan_to_spec
-from tests.strategies import box_themes
+    Every corridor on a raw box zone (dungeon or city) built with no validation
+    gate (``ZonePlan`` -> ``ai.expand.plan_to_spec`` -> ``build_raw``) has
+    CONTINUOUS walkable floor from its ``from_room`` to its ``to_room`` WITHIN
+    the corridor's own region (its route footprint grown by the agent's
+    adjacency tolerance, plus the two rooms' footprints, minus every OTHER
+    room's footprint), and no two corridors conflict in Z. This is the
+    corridor-level half of the north-star "every room reachable on foot" MUST:
+    ``test_raw_navigable`` (task 6.2) proves rooms are reachable *somehow*; this
+    proves the reachability runs THROUGH each corridor's own tube rather than by
+    cutting through a third room's collidable geometry (reason
+    ``"crosses room <id>"``) or by two corridor tubes passing too close to each
+    other (a Z conflict, design decision 12/16).
+
+    SAME domain and examples as ``test_raw_navigable``: box zone types
+    (``box_themes``), the full M1 large-zone range (``room_counts_wide``, up to
+    30 rooms, Req 5.1), built through ``ai.expand.plan_to_spec`` over ALL
+    verticalities (``verticality_all``: flat / moderate / dramatic — the
+    elevation pass, task 8.1, Req 5.4), budget 15. Both ``M0_HUMAN_PASS`` inputs
+    are pinned TWICE as ``@example``s — once re-planned flat, once with their own
+    plan verticality (the 30-room dungeons a human signed off on at the M0 3D
+    pass).
+
+    The verdict is read from ``analyzer.traverse.validate(..,
+    check_corridors=True)``: every ``CorridorResult.connected`` must be True and
+    there must be no conflicts (equivalently, ``report.corridors_passed``). On
+    failure the message iterates ``report.corridors`` / ``report.conflicts`` and
+    prints each failing corridor's id, endpoints and reason so the exact failure
+    class (gap / crosses room / conflict) and seed are visible.
+
+    NOTE: this is an ANALYTICAL check (corridor floor continuity on the real TER
+    walk surface), not a live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: Requirements 4.1, 5.1, 5.2, 5.4; M1-P1.
+    """
+    spec, label, key = case
+    # Shared P1/M1-P1 build (design budget lever 1): reuse the report
+    # test_raw_navigable built for this same case (validated with
+    # check_corridors=True, so the corridor verdict is populated).
+    report = build_and_validate_raw(spec, key)
+
+    if not report.corridors_passed:
+        broken = [c for c in report.corridors if not c.connected]
+        detail_lines = [
+            f"  {c.corridor_id} {c.from_room}->{c.to_room}: "
+            f"{c.reason or 'not connected'}"
+            for c in broken
+        ]
+        conflict_lines = [
+            f"  CONFLICT {ci} <-> {cj}" for ci, cj in report.conflicts
+        ]
+        detail = "\n".join(detail_lines + conflict_lines) or "  (no detail)"
+        pytest.fail(
+            f"corridor floor continuity failed ({label}):\n"
+            f"  {len(broken)}/{len(report.corridors)} corridors not connected, "
+            f"{len(report.conflicts)} conflict(s)\n"
+            f"{detail}"
+        )
+
+
 from tests.pbt_helpers import ramp_rises
 
 #: Verticality that actually elevates corridors (``flat`` would make the ramp
@@ -73,13 +286,13 @@ _elevated_verticality = st.sampled_from(["moderate", "dramatic"])
 @given(
     s=seeds,
     theme=box_themes,
-    n=room_counts(2, 12),
+    n=room_counts_wide,
     verticality=_elevated_verticality,
 )
 def test_ramp_subdivision(s, theme, n, verticality):
     """
-    Feature: zone-generator-m0-hygiene, Property 11: Ramp subdivision
-    (umbrella P8).
+    Feature: zone-generator-m1-controls-traversability, Property 4: Ramp
+    subdivision through 30 rooms (umbrella P8).
 
     Every upward (walkable) triangle on a built box-theme zone's TER rises at
     most ``MAX_SEG_RISE`` (2.5 u, with a 0.01 u tolerance -> 2.51). A sloped
@@ -92,6 +305,13 @@ def test_ramp_subdivision(s, theme, n, verticality):
     ``verticality`` (``_VERTICALITY`` -> elevation chance + rise magnitude);
     ``moderate``/``dramatic`` with elevation on is what actually produces
     elevated corridors.
+
+    Widened in M1 (task 8.2) from the M0 ``room_counts(2, 12)`` domain to
+    ``room_counts_wide`` (2-30, biased ~half into the big-zone band, Req 5.1),
+    so ramp subdivision is proven to hold across the large-zone range where more
+    corridors ramp and the segment cap is exercised harder. Zone types stay box
+    (``box_themes``: dungeon/city); verticality stays moderate/dramatic (flat
+    would make the ramp path vacuously true), budget 20.
 
     The pinned ``@example`` (seed 0, dungeon, 3 rooms, dramatic) has a corridor
     whose total rise is ~71 u, far above 2.5 u, so the subdivision path is

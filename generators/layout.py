@@ -26,6 +26,7 @@ from .zone_spec import (
     GateSpec,
 )
 from . import semantics
+from .routing import plan_route, exit_axis_x
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -242,6 +243,27 @@ class LayoutGenerator:
         # spec: per-room palette, elemental regions, and lighting mood.
         if themed:
             semantics.realize_semantics(spec, self.rng)
+
+        # Resolve corridors that would cut through a third room by splitting the
+        # edge A–B into A–C–B (C becomes a waypoint room; design option (a) for
+        # the `crosses room` class). Runs on the FINAL room geometry so the
+        # splits match the built mesh. A split changes the graph, so when a
+        # build has elevation (or semantic floors moved) re-relax Z over the new
+        # adjacency: the new A–C / C–B edges join rooms whose heights were set
+        # against the OLD graph, so a split could otherwise leave a cliff. On a
+        # flat zone every floor_z is 0 and the relax is a no-op.
+        graph_changed = self._resolve_crossings(rooms, edges)
+        # Drop a loop edge from any pair of corridors that would cross too close
+        # in Z (the residual open-space conflict class the through-room split
+        # can't reach). Only loop edges fall, so the graph stays connected.
+        graph_changed = self._resolve_conflicts(rooms, edges) or graph_changed
+        if graph_changed and (elevation or themed):
+            from collections import defaultdict
+            adj = defaultdict(list)
+            for i, j in edges:
+                adj[i].append(j)
+                adj[j].append(i)
+            self._relax_elevation(rooms, adj, entrance)
 
         self._build_corridors(spec, rooms, edges)
 
@@ -572,6 +594,222 @@ class LayoutGenerator:
         mst.extend(extra[:n_add])
         return mst
 
+    def _resolve_crossings(self, rooms: List[RoomSpec],
+                           edges: List[Tuple[int, int]]) -> bool:
+        """Split any edge whose corridor route passes through a third room.
+
+        Design option (a) for the `crosses room` class (suspect table): when the
+        A–B corridor's route footprint penetrates a third room C, replace the
+        edge A–B with A–C and C–B so C becomes a WAYPOINT room. A player then
+        walks A → (through C's floor, a real room) → B instead of the corridor
+        cutting through C's collidable walls. The graph stays connected (A and B
+        were joined and still are, now via C), so P3/P4/P6 hold on the new graph.
+
+        Operates on the FINAL room geometry (called after the last
+        `_separate_rooms`), so the crossings it resolves are the ones the built
+        mesh and `corridor_continuity` actually see. Runs to a fixpoint because a
+        fresh A–C or C–B sub-edge can itself cross a different room. Edges that
+        become duplicates or self-loops after a split are dropped. Returns True
+        if any edge changed (the caller re-relaxes elevation on the new graph).
+        """
+        hw = self.corridor_width / 2
+        eps = 2.0  # match analyzer.traverse AgentModel.adjacency_eps default
+
+        def _seg_enters_rect(p0, p1, rx0, ry0, rx1, ry1) -> bool:
+            """True when the segment p0→p1 passes through the rect INTERIOR for
+            a non-trivial span (Liang–Barsky clip; the clipped length must
+            exceed one corridor width, so a centreline grazing a wall or just
+            clipping a corner is not counted as a crossing)."""
+            x0, y0 = p0
+            x1, y1 = p1
+            dx, dy = x1 - x0, y1 - y0
+            t0, t1 = 0.0, 1.0
+            for p, q in ((-dx, x0 - rx0), (dx, rx1 - x0),
+                         (-dy, y0 - ry0), (dy, ry1 - y0)):
+                if abs(p) < 1e-9:
+                    if q < 0:
+                        return False  # parallel to this edge and outside it
+                    continue
+                t = q / p
+                if p < 0:
+                    if t > t1:
+                        return False
+                    if t > t0:
+                        t0 = t
+                else:
+                    if t < t0:
+                        return False
+                    if t < t1:
+                        t1 = t
+            if t1 <= t0:
+                return False
+            span = ((dx * (t1 - t0)) ** 2 + (dy * (t1 - t0)) ** 2) ** 0.5
+            return span > hw
+
+        def crossed_room(i: int, j: int) -> Optional[int]:
+            a, b = rooms[i], rooms[j]
+            fx, fy = self._wall_point(a, b)
+            tx, ty = self._wall_point(b, a)
+            exit_from_x = self._exit_axis_x(a, b)
+            exit_to_x = self._exit_axis_x(b, a)
+            route = plan_route((fx, fy), (tx, ty), exit_from_x, exit_to_x,
+                               hw, steps=0)
+            wps = route.waypoints
+            for k, r in enumerate(rooms):
+                if k == i or k == j:
+                    continue
+                rhw, rhd = r.width / 2, r.depth / 2
+                # Shrink by eps so a centreline merely running ALONG a wall face
+                # (never entering the interior) isn't counted; only a centreline
+                # that passes THROUGH the room's interior is a real cut.
+                x0, y0 = r.center_x - rhw + eps, r.center_y - rhd + eps
+                x1, y1 = r.center_x + rhw - eps, r.center_y + rhd - eps
+                if x0 >= x1 or y0 >= y1:
+                    continue
+                for s in range(len(wps) - 1):
+                    if _seg_enters_rect(wps[s], wps[s + 1], x0, y0, x1, y1):
+                        return k
+            return None
+
+        changed = False
+        # Work queue of edges to (re)check; splitting pushes the two halves back.
+        pending = list(edges)
+        resolved: List[Tuple[int, int]] = []
+        seen = set()
+        # Bound iterations: each split adds C as a waypoint; with n rooms the
+        # chain through distinct waypoints can't exceed n edges, so cap at n^2.
+        budget = max(64, len(rooms) * len(rooms))
+        while pending and budget > 0:
+            budget -= 1
+            i, j = pending.pop()
+            if i == j:
+                changed = True
+                continue
+            key = (min(i, j), max(i, j))
+            c = crossed_room(i, j)
+            if c is None:
+                if key not in seen:
+                    seen.add(key)
+                    resolved.append((i, j))
+                continue
+            # Split A–B into A–C and C–B; re-check both halves.
+            changed = True
+            pending.append((i, c))
+            pending.append((c, j))
+
+        if changed:
+            edges[:] = resolved
+        return changed
+
+    def _resolve_conflicts(self, rooms: List[RoomSpec],
+                           edges: List[Tuple[int, int]]) -> bool:
+        """Drop a loop edge from any pair of corridors that cross too close in Z.
+
+        Design suspect-table conflict row / option (b): two corridors that share
+        no room and whose route footprints overlap in XY while their floors sit
+        within the clearance (design decision 12/16) conflict — on a flat zone,
+        any two tubes crossing at the same height. The through-room split
+        (`_resolve_crossings`) removes most of these, but a pair that crosses in
+        OPEN space (neither passing through a room) survives. Every surviving
+        conflict pair has at least one REMOVABLE loop (non-tree) edge — dropping
+        it never disconnects the graph (both endpoints stay reachable by another
+        path), which is why the MST backbone is kept and only loop edges fall.
+
+        Runs after `_resolve_crossings` on the final geometry. A dropped edge can
+        clear several conflicts at once, so it re-detects after each drop.
+        Returns True if any edge was removed (the caller re-relaxes elevation).
+        """
+        hw = self.corridor_width / 2
+
+        def route_for(i: int, j: int):
+            a, b = rooms[i], rooms[j]
+            fx, fy = self._wall_point(a, b)
+            tx, ty = self._wall_point(b, a)
+            return plan_route((fx, fy), (tx, ty),
+                              self._exit_axis_x(a, b), self._exit_axis_x(b, a),
+                              hw, steps=0)
+
+        def leg_rects(route):
+            wps = route.waypoints
+            rects = []
+            for k in range(len(wps) - 1):
+                (x0, y0), (x1, y1) = wps[k], wps[k + 1]
+                rects.append((min(x0, x1) - hw, min(y0, y1) - hw,
+                              max(x0, x1) + hw, max(y0, y1) + hw))
+            return rects
+
+        def overlaps(ra, rb) -> bool:
+            for (ax0, ay0, ax1, ay1) in ra:
+                for (bx0, by0, bx1, by1) in rb:
+                    if ax0 <= bx1 and bx0 <= ax1 and ay0 <= by1 and by0 <= ay1:
+                        return True
+            return False
+
+        def is_removable(idx: int, es: List[Tuple[int, int]]) -> bool:
+            """True when edge es[idx] is a loop edge: its two endpoints stay
+            connected after removing it (so dropping it keeps the graph whole)."""
+            ei, ej = es[idx]
+            parent = list(range(len(rooms)))
+
+            def find(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            for k, (u, v) in enumerate(es):
+                if k == idx:
+                    continue
+                ru, rv = find(u), find(v)
+                if ru != rv:
+                    parent[ru] = rv
+            return find(ei) == find(ej)
+
+        # Clearance (matches analyzer.traverse.corridor_conflicts: the lower
+        # corridor's height + 1 u, floored at ~player height). Flat floors are
+        # all equal so any footprint overlap is within clearance; for elevation
+        # the carry-leg detail is validated on the mesh — here the endpoint Z
+        # band is a conservative proxy that still only ever drops loop edges.
+        clearance = max(self.corridor_height + 1.0, 6.0)
+
+        removed_any = False
+        safety = len(edges) + 4
+        while safety > 0:
+            safety -= 1
+            routes = [route_for(i, j) for (i, j) in edges]
+            rects = [leg_rects(rt) for rt in routes]
+            zlo = [min(rooms[i].floor_z, rooms[j].floor_z) for (i, j) in edges]
+            zhi = [max(rooms[i].floor_z, rooms[j].floor_z) for (i, j) in edges]
+
+            drop = None
+            for a in range(len(edges)):
+                ia, ja = edges[a]
+                for b in range(a + 1, len(edges)):
+                    ib, jb = edges[b]
+                    if {ia, ja} & {ib, jb}:
+                        continue  # share a room → allowed to meet
+                    # Z bands must come within the clearance to conflict.
+                    if zlo[a] - clearance > zhi[b] or zlo[b] - clearance > zhi[a]:
+                        continue
+                    if not overlaps(rects[a], rects[b]):
+                        continue
+                    # Conflict: drop whichever of the two is a removable loop.
+                    if is_removable(a, edges):
+                        drop = a
+                    elif is_removable(b, edges):
+                        drop = b
+                    if drop is not None:
+                        break
+                if drop is not None:
+                    break
+
+            if drop is None:
+                break
+            del edges[drop]
+            removed_any = True
+
+        return removed_any
+
     def _delaunay_edges(self, pts: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
         """Delaunay triangulation edges via scipy; empty list on failure."""
         try:
@@ -700,17 +938,25 @@ class LayoutGenerator:
         """
         fx, fy = self._wall_point(a, b)
         tx, ty = self._wall_point(b, a)
-        dx, dy = tx - fx, ty - fy
-        primary_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
-        hw = self.corridor_width / 2
-        cross_off = abs(dy) if primary_x else abs(dx)
-        if cross_off <= max(2.0, hw * 0.5):
-            return [abs(dx) if primary_x else abs(dy)]
-        if primary_x:
-            mid = (fx + tx) / 2
-            return [abs(mid - fx), abs(ty - fy), abs(tx - mid)]
-        mid = (fy + ty) / 2
-        return [abs(mid - fy), abs(tx - fx), abs(ty - mid)]
+        # Route through the shared planner so the legs we measure match the
+        # geometry actually built. The exit axes come from the footprint
+        # separation, exactly as _wall_point cut the walls, computed per end so
+        # a genuine cross-axis pair measures as an L. Corridors here always
+        # record both rooms, so corridor_route resolves the same axes; planning
+        # directly off the wall points keeps this independent of a CorridorSpec
+        # (the corridor is not built yet when this is called).
+        exit_from_x = self._exit_axis_x(a, b)
+        exit_to_x = self._exit_axis_x(b, a)
+        route = plan_route(
+            (fx, fy), (tx, ty), exit_from_x, exit_to_x,
+            self.corridor_width / 2, steps=0)
+        wps, axes = route.waypoints, route.axes
+        # Each leg runs along a single axis; measure only that axis's delta (a
+        # straight leg carries a sub-slack cross offset we must not count, to
+        # match the former _route_legs exactly).
+        return [abs(wps[k + 1][0] - wps[k][0]) if axes[k]
+                else abs(wps[k + 1][1] - wps[k][1])
+                for k in range(len(wps) - 1)]
 
     def _elevation_run(self, a: RoomSpec, b: RoomSpec) -> float:
         """
@@ -815,34 +1061,58 @@ class LayoutGenerator:
             radius=max(room.width, room.depth) * 0.9,
         ))
 
+    def _exit_axis_x(self, room: RoomSpec, toward: RoomSpec) -> bool:
+        """True when *room*'s corridor to *toward* exits an E/W wall (runs X).
+
+        Delegates to `routing.exit_axis_x` so the wall this cuts and the leg
+        `corridor_route`/`plan_route` plan agree on the same footprint-
+        separation basis.
+        """
+        return exit_axis_x(
+            room.center_x, room.center_y, room.width / 2, room.depth / 2,
+            toward.center_x, toward.center_y, toward.width / 2, toward.depth / 2)
+
     def _wall_point(self, room: RoomSpec, toward: RoomSpec) -> Tuple[float, float]:
         """
         Return the (x, y) point on *room*'s wall that faces *toward*, where the
         corridor should connect. This is the midpoint of the facing wall, so
         the corridor meets the wall opening cleanly instead of driving to the
         room centre. A small inset keeps the corridor flush with the wall plane.
+
+        The wall AXIS is chosen by the gap between the two footprints, not by
+        the centre delta: whichever axis the rooms are cleanly SEPARATED on
+        (positive gap) is the axis a corridor can exit along without the facing
+        walls crossing. When the centre delta picked the axis instead, a pair
+        that overlaps on that axis but is separated on the other produced an
+        INVERTED stub — the from-opening ended up past the to-opening and the
+        corridor had to run backwards to reach the jog (the `fx past tx` class,
+        design suspect table). Picking by separation keeps both stubs pointing
+        out of their rooms toward the real gap. `corridor_route` /
+        `_exit_axis_x` mirror this basis so the routed legs match these walls.
         """
+        exit_x = self._exit_axis_x(room, toward)
         dx = toward.center_x - room.center_x
         dy = toward.center_y - room.center_y
         hw, hd = room.width / 2, room.depth / 2
         # Small inset so the corridor overlaps the wall slightly (clean join).
         inset = 2.0
-        if abs(dx) >= abs(dy):
+        if exit_x:
             # East/West wall
-            x = room.center_x + (hw - inset) * (1 if dx > 0 else -1)
+            x = room.center_x + (hw - inset) * (1 if dx >= 0 else -1)
             return x, room.center_y
         else:
             # North/South wall
-            y = room.center_y + (hd - inset) * (1 if dy > 0 else -1)
+            y = room.center_y + (hd - inset) * (1 if dy >= 0 else -1)
             return room.center_x, y
 
     def _open_facing_walls(self, room: RoomSpec, toward: RoomSpec) -> None:
         """Open the wall of *room* that faces *toward* so a corridor connects."""
+        exit_x = self._exit_axis_x(room, toward)
         dx = toward.center_x - room.center_x
         dy = toward.center_y - room.center_y
-        if abs(dx) >= abs(dy):
-            wall = "E" if dx > 0 else "W"
+        if exit_x:
+            wall = "E" if dx >= 0 else "W"
         else:
-            wall = "N" if dy > 0 else "S"
+            wall = "N" if dy >= 0 else "S"
         if wall not in room.open_walls:
             room.open_walls.append(wall)

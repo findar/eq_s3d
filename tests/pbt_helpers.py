@@ -30,6 +30,8 @@ from core.ter import TerFile
 from generators.builder import ZoneBuilder
 from generators.layout import LayoutGenerator
 import ai.expand as _expand
+from ai.expand import plan_to_spec
+from ai.rule_planner import RulePlanner
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +101,90 @@ def build_raw(spec, out) -> Tuple[object, bytes, bytes]:
     assert ter_bytes is not None, f"ter_{name}.ter missing from {result.eqg_path}"
     assert zon_bytes is not None, f"{name}.zon missing from {result.eqg_path}"
     return result, ter_bytes, zon_bytes
+
+
+# ---------------------------------------------------------------------------
+# Shared P1 / M1-P1 build cache (design Default_Run budget lever 1)
+# ---------------------------------------------------------------------------
+
+#: Module-level LRU of ``case_key -> TraversalReport``. ``test_raw_navigable``
+#: (umbrella P1) and ``test_corridor_continuity`` (M1-P1) draw the IDENTICAL
+#: domain (``_raw_navigable_cases`` + the same ``@example`` pins), so without
+#: sharing they each build + validate the same ~23 specs — the single most
+#: expensive pair in the suite. This cache lets the two tests share ONE build
+#: and ONE ``validate(.., check_corridors=True)`` per case (the corridor check
+#: is a superset: ``report.passed`` is unchanged by it, so P1 reads the same
+#: verdict it would from ``check_corridors=False``). The two tests stay separate
+#: with separate assertions (``report.passed`` vs ``report.corridors_passed``),
+#: exactly as the design's lever 1 specifies.
+#:
+#: Bounded so it can't grow without limit across a session; the bound comfortably
+#: exceeds one test's example budget + pins, so every M1-P1 lookup hits the entry
+#: P1 just built.
+_RAW_REPORT_CACHE: "dict[object, object]" = {}
+_RAW_REPORT_CACHE_ORDER: "list[object]" = []
+_RAW_REPORT_CACHE_MAX = 256
+
+
+def build_and_validate_raw(spec, key):
+    """
+    Build ``spec`` raw and validate it with ``check_corridors=True``, memoised
+    on ``key`` in a bounded module-level LRU (design budget lever 1).
+
+    Returns the ``TraversalReport``. The first caller for a ``key`` builds the
+    zone into a fresh temp dir and runs the full validator; a second caller with
+    the same ``key`` (the sibling P1/M1-P1 test) reuses the cached report. The
+    report carries both the per-room verdict (``report.passed``) and the
+    corridor verdict (``report.corridors_passed``), so each test asserts its own.
+    """
+    cached = _RAW_REPORT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    with fresh_dir() as out:
+        result, _ter_bytes, _zon_bytes = build_raw(spec, out)
+        import analyzer.traverse as _T
+
+        report = _T.validate(result.eqg_path, spec=spec, check_corridors=True)
+    _RAW_REPORT_CACHE[key] = report
+    _RAW_REPORT_CACHE_ORDER.append(key)
+    if len(_RAW_REPORT_CACHE_ORDER) > _RAW_REPORT_CACHE_MAX:
+        evict = _RAW_REPORT_CACHE_ORDER.pop(0)
+        _RAW_REPORT_CACHE.pop(evict, None)
+    return report
+
+
+# ---------------------------------------------------------------------------
+# M0 human-pass reproduction (Decision 13)
+# ---------------------------------------------------------------------------
+
+#: The two (prompt, seed) inputs a human signed off on at the M0 3D pass. The
+#: wave-1 navigability / continuity properties pin these as ``@example``s so the
+#: M1 fixes are proven to keep the known-good zones navigable (Req 5.3).
+M0_HUMAN_PASS = (
+    ("create a dungeon with 30 rooms", 1949459644),
+    ("a dungeon with 30 rooms and long halls", 1510177507),
+)
+
+
+def m0_human_spec(entry, verticality=None):
+    """
+    Turn an ``M0_HUMAN_PASS`` entry into a ``ZoneSpec`` the same way the pipeline
+    does: ``RulePlanner().plan(prompt)`` -> ``plan_to_spec(plan, seed)``.
+
+    ``entry`` is a ``(prompt, seed)`` pair. ``verticality`` optionally overrides
+    the plan's verticality before expansion (e.g. ``"flat"`` to re-plan a
+    known-good zone with no elevation, per the flat-first pass); when ``None``
+    the plan's own verticality is kept. The override also sets ``plan.elevation``
+    consistently (flat => off, otherwise on), matching the rule-planner's own
+    ``elevation = verticality != "flat"`` invariant so ``plan_to_spec`` sees a
+    coherent plan.
+    """
+    prompt, seed = entry
+    plan = RulePlanner().plan(prompt)
+    if verticality is not None:
+        plan.verticality = verticality
+        plan.elevation = verticality != "flat"
+    return plan_to_spec(plan, seed)
 
 
 # ---------------------------------------------------------------------------
@@ -272,19 +358,48 @@ def _point_in_triangle_xy(px: float, py: float, tri: np.ndarray, tol: float) -> 
     return True, float(z)
 
 
-def opening_floor_z(ter, x: float, y: float, z_ref: float, band: float) -> List[float]:
+def opening_floor_z(ter, x: float, y: float, z_ref: float, band: float,
+                    far_z: float | None = None) -> List[float]:
     """
     Z of every upward triangle whose XY closure contains ``(x, y)`` (tolerance
-    1e-4) and whose barycentric Z at that point lies within ``z_ref +/- band``.
+    1e-4) and whose barycentric Z at that point lies within ``z_ref +/- band``
+    — the near-end opening floor under ``(x, y)``.
 
-    At a room/corridor seam both the room floor and the corridor floor qualify,
-    so a step on either side of the opening is caught.
+    The probe measures the corridor's OWN near-end opening, at ``z_ref`` (the
+    near room's ``floor_z``). ``band`` (``MAX_SEG_RISE``) scopes the window to
+    the SEAM so a real step at the opening is <= 2.5 u off and still caught by
+    the caller's strict 0.01 u check, while the legitimately-elevated FAR leg of
+    a corridor is not mistaken for a non-flush opening.
+
+    ``far_z`` is the FAR room's ``floor_z`` (the other end of this corridor).
+    When the corridor's total rise is itself under ``band`` — a SHORT ramped
+    corridor — the far room's flat floor slab (and the ramp top that meets it)
+    overhangs the near opening XY in projection and falls inside ``z_ref +/-
+    band`` even though the opening itself sits exactly on the near floor. Those
+    far-end faces are reached by walking UP the corridor's within-grade-cap
+    ramp, not by a step at this threshold, so they are not a non-flush opening.
+    Faces whose Z at the point equals ``far_z`` (within 0.01 u) AND differs from
+    ``z_ref`` are therefore exempted: the window is scoped to the near-end floor.
+
+    This is a correctness SCOPING fix (it measures the actual opening face, the
+    near-end floor), NOT a loosened tolerance: a genuine non-flush opening — the
+    threshold floor cut above/below ``z_ref`` at a height that is NOT the far
+    room's floor — is still returned and still caught by the caller's 0.01 u
+    assertion (verified against an injected 1.5 u lip). ``far_z=None`` keeps the
+    original behaviour for any caller that does not know the far end.
     """
     out: List[float] = []
     for tri in upward_faces(ter):
         inside, z = _point_in_triangle_xy(x, y, tri, tol=1e-4)
-        if inside and (z_ref - band) <= z <= (z_ref + band):
-            out.append(z)
+        if not (inside and (z_ref - band) <= z <= (z_ref + band)):
+            continue
+        # Exempt the FAR room's floor / ramp-top reached via the within-grade
+        # corridor ramp (short ramped corridor whose total rise < band).
+        if (far_z is not None
+                and abs(z - far_z) <= 0.01
+                and abs(z - z_ref) > 0.01):
+            continue
+        out.append(z)
     return out
 
 

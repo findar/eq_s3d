@@ -53,6 +53,23 @@ def room_counts(lo: int, hi: int) -> st.SearchStrategy[int]:
     return st.integers(min_value=lo, max_value=hi)
 
 
+#: Room counts across the M1 large-zone range, biased so ~half the draws land in
+#: the big-zone band. The two disjoint ``one_of`` branches each get roughly equal
+#: weight, so ``[13, 30]`` is hit about half the time even though it is the wider
+#: interval (Req 5.1 — large-zone connectivity must be exercised, not just the
+#: small-room tail a single uniform ``integers(2, 30)`` would favour less often).
+room_counts_wide = st.one_of(st.integers(2, 12), st.integers(13, 30))
+
+#: Verticality pinned to flat — the "flat first" pass (tasks 6.2/6.3) proves
+#: connectivity with no elevation before the elevation draws return in task 8.
+flat_only = st.just("flat")
+
+#: All three verticalities, for the "then elevation" pass (task 8). Same domain
+#: as ``verticality``; named separately so the flat-first tests read ``flat_only``
+#: and the all-verticality tests read ``verticality_all`` at the call site.
+verticality_all = st.sampled_from(["flat", "moderate", "dramatic"])
+
+
 #: The box-geometry themes (M0_Box_Themes): dungeon + city.
 box_themes = st.sampled_from(["dungeon", "city"])
 

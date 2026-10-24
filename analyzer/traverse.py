@@ -40,12 +40,13 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 
 from core.pfs import PfsArchive
 from core.ter import TerFile
+from generators.routing import Rect, corridor_route, route_footprint
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
 
@@ -98,6 +99,38 @@ class RoomResult:
 
 
 @dataclass
+class CorridorResult:
+    """One corridor's floor-continuity verdict (Requirement 5.2).
+
+    A corridor is ``connected`` when a walkable path exists FROM its ``from_room``
+    floor TO its ``to_room`` floor *within the corridor's own region* — the route
+    footprint (grown by the agent's adjacency tolerance) plus the two rooms'
+    footprints, MINUS every other room's footprint. Excluding third-room
+    footprints (design decision: the continuity path may not enter a third
+    room's footprint) is what turns a corridor that only "reaches" its far room
+    by cutting through room C — through C's collidable walls, a path no player
+    has — into a reported failure instead of a silent pass.
+
+    ``reason`` is "" when connected, else one of:
+      * ``"no floor in from_room"`` — no standable floor face in A's footprint
+        within the region.
+      * ``"no floor in to_room"``   — likewise for B.
+      * ``"gap"``                   — floor at both ends but no walkable path
+        between them in the region.
+      * ``"crosses room <id>"``     — not connected AND a route leg penetrates a
+        third room by more than ``adjacency_eps`` (the far room is only
+        reachable through that room).
+      * ``"conflicts with corridor <id>"`` — set by the corridor–corridor
+        conflict check (design decision 16), independent of the flood above.
+    """
+    corridor_id: str
+    from_room: str
+    to_room: str
+    connected: bool
+    reason: str = ""
+
+
+@dataclass
 class TraversalReport:
     zone_name: str
     agent: AgentModel
@@ -110,10 +143,29 @@ class TraversalReport:
     reachable_faces: int = 0
     seed_face: Optional[int] = None
     notes: List[str] = field(default_factory=list)
+    # Corridor floor continuity (Requirement 5.2). Filled only when
+    # ``validate(check_corridors=True)`` runs; empty otherwise. ``conflicts`` is
+    # the list of corridor-id pairs whose walkable floors cross too close in Z
+    # (design decision 12/16).
+    corridors: List[CorridorResult] = field(default_factory=list)
+    conflicts: List[Tuple[str, str]] = field(default_factory=list)
+    checked_corridors: bool = False
 
     @property
     def passed(self) -> bool:
         return self.total_rooms > 0 and self.reachable_rooms == self.total_rooms
+
+    @property
+    def corridors_passed(self) -> bool:
+        """True when every corridor is connected and no pair conflicts.
+
+        ``True`` when corridors were not checked, so a caller that doesn't ask
+        for continuity sees no regression (umbrella Req 4.2 ``passed`` is
+        unaffected).
+        """
+        if not self.checked_corridors:
+            return True
+        return all(c.connected for c in self.corridors) and not self.conflicts
 
     def summary(self) -> str:
         lines: List[str] = []
@@ -141,6 +193,21 @@ class TraversalReport:
                 lines.append(
                     f"    {mark}{r.room_id:<10} [{r.role}] {detail}  -> {r.reason}"
                 )
+        if self.checked_corridors:
+            n_ok = sum(1 for c in self.corridors if c.connected)
+            cstatus = "PASS" if self.corridors_passed else "FAIL"
+            lines.append(
+                f"  corridors: [{cstatus}] {n_ok}/{len(self.corridors)} continuous"
+                + (f", {len(self.conflicts)} conflict(s)" if self.conflicts else "")
+            )
+            for c in self.corridors:
+                if not c.connected:
+                    lines.append(
+                        f"    XX {c.corridor_id:<10} {c.from_room}->{c.to_room}"
+                        f"  -> {c.reason}"
+                    )
+            for ci, cj in self.conflicts:
+                lines.append(f"    !! {ci} conflicts with {cj}")
         for n in self.notes:
             lines.append(f"  note: {n}")
         return "\n".join(lines)
@@ -187,6 +254,13 @@ class WalkSurface:
     centroids: np.ndarray         # (F, 3)
     standable: np.ndarray         # (F,) bool
     adjacency: Dict[int, List[int]]   # standable face -> neighbouring standable faces
+    # (F,) int: connected-component root (a standable face index) per standable
+    # face; -1 for non-standable faces. Populated by ``build_walk_surface`` from
+    # the union-find it keeps while wiring adjacency, so two standable faces are
+    # in the same walkable component iff ``component[i] == component[j]``. This
+    # is exactly the partition ``flood_reachable`` would recover, exposed once
+    # instead of reflooded.
+    component: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
 
 
 # ---------------------------------------------------------------------------
@@ -328,7 +402,7 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 
     if len(faces) == 0:
         return WalkSurface(verts, faces, np.zeros((0, 3)), np.zeros((0, 3)),
-                           np.zeros(0, bool), {})
+                           np.zeros(0, bool), {}, np.zeros(0, np.int64))
 
     a = verts[faces[:, 0]]
     b = verts[faces[:, 1]]
@@ -349,13 +423,50 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     std_idx = np.nonzero(standable)[0]
 
     # ---- Adjacency ----------------------------------------------------------
+    # The walk surface is a graph whose nodes are standable faces; reachability
+    # (``flood_reachable``) only cares about its CONNECTED COMPONENTS. So we keep
+    # a union-find over standable faces alongside the adjacency lists: every
+    # accepted edge is both recorded (so continuity floods can walk it) and
+    # unioned (so the components stay current). The one thing the union-find buys
+    # us for speed is a licence to DROP REDUNDANT EDGES -- an edge between two
+    # faces already in the same component changes no component, so the expensive
+    # seam contact test for such a pair can be skipped. Components, and therefore
+    # ``flood_reachable`` from any face, are identical to the pre-speedup code;
+    # only redundant seam edges are dropped (proved by M1-P4, task 2.3).
+    #
+    # Union-find indexed by POSITION in ``std_idx`` (0..S-1), not by face id, so
+    # the parent/rank arrays stay small and dense.
+    S = len(std_idx)
+    pos_of = {int(fi): k for k, fi in enumerate(std_idx)}
+    parent = np.arange(S, dtype=np.int64)
+    rank = np.zeros(S, dtype=np.int64)
+
+    def _find(x: int) -> int:
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        # Path compression.
+        while parent[x] != root:
+            parent[x], x = root, parent[x]
+        return root
+
+    def _union(x: int, y: int) -> None:
+        rx, ry = _find(x), _find(y)
+        if rx == ry:
+            return
+        if rank[rx] < rank[ry]:
+            rx, ry = ry, rx
+        parent[ry] = rx
+        if rank[rx] == rank[ry]:
+            rank[rx] += 1
+
     # 1) Shared-vertex adjacency (cheap, exact mesh connectivity).
     vert_to_faces: Dict[int, List[int]] = {}
     for fi in std_idx:
         for vi in faces[fi]:
             vert_to_faces.setdefault(int(vi), []).append(int(fi))
 
-    adjacency: Dict[int, List[int]] = {int(fi): set() for fi in std_idx}
+    adjacency: Dict[int, set] = {int(fi): set() for fi in std_idx}
 
     # Two faces that share a mesh vertex (same index) meet EXACTLY at that
     # vertex in 3D -- they already agree in Z there (it is one point), so the
@@ -363,8 +474,19 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     # vertex-based form of the step check: a welded seam has no step to clear,
     # so the old centroid-Z gate here was a spurious proxy that could wrongly
     # cut a legitimately-welded pair of standable faces. We keep this pass as the
-    # exact mesh-connectivity backbone and drop the centroid test.
+    # exact mesh-connectivity backbone and drop the centroid test. Union as we go
+    # so the seam pass can see the weld components already formed here.
     for vi, flist in vert_to_faces.items():
+        f0 = flist[0]
+        for k in range(1, len(flist)):
+            fk = flist[k]
+            adjacency[f0].add(fk)
+            adjacency[fk].add(f0)
+            # The star edges f0--fk above plus the all-pairs edges below are the
+            # same undirected edge set the reference records (a vertex's faces
+            # are a clique); recording the clique keeps the stored adjacency
+            # byte-identical to the reference. The union only needs the star.
+            _union(pos_of[f0], pos_of[fk])
         for i in range(len(flist)):
             for j in range(i + 1, len(flist)):
                 fi, fj = flist[i], flist[j]
@@ -386,21 +508,71 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     fxy_min = np.minimum(np.minimum(a, b), c)[:, :2]
     fxy_max = np.maximum(np.maximum(a, b), c)[:, :2]
 
+    # Weld components after the shared-vertex pass. A seam edge can only MERGE
+    # two faces that sit in DIFFERENT weld components (same-component pairs are
+    # redundant and skipped below), and a merging edge requires true XY contact
+    # within eps -- which forces the two faces' weld-component XY bounding boxes
+    # to overlap within eps. So a face whose entire weld component's bbox is
+    # isolated (touches no other component's bbox within eps) can never be an
+    # endpoint of a component-changing edge, and is dropped from the seam
+    # candidates. A terrain is a single weld component, so EVERY face is
+    # isolated and the seam pass is empty (design: "a terrain is one weld
+    # component, so its seam pass is empty").
+    weld_root = np.array([_find(k) for k in range(S)], dtype=np.int64)
+    comp_min: Dict[int, np.ndarray] = {}
+    comp_max: Dict[int, np.ndarray] = {}
+    for k, fi in enumerate(std_idx):
+        r = int(weld_root[k])
+        lo = fxy_min[fi]
+        hi = fxy_max[fi]
+        if r not in comp_min:
+            comp_min[r] = lo.copy()
+            comp_max[r] = hi.copy()
+        else:
+            np.minimum(comp_min[r], lo, out=comp_min[r])
+            np.maximum(comp_max[r], hi, out=comp_max[r])
+
+    roots = list(comp_min.keys())
+    if len(roots) <= 1:
+        # One weld component (e.g. terrain): nothing can merge. Seam pass empty.
+        touches_other = {}
+    else:
+        rmin = np.array([comp_min[r] for r in roots])          # (C, 2)
+        rmax = np.array([comp_max[r] for r in roots])          # (C, 2)
+        touches_other = {}
+        for ri, r in enumerate(roots):
+            # bbox(r) within eps of bbox(other) on both axes, for any other.
+            near = (
+                (rmin[:, 0] - eps <= rmax[ri, 0]) & (rmax[:, 0] + eps >= rmin[ri, 0]) &
+                (rmin[:, 1] - eps <= rmax[ri, 1]) & (rmax[:, 1] + eps >= rmin[ri, 1])
+            )
+            near[ri] = False
+            touches_other[r] = bool(near.any())
+
+    # Only faces in a component that touches another component feed the grid.
+    if touches_other:
+        seam_pos = np.array(
+            [k for k in range(S) if touches_other.get(int(weld_root[k]), False)],
+            dtype=np.int64,
+        )
+    else:
+        seam_pos = np.zeros(0, np.int64)
+    seam_faces = std_idx[seam_pos] if len(seam_pos) else np.zeros(0, np.int64)
+
     cell = max(eps * 4.0, 16.0)
     grid: Dict[Tuple[int, int], List[int]] = {}
 
-    def _cells_for(fi: int):
-        lo = fxy_min[fi] - eps
-        hi = fxy_max[fi] + eps
-        cx0, cy0 = int(math.floor(lo[0] / cell)), int(math.floor(lo[1] / cell))
-        cx1, cy1 = int(math.floor(hi[0] / cell)), int(math.floor(hi[1] / cell))
-        for cx in range(cx0, cx1 + 1):
-            for cy in range(cy0, cy1 + 1):
-                yield (cx, cy)
-
-    for fi in std_idx:
-        for key in _cells_for(int(fi)):
-            grid.setdefault(key, []).append(int(fi))
+    if len(seam_faces):
+        # Vectorised cell ranges per face: floor((bbox +/- eps) / cell).
+        lo_all = (fxy_min[seam_faces] - eps) / cell
+        hi_all = (fxy_max[seam_faces] + eps) / cell
+        c_lo = np.floor(lo_all).astype(np.int64)   # (n, 2)
+        c_hi = np.floor(hi_all).astype(np.int64)   # (n, 2)
+        for n, fi in enumerate(seam_faces):
+            fi_i = int(fi)
+            for cx in range(c_lo[n, 0], c_hi[n, 0] + 1):
+                for cy in range(c_lo[n, 1], c_hi[n, 1] + 1):
+                    grid.setdefault((cx, cy), []).append(fi_i)
 
     def _bbox_near(fi: int, fj: int) -> bool:
         # Cheap reject before the exact test: XY bounding boxes within eps.
@@ -411,10 +583,25 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 
     seen_pairs: set = set()
     for key, flist in grid.items():
+        if len(flist) < 2:
+            # A cell holding a single face can produce no pair; skip it.
+            continue
+        # Skip a cell whose faces all share one weld component: every in-cell
+        # pair is same-component (redundant) and would be skipped below anyway,
+        # so the per-cell pair loop produces no edge. (Design: "skip the
+        # per-cell pair loop for cells holding one component.")
+        if len({int(weld_root[pos_of[f]]) for f in flist}) == 1:
+            continue
         for i in range(len(flist)):
             for j in range(i + 1, len(flist)):
                 fi, fj = flist[i], flist[j]
                 if fj in adjacency[fi]:
+                    continue
+                # Redundant-edge skip: already in the same component, so this
+                # edge (accepted or not) changes nothing. Skip BEFORE the
+                # expensive contact test. This is the whole speed-up and it
+                # cannot change components.
+                if _find(pos_of[fi]) == _find(pos_of[fj]):
                     continue
                 pk = (fi, fj) if fi < fj else (fj, fi)
                 if pk in seen_pairs:
@@ -432,9 +619,20 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
                 if abs(zi - zj) <= agent.max_step_up:
                     adjacency[fi].add(fj)
                     adjacency[fj].add(fi)
+                    _union(pos_of[fi], pos_of[fj])
 
     adjacency_lists = {k: sorted(v) for k, v in adjacency.items()}
-    return WalkSurface(verts, faces, normals, centroids, standable, adjacency_lists)
+
+    # Component root per standable face (a face index), -1 elsewhere. Resolve to
+    # the representative face id so callers can group faces by component without
+    # re-flooding.
+    component = np.full(len(faces), -1, dtype=np.int64)
+    if S:
+        roots_pos = np.array([_find(k) for k in range(S)], dtype=np.int64)
+        component[std_idx] = std_idx[roots_pos]
+
+    return WalkSurface(verts, faces, normals, centroids, standable,
+                       adjacency_lists, component)
 
 
 # ---------------------------------------------------------------------------
@@ -444,20 +642,52 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
 def _nearest_standable_face(surf: WalkSurface, point: np.ndarray,
                             xy_radius: float) -> Optional[int]:
     """
-    Pick the standable face to start the walk from: the one whose footprint
-    contains (or is nearest, within xy_radius) the safe point in XY, preferring
-    the face whose centroid Z is closest to the safe point's Z (stand on the
-    floor at that spot, not a surface far above/below it).
+    Pick the standable face to start the walk from: the floor the player stands
+    on at the safe point. The safe point is placed deliberately AT the entrance
+    room centre (``entrance.center + (0, 0, 5)``), so the correct start face is
+    the floor directly BENEATH it — the face whose XY projection CONTAINS the
+    point — and, when several stacked faces contain it (a box dungeon where a
+    corridor ramps up over the entrance floor), the one whose surface Z at that
+    point is closest to the safe point's Z.
+
+    The containment pass is what makes this correct on the elevation path. A
+    plain "within ``xy_radius``, minimise |Δz|" rule (the historic behaviour,
+    kept below only as a fallback) can prefer a DISTANT corridor face whose Z
+    merely happens to sit nearer the safe point over the entrance's OWN floor
+    directly under the safe point — stranding the whole flood on a tiny
+    disconnected component and reporting every room unreachable even though the
+    zone is fully connected from its real entrance floor (seed 2985, dungeon,
+    26 rooms, dramatic: the entrance floor at z=0 floods to every room, but a
+    ramp face ~370u away at z≈5.5 won the old |Δz| race against z=5 and reached
+    almost nothing). Standing on the floor UNDER the spawn point, not the
+    nearest-in-Z surface anywhere nearby, is the fix.
     """
     std_idx = np.nonzero(surf.standable)[0]
     if len(std_idx) == 0:
         return None
+
+    # Preferred: the floor directly beneath the safe point — a face whose XY
+    # projection contains it. Among those stacked faces, stand on the one whose
+    # interpolated surface Z at the point is closest to the safe point's Z.
+    containing: List[int] = []
+    containing_z: List[float] = []
+    for fi in std_idx:
+        tri = surf.verts[surf.faces[fi]]
+        if _point_in_tri_xy(point[0], point[1], tri):
+            containing.append(int(fi))
+            containing_z.append(_plane_z_at(tri, point[0], point[1]))
+    if containing:
+        dz = np.abs(np.asarray(containing_z) - point[2])
+        return int(containing[int(np.argmin(dz))])
+
+    # Fallback (no face underfoot — e.g. a safe point placed off any floor):
+    # the nearest face in XY within the radius, breaking ties by |Δz|; failing
+    # that, the globally nearest in XY.
     cen = surf.centroids[std_idx]
     dxy = np.linalg.norm(cen[:, :2] - point[:2], axis=1)
     within = dxy <= xy_radius
     cand = std_idx[within]
     if len(cand) == 0:
-        # fall back to globally nearest in XY
         return int(std_idx[int(np.argmin(dxy))])
     cz = surf.centroids[cand]
     dz = np.abs(cz[:, 2] - point[2])
@@ -520,6 +750,453 @@ def _faces_in_room(surf: WalkSurface, room: RoomSpec) -> np.ndarray:
 
 
 FLOOR_Z_TOL = 8.0
+
+
+# ---------------------------------------------------------------------------
+# Corridor floor continuity (Requirement 5.2)
+# ---------------------------------------------------------------------------
+#
+# ``validate`` answers "is every room reachable from the entrance?" by flooding
+# the WHOLE walk surface. That is a weak oracle for a corridor: a corridor whose
+# floor passes through a third room's footprint marks every room it touches as
+# reachable, even though in the client the corridor is cut by that room's
+# collidable walls (and the room by the corridor's). ``corridor_continuity``
+# asks the stricter, local question for each corridor: *is there a walkable path
+# from this corridor's own from-room floor to its own to-room floor, using only
+# floor inside the corridor's route footprint and its two rooms — and NOT inside
+# any other room?* A corridor that only "connects" by cutting through room C
+# fails, because C's footprint is removed from the region.
+#
+# Design decision 15: the pruned walk surface (the union-find speed-up) keeps
+# connected components but DROPS redundant seam edges, so flooding a small region
+# across ``surf.adjacency`` could miss a seam the reference would have recorded.
+# ``corridor_continuity`` therefore recomputes seam contacts LOCALLY among the
+# region's standable faces (the region is small, so this is cheap) and never
+# relies on the pruned adjacency lists. This is why M1-P4 (task 4.2) can assert
+# that continuity results are identical on the optimised and reference surfaces.
+
+
+def _room_footprint(room: RoomSpec) -> Rect:
+    """The room's XY footprint as an axis-aligned rect ``(x0, y0, x1, y1)``."""
+    (xmin, ymin, _), (xmax, ymax, _) = room.bounds
+    return (xmin, ymin, xmax, ymax)
+
+
+def _xy_in_rects(x: float, y: float, rects: List[Rect]) -> bool:
+    """True when ``(x, y)`` lies inside (inclusive) any rect in ``rects``."""
+    for x0, y0, x1, y1 in rects:
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return True
+    return False
+
+
+def _rects_overlap(a: Rect, b: Rect) -> bool:
+    """True when two axis-aligned rects overlap (inclusive) in XY."""
+    return (a[0] <= b[2] and a[2] >= b[0] and
+            a[1] <= b[3] and a[3] >= b[1])
+
+
+def _region_faces(surf: WalkSurface, include: List[Rect],
+                  exclude: List[Rect]) -> np.ndarray:
+    """Standable faces whose centroid XY is in ``include`` and not in ``exclude``."""
+    std_idx = np.nonzero(surf.standable)[0]
+    if len(std_idx) == 0:
+        return std_idx
+    cen = surf.centroids[std_idx]
+    keep = np.zeros(len(std_idx), dtype=bool)
+    for k in range(len(std_idx)):
+        x, y = float(cen[k, 0]), float(cen[k, 1])
+        if _xy_in_rects(x, y, include) and not _xy_in_rects(x, y, exclude):
+            keep[k] = True
+    return std_idx[keep]
+
+
+def _local_adjacency(surf: WalkSurface, agent: AgentModel,
+                     face_subset: np.ndarray) -> Dict[int, List[int]]:
+    """Walkable adjacency among ``face_subset`` computed from scratch.
+
+    Replays the two passes of ``build_walk_surface`` (shared mesh vertex, then
+    XY footprint contact with a floor-height agreement test) but confined to
+    ``face_subset`` and WITHOUT the union-find pruning that drops redundant seam
+    edges. Confining the work to the region's handful of faces keeps this cheap;
+    recomputing contacts (design decision 15) is what makes the flood immune to
+    the speed-up having thrown away a seam between two faces already in the same
+    global component.
+    """
+    subset = [int(f) for f in face_subset]
+    if not subset:
+        return {}
+    subset_set = set(subset)
+    adj: Dict[int, set] = {f: set() for f in subset}
+
+    faces = surf.faces
+    verts = surf.verts
+
+    # 1) Shared-vertex adjacency within the subset.
+    vert_to_faces: Dict[int, List[int]] = {}
+    for fi in subset:
+        for vi in faces[fi]:
+            vert_to_faces.setdefault(int(vi), []).append(fi)
+    for flist in vert_to_faces.values():
+        for i in range(len(flist)):
+            for j in range(i + 1, len(flist)):
+                fi, fj = flist[i], flist[j]
+                adj[fi].add(fj)
+                adj[fj].add(fi)
+
+    # 2) Footprint-contact adjacency across seams (true XY overlap / gap within
+    #    adjacency_eps, floors agreeing in Z at the contact within max_step_up).
+    eps = agent.adjacency_eps
+    tris = {fi: np.stack([verts[faces[fi, 0]],
+                          verts[faces[fi, 1]],
+                          verts[faces[fi, 2]]], axis=0) for fi in subset}
+    fxy_min = {fi: np.minimum.reduce(tris[fi][:, :2]) for fi in subset}
+    fxy_max = {fi: np.maximum.reduce(tris[fi][:, :2]) for fi in subset}
+
+    def _bbox_near(fi: int, fj: int) -> bool:
+        return (fxy_min[fi][0] - eps <= fxy_max[fj][0] and
+                fxy_max[fi][0] + eps >= fxy_min[fj][0] and
+                fxy_min[fi][1] - eps <= fxy_max[fj][1] and
+                fxy_max[fi][1] + eps >= fxy_min[fj][1])
+
+    n = len(subset)
+    for i in range(n):
+        fi = subset[i]
+        for j in range(i + 1, n):
+            fj = subset[j]
+            if fj in adj[fi]:
+                continue
+            if not _bbox_near(fi, fj):
+                continue
+            dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
+            if pt is None or dist > eps:
+                continue
+            zi = _plane_z_at(tris[fi], pt[0], pt[1])
+            zj = _plane_z_at(tris[fj], pt[0], pt[1])
+            if abs(zi - zj) <= agent.max_step_up:
+                adj[fi].add(fj)
+                adj[fj].add(fi)
+
+    return {k: sorted(v) for k, v in adj.items() if k in subset_set}
+
+
+def _flood_subset(adj: Dict[int, List[int]], start: set) -> set:
+    """BFS across a local adjacency map from a set of start faces."""
+    reached: set = set()
+    stack = [f for f in start if f in adj]
+    reached.update(stack)
+    while stack:
+        f = stack.pop()
+        for nb in adj.get(f, ()):  # type: ignore[arg-type]
+            if nb not in reached:
+                reached.add(nb)
+                stack.append(nb)
+    return reached
+
+
+def _route_penetration_span(route, rect: Rect) -> float:
+    """Longest run of ``route``'s CENTRELINE inside ``rect`` (any leg).
+
+    Liang-Barsky clip of each leg segment against the rectangle; the result is
+    the clipped leg's length. Mirrors ``LayoutGenerator._resolve_crossings``'s
+    ``_seg_enters_rect`` span measure EXACTLY, so the validator and the layout
+    agree on what "the corridor cuts through this room" means.
+    """
+    best = 0.0
+    wps = route.waypoints
+    rx0, ry0, rx1, ry1 = rect
+    for k in range(len(wps) - 1):
+        (x0, y0), (x1, y1) = wps[k], wps[k + 1]
+        dx, dy = x1 - x0, y1 - y0
+        t0, t1 = 0.0, 1.0
+        ok = True
+        for p, q in ((-dx, x0 - rx0), (dx, rx1 - x0),
+                     (-dy, y0 - ry0), (dy, ry1 - y0)):
+            if abs(p) < 1e-9:
+                if q < 0:
+                    ok = False
+                    break
+                continue
+            t = q / p
+            if p < 0:
+                if t > t1:
+                    ok = False
+                    break
+                if t > t0:
+                    t0 = t
+            else:
+                if t < t0:
+                    ok = False
+                    break
+                if t < t1:
+                    t1 = t
+        if not ok or t1 <= t0:
+            continue
+        span = ((dx * (t1 - t0)) ** 2 + (dy * (t1 - t0)) ** 2) ** 0.5
+        best = max(best, span)
+    return best
+
+
+def _genuinely_crossed_rooms(route, hw: float, spec: ZoneSpec,
+                             cor: CorridorSpec, eps: float) -> List[str]:
+    """Ids of rooms the corridor's CENTRELINE genuinely cuts through.
+
+    "Genuinely" means the same bar ``LayoutGenerator._resolve_crossings`` uses
+    to decide a route needs splitting: the centreline's clipped run inside the
+    room (shrunk by ``eps`` so a leg merely running ALONG a wall face is not
+    counted) exceeds one corridor width (``hw``). A corridor that only grazes a
+    room's corner (span <= hw) is deliberately left unsplit by the layout, so
+    the validator must NOT treat that graze as a crossing -- excluding such a
+    room from the continuity region would sever the corridor's OWN floor where
+    it legitimately runs beside the room (seed 8, dungeon, 30 rooms, dramatic,
+    corr_5 grazing room_8 by ~23 u < hw 24.5: connected in the full mesh, but
+    the old any-overlap exclusion cut its region and mislabelled it a crossing).
+    """
+    out: List[str] = []
+    for r in spec.rooms:
+        if r.id in (cor.from_room, cor.to_room):
+            continue
+        rfp = _room_footprint(r)
+        shrunk = (rfp[0] + eps, rfp[1] + eps, rfp[2] - eps, rfp[3] - eps)
+        if shrunk[0] > shrunk[2] or shrunk[1] > shrunk[3]:
+            shrunk = rfp
+        if _route_penetration_span(route, shrunk) > hw:
+            out.append(r.id)
+    return out
+
+
+def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
+                        agent: AgentModel) -> List[CorridorResult]:
+    """Per-corridor floor-continuity verdicts (Requirement 5.2).
+
+    For each corridor joining rooms A and B:
+
+    1. ``region`` = the route footprint grown by ``agent.adjacency_eps`` ∪
+       footprint(A) ∪ footprint(B), minus the footprint of every OTHER room.
+    2. ``faces`` = standable faces whose centroid XY lies in ``region``.
+    3. ``start`` = A's floor faces ∩ ``faces``; ``goal`` = B's floor faces ∩
+       ``faces``.
+    4. Flood from ``start`` across adjacency recomputed locally over ``faces``
+       (design decision 15); ``connected`` iff start ≠ ∅, goal ≠ ∅ and the
+       flood reaches a goal face.
+    5. ``reason`` names the failure; a third-room crossing is reported as
+       ``"crosses room <id>"``.
+
+    The result does NOT include corridor–corridor conflicts; those are attached
+    by :func:`corridor_conflicts` so the two checks stay independent.
+    """
+    rooms_by_id: Dict[str, RoomSpec] = {r.id: r for r in spec.rooms}
+    results: List[CorridorResult] = []
+
+    for cor in spec.corridors:
+        a = rooms_by_id.get(cor.from_room)
+        b = rooms_by_id.get(cor.to_room)
+        if a is None or b is None:
+            # A corridor to a point that isn't a room: no room floor to join.
+            results.append(CorridorResult(
+                cor.id, cor.from_room, cor.to_room, False,
+                "no floor in from_room" if a is None else "no floor in to_room"))
+            continue
+
+        hw = cor.width / 2
+        route = corridor_route(cor, rooms_by_id)
+        leg_rects = route_footprint(route, hw + agent.adjacency_eps)
+        fp_a = _room_footprint(a)
+        fp_b = _room_footprint(b)
+        include = leg_rects + [fp_a, fp_b]
+        # Exclude only the rooms the corridor's centreline GENUINELY cuts through
+        # (span > hw) -- the same bar ``_resolve_crossings`` splits on. A room
+        # the corridor merely grazes (span <= hw, left unsplit by the layout on
+        # purpose) is NOT excluded, so subtracting it can't sever the corridor's
+        # own floor where it legitimately runs beside that room.
+        crossed_ids = set(_genuinely_crossed_rooms(
+            route, hw, spec, cor, agent.adjacency_eps))
+        exclude = [_room_footprint(r) for r in spec.rooms
+                   if r.id not in (cor.from_room, cor.to_room)
+                   and r.id in crossed_ids]
+
+        region_faces = _region_faces(surf, include, exclude)
+        faces_set = {int(f) for f in region_faces}
+
+        start = {int(f) for f in _faces_in_room(surf, a)} & faces_set
+        goal = {int(f) for f in _faces_in_room(surf, b)} & faces_set
+
+        connected = False
+        reason = ""
+        if not start:
+            reason = "no floor in from_room"
+        elif not goal:
+            reason = "no floor in to_room"
+        else:
+            adj = _local_adjacency(surf, agent, region_faces)
+            reached = _flood_subset(adj, start)
+            if reached & goal:
+                connected = True
+            else:
+                reason = "gap"
+
+        # A third-room crossing is the more specific diagnosis when the route
+        # GENUINELY cuts through another room (centreline span > hw -- the same
+        # bar the layout splits on, so detection and prevention agree). A mere
+        # corner graze is not a crossing and leaves the gap diagnosis in place.
+        if not connected and crossed_ids:
+            reason = f"crosses room {sorted(crossed_ids)[0]}"
+
+        results.append(CorridorResult(
+            cor.id, cor.from_room, cor.to_room, connected, reason))
+
+    return results
+
+
+def _route_floor_z_at(route, cor: CorridorSpec, x: float, y: float) -> float:
+    """Expected floor height of ``cor``'s own tube at the XY point ``(x, y)``.
+
+    Mirrors the geometry builder's carry-leg rule (``MeshBuilder._emit_route``):
+    the entire rise is confined to leg ``carry`` (defaulting to the longest leg),
+    every leg before it sits flat at ``from_z`` and every leg after at ``to_z``.
+    We find the route leg whose segment is nearest ``(x, y)`` in XY and return
+    that leg's floor height, interpolating along the carry leg. This lets
+    :func:`_corridor_floor_z` tell this corridor's own floor apart from a second
+    corridor crossing its footprint at a different height.
+    """
+    wps = route.waypoints
+    n_legs = len(wps) - 1
+    if n_legs <= 0:
+        return float(cor.from_z)
+    carry = route.carry
+    if carry is None or carry < 0:
+        # Builder default: the longest leg carries the rise.
+        def _leg_len(k: int) -> float:
+            (ax, ay), (bx, by) = wps[k], wps[k + 1]
+            return abs(bx - ax) + abs(by - ay)
+        carry = max(range(n_legs), key=_leg_len)
+
+    # Per-waypoint floor heights: from_z up to the carry leg, to_z after it.
+    zs = [cor.from_z if i <= carry else cor.to_z for i in range(len(wps))]
+
+    # Nearest leg to (x, y); interpolate within that leg by arc fraction.
+    best_d = float("inf")
+    best_z = float(cor.from_z)
+    for k in range(n_legs):
+        ax, ay = wps[k]
+        bx, by = wps[k + 1]
+        dx, dy = bx - ax, by - ay
+        seg2 = dx * dx + dy * dy
+        if seg2 <= 1e-12:
+            t = 0.0
+        else:
+            t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / seg2))
+        px, py = ax + t * dx, ay + t * dy
+        d = (x - px) ** 2 + (y - py) ** 2
+        if d < best_d:
+            best_d = d
+            best_z = zs[k] + t * (zs[k + 1] - zs[k])
+    return float(best_z)
+
+
+def _corridor_floor_z(surf: WalkSurface, cor: CorridorSpec,
+                      agent: AgentModel,
+                      rooms: Optional[Mapping[str, "RoomSpec"]] = None,
+                      ) -> Dict[Tuple[int, int], List[float]]:
+    """Bucket a corridor's OWN walkable floor heights by a coarse XY grid cell.
+
+    The region is the corridor's own route footprint (no room footprints, so two
+    corridors are compared only where their TUBES overlap, not where they share a
+    room). Returns ``{(cx, cy): [z, …]}`` keyed by a floor-cell index, so two
+    corridors can be compared cell-by-cell over the XY intersection.
+
+    Crucially, the region footprint is an XY test, so where a SECOND corridor
+    crosses this one it drops its own floor (and ceiling) faces into this
+    corridor's footprint too. Keeping those would merge the two corridors' Z
+    ranges and make every overlapping pair "conflict" regardless of how far apart
+    they sit in Z — defeating design decision 16's clearance exemption. So we
+    keep only faces that belong to THIS corridor's own tube: a face whose
+    centroid Z lies within the tube (from its expected floor at that XY up to the
+    floor + the corridor's height, with ``max_step_up`` slack). A crossing
+    corridor passing over (above the ceiling) or under (below the floor) is
+    excluded, so a pair separated by at least the clearance shares no floor in
+    any cell and is correctly NOT a conflict.
+    """
+    hw = cor.width / 2
+    # Plan the route exactly as the MESH was built: MeshBuilder.add_corridor
+    # calls ``corridor_route(cor, {r.id: r for r in spec.rooms})``, so the exit
+    # axis (hence a Z-corridor's jog position, hence the whole XY footprint)
+    # is decided by the rooms' footprint separation. Planning with an EMPTY map
+    # falls back to the endpoint-delta basis, which for a Z-corridor can pick
+    # the OTHER primary axis and place the jog in a different column — a
+    # footprint that no longer matches the built tube. That mismatch made the
+    # gate flag pairs whose real tubes never touch (false-positive conflicts,
+    # confirmed on the flat sweep: the mesh floors share zero XY cells). Pass
+    # the real rooms so the gate measures the geometry that was actually built.
+    route = corridor_route(cor, rooms if rooms is not None else {})
+    rects = route_footprint(route, hw)
+    faces = _region_faces(surf, rects, [])
+    cell = max(agent.adjacency_eps * 4.0, 16.0)
+    slack = agent.max_step_up
+    buckets: Dict[Tuple[int, int], List[float]] = {}
+    for f in faces:
+        c = surf.centroids[f]
+        floor_z = _route_floor_z_at(route, cor, float(c[0]), float(c[1]))
+        # Only this corridor's own tube: floor (minus a step) up through the
+        # clearance (plus a step). Crossing corridors at a separated height fall
+        # outside this band and are dropped.
+        if not (floor_z - slack <= c[2] <= floor_z + cor.height + slack):
+            continue
+        key = (int(math.floor(c[0] / cell)), int(math.floor(c[1] / cell)))
+        buckets.setdefault(key, []).append(float(c[2]))
+    return buckets
+
+
+def corridor_conflicts(surf: WalkSurface, spec: ZoneSpec,
+                       agent: AgentModel) -> List[Tuple[str, str]]:
+    """Pairs of corridors whose walkable floors cross too close in Z.
+
+    Design decision 12: two corridors that SHARE NO ROOM conflict when their
+    route footprints intersect in XY AND their walkable floors over the
+    intersection are closer in Z than the clearance. Decision 16: clearance is
+    the lower corridor's ``height`` + 1 u (the box backend models no ceiling
+    thickness), never less than ``agent.player_height``; a pair separated by at
+    least the clearance is NOT a conflict — so a future open **bridge** kind that
+    spans over another corridor at a separated height is exempt by construction,
+    not by a special case.
+
+    Returns a sorted list of conflicting ``(corridor_id, corridor_id)`` pairs
+    (ids ordered within each pair).
+    """
+    corridors = list(spec.corridors)
+    rooms = {r.id: r for r in spec.rooms}
+    buckets = [_corridor_floor_z(surf, c, agent, rooms) for c in corridors]
+    pairs: List[Tuple[str, str]] = []
+
+    for i in range(len(corridors)):
+        ci = corridors[i]
+        for j in range(i + 1, len(corridors)):
+            cj = corridors[j]
+            # Corridors that share a room are allowed to meet (they join there).
+            if {ci.from_room, ci.to_room} & {cj.from_room, cj.to_room}:
+                continue
+            bi, bj = buckets[i], buckets[j]
+            # Clearance: the lower corridor's clearance height + 1 u, floored at
+            # the player's height. Use the smaller of the two corridor heights.
+            clearance = max(min(ci.height, cj.height) + 1.0, agent.player_height)
+            conflict = False
+            for key, zi_list in bi.items():
+                zj_list = bj.get(key)
+                if not zj_list:
+                    continue
+                # Floors over this shared cell: any pair within the clearance is
+                # a conflict (tubes too close to pass one over the other).
+                zi_min, zi_max = min(zi_list), max(zi_list)
+                zj_min, zj_max = min(zj_list), max(zj_list)
+                gap = max(zi_min - zj_max, zj_min - zi_max, 0.0)
+                if gap < clearance:
+                    conflict = True
+                    break
+            if conflict:
+                pair = (ci.id, cj.id) if ci.id <= cj.id else (cj.id, ci.id)
+                pairs.append(pair)
+
+    return sorted(set(pairs))
 
 
 def classify_corridor(corr: CorridorSpec, agent: AgentModel) -> Tuple[bool, str]:
@@ -626,10 +1303,18 @@ def _diagnose_unreachable(surf: WalkSurface, agent: AgentModel,
 def validate(eqg_path: str | Path,
              spec: Optional[ZoneSpec] = None,
              spec_path: Optional[str | Path] = None,
-             agent: Optional[AgentModel] = None) -> TraversalReport:
+             agent: Optional[AgentModel] = None,
+             check_corridors: bool = False) -> TraversalReport:
     """
     Load the mesh and room graph, walk the mesh from the safe point, and report
     per-room reachability.
+
+    When ``check_corridors`` is True, also fill ``report.corridors`` (per-corridor
+    floor continuity, Requirement 5.2) and ``report.conflicts`` (corridor pairs
+    that cross too close in Z, design decision 12), and set
+    ``report.checked_corridors``. ``report.passed`` keeps its umbrella Req 4.2
+    meaning (every room reachable) regardless; ``report.corridors_passed``
+    reflects the extra checks (and is ``True`` when they were not run).
     """
     agent = agent or AgentModel()
     ter, zone_name = load_ter_from_eqg(eqg_path)
@@ -665,6 +1350,12 @@ def validate(eqg_path: str | Path,
         for room in spec.rooms:
             report.rooms.append(RoomResult(room.id, room.role, False, 0, 0,
                                            "mesh has no walkable surface"))
+        if check_corridors:
+            report.checked_corridors = True
+            for cor in spec.corridors:
+                report.corridors.append(CorridorResult(
+                    cor.id, cor.from_room, cor.to_room, False,
+                    "no floor in from_room"))
         return report
 
     reachable = flood_reachable(surf, seed_face)
@@ -703,6 +1394,24 @@ def validate(eqg_path: str | Path,
         if is_reachable:
             report.reachable_rooms += 1
 
+    if check_corridors:
+        report.checked_corridors = True
+        results = corridor_continuity(surf, spec, agent)
+        conflicts = corridor_conflicts(surf, spec, agent)
+        report.conflicts = conflicts
+        # Attach the conflict reason to each corridor in a conflicting pair
+        # (design decision 16). A corridor can already carry a continuity reason;
+        # the conflict reason only replaces an empty one so continuity diagnoses
+        # aren't lost. ``corridors_passed`` fails on either count regardless.
+        conflict_partner: Dict[str, str] = {}
+        for ci, cj in conflicts:
+            conflict_partner.setdefault(ci, cj)
+            conflict_partner.setdefault(cj, ci)
+        for cr in results:
+            if cr.corridor_id in conflict_partner and not cr.reason:
+                cr.reason = f"conflicts with corridor {conflict_partner[cr.corridor_id]}"
+        report.corridors = results
+
     return report
 
 
@@ -740,6 +1449,9 @@ if __name__ == "__main__":
                         help="Max walkable slope in degrees (default: 40)")
     parser.add_argument("--step-up", type=float, default=3.0,
                         help="Max climbable vertical step in world units (default: 3.0)")
+    parser.add_argument("--check-corridors", action="store_true",
+                        help="Also report per-corridor floor continuity and "
+                             "corridor-corridor conflicts (Requirement 5.2)")
     args = parser.parse_args()
 
     eqg = _resolve_eqg(args.zone, args.output)
@@ -750,7 +1462,8 @@ if __name__ == "__main__":
         spec_path = eqg.with_suffix(".json")
 
     try:
-        rep = validate(eqg, spec_path=spec_path, agent=agent)
+        rep = validate(eqg, spec_path=spec_path, agent=agent,
+                       check_corridors=args.check_corridors)
     except Exception as e:  # noqa: BLE001 - CLI boundary, show a clean message
         print(f"error: {e}", file=sys.stderr)
         sys.exit(2)

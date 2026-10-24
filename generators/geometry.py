@@ -19,6 +19,7 @@ from typing import Dict, List, Tuple
 
 from core.ter import TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
+from .routing import corridor_route
 
 
 # A sloped corridor floor is subdivided so each segment rises at most this much
@@ -193,81 +194,17 @@ class MeshBuilder:
         ceiling_mat = self.material_id(spec.materials[cor.ceiling_material])
 
         hw = cor.width / 2
-        dx = cor.to_x - cor.from_x
-        dy = cor.to_y - cor.from_y
 
-        # Which axis does each opening face? The corridor's stub at each end
-        # must run PERPENDICULAR to the wall it meets, or the stub runs along
-        # the wall face and the opening doesn't line up with the corridor
-        # (disconnected corridor — seed 1516796975).
-        #
-        # The layout cut each wall from the room-CENTRE delta
-        # (LayoutGenerator._wall_point), so derive each exit axis from the room
-        # centres whenever the corridor records its rooms. Compute both ends
-        # INDEPENDENTLY so a genuine cross-axis pair still routes as an L.
-        rooms = {r.id: r for r in spec.rooms}
-        a = rooms.get(cor.from_room)
-        b = rooms.get(cor.to_room)
-        if a is not None and b is not None:
-            # True = this opening is on an E/W wall → its stub runs along X.
-            exit_from_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
-            exit_to_x   = abs(a.center_x - b.center_x) >= abs(a.center_y - b.center_y)
-        else:
-            # Hand-authored spec with no rooms: infer a single run axis from the
-            # endpoint delta (treats the pair as same-axis, the common case).
-            exit_from_x = exit_to_x = abs(dx) >= abs(dy)
-
-        same_axis = (exit_from_x == exit_to_x)
-        primary_x = exit_from_x
-        cross_off = abs(dy) if primary_x else abs(dx)
-        z_carry = None   # default: carry the rise on the longest leg
-
-        if same_axis and cross_off <= max(2.0, hw * 0.5):
-            # --- Straight: (near) collinear openings meet with a single leg.
-            # (A little slack so tiny offsets don't force an unnecessary bend.)
-            waypoints = [(cor.from_x, cor.from_y), (cor.to_x, cor.to_y)]
-            axes = [primary_x]
-        elif same_axis:
-            # --- Z-corridor: parallel facing walls. A perpendicular stub out
-            # of A, a cross-jog, then a perpendicular stub into B.
-            if primary_x:
-                mid = (cor.from_x + cor.to_x) / 2
-                waypoints = [
-                    (cor.from_x, cor.from_y),
-                    (mid, cor.from_y),
-                    (mid, cor.to_y),
-                    (cor.to_x, cor.to_y),
-                ]
-                axes = [True, False, True]   # X stub, Y jog, X stub
-            else:
-                mid = (cor.from_y + cor.to_y) / 2
-                waypoints = [
-                    (cor.from_x, cor.from_y),
-                    (cor.from_x, mid),
-                    (cor.to_x, mid),
-                    (cor.to_x, cor.to_y),
-                ]
-                axes = [False, True, False]  # Y stub, X jog, Y stub
-            # A STAIRCASE must ride the interior jog (leg 1), so the flat end
-            # stubs stay as flush landings at each room's floor — stairs on a
-            # wall stub would abut the wall a step short. A smooth RAMP is
-            # continuous, so it can ride the longest leg (carry=None) for the
-            # gentlest grade; it stays flush either way.
-            if cor.steps > 0:
-                z_carry = 1
-        else:
-            # --- L-bend: genuine cross-axis pair (perpendicular walls). A
-            # perpendicular leg out of A, then a perpendicular leg into B.
-            if exit_from_x:
-                corner = (cor.to_x, cor.from_y)
-                axes = [True, False]
-            else:
-                corner = (cor.from_x, cor.to_y)
-                axes = [False, True]
-            waypoints = [(cor.from_x, cor.from_y), corner, (cor.to_x, cor.to_y)]
+        # The straight / Z / L decision (and which leg carries the rise) lives
+        # in generators.routing.corridor_route, shared with the layout's leg
+        # measurement and the continuity/terrain consumers. A Route's
+        # carry == -1 means "carry the longest leg", which _emit_route spells
+        # as carry=None.
+        route = corridor_route(cor, {r.id: r for r in spec.rooms})
+        z_carry = None if route.carry < 0 else route.carry
 
         self._emit_route(
-            waypoints, axes, carry=z_carry,
+            list(route.waypoints), list(route.axes), carry=z_carry,
             from_z=cor.from_z, to_z=cor.to_z,
             hw=hw, height=cor.height, steps=cor.steps,
             floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat)
