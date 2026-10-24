@@ -139,6 +139,7 @@ def test_raw_navigable(case):
 @example(case=_flat_human_case(M0_HUMAN_PASS[0])).via("M0 human pass")
 @example(case=_flat_human_case(M0_HUMAN_PASS[1])).via("M0 human pass")
 @example(case=_flat_seed_case("dungeon", 12, 27)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 12, 6)).via("discovered failure")
 @given(case=_raw_navigable_cases())
 def test_corridor_continuity(case):
     """

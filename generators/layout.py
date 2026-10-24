@@ -244,6 +244,23 @@ class LayoutGenerator:
         if themed:
             semantics.realize_semantics(spec, self.rng)
 
+        # Resolve corridors that would cut through a third room by splitting the
+        # edge A–B into A–C–B (C becomes a waypoint room; design option (a) for
+        # the `crosses room` class). Runs on the FINAL room geometry so the
+        # splits match the built mesh. A split changes the graph, so when a
+        # build has elevation (or semantic floors moved) re-relax Z over the new
+        # adjacency: the new A–C / C–B edges join rooms whose heights were set
+        # against the OLD graph, so a split could otherwise leave a cliff. On a
+        # flat zone every floor_z is 0 and the relax is a no-op.
+        if self._resolve_crossings(rooms, edges):
+            if elevation or themed:
+                from collections import defaultdict
+                adj = defaultdict(list)
+                for i, j in edges:
+                    adj[i].append(j)
+                    adj[j].append(i)
+                self._relax_elevation(rooms, adj, entrance)
+
         self._build_corridors(spec, rooms, edges)
 
         # Safe point in the entrance room.
@@ -572,6 +589,113 @@ class LayoutGenerator:
         n_add = max(0, int(len(extra) * 0.12))
         mst.extend(extra[:n_add])
         return mst
+
+    def _resolve_crossings(self, rooms: List[RoomSpec],
+                           edges: List[Tuple[int, int]]) -> bool:
+        """Split any edge whose corridor route passes through a third room.
+
+        Design option (a) for the `crosses room` class (suspect table): when the
+        A–B corridor's route footprint penetrates a third room C, replace the
+        edge A–B with A–C and C–B so C becomes a WAYPOINT room. A player then
+        walks A → (through C's floor, a real room) → B instead of the corridor
+        cutting through C's collidable walls. The graph stays connected (A and B
+        were joined and still are, now via C), so P3/P4/P6 hold on the new graph.
+
+        Operates on the FINAL room geometry (called after the last
+        `_separate_rooms`), so the crossings it resolves are the ones the built
+        mesh and `corridor_continuity` actually see. Runs to a fixpoint because a
+        fresh A–C or C–B sub-edge can itself cross a different room. Edges that
+        become duplicates or self-loops after a split are dropped. Returns True
+        if any edge changed (the caller re-relaxes elevation on the new graph).
+        """
+        hw = self.corridor_width / 2
+        eps = 2.0  # match analyzer.traverse AgentModel.adjacency_eps default
+
+        def _seg_enters_rect(p0, p1, rx0, ry0, rx1, ry1) -> bool:
+            """True when the segment p0→p1 passes through the rect INTERIOR for
+            a non-trivial span (Liang–Barsky clip; the clipped length must
+            exceed one corridor width, so a centreline grazing a wall or just
+            clipping a corner is not counted as a crossing)."""
+            x0, y0 = p0
+            x1, y1 = p1
+            dx, dy = x1 - x0, y1 - y0
+            t0, t1 = 0.0, 1.0
+            for p, q in ((-dx, x0 - rx0), (dx, rx1 - x0),
+                         (-dy, y0 - ry0), (dy, ry1 - y0)):
+                if abs(p) < 1e-9:
+                    if q < 0:
+                        return False  # parallel to this edge and outside it
+                    continue
+                t = q / p
+                if p < 0:
+                    if t > t1:
+                        return False
+                    if t > t0:
+                        t0 = t
+                else:
+                    if t < t0:
+                        return False
+                    if t < t1:
+                        t1 = t
+            if t1 <= t0:
+                return False
+            span = ((dx * (t1 - t0)) ** 2 + (dy * (t1 - t0)) ** 2) ** 0.5
+            return span > hw
+
+        def crossed_room(i: int, j: int) -> Optional[int]:
+            a, b = rooms[i], rooms[j]
+            fx, fy = self._wall_point(a, b)
+            tx, ty = self._wall_point(b, a)
+            exit_from_x = self._exit_axis_x(a, b)
+            exit_to_x = self._exit_axis_x(b, a)
+            route = plan_route((fx, fy), (tx, ty), exit_from_x, exit_to_x,
+                               hw, steps=0)
+            wps = route.waypoints
+            for k, r in enumerate(rooms):
+                if k == i or k == j:
+                    continue
+                rhw, rhd = r.width / 2, r.depth / 2
+                # Shrink by eps so a centreline merely running ALONG a wall face
+                # (never entering the interior) isn't counted; only a centreline
+                # that passes THROUGH the room's interior is a real cut.
+                x0, y0 = r.center_x - rhw + eps, r.center_y - rhd + eps
+                x1, y1 = r.center_x + rhw - eps, r.center_y + rhd - eps
+                if x0 >= x1 or y0 >= y1:
+                    continue
+                for s in range(len(wps) - 1):
+                    if _seg_enters_rect(wps[s], wps[s + 1], x0, y0, x1, y1):
+                        return k
+            return None
+
+        changed = False
+        # Work queue of edges to (re)check; splitting pushes the two halves back.
+        pending = list(edges)
+        resolved: List[Tuple[int, int]] = []
+        seen = set()
+        # Bound iterations: each split adds C as a waypoint; with n rooms the
+        # chain through distinct waypoints can't exceed n edges, so cap at n^2.
+        budget = max(64, len(rooms) * len(rooms))
+        while pending and budget > 0:
+            budget -= 1
+            i, j = pending.pop()
+            if i == j:
+                changed = True
+                continue
+            key = (min(i, j), max(i, j))
+            c = crossed_room(i, j)
+            if c is None:
+                if key not in seen:
+                    seen.add(key)
+                    resolved.append((i, j))
+                continue
+            # Split A–B into A–C and C–B; re-check both halves.
+            changed = True
+            pending.append((i, c))
+            pending.append((c, j))
+
+        if changed:
+            edges[:] = resolved
+        return changed
 
     def _delaunay_edges(self, pts: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
         """Delaunay triangulation edges via scipy; empty list on failure."""
