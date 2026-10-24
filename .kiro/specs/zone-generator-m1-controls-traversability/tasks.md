@@ -645,9 +645,25 @@ Working rules for every task:
       - The throwaway capture script lived at `F:\Dev Projects\_m1_task101_tmp\capture_before.py` (outside the repo) and is not committed. No hash test committed in this wave; task 10.11 re-runs the same capture on the branch head and `test_outdoor_ter_matches_fork_point` continues to guard the 3 outdoor values.
       - `python -m pytest tests/ -q`: **255 passed** (346.32 s) on the fork point. (The two warnings are pre-existing and unrelated.)
       - Touched only this `tasks.md` entry — no code, no `ROADMAP.md`/`README.md`/`tasks/README.md`.
-  - [ ] 10.2 Add `generators/zone_types.py`
+  - [x] 10.2 Add `generators/zone_types.py`
     - `DEFINED_ZONE_TYPES`, `DEFAULT_ZONE_TYPE`, `LEGACY_ZONE_TYPE_VALUES`, `STYLE_PROFILE` (`wilderness` → `outdoor`), `canonical_zone_type`, `read_zone_type` per the design. No Enabled set yet (wave 4).
     - _Requirements: 11.1, 11.2_
+    - **Deliverables:**
+      - `generators/zone_types.py` (new, leaf module — imports only stdlib `typing.Mapping`, nothing project-level, per the design "leaf every other module depends on"). Matches the design "Zone-type vocabulary (wave 2)" block verbatim in names and signatures:
+        - `DEFINED_ZONE_TYPES: tuple[str, ...] = ("dungeon", "city", "wilderness")` — canonical listing order.
+        - `DEFAULT_ZONE_TYPE = "dungeon"` (Req 11.2).
+        - `LEGACY_ZONE_TYPE_VALUES = {"outdoor": "wilderness"}` — legacy value mapped forward on load (Req 11.1).
+        - `STYLE_PROFILE = {"dungeon": "dungeon", "city": "city", "wilderness": "outdoor"}` — zone_type → measured style-profile name; `wilderness` → `outdoor` keeps the `styles/outdoor.json` profile file name unchanged (design "Profile file stays styles/outdoor.json").
+        - `canonical_zone_type(value: object) -> str | None` — lower-cases, applies the legacy map, returns the member of `DEFINED_ZONE_TYPES` or `None` for non-string / undefined input (Req 11.9).
+        - `read_zone_type(d: Mapping[str, object]) -> object` — prefers `zone_type`, then legacy `theme`, then `DEFAULT_ZONE_TYPE`; returns the raw stored value (caller normalises via `canonical_zone_type`) (Req 11.2).
+      - No `ENABLED_ZONE_TYPES` / `ZONE_TYPE_REASONS` yet — those arrive in wave 4 (task 15), as the task and design state.
+      - **Verified:**
+        - `python -c "import generators.zone_types"` imports standalone (leaf module, no project-level imports).
+        - Helper behaviour: `canonical_zone_type("dungeon")` → `dungeon` (defined); `canonical_zone_type("OUTDOOR")` → `wilderness` (legacy, case-insensitive); `canonical_zone_type("cave")` → `None` (unknown string); `canonical_zone_type(5)` / `canonical_zone_type(None)` → `None` (non-string); `read_zone_type({"zone_type": "city"})` → `city`; `read_zone_type({"theme": "outdoor"})` → `outdoor`; `read_zone_type({})` → `dungeon` (default); `read_zone_type({"zone_type": "city", "theme": "dungeon"})` → `city` (prefers `zone_type`).
+        - `python -m pytest tests/ -q`: **255 passed** (341.18 s) — matches the wave-2 fork-point baseline (task 10.1: 255 passed); the new unused module breaks nothing. The two warnings are pre-existing and unrelated.
+      - Not wired into any caller yet — it is consumed starting at 10.3 (plan/planner), 10.4 (spec/layout/builder/pipeline), etc. Nothing to verify in the live 3D viewer (pure vocabulary module, no geometry).
+      - Touched only `generators/zone_types.py` and this `tasks.md` entry — no `ROADMAP.md`/`README.md`/`tasks/README.md`.
+      - Commit: `__PENDING__`.
   - [ ] 10.3 Rename the plan and planner surface
     - `ai/schema.py`: `VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)`, `ZonePlan.zone_type`, schema key `zone_type`; `from_dict`/`validate()` read `read_zone_type` → `canonical_zone_type` → `dungeon` if undefined. `ai/rule_planner.py`: `_ZONE_TYPE_WORDS` keyed `wilderness` (word list unchanged), `_match_zone_type`, same scoring and tie rule. `ai/llm_planner.py`: prompt text and enum. `ai/expand.py`: `LayoutGenerator(zone_type=...)`, `style_profile = STYLE_PROFILE[plan.zone_type]`.
     - Content fields keep their names (Req 11.6). 10.3–10.8 may land as one commit if splitting would leave the suite red; say so in the message.
