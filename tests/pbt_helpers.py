@@ -358,19 +358,48 @@ def _point_in_triangle_xy(px: float, py: float, tri: np.ndarray, tol: float) -> 
     return True, float(z)
 
 
-def opening_floor_z(ter, x: float, y: float, z_ref: float, band: float) -> List[float]:
+def opening_floor_z(ter, x: float, y: float, z_ref: float, band: float,
+                    far_z: float | None = None) -> List[float]:
     """
     Z of every upward triangle whose XY closure contains ``(x, y)`` (tolerance
-    1e-4) and whose barycentric Z at that point lies within ``z_ref +/- band``.
+    1e-4) and whose barycentric Z at that point lies within ``z_ref +/- band``
+    — the near-end opening floor under ``(x, y)``.
 
-    At a room/corridor seam both the room floor and the corridor floor qualify,
-    so a step on either side of the opening is caught.
+    The probe measures the corridor's OWN near-end opening, at ``z_ref`` (the
+    near room's ``floor_z``). ``band`` (``MAX_SEG_RISE``) scopes the window to
+    the SEAM so a real step at the opening is <= 2.5 u off and still caught by
+    the caller's strict 0.01 u check, while the legitimately-elevated FAR leg of
+    a corridor is not mistaken for a non-flush opening.
+
+    ``far_z`` is the FAR room's ``floor_z`` (the other end of this corridor).
+    When the corridor's total rise is itself under ``band`` — a SHORT ramped
+    corridor — the far room's flat floor slab (and the ramp top that meets it)
+    overhangs the near opening XY in projection and falls inside ``z_ref +/-
+    band`` even though the opening itself sits exactly on the near floor. Those
+    far-end faces are reached by walking UP the corridor's within-grade-cap
+    ramp, not by a step at this threshold, so they are not a non-flush opening.
+    Faces whose Z at the point equals ``far_z`` (within 0.01 u) AND differs from
+    ``z_ref`` are therefore exempted: the window is scoped to the near-end floor.
+
+    This is a correctness SCOPING fix (it measures the actual opening face, the
+    near-end floor), NOT a loosened tolerance: a genuine non-flush opening — the
+    threshold floor cut above/below ``z_ref`` at a height that is NOT the far
+    room's floor — is still returned and still caught by the caller's 0.01 u
+    assertion (verified against an injected 1.5 u lip). ``far_z=None`` keeps the
+    original behaviour for any caller that does not know the far end.
     """
     out: List[float] = []
     for tri in upward_faces(ter):
         inside, z = _point_in_triangle_xy(x, y, tri, tol=1e-4)
-        if inside and (z_ref - band) <= z <= (z_ref + band):
-            out.append(z)
+        if not (inside and (z_ref - band) <= z <= (z_ref + band)):
+            continue
+        # Exempt the FAR room's floor / ramp-top reached via the within-grade
+        # corridor ramp (short ramped corridor whose total rise < band).
+        if (far_z is not None
+                and abs(z - far_z) <= 0.01
+                and abs(z - z_ref) > 0.01):
+            continue
+        out.append(z)
     return out
 
 

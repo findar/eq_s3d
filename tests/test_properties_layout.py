@@ -39,6 +39,7 @@ from .strategies import (
     spec_themes,
     box_themes,
     verticality,
+    verticality_all,
     semantic_inputs,
     zone_plan_dicts,
     CAVE_WORDS,
@@ -449,9 +450,12 @@ def test_relax_conflict_fallback():
 # --- Property 3: Flush openings (umbrella P7) ---------------------------------
 #
 # Widened in M1 (task 6.4) to `room_counts_wide` (2-30, biased ~half into the
-# big-zone band) with elevation OFF -- the "flat first" pass proves flush
-# openings hold across the large-zone range before the elevation draw returns in
-# task 8.2.
+# big-zone band). Task 8.2 then RESTORED the elevation draw: verticality is
+# drawn across `verticality_all` (flat / moderate / dramatic), with elevation
+# set consistently (flat => off, moderate/dramatic => on). Flush openings must
+# hold with elevation on too -- the opening is cut at the room floor even when
+# the corridor ramps, because the rise happens away from the opening and the far
+# leg of a Z-corridor is excluded by the MAX_SEG_RISE seam band.
 #
 # Budget scaled(50): the design pins 50, bounded by mesh cost -- this builds the
 # Box_Backend mesh in memory for every example (no binary archive), which is
@@ -479,19 +483,40 @@ def test_relax_conflict_fallback():
 # point is exactly the corridor endpoint, which sits on the room's floor quad
 # edge AND the corridor floor -- so an empty list is itself a failure (a
 # misplaced opening), asserted non-empty rather than tolerated.
+#
+# Task 8.3 added the FAR-END exemption (`opening_floor_z(..., far_z=...)`): when
+# a corridor's TOTAL rise is itself under the MAX_SEG_RISE band -- a SHORT ramped
+# corridor -- the far room's flat floor slab (and the ramp top meeting it)
+# overhangs the near opening XY in projection and lands inside `z_ref +/- band`,
+# even though the near opening sits exactly on its own floor. That far face is
+# reached by walking UP the within-grade-cap ramp, not by a step at THIS
+# threshold, so it is not a non-flush opening. Passing the FAR room's floor_z as
+# `far_z` scopes the window to the corridor's own near-end floor: faces at the
+# far floor level (and != z_ref) are exempted. This is the seed-13 class (seed
+# 13, dungeon, 13 rooms, dramatic, corr_13 room_1->room_11: corridor rise 0.989 u
+# < 2.5, build genuinely navigable, both openings flush at their own floor, but
+# the old symmetric band swept in the far slab 0.989 u away). It is a correctness
+# SCOPING fix of the PROBE, not a weakening: the 0.01 u tolerance and the
+# strategy are untouched, and a genuinely non-flush opening (threshold floor cut
+# above/below z_ref at a height that is NOT the far room's floor) is STILL caught
+# -- confirmed against an injected 1.5 u lip, which the probe still flags.
 @settings(deadline=None, max_examples=scaled(50))
+@example(seed=13, theme="dungeon", n=13, verticality="dramatic").via("discovered failure")
 @given(
     seed=seeds,
     theme=box_themes,
     n=room_counts_wide,
+    verticality=verticality_all,
 )
-def test_flush_openings(seed, theme, n):
+def test_flush_openings(seed, theme, n, verticality):
     """Feature: zone-generator-m1-controls-traversability, Property 3: Flush openings.
 
-    Umbrella P7. For any seed, box theme (dungeon/city) and room count across
-    the M1 large-zone range (2-30, ``room_counts_wide``), with elevation OFF
-    (flat -- the elevation draw returns in task 8.2), every corridor meets both
-    its rooms flush at the floor:
+    Umbrella P7. For any seed, box theme (dungeon/city), room count across the
+    M1 large-zone range (2-30, ``room_counts_wide``) and any verticality
+    (``verticality_all``: flat / moderate / dramatic -- the elevation draw
+    restored in task 8.2; elevation is set consistently, flat => off and
+    moderate/dramatic => on, so the elevated draws actually ramp corridors),
+    every corridor meets both its rooms flush at the floor:
 
     1. The corridor's ``from_z`` / ``to_z`` EQUAL the respective rooms'
        ``floor_z`` -- the opening is cut at the room floor, never above or below
@@ -499,15 +524,21 @@ def test_flush_openings(seed, theme, n):
     2. At each opening XY -- ``(from_x, from_y)`` on the ``from_room`` wall and
        ``(to_x, to_y)`` on the ``to_room`` wall -- every upward face of the
        Box_Backend mesh within ``MAX_SEG_RISE`` (2.5 u, the step-up /
-       segment-rise limit) of that room's floor lies within 0.01 u of
-       ``floor_z``. The band is scoped to the SEAM, not the whole corridor-height
-       column: that is what the design's ``z_ref +/- band`` window expresses. A
-       real step at the opening would be <= 2.5 u off and is still caught by the
-       strict 0.01 u assertion, while the far, legitimately-elevated leg of a
-       Z-corridor -- a walkable ramp within the grade cap -- is correctly
-       excluded. The probe must find at least one upward face at each opening (an
-       empty result means the opening XY is misplaced, which is itself a flush
-       failure).
+       segment-rise limit) of that room's floor, scoped to the corridor's
+       NEAR-END floor, lies within 0.01 u of ``floor_z``. The band is scoped to
+       the SEAM, not the whole corridor-height column: that is what the design's
+       ``z_ref +/- band`` window expresses. A real step at the opening would be
+       <= 2.5 u off and is still caught by the strict 0.01 u assertion, while the
+       far, legitimately-elevated leg of a Z-corridor -- a walkable ramp within
+       the grade cap -- is correctly excluded. The probe is additionally passed
+       the FAR room's ``floor_z`` (``far_z``): on a SHORT ramped corridor whose
+       total rise is itself under the band, the far room's flat floor slab
+       overhangs the near opening XY and falls inside ``z_ref +/- band`` even
+       though the near opening is flush; such far-floor faces are reached by
+       walking the within-grade-cap ramp, not by a step at this threshold, so
+       they are exempted (task 8.3, the seed-13 class). The probe must find at
+       least one upward face at each opening (an empty result means the opening
+       XY is misplaced, which is itself a flush failure).
 
     The mesh is built in memory via ``geometry.build_mesh(spec).to_ter(...)`` --
     no binary archive. If this fails it is a REAL geometry bug (an opening not
@@ -516,13 +547,17 @@ def test_flush_openings(seed, theme, n):
 
     Validates: Requirements 5.1, 5.5.
     """
-    # Elevation OFF for the M1 flat-first pass (task 6.4); the elevation draw
-    # returns in task 8.2.
+    # Elevation draw restored (task 8.2): flat => elevation off, moderate /
+    # dramatic => on, so the elevated draws actually ramp corridors. The flush
+    # invariant holds regardless: the opening is cut at the room floor even when
+    # the corridor ramps -- the rise happens AWAY from the opening (and the far
+    # leg of a Z-corridor is excluded by the MAX_SEG_RISE seam band below).
     plan = ZonePlan(
         name=f"flush{seed}",
         theme=theme,
         room_count=n,
-        elevation=False,
+        verticality=verticality,
+        elevation=verticality != "flat",
     )
     spec = plan_to_spec(plan, seed=seed)
 
@@ -538,7 +573,8 @@ def test_flush_openings(seed, theme, n):
         # lookup rather than crash if that ever changes.
         assert from_room is not None and to_room is not None, (
             f"corridor {c.id} references unknown room(s) "
-            f"{c.from_room!r}/{c.to_room!r} (seed={seed}, theme={theme}, n={n})"
+            f"{c.from_room!r}/{c.to_room!r} (seed={seed}, theme={theme}, n={n}, "
+            f"verticality={verticality!r})"
         )
 
         # (1) The opening Z equals the room floor at each end. Exact equality:
@@ -547,12 +583,12 @@ def test_flush_openings(seed, theme, n):
         assert c.from_z == from_room.floor_z, (
             f"corridor {c.id} from_z {c.from_z!r} != from_room floor_z "
             f"{from_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
-            f"elevation=False)"
+            f"verticality={verticality!r})"
         )
         assert c.to_z == to_room.floor_z, (
             f"corridor {c.id} to_z {c.to_z!r} != to_room floor_z "
             f"{to_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
-            f"elevation=False)"
+            f"verticality={verticality!r})"
         )
 
         # (2) Every upward face under each opening point, within MAX_SEG_RISE
@@ -560,11 +596,16 @@ def test_flush_openings(seed, theme, n):
         # the room floor to within 0.01 u. The band is scoped to the SEAM so the
         # far, legitimately-elevated leg of a Z-corridor is excluded; a real step
         # at the opening is <= 2.5 u off and still caught by the 0.01 u check.
-        for label, (ox, oy), floor_z in (
-            ("from", (c.from_x, c.from_y), from_room.floor_z),
-            ("to", (c.to_x, c.to_y), to_room.floor_z),
+        # `far_z` (the OTHER room's floor_z) scopes the probe to this corridor's
+        # near-end floor: on a short ramped corridor whose total rise is under
+        # the band, the far room's floor slab overhangs the near opening XY and
+        # would otherwise read as non-flush (task 8.3, seed-13 class).
+        for label, (ox, oy), floor_z, far_z in (
+            ("from", (c.from_x, c.from_y), from_room.floor_z, to_room.floor_z),
+            ("to", (c.to_x, c.to_y), to_room.floor_z, from_room.floor_z),
         ):
-            zs = opening_floor_z(ter, ox, oy, z_ref=floor_z, band=MAX_SEG_RISE)
+            zs = opening_floor_z(ter, ox, oy, z_ref=floor_z, band=MAX_SEG_RISE,
+                                 far_z=far_z)
             # The opening point is the corridor endpoint, which lies on the room
             # floor quad's edge AND the corridor floor -- so an upward face MUST
             # be found there. An empty result means the opening XY is off, which
@@ -573,14 +614,14 @@ def test_flush_openings(seed, theme, n):
                 f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) found no "
                 f"upward floor face within {MAX_SEG_RISE} u of floor_z "
                 f"{floor_z:.3f} (seed={seed}, theme={theme}, n={n}, "
-                f"elevation=False)"
+                f"verticality={verticality!r})"
             )
             for z in zs:
                 assert abs(z - floor_z) <= 0.01, (
                     f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) has a "
                     f"floor face at z={z:.5f}, off floor_z {floor_z:.3f} by "
                     f"{abs(z - floor_z):.5f} u > 0.01 (seed={seed}, "
-                    f"theme={theme}, n={n}, elevation=False)"
+                    f"theme={theme}, n={n}, verticality={verticality!r})"
                 )
 
 
