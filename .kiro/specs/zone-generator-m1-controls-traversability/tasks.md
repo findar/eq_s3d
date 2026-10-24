@@ -392,7 +392,7 @@ Working rules for every task:
         - **Delta vs the 88.21 s baseline: +109.81 s — UNDER the +120 s ceiling (208.21 s).** Budget met with lever 1 alone.
       - Verified the two shared-cache tests independently: `python -m pytest tests/test_properties_build.py::test_raw_navigable ::test_corridor_continuity -q` → **2 passed** (49.7 s together, vs ~122 s of separate call time before sharing).
       - NOT a live 3D viewer change — this task runs the suite and tunes the test-time build cache; it touches no geometry. (The flat 30-room 3D pass is the human-gated task 7.2.)
-      - Touched only `tests/pbt_helpers.py`, `tests/test_properties_build.py` and this `tasks.md` entry. Commit: recorded below.
+      - Touched only `tests/pbt_helpers.py`, `tests/test_properties_build.py` and this `tasks.md` entry. Commit: `eb90b86` (lever 1 + measurements + this entry; this self-reference hash line is the only thing added in a trailing tracker edit).
   - [ ] 7.2 **HUMAN-GATED:** flat 30-room 3D pass
     - Write this checklist here and mark it PENDING-HUMAN. The user, in the live viewer with Elevation unchecked: flat 30-room dungeons (and one city) walk end to end; every corridor meets both its rooms; no corridor runs through a room or another corridor; checked on `M0_HUMAN_PASS` seeds 1949459644 and 1510177507 re-planned flat and on every seed a 6.5 fix moved.
     - No elevation draw (task 8) lands until the user signs this off.
