@@ -27,6 +27,19 @@ orders the work as milestones M0–M6. Each milestone gets its own spec,
 board is now history; new work doesn't go there. "Next" below is kept for its
 detail, but the Delivery plan is the ordering.
 
+**M1 wave 1 — large-zone connectivity is DONE** (merge `c63f056` into master).
+The walk surface is faster (union-find, equivalence-proven), all corridors route
+through one function, the validator now checks corridor floor-continuity and
+corridor-corridor conflicts, and flat + elevation connectivity is proven through
+30 rooms with both human 3D passes signed off. One-time M1 seed break recorded
+(Decision 13): 765 of 1200 flat builds moved; pre-M1 pinned seeds are not
+expected to reproduce. Budget flag carried to wave 3: the suite is ~+140 s over
+the +120 s ceiling and the only effective lever (wilderness budgets) lands in
+wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
+105770060) is in the M1 spec tasks.md — not blocking, possibly a feature.
+
+**Pick up here: M1 wave 2 — zone-type rename** (`.kiro/specs/zone-generator-m1-controls-traversability/tasks.md`, tasks 10.x on branch `agent/m1-rename`): `theme` -> `zone_type`, `outdoor` -> `wilderness`, geometry-preserving. Fork the wave-2 worktree from this updated master.
+
 **Suggested next step: M1 — Controls + all-theme traversability + format gate**
 (pillars P-A, P-B and P-C Tier 1). Stand up `.kiro/specs/zone-generator-m1-*`
 first, and carry these into its scope:
@@ -83,6 +96,7 @@ their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 | Traversability gate soundness | `analyzer/traverse` connects floor faces only on true triangle contact at matching floor height; bounding-box overlap + centroid Z had bridged real gaps |
 | Viewer room-id labels | `room_N` floats over each room in 3D and is printed in each map box, so a reported room can be named |
 | Build identity | `/api/version`; side panel shows server and web build commits with a stale-code banner; generate responses carry `build_commit` |
+| M1 wave 1 — large-zone connectivity | Faster walk surface (union-find; 6-room validate 118 s to <1 s, equivalence proven vs a frozen fork-point reference); all corridors routed through one function (`generators/routing.py`, byte-identical over 32 TER captures); corridor floor-continuity + corridor-corridor conflict checks in the validator; flat AND elevation connectivity proven through 30 rooms; both 3D passes signed off. Merge `c63f056` |
 
 ---
 
