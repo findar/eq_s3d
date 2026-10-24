@@ -769,7 +769,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/test_properties_layout.py -q` → **9 passed** (79.41 s) — +1 over the prior 8 (the `zone_plan_dicts` change kept `test_zoneplan_normalisation` green).
         - `python -m pytest tests/ -q` → **259 passed** (373.92 s) — +1 over the 258 baseline (the new property); the two warnings are pre-existing and unrelated.
       - Touched only `tests/test_properties_layout.py`, `tests/strategies.py` and this `tasks.md` entry. No geometry, no production code, no frontend — so nothing to eyeball in the 3D viewer (this is an analytical load-boundary property, per `docs/ACCEPTANCE.md`).
-      - Commit: `__PENDING__`.
+      - Commit: `6c7e5e3` (code + strategy + this entry; a follow-up edit fills this self-reference hash).
   - [ ] 10.11 Confirm the rename moved no geometry
     - Re-run the 10.1 script on the branch head; all 35 hashes must match. Record them in Deliverables. `test_outdoor_ter_matches_fork_point` still passes unchanged.
     - _Requirements: 11.1_
