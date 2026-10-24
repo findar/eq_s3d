@@ -136,6 +136,8 @@ def test_raw_navigable(case):
 @example(case=_flat_seed_case("dungeon", 12, 6)).via("discovered failure")
 @example(case=_flat_seed_case("dungeon", 12, 22)).via("discovered failure")
 @example(case=_flat_seed_case("dungeon", 30, 2)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 20, 143)).via("discovered failure")
+@example(case=_flat_seed_case("dungeon", 30, 114)).via("discovered failure")
 @given(case=_raw_navigable_cases())
 def test_corridor_continuity(case):
     """

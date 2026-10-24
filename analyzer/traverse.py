@@ -40,7 +40,7 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 
 import numpy as np
 
@@ -999,7 +999,9 @@ def _route_floor_z_at(route, cor: CorridorSpec, x: float, y: float) -> float:
 
 
 def _corridor_floor_z(surf: WalkSurface, cor: CorridorSpec,
-                      agent: AgentModel) -> Dict[Tuple[int, int], List[float]]:
+                      agent: AgentModel,
+                      rooms: Optional[Mapping[str, "RoomSpec"]] = None,
+                      ) -> Dict[Tuple[int, int], List[float]]:
     """Bucket a corridor's OWN walkable floor heights by a coarse XY grid cell.
 
     The region is the corridor's own route footprint (no room footprints, so two
@@ -1020,7 +1022,17 @@ def _corridor_floor_z(surf: WalkSurface, cor: CorridorSpec,
     any cell and is correctly NOT a conflict.
     """
     hw = cor.width / 2
-    route = corridor_route(cor, {})  # point-based route; rooms not needed for XY
+    # Plan the route exactly as the MESH was built: MeshBuilder.add_corridor
+    # calls ``corridor_route(cor, {r.id: r for r in spec.rooms})``, so the exit
+    # axis (hence a Z-corridor's jog position, hence the whole XY footprint)
+    # is decided by the rooms' footprint separation. Planning with an EMPTY map
+    # falls back to the endpoint-delta basis, which for a Z-corridor can pick
+    # the OTHER primary axis and place the jog in a different column — a
+    # footprint that no longer matches the built tube. That mismatch made the
+    # gate flag pairs whose real tubes never touch (false-positive conflicts,
+    # confirmed on the flat sweep: the mesh floors share zero XY cells). Pass
+    # the real rooms so the gate measures the geometry that was actually built.
+    route = corridor_route(cor, rooms if rooms is not None else {})
     rects = route_footprint(route, hw)
     faces = _region_faces(surf, rects, [])
     cell = max(agent.adjacency_eps * 4.0, 16.0)
@@ -1056,7 +1068,8 @@ def corridor_conflicts(surf: WalkSurface, spec: ZoneSpec,
     (ids ordered within each pair).
     """
     corridors = list(spec.corridors)
-    buckets = [_corridor_floor_z(surf, c, agent) for c in corridors]
+    rooms = {r.id: r for r in spec.rooms}
+    buckets = [_corridor_floor_z(surf, c, agent, rooms) for c in corridors]
     pairs: List[Tuple[str, str]] = []
 
     for i in range(len(corridors)):
