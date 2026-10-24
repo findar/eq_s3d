@@ -24,9 +24,10 @@ class TestZonePlan:
         assert p.size == "medium"
 
     def test_roundtrip_dict(self):
+        # Legacy "outdoor" maps forward to "wilderness" on load (Req 11.2).
         p = ZonePlan(theme="outdoor", room_count=7, regions=["water"])
         p2 = ZonePlan.from_dict(p.to_dict())
-        assert p2.theme == "outdoor"
+        assert p2.theme == "wilderness"
         assert p2.room_count == 7
         assert p2.regions == ["water"]
 
@@ -59,7 +60,7 @@ class TestRulePlanner:
 
     def test_detects_outdoor(self):
         p = self.rp.plan("a sprawling forest with rolling hills")
-        assert p.theme == "outdoor"
+        assert p.theme == "wilderness"
 
     def test_detects_water_region(self):
         p = self.rp.plan("a flooded cave with a lake")
@@ -120,9 +121,9 @@ class TestRulePlanner:
 
 class TestExpand:
     def test_plan_to_spec_basic(self):
-        plan = ZonePlan(name="t", theme="outdoor", room_count=4)
+        plan = ZonePlan(name="t", zone_type="wilderness", room_count=4)
         spec = plan_to_spec(plan, seed=1)
-        assert spec.theme == "outdoor"
+        assert spec.theme == "wilderness"
         assert len(spec.rooms) == 4
 
     def test_regions_added(self):

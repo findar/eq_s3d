@@ -14,9 +14,11 @@ EQ uses a right-handed system where Z is up.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, InitVar
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
+
+from .zone_types import canonical_zone_type, read_zone_type, DEFAULT_ZONE_TYPE
 
 # ---------------------------------------------------------------------------
 # Spec components
@@ -202,13 +204,13 @@ class ZoneSpec:
 
     Usage::
 
-        spec = ZoneSpec(name="myrealm", theme="dungeon")
+        spec = ZoneSpec(name="myrealm", zone_type="dungeon")
         spec.materials["wall"] = MaterialSpec("wall", "stone_wall.dds", color=(90,85,80))
         spec.rooms.append(RoomSpec("entry", 0, 0, width=300, depth=300, height=80))
         spec.save("myrealm.json")
     """
     name: str
-    theme: str = "dungeon"
+    zone_type: str = "dungeon"
     style_profile: str = "dungeon"
 
     # The random seed this spec was generated from. Threaded through so the
@@ -237,6 +239,35 @@ class ZoneSpec:
     regions: List[RegionSpec]   = field(default_factory=list)
     gates: List["GateSpec"]     = field(default_factory=list)
 
+    # Legacy constructor alias: pre-rename callers passed ``theme=``. An
+    # InitVar (accepted as a kwarg, never stored, never emitted by
+    # ``to_dict()``) that folds forward into ``zone_type`` when supplied. New
+    # code passes ``zone_type=`` directly; ``from_dict`` handles the legacy
+    # ``theme`` JSON key separately (Req 11.1, 11.2).
+    theme: InitVar[Optional[str]] = None
+
+    def __post_init__(self, theme: Optional[str]) -> None:
+        # A legacy ``theme=`` kwarg wins and is mapped forward immediately
+        # (``outdoor`` -> ``wilderness``); an unknown value is left for callers
+        # to normalise (``from_dict`` folds undefined -> ``dungeon``).
+        if theme is not None:
+            self.zone_type = canonical_zone_type(theme) or theme
+
+    # ``theme`` is a live read/write alias for ``zone_type`` (pre-rename
+    # attribute). Via __getattr__/__setattr__ (not a property — that would
+    # collide with the InitVar name). Not a dataclass field, so ``to_dict()``
+    # never emits ``theme`` (Req 11.1). The leftover class-level InitVar
+    # sentinel is deleted just after the class body.
+    def __getattr__(self, name: str):
+        if name == "theme":
+            return self.__dict__["zone_type"]
+        raise AttributeError(name)
+
+    def __setattr__(self, name: str, value) -> None:
+        if name == "theme":
+            name = "zone_type"
+        super().__setattr__(name, value)
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
@@ -244,7 +275,7 @@ class ZoneSpec:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
-            "theme": self.theme,
+            "zone_type": self.zone_type,
             "style_profile": self.style_profile,
             "seed": self.seed,
             "dungeon_theme": self.dungeon_theme,
@@ -268,14 +299,13 @@ class ZoneSpec:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ZoneSpec":
-        # The cave pipeline was removed in M0; a legacy spec with theme "cave"
-        # loads back as a dungeon. No other theme is remapped.
-        theme = d.get("theme", "dungeon")
-        if theme == "cave":
-            theme = "dungeon"
+        # Prefer ``zone_type``, accept the legacy ``theme`` key, map the legacy
+        # ``outdoor`` value to ``wilderness`` and any undefined value (including
+        # the removed-in-M0 "cave" theme) to ``dungeon`` (Req 11.1, 11.2).
+        zone_type = canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE
         spec = cls(
             name=d["name"],
-            theme=theme,
+            zone_type=zone_type,
             style_profile=d.get("style_profile", "dungeon"),
             seed=d.get("seed"),
             dungeon_theme=d.get("dungeon_theme", ""),
@@ -319,8 +349,15 @@ class ZoneSpec:
 
     def __repr__(self) -> str:
         return (
-            f"ZoneSpec({self.name!r}, theme={self.theme!r}, "
+            f"ZoneSpec({self.name!r}, zone_type={self.zone_type!r}, "
             f"rooms={len(self.rooms)}, corridors={len(self.corridors)}, "
             f"lights={len(self.lights)}, regions={len(self.regions)}, "
             f"gates={len(self.gates)})"
         )
+
+
+# Drop the leftover class-level ``theme`` InitVar sentinel so instance
+# ``.theme`` reads fall through to __getattr__ (the live alias). The InitVar
+# was already consumed by @dataclass to build __init__/__post_init__, so the
+# constructor still accepts ``theme=``.
+del ZoneSpec.theme

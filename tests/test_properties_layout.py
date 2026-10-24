@@ -832,7 +832,8 @@ def test_cave_words_mean_dungeon(prompt):
     # computed here from _THEME_WORDS with the planner's own str.count scoring.
     text_lower = prompt.lower()
     dungeon_score = _bucket_score(text_lower, _THEME_WORDS["dungeon"])
-    outdoor_score = _bucket_score(text_lower, _THEME_WORDS["outdoor"])
+    # The open-air bucket key is "wilderness" post-rename (word list unchanged).
+    outdoor_score = _bucket_score(text_lower, _THEME_WORDS["wilderness"])
     city_score = _bucket_score(text_lower, _THEME_WORDS["city"])
 
     if dungeon_score > outdoor_score and dungeon_score > city_score:

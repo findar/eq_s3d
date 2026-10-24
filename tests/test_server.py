@@ -196,12 +196,12 @@ def test_controls_cave_theme_rejected(client):
     """A control-driven generate with theme="cave" is a 400 whose detail names
     all three valid themes, and nothing is written to OUTPUT_DIR (M0 Req 6.7)."""
     resp = assert_no_wildcard(
-        client.post("/api/generate", json={"theme": "cave", "rooms": ROOMS})
+        client.post("/api/generate", json={"zone_type": "cave", "rooms": ROOMS})
     )
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
-    for theme in ("dungeon", "outdoor", "city"):
-        assert theme in detail, f"detail does not name {theme!r}: {detail!r}"
+    for zt in ("dungeon", "wilderness", "city"):
+        assert zt in detail, f"detail does not name {zt!r}: {detail!r}"
     # The 400 is raised before the factory runs, so no artifacts are produced.
     assert list(app_mod.OUTPUT_DIR.iterdir()) == []
 

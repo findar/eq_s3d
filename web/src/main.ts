@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import {
-  generateZone, fetchSidecar, fetchVersion,
+  generateZone, fetchSidecar, fetchVersion, fetchZoneTypes,
   type GenerateResult, type ZoneSidecar,
 } from "./api";
 import { ZoneScene } from "./scene";
@@ -104,7 +104,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     ? `prompt (${result.planner})`
     : "controls";
   $("m-source").textContent = sourceLabel;
-  $("m-theme").textContent = result.theme;
+  $("m-zone-type").textContent = result.zone_type;
   $("m-rooms").textContent = String(result.rooms);
 
   const extra = $("m-plan-extra");
@@ -161,17 +161,18 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     pacing.appendChild(dd);
   }
 
-  // Content / semantic layer: theme line, room-type counts, boss + a sample of
-  // suggestions. Only shown when the zone was themed.
+  // Content / semantic layer: content line, room-type counts, boss + a sample
+  // of suggestions. Only shown when the zone was themed. Current sidecars carry
+  // this under `content`; old sidecars used `theme`, so fall back to it.
   const content = $("m-content");
   content.innerHTML = "";
-  const theme = sidecar.theme;
-  const themed = !!(theme && theme.dungeon_theme);
+  const cnt = sidecar.content ?? sidecar.theme;
+  const themed = !!(cnt && cnt.dungeon_theme);
   if (themed && sidecar.rooms && sidecar.rooms.length) {
-    const tbits: string[] = [theme!.dungeon_theme!];
-    if (theme!.dungeon_race && theme!.dungeon_race !== "default")
-      tbits.push(theme!.dungeon_race!);
-    if (theme!.elemental_tint) tbits.push(theme!.elemental_tint!);
+    const tbits: string[] = [cnt!.dungeon_theme!];
+    if (cnt!.dungeon_race && cnt!.dungeon_race !== "default")
+      tbits.push(cnt!.dungeon_race!);
+    if (cnt!.elemental_tint) tbits.push(cnt!.elemental_tint!);
     const head = document.createElement("div");
     head.className = "row";
     head.innerHTML = `<span>Theme</span><span>${tbits.join(" · ")}</span>`;
@@ -217,7 +218,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
 // ---- Generate ----
 async function doGenerate() {
   const prompt = ($("prompt") as HTMLInputElement).value.trim();
-  const theme = ($("theme") as HTMLSelectElement).value;
+  const zoneType = ($("zone-type") as HTMLSelectElement).value;
   // Rooms is a free number input; clamp to the server's accepted 1–30 range
   // and fall back to 5 if blank/unparseable so an out-of-range value never
   // trips the backend's validation (422).
@@ -246,19 +247,19 @@ async function doGenerate() {
   await refreshVersion();
 
   try {
-    // If a prompt is given, it drives generation (theme/rooms); otherwise the
-    // controls do. Either way the seed, when set, pins the randomness — the
+    // If a prompt is given, it drives generation (zone_type/rooms); otherwise
+    // the controls do. Either way the seed, when set, pins the randomness — the
     // backend applies `seed` in both paths.
     const params = prompt
       ? { prompt, ...(seed !== undefined ? { seed } : {}) }
-      : { theme, rooms, elevation, ...(seed !== undefined ? { seed } : {}) };
+      : { zone_type: zoneType, rooms, elevation, ...(seed !== undefined ? { seed } : {}) };
 
     // Log the user's input so it's visible in the browser console.
     const seedNote = seed !== undefined ? ` seed=${seed}` : " seed=random";
     if (prompt) {
       console.log(`[input] prompt: "${prompt}"${seedNote}`);
     } else {
-      console.log(`[input] controls: theme=${theme} rooms=${rooms} elevation=${elevation}${seedNote}`);
+      console.log(`[input] controls: zone_type=${zoneType} rooms=${rooms} elevation=${elevation}${seedNote}`);
     }
 
     const result = await generateZone(params);
@@ -284,7 +285,7 @@ async function doGenerate() {
     controls.setStart(start, startYaw);
 
     console.info(
-      `[generate] seed=${result.seed} theme=${result.theme} rooms=${result.rooms} ` +
+      `[generate] seed=${result.seed} zone_type=${result.zone_type} rooms=${result.rooms} ` +
       `source=${result.source}` +
       (result.planner ? ` planner=${result.planner}` : "") +
       ` build=${result.build_commit ?? "unknown"}`,
@@ -296,6 +297,27 @@ async function doGenerate() {
     statusEl.textContent = "error — see console";
   } finally {
     genBtn.disabled = false;
+  }
+}
+
+// Populate the zone-type dropdown from the server's single source of truth,
+// keeping the current selection if it survives. The static <option>s in
+// index.html are the offline fallback if the fetch fails.
+async function refreshZoneTypes(): Promise<void> {
+  const sel = $("zone-type") as HTMLSelectElement;
+  try {
+    const listing = await fetchZoneTypes();
+    if (!listing.zone_types?.length) return;
+    const prev = sel.value;
+    const label = (z: string) => z.charAt(0).toUpperCase() + z.slice(1);
+    sel.innerHTML = listing.zone_types
+      .map((z) => `<option value="${z}">${label(z)}</option>`)
+      .join("");
+    sel.value = listing.zone_types.includes(prev)
+      ? prev
+      : (listing.default ?? listing.zone_types[0]);
+  } catch (err) {
+    console.warn("[zone_types]", err);   // keep the static options
   }
 }
 
@@ -386,5 +408,5 @@ function animate() {
 }
 animate();
 
-// Generate one on load so the viewport isn't empty
-doGenerate();
+// Populate zone types, then generate one on load so the viewport isn't empty.
+refreshZoneTypes().finally(doGenerate);

@@ -494,7 +494,9 @@ class TestSemantics:
         ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=True)
         import json
         data = json.loads((tmp_path / "sem.zone.json").read_text())
-        assert data["theme"]["dungeon_theme"] == "wizard_lair"
+        # The content block moved from the sidecar "theme" key to "content"
+        # (task 10.5); the field names inside are unchanged (Req 11.6).
+        assert data["content"]["dungeon_theme"] == "wizard_lair"
         assert all("semantic_type" in rm for rm in data["rooms"])
         assert any(rm["boss"] for rm in data["rooms"])
 

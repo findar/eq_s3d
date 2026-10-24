@@ -8,7 +8,7 @@ Commands:
 
 Usage::
 
-    python main.py generate myrealm --theme dungeon --rooms 5
+    python main.py generate myrealm --zone-type dungeon --rooms 5
 """
 
 from __future__ import annotations
@@ -19,13 +19,24 @@ from pathlib import Path
 
 from generators.layout import LayoutGenerator
 from generators.pipeline import generate_validated, GenerationFailed
+from generators.zone_types import (
+    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type,
+)
 
 
 def cmd_generate(args) -> None:
-    print(f"Generating zone '{args.name}' (theme={args.theme}, rooms={args.rooms})")
+    # Legacy-map the chosen value (``--theme outdoor`` == ``--zone-type
+    # wilderness``); argparse shares one dest so the later option wins. Read a
+    # legacy ``theme`` attribute too, for callers that build the Namespace
+    # directly with the old field name.
+    raw = getattr(args, "zone_type", None)
+    if raw is None:
+        raw = getattr(args, "theme", None)
+    zone_type = canonical_zone_type(raw) or DEFAULT_ZONE_TYPE
+    print(f"Generating zone '{args.name}' (zone_type={zone_type}, rooms={args.rooms})")
 
     def factory(seed):
-        return LayoutGenerator(theme=args.theme, seed=seed).generate(
+        return LayoutGenerator(zone_type=zone_type, seed=seed).generate(
             args.name, room_count=args.rooms,
         )
 
@@ -35,7 +46,7 @@ def cmd_generate(args) -> None:
     try:
         vb = generate_validated(
             factory,
-            theme=args.theme,
+            zone_type=zone_type,
             zone_id=args.name,
             seed=args.seed,
             output_dir=args.output,
@@ -72,7 +83,7 @@ def cmd_generate(args) -> None:
     elif args.no_validate:
         print("  Traversability: skipped (--no-validate)")
     else:
-        print(f"  Traversability: ungated theme '{args.theme}' (not validated)")
+        print(f"  Traversability: ungated zone type '{zone_type}' (not validated)")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -81,8 +92,16 @@ def main(argv: list[str] | None = None) -> None:
 
     g = sub.add_parser("generate", help="Procedurally generate a zone")
     g.add_argument("name", help="Zone short name (lowercase, no spaces)")
-    g.add_argument("--theme", default="dungeon",
-                   choices=["dungeon", "outdoor", "city"])
+    # --zone-type is the current option; --theme is a deprecated alias that
+    # shares the same dest (later option wins) and still accepts the legacy
+    # "outdoor" value, mapped forward to "wilderness" in cmd_generate.
+    g.add_argument("--zone-type", dest="zone_type", default=DEFAULT_ZONE_TYPE,
+                   choices=list(DEFINED_ZONE_TYPES),
+                   help="Zone type to generate")
+    g.add_argument("--theme", dest="zone_type",
+                   choices=list(DEFINED_ZONE_TYPES) + ["outdoor"],
+                   help="Deprecated alias for --zone-type (accepts legacy "
+                        "'outdoor' == 'wilderness')")
     g.add_argument("--rooms", type=int, default=5, help="Number of rooms")
     g.add_argument("--seed", type=int, default=None, help="Random seed")
     g.add_argument("--output", default="output", help="Output directory")

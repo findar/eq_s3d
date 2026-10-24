@@ -108,7 +108,8 @@ class EqgZone:
                   material_colors: Optional[Dict[int, tuple]] = None,
                   room_pacing: Optional[list] = None,
                   gates: Optional[list] = None,
-                  theme: Optional[dict] = None) -> Optional[Path]:
+                  content: Optional[dict] = None,
+                  zone_type: Optional[str] = None) -> Optional[Path]:
         """
         Export the zone terrain as a GLB file for browser preview.
 
@@ -181,13 +182,14 @@ class EqgZone:
         # Emit a companion .zone.json sidecar carrying lights, regions, and
         # metadata so the browser viewer can render overlays. Named
         # <zone>.zone.json next to the GLB.
-        self._write_glb_sidecar(out_path, room_pacing, gates, theme)
+        self._write_glb_sidecar(out_path, room_pacing, gates, content, zone_type)
 
         return out_path
 
     def _write_glb_sidecar(self, glb_path: Path, room_pacing: Optional[list] = None,
                            gates: Optional[list] = None,
-                           theme: Optional[dict] = None) -> None:
+                           content: Optional[dict] = None,
+                           zone_type: Optional[str] = None) -> None:
         """Write a <name>.zone.json next to the GLB with lights/regions/metrics."""
         import json
 
@@ -211,7 +213,11 @@ class EqgZone:
             "regions": [],
             "rooms": room_pacing or [],
             "gates": gates or [],
-            "theme": theme or {},
+            # Content / semantic layer (dungeon_theme/dungeon_race/
+            # elemental_tint — field names unchanged, Req 11.6). The zone type
+            # is a separate top-level key. No legacy ``theme`` key (Req 11.1).
+            "content": content or {},
+            "zone_type": zone_type or "",
         }
 
         if self._placement is not None:

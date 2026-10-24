@@ -17,14 +17,14 @@ import json
 import os
 from typing import Optional
 
-from .schema import ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_THEMES
+from .schema import ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_ZONE_TYPES
 
 
 _SYSTEM_PROMPT = """You are a level designer for EverQuest-style zones.
 Given a short description, produce a compact JSON plan for one zone.
 
 Rules:
-- Choose exactly one theme from: {themes}.
+- Choose exactly one zone_type from: {zone_types}.
 - room_count is how many distinct rooms/chambers/clearings (1-30).
 - size is the overall footprint: small, medium, large, or huge.
 - Set elevation true if the zone should have multiple vertical levels.
@@ -50,7 +50,7 @@ class LLMPlanner:
 
     def plan(self, prompt: str, name: str = "zone",
              style_hint: str = "") -> ZonePlan:
-        system = _SYSTEM_PROMPT.format(themes=", ".join(VALID_THEMES))
+        system = _SYSTEM_PROMPT.format(zone_types=", ".join(VALID_ZONE_TYPES))
         if style_hint:
             system += f"\nStyle guidance:\n{style_hint}\n"
 

@@ -209,10 +209,10 @@ class TestFailureLog:
         lines = _log_lines(tmp_path / "fail.jsonl")
         assert len(lines) == 1
         rec = lines[0]
-        for key in ("ts", "zone_id", "theme", "seed", "attempt",
+        for key in ("ts", "zone_id", "zone_type", "seed", "attempt",
                     "reachable_rooms", "total_rooms", "reasons"):
             assert key in rec, f"missing {key} in failure log line"
-        assert rec["theme"] == "dungeon"
+        assert rec["zone_type"] == "dungeon"
         assert rec["reachable_rooms"] < rec["total_rooms"]
         # Per-room reasons present — the data corridor-connection triages on.
         assert rec["reasons"] and all(isinstance(r, str) for r in rec["reasons"])

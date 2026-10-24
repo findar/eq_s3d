@@ -117,7 +117,10 @@ _TOK_ARGS_PREVIEW = "args." + "preview"
 # aren't a literal import line here).
 _DELETED_FIELD_STEMS = ("ca" + "ve", "fea" + "tures", "me" + "sh", "s" + "df")
 
-DEFINED_THEMES = {"dungeon", "city", "outdoor"}
+# The defined zone-type vocabulary after the wave-2 rename (outdoor ->
+# wilderness). Kept equal to generators.zone_types.DEFINED_ZONE_TYPES. The full
+# identifier rename of this module is task 10.9.
+DEFINED_THEMES = {"dungeon", "city", "wilderness"}
 
 
 def _tracked_py_files():
@@ -308,37 +311,41 @@ def test_no_cave_only_dependency_tokens():
 # ----------------------------------------------------------------------
 
 def test_theme_surface_is_three():
-    """Every theme surface equals the Defined_Themes set.
+    """Every zone-type surface equals the Defined zone-type set.
 
-    Checks `ai.schema.VALID_THEMES`, `server.app.VALID_THEMES`, the `main.py`
-    `--theme` argparse choices and the `web/index.html` theme `<option>` values.
+    Checks `ai.schema.VALID_ZONE_TYPES`, `server.app.VALID_ZONE_TYPES`, the
+    `main.py` `--zone-type` argparse choices and the `web/index.html`
+    `<option>` values. (Renamed to test_zone_type_surface_is_three by task 10.9;
+    retargeted here to the new names/values so the suite stays green.)
     """
     import ai.schema
     import server.app
 
-    assert set(ai.schema.VALID_THEMES) == DEFINED_THEMES, (
-        f"ai.schema.VALID_THEMES = {ai.schema.VALID_THEMES}"
+    assert set(ai.schema.VALID_ZONE_TYPES) == DEFINED_THEMES, (
+        f"ai.schema.VALID_ZONE_TYPES = {ai.schema.VALID_ZONE_TYPES}"
     )
-    assert set(server.app.VALID_THEMES) == DEFINED_THEMES, (
-        f"server.app.VALID_THEMES = {server.app.VALID_THEMES}"
+    assert set(server.app.VALID_ZONE_TYPES) == DEFINED_THEMES, (
+        f"server.app.VALID_ZONE_TYPES = {server.app.VALID_ZONE_TYPES}"
     )
 
-    # main.py --theme choices: parse the argparse call from source (importing
-    # main would execute CLI-construction code; reading the source is safe and
-    # robust). Grab the choices=[...] list attached to the --theme argument.
+    # main.py --zone-type choices: parse the argparse call from source
+    # (importing main would execute CLI-construction code; reading the source is
+    # safe and robust). Grab the choices=[...] attached to the --zone-type arg.
     main_src = _read("main.py")
-    m = re.search(r"--theme[\s\S]*?choices\s*=\s*\[([^\]]*)\]", main_src)
-    assert m, "could not find --theme choices=[...] in main.py"
-    theme_choices = set(re.findall(r"""['"]([^'"]+)['"]""", m.group(1)))
-    assert theme_choices == DEFINED_THEMES, (
-        f"main.py --theme choices = {sorted(theme_choices)}"
+    m = re.search(r"--zone-type[\s\S]*?choices\s*=\s*list\(([^)]*)\)", main_src)
+    assert m, "could not find --zone-type choices=list(...) in main.py"
+    # The option derives its choices from DEFINED_ZONE_TYPES rather than a
+    # literal list, so assert it references that single source of truth.
+    assert "DEFINED_ZONE_TYPES" in m.group(1), (
+        f"main.py --zone-type choices should derive from DEFINED_ZONE_TYPES: "
+        f"{m.group(1)!r}"
     )
 
-    # web/index.html theme <option value="..."> values.
+    # web/index.html zone-type <option value="..."> values.
     html = _read("web/index.html")
     option_vals = set(re.findall(r'<option\s+value="([^"]+)"', html))
     assert option_vals == DEFINED_THEMES, (
-        f"web/index.html theme <option> values = {sorted(option_vals)}"
+        f"web/index.html zone-type <option> values = {sorted(option_vals)}"
     )
 
 
