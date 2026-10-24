@@ -825,7 +825,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - `python -m pytest tests/test_hygiene.py -q`: **15 passed** (5.04 s) — `test_outdoor_ter_matches_fork_point` (×3) passes unchanged.
       - `python -m pytest tests/ -q`: **259 passed** (379.66 s) — matches the 259 baseline. (Two pre-existing unrelated warnings.)
       - The throwaway capture-and-compare script lived at `F:\Dev Projects\_m1_task1011_tmp\capture_after.py` (outside the repo) and is not committed.
-      - Commits: `4064e2e` recorded the Deliverables (this `tasks.md` entry only); a follow-up commit fills this final self-reference hash.
+      - Commits: `4064e2e` recorded the Deliverables; `45e4fad` filled this self-reference. Both touch only task 10.11's `tasks.md` entry.
       - Touched only this `tasks.md` entry — no code, no `ROADMAP.md`/`README.md`/`tasks/README.md`.
 
 - [ ] 11. Checkpoint: wave 2 closed
