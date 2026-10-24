@@ -43,7 +43,7 @@ from tests.pbt_helpers import (
     scaled,
 )
 from tests.strategies import (
-    box_themes,
+    box_zone_types,
     pfs_entries,
     pfs_names,
     room_counts,
@@ -341,11 +341,11 @@ def _zon_fields(zon):
 @pytest.mark.slow
 @build_settings(20)
 @given(
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts(2, 12),
     semantic=semantic_inputs,
 )
-def test_ter_zon_roundtrip(theme, n, semantic):
+def test_ter_zon_roundtrip(zone_type, n, semantic):
     """Feature: zone-generator-m0-hygiene, Property 3: Built TER and ZON round-trip.
 
     Umbrella P15. Validates: M0 Req 2.3, 1.5; umbrella Req 1.6.
@@ -374,8 +374,8 @@ def test_ter_zon_roundtrip(theme, n, semantic):
     content path would realise them.
     """
     plan = ZonePlan(
-        name=f"tz{theme}{n}",
-        theme=theme,
+        name=f"tz{zone_type}{n}",
+        zone_type=zone_type,
         room_count=n,
         dungeon_theme=semantic["dungeon_theme"],
         dungeon_race=semantic["dungeon_race"],
@@ -514,14 +514,14 @@ def _corridor_result_tuples(results) -> list:
 # anchor example rather than a pinned counterexample; if 2.2's union-find ever
 # regresses, replace this with the discovered seed via
 # ``@example(...).via("discovered failure")``.
-@example(theme="dungeon", n=2, vert="flat", s=0)
+@example(zone_type="dungeon", n=2, vert="flat", s=0)
 @given(
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts(2, 30),
     vert=verticality,
     s=seeds,
 )
-def test_walk_surface_equivalence(theme, n, vert, s):
+def test_walk_surface_equivalence(zone_type, n, vert, s):
     """Feature: zone-generator-m1-controls-traversability, Property 13: The faster walk surface has the same reachability.
 
     M1-P4. Validates: Requirements 4.1, 5.2.
@@ -585,7 +585,7 @@ def test_walk_surface_equivalence(theme, n, vert, s):
     # actually elevate corridors (flat stays flat regardless).
     plan = ZonePlan(
         name="wseq",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         verticality=vert,
         elevation=(vert != "flat"),
@@ -606,7 +606,7 @@ def test_walk_surface_equivalence(theme, n, vert, s):
         # surface from the same .eqg).
         live_report = T.validate(result.eqg_path, spec=spec, agent=agent)
 
-    ctx = f"(theme={theme}, rooms={n}, verticality={vert}, seed={s})"
+    ctx = f"(zone_type={zone_type}, rooms={n}, verticality={vert}, seed={s})"
 
     # 1) Same standable faces.
     assert np.array_equal(opt_surf.standable, ref_surf.standable), (

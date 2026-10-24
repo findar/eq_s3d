@@ -14,7 +14,7 @@ has to fill a handful of fields) and easy to validate.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict, InitVar
+from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any
 
 from generators.zone_types import (
@@ -26,10 +26,6 @@ from generators.zone_types import (
 # legacy ``theme`` key and the ``outdoor`` value are accepted on load and mapped
 # forward via ``canonical_zone_type`` (umbrella decision 19; Req 11.1, 11.2).
 VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)
-
-# Legacy alias of ``VALID_ZONE_TYPES`` for pre-rename importers. Task 10.9
-# retargets the test-side references and drops this alias.
-VALID_THEMES = VALID_ZONE_TYPES
 
 VALID_REGION_KINDS = ["water", "lava", "ice", "pvp", "zoneline", "generic"]
 
@@ -78,39 +74,6 @@ class ZonePlan:
     # The original prompt, retained for provenance
     prompt: str = ""
 
-    # Legacy constructor alias: pre-rename callers passed ``theme=``. It is an
-    # InitVar (accepted as a kwarg, never stored and never emitted by
-    # ``to_dict()``) that folds forward into ``zone_type`` when given. New code
-    # should pass ``zone_type=`` directly. ``from_dict`` handles the legacy
-    # ``theme`` JSON key separately via ``read_zone_type``.
-    theme: InitVar[Optional[str]] = None
-
-    def __post_init__(self, theme: Optional[str]) -> None:
-        # A legacy ``theme=`` kwarg wins and is mapped forward immediately
-        # (``outdoor`` -> ``wilderness``), so even an unvalidated plan carries a
-        # current value. An unknown value is left as-is for ``validate()`` to
-        # fold to the default.
-        if theme is not None:
-            self.zone_type = canonical_zone_type(theme) or theme
-
-    # ``theme`` is a live read/write alias for ``zone_type`` (pre-rename
-    # attribute). Implemented via __getattr__/__setattr__ (not a property, which
-    # would collide with the InitVar name): reads return the current
-    # ``zone_type`` and writes forward to it, so ``plan.theme`` always tracks
-    # ``zone_type`` — including after ``validate()``. ``theme`` is not a
-    # dataclass field, so ``to_dict()`` never emits it (Req 11.1). The leftover
-    # class-level InitVar sentinel is deleted just after the class body so
-    # instance ``.theme`` reads fall through to __getattr__.
-    def __getattr__(self, name: str):
-        if name == "theme":
-            return self.__dict__["zone_type"]
-        raise AttributeError(name)
-
-    def __setattr__(self, name: str, value) -> None:
-        if name == "theme":
-            name = "zone_type"
-        super().__setattr__(name, value)
-
     def validate(self) -> "ZonePlan":
         """Clamp/normalise fields to valid ranges. Returns self."""
         # Normalise + legacy-map the zone type: an undefined value (or the
@@ -133,29 +96,21 @@ class ZonePlan:
         return self
 
     def to_dict(self) -> Dict[str, Any]:
-        # ``asdict`` already omits the ``theme`` InitVar (InitVars are not
-        # stored fields), so the emitted dict carries ``zone_type`` and never a
-        # legacy ``theme`` key (Req 11.1).
+        # The emitted dict carries ``zone_type`` and never a legacy ``theme``
+        # key (Req 11.1).
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ZonePlan":
+        # Legacy LOAD boundary (Req 11.1 / Property 12): a stored plan may still
+        # carry the legacy ``theme`` key and/or the ``outdoor`` value. Both are
+        # accepted here and mapped forward; ``zone_type`` wins when both keys
+        # are present.
         allowed = {f for f in cls.__dataclass_fields__}
         clean = {k: v for k, v in d.items() if k in allowed and k != "theme"}
-        # Read the zone type preferring ``zone_type``, then the legacy ``theme``
-        # key, then the default; normalise/legacy-map it (Req 11.2). A JSON
-        # ``theme`` key is consumed here, never forwarded as the constructor
-        # InitVar, so it can't shadow ``zone_type``.
         clean.pop("zone_type", None)
         zt = canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE
         return cls(zone_type=zt, **clean).validate()
-
-
-# Drop the leftover class-level ``theme`` InitVar sentinel (its default ``None``
-# would otherwise shadow the __getattr__ alias on instance reads). The InitVar
-# was already consumed by @dataclass to build __init__/__post_init__, so the
-# constructor still accepts ``theme=``.
-del ZonePlan.theme
 
 
 # JSON schema an LLM is asked to fill (structured output / tool use).

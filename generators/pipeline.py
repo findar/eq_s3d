@@ -25,12 +25,12 @@ zone, and every rejected attempt is logged for triage.
 The validator (`analyzer.traverse.validate`) stays a pure pass/fail; the
 retry / timeout / logging orchestration lives here, on top of it.
 
-Theme scope: only themes whose mesh shares the box / room-graph coordinate
-frame can be validated. Outdoor lives in a different frame (ROADMAP "Known
-issues"), so gating it would reject every zone -> infinite retry -> timeout.
-Non-gated themes therefore pass through UNVALIDATED (with a logged note) until
-the coordinate-frame fix lands. The gated set is explicit and configurable via
-``gated_themes``.
+Zone-type scope: only zone types whose mesh shares the box / room-graph
+coordinate frame can be validated. Wilderness lives in a different frame
+(ROADMAP "Known issues"), so gating it would reject every zone -> infinite
+retry -> timeout. Non-gated zone types therefore pass through UNVALIDATED (with
+a logged note) until the coordinate-frame fix lands. The gated set is explicit
+and configurable via ``gated_zone_types``.
 """
 
 from __future__ import annotations
@@ -57,9 +57,6 @@ logger = logging.getLogger("eq_s3d.pipeline")
 # Zone types whose generated mesh shares the box / room-graph coordinate frame,
 # so the traversability validator is sound for them. Dungeon-only until wave 4.
 DEFAULT_GATED_ZONE_TYPES = frozenset({"dungeon"})
-
-# Legacy alias for pre-rename importers (task 10.9 retargets and drops this).
-DEFAULT_GATED_THEMES = DEFAULT_GATED_ZONE_TYPES
 
 # A dungeon build is sub-second, so a small budget finds a good sibling seed
 # fast; the timeout guards pathological runs. Whichever cap hits first wins.
@@ -216,44 +213,37 @@ def generate_validated(
     agent: Optional[AgentModel] = None,
     rng: Optional[random.Random] = None,
     failure_log: Optional[str | Path] = DEFAULT_FAILURE_LOG,
-    # Legacy aliases for pre-rename callers (task 10.9 retargets and drops
-    # these): ``theme`` -> ``zone_type``, ``gated_themes`` -> ``gated_zone_types``.
-    theme: Optional[str] = None,
-    gated_themes: Optional[Sequence[str]] = None,
 ) -> ValidatedBuild:
     """
-    Build a zone and guarantee (for gated themes) that it passes the
+    Build a zone and guarantee (for gated zone types) that it passes the
     traversability validator before returning it.
 
     ``spec_factory(seed)`` must return a fresh ZoneSpec for the given seed
-    (name/theme/room-count already applied); the pipeline owns which seed to
+    (name/zone_type/room-count already applied); the pipeline owns which seed to
     use on each attempt.
 
     Behaviour:
 
-    * **Ungated theme** (or ``validate_enabled=False``): build exactly once with
-      the pinned seed (or a fresh one) and return it unvalidated, with a logged
-      note. No retries, so there is no false-fail retry storm on outdoor.
-    * **Gated theme, random seed**: build -> validate -> on failure pick a NEW
-      fresh seed and retry, bounded by ``max_attempts`` AND ``timeout_s``
+    * **Ungated zone type** (or ``validate_enabled=False``): build exactly once
+      with the pinned seed (or a fresh one) and return it unvalidated, with a
+      logged note. No retries, so there is no false-fail retry storm on
+      wilderness.
+    * **Gated zone type, random seed**: build -> validate -> on failure pick a
+      NEW fresh seed and retry, bounded by ``max_attempts`` AND ``timeout_s``
       (whichever hits first). At least one full attempt always completes, so we
       never return "failed" without having tried. Returns the first passing
       build; raises :class:`GenerationFailed` if the budget is exhausted.
-    * **Gated theme, pinned seed**: build -> validate once. On failure raise
+    * **Gated zone type, pinned seed**: build -> validate once. On failure raise
       :class:`GenerationFailed` (``pinned=True``) rather than silently swapping
       the caller's explicit seed.
 
     Every rejected attempt is logged (stderr + JSONL) via
     :func:`log_validation_failure`.
     """
-    # Resolve legacy aliases.
-    if zone_type is None:
-        zone_type = theme
     if zone_type is None:
         raise TypeError("generate_validated() requires zone_type")
     if gated_zone_types is None:
-        gated_zone_types = gated_themes if gated_themes is not None \
-            else DEFAULT_GATED_ZONE_TYPES
+        gated_zone_types = DEFAULT_GATED_ZONE_TYPES
 
     gated = validate_enabled and zone_type in set(gated_zone_types)
     pinned = seed is not None

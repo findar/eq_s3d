@@ -50,8 +50,8 @@ KNOWN_GOOD_DUNGEON = [1, 6, 26, 49]
 FORMERLY_BROKEN_DUNGEON = [1955208177, 1516796975, 481893615, 678358326]
 
 
-def _build_and_validate(theme: str, seed: int, rooms: int, tmp_path):
-    spec = LayoutGenerator(theme=theme, seed=seed).generate("trav", room_count=rooms)
+def _build_and_validate(zone_type: str, seed: int, rooms: int, tmp_path):
+    spec = LayoutGenerator(zone_type=zone_type, seed=seed).generate("trav", room_count=rooms)
     result = ZoneBuilder(spec).build(output_dir=str(tmp_path), write_glb=False)
     return validate(result.eqg_path, spec=spec)
 
@@ -154,7 +154,7 @@ class TestValidatorFlagsBreakage:
         # is unstandable (slope > the agent's 40° cap), so the far room is
         # unreachable and the corridor classifier names it a cliff ramp. This
         # replaces the old "known-bad seed" now that no seed is reliably broken.
-        spec = ZoneSpec(name="trav", theme="dungeon")
+        spec = ZoneSpec(name="trav", zone_type="dungeon")
         a = RoomSpec("a", center_x=0, center_y=0, floor_z=0.0,
                      width=200, depth=200, height=100)
         a.role = "entrance"
@@ -334,7 +334,7 @@ class TestCorridorContinuityExamples:
         # C's footprint, so the far room is reachable only by cutting through C
         # (through its collidable walls — a path no player has). The check must
         # refuse it AND name the third room.
-        spec = ZoneSpec(name="xroom", theme="dungeon")
+        spec = ZoneSpec(name="xroom", zone_type="dungeon")
         a = RoomSpec("a", center_x=-400, center_y=0, floor_z=0.0,
                      width=200, depth=200, height=100)
         a.role = "entrance"; a.open_walls = ["E"]
@@ -366,7 +366,7 @@ class TestCorridorContinuityExamples:
         # but the ramp's own faces are unwalkable, so the region has NO walkable
         # path between the two floors — a gap in the corridor floor. No third
         # room exists, so the diagnosis is the generic "gap".
-        spec = ZoneSpec(name="gapramp", theme="dungeon")
+        spec = ZoneSpec(name="gapramp", zone_type="dungeon")
         a = RoomSpec("a", center_x=0, center_y=0, floor_z=0.0,
                      width=200, depth=200, height=100)
         a.role = "entrance"; a.open_walls = ["N"]
@@ -425,7 +425,7 @@ class TestCorridorContinuityExamples:
         corr_cd's whole tube out of corr_ab's floor band, so the shared cells no
         longer hold floors within the clearance.
         """
-        spec = ZoneSpec(name=f"cross{int(cd_floor_z)}", theme="dungeon")
+        spec = ZoneSpec(name=f"cross{int(cd_floor_z)}", zone_type="dungeon")
         # Pair A–B at z=0.
         a = RoomSpec("a", center_x=-500, center_y=0, floor_z=0.0,
                      width=200, depth=200, height=100)

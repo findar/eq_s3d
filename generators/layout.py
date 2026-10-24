@@ -82,15 +82,10 @@ class LayoutGenerator:
         spec = gen.generate("myrealm", room_count=5)
     """
 
-    def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None,
-                 *, theme: Optional[str] = None):
-        # ``theme`` is a legacy positional/keyword alias for ``zone_type``
-        # (pre-rename callers). When given it wins, so ``LayoutGenerator("city")``
-        # and ``LayoutGenerator(theme="city")`` both work (Req 11.1). The value
-        # is legacy-mapped (``outdoor`` -> ``wilderness``) so the backend
-        # registry and the terrain routing see the current vocabulary.
-        if theme is not None:
-            zone_type = theme
+    def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None):
+        # Normalise / legacy-map the zone type (``outdoor`` -> ``wilderness``)
+        # so the backend registry and terrain routing always see the current
+        # vocabulary, whatever a caller hands in.
         from .zone_types import canonical_zone_type
         self.zone_type = canonical_zone_type(zone_type) or zone_type
         # ``profile`` loads the MEASURED style profile for this zone type
@@ -155,15 +150,6 @@ class LayoutGenerator:
         #               ramp. 0.5 ≈ 26.6°, comfortably under the traversability
         #               agent's 40° walkable-slope cap.
         self.max_grade = 0.5
-
-    @property
-    def theme(self) -> str:
-        """Legacy read/write alias for ``zone_type`` (pre-rename attribute)."""
-        return self.zone_type
-
-    @theme.setter
-    def theme(self, value: str) -> None:
-        self.zone_type = value
 
     def _apply_room_scale(self, room_count: int) -> None:
         """

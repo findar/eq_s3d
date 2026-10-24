@@ -35,9 +35,6 @@ _ZONE_TYPE_WORDS = {
                 "cave", "cavern", "grotto", "tunnel", "underground", "mine"],
 }
 
-# Legacy alias for pre-rename importers (task 10.9 retargets and drops this).
-_THEME_WORDS = _ZONE_TYPE_WORDS
-
 # Keyword → region kind
 _REGION_WORDS = {
     "water": ["water", "flooded", "lake", "pool", "pond", "river", "underwater",

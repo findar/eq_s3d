@@ -189,12 +189,13 @@ def test_no_origin_no_cors_headers(client):
 
 
 # ---------------------------------------------------------------------------
-# M0 6.7 — controls path rejects the removed "cave" theme
+# M0 6.7 — controls path rejects the removed "cave" zone type
 # ---------------------------------------------------------------------------
 
-def test_controls_cave_theme_rejected(client):
-    """A control-driven generate with theme="cave" is a 400 whose detail names
-    all three valid themes, and nothing is written to OUTPUT_DIR (M0 Req 6.7)."""
+def test_controls_cave_zone_type_rejected(client):
+    """A control-driven generate with zone_type="cave" is a 400 whose detail
+    names all three valid zone types, and nothing is written to OUTPUT_DIR
+    (M0 Req 6.7)."""
     resp = assert_no_wildcard(
         client.post("/api/generate", json={"zone_type": "cave", "rooms": ROOMS})
     )
@@ -204,6 +205,30 @@ def test_controls_cave_theme_rejected(client):
         assert zt in detail, f"detail does not name {zt!r}: {detail!r}"
     # The 400 is raised before the factory runs, so no artifacts are produced.
     assert list(app_mod.OUTPUT_DIR.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------
+# Req 11.4 — the legacy /api/themes endpoint is a pure alias of /api/zone_types
+# ---------------------------------------------------------------------------
+
+def test_zone_types_and_themes_listings_are_identical(client):
+    """``GET /api/zone_types`` and the legacy ``GET /api/themes`` return the
+    SAME body (Req 11.4).
+
+    ``/api/themes`` is the kept legacy LOAD boundary on the server's read side:
+    an old client polling it must get exactly what the current endpoint serves,
+    so the two bodies are byte-for-byte equal and both list the Defined zone
+    types.
+    """
+    zt = assert_no_wildcard(client.get("/api/zone_types"))
+    th = assert_no_wildcard(client.get("/api/themes"))
+    assert zt.status_code == 200, zt.text
+    assert th.status_code == 200, th.text
+    assert zt.json() == th.json(), (
+        "/api/themes body diverged from /api/zone_types: "
+        f"{th.json()!r} != {zt.json()!r}"
+    )
+    assert set(zt.json()["zone_types"]) == {"dungeon", "city", "wilderness"}
 
 # ---------------------------------------------------------------------------
 # Property 18 (Req 9.3, 9.4) — foreign origins get no CORS grant

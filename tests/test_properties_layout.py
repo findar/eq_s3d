@@ -18,7 +18,7 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from ai.expand import plan_to_spec
-from ai.rule_planner import RulePlanner, _THEME_WORDS
+from ai.rule_planner import RulePlanner, _ZONE_TYPE_WORDS
 from ai.schema import ZonePlan
 from generators.geometry import MAX_SEG_RISE, build_mesh
 from generators.layout import LayoutGenerator
@@ -36,14 +36,14 @@ from .strategies import (
     seeds,
     room_counts,
     room_counts_wide,
-    spec_themes,
-    box_themes,
+    spec_zone_types,
+    box_zone_types,
     verticality,
     verticality_all,
     semantic_inputs,
     zone_plan_dicts,
     CAVE_WORDS,
-    DEFINED_THEMES,
+    DEFINED_ZONE_TYPES,
 )
 
 
@@ -56,13 +56,13 @@ from .strategies import (
 @settings(deadline=None, max_examples=scaled(100))
 @given(
     seed=seeds,
-    theme=spec_themes,
+    zone_type=spec_zone_types,
     n=room_counts(1, 30),
     locks=st.integers(min_value=0, max_value=5),
     elevation=st.booleans(),
     semantic=semantic_inputs,
 )
-def test_zonespec_json_roundtrip(seed, theme, n, locks, elevation, semantic):
+def test_zonespec_json_roundtrip(seed, zone_type, n, locks, elevation, semantic):
     """Feature: zone-generator-m0-hygiene, Property 4: ZoneSpec JSON round-trip.
 
     Umbrella P11. For any Zone_Spec the Layout_Generator produces (themes
@@ -77,7 +77,7 @@ def test_zonespec_json_roundtrip(seed, theme, n, locks, elevation, semantic):
     """
     plan = ZonePlan(
         name=f"rt{seed}",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         elevation=elevation,
         locks=locks,
@@ -122,11 +122,11 @@ def _connected(adj, nodes):
 @settings(deadline=None, max_examples=scaled(100))
 @given(
     seed=seeds,
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts(1, 30),
     semantic=semantic_inputs,
 )
-def test_connectivity_and_roles(seed, theme, n, semantic):
+def test_connectivity_and_roles(seed, zone_type, n, semantic):
     """Feature: zone-generator-m0-hygiene, Property 5: Layout connectivity and pacing roles.
 
     Umbrella P3 (single District). For any Zone_Spec the Layout_Generator
@@ -142,7 +142,7 @@ def test_connectivity_and_roles(seed, theme, n, semantic):
     """
     plan = ZonePlan(
         name=f"conn{seed}",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         dungeon_theme=semantic["dungeon_theme"],
         dungeon_race=semantic["dungeon_race"],
@@ -192,7 +192,7 @@ def test_connectivity_and_roles(seed, theme, n, semantic):
 @settings(deadline=None, max_examples=scaled(100))
 @example(
     seed=16,
-    theme="dungeon",
+    zone_type="dungeon",
     n=5,
     locks=4,
     semantic={"dungeon_theme": "", "dungeon_race": "", "elemental_tint": None},
@@ -200,13 +200,13 @@ def test_connectivity_and_roles(seed, theme, n, semantic):
 )
 @given(
     seed=seeds,
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts(3, 30),
     locks=st.integers(min_value=1, max_value=5),
     semantic=semantic_inputs,
     expect_fallback=st.just(False),
 )
-def test_gating_solvable(seed, theme, n, locks, semantic, expect_fallback):
+def test_gating_solvable(seed, zone_type, n, locks, semantic, expect_fallback):
     """Feature: zone-generator-m0-hygiene, Property 6: Gating is solvable.
 
     Umbrella P4 (single District). For any keyed dungeon the Layout_Generator
@@ -227,7 +227,7 @@ def test_gating_solvable(seed, theme, n, locks, semantic, expect_fallback):
     Validates: M0 Req 3.2, 3.6; umbrella Req 1.6.
     """
     # Same gated path task 10.3 verified: locks > 0 triggers `_apply_gating`.
-    spec = LayoutGenerator(theme, seed=seed).generate(
+    spec = LayoutGenerator(zone_type, seed=seed).generate(
         name=f"gate{seed}",
         room_count=n,
         locks=locks,
@@ -250,7 +250,7 @@ def test_gating_solvable(seed, theme, n, locks, semantic, expect_fallback):
     room_ids = {r.id for r in spec.rooms}
     assert visited == room_ids, (
         f"gating not solvable: unreached rooms "
-        f"{sorted(room_ids - visited)} (seed={seed}, theme={theme}, "
+        f"{sorted(room_ids - visited)} (seed={seed}, theme={zone_type}, "
         f"n={n}, locks={locks})"
     )
 
@@ -281,13 +281,13 @@ def test_gating_solvable(seed, theme, n, locks, semantic, expect_fallback):
 @settings(deadline=None, max_examples=scaled(100))
 @given(
     seed=seeds,
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts(2, 30),
     vert=verticality,
     elevation=st.booleans(),
     semantic=semantic_inputs,
 )
-def test_elevation_grade_cap(seed, theme, n, vert, elevation, semantic):
+def test_elevation_grade_cap(seed, zone_type, n, vert, elevation, semantic):
     """Feature: zone-generator-m0-hygiene, Property 7: Elevation grade cap.
 
     Umbrella P6. For any Zone_Spec `ai.expand.plan_to_spec` produces on a box
@@ -313,7 +313,7 @@ def test_elevation_grade_cap(seed, theme, n, vert, elevation, semantic):
     """
     plan = ZonePlan(
         name=f"grade{seed}",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         elevation=elevation,
         verticality=vert,
@@ -338,7 +338,7 @@ def test_elevation_grade_cap(seed, theme, n, vert, elevation, semantic):
             f"{c.from_room!r}/{c.to_room!r}"
         )
 
-        run = run_for(spec, theme, n, plan.size, a, b)
+        run = run_for(spec, zone_type, n, plan.size, a, b)
         dz = abs(c.from_z - c.to_z)
         cap = run * 0.5 + 0.01
 
@@ -348,7 +348,7 @@ def test_elevation_grade_cap(seed, theme, n, vert, elevation, semantic):
         assert dz <= cap, (
             f"corridor {c.id} exceeds the grade cap: |dz|={dz:.4f} > "
             f"run*0.5+0.01={cap:.4f} (run={run:.4f}); seed={seed}, "
-            f"theme={theme}, n={n}, verticality={vert!r}, "
+            f"theme={zone_type}, n={n}, verticality={vert!r}, "
             f"elevation={elevation}, semantic={semantic}, "
             f"rooms {c.from_room!r}->{c.to_room!r}"
         )
@@ -501,14 +501,14 @@ def test_relax_conflict_fallback():
 # above/below z_ref at a height that is NOT the far room's floor) is STILL caught
 # -- confirmed against an injected 1.5 u lip, which the probe still flags.
 @settings(deadline=None, max_examples=scaled(50))
-@example(seed=13, theme="dungeon", n=13, verticality="dramatic").via("discovered failure")
+@example(seed=13, zone_type="dungeon", n=13, verticality="dramatic").via("discovered failure")
 @given(
     seed=seeds,
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts_wide,
     verticality=verticality_all,
 )
-def test_flush_openings(seed, theme, n, verticality):
+def test_flush_openings(seed, zone_type, n, verticality):
     """Feature: zone-generator-m1-controls-traversability, Property 3: Flush openings.
 
     Umbrella P7. For any seed, box theme (dungeon/city), room count across the
@@ -554,7 +554,7 @@ def test_flush_openings(seed, theme, n, verticality):
     # leg of a Z-corridor is excluded by the MAX_SEG_RISE seam band below).
     plan = ZonePlan(
         name=f"flush{seed}",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         verticality=verticality,
         elevation=verticality != "flat",
@@ -573,7 +573,7 @@ def test_flush_openings(seed, theme, n, verticality):
         # lookup rather than crash if that ever changes.
         assert from_room is not None and to_room is not None, (
             f"corridor {c.id} references unknown room(s) "
-            f"{c.from_room!r}/{c.to_room!r} (seed={seed}, theme={theme}, n={n}, "
+            f"{c.from_room!r}/{c.to_room!r} (seed={seed}, theme={zone_type}, n={n}, "
             f"verticality={verticality!r})"
         )
 
@@ -582,12 +582,12 @@ def test_flush_openings(seed, theme, n, verticality):
         # drift here is a real bug, not float noise.
         assert c.from_z == from_room.floor_z, (
             f"corridor {c.id} from_z {c.from_z!r} != from_room floor_z "
-            f"{from_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
+            f"{from_room.floor_z!r} (seed={seed}, theme={zone_type}, n={n}, "
             f"verticality={verticality!r})"
         )
         assert c.to_z == to_room.floor_z, (
             f"corridor {c.id} to_z {c.to_z!r} != to_room floor_z "
-            f"{to_room.floor_z!r} (seed={seed}, theme={theme}, n={n}, "
+            f"{to_room.floor_z!r} (seed={seed}, theme={zone_type}, n={n}, "
             f"verticality={verticality!r})"
         )
 
@@ -613,7 +613,7 @@ def test_flush_openings(seed, theme, n, verticality):
             assert zs, (
                 f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) found no "
                 f"upward floor face within {MAX_SEG_RISE} u of floor_z "
-                f"{floor_z:.3f} (seed={seed}, theme={theme}, n={n}, "
+                f"{floor_z:.3f} (seed={seed}, theme={zone_type}, n={n}, "
                 f"verticality={verticality!r})"
             )
             for z in zs:
@@ -621,7 +621,7 @@ def test_flush_openings(seed, theme, n, verticality):
                     f"corridor {c.id} {label} opening ({ox:.3f}, {oy:.3f}) has a "
                     f"floor face at z={z:.5f}, off floor_z {floor_z:.3f} by "
                     f"{abs(z - floor_z):.5f} u > 0.01 (seed={seed}, "
-                    f"theme={theme}, n={n}, verticality={verticality!r})"
+                    f"theme={zone_type}, n={n}, verticality={verticality!r})"
                 )
 
 
@@ -641,9 +641,9 @@ def test_flush_openings(seed, theme, n, verticality):
 # fixpoint step -- calling it again on an already-normalised plan must leave it
 # equal. The `zone_plan_dicts` strategy deliberately keeps "cave" in its theme
 # vocab (task 2.4) so cave->dungeon normalisation is exercised; the real
-# `validate()` maps ANY out-of-vocab theme -- "cave" included -- to "dungeon",
-# so the domain assertion below simply requires the normalised theme to be one
-# of VALID_THEMES, which covers the cave case without special-casing it.
+# `validate()` maps ANY out-of-vocab value -- "cave" included -- to "dungeon",
+# so the domain assertion below simply requires the normalised zone_type to be
+# one of VALID_ZONE_TYPES, which covers the cave case without special-casing it.
 @settings(deadline=None, max_examples=scaled(100))
 @given(d=zone_plan_dicts)
 def test_zoneplan_normalisation(d):
@@ -654,8 +654,8 @@ def test_zoneplan_normalisation(d):
     inside its valid domain -- the umbrella Req 2.3/2.4/2.8 vocabularies and
     clamp ranges:
 
-    * ``theme`` in VALID_THEMES (an out-of-vocab theme, "cave" included, maps to
-      "dungeon");
+    * ``zone_type`` in VALID_ZONE_TYPES (an out-of-vocab value, "cave" included,
+      maps to "dungeon");
     * ``room_count`` clamped to ``[1, 30]``; ``locks`` clamped to ``[0, 5]``;
     * ``size`` in {small, medium, large, huge}; ``verticality`` in
       {flat, moderate, dramatic};
@@ -675,7 +675,7 @@ def test_zoneplan_normalisation(d):
     Validates: M0 Req 3.5; umbrella Req 1.6.
     """
     from ai.schema import (
-        VALID_THEMES,
+        VALID_ZONE_TYPES,
         VALID_REGION_KINDS,
         VALID_DUNGEON_THEMES,
         VALID_DUNGEON_RACES,
@@ -685,8 +685,8 @@ def test_zoneplan_normalisation(d):
     plan = ZonePlan.from_dict(d)
 
     # --- (1) Every field is inside its valid domain -------------------------
-    assert plan.theme in VALID_THEMES, (
-        f"theme {plan.theme!r} not in {VALID_THEMES} (input {d.get('theme')!r})"
+    assert plan.zone_type in VALID_ZONE_TYPES, (
+        f"theme {plan.zone_type!r} not in {VALID_ZONE_TYPES} (input {d.get('theme')!r})"
     )
     assert isinstance(plan.room_count, int) and 1 <= plan.room_count <= 30, (
         f"room_count {plan.room_count!r} outside [1, 30] "
@@ -760,10 +760,10 @@ def test_zoneplan_normalisation(d):
 # theme must be `dungeon`; otherwise (ties, or outdoor/city outscoring) we only
 # assert theme in Defined_Themes, because the planner's tie rule -- unchanged in
 # M0 -- lets outdoor/city win ties, and over-constraining ties would be wrong.
-_OTHER_THEME_WORDS = sorted(
+_OTHER_ZONE_TYPE_WORDS = sorted(
     {
         w
-        for bucket, words in _THEME_WORDS.items()
+        for bucket, words in _ZONE_TYPE_WORDS.items()
         for w in words
         if w not in set(CAVE_WORDS)
     }
@@ -778,7 +778,7 @@ def cave_prompts(draw) -> str:
         st.lists(st.sampled_from(CAVE_WORDS), min_size=1, max_size=3)
     )
     other_picks = draw(
-        st.lists(st.sampled_from(_OTHER_THEME_WORDS), min_size=0, max_size=3)
+        st.lists(st.sampled_from(_OTHER_ZONE_TYPE_WORDS), min_size=0, max_size=3)
     )
     filler = draw(st.text(max_size=40))
     tokens = cave_picks + other_picks + ([filler] if filler else [])
@@ -810,35 +810,36 @@ def test_cave_words_mean_dungeon(prompt):
     unchanged in M0 and outdoor/city win ties, so over-constraining ties would
     be wrong.
 
-    The dungeon/outdoor/city scores are computed in the test directly from
-    `ai.rule_planner._THEME_WORDS`, mirroring the planner's substring counting,
-    which is the design's "scores computed in the test from `_THEME_WORDS` for
-    the strictly greater premise". If a cave-word prompt ever yields "cave" (or
-    any out-of-domain theme), or the strictly-greater-dungeon premise fails to
+    The dungeon/wilderness/city scores are computed in the test directly from
+    `ai.rule_planner._ZONE_TYPE_WORDS`, mirroring the planner's substring
+    counting, which is the design's "scores computed in the test from the word
+    buckets for the strictly greater premise". If a cave-word prompt ever yields
+    "cave" (or any out-of-domain value), or the strictly-greater-dungeon premise
+    fails to
     give "dungeon", that is a REAL planner bug -- report the counterexample and
     fix the planner at the root; do NOT narrow the strategy.
 
     Validates: M0 Req 6.5.
     """
-    theme = RulePlanner().plan(prompt).theme
+    zone_type = RulePlanner().plan(prompt).zone_type
 
     # (1) The theme is always a Defined_Theme and never "cave".
-    assert theme in DEFINED_THEMES, (
-        f"planner theme {theme!r} not in Defined_Themes {DEFINED_THEMES} "
+    assert zone_type in DEFINED_ZONE_TYPES, (
+        f"planner theme {zone_type!r} not in Defined_Themes {DEFINED_ZONE_TYPES} "
         f"for prompt {prompt!r}"
     )
 
     # (2) Strictly-greater dungeon score -> theme must be dungeon. Scores are
     # computed here from _THEME_WORDS with the planner's own str.count scoring.
     text_lower = prompt.lower()
-    dungeon_score = _bucket_score(text_lower, _THEME_WORDS["dungeon"])
+    dungeon_score = _bucket_score(text_lower, _ZONE_TYPE_WORDS["dungeon"])
     # The open-air bucket key is "wilderness" post-rename (word list unchanged).
-    outdoor_score = _bucket_score(text_lower, _THEME_WORDS["wilderness"])
-    city_score = _bucket_score(text_lower, _THEME_WORDS["city"])
+    outdoor_score = _bucket_score(text_lower, _ZONE_TYPE_WORDS["wilderness"])
+    city_score = _bucket_score(text_lower, _ZONE_TYPE_WORDS["city"])
 
     if dungeon_score > outdoor_score and dungeon_score > city_score:
-        assert theme == "dungeon", (
+        assert zone_type == "dungeon", (
             f"dungeon score {dungeon_score} strictly beats outdoor "
             f"{outdoor_score} and city {city_score}, but planner chose "
-            f"{theme!r} for prompt {prompt!r}"
+            f"{zone_type!r} for prompt {prompt!r}"
         )

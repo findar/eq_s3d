@@ -18,7 +18,7 @@ from core.zon import ZonFile
 
 class TestZoneSpec:
     def test_roundtrip(self, tmp_path):
-        spec = ZoneSpec(name="test", theme="dungeon")
+        spec = ZoneSpec(name="test", zone_type="dungeon")
         spec.add_material("wall", "wall.dds", color=(100, 90, 80))
         spec.rooms.append(RoomSpec("r0", 0, 0, width=200, depth=200, height=60))
         spec.lights.append(LightSpec("l0", 0, 0, 40))
@@ -28,7 +28,7 @@ class TestZoneSpec:
         loaded = ZoneSpec.load(path)
 
         assert loaded.name == "test"
-        assert loaded.theme == "dungeon"
+        assert loaded.zone_type == "dungeon"
         assert len(loaded.rooms) == 1
         assert len(loaded.lights) == 1
         assert loaded.materials["wall"].color == (100, 90, 80)
@@ -85,8 +85,8 @@ class TestGeometry:
 
 class TestLayout:
     def test_deterministic_seed(self):
-        gen_a = LayoutGenerator(theme="dungeon", seed=123)
-        gen_b = LayoutGenerator(theme="dungeon", seed=123)
+        gen_a = LayoutGenerator(zone_type="dungeon", seed=123)
+        gen_b = LayoutGenerator(zone_type="dungeon", seed=123)
         spec_a = gen_a.generate("z", room_count=4)
         spec_b = gen_b.generate("z", room_count=4)
         # Same seed → same room centres
@@ -95,7 +95,7 @@ class TestLayout:
             assert ra.center_y == rb.center_y
 
     def test_room_count(self):
-        gen = LayoutGenerator(theme="dungeon", seed=1)
+        gen = LayoutGenerator(zone_type="dungeon", seed=1)
         spec = gen.generate("z", room_count=6)
         assert len(spec.rooms) == 6
         # TinyKeep layout: at least N-1 corridors (MST = connected), possibly
@@ -105,35 +105,35 @@ class TestLayout:
         assert len(spec.corridors) < 6 * 5 // 2
 
     def test_lights_generated(self):
-        gen = LayoutGenerator(theme="dungeon", seed=1)
+        gen = LayoutGenerator(zone_type="dungeon", seed=1)
         spec = gen.generate("z", room_count=3, add_lights=True)
         assert len(spec.lights) == 3
 
     def test_connected_rooms_open_walls(self):
-        gen = LayoutGenerator(theme="dungeon", seed=1)
+        gen = LayoutGenerator(zone_type="dungeon", seed=1)
         spec = gen.generate("z", room_count=3)
         # Connected rooms should have at least one open wall each
         assert any(r.open_walls for r in spec.rooms)
 
-    def test_outdoor_rooms_larger_than_dungeon(self):
-        # Theme-accurate scale: outdoor zones are far larger than dungeons.
-        dungeon = LayoutGenerator(theme="dungeon", seed=1).generate("d", room_count=5)
-        outdoor = LayoutGenerator(theme="outdoor", seed=1).generate("o", room_count=5)
+    def test_wilderness_rooms_larger_than_dungeon(self):
+        # Zone-type-accurate scale: wilderness zones are far larger than dungeons.
+        dungeon = LayoutGenerator(zone_type="dungeon", seed=1).generate("d", room_count=5)
+        wilderness = LayoutGenerator(zone_type="wilderness", seed=1).generate("o", room_count=5)
         d_side = dungeon.rooms[0].width
-        o_side = outdoor.rooms[0].width
-        assert o_side > d_side * 3, f"outdoor {o_side:.0f} vs dungeon {d_side:.0f}"
+        o_side = wilderness.rooms[0].width
+        assert o_side > d_side * 3, f"wilderness {o_side:.0f} vs dungeon {d_side:.0f}"
 
     def test_size_multiplier_scales(self):
-        base = LayoutGenerator(theme="dungeon", seed=1)
+        base = LayoutGenerator(zone_type="dungeon", seed=1)
         base_spec = base.generate("b", room_count=5)
-        big = LayoutGenerator(theme="dungeon", seed=1)
+        big = LayoutGenerator(zone_type="dungeon", seed=1)
         big.size_multiplier = 2.0
         big_spec = big.generate("g", room_count=5)
         assert big_spec.rooms[0].width > base_spec.rooms[0].width * 1.5
 
     def test_more_rooms_smaller_each(self):
-        few = LayoutGenerator(theme="dungeon", seed=1).generate("f", room_count=3)
-        many = LayoutGenerator(theme="dungeon", seed=1).generate("m", room_count=15)
+        few = LayoutGenerator(zone_type="dungeon", seed=1).generate("f", room_count=3)
+        many = LayoutGenerator(zone_type="dungeon", seed=1).generate("m", room_count=15)
         # Dividing the footprint across more rooms → smaller individual rooms
         assert many.rooms[0].width < few.rooms[0].width
 
@@ -145,7 +145,7 @@ class TestTinyKeepLayout:
 
     def test_no_room_overlaps(self):
         for seed in (3, 7, 11, 42):
-            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+            spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
                 "z", room_count=12, elevation=False)
             rs = spec.rooms
             for i in range(len(rs)):
@@ -155,7 +155,7 @@ class TestTinyKeepLayout:
 
     def test_fully_connected(self):
         # Build adjacency from corridors (by nearest room to each endpoint)
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate(
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate(
             "z", room_count=10, elevation=False)
         n = len(spec.rooms)
         # At minimum a spanning tree exists → corridors >= n-1
@@ -166,7 +166,7 @@ class TestTinyKeepLayout:
         # Reconstruct adjacency by matching each corridor endpoint to the room
         # whose wall it sits on (endpoints are on room walls, within half the
         # room's extent of its centre on one axis).
-        spec = LayoutGenerator(theme="dungeon", seed=11).generate(
+        spec = LayoutGenerator(zone_type="dungeon", seed=11).generate(
             "z", room_count=10, elevation=False)
         rooms = spec.rooms
 
@@ -206,42 +206,42 @@ class TestTinyKeepLayout:
         # A larger zone should get at least one loop edge above the MST (n-1).
         total_extra = 0
         for seed in range(20):
-            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+            spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
                 "z", room_count=16, elevation=False)
             total_extra += len(spec.corridors) - (len(spec.rooms) - 1)
         assert total_extra > 0, "no loop edges ever added across 20 seeds"
 
     def test_single_room(self):
-        spec = LayoutGenerator(theme="dungeon", seed=1).generate("z", room_count=1)
+        spec = LayoutGenerator(zone_type="dungeon", seed=1).generate("z", room_count=1)
         assert len(spec.rooms) == 1
         assert len(spec.corridors) == 0
 
     def test_two_rooms_one_corridor(self):
-        spec = LayoutGenerator(theme="dungeon", seed=1).generate("z", room_count=2)
+        spec = LayoutGenerator(zone_type="dungeon", seed=1).generate("z", room_count=2)
         assert len(spec.rooms) == 2
         assert len(spec.corridors) == 1
 
 
 class TestPacing:
     def test_exactly_one_entrance_and_climax(self):
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate("z", room_count=10)
         roles = [r.role for r in spec.rooms]
         assert roles.count("entrance") == 1
         assert roles.count("climax") == 1
 
     def test_entrance_is_depth_zero(self):
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate("z", room_count=10)
         entrance = next(r for r in spec.rooms if r.role == "entrance")
         assert entrance.graph_depth == 0
 
     def test_climax_is_deepest(self):
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate("z", room_count=10)
         climax = next(r for r in spec.rooms if r.role == "climax")
         max_depth = max(r.graph_depth for r in spec.rooms)
         assert climax.graph_depth == max_depth
 
     def test_climax_larger_than_deadends(self):
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=12)
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate("z", room_count=12)
         climax = next(r for r in spec.rooms if r.role == "climax")
         deadends = [r for r in spec.rooms if r.role == "deadend"]
         if deadends:
@@ -249,14 +249,14 @@ class TestPacing:
             assert climax.width * climax.depth > avg_de
 
     def test_depth_assigned_to_all(self):
-        spec = LayoutGenerator(theme="dungeon", seed=11).generate("z", room_count=10)
+        spec = LayoutGenerator(zone_type="dungeon", seed=11).generate("z", room_count=10)
         # Every room reachable from entrance → every room has a sensible depth
         assert all(r.graph_depth >= 0 for r in spec.rooms)
         # At least some progression beyond the entrance
         assert max(r.graph_depth for r in spec.rooms) >= 2
 
     def test_safe_point_at_entrance(self):
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=10)
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate("z", room_count=10)
         entrance = next(r for r in spec.rooms if r.role == "entrance")
         sx, sy, _sz = spec.safe_point
         assert abs(sx - entrance.center_x) < 1.0
@@ -264,7 +264,7 @@ class TestPacing:
 
     def test_lighting_fades_with_depth(self):
         # Deeper dungeon rooms should have dimmer lights than the entrance.
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate("z", room_count=12)
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate("z", room_count=12)
         depth_by_id = {r.id: r.graph_depth for r in spec.rooms}
         # Match lights to rooms by id prefix
         bright = {}
@@ -331,19 +331,19 @@ class TestGating:
         return len(reachable) == len(rooms)
 
     def test_open_dungeon_has_no_gates(self):
-        spec = LayoutGenerator(theme="dungeon", seed=3).generate(
+        spec = LayoutGenerator(zone_type="dungeon", seed=3).generate(
             "z", room_count=12, locks=0)
         assert len(spec.gates) == 0
 
     def test_keyed_dungeon_has_gates(self):
-        spec = LayoutGenerator(theme="dungeon", seed=3).generate(
+        spec = LayoutGenerator(zone_type="dungeon", seed=3).generate(
             "z", room_count=12, locks=2)
         assert len(spec.gates) >= 1
 
     def test_keyed_dungeons_always_solvable(self):
         for locks in (1, 2, 3):
             for seed in range(10):
-                spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+                spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
                     "z", room_count=12, locks=locks)
                 assert self._is_solvable(spec), \
                     f"unsolvable: locks={locks} seed={seed}"
@@ -351,7 +351,7 @@ class TestGating:
     def test_keys_shallower_than_their_locks(self):
         # Each key room's graph_depth should be <= the deepest reachable before
         # the lock — a simple sanity check that keys aren't placed behind locks.
-        spec = LayoutGenerator(theme="dungeon", seed=5).generate(
+        spec = LayoutGenerator(zone_type="dungeon", seed=5).generate(
             "z", room_count=12, locks=2)
         depth_by_id = {r.id: r.graph_depth for r in spec.rooms}
         for g in spec.gates:
@@ -369,7 +369,7 @@ class TestGatingPlanner:
         from ai.rule_planner import RulePlanner
         p = RulePlanner().plan("an open sprawling cave to explore")
         assert p.locks == 0
-        assert p.theme == "dungeon"
+        assert p.zone_type == "dungeon"
 
     def test_rule_planner_explicit_word_count(self):
         from ai.rule_planner import RulePlanner
@@ -380,7 +380,7 @@ class TestGatingPlanner:
 class TestMapView:
     def test_renders_svg_with_rooms(self):
         from generators.mapview import render_map_svg
-        gen = LayoutGenerator(theme="dungeon", seed=11)
+        gen = LayoutGenerator(zone_type="dungeon", seed=11)
         spec = gen.generate("maptest", room_count=6)
         svg = render_map_svg(spec)
         assert svg.startswith("<svg")
@@ -397,14 +397,14 @@ class TestMapView:
 
     def test_gates_drawn_when_present(self):
         from generators.mapview import render_map_svg
-        gen = LayoutGenerator(theme="dungeon", seed=11)
+        gen = LayoutGenerator(zone_type="dungeon", seed=11)
         spec = gen.generate("maptest", room_count=10, locks=2)
         svg = render_map_svg(spec)
         # Gold key diamonds use <path>; two gates → at least two paths
         assert svg.count("<path") >= len(spec.gates)
 
     def test_builder_writes_map_sidecar(self, tmp_path):
-        gen = LayoutGenerator(theme="dungeon", seed=11)
+        gen = LayoutGenerator(zone_type="dungeon", seed=11)
         spec = gen.generate("mapsidecar", room_count=4)
         ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=True)
         svg_path = tmp_path / "mapsidecar.map.svg"
@@ -416,7 +416,7 @@ class TestSemantics:
     """Content / semantic layer (Step 1 — single district, dungeon theme)."""
 
     def _themed(self, seed=7, rooms=10, theme="fortress", race="", tint=None):
-        return LayoutGenerator(theme="dungeon", seed=seed).generate(
+        return LayoutGenerator(zone_type="dungeon", seed=seed).generate(
             "sem", room_count=rooms, dungeon_theme=theme,
             dungeon_race=race, elemental_tint=tint)
 
@@ -449,7 +449,7 @@ class TestSemantics:
 
     def test_unthemed_dungeon_has_no_semantic_type(self):
         # A plain dungeon (no theme args) keeps the old behaviour.
-        spec = LayoutGenerator(theme="dungeon", seed=7).generate("plain", room_count=8)
+        spec = LayoutGenerator(zone_type="dungeon", seed=7).generate("plain", room_count=8)
         assert spec.dungeon_theme == ""
         assert all(r.semantic_type == "" for r in spec.rooms)
 
@@ -510,7 +510,7 @@ class TestSemantics:
 
 class TestBuilder:
     def test_full_build(self, tmp_path):
-        gen = LayoutGenerator(theme="dungeon", seed=42)
+        gen = LayoutGenerator(zone_type="dungeon", seed=42)
         spec = gen.generate("buildtest", room_count=4)
         result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
 
@@ -519,7 +519,7 @@ class TestBuilder:
         assert result.polygon_count > 0
 
     def test_build_produces_valid_eqg(self, tmp_path):
-        gen = LayoutGenerator(theme="dungeon", seed=42)
+        gen = LayoutGenerator(zone_type="dungeon", seed=42)
         spec = gen.generate("validtest", room_count=3)
         result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
 
@@ -542,7 +542,7 @@ class TestBuilder:
         assert "TER_VALIDTEST" in zon.models[0].upper()
 
     def test_zon_has_lights(self, tmp_path):
-        gen = LayoutGenerator(theme="dungeon", seed=42)
+        gen = LayoutGenerator(zone_type="dungeon", seed=42)
         spec = gen.generate("lighttest", room_count=3)
         result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
 
@@ -591,20 +591,20 @@ class TestElevation:
         assert len(mb.polygons) > 8
 
     def test_elevation_layout_varies_z(self):
-        gen = LayoutGenerator(theme="dungeon", seed=7)
+        gen = LayoutGenerator(zone_type="dungeon", seed=7)
         spec = gen.generate("ev", room_count=8, elevation=True)
         floor_zs = {r.floor_z for r in spec.rooms}
         # With elevation on and 8 rooms, we expect multiple distinct heights
         assert len(floor_zs) > 1
 
     def test_elevation_off_keeps_flat(self):
-        gen = LayoutGenerator(theme="dungeon", seed=7)
+        gen = LayoutGenerator(zone_type="dungeon", seed=7)
         spec = gen.generate("flat", room_count=8, elevation=False)
         floor_zs = {r.floor_z for r in spec.rooms}
         assert floor_zs == {0.0}
 
     def test_elevated_zone_builds(self, tmp_path):
-        gen = LayoutGenerator(theme="dungeon", seed=7)
+        gen = LayoutGenerator(zone_type="dungeon", seed=7)
         spec = gen.generate("evbuild", room_count=6, elevation=True)
         result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
         assert result.eqg_path.exists()
@@ -696,7 +696,7 @@ class TestCorridorRouting:
         # every corridor's floor footprint covers both room openings, across
         # several seeds (including the two earlier staircase-bug seeds).
         for seed in (1516796975, 481893615, 678358326, 42, 1, 99):
-            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+            spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
                 "cov", room_count=9)
             rooms = {r.id: r for r in spec.rooms}
             for cor in spec.corridors:
@@ -829,7 +829,7 @@ class TestCorridorRouting:
         seeds = [1955208177, 1516796975, 678358326, 481893615,
                  4, 53, 161, 7, 42, 99, 2024]
         for seed in seeds:
-            spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+            spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
                 "cw", room_count=9)
             _ensure_materials(spec)
             rooms = {r.id: r for r in spec.rooms}

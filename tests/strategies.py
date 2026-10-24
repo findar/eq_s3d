@@ -33,8 +33,8 @@ from ai.schema import (
 
 # The three zone types the generator ships (the Defined set). Post wave-2
 # rename the open-air type is "wilderness" (was "outdoor"). Kept equal to
-# generators.zone_types.DEFINED_ZONE_TYPES; task 10.9 renames the identifier.
-DEFINED_THEMES = {"dungeon", "city", "wilderness"}
+# generators.zone_types.DEFINED_ZONE_TYPES.
+DEFINED_ZONE_TYPES = {"dungeon", "city", "wilderness"}
 
 # Words that used to pick the `cave` theme and must now resolve to `dungeon`
 # (Property 19 / Req 6.5).
@@ -70,11 +70,11 @@ flat_only = st.just("flat")
 verticality_all = st.sampled_from(["flat", "moderate", "dramatic"])
 
 
-#: The box-geometry themes (M0_Box_Themes): dungeon + city.
-box_themes = st.sampled_from(["dungeon", "city"])
+#: The box-geometry zone types (M0_Box_Themes): dungeon + city.
+box_zone_types = st.sampled_from(["dungeon", "city"])
 
 #: Every zone type a ZoneSpec may carry (post wave-2 rename).
-spec_themes = st.sampled_from(["dungeon", "city", "wilderness"])
+spec_zone_types = st.sampled_from(["dungeon", "city", "wilderness"])
 
 #: Floor-height variation, as ``ai.schema.ZonePlan.verticality`` accepts.
 verticality = st.sampled_from(["flat", "moderate", "dramatic"])
