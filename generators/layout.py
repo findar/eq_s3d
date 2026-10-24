@@ -26,7 +26,7 @@ from .zone_spec import (
     GateSpec,
 )
 from . import semantics
-from .routing import plan_route
+from .routing import plan_route, exit_axis_x
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -702,14 +702,16 @@ class LayoutGenerator:
         fx, fy = self._wall_point(a, b)
         tx, ty = self._wall_point(b, a)
         # Route through the shared planner so the legs we measure match the
-        # geometry actually built. The exit axes come from the room-centre
-        # delta, exactly as _wall_point cut the walls. Corridors here always
-        # record both rooms, so corridor_route would resolve the same axes;
-        # planning directly off the wall points keeps this independent of a
-        # CorridorSpec (the corridor is not built yet when this is called).
-        primary_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
+        # geometry actually built. The exit axes come from the footprint
+        # separation, exactly as _wall_point cut the walls, computed per end so
+        # a genuine cross-axis pair measures as an L. Corridors here always
+        # record both rooms, so corridor_route resolves the same axes; planning
+        # directly off the wall points keeps this independent of a CorridorSpec
+        # (the corridor is not built yet when this is called).
+        exit_from_x = self._exit_axis_x(a, b)
+        exit_to_x = self._exit_axis_x(b, a)
         route = plan_route(
-            (fx, fy), (tx, ty), primary_x, primary_x,
+            (fx, fy), (tx, ty), exit_from_x, exit_to_x,
             self.corridor_width / 2, steps=0)
         wps, axes = route.waypoints, route.axes
         # Each leg runs along a single axis; measure only that axis's delta (a
@@ -822,34 +824,58 @@ class LayoutGenerator:
             radius=max(room.width, room.depth) * 0.9,
         ))
 
+    def _exit_axis_x(self, room: RoomSpec, toward: RoomSpec) -> bool:
+        """True when *room*'s corridor to *toward* exits an E/W wall (runs X).
+
+        Delegates to `routing.exit_axis_x` so the wall this cuts and the leg
+        `corridor_route`/`plan_route` plan agree on the same footprint-
+        separation basis.
+        """
+        return exit_axis_x(
+            room.center_x, room.center_y, room.width / 2, room.depth / 2,
+            toward.center_x, toward.center_y, toward.width / 2, toward.depth / 2)
+
     def _wall_point(self, room: RoomSpec, toward: RoomSpec) -> Tuple[float, float]:
         """
         Return the (x, y) point on *room*'s wall that faces *toward*, where the
         corridor should connect. This is the midpoint of the facing wall, so
         the corridor meets the wall opening cleanly instead of driving to the
         room centre. A small inset keeps the corridor flush with the wall plane.
+
+        The wall AXIS is chosen by the gap between the two footprints, not by
+        the centre delta: whichever axis the rooms are cleanly SEPARATED on
+        (positive gap) is the axis a corridor can exit along without the facing
+        walls crossing. When the centre delta picked the axis instead, a pair
+        that overlaps on that axis but is separated on the other produced an
+        INVERTED stub — the from-opening ended up past the to-opening and the
+        corridor had to run backwards to reach the jog (the `fx past tx` class,
+        design suspect table). Picking by separation keeps both stubs pointing
+        out of their rooms toward the real gap. `corridor_route` /
+        `_exit_axis_x` mirror this basis so the routed legs match these walls.
         """
+        exit_x = self._exit_axis_x(room, toward)
         dx = toward.center_x - room.center_x
         dy = toward.center_y - room.center_y
         hw, hd = room.width / 2, room.depth / 2
         # Small inset so the corridor overlaps the wall slightly (clean join).
         inset = 2.0
-        if abs(dx) >= abs(dy):
+        if exit_x:
             # East/West wall
-            x = room.center_x + (hw - inset) * (1 if dx > 0 else -1)
+            x = room.center_x + (hw - inset) * (1 if dx >= 0 else -1)
             return x, room.center_y
         else:
             # North/South wall
-            y = room.center_y + (hd - inset) * (1 if dy > 0 else -1)
+            y = room.center_y + (hd - inset) * (1 if dy >= 0 else -1)
             return room.center_x, y
 
     def _open_facing_walls(self, room: RoomSpec, toward: RoomSpec) -> None:
         """Open the wall of *room* that faces *toward* so a corridor connects."""
+        exit_x = self._exit_axis_x(room, toward)
         dx = toward.center_x - room.center_x
         dy = toward.center_y - room.center_y
-        if abs(dx) >= abs(dy):
-            wall = "E" if dx > 0 else "W"
+        if exit_x:
+            wall = "E" if dx >= 0 else "W"
         else:
-            wall = "N" if dy > 0 else "S"
+            wall = "N" if dy >= 0 else "S"
         if wall not in room.open_walls:
             room.open_walls.append(wall)

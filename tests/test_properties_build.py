@@ -69,6 +69,25 @@ def _flat_human_case(entry):
     return spec, label
 
 
+def _flat_seed_case(theme, n, seed):
+    """A flat ``(spec, label)`` case for a pinned regression seed.
+
+    Built the same way ``_raw_navigable_cases`` builds its draws (``ZonePlan``
+    -> ``plan_to_spec``, flat), so a pinned seed reproduces exactly the layout
+    the connectivity sweep surfaced as a failure.
+    """
+    plan = ZonePlan(
+        name="navraw",
+        theme=theme,
+        room_count=n,
+        verticality="flat",
+        elevation=False,
+    )
+    spec = plan_to_spec(plan, seed=seed)
+    label = f"regression seed={seed}, zone_type={theme}, rooms={n}, verticality=flat"
+    return spec, label
+
+
 @pytest.mark.slow
 @build_settings(15)
 @example(case=_flat_human_case(M0_HUMAN_PASS[0])).via("M0 human pass")
@@ -119,6 +138,7 @@ def test_raw_navigable(case):
 @build_settings(15)
 @example(case=_flat_human_case(M0_HUMAN_PASS[0])).via("M0 human pass")
 @example(case=_flat_human_case(M0_HUMAN_PASS[1])).via("M0 human pass")
+@example(case=_flat_seed_case("dungeon", 12, 27)).via("discovered failure")
 @given(case=_raw_navigable_cases())
 def test_corridor_continuity(case):
     """

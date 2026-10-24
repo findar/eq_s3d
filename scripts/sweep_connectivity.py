@@ -61,7 +61,7 @@ from typing import Dict, List, Tuple
 from ai import ZonePlan, plan_to_spec
 from analyzer import traverse
 from generators.builder import ZoneBuilder
-from generators.routing import corridor_route
+from generators.routing import corridor_route, exit_axis_x
 
 
 # The failure classes, in report order.
@@ -88,9 +88,12 @@ def _inverted_stubs(spec) -> List[str]:
         b = rooms.get(cor.to_room)
         if a is None or b is None:
             continue
-        # Exit axis for the FROM opening (same basis as corridor_route): the
-        # wall faces along X when the centre delta is dominated by X.
-        exit_from_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
+        # Exit axis for the FROM opening (same footprint-separation basis as
+        # corridor_route / _wall_point): the wall faces along X when the rooms
+        # are better separated on X.
+        exit_from_x = exit_axis_x(
+            a.center_x, a.center_y, a.width / 2, a.depth / 2,
+            b.center_x, b.center_y, b.width / 2, b.depth / 2)
         if exit_from_x:
             # Direction the from-wall faces, and the opening vs. opening delta.
             facing = 1.0 if (b.center_x - a.center_x) >= 0 else -1.0

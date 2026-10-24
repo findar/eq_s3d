@@ -130,21 +130,53 @@ def plan_route(from_xy: Tuple[float, float], to_xy: Tuple[float, float],
     return Route(waypoints=waypoints, axes=axes, carry=carry, kind=kind)
 
 
+def exit_axis_x(acx: float, acy: float, ahw: float, ahd: float,
+                bcx: float, bcy: float, bhw: float, bhd: float) -> bool:
+    """Which wall AXIS the A→B corridor exits A along: True = E/W (runs X).
+
+    Chosen by the GAP between the two footprints, not the centre delta. The
+    separation on an axis is the centre distance minus the two half-extents on
+    that axis; a positive separation means the footprints are clear of each
+    other there, so a stub can leave through that wall and travel toward the
+    real gap. Picking the axis with the larger separation keeps the facing
+    walls from crossing — the fix for the inverted-stub (`fx past tx`) class in
+    the design suspect table.
+
+    When neither axis separates the footprints (the rooms overlap both ways,
+    e.g. one nested near another after re-separation), both separations are
+    negative and we fall back to the dominant centre delta — the historic
+    basis — because there is no clean gap to prefer. The `>=` tie-break matches
+    the old centre-delta tie-break (X wins ties), keeping byte-identity for
+    pairs that already separated cleanly on the dominant axis.
+    """
+    sep_x = abs(bcx - acx) - (ahw + bhw)
+    sep_y = abs(bcy - acy) - (ahd + bhd)
+    if sep_x >= 0.0 or sep_y >= 0.0:
+        # At least one axis has a clean gap: exit along the better-separated one.
+        return sep_x >= sep_y
+    # Fully overlapping footprints: no clean gap, keep the centre-delta basis.
+    return abs(bcx - acx) >= abs(bcy - acy)
+
+
 def corridor_route(cor: CorridorSpec, rooms: Mapping[str, RoomSpec]) -> Route:
     """Plan the route for a built corridor spec.
 
-    The exit axis of each opening is derived from the ROOM-CENTRE delta (the
-    same basis `LayoutGenerator._wall_point` used to cut the walls), computed
-    INDEPENDENTLY per end so a genuine cross-axis pair still routes as an L.
-    When the corridor records no rooms (hand-authored spec), both ends fall
-    back to the endpoint delta, treating the pair as same-axis.
+    The exit axis of each opening is derived from the FOOTPRINT SEPARATION (the
+    same basis `LayoutGenerator._wall_point` now uses to cut the walls),
+    computed INDEPENDENTLY per end so a genuine cross-axis pair still routes as
+    an L. When the corridor records no rooms (hand-authored spec), both ends
+    fall back to the endpoint delta, treating the pair as same-axis.
     """
     a = rooms.get(cor.from_room)
     b = rooms.get(cor.to_room)
     if a is not None and b is not None:
+        ahw, ahd = a.width / 2, a.depth / 2
+        bhw, bhd = b.width / 2, b.depth / 2
         # True = this opening is on an E/W wall → its stub runs along X.
-        exit_from_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
-        exit_to_x = abs(a.center_x - b.center_x) >= abs(a.center_y - b.center_y)
+        exit_from_x = exit_axis_x(a.center_x, a.center_y, ahw, ahd,
+                                  b.center_x, b.center_y, bhw, bhd)
+        exit_to_x = exit_axis_x(b.center_x, b.center_y, bhw, bhd,
+                                a.center_x, a.center_y, ahw, ahd)
     else:
         dx = cor.to_x - cor.from_x
         dy = cor.to_y - cor.from_y
