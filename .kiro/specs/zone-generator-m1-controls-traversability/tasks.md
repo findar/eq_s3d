@@ -521,6 +521,38 @@ Working rules for every task:
   - [ ] 9.3 **HUMAN-GATED:** elevation 30-room 3D pass
     - Checklist, PENDING-HUMAN: elevated 30-room dungeons walk end to end; ramps land flush at both openings; no corridor runs through a room or another corridor; checked on the `M0_HUMAN_PASS` inputs as originally planned and on every seed an 8.3 fix moved.
     - _Requirements: 5.4_
+    - **Status: PENDING-HUMAN — the agent wrote the checklist below; it does NOT tick this box. The user signs it off in the live 3D viewer with Elevation CHECKED. Leave the checkbox `[ ]` until the user confirms. Wave 1 does not close until this is signed off.**
+    - **The "8.3-moved seeds" set is EMPTY.** The task says to also eyeball "every seed an 8.3 fix moved" — there are NONE. Both 8.3 root fixes moved ZERO geometry: PART 1 (`5afd5ff`) is validator-only (`analyzer/traverse.py::_nearest_standable_face` — corrects where the traversability walk STARTS, no `generators/` change) and PART 2 (`20e43e0`) is probe-only (`tests/pbt_helpers.py::opening_floor_z` + the `test_flush_openings` call site, no `generators/` change). So there is no additional moved-seed list to eyeball beyond groups A/B/C below. The elevated builds render EXACTLY as the pre-8.3 geometry did; 8.3 only corrected the traversability validator's start face and the flush test's probe scoping. (Cross-checked against the 8.3 and 9.1 Deliverables above: both state "Moved seeds: NONE" for 8.3.)
+    - **HUMAN-PASS CHECKLIST (elevation, Elevation CHECKED)**
+
+      Before you start:
+      - Make sure the Server is running **the wave-1 branch head**. Open `/api/version` and confirm `stale` is `false` (HEAD moved / uncommitted edits since start show as `stale: true` — restart the Server first). The elevation work landed in commits `5afd5ff` (8.3 PART 1) and `20e43e0` (8.3 PART 2); both are validator/probe-only, so the mesh is identical to the pre-8.3 geometry — this pass confirms that unchanged elevated geometry walks and lands flush in 3D.
+      - In the viewer, **CHECK Elevation** for every build in this pass. Where the viewer exposes the verticality amount, do each build at **moderate AND dramatic** so both ramp regimes are eyeballed; dramatic is the stress case (steepest ramps, tallest corridor rises).
+      - Per build, confirm the panel's `build_commit` matches the branch head so you know you're eyeballing the head geometry.
+
+      What to confirm on EVERY build below (the three elevation bars, Elevation CHECKED):
+      1. **Walks end to end.** Spawn in and walk the whole zone on foot via the ramps — you can reach every room. No room is a floating island; no ramp is too steep to climb (the agent's ~40° / ~3 u step cap). If a room is stranded behind an unclimbable slope, that's bar 1 failing.
+      2. **Ramps land flush at BOTH openings.** Each elevated corridor's ramp meets the room floor flush at both ends — no lip, no gap where the ramp foot meets the floor — and the ramp is subdivided finely enough to walk up (no single over-tall step; every segment rise is under the climb cap). Check the top AND the bottom of each ramp.
+      3. **No corridor runs through a room or another corridor.** Same as the flat pass (7.2), now with elevation on: no corridor tube clips through the interior of a third room, and no two unrelated corridors cross/overlap — including at different heights, where an elevated corridor could pass over/under another or clip a room's ceiling/floor.
+
+      A — The two M0_HUMAN_PASS inputs AS ORIGINALLY PLANNED, i.e. WITH elevation (Elevation CHECKED — this is the elevated counterpart of the flat 7.2 pass, which re-planned these flat). Do these first; they're the inputs a human signed off at M0 and the task calls out by seed. Tick `( )` → `(x)` as you confirm each, at moderate and at dramatic:
+      - `( )` moderate  `( )` dramatic — `create a dungeon with 30 rooms`, **seed 1949459644**, Elevation CHECKED. (Prompt-driven: paste the prompt, pin the seed, check Elevation.) Walk it end to end via the ramps; confirm every ramp lands flush at both openings; confirm no corridor runs through a room or another corridor.
+      - `( )` moderate  `( )` dramatic — `a dungeon with 30 rooms and long halls`, **seed 1510177507**, Elevation CHECKED. Same three bars; the long halls mean longer ramps, so watch bar 2 (flush + subdivided) especially.
+
+      B — The two analytically-confirmed elevated cases from 8.3 — confirm the analytic verdict holds in 3D. Generate each **dramatic (Elevation CHECKED)** via the controls with the zone type / room count / seed shown:
+      - `( )` Dungeon, 26 rooms, **seed 2985**, dramatic — 8.3 PART 1's reachability falsifier. The validator now stands on the entrance floor under the safe point and floods to all 26 rooms (`report.passed=True`, 26/26). Walk it end to end (bar 1 is the point here — every room reachable on foot via the ramps, no stranded island).
+      - `( )` Dungeon, 13 rooms, **seed 13**, dramatic — 8.3 PART 2's flush-probe case, corr_13 (`room_1 → room_11`). Both openings were confirmed flush analytically (`from_z == floor_z`, `to_z == floor_z`). Confirm corr_13's ramp lands flush at BOTH ends in 3D (bar 2 is the point here — the short ramped corridor).
+
+      C — A small spot-check spread of elevated 30-room dungeons (all **dramatic, Elevation CHECKED**) to confirm ramps generally walk and land flush across the domain, not just on the enumerated cases. A handful of seeds is enough; check all three bars, bar 2 (flush + subdivided ramps) especially:
+      - `( )` Dungeon, 30 rooms, dramatic — a handful of seeds in 1–200 (e.g. 5, 8, 9, 41, 64).
+      - `( )` Dungeon, 30 rooms, moderate — one or two of the same seeds, to confirm the gentler ramp regime also lands flush and walks.
+
+      Note on the empty 8.3-moved set:
+      - `( )` Acknowledge there is NO additional "8.3-moved seed" list to eyeball — 8.3 moved zero geometry (both root fixes validator/probe-only, see the Status note above and the 8.3 / 9.1 Deliverables). Groups A/B/C are the whole elevation 3D pass; the elevated geometry is unchanged from before 8.3.
+
+      Sign-off:
+      - `( )` When every build above satisfies all three bars, the user ticks the `9.3` checkbox. **The agent must NOT tick it.** Until then this stays `[ ]` PENDING-HUMAN, and **wave 1 does not close.**
+      - If any build fails a bar, note the zone type / room count / seed / verticality and the failing bar; that's a real geometry bug for a root fix (not a test to loosen), and wave 1 stays open.
   - [ ] 9.4 Write the wave-1 integration note (don't apply it)
     - Done-table row, "Pick up here" line, commit hash and count, and the moved-seed list from 9.1. Wave 2 starts only after the merge to `master`.
     - _Requirements: 5.4_
