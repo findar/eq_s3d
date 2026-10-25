@@ -391,3 +391,38 @@ def test_cave_prompt_builds_validated_dungeon(tmp_path):
     )
     assert vb.validated
     assert vb.spec.zone_type == "dungeon"
+
+
+# ---------------------------------------------------------------------------
+# Backend fallback (task 12.3, Req 4.3 / 7.1)
+# ---------------------------------------------------------------------------
+
+class TestBackendFallback:
+    def test_wilderness_falls_back_to_box_when_terrain_unavailable(
+            self, tmp_path, monkeypatch):
+        """A wilderness build succeeds on the box backend when terrain can't run.
+
+        Simulates the numpy-less machine (design finding: TerrainBackend.build
+        returns None) by monkeypatching ``TerrainBackend.build`` to return None.
+        The build must still SUCCEED, report ``backend == "box"``, and surface
+        the ``backend_fallback`` warning rather than crashing. Req 4.3, 7.1.
+        """
+        from generators.backends import TerrainBackend
+        from generators.builder import ZoneBuilder
+
+        # Terrain unavailable -> backend_for("wilderness").build(...) returns None.
+        monkeypatch.setattr(TerrainBackend, "build",
+                            lambda self, spec, ter_name, ter_version: None)
+
+        spec = LayoutGenerator(zone_type="wilderness", seed=GOOD_SEED).generate(
+            "wild", room_count=5)
+        assert spec.zone_type == "wilderness"   # really the terrain backend path
+
+        result = ZoneBuilder(spec).build(output_dir=str(tmp_path),
+                                         write_glb=False)
+
+        # Build succeeded via the box fallback.
+        assert Path(result.eqg_path).exists()
+        assert result.backend == "box"
+        assert ("backend_fallback: terrain unavailable, built with box"
+                in result.warnings)
