@@ -16,6 +16,7 @@ from typing import Optional
 
 from generators.layout import LayoutGenerator
 from generators.zone_spec import ZoneSpec, RegionSpec
+from generators.zone_types import STYLE_PROFILE
 from .schema import ZonePlan
 
 # size → footprint scale applied to the layout generator's room spacing
@@ -34,7 +35,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None) -> ZoneSpec:
     plan.validate()
     rng_seed = seed if seed is not None else random.randint(0, 2 ** 31 - 1)
 
-    gen = LayoutGenerator(theme=plan.theme, seed=rng_seed)
+    gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed)
 
     # Apply size as a multiplier on top of the theme-accurate base footprint.
     # (generate() recomputes room scale from the measured profile; this persists.)
@@ -68,8 +69,9 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None) -> ZoneSpec:
         for mat in spec.materials.values():
             mat.description = f"{mat.description}, {plan.mood}".strip(", ")
 
-    # Record provenance
-    spec.style_profile = plan.theme
+    # Record provenance: the measured style-profile name for this zone type
+    # (wilderness -> "outdoor"; dungeon/city map to themselves).
+    spec.style_profile = STYLE_PROFILE[plan.zone_type]
     return spec
 
 

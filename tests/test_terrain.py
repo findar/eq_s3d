@@ -78,9 +78,9 @@ class TestTerrainBuild:
         assert z1 == z2
 
 
-class TestOutdoorThemeRouting:
-    def test_outdoor_uses_terrain_backend(self, tmp_path):
-        gen = LayoutGenerator(theme="outdoor", seed=3)
+class TestWildernessZoneTypeRouting:
+    def test_wilderness_uses_terrain_backend(self, tmp_path):
+        gen = LayoutGenerator(zone_type="wilderness", seed=3)
         spec = gen.generate("outzone", room_count=4)
         result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
 

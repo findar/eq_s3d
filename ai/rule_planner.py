@@ -20,13 +20,15 @@ from typing import List
 from .schema import ZonePlan
 
 
-# Keyword → theme. Cave-like words fold into the dungeon bucket: the cave
+# Keyword → zone_type. Cave-like words fold into the dungeon bucket: the cave
 # pipeline was removed in M0, so a cave prompt plans as a dungeon (realised as a
 # natural, cave-like dungeon archetype). `mine` also stays in the mine_delve
-# archetype, so a mine prompt yields theme `dungeon` AND archetype `mine_delve`.
-_THEME_WORDS = {
-    "outdoor": ["outdoor", "forest", "field", "meadow", "hills", "plains",
-                "valley", "mountain", "wilderness", "swamp", "desert", "coast"],
+# archetype, so a mine prompt yields zone_type `dungeon` AND archetype
+# `mine_delve`. The word lists are unchanged by the rename — only the key for
+# the open-air bucket moved from `outdoor` to `wilderness` (Req 11.1).
+_ZONE_TYPE_WORDS = {
+    "wilderness": ["outdoor", "forest", "field", "meadow", "hills", "plains",
+                   "valley", "mountain", "wilderness", "swamp", "desert", "coast"],
     "city": ["city", "town", "village", "market", "bazaar", "streets", "plaza"],
     "dungeon": ["dungeon", "crypt", "catacomb", "ruin", "temple", "keep",
                 "fortress", "lair", "stronghold", "vault",
@@ -109,7 +111,7 @@ class RulePlanner:
     def plan(self, prompt: str, name: str = "zone") -> ZonePlan:
         text = (prompt or "").lower()
 
-        theme = self._match_theme(text)
+        zone_type = self._match_zone_type(text)
         size = self._match_one(text, _SIZE_WORDS, default="medium")
         verticality = self._match_one(text, _VERTICALITY_WORDS, default="moderate")
         regions = self._match_regions(text)
@@ -118,14 +120,14 @@ class RulePlanner:
         mood = self._extract_mood(text)
         locks = self._lock_count(text, room_count)
 
-        # Content / semantic layer (only meaningful for dungeon theme).
-        dungeon_theme = self._match_archetype(text) if theme == "dungeon" else ""
+        # Content / semantic layer (only meaningful for the dungeon zone type).
+        dungeon_theme = self._match_archetype(text) if zone_type == "dungeon" else ""
         dungeon_race = self._match_one(text, _RACE_WORDS, default="")
         elemental_tint = self._match_tint(regions)
 
         return ZonePlan(
             name=name,
-            theme=theme,
+            zone_type=zone_type,
             room_count=room_count,
             size=size,
             elevation=elevation,
@@ -141,13 +143,15 @@ class RulePlanner:
 
     # ------------------------------------------------------------------
 
-    def _match_theme(self, text: str) -> str:
-        # Score each theme by keyword hits; default dungeon.
+    def _match_zone_type(self, text: str) -> str:
+        # Score each zone type by keyword hits; default dungeon. Same scoring
+        # and tie rule as before the rename (first key with the strictly
+        # highest score wins; dict insertion order breaks ties).
         best, best_score = "dungeon", 0
-        for theme, words in _THEME_WORDS.items():
+        for zone_type, words in _ZONE_TYPE_WORDS.items():
             score = sum(text.count(w) for w in words)
             if score > best_score:
-                best, best_score = theme, score
+                best, best_score = zone_type, score
         return best
 
     def _match_one(self, text: str, mapping: dict, default: str) -> str:

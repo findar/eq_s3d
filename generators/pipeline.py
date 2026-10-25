@@ -25,12 +25,12 @@ zone, and every rejected attempt is logged for triage.
 The validator (`analyzer.traverse.validate`) stays a pure pass/fail; the
 retry / timeout / logging orchestration lives here, on top of it.
 
-Theme scope: only themes whose mesh shares the box / room-graph coordinate
-frame can be validated. Outdoor lives in a different frame (ROADMAP "Known
-issues"), so gating it would reject every zone -> infinite retry -> timeout.
-Non-gated themes therefore pass through UNVALIDATED (with a logged note) until
-the coordinate-frame fix lands. The gated set is explicit and configurable via
-``gated_themes``.
+Zone-type scope: only zone types whose mesh shares the box / room-graph
+coordinate frame can be validated. Wilderness lives in a different frame
+(ROADMAP "Known issues"), so gating it would reject every zone -> infinite
+retry -> timeout. Non-gated zone types therefore pass through UNVALIDATED (with
+a logged note) until the coordinate-frame fix lands. The gated set is explicit
+and configurable via ``gated_zone_types``.
 """
 
 from __future__ import annotations
@@ -54,9 +54,9 @@ logger = logging.getLogger("eq_s3d.pipeline")
 # Defaults (product choices; see tasks/validate-in-pipeline.md "Open decisions")
 # ---------------------------------------------------------------------------
 
-# Themes whose generated mesh shares the box / room-graph coordinate frame, so
-# the traversability validator is sound for them. Dungeon-only for now.
-DEFAULT_GATED_THEMES = frozenset({"dungeon"})
+# Zone types whose generated mesh shares the box / room-graph coordinate frame,
+# so the traversability validator is sound for them. Dungeon-only until wave 4.
+DEFAULT_GATED_ZONE_TYPES = frozenset({"dungeon"})
 
 # A dungeon build is sub-second, so a small budget finds a good sibling seed
 # fast; the timeout guards pathological runs. Whichever cap hits first wins.
@@ -107,10 +107,10 @@ class GenerationFailed(Exception):
     caller can surface / log the reasons.
     """
 
-    def __init__(self, zone_id: str, theme: str, failures: List[AttemptFailure],
+    def __init__(self, zone_id: str, zone_type: str, failures: List[AttemptFailure],
                  *, pinned: bool = False, timed_out: bool = False):
         self.zone_id = zone_id
-        self.theme = theme
+        self.zone_type = zone_type
         self.failures = failures
         self.attempts = len(failures)
         self.pinned = pinned
@@ -122,7 +122,7 @@ class GenerationFailed(Exception):
         else:
             why = f"exhausted {self.attempts} attempt(s)"
         super().__init__(
-            f"could not produce a valid '{theme}' zone for '{zone_id}' ({why})"
+            f"could not produce a valid '{zone_type}' zone for '{zone_id}' ({why})"
         )
 
 
@@ -140,7 +140,7 @@ def _failure_reasons(report: TraversalReport) -> List[str]:
 
 
 def log_validation_failure(failure_log: Optional[str | Path], *,
-                           zone_id: str, theme: str, seed: int, attempt: int,
+                           zone_id: str, zone_type: str, seed: int, attempt: int,
                            report: TraversalReport) -> AttemptFailure:
     """
     Record one rejected attempt: a structured line to stderr (via ``logging``)
@@ -157,9 +157,9 @@ def log_validation_failure(failure_log: Optional[str | Path], *,
     )
 
     logger.warning(
-        "traversability REJECT zone=%s theme=%s seed=%s attempt=%d "
+        "traversability REJECT zone=%s zone_type=%s seed=%s attempt=%d "
         "reachable=%d/%d reasons=%s",
-        zone_id, theme, seed, attempt,
+        zone_id, zone_type, seed, attempt,
         report.reachable_rooms, report.total_rooms,
         "; ".join(reasons) or "(none)",
     )
@@ -168,7 +168,7 @@ def log_validation_failure(failure_log: Optional[str | Path], *,
         record = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "zone_id": zone_id,
-            "theme": theme,
+            "zone_type": zone_type,
             "seed": seed,
             "attempt": attempt,
             "reachable_rooms": report.reachable_rooms,
@@ -200,7 +200,7 @@ def _fresh_seed(rng: Optional[random.Random]) -> int:
 def generate_validated(
     spec_factory: SpecFactory,
     *,
-    theme: str,
+    zone_type: Optional[str] = None,
     zone_id: str,
     seed: Optional[int] = None,
     output_dir: str | Path = "output",
@@ -208,38 +208,44 @@ def generate_validated(
     ter_version: int = 2,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     timeout_s: float = DEFAULT_TIMEOUT_S,
-    gated_themes: Sequence[str] = DEFAULT_GATED_THEMES,
+    gated_zone_types: Optional[Sequence[str]] = None,
     validate_enabled: bool = True,
     agent: Optional[AgentModel] = None,
     rng: Optional[random.Random] = None,
     failure_log: Optional[str | Path] = DEFAULT_FAILURE_LOG,
 ) -> ValidatedBuild:
     """
-    Build a zone and guarantee (for gated themes) that it passes the
+    Build a zone and guarantee (for gated zone types) that it passes the
     traversability validator before returning it.
 
     ``spec_factory(seed)`` must return a fresh ZoneSpec for the given seed
-    (name/theme/room-count already applied); the pipeline owns which seed to
+    (name/zone_type/room-count already applied); the pipeline owns which seed to
     use on each attempt.
 
     Behaviour:
 
-    * **Ungated theme** (or ``validate_enabled=False``): build exactly once with
-      the pinned seed (or a fresh one) and return it unvalidated, with a logged
-      note. No retries, so there is no false-fail retry storm on outdoor.
-    * **Gated theme, random seed**: build -> validate -> on failure pick a NEW
-      fresh seed and retry, bounded by ``max_attempts`` AND ``timeout_s``
+    * **Ungated zone type** (or ``validate_enabled=False``): build exactly once
+      with the pinned seed (or a fresh one) and return it unvalidated, with a
+      logged note. No retries, so there is no false-fail retry storm on
+      wilderness.
+    * **Gated zone type, random seed**: build -> validate -> on failure pick a
+      NEW fresh seed and retry, bounded by ``max_attempts`` AND ``timeout_s``
       (whichever hits first). At least one full attempt always completes, so we
       never return "failed" without having tried. Returns the first passing
       build; raises :class:`GenerationFailed` if the budget is exhausted.
-    * **Gated theme, pinned seed**: build -> validate once. On failure raise
+    * **Gated zone type, pinned seed**: build -> validate once. On failure raise
       :class:`GenerationFailed` (``pinned=True``) rather than silently swapping
       the caller's explicit seed.
 
     Every rejected attempt is logged (stderr + JSONL) via
     :func:`log_validation_failure`.
     """
-    gated = validate_enabled and theme in set(gated_themes)
+    if zone_type is None:
+        raise TypeError("generate_validated() requires zone_type")
+    if gated_zone_types is None:
+        gated_zone_types = DEFAULT_GATED_ZONE_TYPES
+
+    gated = validate_enabled and zone_type in set(gated_zone_types)
     pinned = seed is not None
 
     # -- Ungated / validation-disabled: single build, pass through. ----------
@@ -250,10 +256,11 @@ def generate_validated(
             output_dir=output_dir, write_glb=write_glb, ter_version=ter_version,
         )
         note = ("validation disabled" if not validate_enabled
-                else f"theme '{theme}' is not in the gated set {sorted(gated_themes)}")
-        logger.info("ungated build zone=%s theme=%s seed=%s (%s); "
+                else f"zone_type '{zone_type}' is not in the gated set "
+                     f"{sorted(gated_zone_types)}")
+        logger.info("ungated build zone=%s zone_type=%s seed=%s (%s); "
                     "returned without traversability validation",
-                    zone_id, theme, use_seed, note)
+                    zone_id, zone_type, use_seed, note)
         return ValidatedBuild(
             result=result, spec=spec, seed=use_seed, attempts=1,
             validated=False, gated=False, report=None,
@@ -275,8 +282,8 @@ def generate_validated(
 
         if report.passed:
             if attempt > 1:
-                logger.info("traversability PASS zone=%s theme=%s seed=%s "
-                            "on attempt %d", zone_id, theme, use_seed, attempt)
+                logger.info("traversability PASS zone=%s zone_type=%s seed=%s "
+                            "on attempt %d", zone_id, zone_type, use_seed, attempt)
             return ValidatedBuild(
                 result=result, spec=spec, seed=use_seed, attempts=attempt,
                 validated=True, gated=True, report=report,
@@ -284,18 +291,18 @@ def generate_validated(
 
         # Rejected — log it for triage and decide whether to retry.
         failures.append(log_validation_failure(
-            failure_log, zone_id=zone_id, theme=theme,
+            failure_log, zone_id=zone_id, zone_type=zone_type,
             seed=use_seed, attempt=attempt, report=report,
         ))
 
         # A pinned seed is an explicit request: don't swap it, error out.
         if pinned:
-            raise GenerationFailed(zone_id, theme, failures, pinned=True)
+            raise GenerationFailed(zone_id, zone_type, failures, pinned=True)
 
         # Budget check AFTER a full attempt, so at least one always finishes
         # (never return "failed" without having actually tried once).
         if attempt >= max_attempts:
-            raise GenerationFailed(zone_id, theme, failures)
+            raise GenerationFailed(zone_id, zone_type, failures)
         if (time.monotonic() - start) >= timeout_s:
-            raise GenerationFailed(zone_id, theme, failures, timed_out=True)
+            raise GenerationFailed(zone_id, zone_type, failures, timed_out=True)
         # else: pick a new fresh seed and retry.

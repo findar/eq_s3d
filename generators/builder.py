@@ -28,8 +28,9 @@ _REGION_PREFIX = {
     "zoneline": "ATP", "ice": "ASL", "generic": "APV",
 }
 
-# Themes that use the heightfield terrain backend.
-_TERRAIN_THEMES = {"outdoor"}
+# Zone types that use the heightfield terrain backend. (The backend registry
+# replaces this set in wave 3 task 12.2; the rename just moves the value here.)
+_TERRAIN_THEMES = {"wilderness"}
 
 
 def _stable_seed(*parts) -> int:
@@ -79,7 +80,7 @@ class ZoneBuilder:
         ter_filename = f"ter_{name}.ter"
 
         # 1. Geometry → TER (named ter_<zone> per RoF2 convention).
-        #    Route to the heightfield terrain backend for outdoor themes, box
+        #    Route to the heightfield terrain backend for wilderness zones, box
         #    backend otherwise.
         ter = self._build_geometry(name, ter_version)
 
@@ -143,14 +144,16 @@ class ZoneBuilder:
                 }
                 for g in self.spec.gates
             ]
-            theme_meta = {
+            # Content / semantic layer (field names unchanged — Req 11.6).
+            content_meta = {
                 "dungeon_theme": self.spec.dungeon_theme,
                 "dungeon_race": self.spec.dungeon_race,
                 "elemental_tint": self.spec.elemental_tint,
             }
             result = eqg.write_glb(glb_path, material_colors=mat_colors,
                                    room_pacing=room_pacing, gates=gates,
-                                   theme=theme_meta)
+                                   content=content_meta,
+                                   zone_type=self.spec.zone_type)
             if result is None:
                 glb_path = None  # trimesh not available
 
@@ -193,8 +196,8 @@ class ZoneBuilder:
     # ------------------------------------------------------------------
 
     def _build_geometry(self, name: str, ter_version: int) -> TerFile:
-        """Route to the right geometry backend by theme."""
-        if self.spec.theme in _TERRAIN_THEMES:
+        """Route to the right geometry backend by zone type."""
+        if self.spec.zone_type in _TERRAIN_THEMES:
             ter = self._build_terrain(name, ter_version)
             if ter is not None:
                 return ter

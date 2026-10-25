@@ -117,7 +117,9 @@ _TOK_ARGS_PREVIEW = "args." + "preview"
 # aren't a literal import line here).
 _DELETED_FIELD_STEMS = ("ca" + "ve", "fea" + "tures", "me" + "sh", "s" + "df")
 
-DEFINED_THEMES = {"dungeon", "city", "outdoor"}
+# The defined zone-type vocabulary after the wave-2 rename (outdoor ->
+# wilderness). Kept equal to generators.zone_types.DEFINED_ZONE_TYPES.
+DEFINED_ZONE_TYPES = {"dungeon", "city", "wilderness"}
 
 
 def _tracked_py_files():
@@ -286,9 +288,9 @@ def test_layout_tables_have_no_cave_key():
             assert cave_key not in keys, (
                 f"layout.py {var!r} still has a {cave_key!r} key: {sorted(keys)}"
             )
-            assert keys == DEFINED_THEMES, (
+            assert keys == DEFINED_ZONE_TYPES, (
                 f"layout.py {var!r} keys {sorted(keys)} != Defined_Themes "
-                f"{sorted(DEFINED_THEMES)}"
+                f"{sorted(DEFINED_ZONE_TYPES)}"
             )
 
 
@@ -307,38 +309,48 @@ def test_no_cave_only_dependency_tokens():
 # Theme surface
 # ----------------------------------------------------------------------
 
-def test_theme_surface_is_three():
-    """Every theme surface equals the Defined_Themes set.
+def test_zone_type_surface_is_three():
+    """Every zone-type surface equals the Defined zone-type set.
 
-    Checks `ai.schema.VALID_THEMES`, `server.app.VALID_THEMES`, the `main.py`
-    `--theme` argparse choices and the `web/index.html` theme `<option>` values.
+    One source of truth, four surfaces (Req 11.3, 11.4): the schema vocabulary
+    `ai.schema.VALID_ZONE_TYPES`, the server's `GET /api/zone_types` LISTING
+    body, the `main.py` `--zone-type` argparse choices and the
+    `web/index.html` `<option>` values must all equal `DEFINED_ZONE_TYPES`.
     """
     import ai.schema
     import server.app
+    from fastapi.testclient import TestClient
 
-    assert set(ai.schema.VALID_THEMES) == DEFINED_THEMES, (
-        f"ai.schema.VALID_THEMES = {ai.schema.VALID_THEMES}"
-    )
-    assert set(server.app.VALID_THEMES) == DEFINED_THEMES, (
-        f"server.app.VALID_THEMES = {server.app.VALID_THEMES}"
+    assert set(ai.schema.VALID_ZONE_TYPES) == DEFINED_ZONE_TYPES, (
+        f"ai.schema.VALID_ZONE_TYPES = {ai.schema.VALID_ZONE_TYPES}"
     )
 
-    # main.py --theme choices: parse the argparse call from source (importing
-    # main would execute CLI-construction code; reading the source is safe and
-    # robust). Grab the choices=[...] list attached to the --theme argument.
+    # Server LISTING: the public /api/zone_types body (not just the module
+    # constant) must advertise exactly the Defined zone types.
+    client = TestClient(server.app.app)
+    listing = client.get("/api/zone_types").json()
+    assert set(listing["zone_types"]) == DEFINED_ZONE_TYPES, (
+        f"/api/zone_types listing = {listing['zone_types']}"
+    )
+
+    # main.py --zone-type choices: parse the argparse call from source
+    # (importing main would execute CLI-construction code; reading the source is
+    # safe and robust). Grab the choices=[...] attached to the --zone-type arg.
     main_src = _read("main.py")
-    m = re.search(r"--theme[\s\S]*?choices\s*=\s*\[([^\]]*)\]", main_src)
-    assert m, "could not find --theme choices=[...] in main.py"
-    theme_choices = set(re.findall(r"""['"]([^'"]+)['"]""", m.group(1)))
-    assert theme_choices == DEFINED_THEMES, (
-        f"main.py --theme choices = {sorted(theme_choices)}"
+    m = re.search(r"--zone-type[\s\S]*?choices\s*=\s*list\(([^)]*)\)", main_src)
+    assert m, "could not find --zone-type choices=list(...) in main.py"
+    # The option derives its choices from DEFINED_ZONE_TYPES rather than a
+    # literal list, so assert it references that single source of truth.
+    assert "DEFINED_ZONE_TYPES" in m.group(1), (
+        f"main.py --zone-type choices should derive from DEFINED_ZONE_TYPES: "
+        f"{m.group(1)!r}"
     )
 
-    # web/index.html theme <option value="..."> values.
+    # web/index.html zone-type <option value="..."> values.
     html = _read("web/index.html")
     option_vals = set(re.findall(r'<option\s+value="([^"]+)"', html))
-    assert option_vals == DEFINED_THEMES, (
-        f"web/index.html theme <option> values = {sorted(option_vals)}"
+    assert option_vals == DEFINED_ZONE_TYPES, (
+        f"web/index.html zone-type <option> values = {sorted(option_vals)}"
     )
 
 
@@ -419,3 +431,110 @@ def test_requirements_clean_and_pins_hypothesis():
     assert any(
         ln.split("#", 1)[0].strip().lower().startswith(hyp_pin) for ln in lines
     ), "requirements.txt must pin hypothesis== (test harness)"
+
+# ----------------------------------------------------------------------
+# Serialized-output rename guard (Req 11.1, 11.6)
+# ----------------------------------------------------------------------
+#
+# The wave-2 rename moved the zone-type vocabulary from ``theme`` to
+# ``zone_type`` and relocated the dungeon-content fields under a ``content``
+# block in the sidecar. Legacy ``theme`` is accepted on LOAD (from_dict, the
+# CLI --theme alias, the server theme input, /api/themes) but must NEVER appear
+# in anything the generator SERIALIZES. This guard pins that: no ``"theme"``
+# key in ZonePlan.to_dict(), ZoneSpec.to_dict(), the GLB sidecar JSON, or any
+# GenerateResponse field — while the content fields (dungeon_theme,
+# dungeon_race, elemental_tint) are still carried, just under their own names /
+# the sidecar content block.
+
+def _find_theme_keys(obj, path="root"):
+    """Every JSON path at which a dict uses the literal key ``"theme"``.
+
+    Recurses dicts and lists. Content-field names like ``dungeon_theme`` are a
+    different key and are intentionally NOT matched (exact ``"theme"`` only).
+    """
+    hits = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == "theme":
+                hits.append(path)
+            hits.extend(_find_theme_keys(v, f"{path}.{k}"))
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            hits.extend(_find_theme_keys(v, f"{path}[{i}]"))
+    return hits
+
+
+def test_serialized_output_has_no_theme_key():
+    """No ``"theme"`` key in any serialized output; content fields survive.
+
+    Req 11.1 (the rename is complete on the WRITE side) and Req 11.6 (the
+    dungeon-content layer is preserved). Covers the four serialized surfaces:
+    ``ZonePlan.to_dict()``, ``ZoneSpec.to_dict()``, the GLB ``.json`` sidecar,
+    and the server ``GenerateResponse`` (recursively, including its nested
+    ``plan`` dict).
+    """
+    import json
+    from fastapi.testclient import TestClient
+
+    from ai.schema import ZonePlan
+    from generators.zone_spec import ZoneSpec
+    import server.app as app_mod
+
+    # 1) ZonePlan.to_dict() — a plan carrying content fields.
+    plan = ZonePlan(
+        name="g", zone_type="wilderness", room_count=4,
+        dungeon_theme="temple", dungeon_race="lizardman", elemental_tint="lava",
+    )
+    plan_d = plan.to_dict()
+    assert _find_theme_keys(plan_d, "ZonePlan") == [], (
+        f"ZonePlan.to_dict() still emits a 'theme' key: {plan_d}"
+    )
+    assert plan_d["zone_type"] == "wilderness"
+    for cf in ("dungeon_theme", "dungeon_race", "elemental_tint"):
+        assert cf in plan_d, f"ZonePlan.to_dict() dropped content field {cf!r}"
+
+    # 2) ZoneSpec.to_dict() — a spec carrying content fields.
+    spec = ZoneSpec(
+        name="g", zone_type="dungeon",
+        dungeon_theme="temple", dungeon_race="lizardman", elemental_tint="lava",
+    )
+    spec_d = spec.to_dict()
+    assert _find_theme_keys(spec_d, "ZoneSpec") == [], (
+        f"ZoneSpec.to_dict() still emits a 'theme' key: {spec_d}"
+    )
+    assert spec_d["zone_type"] == "dungeon"
+    for cf in ("dungeon_theme", "dungeon_race", "elemental_tint"):
+        assert cf in spec_d, f"ZoneSpec.to_dict() dropped content field {cf!r}"
+
+    # 3) & 4) Build a real zone through the server so the WRITTEN sidecar and
+    # the GenerateResponse are both exercised on the same generate.
+    with tempfile.TemporaryDirectory() as d:
+        app_mod.OUTPUT_DIR = Path(d)
+        client = TestClient(app_mod.app)
+        resp = client.post("/api/generate", json={
+            "zone_type": "dungeon", "rooms": 4, "seed": 7,
+        })
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+
+        # GenerateResponse (recursively, incl. the nested plan dict).
+        assert _find_theme_keys(body, "GenerateResponse") == [], (
+            f"GenerateResponse carries a 'theme' key: "
+            f"{_find_theme_keys(body, 'GenerateResponse')}"
+        )
+        assert body["zone_type"] == "dungeon"
+
+        # The GLB sidecar JSON written next to the .glb.
+        zone_url = body["zone_url"]           # e.g. /output/<id>.zone.json or .json
+        sidecar_path = Path(d) / Path(zone_url).name
+        assert sidecar_path.exists(), f"sidecar not written at {sidecar_path}"
+        sidecar = json.loads(sidecar_path.read_text())
+        assert _find_theme_keys(sidecar, "sidecar") == [], (
+            f"sidecar carries a 'theme' key: {_find_theme_keys(sidecar, 'sidecar')}"
+        )
+        # Content survives under the sidecar 'content' block (Req 11.6).
+        assert "content" in sidecar, "sidecar dropped the content block"
+        for cf in ("dungeon_theme", "dungeon_race", "elemental_tint"):
+            assert cf in sidecar["content"], (
+                f"sidecar content block dropped {cf!r}"
+            )

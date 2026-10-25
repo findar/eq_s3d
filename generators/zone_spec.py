@@ -18,6 +18,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 
+from .zone_types import canonical_zone_type, read_zone_type, DEFAULT_ZONE_TYPE
+
 # ---------------------------------------------------------------------------
 # Spec components
 # ---------------------------------------------------------------------------
@@ -202,13 +204,13 @@ class ZoneSpec:
 
     Usage::
 
-        spec = ZoneSpec(name="myrealm", theme="dungeon")
+        spec = ZoneSpec(name="myrealm", zone_type="dungeon")
         spec.materials["wall"] = MaterialSpec("wall", "stone_wall.dds", color=(90,85,80))
         spec.rooms.append(RoomSpec("entry", 0, 0, width=300, depth=300, height=80))
         spec.save("myrealm.json")
     """
     name: str
-    theme: str = "dungeon"
+    zone_type: str = "dungeon"
     style_profile: str = "dungeon"
 
     # The random seed this spec was generated from. Threaded through so the
@@ -244,7 +246,7 @@ class ZoneSpec:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
-            "theme": self.theme,
+            "zone_type": self.zone_type,
             "style_profile": self.style_profile,
             "seed": self.seed,
             "dungeon_theme": self.dungeon_theme,
@@ -268,14 +270,14 @@ class ZoneSpec:
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ZoneSpec":
-        # The cave pipeline was removed in M0; a legacy spec with theme "cave"
-        # loads back as a dungeon. No other theme is remapped.
-        theme = d.get("theme", "dungeon")
-        if theme == "cave":
-            theme = "dungeon"
+        # Legacy LOAD boundary (Req 11.1, 11.2 / Property 12): prefer
+        # ``zone_type``, accept the legacy ``theme`` key, map the legacy
+        # ``outdoor`` value to ``wilderness`` and any undefined value (including
+        # the removed-in-M0 "cave" theme) to ``dungeon``.
+        zone_type = canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE
         spec = cls(
             name=d["name"],
-            theme=theme,
+            zone_type=zone_type,
             style_profile=d.get("style_profile", "dungeon"),
             seed=d.get("seed"),
             dungeon_theme=d.get("dungeon_theme", ""),
@@ -319,7 +321,7 @@ class ZoneSpec:
 
     def __repr__(self) -> str:
         return (
-            f"ZoneSpec({self.name!r}, theme={self.theme!r}, "
+            f"ZoneSpec({self.name!r}, zone_type={self.zone_type!r}, "
             f"rooms={len(self.rooms)}, corridors={len(self.corridors)}, "
             f"lights={len(self.lights)}, regions={len(self.regions)}, "
             f"gates={len(self.gates)})"

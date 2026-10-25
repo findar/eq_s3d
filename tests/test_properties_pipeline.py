@@ -61,7 +61,7 @@ def test_returned_build_is_validated(max_attempts, rng):
         # dungeon (fixed good seed) so the gate passes.
         seeds_seen.append(seed)
         calls["n"] += 1
-        return LayoutGenerator(theme="dungeon", seed=_NAVIGABLE_SEED).generate(
+        return LayoutGenerator(zone_type="dungeon", seed=_NAVIGABLE_SEED).generate(
             "p15", room_count=3
         )
 
@@ -69,7 +69,7 @@ def test_returned_build_is_validated(max_attempts, rng):
         try:
             result = generate_validated(
                 spec_factory,
-                theme="dungeon",
+                zone_type="dungeon",
                 zone_id="p15",
                 output_dir=out,
                 write_glb=False,
@@ -109,7 +109,7 @@ def _forced_fail_factory(rooms: int):
     """
 
     def factory(seed: int):
-        spec = LayoutGenerator(theme="dungeon", seed=seed).generate(
+        spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
             "p16", room_count=rooms
         )
         spec.rooms.append(RoomSpec(
@@ -155,7 +155,7 @@ def test_forced_failure_reported(pinned, seed, max_attempts, rooms):
         with pytest.raises(GenerationFailed) as excinfo:
             generate_validated(
                 factory,
-                theme="dungeon",
+                zone_type="dungeon",
                 zone_id="p16",
                 seed=seed if pinned else None,
                 output_dir=out,
@@ -218,7 +218,7 @@ def test_fresh_seeds_vary(k):
         # 2-room dungeon (fixed good seed) so the gate passes on the first
         # attempt and the call returns — same 12.1 spy idiom.
         seeds_seen.append(seed)
-        return LayoutGenerator(theme="dungeon", seed=_NAVIGABLE_SEED).generate(
+        return LayoutGenerator(zone_type="dungeon", seed=_NAVIGABLE_SEED).generate(
             "p17", room_count=2
         )
 
@@ -226,7 +226,7 @@ def test_fresh_seeds_vary(k):
         for _ in range(k):
             result = generate_validated(
                 spec_factory,
-                theme="dungeon",
+                zone_type="dungeon",
                 zone_id="p17",
                 # rng OMITTED and seed OMITTED: each call draws a fresh seed via
                 # _fresh_seed(None) off the module random generator.

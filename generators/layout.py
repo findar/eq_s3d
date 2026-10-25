@@ -27,16 +27,22 @@ from .zone_spec import (
 )
 from . import semantics
 from .routing import plan_route, exit_axis_x
+from .zone_types import STYLE_PROFILE
 
 # ---------------------------------------------------------------------------
 # Style profile loading
 # ---------------------------------------------------------------------------
 
-def load_style_profile(theme: str) -> dict:
-    """Load a style profile JSON, or return sensible defaults."""
+def load_style_profile(profile_name: str) -> dict:
+    """Load a style profile JSON by measured-profile name, or return defaults.
+
+    ``profile_name`` is a measured style-profile name (``styles/<name>.json``),
+    NOT a zone type — callers map a zone type through
+    ``zone_types.STYLE_PROFILE`` first (wilderness -> "outdoor").
+    """
     candidates = [
-        Path(f"styles/{theme}.json"),
-        Path(__file__).parent.parent / "styles" / f"{theme}.json",
+        Path(f"styles/{profile_name}.json"),
+        Path(__file__).parent.parent / "styles" / f"{profile_name}.json",
     ]
     for p in candidates:
         if p.exists():
@@ -57,9 +63,9 @@ def _profile_mean(profile: dict, path: list, default: float) -> float:
     return default
 
 
-# Themes that use the box backend and therefore support the semantic layer.
-# (Cave/outdoor backends are organic/heightfield and are out of scope here.)
-_SEMANTIC_THEMES = {"dungeon", "city"}
+# Zone types that use the box backend and therefore support the semantic layer.
+# (Cave/wilderness backends are organic/heightfield and out of scope here.)
+_SEMANTIC_ZONE_TYPES = {"dungeon", "city"}
 
 
 # ---------------------------------------------------------------------------
@@ -72,13 +78,21 @@ class LayoutGenerator:
 
     Usage::
 
-        gen = LayoutGenerator(theme="dungeon", seed=42)
+        gen = LayoutGenerator(zone_type="dungeon", seed=42)
         spec = gen.generate("myrealm", room_count=5)
     """
 
-    def __init__(self, theme: str = "dungeon", seed: Optional[int] = None):
-        self.theme = theme
-        self.profile = load_style_profile(theme)
+    def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None):
+        # Normalise / legacy-map the zone type (``outdoor`` -> ``wilderness``)
+        # so the backend registry and terrain routing always see the current
+        # vocabulary, whatever a caller hands in.
+        from .zone_types import canonical_zone_type
+        self.zone_type = canonical_zone_type(zone_type) or zone_type
+        # ``profile`` loads the MEASURED style profile for this zone type
+        # (wilderness -> styles/outdoor.json); the profile file name is a style
+        # profile, not a zone type (zone_types "Zone-type vocabulary").
+        self.profile = load_style_profile(
+            STYLE_PROFILE.get(self.zone_type, self.zone_type))
         # Remember the seed so it can be recorded on the ZoneSpec. The geometry
         # backends (cave/terrain) seed from this rather than a hash of the
         # (always-unique, timestamped) name, so a pinned seed reproduces the
@@ -179,9 +193,10 @@ class LayoutGenerator:
         *elemental_tint* overrides the archetype's default tint ("" forces none,
         None uses the default). *room_type_overrides* maps room id → semantic
         type for planner-driven assignment. Semantic labelling only runs for the
-        box (dungeon/city) themes — cave/outdoor backends are untouched.
+        box (dungeon/city) zone types — cave/wilderness backends are untouched.
         """
-        spec = ZoneSpec(name=name, theme=self.theme, style_profile=self.theme,
+        spec = ZoneSpec(name=name, zone_type=self.zone_type,
+                        style_profile=STYLE_PROFILE.get(self.zone_type, self.zone_type),
                         seed=self.seed)
 
         # Scale rooms to the theme's measured footprint divided across the
@@ -206,7 +221,7 @@ class LayoutGenerator:
         # semantic type + theme and apply the shape/proportion/ceiling/floor
         # biases BEFORE the re-separate + elevation passes, so the themed shapes
         # resolve for overlaps and elevation builds on the sunk/raised floors.
-        themed = self.theme in _SEMANTIC_THEMES and (
+        themed = self.zone_type in _SEMANTIC_ZONE_TYPES and (
             dungeon_theme or dungeon_race or elemental_tint is not None
             or room_type_overrides)
         if themed:
@@ -1009,7 +1024,7 @@ class LayoutGenerator:
                 "wall":    ((110, 100, 92),"rough hewn stone blocks, medieval, faint moss"),
                 "ceiling": ((60, 56, 52),  "dark rough rock cave ceiling"),
             },
-            "outdoor": {
+            "wilderness": {
                 "floor":   ((90, 110, 70), "grassy dirt ground, scattered pebbles"),
                 "wall":    ((120, 115, 100),"weathered rock cliff face"),
                 "ceiling": ((120, 140, 170),"overcast sky"),
@@ -1020,7 +1035,7 @@ class LayoutGenerator:
                 "ceiling": ((120, 140, 170),"open sky"),
             },
         }
-        palette = theme_palettes.get(self.theme, theme_palettes["dungeon"])
+        palette = theme_palettes.get(self.zone_type, theme_palettes["dungeon"])
         shaders = self.profile.get("materials", {}).get("shaders", [])
         default_shader = shaders[0] if shaders else "Opaque_MaxCB1.fx"
 
@@ -1032,17 +1047,17 @@ class LayoutGenerator:
         # Theme-appropriate base light colour
         colors = {
             "dungeon": (1.0, 0.55, 0.15),   # torch orange
-            "outdoor": (1.0, 0.95, 0.85),   # daylight
+            "wilderness": (1.0, 0.95, 0.85),   # daylight
             "city":    (1.0, 0.85, 0.6),    # warm lantern
         }
-        r, g, b = colors.get(self.theme, (1.0, 0.6, 0.2))
+        r, g, b = colors.get(self.zone_type, (1.0, 0.6, 0.2))
 
         # Pacing-driven mood: deeper rooms are dimmer and cooler (more
         # ominous), the entrance is brightest, the climax gets a slightly
-        # intensified/charged light. Outdoor zones keep daylight (depth doesn't
-        # darken the sky).
+        # intensified/charged light. Wilderness zones keep daylight (depth
+        # doesn't darken the sky).
         intensity = 1.0
-        if self.theme != "outdoor":
+        if self.zone_type != "wilderness":
             # Fade brightness with graph depth, floored so it never goes black.
             fade = max(0.45, 1.0 - room.graph_depth * 0.08)
             intensity = fade

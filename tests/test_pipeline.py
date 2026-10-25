@@ -34,7 +34,7 @@ from generators.pipeline import (
     generate_validated,
     GenerationFailed,
     ValidatedBuild,
-    DEFAULT_GATED_THEMES,
+    DEFAULT_GATED_ZONE_TYPES,
 )
 
 GOOD_SEED = 1
@@ -54,7 +54,7 @@ def _broken_spec(rooms=5):
     independent of corridor routing — the robust stand-in for the old
     reliably-broken seed now that corridor-connection makes seeds connect.
     """
-    spec = LayoutGenerator(theme="dungeon", seed=GOOD_SEED).generate(
+    spec = LayoutGenerator(zone_type="dungeon", seed=GOOD_SEED).generate(
         "pipe", room_count=rooms)
     spec.rooms.append(RoomSpec(
         id="isolated", center_x=100_000.0, center_y=100_000.0, floor_z=0.0,
@@ -64,7 +64,7 @@ def _broken_spec(rooms=5):
 
 def _good_factory(rooms=5):
     def f(seed):
-        return LayoutGenerator(theme="dungeon", seed=GOOD_SEED).generate(
+        return LayoutGenerator(zone_type="dungeon", seed=GOOD_SEED).generate(
             "pipe", room_count=rooms)
     return f
 
@@ -83,13 +83,13 @@ def _flaky_factory(fail_times):
         calls["n"] += 1
         if calls["n"] <= fail_times:
             return _broken_spec()
-        return LayoutGenerator(theme="dungeon", seed=GOOD_SEED).generate(
+        return LayoutGenerator(zone_type="dungeon", seed=GOOD_SEED).generate(
             "pipe", room_count=5)
     return f
 
 
 def _run(factory, tmp_path, **kw):
-    kw.setdefault("theme", "dungeon")
+    kw.setdefault("zone_type", "dungeon")
     kw.setdefault("zone_id", "pipe")
     kw.setdefault("output_dir", str(tmp_path))
     kw.setdefault("write_glb", False)
@@ -177,13 +177,13 @@ class TestPinnedSeed:
 
 class TestGating:
     def test_dungeon_is_gated_by_default(self):
-        assert "dungeon" in DEFAULT_GATED_THEMES
-        assert "outdoor" not in DEFAULT_GATED_THEMES
+        assert "dungeon" in DEFAULT_GATED_ZONE_TYPES
+        assert "wilderness" not in DEFAULT_GATED_ZONE_TYPES
 
-    def test_ungated_theme_passes_through_without_retry(self, tmp_path):
+    def test_ungated_zone_type_passes_through_without_retry(self, tmp_path):
         # Force "dungeon" to be ungated: even a would-fail zone is returned as-is
         # (validated=False) with NO retries and NO failure-log storm.
-        vb = _run(_bad_factory(), tmp_path, gated_themes=frozenset(),
+        vb = _run(_bad_factory(), tmp_path, gated_zone_types=frozenset(),
                   max_attempts=8)
         assert not vb.validated and not vb.gated
         assert vb.attempts == 1
@@ -209,10 +209,10 @@ class TestFailureLog:
         lines = _log_lines(tmp_path / "fail.jsonl")
         assert len(lines) == 1
         rec = lines[0]
-        for key in ("ts", "zone_id", "theme", "seed", "attempt",
+        for key in ("ts", "zone_id", "zone_type", "seed", "attempt",
                     "reachable_rooms", "total_rooms", "reasons"):
             assert key in rec, f"missing {key} in failure log line"
-        assert rec["theme"] == "dungeon"
+        assert rec["zone_type"] == "dungeon"
         assert rec["reachable_rooms"] < rec["total_rooms"]
         # Per-room reasons present — the data corridor-connection triages on.
         assert rec["reasons"] and all(isinstance(r, str) for r in rec["reasons"])
@@ -226,7 +226,7 @@ class TestCliEscapeHatch:
     def _args(self, tmp_path, **over):
         import argparse
         ns = argparse.Namespace(
-            name="cli", theme="dungeon", rooms=8, seed=PINNED_SEED,
+            name="cli", zone_type="dungeon", rooms=8, seed=PINNED_SEED,
             output=str(tmp_path), ter_version=2,
             no_validate=False,
         )
@@ -266,6 +266,43 @@ class TestCliEscapeHatch:
 # ---------------------------------------------------------------------------
 
 class TestCliArgs:
+    def test_legacy_theme_outdoor_equivalent_to_zone_type_wilderness(
+            self, tmp_path, monkeypatch):
+        """CLI legacy alias maps forward: ``--theme outdoor`` resolves to the
+        SAME zone type as ``--zone-type wilderness`` (Req 11.3).
+
+        ``--theme`` is the kept legacy LOAD boundary on the CLI; it shares the
+        ``zone_type`` argparse dest and its value is legacy-mapped. This asserts
+        the two invocations drive ``cmd_generate`` to the identical resolved
+        zone type (``wilderness``) — the build itself is stubbed so the check is
+        fast and isolated to the argument plumbing.
+        """
+        import main
+        from generators.zone_types import canonical_zone_type, DEFAULT_ZONE_TYPE
+
+        seen = {}
+
+        def _capture(args):
+            raw = getattr(args, "zone_type", None)
+            if raw is None:
+                raw = getattr(args, "theme", None)
+            seen["zt"] = canonical_zone_type(raw) or DEFAULT_ZONE_TYPE
+
+        monkeypatch.setattr(main, "cmd_generate", _capture)
+
+        out = str(tmp_path / "o")
+        main.main(["generate", "legacy", "--theme", "outdoor", "--output", out])
+        legacy_zt = seen["zt"]
+        main.main(["generate", "modern", "--zone-type", "wilderness",
+                   "--output", out])
+        modern_zt = seen["zt"]
+
+        assert legacy_zt == "wilderness"
+        assert legacy_zt == modern_zt, (
+            f"--theme outdoor resolved to {legacy_zt!r} but "
+            f"--zone-type wilderness resolved to {modern_zt!r}"
+        )
+
     def test_cave_theme_rejected_by_argparse(self, tmp_path):
         # "cave" was removed from the --theme choices (M0 6.8): argparse exits 2
         # in parse_args, before any build, so no output directory is created.
@@ -336,21 +373,21 @@ class TestCliArgs:
 @pytest.mark.slow
 def test_cave_prompt_builds_validated_dungeon(tmp_path):
     """An unpinned pipeline run on a cave-word prompt returns a validated build
-    whose theme is dungeon (M0 Req 6.9): the cave pipeline is gone, so cave
+    whose zone_type is dungeon (M0 Req 6.9): the cave pipeline is gone, so cave
     prompts plan and build as gated dungeons."""
     from ai.rule_planner import RulePlanner
     from ai.expand import plan_to_spec
 
     plan = RulePlanner().plan("a dark underground cavern with many tunnels")
-    assert plan.theme == "dungeon"
+    assert plan.zone_type == "dungeon"
 
     def factory(s):
         return plan_to_spec(plan, seed=s)
 
     vb = generate_validated(
-        factory, theme=plan.theme, zone_id="cavedungeon",
+        factory, zone_type=plan.zone_type, zone_id="cavedungeon",
         output_dir=str(tmp_path), write_glb=False,
         failure_log=tmp_path / "fail.jsonl",
     )
     assert vb.validated
-    assert vb.spec.theme == "dungeon"
+    assert vb.spec.zone_type == "dungeon"

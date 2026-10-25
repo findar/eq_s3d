@@ -31,10 +31,10 @@ from ai.schema import (
 # Module constants
 # ---------------------------------------------------------------------------
 
-# The three themes M0 ships (the Defined_Themes). `cave` is being removed from
-# the theme surface in this milestone (tasks 5.2/5.3), so it is NOT here even
-# though `ai.schema.VALID_THEMES` still lists it at the fork point.
-DEFINED_THEMES = {"dungeon", "city", "outdoor"}
+# The three zone types the generator ships (the Defined set). Post wave-2
+# rename the open-air type is "wilderness" (was "outdoor"). Kept equal to
+# generators.zone_types.DEFINED_ZONE_TYPES.
+DEFINED_ZONE_TYPES = {"dungeon", "city", "wilderness"}
 
 # Words that used to pick the `cave` theme and must now resolve to `dungeon`
 # (Property 19 / Req 6.5).
@@ -70,11 +70,11 @@ flat_only = st.just("flat")
 verticality_all = st.sampled_from(["flat", "moderate", "dramatic"])
 
 
-#: The box-geometry themes (M0_Box_Themes): dungeon + city.
-box_themes = st.sampled_from(["dungeon", "city"])
+#: The box-geometry zone types (M0_Box_Themes): dungeon + city.
+box_zone_types = st.sampled_from(["dungeon", "city"])
 
-#: Every theme a ZoneSpec may carry post-M0.
-spec_themes = st.sampled_from(["dungeon", "city", "outdoor"])
+#: Every zone type a ZoneSpec may carry (post wave-2 rename).
+spec_zone_types = st.sampled_from(["dungeon", "city", "wilderness"])
 
 #: Floor-height variation, as ``ai.schema.ZonePlan.verticality`` accepts.
 verticality = st.sampled_from(["flat", "moderate", "dramatic"])
@@ -106,6 +106,7 @@ _unknown_keys = st.text(min_size=1, max_size=12).filter(
     lambda k: k
     not in {
         "name",
+        "zone_type",
         "theme",
         "room_count",
         "size",
@@ -122,13 +123,25 @@ _unknown_keys = st.text(min_size=1, max_size=12).filter(
 )
 
 #: Loosely-typed dicts covering every ``ZonePlan`` field (plus junk keys), used
-#: to prove normalisation lands every field in its valid domain (Property 12).
+#: to prove normalisation lands every field in its valid domain (Property 12)
+#: and the legacy-vocabulary load round-trip (M1-P3, task 10.10).
+#:
+#: The zone type can be keyed the NEW way (``zone_type``) or the LEGACY way
+#: (``theme``), or both. Task 10.9 left this strategy emitting only the legacy
+#: ``theme`` key and deferred ``zone_type`` to task 10.10; both are optional
+#: here, so a drawn dict may carry ``zone_type`` alone, ``theme`` alone, both
+#: (possibly disagreeing — the load boundary must let ``zone_type`` win), or
+#: neither (the default applies). ``theme`` draws the legacy value set (which
+#: includes ``outdoor`` and the removed ``cave``); ``zone_type`` draws the
+#: current ``DEFINED_ZONE_TYPES`` plus the legacy ``outdoor`` so the mapping is
+#: exercised from both keys.
 zone_plan_dicts = st.builds(
     lambda base, extra: {**base, **extra},
     st.fixed_dictionaries(
         {},
         optional={
             "name": st.text(),
+            "zone_type": _vocab_field(sorted(DEFINED_ZONE_TYPES) + ["outdoor"]),
             "theme": _vocab_field(["dungeon", "outdoor", "cave", "city"]),
             "room_count": st.integers(),
             "size": _vocab_field(["small", "medium", "large", "huge"]),

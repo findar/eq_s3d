@@ -34,6 +34,9 @@ from pydantic import BaseModel, Field
 
 from generators.layout import LayoutGenerator
 from generators.pipeline import generate_validated, GenerationFailed
+from generators.zone_types import (
+    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type,
+)
 from analyzer.style_builder import REFERENCE_ZONES
 from ai.planner import make_plan, get_planner
 from ai.expand import plan_to_spec
@@ -48,7 +51,9 @@ WEB_DIST    = ROOT / "web" / "dist"      # built front-end (Vite build)
 FAILURE_LOG = ROOT / "output" / "validation_failures.jsonl"  # triage feed
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-VALID_THEMES = ["dungeon", "outdoor", "city"]
+# The available zone types come from the single source of truth
+# (generators/zone_types.py); the server no longer keeps its own list.
+VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)
 
 # ---------------------------------------------------------------------------
 # Build identity (which code is this process actually running?)
@@ -181,18 +186,31 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 class GenerateRequest(BaseModel):
-    # If `prompt` is set, the planner derives theme/rooms/etc. from it and the
-    # explicit fields below are ignored. Otherwise the explicit fields drive it.
+    # If `prompt` is set, the planner derives zone_type/rooms/etc. from it and
+    # the explicit fields below are ignored. Otherwise the explicit fields drive
+    # it. ``zone_type`` is preferred; the legacy ``theme`` field is still
+    # accepted on input and mapped forward (Req 11.1, 11.2).
     prompt: Optional[str] = Field(default=None, description="Natural-language prompt")
-    theme: str = Field(default="dungeon", description="Zone theme (ignored if prompt set)")
+    zone_type: Optional[str] = Field(
+        default=None, description="Zone type (ignored if prompt set)")
+    theme: Optional[str] = Field(
+        default=None, description="Legacy alias for zone_type (deprecated)")
     rooms: int = Field(default=5, ge=1, le=30, description="Number of rooms")
     elevation: bool = Field(default=True, description="Allow multi-level layout")
     seed: Optional[int] = Field(default=None, description="Pin a seed (omit for random)")
 
+    def resolved_zone_type(self) -> str:
+        """The requested zone type, preferring ``zone_type`` over the legacy
+        ``theme`` and legacy-mapping the value; falls back to the default."""
+        raw = self.zone_type if self.zone_type is not None else self.theme
+        if raw is None:
+            return DEFAULT_ZONE_TYPE
+        return canonical_zone_type(raw) or raw
+
 
 class GenerateResponse(BaseModel):
     id: str
-    theme: str
+    zone_type: str
     rooms: int
     seed: int
     vertices: int
@@ -218,13 +236,30 @@ class GenerateResponse(BaseModel):
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.get("/api/themes")
-def list_themes():
-    """Available themes and the reference zones each profile was built from."""
+def _zone_type_listing() -> dict:
+    """Body shared by ``/api/zone_types`` and the legacy ``/api/themes`` alias.
+
+    Until wave 4 adds the Enabled set, serve the defined zone types, the
+    default, and the reference zones each profile was built from. Wave 4
+    replaces the flat list with richer ``zone_type_listing()`` objects.
+    """
     return {
-        "themes": VALID_THEMES,
+        "zone_types": VALID_ZONE_TYPES,
+        "default": DEFAULT_ZONE_TYPE,
         "reference_zones": {k: v for k, v in REFERENCE_ZONES.items()},
     }
+
+
+@app.get("/api/zone_types")
+def list_zone_types():
+    """Available zone types and the reference zones each profile was built from."""
+    return _zone_type_listing()
+
+
+@app.get("/api/themes")
+def list_themes():
+    """Legacy alias of ``/api/zone_types`` (same body)."""
+    return _zone_type_listing()
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
@@ -243,25 +278,26 @@ def generate(req: GenerateRequest):
         planner_name = get_planner().name
         plan = make_plan(prompt, name=zone_id)
         plan_dict = plan.to_dict()
-        theme = plan.theme
+        zone_type = plan.zone_type
         rooms = plan.room_count
 
         def factory(s: int):
             return plan_to_spec(plan, seed=s)
     else:
-        # Control-driven: explicit theme/rooms/elevation.
+        # Control-driven: explicit zone_type/rooms/elevation. Accepts the legacy
+        # ``theme`` field and the legacy ``outdoor`` value, mapped forward.
         source = "controls"
-        if req.theme not in VALID_THEMES:
+        zone_type = req.resolved_zone_type()
+        if zone_type not in VALID_ZONE_TYPES:
             raise HTTPException(
                 400,
-                f"Unknown theme: {req.theme!r}; valid themes: "
-                f"{', '.join(VALID_THEMES)}",
+                f"Unknown zone_type: {zone_type!r}; valid zone types: "
+                f"{', '.join(VALID_ZONE_TYPES)}",
             )
-        theme = req.theme
         rooms = req.rooms
 
         def factory(s: int):
-            return LayoutGenerator(theme=theme, seed=s).generate(
+            return LayoutGenerator(zone_type=zone_type, seed=s).generate(
                 zone_id, room_count=rooms, elevation=req.elevation,
             )
 
@@ -271,7 +307,7 @@ def generate(req: GenerateRequest):
     try:
         vb = generate_validated(
             factory,
-            theme=theme,
+            zone_type=zone_type,
             zone_id=zone_id,
             seed=req.seed,
             output_dir=OUTPUT_DIR,
@@ -297,7 +333,7 @@ def generate(req: GenerateRequest):
 
     return GenerateResponse(
         id=zone_id,
-        theme=theme,
+        zone_type=zone_type,
         rooms=rooms,
         seed=vb.seed,
         vertices=result.vertex_count,

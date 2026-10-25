@@ -26,7 +26,7 @@ from tests.strategies import (
     seeds,
     room_counts,
     room_counts_wide,
-    box_themes,
+    box_zone_types,
     verticality_all,
 )
 from tests.pbt_helpers import (
@@ -60,19 +60,19 @@ def _raw_navigable_cases(draw):
     the two tests key identically and share one build.
     """
     s = draw(seeds)
-    theme = draw(box_themes)
+    zone_type = draw(box_zone_types)
     n = draw(room_counts_wide)
     verticality = draw(verticality_all)
     plan = ZonePlan(
         name="navraw",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         verticality=verticality,
         elevation=verticality != "flat",
     )
     spec = plan_to_spec(plan, seed=s)
-    label = f"seed={s}, zone_type={theme}, rooms={n}, verticality={verticality}"
-    key = (theme, s, n, verticality)
+    label = f"seed={s}, zone_type={zone_type}, rooms={n}, verticality={verticality}"
+    key = (zone_type, s, n, verticality)
     return spec, label, key
 
 
@@ -104,7 +104,7 @@ def _human_case(entry):
     return spec, label, key
 
 
-def _flat_seed_case(theme, n, seed):
+def _flat_seed_case(zone_type, n, seed):
     """A flat ``(spec, label, key)`` case for a pinned regression seed.
 
     Built the same way ``_raw_navigable_cases`` builds its draws (``ZonePlan``
@@ -113,18 +113,18 @@ def _flat_seed_case(theme, n, seed):
     """
     plan = ZonePlan(
         name="navraw",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         verticality="flat",
         elevation=False,
     )
     spec = plan_to_spec(plan, seed=seed)
-    label = f"regression seed={seed}, zone_type={theme}, rooms={n}, verticality=flat"
-    key = (theme, seed, n, "flat")
+    label = f"regression seed={seed}, zone_type={zone_type}, rooms={n}, verticality=flat"
+    key = (zone_type, seed, n, "flat")
     return spec, label, key
 
 
-def _seed_case(theme, n, seed, verticality):
+def _seed_case(zone_type, n, seed, verticality):
     """A ``(spec, label, key)`` case for a pinned regression seed at a given
     verticality.
 
@@ -134,15 +134,15 @@ def _seed_case(theme, n, seed, verticality):
     """
     plan = ZonePlan(
         name="navraw",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         verticality=verticality,
         elevation=verticality != "flat",
     )
     spec = plan_to_spec(plan, seed=seed)
-    label = (f"regression seed={seed}, zone_type={theme}, rooms={n}, "
+    label = (f"regression seed={seed}, zone_type={zone_type}, rooms={n}, "
              f"verticality={verticality}")
-    key = (theme, seed, n, verticality)
+    key = (zone_type, seed, n, verticality)
     return spec, label, key
 
 
@@ -228,7 +228,7 @@ def test_corridor_continuity(case):
     other (a Z conflict, design decision 12/16).
 
     SAME domain and examples as ``test_raw_navigable``: box zone types
-    (``box_themes``), the full M1 large-zone range (``room_counts_wide``, up to
+    (``box_zone_types``), the full M1 large-zone range (``room_counts_wide``, up to
     30 rooms, Req 5.1), built through ``ai.expand.plan_to_spec`` over ALL
     verticalities (``verticality_all``: flat / moderate / dramatic — the
     elevation pass, task 8.1, Req 5.4), budget 15. Both ``M0_HUMAN_PASS`` inputs
@@ -282,14 +282,14 @@ _elevated_verticality = st.sampled_from(["moderate", "dramatic"])
 
 @pytest.mark.slow
 @build_settings(20)
-@example(s=0, theme="dungeon", n=3, verticality="dramatic")
+@example(s=0, zone_type="dungeon", n=3, verticality="dramatic")
 @given(
     s=seeds,
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts_wide,
     verticality=_elevated_verticality,
 )
-def test_ramp_subdivision(s, theme, n, verticality):
+def test_ramp_subdivision(s, zone_type, n, verticality):
     """
     Feature: zone-generator-m1-controls-traversability, Property 4: Ramp
     subdivision through 30 rooms (umbrella P8).
@@ -310,7 +310,7 @@ def test_ramp_subdivision(s, theme, n, verticality):
     ``room_counts_wide`` (2-30, biased ~half into the big-zone band, Req 5.1),
     so ramp subdivision is proven to hold across the large-zone range where more
     corridors ramp and the segment cap is exercised harder. Zone types stay box
-    (``box_themes``: dungeon/city); verticality stays moderate/dramatic (flat
+    (``box_zone_types``: dungeon/city); verticality stays moderate/dramatic (flat
     would make the ramp path vacuously true), budget 20.
 
     The pinned ``@example`` (seed 0, dungeon, 3 rooms, dramatic) has a corridor
@@ -326,7 +326,7 @@ def test_ramp_subdivision(s, theme, n, verticality):
     """
     plan = ZonePlan(
         name="rampsub",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         verticality=verticality,
         elevation=True,
@@ -343,7 +343,7 @@ def test_ramp_subdivision(s, theme, n, verticality):
     # `assume` it away (never call assume in a build property).
     spans = [abs(c.from_z - c.to_z) for c in spec.corridors]
     max_span = max(spans) if spans else 0.0
-    if (s, theme, n, verticality) == (0, "dungeon", 3, "dramatic"):
+    if (s, zone_type, n, verticality) == (0, "dungeon", 3, "dramatic"):
         assert max_span > 2.5, (
             "pinned subdivision example no longer produces an elevated corridor "
             f"(max corridor span {max_span:.2f} u <= 2.5) — the subdivision path "
@@ -357,7 +357,7 @@ def test_ramp_subdivision(s, theme, n, verticality):
     worst = max(rises) if rises else 0.0
     assert worst <= 2.51, (
         f"ramp segment rises above MAX_SEG_RISE "
-        f"(seed={s}, theme={theme}, rooms={n}, verticality={verticality}): "
+        f"(seed={s}, theme={zone_type}, rooms={n}, verticality={verticality}): "
         f"worst per-triangle rise {worst:.4f} u > 2.51 "
         f"(max corridor span {max_span:.2f} u)"
     )
@@ -366,11 +366,11 @@ def test_ramp_subdivision(s, theme, n, verticality):
 @build_settings(15)
 @given(
     s=seeds,
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts(3, 12),
     locks=st.integers(min_value=1, max_value=5),
 )
-def test_locks_do_not_touch_geometry(s, theme, n, locks):
+def test_locks_do_not_touch_geometry(s, zone_type, n, locks):
     """
     Feature: zone-generator-m0-hygiene, Property 12: Locks never touch geometry
     (umbrella P5, locks).
@@ -393,8 +393,8 @@ def test_locks_do_not_touch_geometry(s, theme, n, locks):
 
     Validates: M0 Req 4.3, 1.5; umbrella Req 1.6.
     """
-    gated_plan = ZonePlan(name="lockgeo", theme=theme, room_count=n, locks=locks)
-    open_plan = ZonePlan(name="lockgeo", theme=theme, room_count=n, locks=0)
+    gated_plan = ZonePlan(name="lockgeo", zone_type=zone_type, room_count=n, locks=locks)
+    open_plan = ZonePlan(name="lockgeo", zone_type=zone_type, room_count=n, locks=0)
 
     # Same name, same seed; the ONLY varied input is `locks`. plan_to_spec uses
     # the explicit seed (no fresh random is drawn), so both specs derive from an
@@ -408,27 +408,27 @@ def test_locks_do_not_touch_geometry(s, theme, n, locks):
         _r2, open_ter, open_zon = build_raw(open_spec, out_open)
 
     assert gated_ter == open_ter, (
-        f"locks changed the TER mesh (seed={s}, theme={theme}, rooms={n}, "
+        f"locks changed the TER mesh (seed={s}, theme={zone_type}, rooms={n}, "
         f"locks={locks}): gating leaked into geometry"
     )
     assert gated_zon == open_zon, (
-        f"locks changed the ZON layout (seed={s}, theme={theme}, rooms={n}, "
+        f"locks changed the ZON layout (seed={s}, theme={zone_type}, rooms={n}, "
         f"locks={locks}): gating leaked into placement"
     )
 
-from tests.strategies import spec_themes
+from tests.strategies import spec_zone_types
 
 
 @pytest.mark.slow
 @build_settings(15)
 @given(
     s=seeds,
-    theme=spec_themes,
+    zone_type=spec_zone_types,
     n=room_counts(2, 12),
     locks=st.integers(min_value=0, max_value=5),
     elevation=st.booleans(),
 )
-def test_seed_determinism(s, theme, n, locks, elevation):
+def test_seed_determinism(s, zone_type, n, locks, elevation):
     """
     Feature: zone-generator-m0-hygiene, Property 13: Seed determinism
     (umbrella P9, no map artifacts).
@@ -459,7 +459,7 @@ def test_seed_determinism(s, theme, n, locks, elevation):
     """
     plan = ZonePlan(
         name="seeddet",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         locks=locks,
         elevation=elevation,
@@ -474,7 +474,7 @@ def test_seed_determinism(s, theme, n, locks, elevation):
 
     assert spec1.to_dict() == spec2.to_dict(), (
         f"same-seed ZoneSpec dicts diverged "
-        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"(seed={s}, theme={zone_type}, rooms={n}, locks={locks}, "
         f"elevation={elevation}): non-deterministic spec"
     )
 
@@ -485,12 +485,12 @@ def test_seed_determinism(s, theme, n, locks, elevation):
 
     assert ter1 == ter2, (
         f"same-seed TER meshes diverged "
-        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"(seed={s}, theme={zone_type}, rooms={n}, locks={locks}, "
         f"elevation={elevation}): non-deterministic geometry"
     )
     assert zon1 == zon2, (
         f"same-seed ZON layouts diverged "
-        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"(seed={s}, theme={zone_type}, rooms={n}, locks={locks}, "
         f"elevation={elevation}): non-deterministic placement"
     )
 
@@ -502,12 +502,12 @@ from tests.pbt_helpers import clear_advisory
 @build_settings(15)
 @given(
     s=seeds,
-    theme=box_themes,
+    zone_type=box_zone_types,
     n=room_counts(3, 12),
     locks=st.integers(min_value=1, max_value=5),
     semantic=semantic_inputs,
 )
-def test_advisory_clearing(s, theme, n, locks, semantic):
+def test_advisory_clearing(s, zone_type, n, locks, semantic):
     """
     Feature: zone-generator-m0-hygiene, Property 14: Advisory clearing leaves
     the TER unchanged (umbrella P5, advisory clearing).
@@ -547,7 +547,7 @@ def test_advisory_clearing(s, theme, n, locks, semantic):
     """
     plan = ZonePlan(
         name="advclear",
-        theme=theme,
+        zone_type=zone_type,
         room_count=n,
         locks=locks,
         dungeon_theme=semantic["dungeon_theme"],
@@ -564,7 +564,7 @@ def test_advisory_clearing(s, theme, n, locks, semantic):
 
     assert ter_original == ter_cleared, (
         f"advisory clearing changed the TER mesh "
-        f"(seed={s}, theme={theme}, rooms={n}, locks={locks}, "
+        f"(seed={s}, theme={zone_type}, rooms={n}, locks={locks}, "
         f"semantic={semantic}): advisory (pacing/gating) data leaked into "
         f"geometry — this is a real bug, advisory data is suggestions-only"
     )

@@ -2,14 +2,14 @@
 
 export interface GenerateParams {
   prompt?: string;
-  theme?: string;
+  zone_type?: string;
   rooms?: number;
   elevation?: boolean;
   seed?: number;
 }
 
 export interface ZonePlan {
-  theme: string;
+  zone_type: string;
   room_count: number;
   size: string;
   elevation: boolean;
@@ -21,7 +21,7 @@ export interface ZonePlan {
 
 export interface GenerateResult {
   id: string;
-  theme: string;
+  zone_type: string;
   rooms: number;
   seed: number;
   vertices: number;
@@ -77,7 +77,8 @@ export interface ZoneRoom {
   boss?: boolean;
 }
 
-export interface ZoneTheme {
+// Content / semantic layer (field names unchanged — dungeon_theme etc.).
+export interface ZoneContent {
   dungeon_theme?: string;
   dungeon_race?: string;
   elemental_tint?: string;
@@ -99,7 +100,11 @@ export interface ZoneSidecar {
   regions: ZoneRegion[];
   rooms: ZoneRoom[];
   gates: ZoneGate[];
-  theme?: ZoneTheme;
+  zone_type?: string;
+  // Current sidecars carry the content block under `content`; old sidecars
+  // used `theme` for the same data, so the reader falls back to it.
+  content?: ZoneContent;
+  theme?: ZoneContent;
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {
@@ -124,5 +129,18 @@ export async function fetchVersion(): Promise<VersionInfo> {
 export async function fetchSidecar(url: string): Promise<ZoneSidecar> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`sidecar fetch failed (${res.status})`);
+  return res.json();
+}
+
+export interface ZoneTypeListing {
+  zone_types: string[];
+  default: string;
+  reference_zones: Record<string, unknown>;
+}
+
+// The available zone types, from the single source of truth on the server.
+export async function fetchZoneTypes(): Promise<ZoneTypeListing> {
+  const res = await fetch("/api/zone_types");
+  if (!res.ok) throw new Error(`zone_types fetch failed (${res.status})`);
   return res.json();
 }

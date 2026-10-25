@@ -7,7 +7,7 @@ plan → ZoneSpec expansion.
 
 import pytest
 
-from ai.schema import ZonePlan, VALID_THEMES
+from ai.schema import ZonePlan, VALID_ZONE_TYPES
 from ai.rule_planner import RulePlanner
 from ai.llm_planner import LLMPlanner
 from ai.expand import plan_to_spec
@@ -18,31 +18,35 @@ from generators.zone_spec import ZoneSpec
 
 class TestZonePlan:
     def test_validate_clamps(self):
-        p = ZonePlan(theme="bogus", room_count=999, size="gigantic").validate()
-        assert p.theme == "dungeon"
+        p = ZonePlan(zone_type="bogus", room_count=999, size="gigantic").validate()
+        assert p.zone_type == "dungeon"
         assert p.room_count == 30
         assert p.size == "medium"
 
     def test_roundtrip_dict(self):
-        p = ZonePlan(theme="outdoor", room_count=7, regions=["water"])
+        # Legacy "outdoor" value maps forward to "wilderness" on load (Req 11.2).
+        p = ZonePlan(zone_type="outdoor", room_count=7, regions=["water"])
         p2 = ZonePlan.from_dict(p.to_dict())
-        assert p2.theme == "outdoor"
+        assert p2.zone_type == "wilderness"
         assert p2.room_count == 7
         assert p2.regions == ["water"]
 
-    def test_from_dict_ignores_unknown(self):
-        # "cave" is no longer a valid theme (M0 removed the cave pipeline);
-        # ZonePlan.validate normalises it to the dungeon default.
+    def test_from_dict_legacy_theme_key_ignored(self):
+        # Legacy LOAD boundary: a stored plan carrying the legacy "theme" key
+        # (Req 11.1) with the removed "cave" value loads as the dungeon default
+        # (the cave pipeline was removed in M0).
         p = ZonePlan.from_dict({"theme": "cave", "nonsense": 123})
-        assert p.theme == "dungeon"
+        assert p.zone_type == "dungeon"
 
-    def test_zonespec_cave_theme_normalised(self):
-        # The spec side of cave removal: a legacy ZoneSpec dict carrying
-        # theme="cave" loads back as a dungeon (ZoneSpec.from_dict remaps it).
-        d = ZoneSpec(name="t", theme="dungeon").to_dict()
+    def test_zonespec_legacy_theme_key_normalised(self):
+        # The spec side of cave removal AND the legacy "theme" key: a stored
+        # ZoneSpec dict carrying theme="cave" loads back as a dungeon
+        # (ZoneSpec.from_dict reads the legacy key and remaps the value).
+        d = ZoneSpec(name="t", zone_type="dungeon").to_dict()
         d["theme"] = "cave"
+        d.pop("zone_type", None)
         spec = ZoneSpec.from_dict(d)
-        assert spec.theme == "dungeon"
+        assert spec.zone_type == "dungeon"
 
 
 class TestRulePlanner:
@@ -55,11 +59,11 @@ class TestRulePlanner:
         # The cave pipeline was removed in M0: cave-like words fold into the
         # dungeon bucket, so each one on its own plans as a dungeon.
         p = self.rp.plan(f"a dark {word} to explore")
-        assert p.theme == "dungeon"
+        assert p.zone_type == "dungeon"
 
-    def test_detects_outdoor(self):
+    def test_detects_wilderness(self):
         p = self.rp.plan("a sprawling forest with rolling hills")
-        assert p.theme == "outdoor"
+        assert p.zone_type == "wilderness"
 
     def test_detects_water_region(self):
         p = self.rp.plan("a flooded cave with a lake")
@@ -96,7 +100,7 @@ class TestRulePlanner:
 
     def test_detects_dungeon_archetype(self):
         p = self.rp.plan("a sunken drowned ruin full of submerged chambers")
-        assert p.theme == "dungeon"
+        assert p.zone_type == "dungeon"
         assert p.dungeon_theme == "sunken_ruin"
 
     def test_detects_fortress_archetype(self):
@@ -112,38 +116,38 @@ class TestRulePlanner:
         assert p.elemental_tint == "lava"
 
     def test_no_archetype_for_non_dungeon(self):
-        p = self.rp.plan("a sprawling forest fortress")  # outdoor wins theme
-        # dungeon_theme only set for dungeon theme
-        if p.theme != "dungeon":
+        p = self.rp.plan("a sprawling forest fortress")  # wilderness wins zone_type
+        # dungeon_theme only set for the dungeon zone type
+        if p.zone_type != "dungeon":
             assert p.dungeon_theme == ""
 
 
 class TestExpand:
     def test_plan_to_spec_basic(self):
-        plan = ZonePlan(name="t", theme="outdoor", room_count=4)
+        plan = ZonePlan(name="t", zone_type="wilderness", room_count=4)
         spec = plan_to_spec(plan, seed=1)
-        assert spec.theme == "outdoor"
+        assert spec.zone_type == "wilderness"
         assert len(spec.rooms) == 4
 
     def test_regions_added(self):
-        plan = ZonePlan(name="t", theme="dungeon", room_count=3, regions=["water"])
+        plan = ZonePlan(name="t", zone_type="dungeon", room_count=3, regions=["water"])
         spec = plan_to_spec(plan, seed=1)
         assert any(r.kind == "water" for r in spec.regions)
 
     def test_mood_folds_into_materials(self):
-        plan = ZonePlan(name="t", theme="dungeon", room_count=2, mood="dark, mossy")
+        plan = ZonePlan(name="t", zone_type="dungeon", room_count=2, mood="dark, mossy")
         spec = plan_to_spec(plan, seed=1)
         assert any("mossy" in m.description for m in spec.materials.values())
 
     def test_flat_verticality_no_elevation(self):
-        plan = ZonePlan(name="t", theme="dungeon", room_count=5,
+        plan = ZonePlan(name="t", zone_type="dungeon", room_count=5,
                         verticality="flat", elevation=True)
         spec = plan_to_spec(plan, seed=1)
         floor_zs = {r.floor_z for r in spec.rooms}
         assert floor_zs == {0.0}
 
     def test_dungeon_theme_flows_to_spec(self):
-        plan = ZonePlan(name="t", theme="dungeon", room_count=6,
+        plan = ZonePlan(name="t", zone_type="dungeon", room_count=6,
                         dungeon_theme="temple", dungeon_race="lizardman")
         spec = plan_to_spec(plan, seed=1)
         assert spec.dungeon_theme == "temple"
@@ -153,7 +157,7 @@ class TestExpand:
     def test_elemental_region_not_double_added(self):
         # A sunken_ruin theme emits water regions itself; the plan's water
         # region must not be added a second time by _add_regions.
-        plan = ZonePlan(name="t", theme="dungeon", room_count=6,
+        plan = ZonePlan(name="t", zone_type="dungeon", room_count=6,
                         dungeon_theme="sunken_ruin", regions=["water"])
         spec = plan_to_spec(plan, seed=1)
         water = [r for r in spec.regions if r.kind == "water"]
@@ -181,13 +185,13 @@ class TestPlannerFactory:
 
     def test_make_plan_returns_valid(self):
         p = make_plan("a big flooded cave", name="z")
-        assert p.theme in VALID_THEMES
+        assert p.zone_type in VALID_ZONE_TYPES
         assert p.name == "z"
 
     def test_plan_zone_full_pipeline(self):
         plan, spec = plan_zone("a small frozen dungeon", name="z", seed=1)
-        assert plan.theme == "dungeon"
-        assert spec.theme == "dungeon"
+        assert plan.zone_type == "dungeon"
+        assert spec.zone_type == "dungeon"
         assert len(spec.rooms) == plan.room_count
 
 

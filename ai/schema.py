@@ -17,7 +17,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Dict, Any
 
-VALID_THEMES = ["dungeon", "outdoor", "city"]
+from generators.zone_types import (
+    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type, read_zone_type,
+)
+
+# The canonical zone-type vocabulary, sourced from the single source of truth
+# (generators/zone_types.py). New code uses ``zone_type`` / ``wilderness``; the
+# legacy ``theme`` key and the ``outdoor`` value are accepted on load and mapped
+# forward via ``canonical_zone_type`` (umbrella decision 19; Req 11.1, 11.2).
+VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)
+
 VALID_REGION_KINDS = ["water", "lava", "ice", "pvp", "zoneline", "generic"]
 
 # Content / semantic layer (dungeon theme). Archetypes mirror
@@ -40,7 +49,7 @@ class ZonePlan:
     (from a terse prompt or a sparse LLM response) still yields a valid zone.
     """
     name: str = "zone"
-    theme: str = "dungeon"            # one of VALID_THEMES
+    zone_type: str = "dungeon"       # one of VALID_ZONE_TYPES
     room_count: int = 5              # 1..30
     size: str = "medium"             # small | medium | large | huge
     elevation: bool = True           # multi-level layout
@@ -67,8 +76,10 @@ class ZonePlan:
 
     def validate(self) -> "ZonePlan":
         """Clamp/normalise fields to valid ranges. Returns self."""
-        if self.theme not in VALID_THEMES:
-            self.theme = "dungeon"
+        # Normalise + legacy-map the zone type: an undefined value (or the
+        # legacy "outdoor") falls back through canonical_zone_type to the
+        # default (Req 11.2).
+        self.zone_type = canonical_zone_type(self.zone_type) or DEFAULT_ZONE_TYPE
         self.room_count = max(1, min(30, int(self.room_count)))
         if self.size not in ("small", "medium", "large", "huge"):
             self.size = "medium"
@@ -85,22 +96,30 @@ class ZonePlan:
         return self
 
     def to_dict(self) -> Dict[str, Any]:
+        # The emitted dict carries ``zone_type`` and never a legacy ``theme``
+        # key (Req 11.1).
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ZonePlan":
+        # Legacy LOAD boundary (Req 11.1 / Property 12): a stored plan may still
+        # carry the legacy ``theme`` key and/or the ``outdoor`` value. Both are
+        # accepted here and mapped forward; ``zone_type`` wins when both keys
+        # are present.
         allowed = {f for f in cls.__dataclass_fields__}
-        clean = {k: v for k, v in d.items() if k in allowed}
-        return cls(**clean).validate()
+        clean = {k: v for k, v in d.items() if k in allowed and k != "theme"}
+        clean.pop("zone_type", None)
+        zt = canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE
+        return cls(zone_type=zt, **clean).validate()
 
 
 # JSON schema an LLM is asked to fill (structured output / tool use).
 ZONE_PLAN_JSON_SCHEMA = {
     "type": "object",
     "properties": {
-        "theme": {
+        "zone_type": {
             "type": "string",
-            "enum": VALID_THEMES,
+            "enum": VALID_ZONE_TYPES,
             "description": "The zone's environment type.",
         },
         "room_count": {
@@ -159,5 +178,5 @@ ZONE_PLAN_JSON_SCHEMA = {
                            "regions + matching light mood.",
         },
     },
-    "required": ["theme", "room_count", "size"],
+    "required": ["zone_type", "room_count", "size"],
 }

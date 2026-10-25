@@ -590,44 +590,269 @@ Working rules for every task:
 ### Wave 2 — Zone-type rename (Requirement 11)
 
 - [ ] 10. Rename `theme` → `zone_type` and `outdoor` → `wilderness`
-  - [ ] 10.1 Create the worktree and capture the "before" hashes
+  - [x] 10.1 Create the worktree and capture the "before" hashes
     - `./scripts/new-worktree.ps1 -Branch agent/m1-rename`. With the 1.2 throwaway script, record the 32 box TER hashes plus outdoor seeds 7 / 1955208177 / 2147483647 at 6 rooms on the fork point of this wave.
     - _Requirements: 11.1_
-  - [ ] 10.2 Add `generators/zone_types.py`
+    - **Deliverables (task 10.1 — wave-2 "before" baselines captured on the fork point `5705ce4`; throwaway capture script run from the worktree, not committed):**
+      - Worktree created with `./scripts/new-worktree.ps1 -Branch agent/m1-rename` at `F:\Dev Projects\eq_s3d-worktrees\agent-m1-rename`. **Fork-point commit (branch `agent/m1-rename` forked from `master`): `5705ce499b62a0f4bb1785ebfa20c5d7411e7f97`.** Staying in this worktree for all of wave 2.
+      - These 35 sha256 TER hashes are the "before" half of the Decision 13 invariant. Task 10.11 re-captures on the branch head; all 35 must match (the rename must move no geometry).
+      - **Part A — 32 box TER `sha256` hashes** (captured exactly as task 1.2 Part A: `LayoutGenerator(theme, seed).generate(name, room_count, elevation)` → `ZoneBuilder(spec)._build_geometry(name, 2).to_bytes()` → `sha256`). Freshly captured on *this* wave's fork point `5705ce4` (which includes the wave-1 geometry fixes), so some values differ from the task-1.2 values captured on `5dabd21` — expected and correct; 10.11 compares against *these*:
+
+        | zone_type | seed | rooms | elevation | sha256 | bytes |
+        |-----------|------|-------|-----------|--------|-------|
+        | dungeon | 7 | 12 | on | `0bee542a602a38df21bf0c7ac2fe4194bd1033d87a73d0d8d425d9734dc7992a` | 90913 |
+        | dungeon | 7 | 12 | off | `06f8ffe93c4334a38e7b6f110c21252909c7f8e6d93a23dc818fbf9110bbc199` | 40513 |
+        | dungeon | 7 | 30 | on | `ae48d9c57c360dc610ec45db732a50041ab236bebc0bb7c7146b0fe60927b243` | 342409 |
+        | dungeon | 7 | 30 | off | `5a5883671d5f42a7191d737b6a9fe5fa34f0e9586bc458e59570b73351563158` | 105193 |
+        | dungeon | 1955208177 | 12 | on | `4230006dc9f080fc717cde1ea152abc9bdbe31df8410345febc5950148983ef6` | 85201 |
+        | dungeon | 1955208177 | 12 | off | `881b9144f6031b34121b9e31a3bf2aa7f6a9d7072cc5739b8f5f9fb38cd2ddd6` | 38161 |
+        | dungeon | 1955208177 | 30 | on | `f4bb948359992643b2b88e5f29d863e850d5c97f792984fc72cc89d7d64bb9c4` | 266809 |
+        | dungeon | 1955208177 | 30 | off | `ebe1bb9f079fb0982eb7db9f465b6981fdd8a02f8fb1e1883773b83ffe8330e0` | 100825 |
+        | dungeon | 1516796975 | 12 | on | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 |
+        | dungeon | 1516796975 | 12 | off | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 |
+        | dungeon | 1516796975 | 30 | on | `c3973c65f29692fe8d995af6c6d18fbf14ef1daeee0bfc5987ac409a6d7f0bcb` | 233713 |
+        | dungeon | 1516796975 | 30 | off | `92fd0b18446db35c9d2356c6ea3ce3a6c62a4fe50a32da5c883524a0aa71587d` | 107377 |
+        | dungeon | 481893615 | 12 | on | `191b9b9a985c0952e097e5f3689e28208ef6deaa2269bf2c182b330ae54f198b` | 72097 |
+        | dungeon | 481893615 | 12 | off | `a394bad9c992e634f4cbd4ae8ce7f7f1905c191e455f03bf15ca30a5f58d3f76` | 36481 |
+        | dungeon | 481893615 | 30 | on | `1813014354537faaf36f2c833b356fd796cbbfd3844c078a4346dbcb198ab825` | 327121 |
+        | dungeon | 481893615 | 30 | off | `599d62c7c0ee4549918c96624c910b1aae403c7d096a6f912b15da4feac8c630` | 102673 |
+        | city | 7 | 12 | on | `bad45473dda32b15e0f40b5562c5cbb5ed89ffb12838375e75f191af4220356f` | 94273 |
+        | city | 7 | 12 | off | `0df8ef526cf5bfd0b0a30cd04d3c2409edbd53b6b4feb3305214293dc54e4877` | 40513 |
+        | city | 7 | 30 | on | `a92867f73c5be41c6694226a06a4a6a7373ba300cea1428f470172a8df02b421` | 312841 |
+        | city | 7 | 30 | off | `6093738555214134a3aaa4fed6e70eb59f58bfec38e536856f5904870fb473a4` | 107209 |
+        | city | 1955208177 | 12 | on | `30022398dd434eae6af3dc648b7c3e9a2497e5f1f462be9b614af47827c99b3b` | 86545 |
+        | city | 1955208177 | 12 | off | `f480b2373ebd3e8ac7207d74d6b58b266443f2be1b8223ab3b76027f7ab34f9b` | 38161 |
+        | city | 1955208177 | 30 | on | `a1a208e468bf6fdc8310965c94747703d54a66b0b3c1fa105b3238a3b7590f1e` | 290329 |
+        | city | 1955208177 | 30 | off | `d1cc504ed8b589778b2bdd8136a038537419047de34d3c98ac9f268402a0c05b` | 102841 |
+        | city | 1516796975 | 12 | on | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 |
+        | city | 1516796975 | 12 | off | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 |
+        | city | 1516796975 | 30 | on | `827e137d1a24f7cd516112e6b485735c7102c08d280faf0c5fded6396759ab30` | 243793 |
+        | city | 1516796975 | 30 | off | `2624b05e39f20316da01d7d10f0e275a7932542f3a5a9faf208f2dd4cbec4158` | 101329 |
+        | city | 481893615 | 12 | on | `e47192e2dab221f312c1c6968da05a96c8643958e764c2518d6206487714dd5e` | 74113 |
+        | city | 481893615 | 12 | off | `3d5284022c87dca21d5d009b4407b637ac3573e952f235acff90a330905861ed` | 36481 |
+        | city | 481893615 | 30 | on | `25d29c69592995c5da0938768dba5e313e7107313a363e846351f603d36106ad` | 283441 |
+        | city | 481893615 | 30 | off | `0ff8ada3f3359e19b6049b507b8968a8b34e2f7ba868f7a239824ac01c4c6d6a` | 102673 |
+
+      - Note: at seed `1516796975`, rooms 12, the elevation-on and elevation-off box builds hash identically (dungeon and city both `9dcb91bc…` / `79f180cf…`). Same observed fork-point fact as task 1.2: that seed's 12-room elevation draw yields a flat graph, so the two builds are byte-identical. All 30 other box pairs differ.
+      - **Part B — 3 outdoor TER `sha256` hashes at 6 rooms** (captured exactly as `tests/test_hygiene.py::test_outdoor_ter_matches_fork_point`: `LayoutGenerator("outdoor", seed).generate(f"ob{seed}", room_count=6)` → `build_raw(spec, tmp)` → `sha256(ter_bytes)`). All three equal the existing `OUTDOOR_BASELINE` literals in that test (which passes on this fork point), confirming the capture:
+
+        | zone_type | seed | rooms | sha256 | bytes |
+        |-----------|------|-------|--------|-------|
+        | outdoor | 7 | 6 | `b3a852e7aa944bb982cfb7c7811b227c55a65305559ee1c16c393e9295b2e80d` | 1967225 |
+        | outdoor | 1955208177 | 6 | `638272f9fc80a96d2e0ec6622c4bfd509e4c55d71c0c7736dfb8957fd05b5da1` | 2003513 |
+        | outdoor | 2147483647 | 6 | `e51045058d3b5b3141947588004eb45bd185edab28a7dec1b718ccde7786a1e7` | 2370473 |
+
+      - The throwaway capture script lived at `F:\Dev Projects\_m1_task101_tmp\capture_before.py` (outside the repo) and is not committed. No hash test committed in this wave; task 10.11 re-runs the same capture on the branch head and `test_outdoor_ter_matches_fork_point` continues to guard the 3 outdoor values.
+      - `python -m pytest tests/ -q`: **255 passed** (346.32 s) on the fork point. (The two warnings are pre-existing and unrelated.)
+      - Touched only this `tasks.md` entry — no code, no `ROADMAP.md`/`README.md`/`tasks/README.md`.
+  - [x] 10.2 Add `generators/zone_types.py`
     - `DEFINED_ZONE_TYPES`, `DEFAULT_ZONE_TYPE`, `LEGACY_ZONE_TYPE_VALUES`, `STYLE_PROFILE` (`wilderness` → `outdoor`), `canonical_zone_type`, `read_zone_type` per the design. No Enabled set yet (wave 4).
     - _Requirements: 11.1, 11.2_
-  - [ ] 10.3 Rename the plan and planner surface
+    - **Deliverables:**
+      - `generators/zone_types.py` (new, leaf module — imports only stdlib `typing.Mapping`, nothing project-level, per the design "leaf every other module depends on"). Matches the design "Zone-type vocabulary (wave 2)" block verbatim in names and signatures:
+        - `DEFINED_ZONE_TYPES: tuple[str, ...] = ("dungeon", "city", "wilderness")` — canonical listing order.
+        - `DEFAULT_ZONE_TYPE = "dungeon"` (Req 11.2).
+        - `LEGACY_ZONE_TYPE_VALUES = {"outdoor": "wilderness"}` — legacy value mapped forward on load (Req 11.1).
+        - `STYLE_PROFILE = {"dungeon": "dungeon", "city": "city", "wilderness": "outdoor"}` — zone_type → measured style-profile name; `wilderness` → `outdoor` keeps the `styles/outdoor.json` profile file name unchanged (design "Profile file stays styles/outdoor.json").
+        - `canonical_zone_type(value: object) -> str | None` — lower-cases, applies the legacy map, returns the member of `DEFINED_ZONE_TYPES` or `None` for non-string / undefined input (Req 11.9).
+        - `read_zone_type(d: Mapping[str, object]) -> object` — prefers `zone_type`, then legacy `theme`, then `DEFAULT_ZONE_TYPE`; returns the raw stored value (caller normalises via `canonical_zone_type`) (Req 11.2).
+      - No `ENABLED_ZONE_TYPES` / `ZONE_TYPE_REASONS` yet — those arrive in wave 4 (task 15), as the task and design state.
+      - **Verified:**
+        - `python -c "import generators.zone_types"` imports standalone (leaf module, no project-level imports).
+        - Helper behaviour: `canonical_zone_type("dungeon")` → `dungeon` (defined); `canonical_zone_type("OUTDOOR")` → `wilderness` (legacy, case-insensitive); `canonical_zone_type("cave")` → `None` (unknown string); `canonical_zone_type(5)` / `canonical_zone_type(None)` → `None` (non-string); `read_zone_type({"zone_type": "city"})` → `city`; `read_zone_type({"theme": "outdoor"})` → `outdoor`; `read_zone_type({})` → `dungeon` (default); `read_zone_type({"zone_type": "city", "theme": "dungeon"})` → `city` (prefers `zone_type`).
+        - `python -m pytest tests/ -q`: **255 passed** (341.18 s) — matches the wave-2 fork-point baseline (task 10.1: 255 passed); the new unused module breaks nothing. The two warnings are pre-existing and unrelated.
+      - Not wired into any caller yet — it is consumed starting at 10.3 (plan/planner), 10.4 (spec/layout/builder/pipeline), etc. Nothing to verify in the live 3D viewer (pure vocabulary module, no geometry).
+      - Touched only `generators/zone_types.py` and this `tasks.md` entry — no `ROADMAP.md`/`README.md`/`tasks/README.md`.
+      - Commit: `62784be` (module + this `tasks.md` entry; the Deliverables commit-hash line itself is this self-reference, left as captured — not chased with a follow-up amend).
+  - [x] 10.3 Rename the plan and planner surface
     - `ai/schema.py`: `VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)`, `ZonePlan.zone_type`, schema key `zone_type`; `from_dict`/`validate()` read `read_zone_type` → `canonical_zone_type` → `dungeon` if undefined. `ai/rule_planner.py`: `_ZONE_TYPE_WORDS` keyed `wilderness` (word list unchanged), `_match_zone_type`, same scoring and tie rule. `ai/llm_planner.py`: prompt text and enum. `ai/expand.py`: `LayoutGenerator(zone_type=...)`, `style_profile = STYLE_PROFILE[plan.zone_type]`.
     - Content fields keep their names (Req 11.6). 10.3–10.8 may land as one commit if splitting would leave the suite red; say so in the message.
     - _Requirements: 11.1, 11.2, 11.6_
-  - [ ] 10.4 Rename the spec, layout, builder and pipeline surface
+    - **Deliverables (10.3–10.8 landed together as one commit `f584b56` — splitting the surface would leave the suite red between steps, which the task entry allows):**
+      - `ai/schema.py`: imports `DEFINED_ZONE_TYPES`/`DEFAULT_ZONE_TYPE`/`canonical_zone_type`/`read_zone_type` from `generators/zone_types.py`. `VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)`. `ZonePlan.zone_type` replaces the `theme` field; JSON schema key + `required` use `zone_type`; `validate()` normalises via `canonical_zone_type(...) or DEFAULT_ZONE_TYPE`; `from_dict` reads `canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE` (prefers `zone_type`, accepts legacy `theme`, undefined → `dungeon`). Legacy compat: a `theme` InitVar accepts `theme=` in the ctor (legacy-mapped), and a `.theme` live read/write alias via `__getattr__`/`__setattr__` (the leftover InitVar class sentinel is `del`'d so reads fall through); `to_dict()` never emits `theme`.
+      - `ai/rule_planner.py`: `_ZONE_TYPE_WORDS` keyed `wilderness` (word lists byte-identical), `_match_zone_type` (same scoring + tie rule), `plan()` sets `zone_type=`. Legacy alias `_THEME_WORDS = _ZONE_TYPE_WORDS` kept for importers.
+      - `ai/llm_planner.py`: imports `VALID_ZONE_TYPES`; system prompt says "Choose exactly one zone_type from: {zone_types}".
+      - `ai/expand.py`: `LayoutGenerator(zone_type=plan.zone_type)`, `spec.style_profile = STYLE_PROFILE[plan.zone_type]` (wilderness → "outdoor").
+      - **Verified:** `ZonePlan(theme='outdoor')` → `zone_type == 'wilderness'`; `from_dict({'theme':'outdoor'})` → `wilderness`; `from_dict({'zone_type':'wilderness','theme':'dungeon'})` → `wilderness` (zone_type wins); `from_dict({'theme':'cave'})` → `dungeon`; `RulePlanner().plan('a sprawling forest ...')` → `wilderness`; `to_dict()` carries `zone_type`, no `theme`. `python -m pytest tests/ -q`: **255 passed** (338.53 s). Not a 3D-viewer change (pure rename; no geometry moved — see 10.11).
+  - [x] 10.4 Rename the spec, layout, builder and pipeline surface
     - `generators/zone_spec.py`: `ZoneSpec.zone_type`; `from_dict` prefers `zone_type`, accepts `theme`, maps `outdoor` → `wilderness` and undefined → `dungeon`. `generators/layout.py`: `LayoutGenerator(zone_type)`, `self.zone_type`, per-type tables keyed `wilderness`, `load_style_profile(STYLE_PROFILE[...])`. `generators/builder.py`: `_TERRAIN_THEMES` → `{"wilderness"}` (replaced by the registry in 12.2). `generators/pipeline.py`: `zone_type=`, `gated_zone_types`, `DEFAULT_GATED_ZONE_TYPES = frozenset({"dungeon"})` until wave 4, JSONL key `zone_type`.
     - _Requirements: 11.1, 11.2_
-  - [ ] 10.5 Move the Sidecar content block
+    - **Deliverables (in commit `f584b56`):**
+      - `generators/zone_spec.py`: `ZoneSpec.zone_type` field; `to_dict()` emits `zone_type`, no `theme`; `from_dict` = `canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE` (prefers `zone_type`, accepts legacy `theme`, maps `outdoor`→`wilderness`, undefined/"cave"→`dungeon`); `__repr__` says `zone_type=`. Same legacy ctor/`.theme`-alias machinery as `ZonePlan` (InitVar + `__getattr__`/`__setattr__` + `del`).
+      - `generators/layout.py`: `LayoutGenerator(zone_type=..., *, theme=None)` — `theme=` legacy alias, value legacy-mapped via `canonical_zone_type` so terrain routing/registry see the current vocab; `self.zone_type`; `.theme` property alias; `load_style_profile(STYLE_PROFILE[self.zone_type])` (loads `styles/outdoor.json` for wilderness — unchanged file); `theme_palettes`/`colors` tables keyed `wilderness`; `self.zone_type != "wilderness"` light-mood guard; `_SEMANTIC_THEMES` → `_SEMANTIC_ZONE_TYPES`; spec built with `zone_type=` + `style_profile=STYLE_PROFILE[...]`.
+      - `generators/builder.py`: `_TERRAIN_THEMES = {"wilderness"}`; `_build_geometry` routes on `self.spec.zone_type in _TERRAIN_THEMES`.
+      - `generators/pipeline.py`: `DEFAULT_GATED_ZONE_TYPES = frozenset({"dungeon"})`; `generate_validated(..., zone_type=, gated_zone_types=)` with legacy `theme=`/`gated_themes=` aliases resolved at entry; `GenerationFailed.zone_type`; `log_validation_failure(zone_type=)` writes JSONL key `zone_type`; log lines say `zone_type=`. Legacy alias `DEFAULT_GATED_THEMES = DEFAULT_GATED_ZONE_TYPES`.
+      - **Verified:** a wilderness build routes to the heightfield terrain backend (48 600 polys, non-box slopes); `test_hygiene.py::test_outdoor_ter_matches_fork_point` (all 3 seeds) and `test_terrain.py::test_outdoor_uses_terrain_backend` pass → the terrain path and its fork-point TER bytes are unchanged by the rename. Box builds still route to the box backend (dungeon/city unaffected). Part of the **255 passed** run.
+  - [x] 10.5 Move the Sidecar content block
     - `core/eqg.py::_write_glb_sidecar`: write `"content": {dungeon_theme, dungeon_race, elemental_tint}` and `"zone_type"`; no `theme` key.
     - _Requirements: 11.1, 11.6_
-  - [ ] 10.6 Rename the Server surface
+    - **Deliverables (in commit `f584b56`):**
+      - `core/eqg.py`: `write_glb(..., content=None, zone_type=None)` and `_write_glb_sidecar(..., content, zone_type)` replace the old `theme` kwarg; the sidecar dict now carries `"content": content or {}` (dungeon_theme/dungeon_race/elemental_tint — field names unchanged, Req 11.6) and top-level `"zone_type": zone_type or ""`; **no `theme` key**. `generators/builder.py` builds `content_meta` and passes `content=content_meta, zone_type=self.spec.zone_type`.
+      - **Verified:** a built sidecar's keys are `bounds, content, gates, lights, metrics, name, regions, rooms, zone_type` — `theme` absent; `content == {dungeon_theme, dungeon_race, elemental_tint}`; `zone_type` is the spec's zone type. `test_generators.py::TestSemantics::test_sidecar_carries_semantic_fields` (updated to read `data["content"]`) passes.
+  - [x] 10.6 Rename the Server surface
     - `server/app.py`: drop the duplicate `VALID_THEMES`; `GenerateRequest` accepts `zone_type` and legacy `theme` (preferring `zone_type`, `outdoor` → `wilderness`); `GenerateResponse.zone_type`; `GET /api/zone_types` with `GET /api/themes` as an alias (one handler, same body). Body shape for this wave: see the decision note below.
     - Decision note (the design only gives the wave-4 body): until wave 4 adds the Enabled set, serve `{"zone_types": [<DEFINED names>], "default": "dungeon", "reference_zones": ...}`; wave 4 replaces the list with `zone_type_listing()` objects.
     - _Requirements: 11.1, 11.2, 11.4_
-  - [ ] 10.7 Rename the CLI option
+    - **Deliverables (in commit `f584b56`):**
+      - `server/app.py`: `VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)` (own list dropped). `GenerateRequest` gains `zone_type: Optional[str]` and keeps `theme: Optional[str]` (deprecated); `resolved_zone_type()` prefers `zone_type`, else legacy `theme`, legacy-maps via `canonical_zone_type`, defaults to `dungeon`. Controls path validates `zone_type in VALID_ZONE_TYPES` (400 names the valid zone types) and builds `LayoutGenerator(zone_type=...)`. Prompt path reads `plan.zone_type`. `GenerateResponse.zone_type` replaces `theme`. New `_zone_type_listing()` body `{"zone_types": VALID_ZONE_TYPES, "default": "dungeon", "reference_zones": ...}` served by `GET /api/zone_types`, with `GET /api/themes` as a one-line alias returning the same body. Pipeline called with `zone_type=`.
+      - **Verified:** `test_server.py` passes, incl. the cave-rejection (now posting `zone_type:"cave"` → 400 naming dungeon/wilderness/city) and the legacy-input round-trip (`test_generate_and_fetch_files` still posts `theme:"dungeon"` and succeeds). Part of the 255-passed run.
+  - [x] 10.7 Rename the CLI option
     - `main.py`: `--zone-type` and deprecated `--theme` share `dest="zone_type"`, both accept legacy `outdoor`; help text marks `--theme` deprecated; later option wins.
     - _Requirements: 11.3_
-  - [ ] 10.8 Relabel the Web_App
+    - **Deliverables (in commit `f584b56`):**
+      - `main.py`: `--zone-type` (dest `zone_type`, `choices=list(DEFINED_ZONE_TYPES)`, default `DEFAULT_ZONE_TYPE`) and deprecated `--theme` (same dest, `choices=DEFINED+["outdoor"]`, help marks it deprecated) — argparse last-wins. `cmd_generate` reads `args.zone_type` (falling back to a legacy `args.theme` attribute for directly-built Namespaces), legacy-maps via `canonical_zone_type`, builds `LayoutGenerator(zone_type=...)` and calls the pipeline with `zone_type=`.
+      - **Verified:** `test_pipeline.py::TestCliEscapeHatch` (both) and `test_cave_theme_rejected_by_argparse` pass. `--theme cave` still argparse-exits 2; `--theme outdoor` ≡ `--zone-type wilderness` by the shared dest + legacy map. The CLI↔API `--theme outdoor` ≡ `--zone-type wilderness` example assertion is 10.9's.
+  - [x] 10.8 Relabel the Web_App
     - `web/`: `#theme` → `#zone-type`, `m-theme` → `m-zone-type`, `result.zone_type`, `sidecar.content ?? sidecar.theme` for old sidecars, list fetched from `/api/zone_types`. Run `cd web; npx vite build`.
     - _Requirements: 11.1_
-  - [ ] 10.9 Retarget the tests and add the rename guards
+    - **Deliverables (in commit `f584b56`):**
+      - `web/index.html`: control `<select id="zone-type">` (was `#theme`), label "Zone type", options `dungeon/city/wilderness`; panel row `id="m-zone-type"` (was `m-theme`).
+      - `web/src/api.ts`: `GenerateParams.zone_type`, `ZonePlan.zone_type`, `GenerateResult.zone_type`; `ZoneTheme`→`ZoneContent`; `ZoneSidecar` gains `zone_type?` and `content?: ZoneContent` and keeps `theme?: ZoneContent` for old sidecars; new `fetchZoneTypes()` / `ZoneTypeListing` hitting `/api/zone_types`.
+      - `web/src/main.ts`: reads `$("zone-type")`, posts `{ zone_type, ... }`, `$("m-zone-type").textContent = result.zone_type`; content block reads `sidecar.content ?? sidecar.theme`; `refreshZoneTypes()` populates the dropdown from `/api/zone_types` on load (static options are the offline fallback); console logs say `zone_type=`.
+      - **Verified:** `cd web; npx vite build` succeeds (TypeScript type-checks + bundles: `dist/index.html`, `dist/assets/index-*.css`, `dist/assets/index-*.js`; the 500 kB chunk warning is pre-existing/unrelated). The one-shot build was run, not a long-running process. The web UI relabel was NOT eyeballed in a live browser — needs a human UAT pass per `docs/ACCEPTANCE.md` (dropdown shows Dungeon/City/Wilderness, the Zone-type panel row populates, old sidecars still show content).
+
+### Notes left for 10.9 / 10.10 (test retargeting + guards + Property 12)
+
+The production rename landed with backward-compat aliases so the suite stays
+green WITHOUT doing 10.9's identifier retargeting (the user chose "do the
+minimum test edits to stay green"). Still owned by 10.9/10.10:
+- Rename test-side identifiers: `box_themes`/`spec_themes`/`DEFINED_THEMES`
+  (tests/strategies.py — still the old names; I only updated their *values* to
+  `wilderness`), `_THEME_WORDS` usages, etc.
+- `tests/test_hygiene.py::test_theme_surface_is_three` → rename to
+  `test_zone_type_surface_is_three` (I retargeted its *body* to the new
+  names/values and `server.app.VALID_ZONE_TYPES` / the `--zone-type` choices so
+  it passes; the function name is still the old one).
+- The to_dict/sidecar/response **no-`theme`-key guard**, the CLI↔API
+  `--theme outdoor` ≡ `--zone-type wilderness` example, and the
+  `/api/zone_types` == `/api/themes` body example (10.9); Property 12 legacy
+  round-trip test (10.10).
+- Drop the temporary legacy aliases once tests are retargeted:
+  `ai.schema.VALID_THEMES`, `ai.rule_planner._THEME_WORDS`,
+  `generators.pipeline.DEFAULT_GATED_THEMES` (+ its `theme=`/`gated_themes=`
+  kwargs), `LayoutGenerator(theme=)`, and the `.theme` / `theme=` ctor aliases
+  on `ZonePlan`/`ZoneSpec` — all marked in-code as legacy for 10.9 to remove.
+  (The `.theme` read/write alias is what currently keeps the ~130
+  `ZonePlan(theme=)`/`LayoutGenerator(theme=)` and ~20 `.theme` test call sites
+  working unedited; 10.9 should flip those to `zone_type` and delete the alias.)
+  - [x] 10.9 Retarget the tests and add the rename guards
     - Rename test-side identifiers (`box_themes` → `box_zone_types`, etc.); keep M0 docstring tags. `tests/test_hygiene.py::test_theme_surface_is_three` → `test_zone_type_surface_is_three` (schema, web options, CLI choices, server listing all equal `DEFINED_ZONE_TYPES`). Add a guard: no `"theme"` key in `ZonePlan.to_dict()`, `ZoneSpec.to_dict()`, the Sidecar or any `GenerateResponse` field; content fields still present. Add CLI examples: `--theme outdoor` ≡ `--zone-type wilderness`; `/api/zone_types` body equals `/api/themes` body.
     - _Requirements: 11.1, 11.3, 11.4, 11.6_
-  - [ ] 10.10 Write property test for Property 12: Legacy vocabulary load round-trip (M1-P3)
+    - **Deliverables (commit `94fb3d4`):**
+      - **Identifiers renamed (tests):** `box_themes` → `box_zone_types`, `spec_themes` → `spec_zone_types`, `DEFINED_THEMES` → `DEFINED_ZONE_TYPES` (`tests/strategies.py` defs + every importer). The zone-type `theme=` constructor kwargs and `.theme` reads flipped to `zone_type` across `tests/test_generators.py`, `test_planner.py`, `test_pipeline.py`, `test_traversability.py`, `test_terrain.py`, `test_properties_pipeline.py`, `test_properties_core.py`, `test_properties_build.py`, `test_properties_layout.py`. In the two property modules the local **identifier** `theme` was renamed to `zone_type` token-safe (Python `tokenize`, NAME tokens only) so docstrings/comments and the content field `dungeon_theme` / the `_themed(theme=...)` content helper were left untouched. The planner word-bucket import flipped to the real `ai.rule_planner._ZONE_TYPE_WORDS` (and `_OTHER_THEME_WORDS` → `_OTHER_ZONE_TYPE_WORDS`). **M0 property docstring tags preserved** (only identifiers changed, never the `Feature: … Property N:` lines). Diagnostic f-string LABELS keep the literal word `theme=` but interpolate the renamed var — cosmetic only.
+      - `tests/test_hygiene.py::test_theme_surface_is_three` → **`test_zone_type_surface_is_three`**: asserts `ai.schema.VALID_ZONE_TYPES`, the live `GET /api/zone_types` LISTING body's `zone_types`, the `main.py` `--zone-type` argparse choices (derived from `DEFINED_ZONE_TYPES`) and the `web/index.html` `<option>` values all equal `DEFINED_ZONE_TYPES`. (Swapped the old `server.app.VALID_ZONE_TYPES` module-constant check for the public endpoint LISTING, per the task.)
+      - **Aliases DROPPED** (not needed for legacy load; removing each only forced updating an old test reference to the new name): `ai.schema.VALID_THEMES`, `ai.rule_planner._THEME_WORDS`, `generators.pipeline.DEFAULT_GATED_THEMES` module re-exports; `generate_validated(theme=/gated_themes=)` kwargs; `LayoutGenerator(theme=)` kwarg + the `.theme` property; the `ZonePlan`/`ZoneSpec` `.theme` live read/write alias (`__getattr__`/`__setattr__`) + the `theme=` ctor InitVar (+ their `del` sentinels). The now-unused `InitVar` import was removed from `ai/schema.py` and `generators/zone_spec.py`. Pipeline module/function docstrings reworded to the new vocabulary.
+      - **Aliases KEPT** (documented legacy LOAD boundaries required by Req 11.1 / Property 12 — task 10.10): `ZonePlan.from_dict` and `ZoneSpec.from_dict` reading the legacy `theme` key and `outdoor` value (both mapped forward; `zone_type` wins when both present); the CLI `--theme` deprecated argparse alias (shares the `zone_type` dest, accepts `outdoor`) + `cmd_generate`'s `getattr(args,'theme')` fallback; the server `GenerateRequest.theme` input field (`resolved_zone_type` prefers `zone_type`); the `GET /api/themes` alias endpoint. `LayoutGenerator("outdoor")` still legacy-maps a positional value defensively (not a dropped alias) so `test_outdoor_ter_matches_fork_point` (owned by 10.11) is unaffected.
+      - **New tests added:**
+        - `tests/test_hygiene.py::test_serialized_output_has_no_theme_key` — recursive guard (`_find_theme_keys`) that no `"theme"` key appears in `ZonePlan.to_dict()`, `ZoneSpec.to_dict()`, the WRITTEN GLB `.zone.json` sidecar, or any `GenerateResponse` field (incl. the nested `plan` dict), while the content fields `dungeon_theme`/`dungeon_race`/`elemental_tint` are still present (sidecar content under the `content` block). Req 11.6. This guard is about SERIALIZED OUTPUT, not the load-side legacy acceptance. Verified the helper detects nested `theme` keys.
+        - `tests/test_pipeline.py::TestCliArgs::test_legacy_theme_outdoor_equivalent_to_zone_type_wilderness` — `--theme outdoor` resolves to the same zone type (`wilderness`) as `--zone-type wilderness` (build stubbed; argument plumbing only). Req 11.3.
+        - `tests/test_server.py::test_zone_types_and_themes_listings_are_identical` — `GET /api/zone_types` body equals `GET /api/themes` body (byte-for-byte, both list the Defined zone types). Req 11.4.
+      - **Verify:** `python -m pytest tests/ -q` → **258 passed** (255 baseline + the 3 new example/guard tests; the two warnings are pre-existing and unrelated). No `web/` source changed, so no frontend rebuild was needed. Production modules import clean after the drops (`ai.schema`, `ai.rule_planner`, `ai.expand`, `generators.{layout,zone_spec,pipeline,builder}`, `server.app`, `main`).
+      - Touched only `ai/{schema,rule_planner}.py`, `generators/{layout,zone_spec,pipeline}.py`, the test suite, and this `tasks.md` entry — no `ROADMAP.md`/`README.md`/`tasks/README.md`. Not a 3D-viewer change (pure rename + test/alias cleanup; no geometry moved — 10.11 confirms the hashes).
+      - Commit: `94fb3d4` (code + tests). The throwaway token-rename script lived at the worktree root (`_retarget_tmp.py`) and was deleted, not committed.
+      - **Notes for 10.10 / 10.11:**
+        - 10.10 (Property 12 round-trip): the load boundaries it needs are all intact — `from_dict` on both `ZonePlan` and `ZoneSpec` reads legacy `theme`/`outdoor` and `zone_type` wins over `theme`. `tests/strategies.py::zone_plan_dicts` still emits the legacy `theme` key (I did NOT add `zone_type` to it — 10.10 owns that change). `DEFINED_ZONE_TYPES`/`box_zone_types`/`spec_zone_types` are the current strategy names to reuse.
+        - 10.11 (no-geometry): `test_outdoor_ter_matches_fork_point` is untouched and still passes; the rename moved no geometry (box/terrain backends unchanged). The `LayoutGenerator` ctor now legacy-maps `outdoor`→`wilderness`, so a positional `"outdoor"` still routes to the terrain backend with the `styles/outdoor.json` profile — identical bytes.
+  - [x] 10.10 Write property test for Property 12: Legacy vocabulary load round-trip (M1-P3)
     - `tests/test_properties_layout.py::test_legacy_vocabulary_round_trip`, budget 100. `zone_plan_dicts` gains `zone_type` and `theme`. For plans from `from_dict` and specs from `plan_to_spec` (all three zone types): `to_dict()` has `zone_type`, no `theme` and no `outdoor`; renaming to `theme`/`outdoor` and reloading gives an equal value; with both keys present and different, `zone_type` wins.
     - **Validates: Requirements 11.1, 11.2, 11.5**
-  - [ ] 10.11 Confirm the rename moved no geometry
+    - **Deliverables:**
+      - `tests/test_properties_layout.py::test_legacy_vocabulary_round_trip` — new layout-tier property, `@settings(deadline=None, max_examples=scaled(100))` (budget 100 via the repo's existing `pbt_helpers.scaled`, matching the sibling layout properties). Draws `seeds`, `spec_zone_types` (all three: dungeon / city / wilderness), `room_counts(1, 30)`, `elevation` and `semantic_inputs`. Docstring begins `Feature: zone-generator-m1-controls-traversability, Property 12: Legacy vocabulary load round-trip`, names the M1 tag **M1-P3** and lists **Requirements 11.1, 11.2, 11.5**.
+      - For each zone type, loads a plan via `ZonePlan.from_dict({... "zone_type": zt ...})` and expands it via `plan_to_spec`, then asserts against BOTH the plan and the spec `to_dict()`:
+        1. `to_dict()` contains a `zone_type` key equal to the canonical type, contains NO `theme` key, and emits NO legacy `outdoor` value — scanning every top-level value **except `style_profile`**, which legitimately names the measured profile file `styles/outdoor.json` (`generators/zone_types.py` `STYLE_PROFILE`: wilderness → `outdoor`; it is provenance, not the zone-type vocabulary — confirmed `spec.to_dict()["style_profile"] == "outdoor"` for wilderness, which is correct and NOT a leak).
+        2. Renaming the serialized `zone_type` key back to legacy `theme` (and value `wilderness` → `outdoor`) and reloading via `from_dict` recovers a canonical `zone_type` EQUAL to the original (forward round-trip through the legacy vocabulary is lossless) — for both `ZonePlan.from_dict` and `ZoneSpec.from_dict`.
+        3. With both `zone_type` and a DIFFERENT legacy `theme` key present, the loader honours `zone_type` (current key wins over legacy) — for both load boundaries, across every other defined type.
+      - Extended `tests/strategies.py::zone_plan_dicts` to emit BOTH an optional `zone_type` key (drawn from `sorted(DEFINED_ZONE_TYPES) + ["outdoor"]`, exercising the legacy mapping from the new key too) and the existing optional legacy `theme` key — so a drawn dict can be keyed the new way, the legacy way, both (possibly disagreeing), or neither (task 10.9 deferred `zone_type` to here). Added `"zone_type"` to the `_unknown_keys` filter so junk keys never collide with the real key.
+      - **No bug found.** The load boundaries (`from_dict` reading legacy `theme`/`outdoor`, `zone_type` winning when both present) were already correct from tasks 10.3 / 10.4; this property held on every example drawn across all three zone types, so there is no discovered-failure counterexample to pin and `ai/schema.py` / `generators/zone_spec.py` / `generators/zone_types.py` were not modified.
+      - **Verify (this machine, default profile, budget 100):**
+        - `python -m pytest tests/test_properties_layout.py::test_legacy_vocabulary_round_trip -q` → **1 passed** (1.69 s).
+        - `python -m pytest tests/test_properties_layout.py -q` → **9 passed** (79.41 s) — +1 over the prior 8 (the `zone_plan_dicts` change kept `test_zoneplan_normalisation` green).
+        - `python -m pytest tests/ -q` → **259 passed** (373.92 s) — +1 over the 258 baseline (the new property); the two warnings are pre-existing and unrelated.
+      - Touched only `tests/test_properties_layout.py`, `tests/strategies.py` and this `tasks.md` entry. No geometry, no production code, no frontend — so nothing to eyeball in the 3D viewer (this is an analytical load-boundary property, per `docs/ACCEPTANCE.md`).
+      - Commit: `6c7e5e3` (code + strategy + this entry; a follow-up edit fills this self-reference hash).
+  - [x] 10.11 Confirm the rename moved no geometry
     - Re-run the 10.1 script on the branch head; all 35 hashes must match. Record them in Deliverables. `test_outdoor_ter_matches_fork_point` still passes unchanged.
     - _Requirements: 11.1_
+    - **Deliverables (task 10.11 — wave-2 "after" baselines re-captured on branch head `a3cba26`, which includes the full rename 10.3–10.10; throwaway capture script run from the worktree, not committed):**
+      - Re-ran the SAME capture the task-10.1 script did (same vocabulary: box via positional `LayoutGenerator(zone_type, seed).generate(name, room_count, elevation)` → `ZoneBuilder(spec)._build_geometry(name, 2).to_bytes()` → `sha256`; outdoor via the retained legacy positional `LayoutGenerator("outdoor", seed).generate(f"ob{seed}", room_count=6)` → `build_raw(spec, tmp)` → `sha256`). The legacy positional `"outdoor"` canonicalises to `wilderness` in the new constructor and produces the identical build. Branch-head commit at capture: `a3cba26262401d2aedcf06715f0770b101da0499`.
+      - **RESULT: ALL 35/35 hashes MATCH the 10.1 "before" baselines exactly** — the rename moved no geometry (Decision 13 invariant holds). Compared programmatically against the 10.1 Deliverables values embedded in the throwaway script.
+      - **Part A — 32 box TER `sha256` (after); each equals the 10.1 "before" value:**
 
-- [ ] 11. Checkpoint: wave 2 closed
+        | zone_type | seed | rooms | elevation | sha256 | bytes | match |
+        |-----------|------|-------|-----------|--------|-------|-------|
+        | dungeon | 7 | 12 | on | `0bee542a602a38df21bf0c7ac2fe4194bd1033d87a73d0d8d425d9734dc7992a` | 90913 | ✓ |
+        | dungeon | 7 | 12 | off | `06f8ffe93c4334a38e7b6f110c21252909c7f8e6d93a23dc818fbf9110bbc199` | 40513 | ✓ |
+        | dungeon | 7 | 30 | on | `ae48d9c57c360dc610ec45db732a50041ab236bebc0bb7c7146b0fe60927b243` | 342409 | ✓ |
+        | dungeon | 7 | 30 | off | `5a5883671d5f42a7191d737b6a9fe5fa34f0e9586bc458e59570b73351563158` | 105193 | ✓ |
+        | dungeon | 1955208177 | 12 | on | `4230006dc9f080fc717cde1ea152abc9bdbe31df8410345febc5950148983ef6` | 85201 | ✓ |
+        | dungeon | 1955208177 | 12 | off | `881b9144f6031b34121b9e31a3bf2aa7f6a9d7072cc5739b8f5f9fb38cd2ddd6` | 38161 | ✓ |
+        | dungeon | 1955208177 | 30 | on | `f4bb948359992643b2b88e5f29d863e850d5c97f792984fc72cc89d7d64bb9c4` | 266809 | ✓ |
+        | dungeon | 1955208177 | 30 | off | `ebe1bb9f079fb0982eb7db9f465b6981fdd8a02f8fb1e1883773b83ffe8330e0` | 100825 | ✓ |
+        | dungeon | 1516796975 | 12 | on | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 | ✓ |
+        | dungeon | 1516796975 | 12 | off | `9dcb91bc06577bd671197698e883d026e2dd449b0edeefd1357d69e89b7930b9` | 40681 | ✓ |
+        | dungeon | 1516796975 | 30 | on | `c3973c65f29692fe8d995af6c6d18fbf14ef1daeee0bfc5987ac409a6d7f0bcb` | 233713 | ✓ |
+        | dungeon | 1516796975 | 30 | off | `92fd0b18446db35c9d2356c6ea3ce3a6c62a4fe50a32da5c883524a0aa71587d` | 107377 | ✓ |
+        | dungeon | 481893615 | 12 | on | `191b9b9a985c0952e097e5f3689e28208ef6deaa2269bf2c182b330ae54f198b` | 72097 | ✓ |
+        | dungeon | 481893615 | 12 | off | `a394bad9c992e634f4cbd4ae8ce7f7f1905c191e455f03bf15ca30a5f58d3f76` | 36481 | ✓ |
+        | dungeon | 481893615 | 30 | on | `1813014354537faaf36f2c833b356fd796cbbfd3844c078a4346dbcb198ab825` | 327121 | ✓ |
+        | dungeon | 481893615 | 30 | off | `599d62c7c0ee4549918c96624c910b1aae403c7d096a6f912b15da4feac8c630` | 102673 | ✓ |
+        | city | 7 | 12 | on | `bad45473dda32b15e0f40b5562c5cbb5ed89ffb12838375e75f191af4220356f` | 94273 | ✓ |
+        | city | 7 | 12 | off | `0df8ef526cf5bfd0b0a30cd04d3c2409edbd53b6b4feb3305214293dc54e4877` | 40513 | ✓ |
+        | city | 7 | 30 | on | `a92867f73c5be41c6694226a06a4a6a7373ba300cea1428f470172a8df02b421` | 312841 | ✓ |
+        | city | 7 | 30 | off | `6093738555214134a3aaa4fed6e70eb59f58bfec38e536856f5904870fb473a4` | 107209 | ✓ |
+        | city | 1955208177 | 12 | on | `30022398dd434eae6af3dc648b7c3e9a2497e5f1f462be9b614af47827c99b3b` | 86545 | ✓ |
+        | city | 1955208177 | 12 | off | `f480b2373ebd3e8ac7207d74d6b58b266443f2be1b8223ab3b76027f7ab34f9b` | 38161 | ✓ |
+        | city | 1955208177 | 30 | on | `a1a208e468bf6fdc8310965c94747703d54a66b0b3c1fa105b3238a3b7590f1e` | 290329 | ✓ |
+        | city | 1955208177 | 30 | off | `d1cc504ed8b589778b2bdd8136a038537419047de34d3c98ac9f268402a0c05b` | 102841 | ✓ |
+        | city | 1516796975 | 12 | on | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 | ✓ |
+        | city | 1516796975 | 12 | off | `79f180cf308b5c7e0adeae351e8120740efc604cb3484c6de347c05b87a5a1e7` | 40681 | ✓ |
+        | city | 1516796975 | 30 | on | `827e137d1a24f7cd516112e6b485735c7102c08d280faf0c5fded6396759ab30` | 243793 | ✓ |
+        | city | 1516796975 | 30 | off | `2624b05e39f20316da01d7d10f0e275a7932542f3a5a9faf208f2dd4cbec4158` | 101329 | ✓ |
+        | city | 481893615 | 12 | on | `e47192e2dab221f312c1c6968da05a96c8643958e764c2518d6206487714dd5e` | 74113 | ✓ |
+        | city | 481893615 | 12 | off | `3d5284022c87dca21d5d009b4407b637ac3573e952f235acff90a330905861ed` | 36481 | ✓ |
+        | city | 481893615 | 30 | on | `25d29c69592995c5da0938768dba5e313e7107313a363e846351f603d36106ad` | 283441 | ✓ |
+        | city | 481893615 | 30 | off | `0ff8ada3f3359e19b6049b507b8968a8b34e2f7ba868f7a239824ac01c4c6d6a` | 102673 | ✓ |
+
+      - Same byte-identical pairs at seed `1516796975`, 12 rooms (dungeon `9dcb91bc…`, city `79f180cf…`) observed on the after-capture too — that seed's 12-room elevation draw yields a flat graph, so elevation on/off are identical; all 30 other box pairs differ. Unchanged from 10.1.
+      - **Part B — 3 outdoor/wilderness TER `sha256` (after), 6 rooms; each equals the 10.1 "before" value and the `OUTDOOR_BASELINE` literal:**
+
+        | zone_type | seed | rooms | sha256 | bytes | match |
+        |-----------|------|-------|--------|-------|-------|
+        | outdoor | 7 | 6 | `b3a852e7aa944bb982cfb7c7811b227c55a65305559ee1c16c393e9295b2e80d` | 1967225 | ✓ |
+        | outdoor | 1955208177 | 6 | `638272f9fc80a96d2e0ec6622c4bfd509e4c55d71c0c7736dfb8957fd05b5da1` | 2003513 | ✓ |
+        | outdoor | 2147483647 | 6 | `e51045058d3b5b3141947588004eb45bd185edab28a7dec1b718ccde7786a1e7` | 2370473 | ✓ |
+
+      - `python -m pytest tests/test_hygiene.py -q`: **15 passed** (5.04 s) — `test_outdoor_ter_matches_fork_point` (×3) passes unchanged.
+      - `python -m pytest tests/ -q`: **259 passed** (379.66 s) — matches the 259 baseline. (Two pre-existing unrelated warnings.)
+      - The throwaway capture-and-compare script lived at `F:\Dev Projects\_m1_task1011_tmp\capture_after.py` (outside the repo) and is not committed.
+      - Commits: `4064e2e` recorded the Deliverables; `45e4fad` filled this self-reference. Both touch only task 10.11's `tasks.md` entry.
+      - Touched only this `tasks.md` entry — no code, no `ROADMAP.md`/`README.md`/`tasks/README.md`.
+
+- [x] 11. Checkpoint: wave 2 closed
   - Suite green; frontend builds; 10.11 hashes match. Write the wave-2 integration note (Done-table row, "Pick up here" line, commit hash and count). Ask the user if questions arise.
+  - **Close preconditions verified (on branch `agent/m1-rename`, head `ec7d1867009400f9e9057ae6c4600726a3a1e5c2`):**
+    - `python -m pytest tests/ -q` → **259 passed** (361.98 s; 2 pre-existing unrelated warnings). Matches the expected 259.
+    - `cd web; npx vite build` → **builds clean** (one-shot; `dist/index.html`, `dist/assets/index-*.css`, `dist/assets/index-*.js`; the 500 kB chunk warning is pre-existing/unrelated). No long-running process started.
+    - 10.11's **35/35 TER hashes matched** the 10.1 fork-point baselines (32 box + 3 wilderness/outdoor); recorded in task 10.11's Deliverables (commits `4064e2e` / `45e4fad`). Not re-run here per the task — referenced.
+    - No open questions arose, so no user input was needed; checkbox ticked.
+
+  - **Wave-2 integration note** (AUTHORED HERE for the serialized integration step run from the MAIN checkout — the single-writer rule means this worker does NOT edit `ROADMAP.md` / `README.md` / `tasks/README.md`; the human integrator applies the rows below from MAIN):
+
+    - **Branch:** `agent/m1-rename` — **head commit `ec7d1867009400f9e9057ae6c4600726a3a1e5c2`**, **12 commits** on the branch since it forked from `master` at `5705ce4` (fork point `5705ce499b62a0f4bb1785ebfa20c5d7411e7f97`, confirmed via `git merge-base`).
+
+    - **Done-table row (wave 2 — zone-type rename):**
+
+      | Wave | Scope | Branch | Head | Commits | Suite | Result |
+      |------|-------|--------|------|---------|-------|--------|
+      | 2 | Zone-type rename (`theme`→`zone_type`, `outdoor`→`wilderness`) | `agent/m1-rename` | `ec7d186` | 12 | 259 passed | geometry unmoved (35/35 TER hashes); Property 12 pins the legacy round-trip |
+
+    - **"Pick up here" line:** Wave 2 (rename) is closed and ready to merge to `master`. Next up is **Wave 3 — Backend registry and wilderness terrain**, starting at **task 12.1** (`./scripts/new-worktree.ps1 -Branch agent/m1-wilderness`; record wilderness build/validate timings at 2/6/12 rooms, seed 7, on the fork point). Wave 3's hotspot owner is `generators/builder.py`.
+
+    - **What wave 2 delivered:** the project-wide vocabulary rename `theme → zone_type` and value `outdoor → wilderness`, applied across the plan and planner (`ai/schema.py`, `ai/rule_planner.py`, `ai/llm_planner.py`, `ai/expand.py`), the new leaf vocabulary module `generators/zone_types.py`, the spec / layout / builder / pipeline (`generators/{zone_spec,layout,builder,pipeline}.py`), the GLB `.zone.json` sidecar (content now under a `content` block, top-level `zone_type`, no `theme` key — `core/eqg.py`), the server (`server/app.py`: `zone_type` input preferred, `GET /api/zone_types` with `/api/themes` as an alias), the CLI (`main.py`: `--zone-type`, deprecated `--theme`), and the web app (`web/`: `#zone-type` control, `/api/zone_types` dropdown, `sidecar.content ?? sidecar.theme` for old sidecars). Legacy **load** boundaries are retained on purpose (Req 11.1): `from_dict` on both `ZonePlan` and `ZoneSpec` reads legacy `theme`/`outdoor` with `zone_type` winning when both are present, the CLI `--theme` alias accepts `outdoor`, the server `GenerateRequest.theme` input field and the `/api/themes` endpoint still work. Serialized **output** carries no `theme` key (guarded by `test_serialized_output_has_no_theme_key`). **Property 12** (M1-P3, `tests/test_properties_layout.py::test_legacy_vocabulary_round_trip`, budget 100) pins the legacy-vocabulary load round-trip. **35 TER hashes** (32 box × seeds/rooms/elevation + 3 wilderness/outdoor) prove no geometry moved (Decision 13 invariant). Suite **259 passed**.
+
+    - **`tasks/README.md` status change (for the integrator to apply from MAIN):** mark the M1 wave-2 (rename) line done / wave 3 (wilderness) as next.
+
+    - Touched only this task 11 entry in `tasks.md` — no code, no `ROADMAP.md` / `README.md` / `tasks/README.md`.
 
 ### Wave 3 — Backend registry and wilderness terrain (Requirements 6, 7)
 
