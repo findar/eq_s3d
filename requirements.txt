@@ -30,3 +30,4 @@ python-dotenv==1.0.1
 # Testing
 hypothesis==6.170.5
 httpx==0.28.1           # test-only: backs FastAPI TestClient
+pytest-xdist==3.6.1     # test-only: parallel test execution (-n auto)
