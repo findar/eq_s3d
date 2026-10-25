@@ -857,9 +857,24 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 ### Wave 3 — Backend registry and wilderness terrain (Requirements 6, 7)
 
 - [ ] 12. Geometry backend registry
-  - [ ] 12.1 Create the worktree and record wilderness timings
+  - [x] 12.1 Create the worktree and record wilderness timings
     - `./scripts/new-worktree.ps1 -Branch agent/m1-wilderness`. Record build and validate times for wilderness at 2 / 6 / 12 rooms (seed 7) on this fork point.
     - _Requirements: 6.1_
+    - **Deliverables:**
+      - Fork-point commit (branch `agent/m1-wilderness` forked from `master` via `./scripts/new-worktree.ps1 -Branch agent/m1-wilderness`, run from the MAIN checkout): `d74baf635625b820e7479782689f721ff9fcd822` — i.e. wave-2 head `d74baf6` ("docs: apply wave-2 integration note … -> wave 3"), which includes waves 1 and 2. Worktree lives at `F:\Dev Projects\eq_s3d-worktrees\agent-m1-wilderness`.
+      - **Wilderness BUILD and VALIDATE timings** — new vocabulary `LayoutGenerator(zone_type="wilderness", seed=7).generate(name, room_count)` → `ZoneBuilder(spec).build(write_glb=False)` → `analyzer.traverse.validate(eqg, spec=spec)`, timed separately. Seed 7, this machine (NOT the Reference_Machine; timings are machine-dependent). Wilderness currently routes to the heightfield terrain backend via `ZoneBuilder._build_geometry` / `_TERRAIN_THEMES` (the pre-12.2 path):
+
+        | rooms | build (s) | validate (s) | rooms reachable | standable/total faces |
+        |-------|-----------|--------------|-----------------|------------------------|
+        | 2 | **0.162** | **0.191** | 2/2 | 8 750 / 8 750 |
+        | 6 | **0.230** | **1.100** | 4/6 | 54 339 / 54 340 |
+        | 12 | **0.507** | **2.413** | 5/12 | 113 566 / 113 568 |
+
+      - All 6 timings are the wilderness baseline; **task 13.8 re-times after the terrain reframe** and compares against these and the ≤ 15 s target. Note the "slow heightfield terrain backend" the task text warns about is, on the fork point, already well under the ≤ 15 s validate target — wave 1's union-find speed-up (task 2.2) collapsed the terrain walk-surface cost (a terrain is a single weld component, so the seam pass is empty). Build is sub-second. Partial room-reachability (4/6, 5/12) is the **pre-existing** outdoor geometry gap already recorded in wave 1 (the heightfield frame differs from the room graph, so room-footprint mapping is not meaningful outdoors yet) — not introduced here and the reason tasks 13.1/13.3 reframe terrain into the Room_Graph frame.
+      - **Wave-3 fork-point suite baseline** — `python -m pytest tests/ -q`, `.hypothesis/` deleted first, on the fresh worktree: **259 passed** (as expected), pytest-reported **363.96 s** (wall-clock 365.42 s). Single run. Two warnings are pre-existing and unrelated (`httpx`/starlette testclient deprecation; `runpy` re-import in `test_server`).
+      - **CARRIED-FORWARD BUDGET OBLIGATION (from wave 1, for the wave-3 owner — tasks 13.x / 14.x):** Wave 1 flagged that the Default_Run suite runs **~+140 s over its +120 s ceiling** (wave-1 median ~348 s vs the 88.21 s M0-exit baseline; +120 s ceiling = 208.21 s). Wave 1 established that the ONLY effective lever left is **lever 2 — wilderness budgets**, which lands in THIS wave (wave 3). Levers 1 (shared build cache) and 3 (small:large draw bias) are exhausted/ineffective. **The wave-3 owner MUST apply the wilderness-budget lever** (or a cheaper traverse on the elevation properties) so the suite comes back under the +120 s ceiling by the wave-3 close (task 14.1). This fork-point run (~364 s) confirms the suite is still well over the ceiling at the start of wave 3. This is a hard carried-forward obligation, not optional.
+      - No code change in this task — worktree + timings only. Touched only this task 12.1 entry in the worktree's `tasks.md`; no `ROADMAP.md`/`README.md`/`tasks/README.md`. The throwaway timing script lived at `F:\Dev Projects\_m1_task121_tmp\time_wilderness.py` (outside the repo) and is not committed; the `output/_m1_task121_timing/` artifacts are per-worktree `output/` and gitignored.
+      - NOT verified in the live 3D viewer — this task records timings on unchanged fork-point geometry (see `docs/ACCEPTANCE.md`); no geometry moved.
   - [ ] 12.2 Add `generators/backends.py` and route `ZoneBuilder` through it
     - `GeometryBackend` protocol, `BoxBackend`, `TerrainBackend` (returns `None` when its `numpy` import fails), `BACKENDS` keyed by `DEFINED_ZONE_TYPES`, `backend_for` (undefined → dungeon). `ZoneBuilder._build_geometry` uses `backend_for(spec.zone_type)`; on `None` it builds with `BoxBackend` and appends `"backend_fallback: <name> unavailable, built with box"` to new `BuildResult.warnings`; add `BuildResult.backend`. Delete `_TERRAIN_THEMES`. No cave backend.
     - _Requirements: 4.3, 7.1_
