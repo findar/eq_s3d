@@ -38,7 +38,9 @@ the +120 s ceiling and the only effective lever (wilderness budgets) lands in
 wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
 105770060) is in the M1 spec tasks.md — not blocking, possibly a feature.
 
-**Pick up here: M1 wave 2 — zone-type rename** (`.kiro/specs/zone-generator-m1-controls-traversability/tasks.md`, tasks 10.x on branch `agent/m1-rename`): `theme` -> `zone_type`, `outdoor` -> `wilderness`, geometry-preserving. Fork the wave-2 worktree from this updated master.
+**M1 wave 2 — zone-type rename is DONE** (merge `43e00f6` into master, 12 branch commits since `5705ce4`). `theme` -> `zone_type` and `outdoor` -> `wilderness` across plan/planner/`generators/zone_types.py`/spec/layout/builder/pipeline/sidecar/server/CLI/web. Legacy load boundaries retained (saved `theme`/`outdoor` still load and map forward); Property 12 (M1-P3) pins the round-trip; all 35 fork-point TER hashes matched, so the rename moved no geometry (Decision 13 invariant holds). Suite 259 passed; frontend builds.
+
+**Pick up here: M1 wave 3 — backend registry + wilderness terrain** (`.kiro/specs/zone-generator-m1-controls-traversability/tasks.md`, tasks 12.x–14.x): add `generators/backends.py`, route `ZoneBuilder` through it, generate wilderness terrain under the room graph with graded corridor paths, and apply the wilderness budget lever to bring the suite back under the +120 s ceiling (flagged in wave 1). Fork the wave-3 worktree from this updated master.
 
 **Suggested next step: M1 — Controls + all-theme traversability + format gate**
 (pillars P-A, P-B and P-C Tier 1). Stand up `.kiro/specs/zone-generator-m1-*`
@@ -97,6 +99,7 @@ their verdicts are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 | Viewer room-id labels | `room_N` floats over each room in 3D and is printed in each map box, so a reported room can be named |
 | Build identity | `/api/version`; side panel shows server and web build commits with a stale-code banner; generate responses carry `build_commit` |
 | M1 wave 1 — large-zone connectivity | Faster walk surface (union-find; 6-room validate 118 s to <1 s, equivalence proven vs a frozen fork-point reference); all corridors routed through one function (`generators/routing.py`, byte-identical over 32 TER captures); corridor floor-continuity + corridor-corridor conflict checks in the validator; flat AND elevation connectivity proven through 30 rooms; both 3D passes signed off. Merge `c63f056` |
+| M1 wave 2 — zone-type rename | `theme`->`zone_type`, `outdoor`->`wilderness` across plan/planner/spec/layout/builder/pipeline/sidecar/server/CLI/web; legacy load boundaries retained; Property 12 pins the round-trip; 35/35 fork-point TER hashes unchanged (no geometry moved); suite 259. Merge `43e00f6` |
 
 ---
 
