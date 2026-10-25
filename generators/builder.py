@@ -19,18 +19,14 @@ from core.eqg import EqgZone
 from core.zon import ZonFile, ZonLight, ZonRegion
 from core.ter import TerFile
 from .zone_spec import ZoneSpec
-from .geometry import build_mesh
 from .textures import generate_texture
+from .backends import backend_for, BoxBackend
 
 # Region kind → ZON name prefix
 _REGION_PREFIX = {
     "water": "AWT", "lava": "ALV", "pvp": "APK",
     "zoneline": "ATP", "ice": "ASL", "generic": "APV",
 }
-
-# Zone types that use the heightfield terrain backend. (The backend registry
-# replaces this set in wave 3 task 12.2; the rename just moves the value here.)
-_TERRAIN_THEMES = {"wilderness"}
 
 
 def _stable_seed(*parts) -> int:
@@ -80,9 +76,8 @@ class ZoneBuilder:
         ter_filename = f"ter_{name}.ter"
 
         # 1. Geometry → TER (named ter_<zone> per RoF2 convention).
-        #    Route to the heightfield terrain backend for wilderness zones, box
-        #    backend otherwise.
-        ter = self._build_geometry(name, ter_version)
+        #    Route through the backend registry by zone type.
+        ter, backend_name, warnings = self._build_geometry(name, ter_version)
 
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
@@ -169,6 +164,8 @@ class ZoneBuilder:
             vertex_count=len(ter.vertices),
             polygon_count=len(ter.polygons),
             material_count=len(ter.materials),
+            backend=backend_name,
+            warnings=warnings,
         )
 
     def _material_color_map(self, ter: TerFile) -> dict:
@@ -195,43 +192,31 @@ class ZoneBuilder:
     # Geometry backend selection
     # ------------------------------------------------------------------
 
-    def _build_geometry(self, name: str, ter_version: int) -> TerFile:
-        """Route to the right geometry backend by zone type."""
-        if self.spec.zone_type in _TERRAIN_THEMES:
-            ter = self._build_terrain(name, ter_version)
-            if ter is not None:
-                return ter
-        # Fall back to the box backend
-        mesh = build_mesh(self.spec)
-        return mesh.to_ter(name=f"ter_{name}", version=ter_version)
+    def _build_geometry(self, name: str,
+                        ter_version: int) -> Tuple[TerFile, str, list]:
+        """Route through the backend registry by zone type.
 
-    def _build_terrain(self, name: str, ter_version: int):
-        """Generate heightfield terrain spanning the zone's room-graph bounds."""
-        from .field.terrain import TerrainSpec, build_terrain
+        Returns ``(ter, backend_name, warnings)``. The chosen backend is
+        ``backend_for(spec.zone_type)``; when its build returns ``None`` (e.g.
+        terrain with numpy unavailable) we fall back to the box backend and
+        record a ``backend_fallback`` warning, so a degraded machine still
+        produces a zone instead of crashing.
+        """
+        ter_name = f"ter_{name}"
+        warnings: list = []
 
-        # Size the terrain to the room footprint plus a generous margin.
-        if self.spec.rooms:
-            xs = [r.center_x for r in self.spec.rooms]
-            ys = [r.center_y for r in self.spec.rooms]
-            margin = 600.0
-            width = max(1200.0, (max(xs) - min(xs)) + 2 * margin)
-            depth = max(1200.0, (max(ys) - min(ys)) + 2 * margin)
-        else:
-            width = depth = 2000.0
-
-        spec = TerrainSpec(
-            width=width,
-            depth=depth,
-            resolution=50.0,
-            seed=self._base_seed(name),
-            height_scale=360.0,
-            noise_scale=max(500.0, min(width, depth) * 0.4),
-            max_walkable_grad=0.85,
-        )
-        ter = build_terrain(spec, name=f"ter_{name}")
+        backend = backend_for(self.spec.zone_type)
+        ter = backend.build(self.spec, ter_name, ter_version)
         if ter is not None:
-            ter.version = ter_version
-        return ter
+            return ter, backend.name, warnings
+
+        # Chosen backend couldn't run — fall back to the box backend.
+        warnings.append(
+            f"backend_fallback: {backend.name} unavailable, built with box"
+        )
+        box = BoxBackend()
+        ter = box.build(self.spec, ter_name, ter_version)
+        return ter, box.name, warnings
 
     def _build_zon(self, ter_filename: str) -> ZonFile:
         zon = ZonFile()
@@ -267,13 +252,18 @@ class BuildResult:
     """Summary of a completed build."""
 
     def __init__(self, spec, eqg_path, glb_path,
-                 vertex_count, polygon_count, material_count):
+                 vertex_count, polygon_count, material_count,
+                 backend="box", warnings=None):
         self.spec = spec
         self.eqg_path = eqg_path
         self.glb_path = glb_path
         self.vertex_count = vertex_count
         self.polygon_count = polygon_count
         self.material_count = material_count
+        # Name of the geometry backend actually used ("box" | "terrain").
+        self.backend = backend
+        # Advisory warnings raised during the build (e.g. a backend fallback).
+        self.warnings = list(warnings) if warnings else []
 
     def summary(self) -> str:
         lines = [
