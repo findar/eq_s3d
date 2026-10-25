@@ -828,8 +828,31 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Commits: `4064e2e` recorded the Deliverables; `45e4fad` filled this self-reference. Both touch only task 10.11's `tasks.md` entry.
       - Touched only this `tasks.md` entry — no code, no `ROADMAP.md`/`README.md`/`tasks/README.md`.
 
-- [ ] 11. Checkpoint: wave 2 closed
+- [x] 11. Checkpoint: wave 2 closed
   - Suite green; frontend builds; 10.11 hashes match. Write the wave-2 integration note (Done-table row, "Pick up here" line, commit hash and count). Ask the user if questions arise.
+  - **Close preconditions verified (on branch `agent/m1-rename`, head `ec7d1867009400f9e9057ae6c4600726a3a1e5c2`):**
+    - `python -m pytest tests/ -q` → **259 passed** (361.98 s; 2 pre-existing unrelated warnings). Matches the expected 259.
+    - `cd web; npx vite build` → **builds clean** (one-shot; `dist/index.html`, `dist/assets/index-*.css`, `dist/assets/index-*.js`; the 500 kB chunk warning is pre-existing/unrelated). No long-running process started.
+    - 10.11's **35/35 TER hashes matched** the 10.1 fork-point baselines (32 box + 3 wilderness/outdoor); recorded in task 10.11's Deliverables (commits `4064e2e` / `45e4fad`). Not re-run here per the task — referenced.
+    - No open questions arose, so no user input was needed; checkbox ticked.
+
+  - **Wave-2 integration note** (AUTHORED HERE for the serialized integration step run from the MAIN checkout — the single-writer rule means this worker does NOT edit `ROADMAP.md` / `README.md` / `tasks/README.md`; the human integrator applies the rows below from MAIN):
+
+    - **Branch:** `agent/m1-rename` — **head commit `ec7d1867009400f9e9057ae6c4600726a3a1e5c2`**, **12 commits** on the branch since it forked from `master` at `5705ce4` (fork point `5705ce499b62a0f4bb1785ebfa20c5d7411e7f97`, confirmed via `git merge-base`).
+
+    - **Done-table row (wave 2 — zone-type rename):**
+
+      | Wave | Scope | Branch | Head | Commits | Suite | Result |
+      |------|-------|--------|------|---------|-------|--------|
+      | 2 | Zone-type rename (`theme`→`zone_type`, `outdoor`→`wilderness`) | `agent/m1-rename` | `ec7d186` | 12 | 259 passed | geometry unmoved (35/35 TER hashes); Property 12 pins the legacy round-trip |
+
+    - **"Pick up here" line:** Wave 2 (rename) is closed and ready to merge to `master`. Next up is **Wave 3 — Backend registry and wilderness terrain**, starting at **task 12.1** (`./scripts/new-worktree.ps1 -Branch agent/m1-wilderness`; record wilderness build/validate timings at 2/6/12 rooms, seed 7, on the fork point). Wave 3's hotspot owner is `generators/builder.py`.
+
+    - **What wave 2 delivered:** the project-wide vocabulary rename `theme → zone_type` and value `outdoor → wilderness`, applied across the plan and planner (`ai/schema.py`, `ai/rule_planner.py`, `ai/llm_planner.py`, `ai/expand.py`), the new leaf vocabulary module `generators/zone_types.py`, the spec / layout / builder / pipeline (`generators/{zone_spec,layout,builder,pipeline}.py`), the GLB `.zone.json` sidecar (content now under a `content` block, top-level `zone_type`, no `theme` key — `core/eqg.py`), the server (`server/app.py`: `zone_type` input preferred, `GET /api/zone_types` with `/api/themes` as an alias), the CLI (`main.py`: `--zone-type`, deprecated `--theme`), and the web app (`web/`: `#zone-type` control, `/api/zone_types` dropdown, `sidecar.content ?? sidecar.theme` for old sidecars). Legacy **load** boundaries are retained on purpose (Req 11.1): `from_dict` on both `ZonePlan` and `ZoneSpec` reads legacy `theme`/`outdoor` with `zone_type` winning when both are present, the CLI `--theme` alias accepts `outdoor`, the server `GenerateRequest.theme` input field and the `/api/themes` endpoint still work. Serialized **output** carries no `theme` key (guarded by `test_serialized_output_has_no_theme_key`). **Property 12** (M1-P3, `tests/test_properties_layout.py::test_legacy_vocabulary_round_trip`, budget 100) pins the legacy-vocabulary load round-trip. **35 TER hashes** (32 box × seeds/rooms/elevation + 3 wilderness/outdoor) prove no geometry moved (Decision 13 invariant). Suite **259 passed**.
+
+    - **`tasks/README.md` status change (for the integrator to apply from MAIN):** mark the M1 wave-2 (rename) line done / wave 3 (wilderness) as next.
+
+    - Touched only this task 11 entry in `tasks.md` — no code, no `ROADMAP.md` / `README.md` / `tasks/README.md`.
 
 ### Wave 3 — Backend registry and wilderness terrain (Requirements 6, 7)
 
