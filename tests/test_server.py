@@ -406,3 +406,51 @@ def test_generate_reports_build_commit(client):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["build_commit"] == app_mod.BUILD_INFO["short"]
+
+
+# ---------------------------------------------------------------------------
+# Per-build file route traversal guards (task 15.9, Req 4.2 / 4.3)
+# ---------------------------------------------------------------------------
+#
+# The /api/zones/{zone_id}/{version}/{filename} route (task 15.5) is strict:
+# every segment must match SEGMENT_RE and not be "..", the extension must be in
+# BUILD_FILE_EXTS, and the resolved path must stay inside OUTPUT_DIR. A
+# malformed segment or a disallowed extension is a 400; a well-formed request
+# for a file that isn't there is a 404. These are example tests covering those
+# cases on the route the 15.5 implementation actually exposes.
+
+class TestZoneFileGuards:
+    def test_disallowed_extension_is_400(self, client):
+        """A well-formed path whose extension is not in the allow-list is a 400,
+        before any file access (Req 4.3)."""
+        for filename in ("evil.py", "notes.txt", "data.jsonl"):
+            resp = assert_no_wildcard(
+                client.get(f"/api/zones/gen_abc/v1/{filename}")
+            )
+            assert resp.status_code == 400, f"{filename!r} -> {resp.status_code}: {resp.text}"
+
+    def test_bad_path_segment_is_400(self, client):
+        """A segment with a character outside SEGMENT_RE (here a space / a
+        slash-escaped parent hop) is rejected 400, never reaching the file
+        system (Req 4.3)."""
+        # A space is outside [A-Za-z0-9_.-]; the allow-list ext keeps the refusal
+        # about the segment, not the extension.
+        resp = assert_no_wildcard(
+            client.get("/api/zones/bad%20id/v1/bad%20id.glb")
+        )
+        assert resp.status_code == 400, resp.text
+
+        # A URL-encoded parent-dir hop (%2e%2e == "..") as a segment is refused:
+        # the `== ".."` guard (and the resolve-and-recheck) block traversal.
+        resp = assert_no_wildcard(
+            client.get("/api/zones/gen_abc/%2e%2e/gen_abc.glb")
+        )
+        assert resp.status_code == 400, resp.text
+
+    def test_absent_wellformed_file_is_404(self, client):
+        """A well-formed request (good segments, allowed extension) for a file
+        that does not exist is a 404, not a 400 (Req 4.2)."""
+        resp = assert_no_wildcard(
+            client.get("/api/zones/gen_missing/v1/gen_missing.glb")
+        )
+        assert resp.status_code == 404, resp.text

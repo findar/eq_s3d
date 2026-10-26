@@ -431,3 +431,106 @@ class TestBackendFallback:
         assert result.backend == "box"
         assert ("backend_fallback: terrain unavailable, built with box"
                 in result.warnings)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline lifecycle example tests (task 15.9, Req 4.2 / 4.3)
+# ---------------------------------------------------------------------------
+#
+# Deterministic wiring/behaviour checks for the wave-4 generate_validated
+# lifecycle (task 15.4): a builder crash leaves no scratch behind, an ungated
+# build carries its format block and validated=False, and a backend_fallback
+# warning reaches both ValidatedBuild.warnings and the written Sidecar. These
+# are example tests, not property tests — they pin specific wiring, not an
+# input-varying invariant.
+
+class TestPipelineLifecycle:
+    def _sidecar(self, vb):
+        """Read the merged Sidecar JSON the pipeline wrote for ``vb``."""
+        path = Path(vb.result.sidecar_path)
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_builder_exception_removes_scratch_and_propagates(
+            self, tmp_path, monkeypatch):
+        """A builder exception mid-build propagates AND leaves no scratch.
+
+        The per-attempt build is wrapped so a crash calls ``_remove_scratch``
+        and re-raises (generators/pipeline.py). We monkeypatch
+        ``ZoneBuilder.build`` to raise, assert the exception propagates, and
+        assert nothing is left under ``output_dir`` — in particular no
+        ``.attempts/`` scratch tree (Req 4.2's "a rejected/crashed attempt
+        leaves nothing behind")."""
+        from generators.builder import ZoneBuilder
+
+        class _Boom(RuntimeError):
+            pass
+
+        def _raise(self, *a, **k):
+            raise _Boom("builder crashed mid-build")
+
+        monkeypatch.setattr(ZoneBuilder, "build", _raise)
+
+        with pytest.raises(_Boom):
+            _run(_good_factory(), tmp_path, max_attempts=3)
+
+        # The crash re-raised, and the scratch tree was cleaned up: no
+        # .attempts dir, and no per-build dir was created either.
+        assert not (tmp_path / ".attempts").exists()
+        assert not (tmp_path / "pipe").exists()
+
+    def test_ungated_build_carries_format_block_and_validated_false(
+            self, tmp_path):
+        """An ungated build is returned ``validated=False`` but still records a
+        ``format`` block in both the result and the Sidecar.
+
+        Forcing an empty gated set makes even a dungeon ungated; the pipeline
+        runs it once through the same scratch->move path, marks it
+        ``validated=False``, and still writes the (stub) ``format`` block to the
+        Sidecar (Req 4.2)."""
+        vb = _run(_good_factory(), tmp_path, gated_zone_types=frozenset(),
+                  max_attempts=8)
+
+        assert vb.validated is False
+        assert vb.gated is False
+        # The format block is present on the build and is the passing stub shape.
+        assert vb.format is not None
+        fmt = vb.format.to_dict()
+        assert set(fmt) == {"passed", "checks"}
+        assert fmt["passed"] is True
+
+        # ...and it reaches the written Sidecar, alongside validated=False.
+        data = self._sidecar(vb)
+        assert data["validated"] is False
+        assert data["format"] == fmt
+
+    def test_backend_fallback_reaches_warnings_and_sidecar(
+            self, tmp_path, monkeypatch):
+        """A builder ``backend_fallback`` warning flows to ``vb.warnings`` and
+        the Sidecar.
+
+        A wilderness spec routes through ``TerrainBackend``; monkeypatching its
+        ``build`` to return ``None`` (the numpy-less machine) makes the builder
+        fall back to box and emit a ``backend_fallback`` warning. Wilderness is
+        not in the Enabled set, so the build is ungated and runs once; the
+        pipeline merges ``result.warnings`` into both ``vb.warnings`` and the
+        written Sidecar (Req 4.3)."""
+        from generators.backends import TerrainBackend
+
+        monkeypatch.setattr(TerrainBackend, "build",
+                            lambda self, spec, ter_name, ter_version: None)
+
+        def factory(seed):
+            return LayoutGenerator(zone_type="wilderness", seed=GOOD_SEED).generate(
+                "pipe", room_count=5)
+
+        vb = _run(factory, tmp_path, zone_type="wilderness", max_attempts=8)
+
+        # Ungated (wilderness is disabled in M1), built once via the box fallback.
+        assert vb.validated is False
+        assert vb.result.backend == "box"
+
+        fallback = "backend_fallback: terrain unavailable, built with box"
+        assert fallback in vb.warnings
+
+        data = self._sidecar(vb)
+        assert fallback in data["warnings"]

@@ -1047,9 +1047,24 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
   - [ ] 15.8 Enable wilderness only if its properties are green  — **DESCOPED: leave wilderness DISABLED unconditionally with `DISABLED_REASON` (its generator is deferred to `.kiro/specs/zone-generator-wilderness/`). Do NOT add wilderness to `ENABLED_ZONE_TYPES` in M1.**
     - In a commit of its own, add `wilderness` to `ENABLED_ZONE_TYPES` once wilderness P1, Property 10, Property 6 and Property 11 are green on this branch. If they aren't, leave it disabled with `DISABLED_REASON` and record why. Decision note: the design gates enabling on P20 too, but the Format_Checker is a passing stub until wave 6, so P20 for wilderness is confirmed in 20.4, which disables it again if it fails.
     - _Requirements: 3.2, 4.1, 6.3_
-  - [ ] 15.9 Add the pipeline and server example tests
+  - [x] 15.9 Add the pipeline and server example tests
     - `tests/test_pipeline.py`: a builder exception removes the scratch directory and propagates; an ungated build carries a `format` block and `validated=False`; `backend_fallback` reaches `ValidatedBuild.warnings` and the Sidecar. `tests/test_server.py`: `/api/zones/...` traversal guards (bad segment or extension → 400, absent → 404).
     - _Requirements: 4.2, 4.3_
+    - **Deliverables:**
+      - Five deterministic EXAMPLE tests (not property tests — wiring/behaviour checks on the wave-4 15.4/15.5 implementation):
+      - `tests/test_pipeline.py::TestPipelineLifecycle` (3 tests, Req 4.2/4.3):
+        - `test_builder_exception_removes_scratch_and_propagates` — monkeypatches `ZoneBuilder.build` to raise a custom exception mid-build; asserts the exception PROPAGATES out of `generate_validated` AND no `.attempts/` scratch tree (and no per-build dir) is left under `output_dir`. Exercises the `try/except … _remove_scratch(); raise` path in the gated loop.
+        - `test_ungated_build_carries_format_block_and_validated_false` — forces an empty `gated_zone_types` so even a dungeon is ungated; asserts `vb.validated is False`, `vb.gated is False`, `vb.format.to_dict()` is the passing-stub shape `{"passed","checks"}` with `passed=True`, AND the written Sidecar carries `validated: false` and the same `format` block.
+        - `test_backend_fallback_reaches_warnings_and_sidecar` — builds a `wilderness` spec (routes through `TerrainBackend`) with `TerrainBackend.build` monkeypatched to return `None` (numpy-less machine); wilderness is not in the Enabled set so the build is ungated and runs once via the box fallback. Asserts `vb.result.backend == "box"`, the `backend_fallback: terrain unavailable, built with box` warning is in `vb.warnings`, AND the warning is in the written Sidecar's `warnings` list.
+      - `tests/test_server.py::TestZoneFileGuards` (3 cases, Req 4.2/4.3) on the 15.5 `/api/zones/{zone_id}/{version}/{filename}` route:
+        - `test_disallowed_extension_is_400` — `.py` / `.txt` / `.jsonl` (outside `BUILD_FILE_EXTS`) → 400 before any file access.
+        - `test_bad_path_segment_is_400` — a space char (outside `SEGMENT_RE`) → 400; a `%2e%2e` (`..`) segment → 400 (the `== ".."` guard + resolve-and-recheck block traversal).
+        - `test_absent_wellformed_file_is_404` — good segments + allowed extension but the file is absent → 404 (not 400).
+      - **No root fix needed.** Every example passed on the existing 15.4/15.5 code first try — the builder-crash cleanup, the ungated `format`/`validated=False` wiring, the `backend_fallback` merge into `vb.warnings` + Sidecar, and the four route guards all behaved as specified. No assertion was weakened; no `pipeline.py`/`app.py` change was required.
+      - **Verify (this machine):** `python -m pytest tests/test_pipeline.py tests/test_server.py -q` → **44 passed** (10.93 s; 38 → 44, +6). `python -m pytest tests/ -q` → **270 passed** (154.03 s) — the 264 baseline + 6 new example tests; the known xdist CORS timing flake did not trip this run.
+      - NOT a geometry/viewer change — these are filesystem-lifecycle and HTTP-route behaviour checks; no 3D pass applies.
+      - Touched only `tests/test_pipeline.py`, `tests/test_server.py`, and this `tasks.md` entry.
+      - Commit: `__PENDING__`.
 
 - [ ] 16. Checkpoint: wave 4 closed
   - [ ] 16.1 Run the suite and write the wave-4 integration note
