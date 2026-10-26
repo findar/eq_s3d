@@ -1242,7 +1242,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Manual CLI exit-code spot-check** (ran `python main.py generate ...`): `--zone-type wilderness` → 2, `--theme outdoor` → 2, `--zone-type cave` → 2, `--rooms 0` → 2, `--rooms 31` → 2, `--locks 6` → 2, `--seed -1` → 2, `--seed 2147483648` → 2. Each printed the enabled-set / range message and wrote nothing.
       - `python -m pytest tests/ -q`: **343 passed** (246.07 s) — matches the wave baseline, no xdist CORS flake this run.
       - NOT verified in the live 3D viewer — this task changes only CLI argument plumbing and the plan-build path (which routes through the already-verified controls path), not geometry; the modes/controls 3D pass is the human-gated task 18.2.
-      - Commit: `419736c` (code + tests + this entry). This self-reference line is written in a follow-up amend; the content is otherwise complete at `419736c`.
+      - Commit: `ee5c76a` (code + tests + the task entry). A tiny follow-up commit records this final self-reference hash.
   - [ ] 17.8 Add the CLI example tests
     - `tests/test_pipeline.py::TestCliArgs`: every new option; `--zone-type cave`, `--rooms 0`, `--rooms 31`, `--locks 6`, `--seed -1` → exit 2 and no output directory; `--verticality flat` builds a flat zone; the CLI's plan equals the Server's controls plan for the same values and seed.
     - _Requirements: 1.2, 2.2, 2.5, 3.3, 5.3_
