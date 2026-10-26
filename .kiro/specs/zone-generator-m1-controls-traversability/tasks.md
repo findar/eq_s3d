@@ -1198,7 +1198,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **343 passed**, 13 warnings (164.05 s) — the wave-5 baseline 271 + 72 new golden cases. The 13 warnings are pre-existing (Starlette/httpx deprecation, runpy re-import) and unrelated; the known xdist CORS flake did not surface this run and passes in isolation.
       - Touched only `tests/test_planner.py` and this `tasks.md` entry.
       - NOT verified in the live 3D viewer — this is an analytical `to_dict()` equivalence between two spec-construction paths, not geometry (per `docs/ACCEPTANCE.md`).
-      - Commit (worktree only, not pushed): `__PENDING__` (recorded after the content commit below).
+      - Commit (worktree only, not pushed): `7147510` (test + this tracker entry). The self-reference hash is finalised in a follow-up tracker commit.
   - [ ] 17.5 Add `mode` and the controls path to the Server
     - `server/app.py`: `GenerateRequest` / `GenerateResponse` per the design (`mode`, `controls`, `StrictInt` seed/rooms, legacy flat fields, `version`, `mode`, `warnings`, `format_passed`); mode resolution; `_require_int` for `controls.room_count` / `controls.locks`; seed range 0–2,147,483,647; a `RequestValidationError` handler turning any `/api/generate` validation error into a 400 naming the field; prompt mode via `make_plan` with `plan.name = zone_id`; controls mode checks the raw zone type then `ZonePlan.from_controls`. Every 400 happens before any build or write. Record `mode` in the Sidecar.
     - _Requirements: 1.1, 1.2, 1.3, 2.4, 2.5_
