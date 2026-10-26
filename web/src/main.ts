@@ -3,16 +3,21 @@
 import * as THREE from "three";
 import {
   generateZone, fetchSidecar, fetchVersion, fetchZoneTypes,
-  type GenerateResult, type ZoneSidecar,
+  type GenerateParams, type GenerateResult, type ZoneSidecar,
 } from "./api";
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
+
+// The two generation modes, chosen explicitly by which button (or which
+// field's Enter) fired — the server no longer infers it from the body shape.
+type Mode = "prompt" | "controls";
 
 // ---- DOM ----
 const $ = (id: string) => document.getElementById(id)!;
 const canvas = $("viewport") as HTMLCanvasElement;
 const statusEl = $("status");
-const genBtn = $("generate") as HTMLButtonElement;
+const genDescBtn = $("generate-description") as HTMLButtonElement;
+const genCtrlBtn = $("generate-controls") as HTMLButtonElement;
 const hintOverlay = $("hint-overlay");
 const seedInput = $("seed") as HTMLInputElement;
 const reproduceBtn = $("reproduce") as HTMLButtonElement;
@@ -92,6 +97,40 @@ async function refreshVersion(): Promise<void> {
   buildWarning.classList.toggle("hidden", warnings.length === 0);
 }
 
+// ---- Warnings ----
+// Non-fatal advisories ride in the response as raw tokens
+// (zone_type_substituted:<planned>-><built>, backend_fallback: <detail>).
+// Render them as human-readable sentences in the #warnings status region, and
+// clear it when a request produced none.
+const warningsEl = $("warnings");
+
+function warningToWords(w: string): string {
+  const sub = w.match(/^zone_type_substituted:(.+?)->(.+)$/);
+  if (sub) {
+    return `Requested zone type "${sub[1]}" isn't available yet — built a ` +
+      `"${sub[2]}" zone instead.`;
+  }
+  if (w.startsWith("backend_fallback")) {
+    // e.g. "backend_fallback: terrain unavailable, built with box"
+    const detail = w.slice("backend_fallback".length).replace(/^[:\s]+/, "");
+    return detail
+      ? `Geometry backend fell back — ${detail}.`
+      : "Geometry backend fell back to the box builder.";
+  }
+  return w;   // unknown token: show it verbatim rather than hide it
+}
+
+function renderWarnings(warnings: string[] | undefined): void {
+  warningsEl.innerHTML = "";
+  if (!warnings || warnings.length === 0) return;
+  for (const w of warnings) {
+    const div = document.createElement("div");
+    div.className = "warning";
+    div.textContent = warningToWords(w);
+    warningsEl.appendChild(div);
+  }
+}
+
 // ---- Metrics panel ----
 function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   const b = sidecar.bounds;
@@ -99,13 +138,16 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   const wy = (b.max[1] - b.min[1]).toFixed(0);
   const wz = (b.max[2] - b.min[2]).toFixed(0);
 
-  // Plan readout
-  const sourceLabel = result.source === "prompt"
-    ? `prompt (${result.planner})`
+  // Plan readout. The resolved mode comes back from the server; show
+  // "description (<planner>)" for prompt mode, "controls" otherwise.
+  const modeLabel = result.mode === "prompt"
+    ? `description (${result.planner})`
     : "controls";
-  $("m-source").textContent = sourceLabel;
+  $("m-mode").textContent = modeLabel;
   $("m-zone-type").textContent = result.zone_type;
   $("m-rooms").textContent = String(result.rooms);
+
+  renderWarnings(result.warnings);
 
   const extra = $("m-plan-extra");
   extra.innerHTML = "";
@@ -216,52 +258,69 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
 }
 
 // ---- Generate ----
-async function doGenerate() {
-  const prompt = ($("prompt") as HTMLInputElement).value.trim();
-  const zoneType = ($("zone-type") as HTMLSelectElement).value;
-  // Rooms is a free number input; clamp to the server's accepted 1–30 range
-  // and fall back to 5 if blank/unparseable so an out-of-range value never
-  // trips the backend's validation (422).
-  const roomsRaw = parseInt(($("rooms") as HTMLInputElement).value, 10);
-  const rooms = Number.isFinite(roomsRaw)
-    ? Math.min(30, Math.max(1, roomsRaw))
-    : 5;
-  const elevation = ($("elevation") as HTMLInputElement).checked;
-
-  // Seed: blank or non-numeric → omit (server picks a fresh random seed, the
-  // default "identical inputs still vary" behaviour). A number pins the seed so
-  // the same inputs reproduce the exact zone. Negative/decimal input is
-  // floored to a non-negative integer; anything unparseable falls back to
-  // random rather than erroring.
+// The seed box feeds both modes. Blank or non-numeric → omit (the server picks
+// a fresh random seed, the default "identical inputs still vary" behaviour). A
+// number pins the seed so the same inputs reproduce the exact zone;
+// negative/decimal input is floored to a non-negative integer.
+function readSeed(): number | undefined {
   const seedRaw = seedInput.value.trim();
-  let seed: number | undefined;
-  if (seedRaw !== "") {
-    const n = Number(seedRaw);
-    if (Number.isFinite(n)) seed = Math.abs(Math.trunc(n));
+  if (seedRaw === "") return undefined;
+  const n = Number(seedRaw);
+  return Number.isFinite(n) ? Math.abs(Math.trunc(n)) : undefined;
+}
+
+async function doGenerate(mode: Mode) {
+  const seed = readSeed();
+  const prompt = ($("prompt") as HTMLInputElement).value.trim();
+
+  // In prompt mode a description is required; fall back to controls if empty so
+  // the on-load / accidental-empty case still produces a zone.
+  if (mode === "prompt" && prompt === "") {
+    mode = "controls";
   }
 
-  genBtn.disabled = true;
+  // Build the request body per the server's explicit-mode contract: prompt mode
+  // sends {mode, prompt}, controls mode sends {mode, controls:{…}}; seed rides
+  // on either when set.
+  let params: GenerateParams;
+  const seedNote = seed !== undefined ? ` seed=${seed}` : " seed=random";
+  if (mode === "prompt") {
+    params = { mode, prompt, ...(seed !== undefined ? { seed } : {}) };
+    console.log(`[input] description: "${prompt}"${seedNote}`);
+  } else {
+    const zoneType = ($("zone-type") as HTMLSelectElement).value;
+    // Rooms/locks are free number inputs; clamp to the server's accepted ranges
+    // and fall back to a sane default if blank/unparseable so an out-of-range
+    // value never trips the backend's validation.
+    const roomsRaw = parseInt(($("rooms") as HTMLInputElement).value, 10);
+    const rooms = Number.isFinite(roomsRaw)
+      ? Math.min(30, Math.max(1, roomsRaw))
+      : 5;
+    const locksRaw = parseInt(($("locks") as HTMLInputElement).value, 10);
+    const locks = Number.isFinite(locksRaw)
+      ? Math.min(5, Math.max(0, locksRaw))
+      : 0;
+    const size = ($("size") as HTMLSelectElement).value;
+    const verticality = ($("verticality") as HTMLSelectElement).value;
+    params = {
+      mode,
+      controls: { zone_type: zoneType, room_count: rooms, size, verticality, locks },
+      ...(seed !== undefined ? { seed } : {}),
+    };
+    console.log(
+      `[input] controls: zone_type=${zoneType} rooms=${rooms} size=${size} ` +
+      `verticality=${verticality} locks=${locks}${seedNote}`,
+    );
+  }
+
+  genDescBtn.disabled = true;
+  genCtrlBtn.disabled = true;
   statusEl.textContent = "generating…";
 
   // Cheap re-check so a stale-server warning shows exactly when it matters.
   await refreshVersion();
 
   try {
-    // If a prompt is given, it drives generation (zone_type/rooms); otherwise
-    // the controls do. Either way the seed, when set, pins the randomness — the
-    // backend applies `seed` in both paths.
-    const params = prompt
-      ? { prompt, ...(seed !== undefined ? { seed } : {}) }
-      : { zone_type: zoneType, rooms, elevation, ...(seed !== undefined ? { seed } : {}) };
-
-    // Log the user's input so it's visible in the browser console.
-    const seedNote = seed !== undefined ? ` seed=${seed}` : " seed=random";
-    if (prompt) {
-      console.log(`[input] prompt: "${prompt}"${seedNote}`);
-    } else {
-      console.log(`[input] controls: zone_type=${zoneType} rooms=${rooms} elevation=${elevation}${seedNote}`);
-    }
-
     const result = await generateZone(params);
     currentMapUrl = result.map_url;
     lastSeed = result.seed;
@@ -286,7 +345,7 @@ async function doGenerate() {
 
     console.info(
       `[generate] seed=${result.seed} zone_type=${result.zone_type} rooms=${result.rooms} ` +
-      `source=${result.source}` +
+      `mode=${result.mode}` +
       (result.planner ? ` planner=${result.planner}` : "") +
       ` build=${result.build_commit ?? "unknown"}`,
     );
@@ -296,32 +355,58 @@ async function doGenerate() {
     console.error(err);
     statusEl.textContent = "error — see console";
   } finally {
-    genBtn.disabled = false;
+    genDescBtn.disabled = false;
+    genCtrlBtn.disabled = false;
   }
 }
 
-// Populate the zone-type dropdown from the server's single source of truth,
-// keeping the current selection if it survives. The static <option>s in
-// index.html are the offline fallback if the fetch fails.
+// Populate the zone-type dropdown from the server's single source of truth.
+// Each entry is {name, enabled, reason}: a DISABLED type is rendered as a
+// disabled <option> whose text and title carry the reason (so it's visible but
+// unselectable — not hidden), and the first ENABLED type is preselected (or the
+// current selection if it survives and is still enabled). The static <option>s
+// in index.html are the offline fallback if the fetch fails.
+function titleCase(z: string): string {
+  return z.charAt(0).toUpperCase() + z.slice(1);
+}
+
 async function refreshZoneTypes(): Promise<void> {
   const sel = $("zone-type") as HTMLSelectElement;
   try {
     const listing = await fetchZoneTypes();
-    if (!listing.zone_types?.length) return;
+    const types = listing.zone_types;
+    if (!types?.length) return;
     const prev = sel.value;
-    const label = (z: string) => z.charAt(0).toUpperCase() + z.slice(1);
-    sel.innerHTML = listing.zone_types
-      .map((z) => `<option value="${z}">${label(z)}</option>`)
-      .join("");
-    sel.value = listing.zone_types.includes(prev)
-      ? prev
-      : (listing.default ?? listing.zone_types[0]);
+
+    sel.innerHTML = "";
+    for (const zt of types) {
+      const opt = document.createElement("option");
+      opt.value = zt.name;
+      if (zt.enabled) {
+        opt.textContent = titleCase(zt.name);
+      } else {
+        opt.disabled = true;
+        const reason = zt.reason ?? "not available yet";
+        opt.textContent = `${titleCase(zt.name)} — ${reason}`;
+        opt.title = reason;
+      }
+      sel.appendChild(opt);
+    }
+
+    // Keep a surviving, still-enabled selection; else the server default when
+    // it's enabled; else the first enabled option.
+    const enabled = types.filter((z) => z.enabled).map((z) => z.name);
+    const prevOk = enabled.includes(prev);
+    const defaultOk = listing.default && enabled.includes(listing.default);
+    sel.value = prevOk ? prev : (defaultOk ? listing.default : (enabled[0] ?? ""));
   } catch (err) {
     console.warn("[zone_types]", err);   // keep the static options
   }
 }
 
-genBtn.addEventListener("click", doGenerate);
+// The two Generate actions choose the mode explicitly.
+genDescBtn.addEventListener("click", () => doGenerate("prompt"));
+genCtrlBtn.addEventListener("click", () => doGenerate("controls"));
 
 // Reset View button — return the camera to its starting position/orientation
 $("reset-view").addEventListener("click", () => {
@@ -329,15 +414,17 @@ $("reset-view").addEventListener("click", () => {
   console.log("[input] reset view");
 });
 
-// Enter in the prompt box triggers generation
+// Enter routing is per field: Enter in the description → prompt mode; Enter in
+// any Controls-panel field (or the shared seed box) → controls mode.
 ($("prompt") as HTMLInputElement).addEventListener("keydown", (e) => {
-  if ((e as KeyboardEvent).key === "Enter") doGenerate();
+  if ((e as KeyboardEvent).key === "Enter") doGenerate("prompt");
 });
 
-// Enter in the seed box triggers generation too.
-seedInput.addEventListener("keydown", (e) => {
-  if ((e as KeyboardEvent).key === "Enter") doGenerate();
-});
+for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed"]) {
+  $(id).addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
+  });
+}
 
 // Reproduce last: refill the seed box with the last result's seed and copy it
 // to the clipboard, so the next Generate reruns the exact same zone.
@@ -408,5 +495,6 @@ function animate() {
 }
 animate();
 
-// Populate zone types, then generate one on load so the viewport isn't empty.
-refreshZoneTypes().finally(doGenerate);
+// Populate zone types, then generate one on load (controls mode) so the
+// viewport isn't empty.
+refreshZoneTypes().finally(() => doGenerate("controls"));
