@@ -1133,9 +1133,14 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 ### Wave 5 — Modes, `from_controls` and geometry-slice controls (Requirements 1, 2)
 
 - [ ] 17. Explicit modes and the controls path
-  - [ ] 17.1 Create the worktree
+  - [x] 17.1 Create the worktree
     - `./scripts/new-worktree.ps1 -Branch agent/m1-modes`. Record the fork-point hash.
     - _Requirements: 1.2_
+    - **Deliverables:**
+      - Fork-point commit (branch `agent/m1-modes` forked from `master`, which includes waves 1–4): `43df9ecbf6be8fe66b1bddc3c02fae39652a3966`.
+      - Worktree landed at `F:\Dev Projects\eq_s3d-worktrees\agent-m1-modes` via `./scripts/new-worktree.ps1 -Branch agent/m1-modes` (no `-Venv`/`-IsolateNode` — wave 5 touches neither `requirements.txt` nor `web/package.json`; `.env` absent in MAIN so procedural defaults apply, `web/node_modules` shared via junction, global Python env shared).
+      - Health check: `python -c "import analyzer.traverse, generators.builder, generators.pipeline, ai.schema, server.app"` → imports OK; tree clean on branch `agent/m1-modes`.
+      - **Wave-5 fork-point suite baseline** — `python -m pytest tests/ -q` (one run, xdist/pytest-xdist parallel): **271 passed**, 13 warnings, pytest-reported **127.89 s** (wall ~128.93 s). Matches the expected 271 (wave-4 close). The known pre-existing xdist CORS timing flake (`test_server.py::test_foreign_origins_get_no_cors`, passes in isolation) did not surface this run and is not a regression. The 13 warnings are pre-existing (Starlette/httpx deprecation, runpy re-import) and unrelated.
   - [ ] 17.2 Add `ZonePlan.from_controls`
     - `ai/schema.py`: `CONTROL_ALIASES = {"rooms": "room_count", "theme": "zone_type"}` (a plan key wins over its alias); legacy `elevation: false` without `verticality` means `flat`; ends in the same `cls(**clean).validate(warnings)` as `from_dict`. Content fields keep their names and rules; target keys are dropped as unknown.
     - _Requirements: 1.2, 2.3, 2.4_
