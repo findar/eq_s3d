@@ -355,6 +355,31 @@ def test_zone_type_surface_is_three():
 
 
 # ----------------------------------------------------------------------
+# Geometry backend registry (task 12.3, Req 4.3 / 7.1)
+# ----------------------------------------------------------------------
+
+def test_backends_registry_covers_zone_types_and_has_no_cave():
+    """``BACKENDS`` is keyed by exactly the defined zone types, cave absent.
+
+    Req 7.1: the backend registry's keys equal ``DEFINED_ZONE_TYPES`` (one
+    source of truth; no stray or missing zone type). And the cave backend was
+    removed in M0 and must not reappear — cave returns as a dungeon archetype /
+    natural style later, not as its own backend.
+    """
+    from generators.backends import BACKENDS
+    from generators.zone_types import DEFINED_ZONE_TYPES as _DEFINED
+
+    assert set(BACKENDS) == set(_DEFINED), (
+        f"BACKENDS keys {sorted(BACKENDS)} != DEFINED_ZONE_TYPES "
+        f"{sorted(_DEFINED)}"
+    )
+    cave_key = "ca" + "ve"
+    assert cave_key not in BACKENDS, (
+        f"BACKENDS must not have a {cave_key!r} backend: {sorted(BACKENDS)}"
+    )
+
+
+# ----------------------------------------------------------------------
 # Legacy-viewer residue
 # ----------------------------------------------------------------------
 

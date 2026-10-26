@@ -393,7 +393,9 @@ def test_ter_zon_roundtrip(zone_type, n, semantic):
     # arguments ZoneBuilder.build feeds _build_geometry (lowercased name,
     # ter_version=2). Its serialisation must reproduce the archived TER byte for
     # byte.
-    re_ter = ZoneBuilder(spec)._build_geometry(name, 2)
+    # _build_geometry now returns (ter, backend_name, warnings) — it routes
+    # through the backend registry (wave 3). We only need the TerFile here.
+    re_ter, _backend, _warnings = ZoneBuilder(spec)._build_geometry(name, 2)
     assert re_ter.to_bytes() == ter_bytes, (
         "re-derived TER bytes differ from the TER archived in the .eqg "
         "(builder geometry serialisation is not stable)"
