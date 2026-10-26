@@ -1159,7 +1159,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q`: **271 passed** (212.24 s) — matches the wave-5 fork-point baseline exactly (the new method is additive; no existing behaviour moved). 13 warnings pre-existing/unrelated. The known xdist CORS flake did not surface this run.
       - Touched only `ai/schema.py` and this `tasks.md` entry.
       - NOT verified in the live 3D viewer — pure schema/dataclass logic, no geometry (per `docs/ACCEPTANCE.md`).
-      - Commit (worktree only, not pushed): `<filled after commit>`.
+      - Commit (worktree only, not pushed): `d257e8b` (code + this tracker entry).
   - [ ] 17.3 Write property test for Property 5: Plan normalisation, both entry paths (umbrella P12)
     - Extend `test_zoneplan_normalisation` (budget 100): `zone_plan_dicts` gains `rooms` and `elevation` aliases and `zone_type` values `cave`, `outdoor`, junk. Assert both `from_dict(d)` and `from_controls(d)` have every field in its domain, agree on every key `d` names directly, and are fixed points of `validate()`.
     - **Validates: Requirements 1.2, 2.4**
