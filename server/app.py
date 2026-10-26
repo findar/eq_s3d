@@ -25,15 +25,15 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from generators.layout import LayoutGenerator
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type,
@@ -42,6 +42,7 @@ from generators.zone_types import (
 from analyzer.style_builder import REFERENCE_ZONES
 from ai.planner import make_plan, get_planner
 from ai.expand import plan_to_spec
+from ai.schema import ZonePlan
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -222,35 +223,107 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(RequestValidationError)
+async def _validation_to_400(request: Request, exc: RequestValidationError):
+    """Turn any ``/api/generate`` body-validation error into a 400 that names
+    the offending field, instead of FastAPI's default raw 422 (Req 2.5).
+
+    A ``StrictInt`` field fed a float/bool/string, or any other schema error on
+    the generate body, surfaces as ``"<field> must be an integer"`` (for the
+    integer fields) or ``"<field>: <message>"`` — always a 400 naming the field
+    (``loc[-1]``), never a 422. Other routes keep FastAPI's default handling.
+    """
+    if not request.url.path.startswith("/api/generate"):
+        # Preserve the default 422 for every other route.
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+    errors = exc.errors()
+    detail = "invalid request"
+    if errors:
+        err = errors[0]
+        loc = err.get("loc", ())
+        field = str(loc[-1]) if loc else "body"
+        # The StrictInt fields (seed, rooms) read most clearly as "must be an
+        # integer"; everything else keeps the validator's own message.
+        if field in ("seed", "rooms", "room_count", "locks"):
+            detail = f"{field} must be an integer"
+        else:
+            detail = f"{field}: {err.get('msg', 'invalid value')}"
+    return JSONResponse(status_code=400, content={"detail": detail})
+
+
 # ---------------------------------------------------------------------------
 # Request / response models
 # ---------------------------------------------------------------------------
 
+# The Pinned_Seed domain: a 32-bit non-negative integer (Req 2.5). A pinned seed
+# outside this range is a 400 naming ``seed``.
+SEED_MIN = 0
+SEED_MAX = 2_147_483_647
+
+# The integer kinds the controls dict may NOT carry for its numeric fields. A
+# JSON ``bool`` is an ``int`` subclass in Python, so it must be rejected
+# explicitly; floats, strings, lists and null are rejected as non-int kinds.
+VALID_MODES = ("prompt", "controls")
+
+
+def _require_int(d: dict, key: str) -> None:
+    """Reject a controls value that is present but not a JSON integer.
+
+    Mirrors the ``StrictInt`` guard the top-level fields get from pydantic: a
+    ``bool`` (an ``int`` subclass in Python) and any non-int kind (float, string,
+    list, null) raise an :class:`HTTPException` 400 that names the field, so a
+    malformed ``controls.room_count`` / ``controls.locks`` is a 400 — never a
+    silent coercion and never a raw 422 (Req 2.5).
+    """
+    if key not in d or d[key] is None:
+        return
+    v = d[key]
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise HTTPException(400, f"{key} must be an integer")
+
+
 class GenerateRequest(BaseModel):
-    # If `prompt` is set, the planner derives zone_type/rooms/etc. from it and
-    # the explicit fields below are ignored. Otherwise the explicit fields drive
-    # it. ``zone_type`` is preferred; the legacy ``theme`` field is still
-    # accepted on input and mapped forward (Req 11.1, 11.2).
+    # An extra/unknown key (e.g. a legacy ``target_shortname``) is ignored like
+    # any other non-field key rather than rejected (Req 8.1).
+    model_config = ConfigDict(extra="ignore")
+
+    # Explicit mode selector. When absent the mode is inferred from the presence
+    # of ``prompt`` vs ``controls`` (see ``generate``). "prompt" | "controls".
+    mode: Optional[str] = Field(default=None, description="prompt | controls")
+
+    # If the resolved mode is ``prompt``, the planner derives zone_type/rooms/etc.
+    # from ``prompt``. In ``controls`` mode the ``controls`` sub-object (or the
+    # legacy flat fields) drive it.
     prompt: Optional[str] = Field(default=None, description="Natural-language prompt")
+    controls: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Controls sub-object: zone_type, room_count, size, "
+                    "verticality, locks, …",
+    )
+    # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
+    # via the RequestValidationError handler), never a silent coercion.
+    seed: Optional[StrictInt] = Field(
+        default=None, description="Pin a seed (omit for random)")
+
+    # Legacy flat fields (mode absent -> inferred), kept for back-compat with
+    # pre-mode clients. ``zone_type`` is preferred over the legacy ``theme``;
+    # both are mapped forward (Req 11.1, 11.2). ``rooms`` is StrictInt so a
+    # non-integer is a 400, not a clamp.
     zone_type: Optional[str] = Field(
-        default=None, description="Zone type (ignored if prompt set)")
+        default=None, description="Legacy flat zone type (controls mode)")
     theme: Optional[str] = Field(
         default=None, description="Legacy alias for zone_type (deprecated)")
-    rooms: int = Field(default=5, ge=1, le=30, description="Number of rooms")
-    elevation: bool = Field(default=True, description="Allow multi-level layout")
-    seed: Optional[int] = Field(default=None, description="Pin a seed (omit for random)")
-
-    def resolved_zone_type(self) -> str:
-        """The requested zone type, preferring ``zone_type`` over the legacy
-        ``theme`` and legacy-mapping the value; falls back to the default."""
-        raw = self.zone_type if self.zone_type is not None else self.theme
-        if raw is None:
-            return DEFAULT_ZONE_TYPE
-        return canonical_zone_type(raw) or raw
+    rooms: Optional[StrictInt] = Field(
+        default=None, description="Legacy flat room count (controls mode)")
+    elevation: Optional[bool] = Field(
+        default=None, description="Legacy flat multi-level flag (controls mode)")
 
 
 class GenerateResponse(BaseModel):
-    id: str
+    id: str                          # the Build_Name (directory + file stem)
+    version: int = 1                 # the per-build version (output/<id>/v<version>/)
+    mode: str                        # the resolved mode: "prompt" | "controls"
     zone_type: str
     rooms: int
     seed: int
@@ -260,8 +333,9 @@ class GenerateResponse(BaseModel):
     glb_url: str
     zone_url: str
     map_url: str
-    # What drove the generation (so the UI can show inferred choices)
-    source: str                      # "prompt" | "controls"
+    # What drove the generation (so the UI can show inferred choices). ``source``
+    # is kept as a back-compat mirror of ``mode`` for pre-mode clients.
+    source: str                      # "prompt" | "controls" (== mode)
     planner: Optional[str] = None    # "rule" | "llm" when a prompt was used
     plan: Optional[dict] = None      # the ZonePlan the planner produced
     gates: int = 0                   # number of lock-and-key gates (keyed dungeon)
@@ -272,6 +346,9 @@ class GenerateResponse(BaseModel):
     # dungeon`` when a prompt planned a disabled zone type, or a
     # ``backend_fallback`` note from the builder (Req 3.3).
     warnings: list[str] = Field(default_factory=list)
+    # Whether the build cleared the Format_Checker (a passing stub until the
+    # wave-6 rof2check lands).
+    format_passed: bool = False
     # Short commit of the code this server process loaded (BUILD_INFO), so a
     # result/screenshot can be traced to the exact code that produced it.
     build_commit: str = UNKNOWN
@@ -317,23 +394,51 @@ def list_themes():
     return _zone_type_listing()
 
 
+def _resolve_mode(req: GenerateRequest) -> str:
+    """Resolve the request's mode BEFORE any build or write (Req 1.1, 1.3).
+
+    An explicit ``mode`` wins and must be one of ``VALID_MODES`` (else 400).
+    When absent, infer: a non-empty ``prompt`` means ``prompt`` mode; otherwise
+    ``controls`` mode (the on-load / dropdown path).
+    """
+    if req.mode is not None:
+        if req.mode not in VALID_MODES:
+            raise HTTPException(
+                400, f"mode must be one of: {', '.join(VALID_MODES)}")
+        return req.mode
+    return "prompt" if (req.prompt or "").strip() else "controls"
+
+
 @app.post("/api/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
     zone_id = f"gen_{int(time.time())}_{uuid.uuid4().hex[:6]}"
 
-    prompt = (req.prompt or "").strip()
+    # --- Mode + seed resolution: every 400 here happens BEFORE any build/write.
+    mode = _resolve_mode(req)
+
+    # A pinned seed must be in the 32-bit non-negative Pinned_Seed domain. (Its
+    # integer *kind* is already guaranteed by StrictInt via the 400 handler.)
+    if req.seed is not None and not (SEED_MIN <= req.seed <= SEED_MAX):
+        raise HTTPException(
+            400, f"seed must be between {SEED_MIN} and {SEED_MAX}")
+
     plan_dict = None
     planner_name = None
     warnings: list[str] = []
     planned_zone_type: Optional[str] = None
 
-    if prompt:
-        # Prompt-driven: the planner derives the full spec. The plan is
+    if mode == "prompt":
+        # Prompt-driven: the planner derives the full spec. A missing/blank
+        # prompt in prompt mode is a 400 before any build (Req 1.3). The plan is
         # seed-independent (it comes from the prompt), so build it once and let
         # the pipeline re-run spec expansion per fresh-seed retry.
-        source = "prompt"
+        prompt = (req.prompt or "").strip()
+        if not prompt:
+            raise HTTPException(400, "a description is required for mode=prompt")
         planner_name = get_planner().name
         plan = make_plan(prompt, name=zone_id)
+        # Guard the Build_Name: no planner output chooses the directory/file stem.
+        plan.name = zone_id
 
         # A prompt-planned DISABLED zone type is not refused — it is substituted
         # to dungeon so the prompt still yields a zone, with a
@@ -347,11 +452,9 @@ def generate(req: GenerateRequest):
             )
         else:
             # The planned type is enabled: canonicalise it so a legacy value
-            # (e.g. ``outdoor``) builds as its current name (``wilderness``),
-            # mirroring the controls path. A real planner already emits a
-            # validated (canonical) zone_type, so this is defense-in-depth for a
-            # planner that surfaces a legacy value — the built/returned zone_type
-            # is always a canonical member of the Enabled set.
+            # (e.g. ``outdoor``) builds as its current name, mirroring the
+            # controls path. The built/returned zone_type is always a canonical
+            # member of the Enabled set.
             plan.zone_type = canonical_zone_type(plan.zone_type)
 
         plan_dict = plan.to_dict()
@@ -361,14 +464,32 @@ def generate(req: GenerateRequest):
         def factory(s: int):
             return plan_to_spec(plan, seed=s)
     else:
-        # Control-driven: explicit zone_type/rooms/elevation. Accepts the legacy
-        # ``theme`` field and the legacy ``outdoor`` value, mapped forward. A
-        # zone type whose canonical form is not in the Enabled set — including an
-        # undefined name like ``cave`` (canonicalises to None) and the DISABLED
-        # ``wilderness`` — is refused HTTP 400 BEFORE any build or write, listing
-        # the enabled set (Req 3.3).
-        source = "controls"
-        raw_zone_type = req.zone_type if req.zone_type is not None else req.theme
+        # Control-driven: the ``controls`` sub-object drives it, with the legacy
+        # flat fields filling any key it doesn't name. The raw zone type is
+        # checked against the Enabled set FIRST — before ``from_controls``
+        # normalisation — so an undefined name like ``cave`` (canonicalises to
+        # None) and the DISABLED ``wilderness`` are refused HTTP 400 BEFORE any
+        # build or write, listing the enabled set (Req 3.3, matches 15.5).
+        c: dict[str, Any] = dict(req.controls or {})
+        # Legacy flat fields fill missing keys only (a controls key wins).
+        if "zone_type" not in c and "theme" not in c:
+            if req.zone_type is not None:
+                c["zone_type"] = req.zone_type
+            elif req.theme is not None:
+                c["theme"] = req.theme
+        if "room_count" not in c and "rooms" not in c and req.rooms is not None:
+            c["rooms"] = req.rooms
+        if "elevation" not in c and req.elevation is not None:
+            c["elevation"] = req.elevation
+
+        # Integer-kind guard for the controls numeric fields (float/bool/string/
+        # list/null -> 400 naming the field, before any build).
+        _require_int(c, "room_count")
+        _require_int(c, "rooms")
+        _require_int(c, "locks")
+
+        # Raw zone type -> Enabled-set check BEFORE normalisation (15.5 behaviour).
+        raw_zone_type = c.get("zone_type", c.get("theme"))
         if raw_zone_type is None:
             raw_zone_type = DEFAULT_ZONE_TYPE
         if not is_enabled(raw_zone_type):
@@ -377,13 +498,16 @@ def generate(req: GenerateRequest):
                 f"zone_type {raw_zone_type!r} is not available; enabled: "
                 f"{_enabled_zone_type_names()}",
             )
-        zone_type = canonical_zone_type(raw_zone_type)
-        rooms = req.rooms
+
+        # Proven equal to the legacy LayoutGenerator path by the 17.4 golden test.
+        plan = ZonePlan.from_controls(c, warnings)
+        plan.name = zone_id
+        plan_dict = plan.to_dict()
+        zone_type = plan.zone_type
+        rooms = plan.room_count
 
         def factory(s: int):
-            return LayoutGenerator(zone_type=zone_type, seed=s).generate(
-                zone_id, room_count=rooms, elevation=req.elevation,
-            )
+            return plan_to_spec(plan, seed=s)
 
     # Build + traversability gate. On gated themes a failing dungeon seed is
     # never returned: the pipeline retries on fresh seeds (bounded by attempts +
@@ -399,6 +523,7 @@ def generate(req: GenerateRequest):
             failure_log=FAILURE_LOG,
             warnings=warnings,
             planned_zone_type=planned_zone_type,
+            mode=mode,
         )
     except GenerationFailed as e:
         # Exhaustion / pinned-seed failure -> clean error, never a broken GLB.
@@ -424,6 +549,8 @@ def generate(req: GenerateRequest):
     # that merged list.
     return GenerateResponse(
         id=zone_id,
+        version=1,
+        mode=mode,
         zone_type=zone_type,
         rooms=rooms,
         seed=vb.seed,
@@ -433,13 +560,14 @@ def generate(req: GenerateRequest):
         glb_url=f"/api/zones/{zone_id}/v1/{zone_id}.glb",
         zone_url=f"/api/zones/{zone_id}/v1/{zone_id}.zone.json",
         map_url=f"/api/zones/{zone_id}/v1/{zone_id}.map.svg",
-        source=source,
+        source=mode,
         planner=planner_name,
         plan=plan_dict,
         gates=len(vb.spec.gates),
         validated=vb.validated,
         attempts=vb.attempts,
         warnings=list(vb.warnings),
+        format_passed=bool(vb.format.passed) if vb.format is not None else False,
         build_commit=BUILD_INFO["short"],
     )
 

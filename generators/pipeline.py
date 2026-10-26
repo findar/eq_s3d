@@ -349,6 +349,7 @@ def generate_validated(
     failure_log: Optional[str | Path] = DEFAULT_FAILURE_LOG,
     warnings: Sequence[str] = (),
     planned_zone_type: Optional[str] = None,
+    mode: Optional[str] = None,
 ) -> ValidatedBuild:
     """
     Build a zone and guarantee (for gated zone types) that it passes the
@@ -369,7 +370,8 @@ def generate_validated(
     * on PASS: ``os.replace`` every file into
       ``output_dir/<zone_id>/v<version>/``, merge ``format``/``warnings``/
       ``validated``/``attempts``/``seed`` (and ``planned_zone_type`` when a
-      prompt-planned zone type was substituted) into the Sidecar there, remove
+      prompt-planned zone type was substituted, and ``mode`` when the caller
+      names the Server/CLI path) into the Sidecar there, remove
       the scratch and its empty parent, and return;
     * on FAIL: log one JSONL line (with the failed ``checks``), ``rmtree`` the
       scratch, then the pinned / attempt-cap / timeout logic;
@@ -418,7 +420,7 @@ def generate_validated(
             moved = _finalize_build(
                 result, scratch, final_dir, fmt=fmt, warnings=all_warnings,
                 validated=False, attempts=1, seed=use_seed,
-                planned_zone_type=planned_zone_type,
+                planned_zone_type=planned_zone_type, mode=mode,
             )
             _remove_scratch(output_dir, zone_id, scratch)
         except Exception:
@@ -464,7 +466,7 @@ def generate_validated(
                 moved = _finalize_build(
                     result, scratch, final_dir, fmt=fmt, warnings=all_warnings,
                     validated=True, attempts=attempt, seed=use_seed,
-                    planned_zone_type=planned_zone_type,
+                    planned_zone_type=planned_zone_type, mode=mode,
                 )
                 _remove_scratch(output_dir, zone_id, scratch)
                 if attempt > 1:
@@ -505,7 +507,8 @@ def generate_validated(
 def _finalize_build(result: BuildResult, scratch: Path, final_dir: Path, *,
                     fmt: _FormatStub, warnings: Sequence[str], validated: bool,
                     attempts: int, seed: int,
-                    planned_zone_type: Optional[str] = None) -> BuildResult:
+                    planned_zone_type: Optional[str] = None,
+                    mode: Optional[str] = None) -> BuildResult:
     """Move a passing/ungated build out of scratch into ``final_dir``.
 
     ``os.replace`` every file from ``scratch`` into ``final_dir`` (atomic on the
@@ -549,6 +552,11 @@ def _finalize_build(result: BuildResult, scratch: Path, final_dir: Path, *,
         # zone type was substituted (design "Build naming ... Sidecar additions").
         if planned_zone_type is not None:
             data["planned_zone_type"] = planned_zone_type
+        # ``mode`` records which Server/CLI path produced the build ("prompt" |
+        # "controls"), recorded in the Sidecar when the caller passes it (the
+        # CLI and ungated builds may omit it).
+        if mode is not None:
+            data["mode"] = mode
         sidecar.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     return result
