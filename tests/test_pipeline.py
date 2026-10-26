@@ -229,7 +229,8 @@ class TestCliEscapeHatch:
     def _args(self, tmp_path, **over):
         import argparse
         ns = argparse.Namespace(
-            name="cli", zone_type="dungeon", rooms=8, seed=PINNED_SEED,
+            name="cli", zone_type="dungeon", rooms=8, size="medium",
+            verticality="moderate", locks=0, seed=PINNED_SEED,
             output=str(tmp_path), ter_version=2,
             no_validate=False,
         )
@@ -249,7 +250,12 @@ class TestCliEscapeHatch:
         # Force the CLI to build a broken zone (an isolated, corridor-less room)
         # so the pinned-seed gate must error out. No seed is reliably broken any
         # more, so we inject the breakage rather than rely on one.
-        import main
+        #
+        # The CLI builds its spec through ``ai.expand.plan_to_spec`` (the shared
+        # controls path), which drives ``LayoutGenerator`` imported into the
+        # ``ai.expand`` namespace — so that is where the breakage is injected.
+        import main  # noqa: F401  (keeps the CLI import alive for the run)
+        import ai.expand as _expand
         from generators.layout import LayoutGenerator as _RealLG
 
         class _BrokenLG(_RealLG):
@@ -260,7 +266,7 @@ class TestCliEscapeHatch:
                     floor_z=0.0, width=200, depth=200, height=100))
                 return spec
 
-        monkeypatch.setattr(main, "LayoutGenerator", _BrokenLG)
+        monkeypatch.setattr(_expand, "LayoutGenerator", _BrokenLG)
         with pytest.raises(SystemExit) as ei:
             main.cmd_generate(self._args(tmp_path, no_validate=False))
         assert ei.value.code == 1
@@ -272,46 +278,36 @@ class TestCliEscapeHatch:
 
 class TestCliArgs:
     def test_legacy_theme_outdoor_equivalent_to_zone_type_wilderness(
-            self, tmp_path, monkeypatch):
-        """CLI legacy alias maps forward: ``--theme outdoor`` resolves to the
-        SAME zone type as ``--zone-type wilderness`` (Req 11.3).
+            self, tmp_path, capsys):
+        """CLI legacy alias resolves ``--theme outdoor`` to the SAME zone type
+        as ``--zone-type wilderness`` — and, wilderness being DISABLED in M1,
+        both are rejected identically (Req 3.3, 11.3).
 
-        ``--theme`` is the kept legacy LOAD boundary on the CLI; it shares the
-        ``zone_type`` argparse dest and its value is legacy-mapped. This asserts
-        the two invocations drive ``cmd_generate`` to the identical resolved
-        zone type (``wilderness``) — the build itself is stubbed so the check is
-        fast and isolated to the argument plumbing.
+        ``--theme`` is the kept legacy alias on the CLI; it shares the
+        ``zone_type`` argparse dest and its value is legacy-mapped by
+        ``_zone_type_arg``, which maps ``outdoor`` -> ``wilderness`` and then
+        rejects it as a disabled type. So both invocations exit 2 before any
+        build, listing the enabled set and creating no output directory.
         """
         import main
-        from generators.zone_types import canonical_zone_type, DEFAULT_ZONE_TYPE
 
-        seen = {}
-
-        def _capture(args):
-            raw = getattr(args, "zone_type", None)
-            if raw is None:
-                raw = getattr(args, "theme", None)
-            seen["zt"] = canonical_zone_type(raw) or DEFAULT_ZONE_TYPE
-
-        monkeypatch.setattr(main, "cmd_generate", _capture)
-
-        out = str(tmp_path / "o")
-        main.main(["generate", "legacy", "--theme", "outdoor", "--output", out])
-        legacy_zt = seen["zt"]
-        main.main(["generate", "modern", "--zone-type", "wilderness",
-                   "--output", out])
-        modern_zt = seen["zt"]
-
-        assert legacy_zt == "wilderness"
-        assert legacy_zt == modern_zt, (
-            f"--theme outdoor resolved to {legacy_zt!r} but "
-            f"--zone-type wilderness resolved to {modern_zt!r}"
-        )
+        for zt_args in (["--theme", "outdoor"], ["--zone-type", "wilderness"]):
+            out = str(tmp_path / ("o_" + zt_args[-1]))
+            with pytest.raises(SystemExit) as ei:
+                main.main(["generate", "legacy", *zt_args, "--output", out])
+            assert ei.value.code == 2, (
+                f"{zt_args} should exit 2 (disabled zone type), got "
+                f"{ei.value.code}"
+            )
+            err = capsys.readouterr().err
+            # The rejection names the enabled set and never offers wilderness.
+            assert "enabled: dungeon, city" in err, err
+            assert not Path(out).exists()  # argparse exits before any write
 
     def test_cave_theme_rejected_by_argparse(self, tmp_path):
-        # "cave" was removed from the --theme choices (M0 6.8): argparse exits 2
-        # in parse_args, before any build, so no output directory is created.
-        # Driven in-process via the main(argv) entry point (task 6.1).
+        # "cave" is not a defined zone type: _zone_type_arg can't canonicalise
+        # it, so argparse exits 2 in parse_args, before any build, and no output
+        # directory is created. Driven in-process via main(argv).
         import main
         out = str(tmp_path / "cli_out")
         with pytest.raises(SystemExit) as ei:
