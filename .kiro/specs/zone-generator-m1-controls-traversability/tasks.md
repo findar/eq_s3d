@@ -1064,7 +1064,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Verify (this machine):** `python -m pytest tests/test_pipeline.py tests/test_server.py -q` → **44 passed** (10.93 s; 38 → 44, +6). `python -m pytest tests/ -q` → **270 passed** (154.03 s) — the 264 baseline + 6 new example tests; the known xdist CORS timing flake did not trip this run.
       - NOT a geometry/viewer change — these are filesystem-lifecycle and HTTP-route behaviour checks; no 3D pass applies.
       - Touched only `tests/test_pipeline.py`, `tests/test_server.py`, and this `tasks.md` entry.
-      - Commit: `__PENDING__`.
+      - Commit: `4d86dba` (code + tests + this entry). A follow-up amend-free edit updates only this self-reference line.
 
 - [ ] 16. Checkpoint: wave 4 closed
   - [ ] 16.1 Run the suite and write the wave-4 integration note
