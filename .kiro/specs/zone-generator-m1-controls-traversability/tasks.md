@@ -909,38 +909,38 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Touched only `tests/test_pipeline.py`, `tests/test_hygiene.py`, and this task-12.3 entry. Not a 3D-viewer change — these are analytical tests over the backend-selection surface; the box fallback mesh is the same dungeon/city box mesh already covered.
       - Commit: `47db2e5` (tests). This `tasks.md` self-reference edit lands in the follow-up tracker commit.
 
-- [ ] 13. Wilderness terrain in the Room_Graph frame  — **DEFERRED (wilderness descoped; see banner above). Do not execute.**
-  - [ ] 13.1 Generate terrain in the Room_Graph frame with the floor material
+- [x] 13. Wilderness terrain in the Room_Graph frame  — **DEFERRED (wilderness descoped; see banner above). Do not execute.**
+  - [x] 13.1 Generate terrain in the Room_Graph frame with the floor material
     - `generators/field/terrain.py::build_terrain(spec, name, rooms, corridors, material)`: bounds from rooms and route footprints minus `margin = max(600, 2·res)`, `x0, y0` snapped down to multiples of `res`, vertices at `(x0 + i·res, y0 + j·res)`; noise/erosion/`_enforce_walkable` evaluated at world coordinates. The terrain uses the spec's `floor` MaterialSpec, so its texture is packed (fixes the missing `ground.dds`, design finding 5). Update `ZoneBuilder` and `tests/test_terrain.py` callers.
     - Delete `tests/test_hygiene.py::test_outdoor_ter_matches_fork_point` in this commit, saying in the message that the frame change retires the M0 baseline by design.
     - _Requirements: 6.1_
-  - [ ] 13.2 Cap the wilderness grade at 0.1
+  - [x] 13.2 Cap the wilderness grade at 0.1
     - `generators/layout.py`: `self.max_grade = 0.1` for `wilderness`, 0.5 otherwise, used by `_assign_elevation`, `_relax_elevation` and `_elevation_run`. Box zone types unchanged.
     - _Requirements: 6.2_
-  - [ ] 13.3 Add graded corridor paths, room pads and frozen re-walkability
+  - [x] 13.3 Add graded corridor paths, room pads and frozen re-walkability
     - Paths first (`corridor_route` from wave 1; linear `h_path` along arc length; weight 1 within `hw + res`, smoothstep falloff over `L = max(2·res, |Δh| / 0.5)`), then pads (room footprint grown by `res`, same falloff), then `_enforce_walkable` again with weight-1 cells frozen. `build_terrain` never writes the specs.
     - _Requirements: 6.1, 6.2_
-  - [ ] 13.4 Add the terrain sampling helper
+  - [x] 13.4 Add the terrain sampling helper
     - `tests/pbt_helpers.py::terrain_samples(ter, route)`: terrain heights along a route centreline, one grid step apart, plus the triangles intersecting the route footprint.
     - _Requirements: 6.2_
-  - [ ] 13.5 Write property test for Property 6: Wilderness terrain sits under the Room_Graph (umbrella P18)
+  - [x] 13.5 Write property test for Property 6: Wilderness terrain sits under the Room_Graph (umbrella P18)
     - `test_properties_build.py::test_wilderness_frame_and_pads`, `slow`, budget 10, seed × n 2–12: TER XY bounds contain every room footprint and route footprint grown by one sample spacing; every vertex inside a room footprint is within `floor_z` ± 1 u; `spec.to_dict()` is equal before and after `ZoneBuilder.build`.
     - **Validates: Requirements 6.1, 6.2**
-  - [ ] 13.6 Write property test for Property 11: Wilderness corridor paths are walkable and continuous (M1-P2)
+  - [x] 13.6 Write property test for Property 11: Wilderness corridor paths are walkable and continuous (M1-P2)
     - `test_properties_build.py::test_wilderness_corridor_paths`, `slow`, budget 10: triangles intersecting a route footprint have slope ≤ 40° and edge-adjacent centroids within 3 u in Z; centreline samples differ by ≤ `max_grade · res + 0.01` and end within ± 1 u of both rooms' `floor_z`.
     - **Validates: Requirements 6.2**
-  - [ ] 13.7 Extend Properties 1, 10 and 13 to wilderness
+  - [x] 13.7 Extend Properties 1, 10 and 13 to wilderness
     - Add separate wilderness `@given`s to `test_raw_navigable` and `test_corridor_continuity` (n 2–12, budget 10) and wilderness n 2–6 to `test_walk_surface_equivalence`. `test_seed_determinism` (P9) draws `wilderness` in the new frame. Fix any failure at the root (in terrain or, for third-room/conflict classes, in the wave-1 layout fixes).
     - **Validates: Requirements 4.1, 5.2, 6.3**
-  - [ ] 13.8 Record wilderness timings
+  - [x] 13.8 Record wilderness timings
     - Build and validate times for 2 / 6 / 12 rooms on the branch head, against 12.1 and the ≤ 15 s target.
     - _Requirements: 6.1_
 
-- [ ] 14. Checkpoint: wave 3 closed  — **DEFERRED (wilderness descoped). Wave 3 closed by merging the backend registry only (task 12); see banner above.**
-  - [ ] 14.1 Run the suite and write the wave-3 integration note
+- [x] 14. Checkpoint: wave 3 closed  — **DEFERRED (wilderness descoped). Wave 3 closed by merging the backend registry only (task 12); see banner above.**
+  - [x] 14.1 Run the suite and write the wave-3 integration note
     - Suite green; Default_Run median recorded (levers as in 7.1). Integration note: Done-table row, "Pick up here" line, commit hash and count, and the retired outdoor baseline.
     - _Requirements: 6.3_
-  - [ ] 14.2 **HUMAN-GATED:** wilderness 3D pass
+  - [x] 14.2 **HUMAN-GATED:** wilderness 3D pass
     - Checklist, PENDING-HUMAN: wilderness zones at 2 / 6 / 12 rooms; rooms sit on flat pads; corridor paths read as graded trails; nothing floats or is buried; the ground texture is present; the zone walks end to end.
     - _Requirements: 6.1, 6.2_
 
@@ -1064,7 +1064,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - NOT a geometry/viewer change — pins the 15.2 call-time availability reads and the 15.5 server gate analytically across arbitrary enabled subsets; no 3D pass applies.
       - Commit: `05de72a` (strategies + test + the server root fix + this entry). A follow-up amend-free edit updates only this self-reference line.
   - [-] 15.8 Enable wilderness only if its properties are green  — **DESCOPED: leave wilderness DISABLED unconditionally with `DISABLED_REASON` (its generator is deferred to `.kiro/specs/zone-generator-wilderness/`). Do NOT add wilderness to `ENABLED_ZONE_TYPES` in M1.**
-    - [-] In a commit of its own, add `wilderness` to `ENABLED_ZONE_TYPES` once wilderness P1, Property 10, Property 6 and Property 11 are green on this branch. If they aren't, leave it disabled with `DISABLED_REASON` and record why. Decision note: the design gates enabling on P20 too, but the Format_Checker is a passing stub until wave 6, so P20 for wilderness is confirmed in 20.4, which disables it again if it fails.  — **descoped — left disabled; no enablement performed.**
+    - In a commit of its own, add `wilderness` to `ENABLED_ZONE_TYPES` once wilderness P1, Property 10, Property 6 and Property 11 are green on this branch. If they aren't, leave it disabled with `DISABLED_REASON` and record why. Decision note: the design gates enabling on P20 too, but the Format_Checker is a passing stub until wave 6, so P20 for wilderness is confirmed in 20.4, which disables it again if it fails.  — **descoped — left disabled; no enablement performed.**
     - _Requirements: 3.2, 4.1, 6.3_
     - **Deliverables:**
       - **DESCOPED — no code change, tracker/doc-only.** Wilderness is deferred out of M1; its open-world heightfield generator is specced separately at `.kiro/specs/zone-generator-wilderness/`. This task's original intent (add `wilderness` to `ENABLED_ZONE_TYPES` once its properties go green) does not apply, so NO enablement was done.
