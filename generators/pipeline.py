@@ -310,17 +310,20 @@ def _remove_scratch(output_dir: Path, zone_id: str, scratch: Path) -> None:
     Rejected and accepted attempts both call this (via the callers below) so an
     attempt never leaves a directory behind — the invariant Property 2 asserts.
     Removing the ``.attempts/<zone_id>`` parent when it is empty keeps the
-    output directory clean; ``.attempts`` itself is left (it may hold other
-    zones' in-flight scratch) and is harmless when empty.
+    output directory clean; the ``.attempts`` root is likewise removed when it
+    is empty, so a returned build leaves ONLY ``<zone_id>/v<version>/`` (and the
+    failure log) behind — the Property 2 invariant. A still-populated
+    ``.attempts`` (another zone's in-flight scratch) is left untouched.
     """
     if scratch.exists():
         shutil.rmtree(scratch, ignore_errors=True)
-    parent = output_dir / ".attempts" / zone_id
-    try:
-        if parent.exists() and not any(parent.iterdir()):
-            parent.rmdir()
-    except OSError:
-        pass  # a concurrent attempt repopulated it — harmless.
+    attempts_root = output_dir / ".attempts"
+    for pruned in (attempts_root / zone_id, attempts_root):
+        try:
+            if pruned.exists() and not any(pruned.iterdir()):
+                pruned.rmdir()
+        except OSError:
+            pass  # a concurrent attempt repopulated it — harmless.
 
 
 # ---------------------------------------------------------------------------

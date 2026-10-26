@@ -371,3 +371,221 @@ def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
     assert no_network == [], (
         f"the no-API prompt/CLI flow attempted outbound network: {no_network}"
     )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 2: Returned builds passed both gates, rejected attempts leave
+# nothing (umbrella P2). These PIN the task-15.4 scratch -> move -> cleanup
+# lifecycle and the two-gate PASS criterion
+# (report.passed AND report.corridors_passed AND fmt.passed), over the real
+# Enabled set (dungeon, city). Wilderness is disabled, so it is never drawn.
+# ---------------------------------------------------------------------------
+
+import json  # noqa: E402  (grouped with the M1 P2 tests that read the Sidecar)
+import os  # noqa: E402
+
+from generators.zone_types import ENABLED_ZONE_TYPES  # noqa: E402
+import analyzer.traverse as _traverse  # noqa: E402
+
+# The gated zone types this property ranges over. Sorted for a stable sample
+# order; wilderness is absent from ENABLED_ZONE_TYPES, so this is (city,
+# dungeon) and the property never touches a disabled type (task note).
+_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES))
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    zone_type=_enabled_zone_types,
+    rooms=st.integers(min_value=2, max_value=4),
+    max_attempts=st.integers(min_value=1, max_value=8),
+    rng=st.randoms(use_true_random=False),
+)
+def test_returned_build_passed_both_gates(zone_type, rooms, max_attempts, rng):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 2: Returned
+    builds passed both gates, and rejected attempts leave nothing (umbrella P2,
+    returned half).
+
+    When ``generate_validated`` RETURNS a ``ValidatedBuild`` for a zone type in
+    ``ENABLED_ZONE_TYPES`` (dungeon, city — wilderness is disabled and never
+    drawn), that build provably cleared BOTH gates and its files live only where
+    they should:
+
+    * ``vb.validated`` is True — the traversability gate ran and passed;
+    * the two traversability verdicts hold — ``report.passed`` (every room
+      reachable) and ``report.corridors_passed`` (corridor continuity), re-run
+      independently on the RETURNED ``.eqg`` so this does not merely trust the
+      pipeline's own bookkeeping;
+    * ``vb.format.passed`` holds (the wave-6 Format_Checker gate — a passing stub
+      until task 20.3);
+    * the Sidecar's ``format`` block equals ``vb.format.to_dict()`` — the merged
+      provenance matches the gate result;
+    * the Output_Directory holds ONLY ``vb.build_dir`` (the ``<zone_id>/
+      v<version>/`` tree) — no ``.attempts/`` scratch, nothing else (failure log
+      is disabled here).
+
+    This pins the task-15.4 scratch -> move -> cleanup lifecycle: a returned
+    build leaves nothing behind but its own directory.
+
+    Validates: Requirements 4.2, 9.2; umbrella P2.
+    """
+    seeds_seen: list[int] = []
+
+    def spec_factory(seed: int):
+        # Record the seed the pipeline asked for, then build a genuinely
+        # navigable zone (fixed good seed) so both gates pass. Same spy idiom as
+        # the P15 test above: the factory decides the outcome, the pipeline owns
+        # seed selection.
+        seeds_seen.append(seed)
+        return LayoutGenerator(zone_type=zone_type, seed=_NAVIGABLE_SEED).generate(
+            "p2", room_count=rooms
+        )
+
+    with fresh_dir() as out:
+        try:
+            vb = generate_validated(
+                spec_factory,
+                zone_type=zone_type,
+                zone_id="p2",
+                output_dir=out,
+                write_glb=False,
+                max_attempts=max_attempts,
+                rng=rng,
+                failure_log=None,
+            )
+        except GenerationFailed:
+            # Only RETURNING calls are in scope for the returned half.
+            assume(False)
+
+        assert isinstance(vb, ValidatedBuild)
+
+        # -- Gate 1 + 2: the traversability verdicts, re-run on the RETURNED eqg.
+        assert vb.validated, "returned gated build is not marked validated"
+        report = _traverse.validate(
+            vb.result.eqg_path, spec=vb.spec, check_corridors=True
+        )
+        assert report.passed, (
+            "re-validating the returned build found an unreachable room"
+        )
+        assert report.corridors_passed, (
+            "re-validating the returned build found a corridor-continuity break"
+        )
+
+        # -- Gate 3: the Format_Checker verdict (passing stub until 20.3).
+        assert vb.format is not None and vb.format.passed, (
+            "returned build's format gate did not pass"
+        )
+
+        # -- The Sidecar's format block equals the gate result it was merged from.
+        sidecar = vb.build_dir / f"{vb.spec.name.lower()}.zone.json"
+        assert sidecar.exists(), f"Sidecar missing from build dir: {sidecar}"
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert data.get("format") == vb.format.to_dict(), (
+            f"Sidecar format {data.get('format')!r} != vb.format.to_dict() "
+            f"{vb.format.to_dict()!r}"
+        )
+
+        # -- The Output_Directory holds ONLY the build directory tree. build_dir
+        # is output_dir/<zone_id>/v<version>/, so the only top-level entry is the
+        # <zone_id> dir; no ".attempts" scratch, no stray files (failure log off).
+        top_level = sorted(os.listdir(out))
+        assert top_level == ["p2"], (
+            f"output dir holds more than the build directory: {top_level} "
+            "(a rejected/accepted attempt left scratch behind)"
+        )
+        assert (vb.build_dir).is_dir(), f"build dir is not a directory: {vb.build_dir}"
+
+
+def _always_fail_factory(zone_type: str, rooms: int):
+    """A ``spec_factory(seed)`` whose every build fails the traversability gate.
+
+    It honours the seed for the base geometry (as required), then appends one
+    far-away isolated room with no corridor, so the Traversal_Validator rejects
+    EVERY attempt regardless of seed — the established forced-failure idiom.
+    """
+    from generators.zone_spec import RoomSpec
+
+    def factory(seed: int):
+        spec = LayoutGenerator(zone_type=zone_type, seed=seed).generate(
+            "p2f", room_count=rooms
+        )
+        spec.rooms.append(RoomSpec(
+            id="isolated", center_x=100_000.0, center_y=100_000.0, floor_z=0.0,
+            width=200, depth=200, height=100,
+        ))
+        return spec
+
+    return factory
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    zone_type=_enabled_zone_types,
+    pinned=st.booleans(),
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+    max_attempts=st.integers(min_value=1, max_value=8),
+    rooms=st.integers(min_value=2, max_value=4),
+)
+def test_forced_failure_leaves_nothing(zone_type, pinned, seed, max_attempts, rooms):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 2: Returned
+    builds passed both gates, and rejected attempts leave nothing (umbrella P2,
+    rejected half).
+
+    When every attempt to build a gated zone type (dungeon, city) is FORCED to
+    fail the traversability gate, ``generate_validated`` raises
+    ``GenerationFailed`` rather than ever returning a broken zone, and — the
+    invariant this pins — leaves nothing on disk:
+
+    * a PINNED call (explicit ``seed``) raises after exactly ONE attempt
+      (``pinned=True``, ``attempts == 1``) — the caller's seed is respected, not
+      swapped;
+    * an UNPINNED call exhausts all ``max_attempts`` fresh seeds and then raises
+      (``pinned=False``, ``attempts == max_attempts``);
+    * in BOTH cases, after the raise the Output_Directory has NO ``.attempts/``
+      scratch entry and NO build directory — only the JSONL failure log may
+      exist (disabled here, so the directory is empty).
+
+    This pins the task-15.4 cleanup: a rejected attempt leaves no directory
+    behind, whether it is a one-shot pinned failure or an exhausted retry loop.
+
+    Validates: Requirements 4.2, 9.2; umbrella P2.
+    """
+    factory = _always_fail_factory(zone_type, rooms)
+
+    with fresh_dir() as out:
+        with pytest.raises(GenerationFailed) as excinfo:
+            generate_validated(
+                factory,
+                zone_type=zone_type,
+                zone_id="p2f",
+                seed=seed if pinned else None,
+                output_dir=out,
+                write_glb=False,
+                max_attempts=max_attempts,
+                timeout_s=1e9,  # non-binding: exhaustion, never a timeout
+                rng=None,
+                failure_log=None,
+            )
+
+        err = excinfo.value
+        if pinned:
+            assert err.pinned is True, "pinned forced-failure not flagged pinned"
+            assert err.attempts == 1, (
+                f"pinned seed retried: attempts={err.attempts}, expected 1"
+            )
+        else:
+            assert err.pinned is False, "unpinned forced-failure flagged pinned"
+            assert err.attempts == max_attempts, (
+                f"attempts={err.attempts}, expected all {max_attempts} exhausted"
+            )
+
+        # Nothing left behind: no ".attempts" scratch, no build directory. With
+        # the failure log disabled, the output dir is empty.
+        leftover = sorted(os.listdir(out))
+        assert leftover == [], (
+            f"a rejected attempt left files behind: {leftover} "
+            "(scratch or build directory not cleaned up)"
+        )
