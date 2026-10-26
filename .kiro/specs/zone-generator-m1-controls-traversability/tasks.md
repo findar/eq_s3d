@@ -947,9 +947,15 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 ### Wave 4 — Gate city and wilderness from one Enabled set (Requirements 3, 4)
 
 - [ ] 15. All-zone-type gate and availability
-  - [ ] 15.1 Create the worktree
+  - [x] 15.1 Create the worktree
     - `./scripts/new-worktree.ps1 -Branch agent/m1-gate`. Record the fork-point hash.
     - _Requirements: 4.2_
+    - **Deliverables:**
+      - Worktree created from the MAIN checkout with `./scripts/new-worktree.ps1 -Branch agent/m1-gate` (no `-Venv`, no `-IsolateNode`: this wave changes neither `requirements.txt` nor `web/package.json`, so the global Python env and the shared `web/node_modules` junction are correct). Landed at `F:\Dev Projects\eq_s3d-worktrees\agent-m1-gate` on branch `agent/m1-gate`.
+      - **Fork-point commit** (branch `agent/m1-gate` forked from `master`): `3e7a4279f71095fc00675c7dbb837c4b099167ce` (`3e7a427` — `docs(spec): add zone-generator-wilderness spec`). This master head includes waves 1 and 2, the wave-3 backend registry, and the wilderness-descope reconciliation.
+      - Worktree healthy: `git status` clean on `agent/m1-gate`; `python -c "import generators.pipeline, generators.zone_types, server.app, analyzer.traverse, ai.schema"` → `imports OK`.
+      - **Wave-4 fork-point suite baseline** — `python -m pytest tests/ -q` (one run; suite runs in parallel via pytest-xdist): **261 green** in **~156 s** wall (155.77 s pytest-reported). The headline line read `1 failed, 260 passed` but the single "failure" is a Hypothesis `FlakyFailure`/`DeadlineExceeded` on `tests/test_server.py::test_foreign_origins_get_no_cors` — it exceeded the 200 ms deadline on its first call (252.83 ms, cold start under parallel `gw6` load) then ran in 15.17 ms on retry; Hypothesis itself reports it "Failed on the first call but did not on a subsequent one." Re-run in isolation: **1 passed** (7.36 s). So the honest fork-point green count is **261** (matches the expected ~261); the flake is pre-existing timing variance under xdist, not a fork-point regression. Recorded as the wave-4 fork-point baseline.
+      - Discipline: all work from here stays inside `F:\Dev Projects\eq_s3d-worktrees\agent-m1-gate`; the branch is not pushed; only task 15.1's own entry in the worktree `tasks.md` was written.
   - [ ] 15.2 Add the Enabled set and the listing to `generators/zone_types.py`
     - `ENABLED_ZONE_TYPES = frozenset({"dungeon", "city"})` for now (wilderness joins in 15.8), `ZONE_TYPE_REASONS`, `DISABLED_REASON`, `is_enabled` (reads the set at call time), `zone_type_listing()` in DEFINED order.
     - _Requirements: 3.1, 3.2_
