@@ -12,6 +12,7 @@ from ai.rule_planner import RulePlanner
 from ai.llm_planner import LLMPlanner
 from ai.expand import plan_to_spec
 from ai.planner import make_plan, plan_zone, get_planner
+from generators.layout import LayoutGenerator
 from ai import planner as planner_mod
 from generators.zone_spec import ZoneSpec
 
@@ -165,6 +166,58 @@ class TestExpand:
         # "water_"); none should be the expand._add_regions duplicate (also
         # "water_"), so just assert the count is reasonable (<= room count).
         assert 0 < len(water) <= len(spec.rooms)
+
+
+class TestControlsGolden:
+    """Golden / equivalence check for umbrella decision 2 (Req 1.2).
+
+    The controls path must produce exactly the same ZoneSpec as the legacy
+    direct ``LayoutGenerator(...).generate(...)`` call, so switching the Server
+    and CLI callers to ``from_controls`` (tasks 17.5 / 17.7) changes no output.
+    This test MUST land BEFORE those caller switches.
+
+    It compares the two paths LIVE (not against frozen values), so wave-1 layout
+    fixes that move both paths together don't disturb it. The controls dict
+    carries only ``{"zone_type", "rooms", "elevation"}`` (plus the shared
+    ``name``); the plan defaults (``size="medium"`` -> multiplier 1.0, and
+    ``verticality`` moderate for elevation-on / flat for elevation-off) line up
+    with the legacy generator defaults, so the two configurations are identical
+    and the same seed makes the geometry directly comparable.
+    """
+
+    ZONE_TYPES = ["dungeon", "city", "wilderness"]
+    SEEDS = [7, 1955208177, 1949459644]
+    ROOMS = [1, 5, 12, 30]
+    ELEVATION = [True, False]
+
+    @pytest.mark.parametrize("zone_type", ZONE_TYPES)
+    @pytest.mark.parametrize("seed", SEEDS)
+    @pytest.mark.parametrize("rooms", ROOMS)
+    @pytest.mark.parametrize("elevation", ELEVATION)
+    def test_controls_golden(self, zone_type, seed, rooms, elevation):
+        name = "golden"
+
+        # Legacy direct path.
+        legacy = LayoutGenerator(zone_type=zone_type, seed=seed).generate(
+            name, room_count=rooms, elevation=elevation
+        ).to_dict()
+
+        # New controls path. The controls dict names only zone_type, rooms and
+        # elevation (plus the shared name); everything else comes from the plan
+        # defaults, which match the legacy generator's defaults.
+        plan = ZonePlan.from_controls({
+            "name": name,
+            "zone_type": zone_type,
+            "rooms": rooms,
+            "elevation": elevation,
+        })
+        new = plan_to_spec(plan, seed).to_dict()
+
+        assert legacy == new, (
+            f"controls path diverged from legacy for "
+            f"zone_type={zone_type} seed={seed} rooms={rooms} "
+            f"elevation={elevation}"
+        )
 
 
 class TestPlannerFactory:
