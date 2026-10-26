@@ -326,10 +326,12 @@ def test_zone_type_surface_is_three():
     )
 
     # Server LISTING: the public /api/zone_types body (not just the module
-    # constant) must advertise exactly the Defined zone types.
+    # constant) must advertise exactly the Defined zone types. Wave 4 (task
+    # 15.5) made each entry a {name, enabled, reason} object, so read the names.
     client = TestClient(server.app.app)
     listing = client.get("/api/zone_types").json()
-    assert set(listing["zone_types"]) == DEFINED_ZONE_TYPES, (
+    listed_names = {z["name"] for z in listing["zone_types"]}
+    assert listed_names == DEFINED_ZONE_TYPES, (
         f"/api/zone_types listing = {listing['zone_types']}"
     )
 
