@@ -345,6 +345,14 @@ def generate(req: GenerateRequest):
             warnings.append(
                 f"zone_type_substituted:{planned_zone_type}->{DEFAULT_ZONE_TYPE}"
             )
+        else:
+            # The planned type is enabled: canonicalise it so a legacy value
+            # (e.g. ``outdoor``) builds as its current name (``wilderness``),
+            # mirroring the controls path. A real planner already emits a
+            # validated (canonical) zone_type, so this is defense-in-depth for a
+            # planner that surfaces a legacy value — the built/returned zone_type
+            # is always a canonical member of the Enabled set.
+            plan.zone_type = canonical_zone_type(plan.zone_type)
 
         plan_dict = plan.to_dict()
         zone_type = plan.zone_type

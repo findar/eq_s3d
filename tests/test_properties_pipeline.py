@@ -16,7 +16,7 @@ Correctness Property 15 (umbrella P2).
 from __future__ import annotations
 
 import pytest
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
 from generators.layout import LayoutGenerator
@@ -589,3 +589,222 @@ def test_forced_failure_leaves_nothing(zone_type, pinned, seed, max_attempts, ro
             f"a rejected attempt left files behind: {leftover} "
             "(scratch or build directory not cleaned up)"
         )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 7: Availability follows the Enabled set (umbrella P19). This PINS
+# the task-15.2 availability helpers (is_enabled / zone_type_listing read the
+# set at CALL TIME) and the task-15.5 server gate across ARBITRARY enabled
+# subsets of DEFINED_ZONE_TYPES — not just the shipped {dungeon, city}. The
+# listing, the controls-400, and the prompt substitution-to-dungeon are one
+# function of the Enabled set E.
+# ---------------------------------------------------------------------------
+
+import generators.zone_types as _zt  # noqa: E402
+import server.app as _app_mod  # noqa: E402
+from ai.schema import ZonePlan  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from hypothesis import HealthCheck, settings as _settings  # noqa: E402
+
+from tests.strategies import enabled_subsets, zone_type_names  # noqa: E402
+from tests.pbt_helpers import scaled as _scaled  # noqa: E402
+
+
+# Budget 50 (design "Correctness Properties" table). Each example drives a real
+# TestClient build (small 2-4 room zones), so there is no per-example deadline
+# and the slow/large-data health checks are suppressed — but this is NOT marked
+# ``slow``: it must run in the Default_Run (the gate/availability surface is the
+# point of the property). ``scaled(50)`` scales with the active profile exactly
+# like ``build_settings`` does (50 under default, 250 under thorough).
+@_settings(
+    max_examples=_scaled(50),
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
+)
+@example(
+    # Regression_Example (discovered failure): a planner that emits the LEGACY
+    # value ``outdoor`` for an ENABLED wilderness. Before the root fix the prompt
+    # path built/returned the raw ``outdoor`` instead of canonical ``wilderness``
+    # (the controls path canonicalised, the prompt path trusted plan.zone_type).
+    # server/app.py now canonicalises the enabled planned type too.
+    enabled=frozenset({"dungeon", "wilderness"}),
+    t="outdoor",
+    rooms=2,
+).via("discovered failure")
+@given(
+    enabled=enabled_subsets,
+    t=zone_type_names,
+    rooms=st.integers(min_value=2, max_value=4),
+)
+def test_availability_follows_enabled(enabled, t, rooms, tmp_path_factory):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 7: Availability
+    follows the Enabled set (umbrella P19).
+
+    For any non-empty subset E of ``DEFINED_ZONE_TYPES`` installed as
+    ``ENABLED_ZONE_TYPES`` (every drawn E includes ``dungeon`` so the prompt
+    substitution has a live target) and any zone-type name t (defined, legacy
+    ``outdoor``, removed ``cave``, or an in-domain name), the availability
+    surface is exactly one function of E:
+
+    * ``GET /api/zone_types`` (and the ``/api/themes`` alias) list each member of
+      ``DEFINED_ZONE_TYPES`` once, in canonical order, with
+      ``enabled == (name in E)``; every disabled entry carries a non-empty
+      reason and every enabled entry carries ``reason is None``;
+    * a CONTROLS request naming t returns 400 **iff** ``canonical_zone_type(t)``
+      is not in E — and it does so BEFORE any build/write (the output dir stays
+      empty on a 400);
+    * a PROMPT whose (stubbed) planner picks t builds as t when t ∈ E, and
+      otherwise builds as ``dungeon`` carrying exactly one
+      ``zone_type_substituted:<t>->dungeon`` warning AND a ``planned_zone_type``
+      Sidecar entry equal to t;
+    * every 200 response's ``zone_type`` is a member of E.
+
+    This pins the 15.2 availability helpers (``is_enabled`` /
+    ``zone_type_listing`` must read ``ENABLED_ZONE_TYPES`` at call time, so a
+    monkeypatched subset takes effect) and the 15.5 server gate across arbitrary
+    enabled subsets. A failure here is a real bug in the call-time read or the
+    server gating, fixed at the root.
+
+    Validates: Requirements 3.1, 3.3, 3.4; umbrella P19.
+    """
+    # @given runs many examples per test function; pytest's `monkeypatch`
+    # fixture is NOT reset between them, so use an explicit MonkeyPatch context
+    # that undoes every patch at the end of each example (Hypothesis's own
+    # function_scoped_fixture guidance). `tmp_path_factory` is session-scoped,
+    # so it is safe to take as a fixture.
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        _run_availability_example(enabled, t, rooms, tmp_path_factory, monkeypatch)
+
+
+def _run_availability_example(enabled, t, rooms, tmp_path_factory, monkeypatch):
+    # Install the drawn Enabled set. is_enabled()/zone_type_listing() re-read
+    # generators.zone_types.ENABLED_ZONE_TYPES at call time, and server.app
+    # calls those (not a captured copy), so this monkeypatch gates the whole
+    # availability surface for this example.
+    monkeypatch.setattr(_zt, "ENABLED_ZONE_TYPES", frozenset(enabled))
+
+    canonical_t = _zt.canonical_zone_type(t)
+    t_enabled = canonical_t is not None and canonical_t in enabled
+
+    # Each example writes under its own OUTPUT_DIR / FAILURE_LOG so a 400's
+    # "nothing was written" check is unambiguous and examples don't collide.
+    out_dir = tmp_path_factory.mktemp("p7_out")
+    monkeypatch.setattr(_app_mod, "OUTPUT_DIR", out_dir)
+    monkeypatch.setattr(_app_mod, "FAILURE_LOG", out_dir / "failures.jsonl")
+
+    client = TestClient(_app_mod.app)
+
+    # -- Listing: exactly E enabled, in canonical order, reasons as specified. --
+    for path in ("/api/zone_types", "/api/themes"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}: {resp.text}"
+        listing = resp.json()["zone_types"]
+        assert [z["name"] for z in listing] == list(_zt.DEFINED_ZONE_TYPES), (
+            f"{path} listing not in canonical DEFINED order: "
+            f"{[z['name'] for z in listing]}"
+        )
+        for z in listing:
+            expect_enabled = z["name"] in enabled
+            assert z["enabled"] is expect_enabled, (
+                f"{path}: {z['name']} enabled={z['enabled']}, "
+                f"expected {expect_enabled} for E={sorted(enabled)}"
+            )
+            if expect_enabled:
+                assert z["reason"] is None, (
+                    f"enabled {z['name']} carries a reason: {z['reason']!r}"
+                )
+            else:
+                assert z["reason"], (
+                    f"disabled {z['name']} has no reason (empty/None): "
+                    f"{z['reason']!r}"
+                )
+
+    # -- Controls path: 400 IFF canonical_zone_type(t) not in E, before writes. --
+    controls_resp = client.post(
+        "/api/generate",
+        json={"zone_type": t, "rooms": rooms, "elevation": False},
+    )
+    if not t_enabled:
+        assert controls_resp.status_code == 400, (
+            f"controls t={t!r} (canonical {canonical_t!r}) not in E="
+            f"{sorted(enabled)} should 400, got {controls_resp.status_code}: "
+            f"{controls_resp.text}"
+        )
+        # Refused before any build/write: the output tree stays empty (only the
+        # failure log parent may exist; nothing was generated).
+        leftover = [p.name for p in out_dir.iterdir() if p.name != "failures.jsonl"]
+        assert leftover == [], (
+            f"a refused controls request wrote to the output dir: {leftover}"
+        )
+    else:
+        assert controls_resp.status_code == 200, (
+            f"controls t={t!r} (canonical {canonical_t!r}) in E="
+            f"{sorted(enabled)} should build, got {controls_resp.status_code}: "
+            f"{controls_resp.text}"
+        )
+        body = controls_resp.json()
+        assert body["zone_type"] == canonical_t, (
+            f"controls built zone_type {body['zone_type']!r} != canonical "
+            f"{canonical_t!r}"
+        )
+        assert body["zone_type"] in enabled, (
+            f"200 response zone_type {body['zone_type']!r} not in E="
+            f"{sorted(enabled)}"
+        )
+
+    # -- Prompt path: planner (stubbed) picks t. t ∈ E builds as t; otherwise
+    #    substituted to dungeon with exactly one warning + a Sidecar entry. ----
+    def _stub_make_plan(prompt, name="zone"):
+        # Return an UN-validated plan so the server sees the planner's raw pick
+        # t verbatim (ZonePlan.validate() would canonicalise t away). The server
+        # applies is_enabled(plan.zone_type) and substitutes to dungeon itself.
+        return ZonePlan(name=name, zone_type=t, room_count=rooms, prompt=prompt)
+
+    monkeypatch.setattr(_app_mod, "make_plan", _stub_make_plan)
+
+    prompt_resp = client.post("/api/generate", json={"prompt": "a test zone"})
+    assert prompt_resp.status_code == 200, (
+        f"prompt (planner picks t={t!r}) -> {prompt_resp.status_code}: "
+        f"{prompt_resp.text}"
+    )
+    pbody = prompt_resp.json()
+    sub_warnings = [
+        w for w in pbody["warnings"] if w.startswith("zone_type_substituted:")
+    ]
+
+    if t_enabled:
+        # Planned t is enabled: built as t, no substitution warning.
+        assert pbody["zone_type"] == canonical_t, (
+            f"prompt built {pbody['zone_type']!r} != planned-enabled "
+            f"canonical {canonical_t!r}"
+        )
+        assert sub_warnings == [], (
+            f"enabled planned t={t!r} should not be substituted; warnings="
+            f"{pbody['warnings']}"
+        )
+    else:
+        # Planned t is disabled/undefined: substituted to dungeon, exactly one
+        # zone_type_substituted warning naming the RAW planned t.
+        assert pbody["zone_type"] == "dungeon", (
+            f"disabled planned t={t!r} should build as dungeon, got "
+            f"{pbody['zone_type']!r}"
+        )
+        assert sub_warnings == [f"zone_type_substituted:{t}->dungeon"], (
+            f"expected exactly one zone_type_substituted:{t}->dungeon warning, "
+            f"got {pbody['warnings']}"
+        )
+        # The Sidecar of the accepted build records planned_zone_type == t.
+        zone_id = pbody["id"]
+        sidecar = out_dir / zone_id / "v1" / f"{zone_id}.zone.json"
+        assert sidecar.exists(), f"Sidecar missing: {sidecar}"
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert data.get("planned_zone_type") == t, (
+            f"Sidecar planned_zone_type {data.get('planned_zone_type')!r} != "
+            f"raw planned t {t!r}"
+        )
+
+    # Every 200 response's zone_type is in E.
+    assert pbody["zone_type"] in enabled, (
+        f"prompt 200 zone_type {pbody['zone_type']!r} not in E={sorted(enabled)}"
+    )

@@ -73,6 +73,34 @@ verticality_all = st.sampled_from(["flat", "moderate", "dramatic"])
 #: The box-geometry zone types (M0_Box_Themes): dungeon + city.
 box_zone_types = st.sampled_from(["dungeon", "city"])
 
+# ---------------------------------------------------------------------------
+# Enabled-set gating (Property 7 / Req 3.1, 3.3, 3.4)
+# ---------------------------------------------------------------------------
+
+#: Non-empty subsets of ``DEFINED_ZONE_TYPES`` to install as the Enabled set in
+#: the availability property. Every subset INCLUDES ``dungeon`` because the
+#: server substitutes a prompt-planned disabled zone type to ``dungeon``
+#: (``DEFAULT_ZONE_TYPE``): if the substitution target were itself disabled the
+#: prompt path could not yield an enabled zone. The members are canonical
+#: ``DEFINED_ZONE_TYPES`` names, so the drawn set is a valid monkeypatch value
+#: for ``generators.zone_types.ENABLED_ZONE_TYPES``. Emitted as a ``frozenset``
+#: to match the production type (``is_enabled``/``zone_type_listing`` read it as
+#: a membership set at call time).
+_OPTIONAL_ZONE_TYPES = sorted(DEFINED_ZONE_TYPES - {"dungeon"})  # city, wilderness
+enabled_subsets = st.sets(
+    st.sampled_from(_OPTIONAL_ZONE_TYPES),
+    max_size=len(_OPTIONAL_ZONE_TYPES),
+).map(lambda extra: frozenset({"dungeon", *extra}))
+
+#: Zone-type NAMES a stubbed planner / controls request may pick: the three
+#: defined names plus the removed ``cave`` word (which ``canonical_zone_type``
+#: maps to ``None`` — an undefined type that is never enabled) and the legacy
+#: ``outdoor`` value (canonicalises to ``wilderness``). This spans in-domain,
+#: legacy, and undefined names so the gate is exercised on all three.
+zone_type_names = st.sampled_from(
+    sorted(DEFINED_ZONE_TYPES) + ["cave", "outdoor"]
+)
+
 #: Every zone type a ZoneSpec may carry (post wave-2 rename).
 spec_zone_types = st.sampled_from(["dungeon", "city", "wilderness"])
 
