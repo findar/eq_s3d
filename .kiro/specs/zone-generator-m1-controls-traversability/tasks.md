@@ -1040,7 +1040,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Verify:** `python -m pytest tests/test_properties_pipeline.py -q` → **7 passed** (30.61 s). `python -m pytest tests/ -q` → **264 passed** (156.97 s) — the 262 baseline plus the two new properties; the known xdist CORS timing flake did not trip this run.
       - NOT a geometry/viewer change — pins the 15.4 filesystem lifecycle and the two-gate PASS criterion analytically; no 3D pass applies.
       - Touched only `generators/pipeline.py`, `tests/test_properties_pipeline.py`, and this `tasks.md` entry.
-      - Commit: `__HASH__`.
+      - Commit: `b08e74e` (code + tests + this entry). A follow-up amend-free edit updates only this self-reference line.
   - [ ] 15.7 Write property test for Property 7: Availability follows the Enabled set (umbrella P19)
     - `test_properties_pipeline.py::test_availability_follows_enabled`, budget 50, `TestClient`, 2–4 room builds, monkeypatching `ENABLED_ZONE_TYPES` to subsets from `enabled_subsets` and the planner to a stub picking t from `zone_type_names`. Assert the listing, the 400 iff `canonical_zone_type(t) ∉ E`, the substitution warning and Sidecar entry, and every 200's `zone_type ∈ E`.
     - **Validates: Requirements 3.1, 3.3, 3.4**
