@@ -856,6 +856,19 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 
 ### Wave 3 — Backend registry and wilderness terrain (Requirements 6, 7)
 
+> **WILDERNESS DESCOPED (decision recorded during M1 execution).** The wave-3
+> wilderness TERRAIN work — draping a heightfield under the TinyKeep room graph
+> (pads + graded corridor paths) — was REJECTED by the user: wilderness must be
+> an open, scenic landscape, not a room-graph in a grass skin. Only the
+> **backend registry (task 12)** landed on master (merge `fbadf63`); the terrain
+> work (tasks 13.x) and its 3D pass (14.x) are **ABANDONED here** and will NOT be
+> run as written. Wilderness ships in M1 **present-but-DISABLED**
+> (`ENABLED_ZONE_TYPES = {dungeon, city}`). The real open-world wilderness
+> generator is its own milestone: **`.kiro/specs/zone-generator-wilderness/`**
+> (requirements + design + tasks complete), sequenced AFTER M1 and
+> `zone-generator-followup`. Tasks 13.x/14.x below are kept for history, struck
+> through as DEFERRED — do not execute them.
+
 - [ ] 12. Geometry backend registry
   - [x] 12.1 Create the worktree and record wilderness timings
     - `./scripts/new-worktree.ps1 -Branch agent/m1-wilderness`. Record build and validate times for wilderness at 2 / 6 / 12 rooms (seed 7) on this fork point.
@@ -896,7 +909,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Touched only `tests/test_pipeline.py`, `tests/test_hygiene.py`, and this task-12.3 entry. Not a 3D-viewer change — these are analytical tests over the backend-selection surface; the box fallback mesh is the same dungeon/city box mesh already covered.
       - Commit: `47db2e5` (tests). This `tasks.md` self-reference edit lands in the follow-up tracker commit.
 
-- [ ] 13. Wilderness terrain in the Room_Graph frame
+- [ ] 13. Wilderness terrain in the Room_Graph frame  — **DEFERRED (wilderness descoped; see banner above). Do not execute.**
   - [ ] 13.1 Generate terrain in the Room_Graph frame with the floor material
     - `generators/field/terrain.py::build_terrain(spec, name, rooms, corridors, material)`: bounds from rooms and route footprints minus `margin = max(600, 2·res)`, `x0, y0` snapped down to multiples of `res`, vertices at `(x0 + i·res, y0 + j·res)`; noise/erosion/`_enforce_walkable` evaluated at world coordinates. The terrain uses the spec's `floor` MaterialSpec, so its texture is packed (fixes the missing `ground.dds`, design finding 5). Update `ZoneBuilder` and `tests/test_terrain.py` callers.
     - Delete `tests/test_hygiene.py::test_outdoor_ter_matches_fork_point` in this commit, saying in the message that the frame change retires the M0 baseline by design.
@@ -923,7 +936,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
     - Build and validate times for 2 / 6 / 12 rooms on the branch head, against 12.1 and the ≤ 15 s target.
     - _Requirements: 6.1_
 
-- [ ] 14. Checkpoint: wave 3 closed
+- [ ] 14. Checkpoint: wave 3 closed  — **DEFERRED (wilderness descoped). Wave 3 closed by merging the backend registry only (task 12); see banner above.**
   - [ ] 14.1 Run the suite and write the wave-3 integration note
     - Suite green; Default_Run median recorded (levers as in 7.1). Integration note: Done-table row, "Pick up here" line, commit hash and count, and the retired outdoor baseline.
     - _Requirements: 6.3_
@@ -958,7 +971,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
   - [ ] 15.7 Write property test for Property 7: Availability follows the Enabled set (umbrella P19)
     - `test_properties_pipeline.py::test_availability_follows_enabled`, budget 50, `TestClient`, 2–4 room builds, monkeypatching `ENABLED_ZONE_TYPES` to subsets from `enabled_subsets` and the planner to a stub picking t from `zone_type_names`. Assert the listing, the 400 iff `canonical_zone_type(t) ∉ E`, the substitution warning and Sidecar entry, and every 200's `zone_type ∈ E`.
     - **Validates: Requirements 3.1, 3.3, 3.4**
-  - [ ] 15.8 Enable wilderness only if its properties are green
+  - [ ] 15.8 Enable wilderness only if its properties are green  — **DESCOPED: leave wilderness DISABLED unconditionally with `DISABLED_REASON` (its generator is deferred to `.kiro/specs/zone-generator-wilderness/`). Do NOT add wilderness to `ENABLED_ZONE_TYPES` in M1.**
     - In a commit of its own, add `wilderness` to `ENABLED_ZONE_TYPES` once wilderness P1, Property 10, Property 6 and Property 11 are green on this branch. If they aren't, leave it disabled with `DISABLED_REASON` and record why. Decision note: the design gates enabling on P20 too, but the Format_Checker is a passing stub until wave 6, so P20 for wilderness is confirmed in 20.4, which disables it again if it fails.
     - _Requirements: 3.2, 4.1, 6.3_
   - [ ] 15.9 Add the pipeline and server example tests
@@ -1044,7 +1057,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
   - [ ] 20.3 Put the Format_Checker in the Pipeline gate
     - Replace the 15.4 stub with `check_eqg(eqg, spec, sidecar_path=scratch / f"{name}.zone.json")`; the failed check names go into the JSONL line and `GenerationFailed`; ungated builds still run it and record it. `GenerateResponse.format_passed` reflects it.
     - _Requirements: 9.1, 9.2_
-  - [ ] 20.4 Write property test for Property 8: Every enabled build passes the Format_Checker (umbrella P20)
+  - [ ] 20.4 Write property test for Property 8: Every enabled build passes the Format_Checker (umbrella P20)  — **note: wilderness is DISABLED in M1 (see 15.8), so `ENABLED_ZONE_TYPES` is {dungeon, city}; the wilderness `@example`/row does not apply in M1.**
     - `test_properties_build.py::test_enabled_builds_pass_format`, `slow`, budget 15, over `ENABLED_ZONE_TYPES`, seeds, n (box 2–30, wilderness 2–12) and `build_names`. Assert `check_eqg` passes, including `name_consistent`, and has no `normals_resolve` check. Pin one `huge` 30-room wilderness `@example` (design risk table). If wilderness fails here, fix it at the root, or disable it in `ENABLED_ZONE_TYPES` with `DISABLED_REASON` and record why.
     - **Validates: Requirements 9.1, 9.4**
   - [ ] 20.5 Write property test for Property 14: The Format_Checker is total and specific (M1-P5)
