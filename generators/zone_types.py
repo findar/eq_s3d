@@ -10,8 +10,10 @@ forward here (Req 11.1, 11.2).
 
 This module imports nothing project-level beyond the standard library on
 purpose: it is the leaf every other module depends on, so it must have no
-inbound coupling of its own. The Enabled set and availability reasons arrive in
-wave 4 (see ``design.md`` "Gate and availability").
+inbound coupling of its own. The Enabled set and availability reasons (wave 4,
+``design.md`` "Gate and availability") live here too: ``is_enabled`` reads
+``ENABLED_ZONE_TYPES`` at call time so tests can monkeypatch the set (Req 3.1),
+and ``zone_type_listing`` is what the server's ``/api/zone_types`` serves.
 """
 
 from __future__ import annotations
@@ -63,3 +65,61 @@ def read_zone_type(d: Mapping[str, object]) -> object:
     if "theme" in d:
         return d["theme"]
     return DEFAULT_ZONE_TYPE
+
+# --- Gate and availability (wave 4, Req 3.1, 3.2) --------------------------
+#
+# A zone type is *offered* only if it is in ENABLED_ZONE_TYPES. Everything that
+# gates a zone type (CLI, server, pipeline) reads this one set; there is no
+# second "gated" set (Req 3.1). Wilderness is DEFINED but DISABLED in M1: its
+# heightfield generator is deferred to the open-world wilderness milestone, so
+# it ships present-but-disabled with a reason the Web_App can surface.
+
+# The zone types offered in M1. Wilderness is intentionally absent — see
+# ZONE_TYPE_REASONS["wilderness"]. Kept a frozenset so it can't be mutated in
+# place; a test that needs a different gate monkeypatches this whole name, which
+# is why is_enabled() re-reads it at call time rather than capturing it.
+ENABLED_ZONE_TYPES: frozenset[str] = frozenset({"dungeon", "city"})
+
+# Human-readable reason per DISABLED zone type, explaining why it is unavailable.
+# Only disabled zone types need an entry; enabled ones never show a reason.
+ZONE_TYPE_REASONS: dict[str, str] = {
+    "wilderness": (
+        "Wilderness is deferred to the open-world wilderness milestone "
+        "(.kiro/specs/zone-generator-wilderness/); it is not offered yet."
+    ),
+}
+
+# Fallback reason for a defined-but-disabled zone type with no specific entry in
+# ZONE_TYPE_REASONS.
+DISABLED_REASON = "Not yet offered: its builds don't pass the traversability sweep."
+
+
+def is_enabled(zone_type: object) -> bool:
+    """Whether ``zone_type`` is currently offered (Req 3.1).
+
+    Canonicalises the input first (so legacy values and casing resolve), then
+    reads ``ENABLED_ZONE_TYPES`` AT CALL TIME — never a value captured at import
+    — so a test can monkeypatch the set to a subset and this reflects it.
+    Undefined or non-string input is not enabled.
+    """
+    canonical = canonical_zone_type(zone_type)
+    if canonical is None:
+        return False
+    return canonical in ENABLED_ZONE_TYPES
+
+
+def zone_type_listing() -> list[dict]:
+    """Availability listing for every defined zone type, in canonical order.
+
+    One entry per member of ``DEFINED_ZONE_TYPES`` (canonical listing order),
+    each a dict with ``name``, ``enabled`` and ``reason``. Enabled zone types
+    carry ``reason = None``; disabled ones carry their ``ZONE_TYPE_REASONS``
+    entry, falling back to ``DISABLED_REASON``. This is what the server's
+    ``/api/zone_types`` serves (Req 3.2).
+    """
+    listing: list[dict] = []
+    for name in DEFINED_ZONE_TYPES:
+        enabled = name in ENABLED_ZONE_TYPES
+        reason = None if enabled else ZONE_TYPE_REASONS.get(name, DISABLED_REASON)
+        listing.append({"name": name, "enabled": enabled, "reason": reason})
+    return listing
