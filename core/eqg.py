@@ -186,13 +186,24 @@ class EqgZone:
 
         return out_path
 
-    def _write_glb_sidecar(self, glb_path: Path, room_pacing: Optional[list] = None,
-                           gates: Optional[list] = None,
-                           content: Optional[dict] = None,
-                           zone_type: Optional[str] = None) -> None:
-        """Write a <name>.zone.json next to the GLB with lights/regions/metrics."""
-        import json
+    # ------------------------------------------------------------------
+    # Sidecar (.zone.json)
+    # ------------------------------------------------------------------
 
+    def _build_sidecar_dict(self, rooms: Optional[list] = None,
+                            gates: Optional[list] = None,
+                            content: Optional[dict] = None,
+                            zone_type: Optional[str] = None,
+                            extra: Optional[dict] = None) -> dict:
+        """Build the ``<name>.zone.json`` sidecar dict.
+
+        Shared by the GLB-export path (``write_glb`` → ``_write_glb_sidecar``)
+        and the standalone writer (``write_sidecar``) so the two can never
+        diverge. The advisory pacing/gating data (rooms, gates) and the
+        content layer ride in the sidecar, never in the binary. ``extra`` is
+        merged in last for pipeline fields (format/warnings/validated/attempts/
+        seed) and the ``zone_type`` top-level key.
+        """
         ter = self._terrain
         zs = [v.z for v in ter.vertices] if ter else [0]
         xs = [v.x for v in ter.vertices] if ter else [0]
@@ -211,7 +222,7 @@ class EqgZone:
             },
             "lights": [],
             "regions": [],
-            "rooms": room_pacing or [],
+            "rooms": rooms or [],
             "gates": gates or [],
             # Content / semantic layer (dungeon_theme/dungeon_race/
             # elemental_tint — field names unchanged, Req 11.6). The zone type
@@ -241,6 +252,45 @@ class EqgZone:
                     "center": [reg.center_x, reg.center_y, reg.center_z],
                     "extent": [reg.extend_x, reg.extend_y, reg.extend_z],
                 })
+
+        if extra:
+            data.update(extra)
+
+        return data
+
+    def write_sidecar(self, path: str | Path, *,
+                      rooms: Optional[list] = None,
+                      gates: Optional[list] = None,
+                      content: Optional[dict] = None,
+                      extra: Optional[dict] = None) -> Path:
+        """Write the ``<name>.zone.json`` sidecar to *path*.
+
+        Standalone writer used by the build path on EVERY build (not only when
+        a GLB is exported). Produces the same dict shape as the GLB-export
+        sidecar via the shared ``_build_sidecar_dict`` helper, then merges
+        *extra* for pipeline fields (format/warnings/validated/attempts/seed)
+        and the ``zone_type`` top-level key. Returns the written path.
+        """
+        import json
+
+        out_path = Path(path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        data = self._build_sidecar_dict(
+            rooms=rooms, gates=gates, content=content, extra=extra,
+        )
+        out_path.write_text(json.dumps(data, indent=2))
+        return out_path
+
+    def _write_glb_sidecar(self, glb_path: Path, room_pacing: Optional[list] = None,
+                           gates: Optional[list] = None,
+                           content: Optional[dict] = None,
+                           zone_type: Optional[str] = None) -> None:
+        """Write a <name>.zone.json next to the GLB with lights/regions/metrics."""
+        import json
+
+        data = self._build_sidecar_dict(
+            rooms=room_pacing, gates=gates, content=content, zone_type=zone_type,
+        )
 
         sidecar = glb_path.with_suffix("")  # strip .glb
         sidecar = sidecar.with_suffix(".zone.json")
