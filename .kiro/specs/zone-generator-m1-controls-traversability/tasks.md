@@ -1090,9 +1090,42 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Commit: `4d86dba` (code + tests + this entry). A follow-up amend-free edit updates only this self-reference line.
 
 - [ ] 16. Checkpoint: wave 4 closed
-  - [ ] 16.1 Run the suite and write the wave-4 integration note
+  - [x] 16.1 Run the suite and write the wave-4 integration note
     - Suite green; Default_Run median recorded. Integration note: Done-table row, "Pick up here" line, commit hash and count, and whether wilderness shipped enabled.
     - _Requirements: 3.2, 4.2_
+    - **Deliverables:**
+      - **Suite result — green.** `python -m pytest tests/ -q` run 3×, each **271 passed** (0 failed), 13 pre-existing warnings. Pytest-reported wall times under pytest-xdist: 127.57 s · 126.10 s · 156.95 s. **Default_Run median: 127.57 s.**
+      - **Against the task-15.1 wave-4 fork-point baseline** (fork point `3e7a427`: **261 green**, ~156 s / 155.77 s wall under xdist): branch head is now **271 green** (+10 tests — the wave-4 property/example tests added by 15.6 Property 2 ×2, 15.7 Property 7, and 15.9 pipeline/server examples) with median 127.57 s. No wall-time regression (within xdist run-to-run variance; ~2.5 min is normal for this suite in parallel), no test regression.
+      - **Known pre-existing flake (NOT a wave-4 regression):** `tests/test_server.py::test_foreign_origins_get_no_cors` can trip a Hypothesis `DeadlineExceeded`/`FlakyFailure` on a cold first call under parallel xdist load (exceeds the 200 ms deadline, e.g. ~250–360 ms) then passes on retry / in isolation (~7–15 ms). It did NOT surface in any of the three measured runs above. It is pre-existing timing variance (recorded at the fork point in task 15.1), unrelated to the gate/availability work.
+      - **Head commit:** `a0823f0cb7dc08f80c9650c065ca8afe62771c47` (`a0823f0`) — the branch head at the time this note was measured/written. **Commit count since fork point `3e7a427`: 16** at that head (this tracker commit, which records the note, makes 17; the integrator should read the then-current head when merging).
+      - **Branch:** `agent/m1-gate` (local-only; not pushed, per the single-machine backup model — merged to `master` from the MAIN checkout).
+      - **Wilderness shipped ENABLED? NO.** Wilderness is descoped in M1 (task 15.8, DESCOPED) and left **DISABLED unconditionally** with `DISABLED_REASON`; its generator is deferred to `.kiro/specs/zone-generator-wilderness/`. `ENABLED_ZONE_TYPES = frozenset({"dungeon", "city"})` on this branch head. Wilderness was NOT added to the Enabled set.
+
+      ---
+
+      **WAVE-4 INTEGRATION NOTE** (for the single-writer integrator to apply from the MAIN checkout — do not apply here):
+
+      - **Done-table row (ROADMAP.md):**
+
+        | Wave | Scope | Branch | Head | Result |
+        |------|-------|--------|------|--------|
+        | M1 wave 4 — all-zone-type gate + availability | Enabled-set gate (dungeon+city; wilderness disabled/deferred), sidecar-on-every-build, rebuilt `generate_validated` scratch-attempt gate, server gating + per-build versioned paths, Properties 2 & 7 | `agent/m1-gate` | `a0823f0` | **271 green** (median 127.57 s, xdist); wave-4 complete |
+
+      - **"Pick up here":** Wave 4 is closed (code + tests landed; only the HUMAN-GATED city 3D pass, task 16.2, remains for the user). **Next: wave 5 — Modes, `from_controls` and geometry-slice controls (Requirements 1, 2), starting at task 17.1** — open the `agent/m1-modes` worktree off the updated `master` and record its fork-point hash.
+
+      - **Branch / commits:** `agent/m1-gate`, head `a0823f0cb7dc08f80c9650c065ca8afe62771c47`, **16 commits** since fork point `3e7a427` (17 including this tracker commit).
+
+      - **What wave 4 delivered:**
+        - **`generators/zone_types.py`:** the `ENABLED_ZONE_TYPES = frozenset({"dungeon", "city"})` set, `ZONE_TYPE_REASONS`/`DISABLED_REASON`, `is_enabled` (reads the set at call time), and `zone_type_listing()` in DEFINED order. **Wilderness is DISABLED/deferred** (task 15.8 descoped — its generator moves to `.kiro/specs/zone-generator-wilderness/`).
+        - **Sidecar on every build:** `EqgZone.write_sidecar(...)` in `core/eqg.py`; `ZoneBuilder.build` writes `<name>.zone.json` whether or not GLB is written; `BuildResult.sidecar_path`/`map_path` added.
+        - **Rebuilt `generate_validated` (`generators/pipeline.py`):** per-attempt builds into `output_dir/.attempts/<zone_id>/a<k>/`; pass ⇔ `report.passed ∧ report.corridors_passed ∧ fmt.passed` (format a passing stub until wave 6); on pass, atomic `os.replace` of every file into `output_dir/<zone_id>/v<version>/` + sidecar merge (`format`/`warnings`/`validated`/`attempts`/`seed`) + scratch cleanup; on fail, JSONL log line (with `checks`) + `shutil.rmtree` the scratch; builder exceptions clean the scratch in `finally` and re-raise; ungated builds run once marked `validated=False`.
+        - **Server gating (`server/app.py`):** disabled controls zone type (incl. `cave`) → **400 before any write**, listing the enabled set; prompt-planned disabled zone type → substituted to `dungeon` with a `zone_type_substituted:<planned>->dungeon` warning and `planned_zone_type` carried into the sidecar; `/api/zone_types` + `/api/themes` listing with enable/reason; **per-build versioned route** `/api/zones/{zone_id}/{version}/{filename}` with segment regex + no-`..` + extension allow-list + resolved-path-inside-`OUTPUT_DIR` traversal guards.
+        - **Properties 2 and 7:** Property 2 (returned builds passed both gates; rejected attempts leave nothing) and Property 7 (availability follows the Enabled set) pinned in `tests/test_properties_pipeline.py`, plus pipeline/server example tests (task 15.9).
+        - **Two root bugs fixed by the property tests (fixed at root, not worked around):** (1) a rejected run left an empty `.attempts/<zone_id>/` root behind → fixed in `_remove_scratch` to also prune the empty parent; (2) a prompt-planned disabled zone type was not canonicalized before the enabled-set check → fixed so the planned zone type is canonicalized on the prompt path.
+
+      - **Wilderness status:** descoped/disabled in M1; **did NOT ship enabled.**
+      - **Suite count:** 271 tests, all green.
+      - **Human-gated follow-up:** the city 3D pass is **task 16.2** (next, user-signed-off in the live viewer — agent writes the checklist PENDING-HUMAN and never ticks it).
   - [ ] 16.2 **HUMAN-GATED:** city 3D pass
     - Checklist, PENDING-HUMAN: city zones (flat and elevated, 12 and 30 rooms) walk end to end in the viewer; if wilderness is enabled, one wilderness zone from the Server loads and walks.
     - _Requirements: 4.1_
