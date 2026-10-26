@@ -1261,7 +1261,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Build:** `cd web; npx vite build` → **exit 0** (TypeScript type-checks + bundles; `dist/index.html` 5.91 kB, `index.*.js` 577 kB). The pre-existing >500 kB three.js chunk notice is advisory, not an error. `web/dist/` is per-worktree and gitignored.
       - **Tests:** no test files touched (the `#size`/`#verticality` no-`value` trick kept `test_zone_type_surface_is_three` green). `python -m pytest tests/ -q` → **342 passed, 1 failed**; the one failure is `tests/test_server.py::test_foreign_origins_get_no_cors`, a Hypothesis `DeadlineExceeded` TIMING FLAKE (416 ms first call vs 28 ms on retry) in an unrelated CORS test — it PASSES in isolation (`1 passed`), so the suite is effectively the 343 baseline. Web-only change, as expected.
       - **NOT eyeballed in a live browser** — the modes/controls human pass (3D + browser) is task 18.2. This task is verified by the type-checking build and the Python suite only.
-      - Commit (worktree only, not pushed): `__PENDING__`.
+      - Commit (worktree only, not pushed): `eccd066` (web + this tracker entry).
   - [ ] 17.10 Add the surface guards
     - `tests/test_hygiene.py`: no topology / district / purpose / builder / inhabitants / condition / element control ids in `web/index.html` or CLI options; no target field in `ZonePlan` / `ZoneSpec` dataclass fields, `GenerateRequest`, CLI options or `web/index.html` ids.
     - _Requirements: 2.3, 8.1_
