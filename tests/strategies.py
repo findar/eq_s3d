@@ -129,7 +129,10 @@ def _vocab_field(vocab) -> st.SearchStrategy:
     return st.one_of(st.text(), st.sampled_from(list(vocab)))
 
 
-# Keys outside the ZonePlan schema that `from_dict` must ignore.
+# Keys outside the ZonePlan schema that `from_dict` must ignore. ``rooms`` is
+# excluded too: it is a control ALIAS (of ``room_count``) emitted on purpose
+# below, so it must not also surface as a random junk key that `from_dict`
+# silently drops.
 _unknown_keys = st.text(min_size=1, max_size=12).filter(
     lambda k: k
     not in {
@@ -137,6 +140,7 @@ _unknown_keys = st.text(min_size=1, max_size=12).filter(
         "zone_type",
         "theme",
         "room_count",
+        "rooms",
         "size",
         "elevation",
         "verticality",
@@ -163,6 +167,18 @@ _unknown_keys = st.text(min_size=1, max_size=12).filter(
 #: includes ``outdoor`` and the removed ``cave``); ``zone_type`` draws the
 #: current ``DEFINED_ZONE_TYPES`` plus the legacy ``outdoor`` so the mapping is
 #: exercised from both keys.
+#:
+#: Task 17.3 also emits the two CONTROL-ALIAS keys the controls path
+#: (``ZonePlan.from_controls``) understands, so both entry paths (P12) see
+#: undefined/legacy/alias values:
+#:   * ``rooms`` — alias of ``room_count`` (same loosely-typed integer domain);
+#:   * ``elevation`` — the legacy boolean (already drawn above). ``from_controls``
+#:     reads ``elevation: false`` without a ``verticality`` as ``flat``; emitting
+#:     it as a plain boolean next to an optional ``verticality`` exercises both
+#:     the translation and the "verticality present wins" branch.
+#: ``rooms`` and ``room_count`` are both optional, so a draw may carry the alias
+#: alone (from_controls folds it in; from_dict never sees it), the plan key alone,
+#: or both (the plan key must win on both paths).
 zone_plan_dicts = st.builds(
     lambda base, extra: {**base, **extra},
     st.fixed_dictionaries(
@@ -172,6 +188,7 @@ zone_plan_dicts = st.builds(
             "zone_type": _vocab_field(sorted(DEFINED_ZONE_TYPES) + ["outdoor"]),
             "theme": _vocab_field(["dungeon", "outdoor", "cave", "city"]),
             "room_count": st.integers(),
+            "rooms": st.integers(),
             "size": _vocab_field(["small", "medium", "large", "huge"]),
             "elevation": st.booleans(),
             "verticality": _vocab_field(["flat", "moderate", "dramatic"]),

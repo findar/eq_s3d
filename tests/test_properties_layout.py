@@ -647,32 +647,47 @@ def test_flush_openings(seed, zone_type, n, verticality):
 @settings(deadline=None, max_examples=scaled(100))
 @given(d=zone_plan_dicts)
 def test_zoneplan_normalisation(d):
-    """Feature: zone-generator-m0-hygiene, Property 9: ZonePlan normalisation.
+    """Feature: zone-generator-m1-controls-traversability, Property 5: Plan normalisation.
 
-    Umbrella P12 (no controls path). For any loosely-typed dict covering every
-    `ZonePlan` field (plus junk keys), `ZonePlan.from_dict(d)` lands every field
-    inside its valid domain -- the umbrella Req 2.3/2.4/2.8 vocabularies and
-    clamp ranges:
+    Umbrella P12 -- BOTH entry paths. For any loosely-typed dict covering every
+    `ZonePlan` field (plus the control-alias keys ``rooms`` / ``elevation`` and
+    junk keys), the plan-dictionary path (`ZonePlan.from_dict`) and the controls
+    path (`ZonePlan.from_controls`, task 17.2) both normalise the input to a
+    valid, idempotent plan -- and agree wherever the dict names a plan field
+    directly. This pins `from_controls` alongside `from_dict`:
 
-    * ``zone_type`` in VALID_ZONE_TYPES (an out-of-vocab value, "cave" included,
-      maps to "dungeon");
-    * ``room_count`` clamped to ``[1, 30]``; ``locks`` clamped to ``[0, 5]``;
-    * ``size`` in {small, medium, large, huge}; ``verticality`` in
-      {flat, moderate, dramatic};
-    * ``regions`` a list whose every kind is in VALID_REGION_KINDS;
-    * ``dungeon_theme`` / ``dungeon_race`` / ``elemental_tint`` each in their
-      vocabulary or the empty string;
-    * ``elevation`` a bool.
+    1. **Both land every field in its domain.** For each path the normalised
+       plan has ``zone_type`` in VALID_ZONE_TYPES (an out-of-vocab value, "cave"
+       and "outdoor"->wilderness included, maps into the defined set);
+       ``room_count`` clamped to ``[1, 30]``; ``locks`` clamped to ``[0, 5]``;
+       ``size`` in {small, medium, large, huge}; ``verticality`` in
+       {flat, moderate, dramatic}; ``regions`` a list whose every kind is in
+       VALID_REGION_KINDS; ``dungeon_theme`` / ``dungeon_race`` /
+       ``elemental_tint`` each in their vocabulary or the empty string;
+       ``elevation`` a bool.
+    2. **The paths AGREE on every key ``d`` names DIRECTLY as a plan field.**
+       Where ``d`` carries a plan field under its own name (``room_count``,
+       ``zone_type`` -- also reachable via the legacy ``theme`` alias both paths
+       map identically -- ``size``, ``verticality``, ``elevation``, ``locks``,
+       the content fields, …) both paths interpret it as the same field, so the
+       normalised values are equal. Keys ``d`` names only via a CONTROL ALIAS
+       are deliberately excluded: e.g. ``rooms`` alone feeds ``room_count`` on
+       the controls path but is dropped by ``from_dict``, and a legacy
+       ``elevation: false`` with no ``verticality`` becomes ``flat`` on the
+       controls path only -- in neither case does ``d`` name that plan field
+       directly, so the paths may legitimately differ there.
+    3. **Both are FIXED POINTS of ``validate()``.** Each path runs ``validate()``
+       once internally; re-validating the normalised plan must not move any
+       field.
 
-    And normalisation is idempotent: a second ``validate()`` on the already-
-    normalised plan returns an equal plan (a fixpoint). `from_dict` runs
-    `validate()` once internally, so re-validating must not move any field.
+    If any field escapes its domain, the paths disagree on a directly-named key,
+    or a second ``validate()`` moves a field, that is a REAL bug in
+    ``from_dict`` / ``from_controls`` / ``validate`` -- report the counterexample
+    and fix at the ROOT in ``ai/schema.py`` (pinned here as a
+    ``@example(...).via("discovered failure")``); do NOT weaken an assertion or
+    narrow the strategy.
 
-    If any field escapes its domain for some input, that is a REAL normalisation
-    bug in `ZonePlan.validate` -- report the counterexample and fix the clamp at
-    the root; do NOT narrow the strategy.
-
-    Validates: M0 Req 3.5; umbrella Req 1.6.
+    Validates: Requirements 1.2, 2.4.
     """
     from ai.schema import (
         VALID_ZONE_TYPES,
@@ -682,58 +697,101 @@ def test_zoneplan_normalisation(d):
         VALID_ELEMENTAL_TINTS,
     )
 
-    plan = ZonePlan.from_dict(d)
+    from_dict_plan = ZonePlan.from_dict(d)
+    from_controls_plan = ZonePlan.from_controls(d)
 
-    # --- (1) Every field is inside its valid domain -------------------------
-    assert plan.zone_type in VALID_ZONE_TYPES, (
-        f"theme {plan.zone_type!r} not in {VALID_ZONE_TYPES} (input {d.get('theme')!r})"
-    )
-    assert isinstance(plan.room_count, int) and 1 <= plan.room_count <= 30, (
-        f"room_count {plan.room_count!r} outside [1, 30] "
-        f"(input {d.get('room_count')!r})"
-    )
-    assert plan.size in ("small", "medium", "large", "huge"), (
-        f"size {plan.size!r} outside its vocab (input {d.get('size')!r})"
-    )
-    assert plan.verticality in ("flat", "moderate", "dramatic"), (
-        f"verticality {plan.verticality!r} outside its vocab "
-        f"(input {d.get('verticality')!r})"
-    )
-    assert isinstance(plan.regions, list)
-    for r in plan.regions:
-        assert r in VALID_REGION_KINDS, (
-            f"region kind {r!r} not in {VALID_REGION_KINDS} "
-            f"(input regions {d.get('regions')!r})"
+    def assert_in_domain(plan, path):
+        """Every field of ``plan`` is inside its valid domain (part 1)."""
+        assert plan.zone_type in VALID_ZONE_TYPES, (
+            f"[{path}] zone_type {plan.zone_type!r} not in {VALID_ZONE_TYPES} "
+            f"(input zone_type={d.get('zone_type')!r} theme={d.get('theme')!r})"
         )
-    assert isinstance(plan.locks, int) and 0 <= plan.locks <= 5, (
-        f"locks {plan.locks!r} outside [0, 5] (input {d.get('locks')!r})"
-    )
-    assert plan.dungeon_theme == "" or plan.dungeon_theme in VALID_DUNGEON_THEMES, (
-        f"dungeon_theme {plan.dungeon_theme!r} not empty and not in "
-        f"{VALID_DUNGEON_THEMES} (input {d.get('dungeon_theme')!r})"
-    )
-    assert plan.dungeon_race == "" or plan.dungeon_race in VALID_DUNGEON_RACES, (
-        f"dungeon_race {plan.dungeon_race!r} not empty and not in "
-        f"{VALID_DUNGEON_RACES} (input {d.get('dungeon_race')!r})"
-    )
-    assert plan.elemental_tint == "" or plan.elemental_tint in VALID_ELEMENTAL_TINTS, (
-        f"elemental_tint {plan.elemental_tint!r} not empty and not in "
-        f"{VALID_ELEMENTAL_TINTS} (input {d.get('elemental_tint')!r})"
-    )
-    assert isinstance(plan.elevation, bool), (
-        f"elevation {plan.elevation!r} is not a bool (input {d.get('elevation')!r})"
-    )
+        assert isinstance(plan.room_count, int) and 1 <= plan.room_count <= 30, (
+            f"[{path}] room_count {plan.room_count!r} outside [1, 30] "
+            f"(input room_count={d.get('room_count')!r} rooms={d.get('rooms')!r})"
+        )
+        assert plan.size in ("small", "medium", "large", "huge"), (
+            f"[{path}] size {plan.size!r} outside its vocab (input {d.get('size')!r})"
+        )
+        assert plan.verticality in ("flat", "moderate", "dramatic"), (
+            f"[{path}] verticality {plan.verticality!r} outside its vocab "
+            f"(input verticality={d.get('verticality')!r} elevation={d.get('elevation')!r})"
+        )
+        assert isinstance(plan.regions, list)
+        for r in plan.regions:
+            assert r in VALID_REGION_KINDS, (
+                f"[{path}] region kind {r!r} not in {VALID_REGION_KINDS} "
+                f"(input regions {d.get('regions')!r})"
+            )
+        assert isinstance(plan.locks, int) and 0 <= plan.locks <= 5, (
+            f"[{path}] locks {plan.locks!r} outside [0, 5] (input {d.get('locks')!r})"
+        )
+        assert plan.dungeon_theme == "" or plan.dungeon_theme in VALID_DUNGEON_THEMES, (
+            f"[{path}] dungeon_theme {plan.dungeon_theme!r} not empty and not in "
+            f"{VALID_DUNGEON_THEMES} (input {d.get('dungeon_theme')!r})"
+        )
+        assert plan.dungeon_race == "" or plan.dungeon_race in VALID_DUNGEON_RACES, (
+            f"[{path}] dungeon_race {plan.dungeon_race!r} not empty and not in "
+            f"{VALID_DUNGEON_RACES} (input {d.get('dungeon_race')!r})"
+        )
+        assert plan.elemental_tint == "" or plan.elemental_tint in VALID_ELEMENTAL_TINTS, (
+            f"[{path}] elemental_tint {plan.elemental_tint!r} not empty and not in "
+            f"{VALID_ELEMENTAL_TINTS} (input {d.get('elemental_tint')!r})"
+        )
+        assert isinstance(plan.elevation, bool), (
+            f"[{path}] elevation {plan.elevation!r} is not a bool "
+            f"(input {d.get('elevation')!r})"
+        )
 
-    # --- (2) Idempotence: re-normalising a normalised plan is a fixpoint ----
-    # `from_dict` already called `validate()` once; calling it again must leave
-    # every field equal. Compare through `to_dict()` so the check is field-for-
-    # field and does not depend on dataclass identity.
-    before = plan.to_dict()
-    again = plan.validate().to_dict()
-    assert again == before, (
-        f"normalisation is not idempotent: a second validate() changed the "
-        f"plan from {before!r} to {again!r} (input {d!r})"
+    def assert_fixpoint(plan, path):
+        """``validate()`` applied again changes nothing (part 3)."""
+        # `from_dict` / `from_controls` already called `validate()` once; calling
+        # it again must leave every field equal. Compare through `to_dict()` so
+        # the check is field-for-field and independent of dataclass identity.
+        before = plan.to_dict()
+        again = plan.validate().to_dict()
+        assert again == before, (
+            f"[{path}] normalisation is not idempotent: a second validate() "
+            f"changed the plan from {before!r} to {again!r} (input {d!r})"
+        )
+
+    # --- (1) Both paths land every field inside its valid domain ------------
+    assert_in_domain(from_dict_plan, "from_dict")
+    assert_in_domain(from_controls_plan, "from_controls")
+
+    # --- (2) The two paths AGREE on every key `d` names DIRECTLY ------------
+    # The direct plan-field names `d` can carry. Control aliases (`rooms`) and the
+    # legacy boolean (`elevation`, which only derives `verticality` on the
+    # controls path) are NOT in this set: where `d` names a field only via an
+    # alias, from_dict and from_controls legitimately differ, so those fields are
+    # excluded from the agreement check (they are still domain-checked above).
+    direct_field_keys = (
+        "name", "room_count", "size", "elevation", "verticality",
+        "regions", "locks", "dungeon_theme", "dungeon_race",
+        "elemental_tint", "mood", "prompt",
     )
+    dd = from_dict_plan.to_dict()
+    dc = from_controls_plan.to_dict()
+    for key in direct_field_keys:
+        if key in d:
+            assert dd[key] == dc[key], (
+                f"paths disagree on directly-named field {key!r}: from_dict="
+                f"{dd[key]!r} from_controls={dc[key]!r} (input {d!r})"
+            )
+    # zone_type is named directly by `zone_type` OR the legacy `theme` alias, and
+    # both paths resolve the zone type through the same read_zone_type/canonical
+    # mapping (zone_type wins over theme on both), so they must always agree when
+    # either key is present.
+    if "zone_type" in d or "theme" in d:
+        assert dd["zone_type"] == dc["zone_type"], (
+            f"paths disagree on zone_type: from_dict={dd['zone_type']!r} "
+            f"from_controls={dc['zone_type']!r} "
+            f"(input zone_type={d.get('zone_type')!r} theme={d.get('theme')!r})"
+        )
+
+    # --- (3) Both normalised plans are fixed points of validate() -----------
+    assert_fixpoint(from_dict_plan, "from_dict")
+    assert_fixpoint(from_controls_plan, "from_controls")
 
 
 # --- Property 19: Cave words never yield a cave theme (M0-only) ---------------
