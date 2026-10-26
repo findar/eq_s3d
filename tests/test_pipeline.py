@@ -34,8 +34,8 @@ from generators.pipeline import (
     generate_validated,
     GenerationFailed,
     ValidatedBuild,
-    DEFAULT_GATED_ZONE_TYPES,
 )
+from generators.zone_types import ENABLED_ZONE_TYPES
 
 GOOD_SEED = 1
 # A pinned-seed value for the pinned-seed tests. Its brokenness is no longer
@@ -177,8 +177,11 @@ class TestPinnedSeed:
 
 class TestGating:
     def test_dungeon_is_gated_by_default(self):
-        assert "dungeon" in DEFAULT_GATED_ZONE_TYPES
-        assert "wilderness" not in DEFAULT_GATED_ZONE_TYPES
+        # task 15.4 removed the separate DEFAULT_GATED_ZONE_TYPES: the gated set
+        # now defaults to the one Enabled set (Req 3.1). Dungeon is enabled and
+        # therefore gated; wilderness is disabled in M1 and so ungated.
+        assert "dungeon" in ENABLED_ZONE_TYPES
+        assert "wilderness" not in ENABLED_ZONE_TYPES
 
     def test_ungated_zone_type_passes_through_without_retry(self, tmp_path):
         # Force "dungeon" to be ungated: even a would-fail zone is returned as-is
@@ -237,7 +240,9 @@ class TestCliEscapeHatch:
     def test_no_validate_builds_broken_seed(self, tmp_path):
         import main
         main.cmd_generate(self._args(tmp_path, no_validate=True))
-        assert (tmp_path / "cli.eqg").exists()
+        # task 15.4 moves accepted/ungated builds into <zone_id>/v<version>/;
+        # the .eqg lives there now. The spec is still saved flat by main.py.
+        assert (tmp_path / "cli" / "v1" / "cli.eqg").exists()
         assert (tmp_path / "cli.json").exists()
 
     def test_gate_blocks_pinned_bad_seed(self, tmp_path, monkeypatch):

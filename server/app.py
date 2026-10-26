@@ -358,7 +358,16 @@ def get_zone_file(filename: str):
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, "Invalid filename")
 
-    path = OUTPUT_DIR / filename
+    # task 15.4 moved accepted builds into per-build directories
+    # (output/web/<zone_id>/v<version>/<zone_id>.*). The flat URL is still
+    # <zone_id>.<ext>, so resolve it to that build dir (default v1). The
+    # segment-regex route + per-build response URLs are task 15.5; this is the
+    # minimum to keep the flat round-trip working after the move.
+    stem = filename.split(".", 1)[0]
+    path = OUTPUT_DIR / stem / "v1" / filename
+    if not path.exists():
+        # Back-compat: a flat file (e.g. a non-pipeline writer) still resolves.
+        path = OUTPUT_DIR / filename
     if not path.exists():
         raise HTTPException(404, "Not found")
 

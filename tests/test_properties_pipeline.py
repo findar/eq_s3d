@@ -356,9 +356,12 @@ def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
     cli_out = tmp_path / "cli"
     main.main(["generate", "p16", "--rooms", "5", "--output", str(cli_out)])
 
-    # Accepted_Build artifacts written under the CLI output dir.
-    eqg = cli_out / "p16.eqg"
-    glb = cli_out / "p16.glb"
+    # Accepted_Build artifacts written under the CLI output dir. task 15.4
+    # moves accepted builds into <zone_id>/v<version>/; the .eqg/.glb live
+    # there now, while main.py still saves the spec flat for inspection.
+    build_dir = cli_out / "p16" / "v1"
+    eqg = build_dir / "p16.eqg"
+    glb = build_dir / "p16.glb"
     spec_json = cli_out / "p16.json"
     assert eqg.exists(), f"CLI did not write the .eqg: {eqg}"
     assert glb.exists(), f"CLI did not write the .glb: {glb}"

@@ -549,9 +549,11 @@ def test_serialized_output_has_no_theme_key():
         )
         assert body["zone_type"] == "dungeon"
 
-        # The GLB sidecar JSON written next to the .glb.
-        zone_url = body["zone_url"]           # e.g. /output/<id>.zone.json or .json
-        sidecar_path = Path(d) / Path(zone_url).name
+        # The GLB sidecar JSON written next to the .glb. task 15.4 moved
+        # accepted builds into <zone_id>/v<version>/, so the sidecar lives there
+        # (the flat URL still names <id>.zone.json).
+        zone_url = body["zone_url"]           # e.g. /api/zones/<id>.zone.json
+        sidecar_path = Path(d) / body["id"] / "v1" / Path(zone_url).name
         assert sidecar_path.exists(), f"sidecar not written at {sidecar_path}"
         sidecar = json.loads(sidecar_path.read_text())
         assert _find_theme_keys(sidecar, "sidecar") == [], (
