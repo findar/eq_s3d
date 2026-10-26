@@ -326,10 +326,12 @@ def test_zone_type_surface_is_three():
     )
 
     # Server LISTING: the public /api/zone_types body (not just the module
-    # constant) must advertise exactly the Defined zone types.
+    # constant) must advertise exactly the Defined zone types. Wave 4 (task
+    # 15.5) made each entry a {name, enabled, reason} object, so read the names.
     client = TestClient(server.app.app)
     listing = client.get("/api/zone_types").json()
-    assert set(listing["zone_types"]) == DEFINED_ZONE_TYPES, (
+    listed_names = {z["name"] for z in listing["zone_types"]}
+    assert listed_names == DEFINED_ZONE_TYPES, (
         f"/api/zone_types listing = {listing['zone_types']}"
     )
 
@@ -549,9 +551,11 @@ def test_serialized_output_has_no_theme_key():
         )
         assert body["zone_type"] == "dungeon"
 
-        # The GLB sidecar JSON written next to the .glb.
-        zone_url = body["zone_url"]           # e.g. /output/<id>.zone.json or .json
-        sidecar_path = Path(d) / Path(zone_url).name
+        # The GLB sidecar JSON written next to the .glb. task 15.4 moved
+        # accepted builds into <zone_id>/v<version>/, so the sidecar lives there
+        # (the flat URL still names <id>.zone.json).
+        zone_url = body["zone_url"]           # e.g. /api/zones/<id>.zone.json
+        sidecar_path = Path(d) / body["id"] / "v1" / Path(zone_url).name
         assert sidecar_path.exists(), f"sidecar not written at {sidecar_path}"
         sidecar = json.loads(sidecar_path.read_text())
         assert _find_theme_keys(sidecar, "sidecar") == [], (

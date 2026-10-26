@@ -16,7 +16,7 @@ Correctness Property 15 (umbrella P2).
 from __future__ import annotations
 
 import pytest
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
 from generators.layout import LayoutGenerator
@@ -356,9 +356,12 @@ def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
     cli_out = tmp_path / "cli"
     main.main(["generate", "p16", "--rooms", "5", "--output", str(cli_out)])
 
-    # Accepted_Build artifacts written under the CLI output dir.
-    eqg = cli_out / "p16.eqg"
-    glb = cli_out / "p16.glb"
+    # Accepted_Build artifacts written under the CLI output dir. task 15.4
+    # moves accepted builds into <zone_id>/v<version>/; the .eqg/.glb live
+    # there now, while main.py still saves the spec flat for inspection.
+    build_dir = cli_out / "p16" / "v1"
+    eqg = build_dir / "p16.eqg"
+    glb = build_dir / "p16.glb"
     spec_json = cli_out / "p16.json"
     assert eqg.exists(), f"CLI did not write the .eqg: {eqg}"
     assert glb.exists(), f"CLI did not write the .glb: {glb}"
@@ -367,4 +370,441 @@ def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
     # --- The whole point of P16: zero outbound network across BOTH paths.
     assert no_network == [], (
         f"the no-API prompt/CLI flow attempted outbound network: {no_network}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 2: Returned builds passed both gates, rejected attempts leave
+# nothing (umbrella P2). These PIN the task-15.4 scratch -> move -> cleanup
+# lifecycle and the two-gate PASS criterion
+# (report.passed AND report.corridors_passed AND fmt.passed), over the real
+# Enabled set (dungeon, city). Wilderness is disabled, so it is never drawn.
+# ---------------------------------------------------------------------------
+
+import json  # noqa: E402  (grouped with the M1 P2 tests that read the Sidecar)
+import os  # noqa: E402
+
+from generators.zone_types import ENABLED_ZONE_TYPES  # noqa: E402
+import analyzer.traverse as _traverse  # noqa: E402
+
+# The gated zone types this property ranges over. Sorted for a stable sample
+# order; wilderness is absent from ENABLED_ZONE_TYPES, so this is (city,
+# dungeon) and the property never touches a disabled type (task note).
+_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES))
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    zone_type=_enabled_zone_types,
+    rooms=st.integers(min_value=2, max_value=4),
+    max_attempts=st.integers(min_value=1, max_value=8),
+    rng=st.randoms(use_true_random=False),
+)
+def test_returned_build_passed_both_gates(zone_type, rooms, max_attempts, rng):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 2: Returned
+    builds passed both gates, and rejected attempts leave nothing (umbrella P2,
+    returned half).
+
+    When ``generate_validated`` RETURNS a ``ValidatedBuild`` for a zone type in
+    ``ENABLED_ZONE_TYPES`` (dungeon, city — wilderness is disabled and never
+    drawn), that build provably cleared BOTH gates and its files live only where
+    they should:
+
+    * ``vb.validated`` is True — the traversability gate ran and passed;
+    * the two traversability verdicts hold — ``report.passed`` (every room
+      reachable) and ``report.corridors_passed`` (corridor continuity), re-run
+      independently on the RETURNED ``.eqg`` so this does not merely trust the
+      pipeline's own bookkeeping;
+    * ``vb.format.passed`` holds (the wave-6 Format_Checker gate — a passing stub
+      until task 20.3);
+    * the Sidecar's ``format`` block equals ``vb.format.to_dict()`` — the merged
+      provenance matches the gate result;
+    * the Output_Directory holds ONLY ``vb.build_dir`` (the ``<zone_id>/
+      v<version>/`` tree) — no ``.attempts/`` scratch, nothing else (failure log
+      is disabled here).
+
+    This pins the task-15.4 scratch -> move -> cleanup lifecycle: a returned
+    build leaves nothing behind but its own directory.
+
+    Validates: Requirements 4.2, 9.2; umbrella P2.
+    """
+    seeds_seen: list[int] = []
+
+    def spec_factory(seed: int):
+        # Record the seed the pipeline asked for, then build a genuinely
+        # navigable zone (fixed good seed) so both gates pass. Same spy idiom as
+        # the P15 test above: the factory decides the outcome, the pipeline owns
+        # seed selection.
+        seeds_seen.append(seed)
+        return LayoutGenerator(zone_type=zone_type, seed=_NAVIGABLE_SEED).generate(
+            "p2", room_count=rooms
+        )
+
+    with fresh_dir() as out:
+        try:
+            vb = generate_validated(
+                spec_factory,
+                zone_type=zone_type,
+                zone_id="p2",
+                output_dir=out,
+                write_glb=False,
+                max_attempts=max_attempts,
+                rng=rng,
+                failure_log=None,
+            )
+        except GenerationFailed:
+            # Only RETURNING calls are in scope for the returned half.
+            assume(False)
+
+        assert isinstance(vb, ValidatedBuild)
+
+        # -- Gate 1 + 2: the traversability verdicts, re-run on the RETURNED eqg.
+        assert vb.validated, "returned gated build is not marked validated"
+        report = _traverse.validate(
+            vb.result.eqg_path, spec=vb.spec, check_corridors=True
+        )
+        assert report.passed, (
+            "re-validating the returned build found an unreachable room"
+        )
+        assert report.corridors_passed, (
+            "re-validating the returned build found a corridor-continuity break"
+        )
+
+        # -- Gate 3: the Format_Checker verdict (passing stub until 20.3).
+        assert vb.format is not None and vb.format.passed, (
+            "returned build's format gate did not pass"
+        )
+
+        # -- The Sidecar's format block equals the gate result it was merged from.
+        sidecar = vb.build_dir / f"{vb.spec.name.lower()}.zone.json"
+        assert sidecar.exists(), f"Sidecar missing from build dir: {sidecar}"
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert data.get("format") == vb.format.to_dict(), (
+            f"Sidecar format {data.get('format')!r} != vb.format.to_dict() "
+            f"{vb.format.to_dict()!r}"
+        )
+
+        # -- The Output_Directory holds ONLY the build directory tree. build_dir
+        # is output_dir/<zone_id>/v<version>/, so the only top-level entry is the
+        # <zone_id> dir; no ".attempts" scratch, no stray files (failure log off).
+        top_level = sorted(os.listdir(out))
+        assert top_level == ["p2"], (
+            f"output dir holds more than the build directory: {top_level} "
+            "(a rejected/accepted attempt left scratch behind)"
+        )
+        assert (vb.build_dir).is_dir(), f"build dir is not a directory: {vb.build_dir}"
+
+
+def _always_fail_factory(zone_type: str, rooms: int):
+    """A ``spec_factory(seed)`` whose every build fails the traversability gate.
+
+    It honours the seed for the base geometry (as required), then appends one
+    far-away isolated room with no corridor, so the Traversal_Validator rejects
+    EVERY attempt regardless of seed — the established forced-failure idiom.
+    """
+    from generators.zone_spec import RoomSpec
+
+    def factory(seed: int):
+        spec = LayoutGenerator(zone_type=zone_type, seed=seed).generate(
+            "p2f", room_count=rooms
+        )
+        spec.rooms.append(RoomSpec(
+            id="isolated", center_x=100_000.0, center_y=100_000.0, floor_z=0.0,
+            width=200, depth=200, height=100,
+        ))
+        return spec
+
+    return factory
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    zone_type=_enabled_zone_types,
+    pinned=st.booleans(),
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+    max_attempts=st.integers(min_value=1, max_value=8),
+    rooms=st.integers(min_value=2, max_value=4),
+)
+def test_forced_failure_leaves_nothing(zone_type, pinned, seed, max_attempts, rooms):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 2: Returned
+    builds passed both gates, and rejected attempts leave nothing (umbrella P2,
+    rejected half).
+
+    When every attempt to build a gated zone type (dungeon, city) is FORCED to
+    fail the traversability gate, ``generate_validated`` raises
+    ``GenerationFailed`` rather than ever returning a broken zone, and — the
+    invariant this pins — leaves nothing on disk:
+
+    * a PINNED call (explicit ``seed``) raises after exactly ONE attempt
+      (``pinned=True``, ``attempts == 1``) — the caller's seed is respected, not
+      swapped;
+    * an UNPINNED call exhausts all ``max_attempts`` fresh seeds and then raises
+      (``pinned=False``, ``attempts == max_attempts``);
+    * in BOTH cases, after the raise the Output_Directory has NO ``.attempts/``
+      scratch entry and NO build directory — only the JSONL failure log may
+      exist (disabled here, so the directory is empty).
+
+    This pins the task-15.4 cleanup: a rejected attempt leaves no directory
+    behind, whether it is a one-shot pinned failure or an exhausted retry loop.
+
+    Validates: Requirements 4.2, 9.2; umbrella P2.
+    """
+    factory = _always_fail_factory(zone_type, rooms)
+
+    with fresh_dir() as out:
+        with pytest.raises(GenerationFailed) as excinfo:
+            generate_validated(
+                factory,
+                zone_type=zone_type,
+                zone_id="p2f",
+                seed=seed if pinned else None,
+                output_dir=out,
+                write_glb=False,
+                max_attempts=max_attempts,
+                timeout_s=1e9,  # non-binding: exhaustion, never a timeout
+                rng=None,
+                failure_log=None,
+            )
+
+        err = excinfo.value
+        if pinned:
+            assert err.pinned is True, "pinned forced-failure not flagged pinned"
+            assert err.attempts == 1, (
+                f"pinned seed retried: attempts={err.attempts}, expected 1"
+            )
+        else:
+            assert err.pinned is False, "unpinned forced-failure flagged pinned"
+            assert err.attempts == max_attempts, (
+                f"attempts={err.attempts}, expected all {max_attempts} exhausted"
+            )
+
+        # Nothing left behind: no ".attempts" scratch, no build directory. With
+        # the failure log disabled, the output dir is empty.
+        leftover = sorted(os.listdir(out))
+        assert leftover == [], (
+            f"a rejected attempt left files behind: {leftover} "
+            "(scratch or build directory not cleaned up)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 7: Availability follows the Enabled set (umbrella P19). This PINS
+# the task-15.2 availability helpers (is_enabled / zone_type_listing read the
+# set at CALL TIME) and the task-15.5 server gate across ARBITRARY enabled
+# subsets of DEFINED_ZONE_TYPES — not just the shipped {dungeon, city}. The
+# listing, the controls-400, and the prompt substitution-to-dungeon are one
+# function of the Enabled set E.
+# ---------------------------------------------------------------------------
+
+import generators.zone_types as _zt  # noqa: E402
+import server.app as _app_mod  # noqa: E402
+from ai.schema import ZonePlan  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from hypothesis import HealthCheck, settings as _settings  # noqa: E402
+
+from tests.strategies import enabled_subsets, zone_type_names  # noqa: E402
+from tests.pbt_helpers import scaled as _scaled  # noqa: E402
+
+
+# Budget 50 (design "Correctness Properties" table). Each example drives a real
+# TestClient build (small 2-4 room zones), so there is no per-example deadline
+# and the slow/large-data health checks are suppressed — but this is NOT marked
+# ``slow``: it must run in the Default_Run (the gate/availability surface is the
+# point of the property). ``scaled(50)`` scales with the active profile exactly
+# like ``build_settings`` does (50 under default, 250 under thorough).
+@_settings(
+    max_examples=_scaled(50),
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
+)
+@example(
+    # Regression_Example (discovered failure): a planner that emits the LEGACY
+    # value ``outdoor`` for an ENABLED wilderness. Before the root fix the prompt
+    # path built/returned the raw ``outdoor`` instead of canonical ``wilderness``
+    # (the controls path canonicalised, the prompt path trusted plan.zone_type).
+    # server/app.py now canonicalises the enabled planned type too.
+    enabled=frozenset({"dungeon", "wilderness"}),
+    t="outdoor",
+    rooms=2,
+).via("discovered failure")
+@given(
+    enabled=enabled_subsets,
+    t=zone_type_names,
+    rooms=st.integers(min_value=2, max_value=4),
+)
+def test_availability_follows_enabled(enabled, t, rooms, tmp_path_factory):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 7: Availability
+    follows the Enabled set (umbrella P19).
+
+    For any non-empty subset E of ``DEFINED_ZONE_TYPES`` installed as
+    ``ENABLED_ZONE_TYPES`` (every drawn E includes ``dungeon`` so the prompt
+    substitution has a live target) and any zone-type name t (defined, legacy
+    ``outdoor``, removed ``cave``, or an in-domain name), the availability
+    surface is exactly one function of E:
+
+    * ``GET /api/zone_types`` (and the ``/api/themes`` alias) list each member of
+      ``DEFINED_ZONE_TYPES`` once, in canonical order, with
+      ``enabled == (name in E)``; every disabled entry carries a non-empty
+      reason and every enabled entry carries ``reason is None``;
+    * a CONTROLS request naming t returns 400 **iff** ``canonical_zone_type(t)``
+      is not in E — and it does so BEFORE any build/write (the output dir stays
+      empty on a 400);
+    * a PROMPT whose (stubbed) planner picks t builds as t when t ∈ E, and
+      otherwise builds as ``dungeon`` carrying exactly one
+      ``zone_type_substituted:<t>->dungeon`` warning AND a ``planned_zone_type``
+      Sidecar entry equal to t;
+    * every 200 response's ``zone_type`` is a member of E.
+
+    This pins the 15.2 availability helpers (``is_enabled`` /
+    ``zone_type_listing`` must read ``ENABLED_ZONE_TYPES`` at call time, so a
+    monkeypatched subset takes effect) and the 15.5 server gate across arbitrary
+    enabled subsets. A failure here is a real bug in the call-time read or the
+    server gating, fixed at the root.
+
+    Validates: Requirements 3.1, 3.3, 3.4; umbrella P19.
+    """
+    # @given runs many examples per test function; pytest's `monkeypatch`
+    # fixture is NOT reset between them, so use an explicit MonkeyPatch context
+    # that undoes every patch at the end of each example (Hypothesis's own
+    # function_scoped_fixture guidance). `tmp_path_factory` is session-scoped,
+    # so it is safe to take as a fixture.
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        _run_availability_example(enabled, t, rooms, tmp_path_factory, monkeypatch)
+
+
+def _run_availability_example(enabled, t, rooms, tmp_path_factory, monkeypatch):
+    # Install the drawn Enabled set. is_enabled()/zone_type_listing() re-read
+    # generators.zone_types.ENABLED_ZONE_TYPES at call time, and server.app
+    # calls those (not a captured copy), so this monkeypatch gates the whole
+    # availability surface for this example.
+    monkeypatch.setattr(_zt, "ENABLED_ZONE_TYPES", frozenset(enabled))
+
+    canonical_t = _zt.canonical_zone_type(t)
+    t_enabled = canonical_t is not None and canonical_t in enabled
+
+    # Each example writes under its own OUTPUT_DIR / FAILURE_LOG so a 400's
+    # "nothing was written" check is unambiguous and examples don't collide.
+    out_dir = tmp_path_factory.mktemp("p7_out")
+    monkeypatch.setattr(_app_mod, "OUTPUT_DIR", out_dir)
+    monkeypatch.setattr(_app_mod, "FAILURE_LOG", out_dir / "failures.jsonl")
+
+    client = TestClient(_app_mod.app)
+
+    # -- Listing: exactly E enabled, in canonical order, reasons as specified. --
+    for path in ("/api/zone_types", "/api/themes"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}: {resp.text}"
+        listing = resp.json()["zone_types"]
+        assert [z["name"] for z in listing] == list(_zt.DEFINED_ZONE_TYPES), (
+            f"{path} listing not in canonical DEFINED order: "
+            f"{[z['name'] for z in listing]}"
+        )
+        for z in listing:
+            expect_enabled = z["name"] in enabled
+            assert z["enabled"] is expect_enabled, (
+                f"{path}: {z['name']} enabled={z['enabled']}, "
+                f"expected {expect_enabled} for E={sorted(enabled)}"
+            )
+            if expect_enabled:
+                assert z["reason"] is None, (
+                    f"enabled {z['name']} carries a reason: {z['reason']!r}"
+                )
+            else:
+                assert z["reason"], (
+                    f"disabled {z['name']} has no reason (empty/None): "
+                    f"{z['reason']!r}"
+                )
+
+    # -- Controls path: 400 IFF canonical_zone_type(t) not in E, before writes. --
+    controls_resp = client.post(
+        "/api/generate",
+        json={"zone_type": t, "rooms": rooms, "elevation": False},
+    )
+    if not t_enabled:
+        assert controls_resp.status_code == 400, (
+            f"controls t={t!r} (canonical {canonical_t!r}) not in E="
+            f"{sorted(enabled)} should 400, got {controls_resp.status_code}: "
+            f"{controls_resp.text}"
+        )
+        # Refused before any build/write: the output tree stays empty (only the
+        # failure log parent may exist; nothing was generated).
+        leftover = [p.name for p in out_dir.iterdir() if p.name != "failures.jsonl"]
+        assert leftover == [], (
+            f"a refused controls request wrote to the output dir: {leftover}"
+        )
+    else:
+        assert controls_resp.status_code == 200, (
+            f"controls t={t!r} (canonical {canonical_t!r}) in E="
+            f"{sorted(enabled)} should build, got {controls_resp.status_code}: "
+            f"{controls_resp.text}"
+        )
+        body = controls_resp.json()
+        assert body["zone_type"] == canonical_t, (
+            f"controls built zone_type {body['zone_type']!r} != canonical "
+            f"{canonical_t!r}"
+        )
+        assert body["zone_type"] in enabled, (
+            f"200 response zone_type {body['zone_type']!r} not in E="
+            f"{sorted(enabled)}"
+        )
+
+    # -- Prompt path: planner (stubbed) picks t. t ∈ E builds as t; otherwise
+    #    substituted to dungeon with exactly one warning + a Sidecar entry. ----
+    def _stub_make_plan(prompt, name="zone"):
+        # Return an UN-validated plan so the server sees the planner's raw pick
+        # t verbatim (ZonePlan.validate() would canonicalise t away). The server
+        # applies is_enabled(plan.zone_type) and substitutes to dungeon itself.
+        return ZonePlan(name=name, zone_type=t, room_count=rooms, prompt=prompt)
+
+    monkeypatch.setattr(_app_mod, "make_plan", _stub_make_plan)
+
+    prompt_resp = client.post("/api/generate", json={"prompt": "a test zone"})
+    assert prompt_resp.status_code == 200, (
+        f"prompt (planner picks t={t!r}) -> {prompt_resp.status_code}: "
+        f"{prompt_resp.text}"
+    )
+    pbody = prompt_resp.json()
+    sub_warnings = [
+        w for w in pbody["warnings"] if w.startswith("zone_type_substituted:")
+    ]
+
+    if t_enabled:
+        # Planned t is enabled: built as t, no substitution warning.
+        assert pbody["zone_type"] == canonical_t, (
+            f"prompt built {pbody['zone_type']!r} != planned-enabled "
+            f"canonical {canonical_t!r}"
+        )
+        assert sub_warnings == [], (
+            f"enabled planned t={t!r} should not be substituted; warnings="
+            f"{pbody['warnings']}"
+        )
+    else:
+        # Planned t is disabled/undefined: substituted to dungeon, exactly one
+        # zone_type_substituted warning naming the RAW planned t.
+        assert pbody["zone_type"] == "dungeon", (
+            f"disabled planned t={t!r} should build as dungeon, got "
+            f"{pbody['zone_type']!r}"
+        )
+        assert sub_warnings == [f"zone_type_substituted:{t}->dungeon"], (
+            f"expected exactly one zone_type_substituted:{t}->dungeon warning, "
+            f"got {pbody['warnings']}"
+        )
+        # The Sidecar of the accepted build records planned_zone_type == t.
+        zone_id = pbody["id"]
+        sidecar = out_dir / zone_id / "v1" / f"{zone_id}.zone.json"
+        assert sidecar.exists(), f"Sidecar missing: {sidecar}"
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert data.get("planned_zone_type") == t, (
+            f"Sidecar planned_zone_type {data.get('planned_zone_type')!r} != "
+            f"raw planned t {t!r}"
+        )
+
+    # Every 200 response's zone_type is in E.
+    assert pbody["zone_type"] in enabled, (
+        f"prompt 200 zone_type {pbody['zone_type']!r} not in E={sorted(enabled)}"
     )

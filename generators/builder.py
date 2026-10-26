@@ -107,44 +107,48 @@ class ZoneBuilder:
         eqg_path = out_dir / f"{name}.eqg"
         eqg.write(eqg_path)
 
-        # 5. GLB preview — pass per-material base colours so the preview shows
-        #    the real palette rather than arbitrary hues.
+        # Advisory pacing/gating + content layer for the sidecar. These ride
+        # in the .zone.json sidecar (and the GLB sidecar), never in the binary.
+        room_pacing = [
+            {
+                "id": r.id,
+                "role": r.role,
+                "graph_depth": r.graph_depth,
+                "center": [r.center_x, r.center_y, r.floor_z],
+                # Content / semantic layer (advisory; may be empty).
+                "semantic_type": r.semantic_type,
+                "room_theme": r.room_theme,
+                "district": r.district,
+                "prop_hints": list(r.prop_hints),
+                "encounter_intent": r.encounter_intent,
+                "boss": r.boss,
+            }
+            for r in self.spec.rooms
+        ]
+        gates = [
+            {
+                "id": g.id,
+                "tier": g.tier,
+                "lock": [g.lock_x, g.lock_y, g.lock_z],
+                "key": [g.key_x, g.key_y, g.key_z],
+                "key_room": g.key_room_id,
+            }
+            for g in self.spec.gates
+        ]
+        # Content / semantic layer (field names unchanged — Req 11.6).
+        content_meta = {
+            "dungeon_theme": self.spec.dungeon_theme,
+            "dungeon_race": self.spec.dungeon_race,
+            "elemental_tint": self.spec.elemental_tint,
+        }
+
+        # 6. GLB preview — pass per-material base colours so the preview shows
+        #    the real palette rather than arbitrary hues. The GLB path also
+        #    writes its own <name>.zone.json next to the .glb.
         glb_path = None
         if write_glb:
             glb_path = out_dir / f"{name}.glb"
             mat_colors = self._material_color_map(ter)
-            room_pacing = [
-                {
-                    "id": r.id,
-                    "role": r.role,
-                    "graph_depth": r.graph_depth,
-                    "center": [r.center_x, r.center_y, r.floor_z],
-                    # Content / semantic layer (advisory; may be empty).
-                    "semantic_type": r.semantic_type,
-                    "room_theme": r.room_theme,
-                    "district": r.district,
-                    "prop_hints": list(r.prop_hints),
-                    "encounter_intent": r.encounter_intent,
-                    "boss": r.boss,
-                }
-                for r in self.spec.rooms
-            ]
-            gates = [
-                {
-                    "id": g.id,
-                    "tier": g.tier,
-                    "lock": [g.lock_x, g.lock_y, g.lock_z],
-                    "key": [g.key_x, g.key_y, g.key_z],
-                    "key_room": g.key_room_id,
-                }
-                for g in self.spec.gates
-            ]
-            # Content / semantic layer (field names unchanged — Req 11.6).
-            content_meta = {
-                "dungeon_theme": self.spec.dungeon_theme,
-                "dungeon_race": self.spec.dungeon_race,
-                "elemental_tint": self.spec.elemental_tint,
-            }
             result = eqg.write_glb(glb_path, material_colors=mat_colors,
                                    room_pacing=room_pacing, gates=gates,
                                    content=content_meta,
@@ -152,15 +156,32 @@ class ZoneBuilder:
             if result is None:
                 glb_path = None  # trimesh not available
 
-            # Top-down schematic map (SVG sidecar) for the UI "Map" view.
-            from .mapview import render_map_svg
-            map_path = out_dir / f"{name}.map.svg"
-            map_path.write_text(render_map_svg(self.spec), encoding="utf-8")
+        # 7. Sidecar on EVERY build (not only when a GLB is written). When the
+        #    GLB path ran it already wrote an identical <name>.zone.json; this
+        #    rewrites the same content, and covers the write_glb=False case
+        #    (e.g. the Pipeline's scratch attempts, which merge gate results in
+        #    via `extra`). Content shape is shared with the GLB sidecar.
+        sidecar_path = out_dir / f"{name}.zone.json"
+        eqg.write_sidecar(
+            sidecar_path,
+            rooms=room_pacing,
+            gates=gates,
+            content=content_meta,
+            extra={"zone_type": self.spec.zone_type},
+        )
+
+        # 8. Top-down schematic map (SVG sidecar) for the UI "Map" view —
+        #    written on every build so the Pipeline can locate it.
+        from .mapview import render_map_svg
+        map_path = out_dir / f"{name}.map.svg"
+        map_path.write_text(render_map_svg(self.spec), encoding="utf-8")
 
         return BuildResult(
             spec=self.spec,
             eqg_path=eqg_path,
             glb_path=glb_path,
+            sidecar_path=sidecar_path,
+            map_path=map_path,
             vertex_count=len(ter.vertices),
             polygon_count=len(ter.polygons),
             material_count=len(ter.materials),
@@ -253,10 +274,15 @@ class BuildResult:
 
     def __init__(self, spec, eqg_path, glb_path,
                  vertex_count, polygon_count, material_count,
-                 backend="box", warnings=None):
+                 backend="box", warnings=None,
+                 sidecar_path=None, map_path=None):
         self.spec = spec
         self.eqg_path = eqg_path
         self.glb_path = glb_path
+        # The .zone.json sidecar and the .map.svg are written on every build
+        # (not only when a GLB is exported), so callers can always locate them.
+        self.sidecar_path = sidecar_path
+        self.map_path = map_path
         self.vertex_count = vertex_count
         self.polygon_count = polygon_count
         self.material_count = material_count

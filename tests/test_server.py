@@ -194,16 +194,39 @@ def test_no_origin_no_cors_headers(client):
 
 def test_controls_cave_zone_type_rejected(client):
     """A control-driven generate with zone_type="cave" is a 400 whose detail
-    names all three valid zone types, and nothing is written to OUTPUT_DIR
-    (M0 Req 6.7)."""
+    names the ENABLED zone types, and nothing is written to OUTPUT_DIR.
+
+    After the wave-4 gate (task 15.5) the controls path refuses any zone type
+    whose canonical form is not in ``ENABLED_ZONE_TYPES`` — ``cave`` is
+    undefined (canonicalises to None) and is refused, listing the enabled set
+    (``dungeon, city``); ``wilderness`` is DEFINED but DISABLED and therefore no
+    longer appears in that list (Req 3.3)."""
     resp = assert_no_wildcard(
         client.post("/api/generate", json={"zone_type": "cave", "rooms": ROOMS})
     )
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
-    for zt in ("dungeon", "wilderness", "city"):
-        assert zt in detail, f"detail does not name {zt!r}: {detail!r}"
+    for zt in ("dungeon", "city"):
+        assert zt in detail, f"detail does not name enabled {zt!r}: {detail!r}"
+    # Wilderness is disabled in M1, so the enabled list must not offer it.
+    assert "wilderness" not in detail, (
+        f"400 detail should not list the disabled wilderness: {detail!r}"
+    )
     # The 400 is raised before the factory runs, so no artifacts are produced.
+    assert list(app_mod.OUTPUT_DIR.iterdir()) == []
+
+
+def test_controls_wilderness_zone_type_rejected(client):
+    """A control-driven generate with zone_type="wilderness" (DEFINED but
+    DISABLED in M1) is a 400 listing the enabled set, before any write (Req
+    3.3)."""
+    resp = assert_no_wildcard(
+        client.post("/api/generate",
+                    json={"zone_type": "wilderness", "rooms": ROOMS})
+    )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert "dungeon" in detail and "city" in detail, detail
     assert list(app_mod.OUTPUT_DIR.iterdir()) == []
 
 
@@ -228,7 +251,16 @@ def test_zone_types_and_themes_listings_are_identical(client):
         "/api/themes body diverged from /api/zone_types: "
         f"{th.json()!r} != {zt.json()!r}"
     )
-    assert set(zt.json()["zone_types"]) == {"dungeon", "city", "wilderness"}
+    # The listing is one {name, enabled, reason} object per Defined zone type,
+    # in canonical order; wave 4 (task 15.5) replaced the bare name list.
+    listing = zt.json()["zone_types"]
+    assert [z["name"] for z in listing] == ["dungeon", "city", "wilderness"]
+    by_name = {z["name"]: z for z in listing}
+    assert by_name["dungeon"]["enabled"] is True
+    assert by_name["city"]["enabled"] is True
+    # Wilderness is DEFINED but DISABLED in M1 and carries a reason.
+    assert by_name["wilderness"]["enabled"] is False
+    assert by_name["wilderness"]["reason"]
 
 # ---------------------------------------------------------------------------
 # Property 18 (Req 9.3, 9.4) — foreign origins get no CORS grant
@@ -374,3 +406,51 @@ def test_generate_reports_build_commit(client):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["build_commit"] == app_mod.BUILD_INFO["short"]
+
+
+# ---------------------------------------------------------------------------
+# Per-build file route traversal guards (task 15.9, Req 4.2 / 4.3)
+# ---------------------------------------------------------------------------
+#
+# The /api/zones/{zone_id}/{version}/{filename} route (task 15.5) is strict:
+# every segment must match SEGMENT_RE and not be "..", the extension must be in
+# BUILD_FILE_EXTS, and the resolved path must stay inside OUTPUT_DIR. A
+# malformed segment or a disallowed extension is a 400; a well-formed request
+# for a file that isn't there is a 404. These are example tests covering those
+# cases on the route the 15.5 implementation actually exposes.
+
+class TestZoneFileGuards:
+    def test_disallowed_extension_is_400(self, client):
+        """A well-formed path whose extension is not in the allow-list is a 400,
+        before any file access (Req 4.3)."""
+        for filename in ("evil.py", "notes.txt", "data.jsonl"):
+            resp = assert_no_wildcard(
+                client.get(f"/api/zones/gen_abc/v1/{filename}")
+            )
+            assert resp.status_code == 400, f"{filename!r} -> {resp.status_code}: {resp.text}"
+
+    def test_bad_path_segment_is_400(self, client):
+        """A segment with a character outside SEGMENT_RE (here a space / a
+        slash-escaped parent hop) is rejected 400, never reaching the file
+        system (Req 4.3)."""
+        # A space is outside [A-Za-z0-9_.-]; the allow-list ext keeps the refusal
+        # about the segment, not the extension.
+        resp = assert_no_wildcard(
+            client.get("/api/zones/bad%20id/v1/bad%20id.glb")
+        )
+        assert resp.status_code == 400, resp.text
+
+        # A URL-encoded parent-dir hop (%2e%2e == "..") as a segment is refused:
+        # the `== ".."` guard (and the resolve-and-recheck) block traversal.
+        resp = assert_no_wildcard(
+            client.get("/api/zones/gen_abc/%2e%2e/gen_abc.glb")
+        )
+        assert resp.status_code == 400, resp.text
+
+    def test_absent_wellformed_file_is_404(self, client):
+        """A well-formed request (good segments, allowed extension) for a file
+        that does not exist is a 404, not a 400 (Req 4.2)."""
+        resp = assert_no_wildcard(
+            client.get("/api/zones/gen_missing/v1/gen_missing.glb")
+        )
+        assert resp.status_code == 404, resp.text
