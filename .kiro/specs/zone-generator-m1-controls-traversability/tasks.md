@@ -1218,7 +1218,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Also touched `generators/pipeline.py`:** `generate_validated` and `_finalize_build` gained the optional `mode` param and the Sidecar merge (the only non-`server/app.py` code change, strictly to carry `mode` to the Sidecar as the task requires).
       - **Suite:** `python -m pytest tests/ -q` → **342 passed, 1 failed** — the single failure is the known xdist CORS flake `test_foreign_origins_get_no_cors` (a hypothesis `DeadlineExceeded` timing flake under parallelism); it **passes in isolation** (`-n0` → 1 passed). Matches the 343 baseline (no test added/removed).
       - NOT verified in the live browser/3D viewer — this is a server request/response + sidecar change; the Web_App rebuild is task 17.9 and the human-gated modes pass is 18.2.
-      - Commit: `<COMMIT_HASH>`.
+      - Commit: `9576590` (content). This tracker self-reference line is recorded in a follow-up commit.
   - [ ] 17.6 Add the Server example tests
     - `tests/test_server.py`: the mode routing table; 400 for unknown mode, empty prompt and each non-integer field and kind (float, string, bool, null, list), with `OUTPUT_DIR` empty afterwards; a request carrying `target_shortname: "arena"` returns 200 with files named `<id>.*`; `mode` in the response.
     - _Requirements: 1.1, 1.3, 2.5, 8.1_
