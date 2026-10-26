@@ -1062,7 +1062,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **271 passed** (154.63 s) — the 270 baseline plus this new property; the known xdist CORS timing flake did not trip this run (it passes in isolation — not chased).
       - Touched only `tests/strategies.py`, `tests/test_properties_pipeline.py`, `server/app.py`, and this `tasks.md` entry.
       - NOT a geometry/viewer change — pins the 15.2 call-time availability reads and the 15.5 server gate analytically across arbitrary enabled subsets; no 3D pass applies.
-      - Commit: `<pending — recorded after commit>`.
+      - Commit: `05de72a` (strategies + test + the server root fix + this entry). A follow-up amend-free edit updates only this self-reference line.
   - [ ] 15.8 Enable wilderness only if its properties are green  — **DESCOPED: leave wilderness DISABLED unconditionally with `DISABLED_REASON` (its generator is deferred to `.kiro/specs/zone-generator-wilderness/`). Do NOT add wilderness to `ENABLED_ZONE_TYPES` in M1.**
     - In a commit of its own, add `wilderness` to `ENABLED_ZONE_TYPES` once wilderness P1, Property 10, Property 6 and Property 11 are green on this branch. If they aren't, leave it disabled with `DISABLED_REASON` and record why. Decision note: the design gates enabling on P20 too, but the Format_Checker is a passing stub until wave 6, so P20 for wilderness is confirmed in 20.4, which disables it again if it fails.
     - _Requirements: 3.2, 4.1, 6.3_
