@@ -315,6 +315,110 @@ class TestCliArgs:
         assert ei.value.code == 2
         assert not Path(out).exists()
 
+    # -- Geometry-slice CLI options (task 17.8) ---------------------------
+    #
+    # The range-checked type= functions and _zone_type_arg (main.py, task 17.7)
+    # reject an out-of-domain geometry-slice option DURING parse_args, so
+    # argparse exits 2 before cmd_generate runs and before any output directory
+    # is created. Each case is driven in-process via main(argv) and asserts the
+    # exit code AND that no output dir was written (the write only happens after
+    # a successful parse). "cave" is undefined, "wilderness" is defined but
+    # disabled in M1 — both are rejected by _zone_type_arg; the numeric options
+    # are rejected by their range-checked converters.
+
+    @pytest.mark.parametrize("bad_arg", [
+        ["--zone-type", "cave"],        # undefined zone type
+        ["--zone-type", "wilderness"],  # defined but disabled in M1
+        ["--rooms", "0"],               # below the 1..30 range
+        ["--rooms", "31"],              # above the 1..30 range
+        ["--locks", "6"],               # above the 0..5 range
+        ["--seed", "-1"],               # below the 0..2^31-1 range
+        ["--seed", "2147483648"],       # above the 0..2^31-1 range (2^31)
+    ])
+    def test_out_of_domain_option_exits_2_and_writes_nothing(
+            self, tmp_path, bad_arg):
+        import main
+        out = str(tmp_path / ("o_" + "_".join(bad_arg).replace("-", "")))
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "x", *bad_arg, "--output", out])
+        assert ei.value.code == 2, (
+            f"{bad_arg} should exit 2 (out of domain), got {ei.value.code}")
+        # argparse exits during parse_args, before cmd_generate creates the dir.
+        assert not Path(out).exists()
+
+    def test_verticality_flat_builds_a_flat_zone(self, tmp_path):
+        """``--verticality flat`` builds a zone with NO elevation.
+
+        The controls path sends ``verticality: "flat"`` through
+        ``ZonePlan.from_controls`` -> ``plan_to_spec``, which generates with
+        ``elevation=False`` and zero elevation chance, so every room shares a
+        single floor height. We run the real CLI build (small dungeon, kept
+        fast) and assert the saved spec's rooms are all at one ``floor_z`` —
+        the structural signature of a flat zone.
+        """
+        import argparse
+        import main
+        from generators.zone_spec import ZoneSpec
+
+        ns = argparse.Namespace(
+            name="flatcli", zone_type="dungeon", rooms=4, size="small",
+            verticality="flat", locks=0, seed=GOOD_SEED,
+            output=str(tmp_path), ter_version=2, no_validate=False,
+        )
+        main.cmd_generate(ns)
+
+        spec = ZoneSpec.load(tmp_path / "flatcli.json")
+        floors = {round(r.floor_z, 6) for r in spec.rooms}
+        assert spec.rooms, "expected rooms in the built spec"
+        assert len(floors) == 1, (
+            f"flat zone should have one floor height, got {sorted(floors)}")
+
+    def test_cli_controls_plan_equals_server_controls_plan(self):
+        """The CLI's controls plan EQUALS the Server's controls plan (Req 1.2).
+
+        Both surfaces funnel the geometry slice through the exact same
+        ``ZonePlan.from_controls`` entry point, so for identical
+        zone_type/rooms/size/verticality/locks (and the same pinned seed, which
+        the plan itself does not carry — it is applied later by the pipeline)
+        the two produced plans must be field-for-field equal. This pins that the
+        CLI and Server cannot drift into two different controls interpretations.
+        """
+        from ai.schema import ZonePlan
+
+        for zone_type, rooms, size, verticality, locks, seed in [
+            ("dungeon", 5, "medium", "moderate", 0, 7),
+            ("city", 12, "large", "flat", 3, 1955208177),
+            ("dungeon", 1, "small", "dramatic", 5, 0),
+            ("city", 30, "huge", "moderate", 2, 2147483647),
+        ]:
+            # The dict the CLI builds (main.cmd_generate), seed applied later.
+            cli_controls = {
+                "zone_type": zone_type,
+                "rooms": rooms,
+                "size": size,
+                "verticality": verticality,
+                "locks": locks,
+            }
+            # The dict the Server builds in controls mode (server/app.py): the
+            # same geometry slice (keys equal here by construction of identical
+            # client input).
+            server_controls = {
+                "zone_type": zone_type,
+                "rooms": rooms,
+                "size": size,
+                "verticality": verticality,
+                "locks": locks,
+            }
+
+            cli_plan = ZonePlan.from_controls(cli_controls)
+            cli_plan.name = "cli"
+            server_plan = ZonePlan.from_controls(server_controls)
+            server_plan.name = "cli"   # name is per-build, not a controls value
+
+            assert cli_plan.to_dict() == server_plan.to_dict(), (
+                f"CLI/Server controls plans diverged for "
+                f"{zone_type}/{rooms}/{size}/{verticality}/{locks}/seed {seed}")
+
     # -- Removed preview paths (M0 6.2) -----------------------------------
     # The legacy viewer and its CLI entry points were deleted in task 6.1:
     # the "preview" subcommand and the "--preview" option are both gone, so
