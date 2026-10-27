@@ -1425,7 +1425,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Suite:** `python -m pytest tests/ -q` → **425 passed** (379.83 s; the known xdist CORS timing flake `test_foreign_origins_get_no_cors` did not trip this run — it passes in isolation at `-n0`, reconfirmed). Effective baseline 421 + 3 new tests + the occasionally-flaky CORS test passing. Touched-module focused run at `-n0` (`test_pipeline`/`test_generators`/`test_paths`/`test_server`/`test_hygiene`/`test_properties_pipeline`) → **191 passed**.
       - NOT verified in the live 3D viewer — this is filesystem-confinement plumbing (writes/moves/removes rerouted, refusal added), not geometry; a normal build produces the same artifacts in the same place. The Property-15 writes-confined audit-hook test (20.7) and the confinement/key/format example tests (20.8) are separate tasks that will pin the invariant.
       - Touched only `core/eqg.py`, `generators/builder.py`, `generators/pipeline.py`, `main.py`, `server/app.py`, `tests/test_pipeline.py`, `tests/test_server.py`, and this `tasks.md` entry.
-      - Commit: `__PENDING__` (code + tests + this entry; this self-reference line is updated in a follow-up amend-free edit).
+      - Commit: `88fbb8d` (code + tests + this entry; this self-reference line is updated in this follow-up amend-free edit).
 
 - [ ] 20. Tier-1 format check in the gate
   - [x] 20.1 Add the non-raising PFS directory reader
