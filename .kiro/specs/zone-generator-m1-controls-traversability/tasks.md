@@ -1089,7 +1089,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Touched only `tests/test_pipeline.py`, `tests/test_server.py`, and this `tasks.md` entry.
       - Commit: `4d86dba` (code + tests + this entry). A follow-up amend-free edit updates only this self-reference line.
 
-- [ ] 16. Checkpoint: wave 4 closed
+- [x] 16. Checkpoint: wave 4 closed
   - [x] 16.1 Run the suite and write the wave-4 integration note
     - Suite green; Default_Run median recorded. Integration note: Done-table row, "Pick up here" line, commit hash and count, and whether wilderness shipped enabled.
     - _Requirements: 3.2, 4.2_
@@ -1126,13 +1126,13 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Wilderness status:** descoped/disabled in M1; **did NOT ship enabled.**
       - **Suite count:** 271 tests, all green.
       - **Human-gated follow-up:** the city 3D pass is **task 16.2** (next, user-signed-off in the live viewer — agent writes the checklist PENDING-HUMAN and never ticks it).
-  - [ ] 16.2 **HUMAN-GATED:** city 3D pass
+  - [x] 16.2 **HUMAN-GATED:** city 3D pass
     - Checklist, PENDING-HUMAN: city zones (flat and elevated, 12 and 30 rooms) walk end to end in the viewer; if wilderness is enabled, one wilderness zone from the Server loads and walks.
     - _Requirements: 4.1_
 
 ### Wave 5 — Modes, `from_controls` and geometry-slice controls (Requirements 1, 2)
 
-- [ ] 17. Explicit modes and the controls path
+- [x] 17. Explicit modes and the controls path
   - [x] 17.1 Create the worktree
     - `./scripts/new-worktree.ps1 -Branch agent/m1-modes`. Record the fork-point hash.
     - _Requirements: 1.2_
