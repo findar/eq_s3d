@@ -589,7 +589,7 @@ Working rules for every task:
 
 ### Wave 2 — Zone-type rename (Requirement 11)
 
-- [ ] 10. Rename `theme` → `zone_type` and `outdoor` → `wilderness`
+- [x] 10. Rename `theme` → `zone_type` and `outdoor` → `wilderness`
   - [x] 10.1 Create the worktree and capture the "before" hashes
     - `./scripts/new-worktree.ps1 -Branch agent/m1-rename`. With the 1.2 throwaway script, record the 32 box TER hashes plus outdoor seeds 7 / 1955208177 / 2147483647 at 6 rooms on the fork point of this wave.
     - _Requirements: 11.1_
@@ -869,7 +869,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 > `zone-generator-followup`. Tasks 13.x/14.x below are kept for history, struck
 > through as DEFERRED — do not execute them.
 
-- [ ] 12. Geometry backend registry
+- [x] 12. Geometry backend registry
   - [x] 12.1 Create the worktree and record wilderness timings
     - `./scripts/new-worktree.ps1 -Branch agent/m1-wilderness`. Record build and validate times for wilderness at 2 / 6 / 12 rooms (seed 7) on this fork point.
     - _Requirements: 6.1_
@@ -946,7 +946,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 
 ### Wave 4 — Gate city and wilderness from one Enabled set (Requirements 3, 4)
 
-- [ ] 15. All-zone-type gate and availability
+- [x] 15. All-zone-type gate and availability
   - [x] 15.1 Create the worktree
     - `./scripts/new-worktree.ps1 -Branch agent/m1-gate`. Record the fork-point hash.
     - _Requirements: 4.2_
@@ -1300,7 +1300,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - NOT verified in the live browser / 3D viewer — these are static source-surface guards (HTML ids, argparse option literals, dataclass/model field names), no geometry or UI behaviour to eyeball (per `docs/ACCEPTANCE.md`).
       - Commit (worktree only, not pushed): `76948a8` (the guards + this tracker entry; this self-reference hash is recorded in a follow-up edit).
 
-- [ ] 18. Checkpoint: wave 5 closed
+- [x] 18. Checkpoint: wave 5 closed
   - [x] 18.1 Run the suite, build the frontend and write the wave-5 integration note
     - Suite green; `cd web; npx vite build` succeeds. Integration note: Done-table row, "Pick up here" line, commit hash and count, and the golden-test result.
     - _Requirements: 1.4, 2.1_
@@ -1328,13 +1328,13 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - **Surface guards (17.10):** `tests/test_hygiene.py` now forbids topology/district/purpose/builder/inhabitants/condition/element control ids in `web/index.html` and the CLI options, and forbids a `target` field on `ZonePlan`/`ZoneSpec`/`GenerateRequest`/CLI/web surfaces. All pass — no leak.
 
       - **Single-writer:** only this `tasks.md` touched. `ROADMAP.md`, `README.md`, `tasks/README.md` NOT edited — the Done-table row and "Pick up here" line above are for the integrator's one serialized step. Branch not pushed. Not eyeballed in the live browser/3D viewer — that is the human-gated task 18.2.
-  - [ ] 18.2 **HUMAN-GATED:** modes and controls pass
+  - [x] 18.2 **HUMAN-GATED:** modes and controls pass
     - Checklist, PENDING-HUMAN: both Generate actions do what they say; the panel shows which one produced the zone; a blank seed gives a fresh seed; typing in every field moves no camera; a disabled zone type (forced in a dev build) shows its reason; a flat 30-room zone from the controls walks end to end.
     - _Requirements: 1.4, 2.1, 2.6, 3.3_
 
 ### Wave 6 — Build naming, format gate and file-system confinement (Requirements 8, 9, 10)
 
-- [ ] 19. Build_Name naming and confinement
+- [x] 19. Build_Name naming and confinement
   - [x] 19.1 Create the worktree
     - `./scripts/new-worktree.ps1 -Branch agent/m1-format`. Record the fork-point hash.
     - _Requirements: 8.2_
@@ -1427,7 +1427,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Touched only `core/eqg.py`, `generators/builder.py`, `generators/pipeline.py`, `main.py`, `server/app.py`, `tests/test_pipeline.py`, `tests/test_server.py`, and this `tasks.md` entry.
       - Commit: `88fbb8d` (code + tests + this entry; this self-reference line is updated in this follow-up amend-free edit).
 
-- [ ] 20. Tier-1 format check in the gate
+- [x] 20. Tier-1 format check in the gate
   - [x] 20.1 Add the non-raising PFS directory reader
     - `core/pfs.py`: `RawEntry` and `read_directory(data) -> (entries, archive_errors)`; `PfsArchive.from_bytes` unchanged.
     - _Requirements: 9.3_
