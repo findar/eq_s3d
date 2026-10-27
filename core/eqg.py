@@ -10,11 +10,35 @@ Also provides GLB export for the browser preview viewer.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 
 from .pfs import PfsArchive
 from .ter import TerFile
 from .zon import ZonFile
+
+if TYPE_CHECKING:  # avoid a runtime import cycle; only needed for typing.
+    from .paths import OutputRoot
+
+
+def _checked_parent(path: Path, root: Optional["OutputRoot"]) -> Path:
+    """Resolve ``path``, confining it to ``root`` and creating its parent.
+
+    When ``root`` is given, the path is asserted to lie inside the
+    Output_Directory (``OutputRoot.path`` raises ``OutsideOutputError`` on an
+    escaping path) BEFORE the parent directory is created or anything is
+    written. When ``root`` is ``None`` the path is used as-is (the legacy,
+    unconfined behaviour kept for direct callers/tests). Returns the path whose
+    parent now exists.
+    """
+    out_path = Path(path)
+    if root is not None:
+        # ``OutputRoot.path`` joins onto the root (an absolute part replaces the
+        # root via ``joinpath``) and asserts the result lies inside it — so an
+        # absolute path already under the root passes, and an escaping one
+        # raises ``OutsideOutputError`` before any mkdir/write.
+        out_path = root.path(str(out_path))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -93,10 +117,15 @@ class EqgZone:
 
         return arc
 
-    def write(self, path: str | Path) -> Path:
-        """Write the .eqg archive to *path*."""
-        out_path = Path(path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+    def write(self, path: str | Path,
+              root: Optional["OutputRoot"] = None) -> Path:
+        """Write the .eqg archive to *path*.
+
+        When *root* is given the path is confinement-checked against the
+        Output_Directory (``OutsideOutputError`` on an escaping path, before any
+        write); when ``None`` the path is used as-is (legacy direct callers).
+        """
+        out_path = _checked_parent(path, root)
         self.build_archive().write_file(out_path)
         return out_path
 
@@ -109,7 +138,8 @@ class EqgZone:
                   room_pacing: Optional[list] = None,
                   gates: Optional[list] = None,
                   content: Optional[dict] = None,
-                  zone_type: Optional[str] = None) -> Optional[Path]:
+                  zone_type: Optional[str] = None,
+                  root: Optional["OutputRoot"] = None) -> Optional[Path]:
         """
         Export the zone terrain as a GLB file for browser preview.
 
@@ -175,14 +205,17 @@ class EqgZone:
                     vertex_colors[vi] = rgba
         mesh.visual.vertex_colors = vertex_colors
 
-        out_path = Path(path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        # Confinement-check (and create the parent of) the GLB path before
+        # trimesh writes it; trimesh writes only to this one checked path.
+        out_path = _checked_parent(path, root)
         mesh.export(str(out_path))
 
         # Emit a companion .zone.json sidecar carrying lights, regions, and
         # metadata so the browser viewer can render overlays. Named
-        # <zone>.zone.json next to the GLB.
-        self._write_glb_sidecar(out_path, room_pacing, gates, content, zone_type)
+        # <zone>.zone.json next to the GLB (its parent is already created and
+        # confined, so it rides inside the same Output_Directory).
+        self._write_glb_sidecar(out_path, room_pacing, gates, content,
+                                zone_type, root=root)
 
         return out_path
 
@@ -262,19 +295,21 @@ class EqgZone:
                       rooms: Optional[list] = None,
                       gates: Optional[list] = None,
                       content: Optional[dict] = None,
-                      extra: Optional[dict] = None) -> Path:
+                      extra: Optional[dict] = None,
+                      root: Optional["OutputRoot"] = None) -> Path:
         """Write the ``<name>.zone.json`` sidecar to *path*.
 
         Standalone writer used by the build path on EVERY build (not only when
         a GLB is exported). Produces the same dict shape as the GLB-export
         sidecar via the shared ``_build_sidecar_dict`` helper, then merges
         *extra* for pipeline fields (format/warnings/validated/attempts/seed)
-        and the ``zone_type`` top-level key. Returns the written path.
+        and the ``zone_type`` top-level key. When *root* is given the path is
+        confinement-checked against the Output_Directory. Returns the written
+        path.
         """
         import json
 
-        out_path = Path(path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = _checked_parent(path, root)
         data = self._build_sidecar_dict(
             rooms=rooms, gates=gates, content=content, extra=extra,
         )
@@ -284,7 +319,8 @@ class EqgZone:
     def _write_glb_sidecar(self, glb_path: Path, room_pacing: Optional[list] = None,
                            gates: Optional[list] = None,
                            content: Optional[dict] = None,
-                           zone_type: Optional[str] = None) -> None:
+                           zone_type: Optional[str] = None,
+                           root: Optional["OutputRoot"] = None) -> None:
         """Write a <name>.zone.json next to the GLB with lights/regions/metrics."""
         import json
 
@@ -294,6 +330,7 @@ class EqgZone:
 
         sidecar = glb_path.with_suffix("")  # strip .glb
         sidecar = sidecar.with_suffix(".zone.json")
+        sidecar = _checked_parent(sidecar, root)
         sidecar.write_text(json.dumps(data, indent=2))
 
     def __repr__(self) -> str:

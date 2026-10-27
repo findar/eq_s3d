@@ -768,3 +768,98 @@ def test_no_target_field_on_any_surface():
     assert not web_offenders, (
         f"web/index.html has a target control id: {sorted(web_offenders)}"
     )
+
+
+# ======================================================================
+# Format-checker / Sidecar hygiene (task 20.8, Req 9.4)
+# ======================================================================
+#
+# Two deliberate absences the M1 design pins:
+#   * the Format_Checker drops the umbrella ``normals_resolve`` check (Req 9.4,
+#     deferred to M3 with normal maps) — it must not appear in the checker's
+#     CHECK_NAMES tuple nor anywhere in analyzer/rof2check.py source; and
+#   * nothing writes a legacy ``shortname`` key into the Sidecar (task 19.4) —
+#     a freshly built zone's ``.zone.json`` carries no ``shortname``.
+#
+# These name the tokens literally; this module is excluded from the generic
+# ``*.py`` token scans above (``_THIS_REL``), and the cave/viewer scanners only
+# look for their own specific tokens, so a literal here trips nothing.
+
+_TOK_NORMALS_RESOLVE = "normals_resolve"
+_TOK_SHORTNAME = "shortname"
+
+
+def test_rof2check_has_no_normals_resolve():
+    """``analyzer/rof2check.py`` defines no ``normals_resolve`` check (Req 9.4).
+
+    The umbrella RoF2 format check had a ``normals_resolve`` check; M1 drops it
+    deliberately (the normal-map format check is deferred to M3). Assert it is
+    absent BOTH from the public ``CHECK_NAMES`` tuple (the single source of
+    truth) and from the report of a built zone — and, belt-and-suspenders, that
+    the token does not appear as a check-name string literal in the module.
+    """
+    from analyzer.rof2check import CHECK_NAMES, check_eqg
+
+    assert _TOK_NORMALS_RESOLVE not in CHECK_NAMES, (
+        f"rof2check CHECK_NAMES must not include {_TOK_NORMALS_RESOLVE!r}: "
+        f"{CHECK_NAMES}"
+    )
+
+    # Build a small dungeon and run the checker; the report's check names must
+    # not contain normals_resolve either (CHECK_NAMES is the source, but this
+    # pins the actual produced report too).
+    spec = LayoutGenerator(zone_type="dungeon", seed=7).generate(
+        "normchk", room_count=4)
+    with tempfile.TemporaryDirectory() as d:
+        from generators.builder import ZoneBuilder
+        result = ZoneBuilder(spec).build(output_dir=d, write_glb=False)
+        report = check_eqg(Path(result.eqg_path), spec)
+    report_names = {c.name for c in report.checks}
+    assert _TOK_NORMALS_RESOLVE not in report_names, (
+        f"a built-zone format report must not include {_TOK_NORMALS_RESOLVE!r}: "
+        f"{sorted(report_names)}"
+    )
+
+    # The token must not appear as a quoted check-name in the module source.
+    src = _read("analyzer/rof2check.py")
+    quoted = (f'"{_TOK_NORMALS_RESOLVE}"', f"'{_TOK_NORMALS_RESOLVE}'")
+    for q in quoted:
+        assert q not in src, (
+            f"rof2check source still names a {_TOK_NORMALS_RESOLVE!r} check: {q}"
+        )
+
+
+def test_sidecar_has_no_shortname_key():
+    """A freshly built zone's Sidecar carries no legacy ``shortname`` key.
+
+    task 19.4 dropped the legacy ``shortname`` on load and writes none; the
+    Sidecar names the zone by its Build_Name ``name`` only. Build a real dungeon
+    and assert the written ``.zone.json`` dict (recursively) has no
+    ``shortname`` key, while the ``name`` key is present and equals the
+    (lower-cased) Build_Name.
+    """
+    import json
+
+    from generators.builder import ZoneBuilder
+
+    spec = LayoutGenerator(zone_type="dungeon", seed=7).generate(
+        "snchk", room_count=4)
+    with tempfile.TemporaryDirectory() as d:
+        result = ZoneBuilder(spec).build(output_dir=d, write_glb=False)
+        sidecar = json.loads(Path(result.sidecar_path).read_text(encoding="utf-8"))
+
+    def _has_key(obj, key):
+        if isinstance(obj, dict):
+            if key in obj:
+                return True
+            return any(_has_key(v, key) for v in obj.values())
+        if isinstance(obj, list):
+            return any(_has_key(v, key) for v in obj)
+        return False
+
+    assert not _has_key(sidecar, _TOK_SHORTNAME), (
+        f"the Sidecar must not carry a {_TOK_SHORTNAME!r} key: {sidecar}"
+    )
+    assert sidecar.get("name") == "snchk", (
+        f"the Sidecar should name the zone by its Build_Name: {sidecar.get('name')!r}"
+    )

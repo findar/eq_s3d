@@ -15,10 +15,10 @@ any failure so planning never breaks.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Optional
 
+from core.env import env_value
 from generators.zone_spec import ZoneSpec
 from .schema import ZonePlan
 from .rule_planner import RulePlanner
@@ -28,11 +28,28 @@ from .expand import plan_to_spec
 _forced = None  # test override
 
 
+def _redacted_error(exc: Exception) -> str:
+    """Describe an exception without leaking a key, URL or response body.
+
+    LLM SDK exceptions (``openai``/``anthropic``) stringify to the request URL
+    and the response body, which can echo the prompt or an auth header. We log
+    only the exception TYPE and, if the SDK attached one, the HTTP status code —
+    never ``str(exc)``.
+    """
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+    if status is not None:
+        return f"{type(exc).__name__} (HTTP {status})"
+    return type(exc).__name__
+
+
 def get_planner(prefer_llm: bool = True):
     """Return the best available planner."""
     if _forced is not None:
         return _forced
-    override = os.environ.get("EQ_S3D_PLANNER", "").lower()
+    override = (env_value("EQ_S3D_PLANNER") or "").lower()
     if override == "rule":
         return RulePlanner()
     if override == "llm":
@@ -60,7 +77,8 @@ def make_plan(prompt: str, name: str = "zone") -> ZonePlan:
         return planner.plan(prompt, name=name)
     except Exception as e:
         if planner.name != "rule":
-            print(f"[planner] {planner.name} failed ({e}); falling back to rule planner")
+            print(f"[planner] {planner.name} failed ({_redacted_error(e)}); "
+                  f"falling back to rule planner")
             return RulePlanner().plan(prompt, name=name)
         raise
 

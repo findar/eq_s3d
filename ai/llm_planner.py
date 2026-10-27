@@ -14,9 +14,9 @@ error) raises so the factory can fall back.
 from __future__ import annotations
 
 import json
-import os
 from typing import Optional
 
+from core.env import env_value
 from .schema import ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_ZONE_TYPES
 
 
@@ -42,8 +42,8 @@ class LLMPlanner:
     name = "llm"
 
     def __init__(self):
-        self.openai_key = os.environ.get("OPENAI_API_KEY")
-        self.anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+        self.openai_key = env_value("OPENAI_API_KEY")
+        self.anthropic_key = env_value("ANTHROPIC_API_KEY")
 
     def available(self) -> bool:
         return bool(self.openai_key or self.anthropic_key)

@@ -463,3 +463,223 @@ def ref_crc(name: str) -> int:
             else:
                 crc = (crc << 1) & 0xFFFFFFFF
     return crc & 0xFFFFFFFF
+
+
+# ---------------------------------------------------------------------------
+# M1-P6 filesystem-confinement audit (Property 15)
+# ---------------------------------------------------------------------------
+#
+# ``write_audit`` installs ONE module-level ``sys.addaudithook`` (audit hooks
+# can never be removed, so it is added exactly once and guarded by a module
+# flag) that records the path argument of every WRITE-side filesystem audit
+# event while recording is enabled, and is completely inert otherwise. The
+# Property-15 test turns recording on around a single ``generate_validated``
+# call and then asserts every recorded path resolved inside the
+# Output_Directory.
+#
+# Audit events (CPython runtime audit events) and the path argument we capture:
+#   * ``open``            (path, mode, flags) — recorded only when ``mode``
+#                         contains a write/append/create/truncate intent
+#                         (``w`` ``a`` ``x`` ``+``) or the raw ``os.open`` flags
+#                         request write/create/truncate; a pure read ``open`` is
+#                         ignored.
+#   * ``os.rename``       (src, dst)   — both endpoints recorded.
+#   * ``os.replace``      — CPython emits this under the ``os.rename`` event.
+#   * ``os.mkdir``        (path, mode) — recorded.
+#   * ``os.remove``       (path)       — recorded (``os.unlink`` emits this too).
+#   * ``os.rmdir``        (path)       — recorded.
+#   * ``shutil.rmtree``   (path)       — recorded (not used by the confined
+#                         pipeline, but watched so a regression that reaches for
+#                         it is caught).
+#   * ``pathlib.Path.*``  — ``Path.write_bytes`` / ``write_text`` / ``mkdir`` /
+#                         ``unlink`` / ``rename`` / ``replace`` all go through the
+#                         ``open`` / ``os.*`` events above at the C level, so they
+#                         are covered without a separate hook.
+#
+# Only the WRITE side is watched (design: "records ``open`` in a write mode,
+# ``os.rename``, ``os.replace``, ``os.remove``, ``os.rmdir``, ``shutil.rmtree``
+# and ``os.mkdir``"); a read-only ``open`` is deliberately not recorded so the
+# hook does not drown the measured region in every stat/read the build performs.
+
+import os as _os
+import sys as _sys
+import threading as _threading
+from pathlib import Path
+
+# Write-intent character classes for a text ``open`` mode string.
+_WRITE_MODE_CHARS = frozenset("waxWAX+")
+
+# The os.open integer-flag bits that mean "this descriptor can be written".
+_WRITE_OPEN_FLAGS = (
+    _os.O_WRONLY | _os.O_RDWR | _os.O_APPEND | _os.O_CREAT | _os.O_TRUNC
+    | getattr(_os, "O_EXCL", 0)
+)
+
+#: Module-level recording state for the single audit hook. ``enabled`` gates
+#: recording (the hook is inert when False); ``paths`` accumulates the recorded
+#: write paths; ``lock`` guards both so a threaded server request is safe.
+_AUDIT_STATE = {
+    "enabled": False,
+    "paths": [],  # type: List[str]
+    "installed": False,
+}
+_AUDIT_LOCK = _threading.Lock()
+
+
+def _audit_is_write_open(args) -> bool:
+    """Whether an ``open`` audit event's ``(path, mode, flags)`` is a write."""
+    # args is (path, mode, flags). mode is a str like "w"/"rb"/"a+" or None;
+    # flags is the integer passed to os.open (0 for the builtin open with a
+    # mode string).
+    mode = args[1] if len(args) > 1 else None
+    flags = args[2] if len(args) > 2 else 0
+    if isinstance(mode, str) and any(c in _WRITE_MODE_CHARS for c in mode):
+        return True
+    if isinstance(flags, int) and (flags & _WRITE_OPEN_FLAGS):
+        return True
+    return False
+
+
+# Audit events whose FIRST argument is a path we always record when they fire
+# in the measured region (write-side mutations).
+_PATH_EVENTS = frozenset({
+    "os.mkdir", "os.rmdir", "os.remove", "os.unlink", "shutil.rmtree",
+    "shutil.copyfile", "shutil.copytree", "shutil.move",
+})
+# Rename/replace carry TWO paths (src, dst); CPython emits os.replace under the
+# os.rename event name.
+_RENAME_EVENTS = frozenset({"os.rename", "os.replace", "os.link", "os.symlink"})
+
+
+def _audit_hook(event: str, args) -> None:
+    """The one module-level audit hook. Inert unless recording is enabled.
+
+    Appends the path(s) of each write-side event to ``_AUDIT_STATE['paths']``
+    while ``enabled`` is set. Never raises (an audit hook that raises would
+    abort the audited operation), and does the cheapest possible check first so
+    it adds no measurable cost outside the measured region.
+    """
+    if not _AUDIT_STATE["enabled"]:
+        return
+    try:
+        if event == "open":
+            if _audit_is_write_open(args):
+                _audit_record(args[0] if args else None)
+            return
+        if event in _RENAME_EVENTS:
+            for target in args[:2]:
+                _audit_record(target)
+            return
+        if event in _PATH_EVENTS:
+            _audit_record(args[0] if args else None)
+            return
+    except Exception:
+        # Never abort the audited operation because of a hook hiccup.
+        return
+
+
+def _audit_record(target) -> None:
+    """Append ``target`` to the recorded paths as a ``str`` filesystem path.
+
+    Skips ``None`` and integer file descriptors (not a confine-checkable path);
+    decodes a bytes path to ``str``. Anything else is coerced through
+    ``os.fspath`` and ``str``.
+    """
+    if target is None or isinstance(target, int):
+        return
+    try:
+        p = _os.fspath(target)
+    except TypeError:
+        return
+    if isinstance(p, bytes):
+        p = _os.fsdecode(p)
+    _AUDIT_STATE["paths"].append(str(p))
+
+
+def _ensure_audit_installed() -> None:
+    """Install the single audit hook exactly once (idempotent, thread-safe)."""
+    with _AUDIT_LOCK:
+        if not _AUDIT_STATE["installed"]:
+            _sys.addaudithook(_audit_hook)
+            _AUDIT_STATE["installed"] = True
+
+
+@contextlib.contextmanager
+def write_audit():
+    """Record every WRITE-side filesystem path while the block runs.
+
+    Installs the one module-level audit hook on first use (it can never be
+    removed, so it is guarded to install once and stays inert outside this
+    block), clears the recorded-path list, enables recording for the duration
+    of the ``with`` block, and yields an object with a ``.paths`` property
+    returning the list of recorded paths (as strings) captured so far. Recording
+    is disabled again on exit, so the hook adds no cost to the rest of the suite.
+
+    Usage::
+
+        with write_audit() as audit:
+            ... # run the measured region
+        for p in audit.paths:
+            assert inside_output_dir(p)
+    """
+    _ensure_audit_installed()
+
+    class _Recorder:
+        @property
+        def paths(self):
+            # A copy so callers can iterate while (in principle) more is added.
+            return list(_AUDIT_STATE["paths"])
+
+    with _AUDIT_LOCK:
+        _AUDIT_STATE["paths"] = []
+        _AUDIT_STATE["enabled"] = True
+    try:
+        yield _Recorder()
+    finally:
+        with _AUDIT_LOCK:
+            _AUDIT_STATE["enabled"] = False
+
+
+# ---------------------------------------------------------------------------
+# Fake EQ install (M1-P6 untouched-install check)
+# ---------------------------------------------------------------------------
+
+import hashlib as _hashlib
+
+
+def fake_install(tmp) -> Path:
+    """Create a small fake EQ install directory tree under ``tmp``.
+
+    Writes a handful of files with known contents (mimicking an EQ_PATH install:
+    a couple of top-level archives and a nested subdirectory) and returns the
+    install root. Pair with :func:`snapshot_install` to assert the install is
+    byte-for-byte UNCHANGED across a generate call (Property 15 / Req 10.2:
+    nothing is ever written into or over the EQ_PATH install).
+    """
+    root = Path(tmp) / "fake_eq_install"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "gfaydark.s3d").write_bytes(b"S3D\x00" + b"fake zone archive bytes" * 4)
+    (root / "qeynos.eqg").write_bytes(b"PFS \x00" + bytes(range(64)))
+    (root / "spells_us.txt").write_text("1|Fake Spell|0|0|\n", encoding="utf-8")
+    nested = root / "maps"
+    nested.mkdir(exist_ok=True)
+    (nested / "qeynos.map").write_text("L 0 0 0 1 1 1 255 255 255\n", encoding="utf-8")
+    return root
+
+
+def snapshot_install(root: Path):
+    """A snapshot of ``root``'s tree: ``{relpath: (size, sha256)}`` per file.
+
+    Captures every file under ``root`` (relative path, byte size, and SHA-256 of
+    its contents) so two snapshots — before and after a generate call — can be
+    compared for exact equality. Any added, removed, resized or rewritten file
+    makes the two snapshots differ.
+    """
+    root = Path(root)
+    snap: Dict[str, Tuple[int, str]] = {}
+    for p in sorted(root.rglob("*")):
+        if p.is_file():
+            data = p.read_bytes()
+            rel = str(p.relative_to(root)).replace("\\", "/")
+            snap[rel] = (len(data), _hashlib.sha256(data).hexdigest())
+    return snap

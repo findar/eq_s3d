@@ -11,11 +11,13 @@ This is the single entry point the CLI and (later) the AI agent call.
 
 from __future__ import annotations
 
+import re
 import zlib
 from pathlib import Path
 from typing import Optional, Tuple
 
 from core.eqg import EqgZone
+from core.paths import OutputRoot
 from core.zon import ZonFile, ZonLight, ZonRegion
 from core.ter import TerFile
 from .zone_spec import ZoneSpec
@@ -27,6 +29,14 @@ _REGION_PREFIX = {
     "water": "AWT", "lava": "ALV", "pvp": "APK",
     "zoneline": "ATP", "ice": "ASL", "generic": "APV",
 }
+
+# The Build_Name alphabet (umbrella glossary; design "Build_Name artifact
+# naming", Req 8.1/8.2). Every artifact a build writes — the ``.eqg`` archive,
+# its ``ter_<name>.ter`` / ``<name>.zon`` entries, the ZON model reference, the
+# ``.glb``, the ``.zone.json`` Sidecar and the ``.map.svg`` — is named by this
+# ONE stem, so a bad name can never reach a file (``ZoneBuilder.build`` checks
+# it with ``fullmatch`` and raises ``ValueError`` *before* any write).
+BUILD_NAME_RE = re.compile(r"[a-z0-9_]+")
 
 
 def _stable_seed(*parts) -> int:
@@ -69,10 +79,25 @@ class ZoneBuilder:
               output_dir: str | Path = "output",
               write_glb: bool = True,
               ter_version: int = 2) -> "BuildResult":
-        out_dir = Path(output_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-
+        # Build_Name gate (Req 8.2): validate BEFORE any mkdir / write, so an
+        # invalid name produces no partial output. The Build_Name is the one
+        # stem every artifact is named by.
         name = self.spec.name.lower()
+        if not BUILD_NAME_RE.fullmatch(name):
+            raise ValueError(
+                f"invalid Build_Name {self.spec.name!r}: must match "
+                f"{BUILD_NAME_RE.pattern} (lower-case a-z, 0-9, underscore)"
+            )
+
+        # Every write this build performs is routed through an ``OutputRoot``
+        # (Req 10.1): a path that resolves outside ``output_dir`` raises
+        # ``OutsideOutputError`` and nothing is written. ``out_dir`` is the
+        # resolved root; the artifact paths below are built from it so they are
+        # inside by construction, but ``EqgZone``/the sidecar/map writers are
+        # handed the ``OutputRoot`` so the check is enforced at the write.
+        root = OutputRoot(output_dir)
+        out_dir = root.mkdir()
+
         ter_filename = f"ter_{name}.ter"
 
         # 1. Geometry → TER (named ter_<zone> per RoF2 convention).
@@ -103,9 +128,9 @@ class ZoneBuilder:
             )
             eqg.add_texture(mat_spec.texture, dds)
 
-        # 5. Pack .eqg
+        # 5. Pack .eqg (confinement-checked through the OutputRoot).
         eqg_path = out_dir / f"{name}.eqg"
-        eqg.write(eqg_path)
+        eqg.write(eqg_path, root=root)
 
         # Advisory pacing/gating + content layer for the sidecar. These ride
         # in the .zone.json sidecar (and the GLB sidecar), never in the binary.
@@ -152,7 +177,8 @@ class ZoneBuilder:
             result = eqg.write_glb(glb_path, material_colors=mat_colors,
                                    room_pacing=room_pacing, gates=gates,
                                    content=content_meta,
-                                   zone_type=self.spec.zone_type)
+                                   zone_type=self.spec.zone_type,
+                                   root=root)
             if result is None:
                 glb_path = None  # trimesh not available
 
@@ -168,13 +194,15 @@ class ZoneBuilder:
             gates=gates,
             content=content_meta,
             extra={"zone_type": self.spec.zone_type},
+            root=root,
         )
 
         # 8. Top-down schematic map (SVG sidecar) for the UI "Map" view —
-        #    written on every build so the Pipeline can locate it.
+        #    written on every build so the Pipeline can locate it. Routed
+        #    through the OutputRoot like every other artifact.
         from .mapview import render_map_svg
         map_path = out_dir / f"{name}.map.svg"
-        map_path.write_text(render_map_svg(self.spec), encoding="utf-8")
+        root.write_text(map_path.name, render_map_svg(self.spec))
 
         return BuildResult(
             spec=self.spec,
@@ -242,9 +270,12 @@ class ZoneBuilder:
     def _build_zon(self, ter_filename: str) -> ZonFile:
         zon = ZonFile()
 
-        # The terrain mesh is the ZON's first model (RoF2 convention).
-        # Stored uppercase to match how the client references it.
-        zon.models.append(ter_filename.upper().replace(".TER", ".TER"))
+        # The terrain mesh is the ZON's first model (RoF2 convention):
+        # ``TER_<NAME>.TER`` — the Build_Name upper-cased, the ONLY uppercase
+        # form of the stem (design "Build_Name artifact naming", Req 8.2). The
+        # ``ter_filename`` is already ``ter_<name>.ter`` so upper-casing it
+        # yields exactly ``TER_<NAME>.TER``.
+        zon.models.append(ter_filename.upper())
 
         for light in self.spec.lights:
             zon.lights.append(ZonLight(

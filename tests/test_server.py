@@ -94,6 +94,60 @@ def test_main_binds_host_and_port(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# 10.2 — EQ_PATH refusal: importing server.app with an overlapping EQ_PATH
+# must raise, so the server never starts (task 19.5).
+# ---------------------------------------------------------------------------
+
+def test_import_refuses_when_eq_path_overlaps_output(tmp_path):
+    """Importing ``server.app`` with EQ_PATH containing OUTPUT_DIR raises.
+
+    ``assert_output_allowed(OUTPUT_DIR, env_value("EQ_PATH"))`` runs at IMPORT
+    time, before ``OUTPUT_DIR.mkdir`` — so an EQ_PATH that contains the output
+    tree makes the import raise ``OutsideOutputError`` and uvicorn can never
+    load the app. We run the import in a fresh subprocess (the module is already
+    imported in-process) with EQ_PATH pointed at the repo root, which contains
+    the server's ``output/web`` OUTPUT_DIR.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path as _P
+
+    repo_root = _P(app_mod.__file__).resolve().parent.parent
+    env = dict(**{k: v for k, v in __import__("os").environ.items()})
+    env["EQ_PATH"] = str(repo_root)   # contains output/web -> overlap
+
+    proc = subprocess.run(
+        [sys.executable, "-c", "import server.app"],
+        cwd=str(repo_root), env=env, capture_output=True, text=True,
+    )
+    assert proc.returncode != 0, "import should fail with an overlapping EQ_PATH"
+    assert "OutsideOutputError" in proc.stderr, proc.stderr
+
+
+def test_import_ok_when_eq_path_disjoint(tmp_path):
+    """Importing ``server.app`` with a disjoint (or unset) EQ_PATH succeeds.
+
+    The refusal must not disturb the normal case: a disjoint EQ_PATH (and, by
+    construction, an unset one) leaves the import working so the test suite's
+    own ``import server.app`` keeps functioning (task 19.5).
+    """
+    import subprocess
+    import sys
+    from pathlib import Path as _P
+
+    repo_root = _P(app_mod.__file__).resolve().parent.parent
+    env = dict(**{k: v for k, v in __import__("os").environ.items()})
+    env["EQ_PATH"] = str(tmp_path / "somewhere_else")   # disjoint
+
+    proc = subprocess.run(
+        [sys.executable, "-c", "import server.app; print('ok')"],
+        cwd=str(repo_root), env=env, capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "ok" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
 # 9.2 — ACAO echoed byte-identically for each allowed origin
 # ---------------------------------------------------------------------------
 

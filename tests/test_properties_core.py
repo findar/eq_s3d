@@ -17,6 +17,8 @@ Properties in this module:
 M1 property added here (``.kiro/specs/zone-generator-m1-controls-traversability``):
   * M1-P4 — the faster walk surface has the same reachability as the fork-point
     reference (``test_walk_surface_equivalence``).
+  * M1-P5 — the Format_Checker is total and specific
+    (``test_format_checker_total``).
 """
 
 from __future__ import annotations
@@ -704,3 +706,194 @@ def test_walk_surface_equivalence(zone_type, n, vert, s):
         f"corridor_conflicts differ between optimised and reference surface "
         f"{ctx}: opt={opt_conf} ref={ref_conf}"
     )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 14 (M1-P5): the Format_Checker is total and specific.
+#
+# ``analyzer.rof2check.check_eqg`` must be TOTAL — it NEVER raises, for ANY
+# corruption of the archive — and SPECIFIC — a failed check carries a message
+# that names itself, every check in ``CHECK_NAMES`` is present exactly once, and
+# a check whose inputs a corruption did not touch reports the same verdict as on
+# the clean archive. This property fuzzes a single small valid dungeon with the
+# design's corruption set (``tests.strategies.archive_corruptions``) and asserts
+# all four facets. A corruption that makes an input unreadable legitimately
+# flips that input's DEPENDENTS to skipped; those dependents are listed in the
+# corruption's ``affected`` set (or the corruption is marked ``ALL_CHECKS``), so
+# the untouched-check comparison is scoped to checks the damage genuinely left
+# alone — the design's "untouched checks unchanged" formulation.
+#
+# Imports local to this block so the rest of the module is untouched.
+# ---------------------------------------------------------------------------
+
+import json as _json
+from pathlib import Path as _Path
+
+import analyzer.rof2check as _rof2
+from ai.rule_planner import RulePlanner as _RulePlanner
+from tests.strategies import ALL_CHECKS as _ALL_CHECKS, archive_corruptions
+
+_FMT_BUILD_NAME = "fmtprobe"
+
+
+def _corruption_by_label(build: str, label: str):
+    """The ``(label, apply, affected)`` corruption tuple with the given label,
+    materialised from the same list ``archive_corruptions`` draws from — so a
+    pinned ``@example`` is a genuine member of the strategy's domain."""
+    from tests.strategies import _corruption_list
+
+    for c in _corruption_list(build):
+        if c[0] == label:
+            return c
+    raise KeyError(f"no corruption labelled {label!r}")
+
+
+def _check_map(report) -> dict:
+    """``{check_name: (passed, skipped)}`` for a FormatReport — the comparable
+    verdict per check, independent of message text."""
+    return {c.name: (c.passed, c.skipped) for c in report.checks}
+
+
+@pytest.mark.slow
+@build_settings(25)
+@given(corruption=archive_corruptions(_FMT_BUILD_NAME))
+# Regression anchors: the two corruptions that most directly exercise the two
+# halves of the property — the zeroed header (TOTALITY: nothing may raise even
+# when the whole archive is unreadable) and a single −1 material index
+# (SPECIFICITY: exactly material_indices flips, every untouched check stays
+# unchanged). Pinned by label from the materialised corruption list, so the
+# @example values are real members of the drawn domain. No totality bug has been
+# found, so these are anchors; if a future corruption makes check_eqg raise, add
+# it here via ``@example(...).via("discovered failure")``.
+@example(corruption=_corruption_by_label(_FMT_BUILD_NAME, "zero_header"))
+@example(corruption=_corruption_by_label(_FMT_BUILD_NAME, "material_index_neg"))
+def test_format_checker_total(corruption):
+    """Feature: zone-generator-m1-controls-traversability, Property 14: The Format_Checker is total and specific.
+
+    M1-P5. Validates: Requirements 9.3.
+
+    For any valid Raw_Build archive and any corruption drawn from the design's
+    set (truncate at an offset, flip a byte range, zero the header, drop/rename
+    the TER or ZON entry, set a wrong directory CRC, replace the TER or ZON with
+    random bytes, set a polygon's material to −1 or past the end, push a vertex
+    coordinate past MAX_COORD, shrink a diffuse DDS dimension to a
+    non-power-of-two, break the ZON model ref, break Sidecar name consistency),
+    ``analyzer.rof2check.check_eqg``:
+
+      1. **TOTAL** — returns a ``FormatReport`` WITHOUT raising, for every
+         corruption. If any corruption makes ``check_eqg`` raise, that is a real
+         totality bug in ``analyzer/rof2check.py`` to fix at the root (not a
+         test to weaken) and pin as a ``@example(...).via("discovered
+         failure")``.
+      2. **Complete** — the report holds exactly one entry per name in
+         ``CHECK_NAMES`` (every check present, none duplicated or missing) in
+         the canonical order, and there is no ``normals_resolve`` check (Req
+         9.4).
+      3. **Specific (self-naming)** — every FAILED check carries at least one
+         message, and its first message STARTS WITH its own check name, so a
+         failure attributes itself.
+      4. **Specific (untouched unchanged)** — a check whose inputs the corruption
+         did NOT touch reports the SAME ``(passed, skipped)`` verdict as on the
+         clean baseline archive. The comparison is scoped to checks outside the
+         corruption's ``affected`` set; a corruption marked ``ALL_CHECKS`` (byte
+         garbage that can cascade anywhere) is exempt from this one facet (it
+         still exercises 1–3).
+
+    The archive is built ONCE per example (a small valid dungeon) and the
+    baseline ``check_eqg`` is run on it; the corruption is then applied to a
+    COPY of the archive bytes (or, for the Sidecar-name corruption, to a copy of
+    the ``.zone.json``) and ``check_eqg`` is run again on the corrupted archive.
+    ``@pytest.mark.slow`` + ``build_settings(25)`` (design: archives built once
+    per example, mutations cheap).
+
+    NOTE: analytical property over the format checker on built binaries, not a
+    live 3D confirmation — see docs/ACCEPTANCE.md.
+    """
+    label, apply, affected = corruption
+
+    # --- Build ONE valid small dungeon and read its baseline report --------
+    plan = _RulePlanner().plan("create a dungeon with 6 rooms")
+    spec = plan_to_spec(plan, seed=7)
+    spec.name = _FMT_BUILD_NAME
+
+    with fresh_dir() as out:
+        result = ZoneBuilder(spec).build(output_dir=out, write_glb=False)
+        eqg_path = _Path(result.eqg_path)
+        clean_bytes = eqg_path.read_bytes()
+        sidecar_path = _Path(out) / f"{_FMT_BUILD_NAME}.zone.json"
+
+        baseline = _rof2.check_eqg(eqg_path, spec, sidecar_path=sidecar_path)
+        # Sanity: the clean build passes (a corruption's effect is measured
+        # against a KNOWN-GOOD baseline, not a flaky one).
+        assert baseline.passed is True, (
+            f"baseline clean archive should pass; failures: {baseline.failed_checks} "
+            f"({baseline.messages})"
+        )
+
+        is_sidecar = label.startswith("__sidecar__")
+
+        # The corrupted copy keeps the SAME stem as the clean build
+        # (``<build>.eqg``) in a sibling directory, so the ``name_consistent``
+        # archive-stem comparison is unaffected by the test harness — only the
+        # corruption itself can move that check. The Sidecar sits next to it
+        # with the matching ``<build>.zone.json`` name for the same reason.
+        corrupt_dir = _Path(out) / "corrupt"
+        corrupt_dir.mkdir()
+        corrupt_path = corrupt_dir / f"{_FMT_BUILD_NAME}.eqg"
+        corrupt_sidecar = corrupt_dir / f"{_FMT_BUILD_NAME}.zone.json"
+        # Default: carry the clean Sidecar across unchanged.
+        corrupt_sidecar.write_text(sidecar_path.read_text())
+
+        if is_sidecar:
+            # The eqg is unchanged; corrupt the Sidecar name instead.
+            corrupt_path.write_bytes(clean_bytes)
+            doc = _json.loads(sidecar_path.read_text())
+            doc["name"] = "totally_different_name"
+            corrupt_sidecar.write_text(_json.dumps(doc))
+        else:
+            corrupt_bytes = apply(clean_bytes)
+            corrupt_path.write_bytes(corrupt_bytes)
+
+        # --- 1) TOTAL: check_eqg must not raise, for any corruption --------
+        try:
+            report = _rof2.check_eqg(corrupt_path, spec, sidecar_path=corrupt_sidecar)
+        except Exception as e:  # noqa: BLE001 — totality is exactly what we test
+            raise AssertionError(
+                f"check_eqg RAISED on corruption {label!r} — a totality bug in "
+                f"analyzer/rof2check.py (fix at the root, pin this as a "
+                f"Regression_Example): {type(e).__name__}: {e}"
+            ) from e
+
+    ctx = f"(corruption={label!r})"
+
+    # --- 2) Complete: one entry per check name, canonical order, no normals --
+    names = [c.name for c in report.checks]
+    assert names == list(_rof2.CHECK_NAMES), (
+        f"report check names {names} != canonical {list(_rof2.CHECK_NAMES)} {ctx}"
+    )
+    assert len(names) == len(set(names)), f"duplicate check names {names} {ctx}"
+    assert "normals_resolve" not in names, f"normals_resolve must be absent {ctx}"
+
+    # --- 3) Specific (self-naming): a failed check names itself -------------
+    for c in report.checks:
+        if not c.passed:
+            assert c.messages, (
+                f"failed check {c.name!r} carries no message {ctx}"
+            )
+            assert c.messages[0].startswith(f"{c.name}:"), (
+                f"failed check {c.name!r} first message {c.messages[0]!r} does "
+                f"not start with its own name {ctx}"
+            )
+
+    # --- 4) Specific (untouched unchanged): scoped to unaffected checks -----
+    if affected != _ALL_CHECKS:
+        base_map = _check_map(baseline)
+        corr_map = _check_map(report)
+        for name in _rof2.CHECK_NAMES:
+            if name in affected:
+                continue
+            assert corr_map[name] == base_map[name], (
+                f"untouched check {name!r} changed verdict {ctx}: "
+                f"baseline={base_map[name]} corrupted={corr_map[name]} "
+                f"(corruption affected set={sorted(affected)})"
+            )

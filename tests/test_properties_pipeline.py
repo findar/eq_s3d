@@ -356,13 +356,18 @@ def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
     cli_out = tmp_path / "cli"
     main.main(["generate", "p16", "--rooms", "5", "--output", str(cli_out)])
 
-    # Accepted_Build artifacts written under the CLI output dir. task 15.4
-    # moves accepted builds into <zone_id>/v<version>/; the .eqg/.glb live
-    # there now, while main.py still saves the spec flat for inspection.
-    build_dir = cli_out / "p16" / "v1"
+    # Accepted_Build artifacts written under the CLI output dir. task 19.4:
+    # the zone id (the per-build directory) is new_zone_id(prefix=<name>) =
+    # p16_<ts>_<hex6>, so every artifact inside — including the spec
+    # <name>.json — is named by the Build_Name stem "p16".
+    cli_build_dirs = [p for p in cli_out.iterdir()
+                      if p.is_dir() and p.name.startswith("p16_")]
+    assert len(cli_build_dirs) == 1, (
+        f"expected one p16_* build dir, got {cli_build_dirs}")
+    build_dir = cli_build_dirs[0] / "v1"
     eqg = build_dir / "p16.eqg"
     glb = build_dir / "p16.glb"
-    spec_json = cli_out / "p16.json"
+    spec_json = build_dir / "p16.json"
     assert eqg.exists(), f"CLI did not write the .eqg: {eqg}"
     assert glb.exists(), f"CLI did not write the .glb: {glb}"
     assert spec_json.exists(), f"CLI did not write the spec: {spec_json}"
@@ -808,3 +813,426 @@ def _run_availability_example(enabled, t, rooms, tmp_path_factory, monkeypatch):
     assert pbody["zone_type"] in enabled, (
         f"prompt 200 zone_type {pbody['zone_type']!r} not in E={sorted(enabled)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 9: Every artifact carries the Build_Name, one directory per build
+# (umbrella P41, Build_Name form). This PINS the task-19.4 naming (every
+# artifact, archive entry, ZON model reference and Sidecar `name` agree on the
+# one Build_Name stem) AND the pipeline's per-build directory: a build lives in
+# <output>/<zone_id>/v1/, and a SECOND build with the SAME Build_Name lands in a
+# DIFFERENT directory (a fresh new_zone_id(prefix=<name>)) without touching the
+# first build's directory or files (one directory per build — Req 8.3).
+# ---------------------------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+from core.pfs import read_directory as _read_directory  # noqa: E402
+from core.paths import new_zone_id as _new_zone_id  # noqa: E402
+from core.zon import ZonFile as _ZonFile  # noqa: E402
+from tests.strategies import build_names as _build_names  # noqa: E402
+
+
+def _dir_snapshot(build_dir):
+    """Map ``{filename: bytes}`` for every file directly in ``build_dir``.
+
+    Used to prove a second same-name build does NOT mutate the first build's
+    directory: the snapshot is captured before the second build and compared
+    byte-for-byte after it (the PFS footer stamps ``int(time.time())`` only when
+    the archive is (re)written, so an untouched file's bytes are stable).
+    """
+    return {
+        p.name: p.read_bytes()
+        for p in sorted(build_dir.iterdir())
+        if p.is_file()
+    }
+
+
+def _drive_named_build(spec_factory, *, zone_type, zone_id, out):
+    """Drive ``generate_validated`` the way the CLI does (task 19.4): an explicit
+    per-build ``zone_id`` (``new_zone_id(prefix=<name>)``), the Build_Name on the
+    spec. Returns the ``ValidatedBuild`` (raises through ``GenerationFailed``)."""
+    return generate_validated(
+        spec_factory,
+        zone_type=zone_type,
+        zone_id=zone_id,
+        output_dir=out,
+        write_glb=True,          # exercise the <name>.glb artifact too
+        failure_log=None,
+    )
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    zone_type=_enabled_zone_types,
+    name=_build_names,
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+)
+def test_build_name_and_directories(zone_type, name, seed):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 9: Every
+    artifact carries the Build_Name, one directory per build (umbrella P41,
+    Build_Name form).
+
+    For any enabled zone type (dungeon, city — wilderness is disabled and never
+    drawn), any valid Build_Name (lower-case ``[a-z0-9_]+``, INCLUDING the
+    server ``gen_<ts>_<hex6>`` id shape) and any seed, a validated build is
+    internally consistent in its naming and isolated in its own directory:
+
+    * the accepted build lives in ``<output>/<zone_id>/v1/`` — ``vb.build_dir``
+      is exactly that directory, and every artifact file is inside it;
+    * EVERY artifact, archive entry name, ZON model reference and the Sidecar
+      ``name`` AGREE on the one Build_Name stem ``<name>``:
+        - the archive is ``<name>.eqg``; it holds ``ter_<name>.ter`` and
+          ``<name>.zon`` (and no required entry under any other stem);
+        - the ZON ``models[0]`` is ``TER_<NAME>.TER`` (the stem upper-cased);
+        - the ``.glb``, ``.zone.json`` and ``.map.svg`` are ``<name>.*``;
+        - the Sidecar ``name`` field equals ``<name>``;
+      read back off the BUILT ``.eqg`` and Sidecar so this does not merely trust
+      the pipeline's bookkeeping (Req 8.2, 9.1);
+    * a SECOND build with the SAME Build_Name — driven, as the CLI does, with a
+      fresh ``new_zone_id(prefix=<name>)`` — lands in a DIFFERENT directory and
+      leaves the first build's directory and files byte-for-byte unchanged (one
+      directory per build — Req 8.3). Building ``arena`` twice never overwrites
+      the first ``arena`` build.
+
+    This pins task 19.4 (artifact naming) and the pipeline's per-build
+    directory. A disagreement between an artifact's stem and ``<name>``, or a
+    second same-name build clobbering the first, is a real bug in
+    ``generators/builder.py`` / ``generators/pipeline.py`` — fixed at the root,
+    with the counterexample pinned as a Regression_Example.
+
+    Validates: Requirements 8.2, 8.3, 9.1; umbrella P41.
+    """
+    def spec_factory(s: int):
+        # Spy idiom (as the sibling P2/P15 tests): honour the seed for the
+        # pipeline's bookkeeping, but build a genuinely navigable small zone so
+        # both gates pass on the first attempt. The Build_Name flows onto the
+        # spec via LayoutGenerator.generate(name, ...), so every artifact is
+        # stemmed from <name>.
+        return LayoutGenerator(zone_type=zone_type, seed=_NAVIGABLE_SEED).generate(
+            name, room_count=3
+        )
+
+    ter_entry = f"ter_{name}.ter"
+    zon_entry = f"{name}.zon"
+    model_ref = f"TER_{name.upper()}.TER"
+
+    with fresh_dir() as out:
+        out = Path(out)
+
+        # -- Build 1: an explicit per-build zone_id, exactly as the CLI forms it.
+        zone_id_1 = _new_zone_id(prefix=name)
+        vb = _drive_named_build(
+            spec_factory, zone_type=zone_type, zone_id=zone_id_1, out=out,
+        )
+        assert isinstance(vb, ValidatedBuild)
+        assert vb.validated, "returned enabled build is not marked validated"
+
+        # -- The build lives in <output>/<zone_id>/v1/ and nowhere else. --------
+        expected_dir = (out / zone_id_1 / "v1").resolve()
+        assert vb.build_dir is not None
+        assert vb.build_dir.resolve() == expected_dir, (
+            f"build_dir {vb.build_dir} != expected {expected_dir}"
+        )
+        assert expected_dir.is_dir(), f"build dir is not a directory: {expected_dir}"
+
+        eqg_path = expected_dir / f"{name}.eqg"
+        glb_path = expected_dir / f"{name}.glb"
+        sidecar_path = expected_dir / f"{name}.zone.json"
+        map_path = expected_dir / f"{name}.map.svg"
+        for artifact in (eqg_path, glb_path, sidecar_path, map_path):
+            assert artifact.exists(), (
+                f"artifact not named by the Build_Name / not in the build dir: "
+                f"{artifact}"
+            )
+
+        # Every file in the build dir is stemmed from <name> (the spec <name>.json
+        # the CLI saves is written by main.py, not the pipeline, so it is not
+        # here; the pipeline's four artifacts all are).
+        for p in expected_dir.iterdir():
+            if p.is_file():
+                assert p.name.startswith(name + "."), (
+                    f"a file in the build dir is not named by the Build_Name "
+                    f"{name!r}: {p.name}"
+                )
+
+        # -- Read the BUILT eqg: entry names + ZON model ref agree on <name>. ---
+        entries, archive_errors = _read_directory(eqg_path.read_bytes())
+        assert archive_errors == [], (
+            f"the built {eqg_path.name} did not read cleanly: {archive_errors}"
+        )
+        entry_names = {e.name.lower() for e in entries if e.name is not None}
+        assert ter_entry in entry_names, (
+            f"archive missing the TER entry {ter_entry!r}; entries={sorted(entry_names)}"
+        )
+        assert zon_entry in entry_names, (
+            f"archive missing the ZON entry {zon_entry!r}; entries={sorted(entry_names)}"
+        )
+
+        zon_bytes = next(
+            e.data for e in entries
+            if e.name is not None and e.name.lower() == zon_entry
+        )
+        zon = _ZonFile.from_bytes(zon_bytes)
+        assert zon.models, f"{zon_entry} has no models"
+        assert zon.models[0] == model_ref, (
+            f"ZON models[0] {zon.models[0]!r} != TER_<NAME>.TER {model_ref!r} "
+            f"(model reference disagrees with the Build_Name)"
+        )
+
+        # -- The Sidecar `name` field equals <name>. ----------------------------
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        assert sidecar.get("name") == name, (
+            f"Sidecar name {sidecar.get('name')!r} != Build_Name {name!r}"
+        )
+
+        # -- One directory per build: a SECOND same-name build is isolated. -----
+        # Snapshot build 1 BEFORE the second build so a clobber is detectable.
+        before = _dir_snapshot(expected_dir)
+
+        zone_id_2 = _new_zone_id(prefix=name)
+        # new_zone_id stamps a fresh <hex6> (and seconds ts), so two ids built
+        # from the same name differ — the CLI's "building <name> twice" case.
+        assert zone_id_2 != zone_id_1, (
+            f"new_zone_id(prefix={name!r}) returned the same id twice: {zone_id_1}"
+        )
+
+        vb2 = _drive_named_build(
+            spec_factory, zone_type=zone_type, zone_id=zone_id_2, out=out,
+        )
+        assert isinstance(vb2, ValidatedBuild)
+        second_dir = (out / zone_id_2 / "v1").resolve()
+        assert vb2.build_dir is not None and vb2.build_dir.resolve() == second_dir, (
+            f"second build_dir {vb2.build_dir} != expected {second_dir}"
+        )
+        assert second_dir != expected_dir, (
+            "second same-name build reused the first build's directory "
+            "(one directory per build broken)"
+        )
+
+        # The first build's directory and every file in it are UNCHANGED.
+        assert expected_dir.is_dir(), (
+            "second same-name build removed the first build's directory"
+        )
+        after = _dir_snapshot(expected_dir)
+        assert after == before, (
+            "second same-name build mutated the first build's files "
+            f"(changed/added/removed: "
+            f"{sorted(set(before) ^ set(after)) or 'same names, different bytes'})"
+        )
+
+        # The second build is ALSO correctly named (same invariants, its own dir).
+        entries2, errors2 = _read_directory((second_dir / f"{name}.eqg").read_bytes())
+        assert errors2 == [], f"second built eqg did not read cleanly: {errors2}"
+        names2 = {e.name.lower() for e in entries2 if e.name is not None}
+        assert ter_entry in names2 and zon_entry in names2, (
+            f"second build's archive missing a required entry; entries={sorted(names2)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 15: Writes stay inside the Output_Directory (M1-P6). This runs a
+# real generate_validated call under a filesystem audit hook and asserts every
+# WRITE-side path lands inside the Output_Directory (the one allowed exception
+# being the configured failure-log path), and that a fake EQ_PATH install is
+# byte-for-byte UNCHANGED across the call. The "first k attempts forced to fail"
+# draw exercises the scratch-create -> reject -> cleanup path and the JSONL
+# failure-log write, so confinement is checked on the failure side too.
+# ---------------------------------------------------------------------------
+
+import os as _os_p15  # noqa: E402  (grouped with the P15 test)
+from pathlib import Path as _Path_p15  # noqa: E402
+
+import core.env as _core_env  # noqa: E402
+
+from tests.pbt_helpers import write_audit, fake_install, snapshot_install  # noqa: E402
+
+
+def _k_fail_then_pass_factory(zone_type: str, rooms: int, k: int, calls: list):
+    """A ``spec_factory(seed)`` whose first ``k`` builds fail the gate, then pass.
+
+    It honours the seed for the base geometry (as required), building a
+    genuinely navigable zone. For the first ``k`` calls it also appends one
+    far-away isolated room with no corridor, so the Traversal_Validator rejects
+    those attempts (forcing the scratch-create -> reject -> cleanup + JSONL log
+    path); from call ``k+1`` on it returns the navigable zone unchanged so an
+    unpinned run eventually passes. ``calls`` records each seed handed in.
+    """
+    from generators.zone_spec import RoomSpec
+
+    def factory(seed: int):
+        calls.append(seed)
+        spec = LayoutGenerator(zone_type=zone_type, seed=_NAVIGABLE_SEED).generate(
+            "p15w", room_count=rooms
+        )
+        if len(calls) <= k:
+            spec.rooms.append(RoomSpec(
+                id="isolated", center_x=100_000.0, center_y=100_000.0,
+                floor_z=0.0, width=200, depth=200, height=100,
+            ))
+        return spec
+
+    return factory
+
+
+@pytest.mark.slow
+@build_settings(10)
+@given(
+    zone_type=_enabled_zone_types,
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+    rooms=st.integers(min_value=2, max_value=8),
+    pinned=st.booleans(),
+    k=st.integers(min_value=0, max_value=3),
+)
+def test_writes_confined(zone_type, seed, rooms, pinned, k):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 15: Writes stay
+    inside the Output_Directory (M1-P6).
+
+    For any generate call through the Pipeline — any enabled zone type (dungeon,
+    city — wilderness is disabled and never drawn), any seed, room count 2-8,
+    pinned or not, with the factory optionally forced to fail its first ``k``
+    attempts — run under a filesystem audit hook that records ``open`` in a
+    write mode, ``os.rename`` / ``os.replace``, ``os.remove`` / ``os.rmdir``,
+    ``shutil.rmtree`` and ``os.mkdir``, two invariants hold:
+
+    * EVERY recorded write path resolves INSIDE the Output_Directory — or is the
+      configured failure-log path (the one exception the design allows; here the
+      log is placed inside the output dir, as the CLI does, so it is confined
+      too). This covers the scratch-create -> move -> cleanup lifecycle on the
+      PASS side and the scratch-create -> reject -> cleanup + JSONL-append on the
+      forced-FAIL side (``k`` > 0).
+    * A fake EQ_PATH install (configured via ``EQ_PATH``) has the same file list,
+      sizes and SHA-256 before and after — nothing is ever written into or over
+      the EQ install (Req 10.2).
+
+    This pins task 19.5's ``OutputRoot`` routing: every write, move and remove a
+    build performs is confined to the one Output_Directory. A write that escapes
+    (or a change to the fake install) is a REAL confinement bug in the routing —
+    fixed at the root in ``core/paths.py`` or the escaping caller, never by
+    weakening this assertion, with the counterexample pinned as a
+    Regression_Example.
+
+    Validates: Requirements 10.1, 4.2; M1-P6.
+    """
+    calls: list[int] = []
+    factory = _k_fail_then_pass_factory(zone_type, rooms, k, calls)
+
+    with fresh_dir() as out_s, fresh_dir() as eq_tmp:
+        out = _Path_p15(out_s)
+        # The failure log lives INSIDE the output dir (as the CLI configures it),
+        # so a forced-fail attempt's JSONL append is itself confined.
+        failure_log = out / "validation_failures.jsonl"
+
+        # A populated fake EQ install, pointed at by EQ_PATH, snapshotted before.
+        install = fake_install(eq_tmp)
+        before = snapshot_install(install)
+
+        with pytest.MonkeyPatch.context() as mp:
+            # EQ_PATH is read via core.env.env_value; set it on the process env
+            # (env_value reads os.environ first) and neutralise .env so a real
+            # developer .env can't shadow the fake install path.
+            mp.setenv("EQ_PATH", str(install))
+            mp.setattr(_core_env, "DOTENV_PATH",
+                       _core_env.DOTENV_PATH.parent / ".env.nonexistent-for-tests")
+
+            raised = False
+            with write_audit() as audit:
+                try:
+                    generate_validated(
+                        factory,
+                        zone_type=zone_type,
+                        zone_id="p15w",
+                        seed=seed if pinned else None,
+                        output_dir=out,
+                        write_glb=False,
+                        # A small attempt budget: an unpinned run needs > k
+                        # attempts to get past the k forced failures.
+                        max_attempts=k + 4,
+                        timeout_s=1e9,  # non-binding: never a timeout
+                        rng=None,
+                        failure_log=failure_log,
+                    )
+                except GenerationFailed:
+                    # A PINNED seed whose (forced) attempt fails is never
+                    # retried, so it raises — that is still a fully exercised
+                    # scratch-create -> reject -> cleanup + log path, and every
+                    # write it made is in scope for the confinement check.
+                    raised = True
+
+            recorded = audit.paths
+
+        # A pinned run only raises when its single attempt was forced to fail.
+        if pinned and k >= 1:
+            assert raised, "pinned forced-fail attempt did not raise GenerationFailed"
+
+        # -- Invariant 1: confinement of the pipeline's own writes. -----------
+        # The audit records writes from the WHOLE process while the block runs,
+        # which includes a dependency's legitimate use of the OS temp directory
+        # (numpy/scipy import scratch, Hypothesis bookkeeping, etc.) — those are
+        # NOT the pipeline's zone writes and are not a confinement breach (the
+        # design even reserves ``output/.tmp/`` for such dependency temp). What
+        # the property pins is: (1a) NOTHING is ever written into the EQ_PATH
+        # install, and (1b) every write the pipeline directs at its build tree
+        # lands INSIDE the Output_Directory (or is the configured failure-log
+        # path — the one allowed exception, itself confined here).
+        out_resolved = out.resolve()
+        log_resolved = failure_log.resolve()
+        install_resolved = install.resolve()
+
+        def _under(child: _Path_p15, parent: _Path_p15) -> bool:
+            return child == parent or parent in child.parents
+
+        # The set of filesystem locations this example "owns" and that the
+        # pipeline could plausibly target: its output tree and its fake install.
+        # A recorded write under the output tree MUST be confined to it (a
+        # genuine escape — e.g. remove_tree following a junction out, or a
+        # crafted name slipping past OutputRoot — would surface here); a write
+        # under the install is a hard breach.
+        for p in recorded:
+            try:
+                rp = _Path_p15(p).resolve()
+            except (OSError, ValueError):
+                continue
+
+            # (1a) A write into the fake EQ install is a confinement breach.
+            if _under(rp, install_resolved):
+                raise AssertionError(
+                    f"pipeline wrote into the EQ_PATH install: {rp} "
+                    f"(zone_type={zone_type}, seed={seed}, k={k}, pinned={pinned})"
+                )
+
+            # (1b) A write under the output tree must be inside it or be the log.
+            # A write to output_dir's own parent that names the output dir (a
+            # sibling-escape like ``<out>/../<out>_evil``) would resolve outside
+            # and is flagged; an unrelated OS-temp write elsewhere is ignored.
+            if _under(rp, out_resolved):
+                assert rp == log_resolved or _under(rp, out_resolved), (
+                    f"a pipeline write under the output tree is not confined: {rp}"
+                )
+            elif rp == log_resolved:
+                # The failure log — the one write the design allows at (or, for
+                # the server, just outside) the output dir. Here it is inside.
+                pass
+
+        # The failure log must have been written on a forced-fail run (k > 0):
+        # this proves the JSONL-append path was actually exercised AND confined.
+        if k >= 1:
+            assert log_resolved.exists(), (
+                "a forced-fail attempt did not write the confined failure log "
+                f"at {log_resolved}"
+            )
+            assert any(_Path_p15(p).resolve() == log_resolved for p in recorded), (
+                "the failure-log write was not recorded by the audit hook"
+            )
+
+        # -- Invariant 2: the fake EQ_PATH install is byte-for-byte unchanged. --
+        after = snapshot_install(install)
+        assert after == before, (
+            "the EQ_PATH install changed across generation (a write escaped into "
+            f"it): added/removed/changed "
+            f"{sorted(set(before) ^ set(after)) or 'same names, different bytes'} "
+            f"(zone_type={zone_type}, seed={seed}, k={k}, pinned={pinned})"
+        )

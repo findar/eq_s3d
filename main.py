@@ -19,6 +19,14 @@ from pathlib import Path
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
+from core.env import env_value
+from core.paths import (
+    OutputRoot,
+    OutsideOutputError,
+    assert_output_allowed,
+    new_zone_id,
+)
+from generators.builder import BUILD_NAME_RE
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, ENABLED_ZONE_TYPES,
@@ -38,6 +46,26 @@ from generators.zone_types import (
 def _enabled_set_str() -> str:
     """The enabled zone types in canonical listing order, comma-joined."""
     return ", ".join(z for z in DEFINED_ZONE_TYPES if z in ENABLED_ZONE_TYPES)
+
+
+def _build_name_arg(value: str) -> str:
+    """``generate`` positional-name converter (Req 8.2, 8.3).
+
+    Lower-cases the value and requires it to match the Build_Name alphabet
+    (``^[a-z0-9_]+$`` — the umbrella glossary's Build_Name grammar, shared with
+    ``generators.builder.BUILD_NAME_RE``). An out-of-alphabet name raises
+    ``argparse.ArgumentTypeError`` → argparse exits 2 DURING parse_args, before
+    ``cmd_generate`` runs and so before any build or write. No length limit or
+    reserved-name list; just the one regex. The accepted value is returned
+    lower-cased, so it IS the Build_Name the builder then validates again.
+    """
+    lowered = value.lower()
+    if not BUILD_NAME_RE.fullmatch(lowered):
+        raise argparse.ArgumentTypeError(
+            f"name {value!r} is not a valid Build_Name; use only lower-case "
+            f"letters, digits and underscore (matching {BUILD_NAME_RE.pattern})"
+        )
+    return lowered
 
 
 def _zone_type_arg(value: str) -> str:
@@ -109,7 +137,13 @@ def cmd_generate(args) -> None:
         "locks": args.locks,
     }
     plan = ZonePlan.from_controls(controls)
+    # The positional is the Build_Name (lower-cased + validated by
+    # ``_build_name_arg``); it names every artifact. The zone id — the per-build
+    # directory — is ``new_zone_id(prefix=<name>)`` so two runs with the same
+    # name land in DIFFERENT directories (Req 8.3) while every file inside still
+    # carries the Build_Name stem.
     plan.name = args.name
+    zone_id = new_zone_id(prefix=args.name)
 
     def factory(seed):
         return plan_to_spec(plan, seed=seed)
@@ -121,7 +155,7 @@ def cmd_generate(args) -> None:
         vb = generate_validated(
             factory,
             zone_type=zone_type,
-            zone_id=args.name,
+            zone_id=zone_id,
             seed=args.seed,
             output_dir=args.output,
             ter_version=args.ter_version,
@@ -143,9 +177,20 @@ def cmd_generate(args) -> None:
                   file=sys.stderr)
         sys.exit(1)
 
-    # Save the passing spec alongside output for inspection / iteration. Using
-    # vb.spec records the seed that actually produced a valid zone.
-    spec_path = Path(args.output) / f"{args.name}.json"
+    # Save the passing spec as ``<name>.json`` in the build directory (next to
+    # the artifacts), so ``python -m analyzer.traverse <dir>/<name>.eqg`` finds
+    # it (design "CLI"). Using vb.spec records the seed that actually produced a
+    # valid zone. ``vb.build_dir`` is ``<output>/<zone_id>/v1`` for a gated or
+    # ungated build; fall back to the output dir only if it is somehow unset.
+    build_dir = Path(vb.build_dir) if vb.build_dir is not None else Path(args.output)
+    # The spec save is confinement-checked against the output dir (Req 10.1):
+    # ``OutputRoot.path`` raises ``OutsideOutputError`` if the resolved path
+    # escapes ``args.output``; ``ZoneSpec.save`` then writes to that checked
+    # path. Resolve ``build_dir`` to an absolute path first — it is built
+    # relative to the CWD, and ``OutputRoot.path`` would otherwise re-join a
+    # relative part onto the root and double the output segment.
+    spec_rel = (build_dir / f"{args.name}.json").resolve()
+    spec_path = OutputRoot(args.output).path(str(spec_rel))
     vb.spec.save(spec_path)
     print(f"  Spec saved: {spec_path}")
 
@@ -166,7 +211,9 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     g = sub.add_parser("generate", help="Procedurally generate a zone")
-    g.add_argument("name", help="Zone short name (lowercase, no spaces)")
+    g.add_argument("name", type=_build_name_arg,
+                   help="Build name / zone stem (lower-cased; must match "
+                        "[a-z0-9_]+, else exit 2)")
     # --zone-type is the current option; --theme is a deprecated alias that
     # shares the same dest (later option wins). Both convert through
     # _zone_type_arg, which maps the legacy "outdoor" forward and REJECTS a
@@ -204,6 +251,26 @@ def main(argv: list[str] | None = None) -> None:
     g.set_defaults(func=cmd_generate)
 
     args = parser.parse_args(argv)
+
+    # Refusal (Req 10.2): right after parsing — before any build or write —
+    # refuse an output directory that resolves to, inside, or around the
+    # EQ_PATH install, so a build can never write into (or over) EverQuest.
+    # EQ_PATH unset ⇒ nothing to compare, the check passes. Exit 2 (a usage
+    # error), naming BOTH paths.
+    output = getattr(args, "output", None)
+    if output is not None:
+        try:
+            assert_output_allowed(Path(output), env_value("EQ_PATH"))
+        except OutsideOutputError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(2)
+
+        # Keep dependency temp files inside the output dir, process-wide, set
+        # HERE in main() (never at import, so the test suite's temp dirs are
+        # untouched). The <output>/.tmp dir is confinement-checked and created.
+        import tempfile
+        tempfile.tempdir = str(OutputRoot(output).mkdir(".tmp"))
+
     args.func(args)
 
 

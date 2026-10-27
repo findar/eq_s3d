@@ -241,10 +241,17 @@ class TestCliEscapeHatch:
     def test_no_validate_builds_broken_seed(self, tmp_path):
         import main
         main.cmd_generate(self._args(tmp_path, no_validate=True))
-        # task 15.4 moves accepted/ungated builds into <zone_id>/v<version>/;
-        # the .eqg lives there now. The spec is still saved flat by main.py.
-        assert (tmp_path / "cli" / "v1" / "cli.eqg").exists()
-        assert (tmp_path / "cli.json").exists()
+        # task 19.4: the zone id (the per-build directory) is
+        # new_zone_id(prefix=<name>) = cli_<ts>_<hex6>, so two runs with the
+        # same name land in different directories (Req 8.3). Every artifact
+        # inside is still named by the Build_Name stem "cli", and the spec is
+        # saved as <name>.json IN the build directory (not flat).
+        build_dirs = [p for p in tmp_path.iterdir()
+                      if p.is_dir() and p.name.startswith("cli_")]
+        assert len(build_dirs) == 1, f"expected one cli_* build dir, got {build_dirs}"
+        bd = build_dirs[0] / "v1"
+        assert (bd / "cli.eqg").exists()
+        assert (bd / "cli.json").exists()
 
     def test_gate_blocks_pinned_bad_seed(self, tmp_path, monkeypatch):
         # Force the CLI to build a broken zone (an isolated, corridor-less room)
@@ -315,6 +322,57 @@ class TestCliArgs:
         assert ei.value.code == 2
         assert not Path(out).exists()
 
+    def test_output_inside_eq_path_exits_2_naming_both(
+            self, tmp_path, monkeypatch, capsys):
+        """CLI refuses an output dir that overlaps EQ_PATH (Req 10.2, task 19.5).
+
+        With ``EQ_PATH`` set (via ``env_value``) to a directory that CONTAINS
+        the requested ``--output``, ``main()`` runs ``assert_output_allowed``
+        right after parsing and exits 2 BEFORE any build/write — the error names
+        BOTH the output path and the EQ install, and no output directory is
+        created.
+        """
+        import main
+
+        eq = tmp_path / "everquest_rof2"
+        out = eq / "mygen" / "output"      # output resolves INSIDE the EQ install
+        eq.mkdir()
+        monkeypatch.setenv("EQ_PATH", str(eq))
+
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "refuse", "--rooms", "3",
+                       "--output", str(out)])
+        assert ei.value.code == 2
+        err = capsys.readouterr().err
+        # The refusal names BOTH paths.
+        assert str(out.resolve()) in err
+        assert str(eq.resolve()) in err
+        # Nothing was built under the (refused) output path.
+        assert not out.exists()
+
+    def test_output_disjoint_from_eq_path_is_allowed(
+            self, tmp_path, monkeypatch):
+        """A normal output dir that does NOT overlap EQ_PATH builds normally.
+
+        The refusal check must not disturb the ordinary case: with EQ_PATH set
+        to a disjoint sibling, a small dungeon build runs to completion and
+        lands its artifacts under the per-build directory (Req 10.1/10.2 — the
+        guard is plumbing, not a behaviour change).
+        """
+        import main
+
+        eq = tmp_path / "everquest_rof2"
+        out = tmp_path / "output"          # disjoint sibling of the EQ install
+        eq.mkdir()
+        monkeypatch.setenv("EQ_PATH", str(eq))
+
+        main.main(["generate", "okgen", "--rooms", "3", "--seed",
+                   str(GOOD_SEED), "--output", str(out)])
+
+        build_dirs = [p for p in out.iterdir()
+                      if p.is_dir() and p.name.startswith("okgen_")]
+        assert build_dirs, "a disjoint output dir should build normally"
+
     # -- Geometry-slice CLI options (task 17.8) ---------------------------
     #
     # The range-checked type= functions and _zone_type_arg (main.py, task 17.7)
@@ -367,7 +425,12 @@ class TestCliArgs:
         )
         main.cmd_generate(ns)
 
-        spec = ZoneSpec.load(tmp_path / "flatcli.json")
+        # task 19.4: the spec is saved as <name>.json inside the per-build
+        # directory <output>/<zone_id>/v1/, where <zone_id> = flatcli_<ts>_<hex6>.
+        build_dirs = [p for p in tmp_path.iterdir()
+                      if p.is_dir() and p.name.startswith("flatcli_")]
+        assert len(build_dirs) == 1, f"expected one flatcli_* dir, got {build_dirs}"
+        spec = ZoneSpec.load(build_dirs[0] / "v1" / "flatcli.json")
         floors = {round(r.floor_z, 6) for r in spec.rooms}
         assert spec.rooms, "expected rooms in the built spec"
         assert len(floors) == 1, (
@@ -634,3 +697,190 @@ class TestPipelineLifecycle:
 
         data = self._sidecar(vb)
         assert fallback in data["warnings"]
+
+
+# ---------------------------------------------------------------------------
+# Confinement, key-leak and Build_Name example tests (task 20.8)
+# ---------------------------------------------------------------------------
+#
+# Deterministic examples pinning the wave-6 confinement / no-key-leak / naming
+# invariants (Req 8.2, 9.4, 10.2). These are the concrete companions to the
+# Property-15 writes-confined audit-hook test (task 20.7): where that proves the
+# invariant over many inputs, these pin the exact behaviours a human would check.
+
+
+class TestConfinementExample:
+    """Req 10.2 — with EQ_PATH overlapping the Output_Directory the tool refuses.
+
+    Two entry points, one invariant: the CLI exits 2 (naming BOTH paths) and
+    importing ``server.app`` raises ``OutsideOutputError``. The server half runs
+    the import in a FRESH subprocess with the overlapping EQ_PATH env set, so the
+    already-imported module in this test process is not disturbed (the refusal
+    fires only at import time, before ``OUTPUT_DIR.mkdir``).
+    """
+
+    def test_output_inside_eq_path_refuses_cli_and_server_import(
+            self, tmp_path, monkeypatch, capsys):
+        import main
+
+        # EQ_PATH is an install dir; the requested --output resolves INSIDE it.
+        eq = tmp_path / "everquest_rof2"
+        out = eq / "gen" / "output"
+        eq.mkdir()
+
+        # --- CLI half: exit 2, naming BOTH the output path and the EQ install,
+        # nothing written.
+        monkeypatch.setenv("EQ_PATH", str(eq))
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "refuse", "--rooms", "3",
+                       "--output", str(out)])
+        assert ei.value.code == 2
+        err = capsys.readouterr().err
+        assert str(out.resolve()) in err, err
+        assert str(eq.resolve()) in err, err
+        assert not out.exists(), "a refused build must write nothing"
+
+        # --- Server half: importing server.app with an EQ_PATH that CONTAINS
+        # the server's OUTPUT_DIR raises OutsideOutputError at import time. Run
+        # it in a fresh subprocess (the module is already imported here) with
+        # EQ_PATH = repo root, which contains the server's output/web dir.
+        import subprocess
+        import sys
+        import os
+        import server.app as app_mod
+
+        repo_root = Path(app_mod.__file__).resolve().parent.parent
+        env = dict(os.environ)
+        env["EQ_PATH"] = str(repo_root)      # contains output/web -> overlap
+
+        proc = subprocess.run(
+            [sys.executable, "-c", "import server.app"],
+            cwd=str(repo_root), env=env, capture_output=True, text=True,
+        )
+        assert proc.returncode != 0, (
+            "server.app import should fail with an overlapping EQ_PATH")
+        assert "OutsideOutputError" in proc.stderr, proc.stderr
+
+
+class TestKeyNeverLeaks:
+    """Req 10.2 — an API key in the environment never leaks into any artifact,
+    response, captured log or stdout/stderr.
+
+    Sentinel key values are placed in the environment and the planner / texture
+    provider are pinned to their zero-network paths (rule planner + procedural
+    textures), so NO real API call is made. One prompt generate (Server) and one
+    CLI generate are then run, and the sentinel string must appear in NO output
+    file, NO response body, NO captured log and NO stdout/stderr. This is the
+    log-redaction (task 19.2) + ``env_value`` not echoing keys, pinned.
+    """
+
+    SENTINEL = "sk-SENTINEL-do-not-leak-0123456789"
+
+    def _set_sentinel_env(self, monkeypatch):
+        # Keys present in the env (sentinel values) ...
+        monkeypatch.setenv("OPENAI_API_KEY", self.SENTINEL)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", self.SENTINEL)
+        monkeypatch.setenv("STABILITY_API_KEY", self.SENTINEL)
+        # ... but force the zero-network paths so no real request is made.
+        monkeypatch.setenv("EQ_S3D_PLANNER", "rule")
+        monkeypatch.setenv("EQ_S3D_TEXTURE_PROVIDER", "procedural")
+        # Reset forced globals so the overrides above are honoured.
+        import ai.planner
+        import generators.textures.factory as texture_factory
+        ai.planner.set_planner(None)
+        texture_factory.set_provider(None)
+
+    @staticmethod
+    def _assert_tree_clean(root: Path, needle: str):
+        """No file under ``root`` may contain ``needle`` (text or bytes)."""
+        needle_b = needle.encode("utf-8")
+        for p in root.rglob("*"):
+            if not p.is_file():
+                continue
+            data = p.read_bytes()
+            assert needle_b not in data, (
+                f"sentinel key leaked into output file {p}")
+
+    def test_sentinel_key_never_leaks_through_prompt_or_cli(
+            self, tmp_path, monkeypatch, capsys, caplog, no_network):
+        import logging
+        import main
+        import server.app as app_mod
+        from fastapi.testclient import TestClient
+
+        self._set_sentinel_env(monkeypatch)
+        caplog.set_level(logging.DEBUG)
+
+        # --- Server: one prompt generate (rule planner, procedural textures).
+        server_out = tmp_path / "server"
+        server_out.mkdir()
+        monkeypatch.setattr(app_mod, "OUTPUT_DIR", server_out)
+        monkeypatch.setattr(app_mod, "FAILURE_LOG", tmp_path / "server_fail.jsonl")
+
+        client = TestClient(app_mod.app)
+        resp = client.post(
+            "/api/generate",
+            json={"prompt": "a dark dungeon with a few rooms"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["planner"] == "rule", body       # zero-network path
+        # The sentinel must not be anywhere in the response body.
+        assert self.SENTINEL not in resp.text, "sentinel leaked into the response"
+
+        # --- CLI: one generate on the default gated dungeon.
+        cli_out = tmp_path / "cli"
+        main.main(["generate", "keysafe", "--rooms", "4", "--output", str(cli_out)])
+
+        # No output file (either tree) contains the sentinel.
+        self._assert_tree_clean(server_out, self.SENTINEL)
+        self._assert_tree_clean(cli_out, self.SENTINEL)
+
+        # No captured stdout/stderr and no captured log record contains it.
+        captured = capsys.readouterr()
+        assert self.SENTINEL not in captured.out, "sentinel leaked to stdout"
+        assert self.SENTINEL not in captured.err, "sentinel leaked to stderr"
+        assert self.SENTINEL not in caplog.text, "sentinel leaked into a log record"
+
+        # And it was never used to open a foreign connection.
+        assert no_network == [], f"a key path attempted network: {no_network}"
+
+
+class TestBuildNameExample:
+    """Req 8.2 — the CLI Build_Name alphabet and lower-casing, by example.
+
+    A positional with a hyphen is out of the ``[a-z0-9_]+`` Build_Name alphabet
+    and must exit 2 during parse (before any build/write); a mixed-case
+    ``MyZone`` is lower-cased to ``myzone`` and names every artifact
+    ``myzone.*``.
+    """
+
+    def test_hyphenated_name_exits_2_and_writes_nothing(self, tmp_path):
+        import main
+        out = str(tmp_path / "out")
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "bad-name", "--rooms", "3", "--output", out])
+        assert ei.value.code == 2, "a hyphenated Build_Name must exit 2"
+        # argparse exits during parse_args, before cmd_generate creates the dir.
+        assert not Path(out).exists()
+
+    def test_mixed_case_name_builds_lowercased_artifacts(self, tmp_path):
+        import main
+        out = tmp_path / "out"
+        main.main(["generate", "MyZone", "--rooms", "3", "--seed",
+                   str(GOOD_SEED), "--output", str(out)])
+
+        # The per-build directory is new_zone_id(prefix=<name>) on the
+        # lower-cased name, so it starts with "myzone_" (never "MyZone_").
+        build_dirs = [p for p in out.iterdir()
+                      if p.is_dir() and p.name.startswith("myzone_")]
+        assert len(build_dirs) == 1, (
+            f"expected one myzone_* build dir, got {list(out.iterdir())}")
+        assert not any(p.name.startswith("MyZone") for p in out.iterdir()), (
+            "the Build_Name must be lower-cased, not kept mixed-case")
+
+        bd = build_dirs[0] / "v1"
+        # Every artifact carries the lower-cased Build_Name stem "myzone".
+        for artifact in ("myzone.eqg", "myzone.glb", "myzone.zone.json",
+                         "myzone.map.svg", "myzone.json"):
+            assert (bd / artifact).exists(), f"missing {artifact} in {bd}"
