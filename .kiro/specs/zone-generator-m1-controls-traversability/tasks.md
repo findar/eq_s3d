@@ -1493,7 +1493,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **425 passed, 1 failed** (262.95 s, parallel) — the one failure is the KNOWN xdist CORS flake `test_server.py::test_foreign_origins_get_no_cors` (`DeadlineExceeded` under parallel timing), which **passes in isolation at `-n0`** (`1 passed`, 10.51 s, re-confirmed). Effective: 425 baseline + this test, suite green.
       - Touched ONLY `tests/strategies.py` (added `build_names`) and `tests/test_properties_build.py` (added the test). No `generators/`, no `test_properties_core.py` (20.5), no `test_properties_pipeline.py` (20.6). Wilderness remains DISABLED in `ENABLED_ZONE_TYPES` — no enablement change.
       - NOT a geometry/viewer change — an analytical format-gate property over the built binary; nothing to eyeball in 3D (see `docs/ACCEPTANCE.md`).
-      - Commit: `__PENDING__`.
+      - Commit: `e63c6f2` (strategy + test + this entry; this self-reference line is recorded in a follow-up amend-free edit, so the content commit is `e63c6f2`).
   - [ ] 20.5 Write property test for Property 14: The Format_Checker is total and specific (M1-P5)
     - `tests/strategies.py::archive_corruptions` (the design's list). `test_properties_core.py::test_format_checker_total`, `slow`, budget 25, archives built once per example: no exception, one entry per check name, every failed check has a message starting with its name, untouched checks report the same result as on the clean archive.
     - **Validates: Requirements 9.3**
