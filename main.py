@@ -19,7 +19,13 @@ from pathlib import Path
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
-from core.paths import new_zone_id
+from core.env import env_value
+from core.paths import (
+    OutputRoot,
+    OutsideOutputError,
+    assert_output_allowed,
+    new_zone_id,
+)
 from generators.builder import BUILD_NAME_RE
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
@@ -177,7 +183,14 @@ def cmd_generate(args) -> None:
     # valid zone. ``vb.build_dir`` is ``<output>/<zone_id>/v1`` for a gated or
     # ungated build; fall back to the output dir only if it is somehow unset.
     build_dir = Path(vb.build_dir) if vb.build_dir is not None else Path(args.output)
-    spec_path = build_dir / f"{args.name}.json"
+    # The spec save is confinement-checked against the output dir (Req 10.1):
+    # ``OutputRoot.path`` raises ``OutsideOutputError`` if the resolved path
+    # escapes ``args.output``; ``ZoneSpec.save`` then writes to that checked
+    # path. Resolve ``build_dir`` to an absolute path first — it is built
+    # relative to the CWD, and ``OutputRoot.path`` would otherwise re-join a
+    # relative part onto the root and double the output segment.
+    spec_rel = (build_dir / f"{args.name}.json").resolve()
+    spec_path = OutputRoot(args.output).path(str(spec_rel))
     vb.spec.save(spec_path)
     print(f"  Spec saved: {spec_path}")
 
@@ -238,6 +251,26 @@ def main(argv: list[str] | None = None) -> None:
     g.set_defaults(func=cmd_generate)
 
     args = parser.parse_args(argv)
+
+    # Refusal (Req 10.2): right after parsing — before any build or write —
+    # refuse an output directory that resolves to, inside, or around the
+    # EQ_PATH install, so a build can never write into (or over) EverQuest.
+    # EQ_PATH unset ⇒ nothing to compare, the check passes. Exit 2 (a usage
+    # error), naming BOTH paths.
+    output = getattr(args, "output", None)
+    if output is not None:
+        try:
+            assert_output_allowed(Path(output), env_value("EQ_PATH"))
+        except OutsideOutputError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(2)
+
+        # Keep dependency temp files inside the output dir, process-wide, set
+        # HERE in main() (never at import, so the test suite's temp dirs are
+        # untouched). The <output>/.tmp dir is confinement-checked and created.
+        import tempfile
+        tempfile.tempdir = str(OutputRoot(output).mkdir(".tmp"))
+
     args.func(args)
 
 

@@ -322,6 +322,57 @@ class TestCliArgs:
         assert ei.value.code == 2
         assert not Path(out).exists()
 
+    def test_output_inside_eq_path_exits_2_naming_both(
+            self, tmp_path, monkeypatch, capsys):
+        """CLI refuses an output dir that overlaps EQ_PATH (Req 10.2, task 19.5).
+
+        With ``EQ_PATH`` set (via ``env_value``) to a directory that CONTAINS
+        the requested ``--output``, ``main()`` runs ``assert_output_allowed``
+        right after parsing and exits 2 BEFORE any build/write — the error names
+        BOTH the output path and the EQ install, and no output directory is
+        created.
+        """
+        import main
+
+        eq = tmp_path / "everquest_rof2"
+        out = eq / "mygen" / "output"      # output resolves INSIDE the EQ install
+        eq.mkdir()
+        monkeypatch.setenv("EQ_PATH", str(eq))
+
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "refuse", "--rooms", "3",
+                       "--output", str(out)])
+        assert ei.value.code == 2
+        err = capsys.readouterr().err
+        # The refusal names BOTH paths.
+        assert str(out.resolve()) in err
+        assert str(eq.resolve()) in err
+        # Nothing was built under the (refused) output path.
+        assert not out.exists()
+
+    def test_output_disjoint_from_eq_path_is_allowed(
+            self, tmp_path, monkeypatch):
+        """A normal output dir that does NOT overlap EQ_PATH builds normally.
+
+        The refusal check must not disturb the ordinary case: with EQ_PATH set
+        to a disjoint sibling, a small dungeon build runs to completion and
+        lands its artifacts under the per-build directory (Req 10.1/10.2 — the
+        guard is plumbing, not a behaviour change).
+        """
+        import main
+
+        eq = tmp_path / "everquest_rof2"
+        out = tmp_path / "output"          # disjoint sibling of the EQ install
+        eq.mkdir()
+        monkeypatch.setenv("EQ_PATH", str(eq))
+
+        main.main(["generate", "okgen", "--rooms", "3", "--seed",
+                   str(GOOD_SEED), "--output", str(out)])
+
+        build_dirs = [p for p in out.iterdir()
+                      if p.is_dir() and p.name.startswith("okgen_")]
+        assert build_dirs, "a disjoint output dir should build normally"
+
     # -- Geometry-slice CLI options (task 17.8) ---------------------------
     #
     # The range-checked type= functions and _zone_type_arg (main.py, task 17.7)

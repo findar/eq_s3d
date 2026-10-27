@@ -37,18 +37,19 @@ in M1, so it is not in the Enabled set and simply isn't offered. A non-gated
 build (zone type outside the gated set, or ``validate_enabled=False``) runs
 ONCE through the same scratch->move path, marked ``validated=False``.
 
-Filesystem note: this module uses plain ``pathlib`` / ``os`` / ``shutil`` calls
-for now. Task 19.5 routes every write, move and remove through ``OutputRoot``
-(file-system confinement, wave 6); until then the paths are built directly.
+Filesystem note: every write, move and remove is routed through an
+``OutputRoot`` (``core/paths.py``) so it is confinement-checked against the
+Output_Directory (Req 10.1, task 19.5). The scratch-to-final move uses
+``OutputRoot.replace`` and scratch cleanup uses ``OutputRoot.remove_tree`` — the
+junction-safe remove that never recurses through a directory junction / symlink
+(the lessons-learned ``node_modules`` gotcha, made load-bearing here).
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import random
-import shutil
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -56,6 +57,7 @@ from pathlib import Path
 from typing import Callable, Collection, List, Optional, Sequence
 
 from analyzer.traverse import AgentModel, TraversalReport, validate
+from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
 from generators.zone_spec import ZoneSpec
 from generators.zone_types import ENABLED_ZONE_TYPES
@@ -263,9 +265,15 @@ def log_validation_failure(failure_log: Optional[str | Path], *,
             "total_rooms": report.total_rooms,
             "reasons": reasons,
         }
+        # The triage feed is append-only and lives at the caller's chosen path
+        # (the CLI puts it inside the output dir; the Server one level up at
+        # output/validation_failures.jsonl). Confine the write to the log's own
+        # parent via an OutputRoot so a crafted name can't escape it, then
+        # append in place (OutputRoot has no append, so open the checked path).
         p = Path(failure_log)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as fh:
+        log_root = OutputRoot(p.parent)
+        checked = log_root.path(p.name)
+        with checked.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record) + "\n")
 
     return failure
@@ -290,33 +298,45 @@ def _scratch_dir(output_dir: Path, zone_id: str, k: int) -> Path:
     return output_dir / ".attempts" / zone_id / f"a{k}"
 
 
-def _move_into(scratch: Path, final: Path) -> None:
-    """Move every file from ``scratch`` into ``final`` with ``os.replace``.
+def _move_into(root: OutputRoot, scratch: Path, final: Path) -> None:
+    """Move every file from ``scratch`` into ``final``, confined to ``root``.
 
-    Same volume, so each move is atomic. ``final`` is created fresh; a stale
-    ``final`` (e.g. a re-generate of the same zone id + version) is removed
-    first so the move can't collide with leftover files.
+    Both endpoints are checked against the Output_Directory via
+    ``OutputRoot.replace`` (which ``os.replace``s on the same volume, so each
+    move is atomic). ``final`` is created fresh; a stale ``final`` (e.g. a
+    re-generate of the same zone id + version) is removed first — through the
+    junction-safe ``OutputRoot.remove_tree`` — so the move can't collide with
+    leftover files.
     """
+    # Resolve both endpoints to absolute paths so ``OutputRoot.replace`` takes
+    # its absolute (``_checked``) branch — a relative path would otherwise be
+    # re-joined onto the root and double the ``output/`` segment.
+    scratch = scratch.resolve()
+    final = final.resolve()
     if final.exists():
-        shutil.rmtree(final)
+        root.remove_tree(final)
     final.mkdir(parents=True, exist_ok=True)
     for entry in scratch.iterdir():
-        os.replace(str(entry), str(final / entry.name))
+        root.replace(entry, final / entry.name)
 
 
-def _remove_scratch(output_dir: Path, zone_id: str, scratch: Path) -> None:
+def _remove_scratch(root: OutputRoot, output_dir: Path, zone_id: str,
+                    scratch: Path) -> None:
     """Remove a scratch attempt dir and the now-empty ``.attempts/<zone_id>`` parent.
 
     Rejected and accepted attempts both call this (via the callers below) so an
     attempt never leaves a directory behind — the invariant Property 2 asserts.
-    Removing the ``.attempts/<zone_id>`` parent when it is empty keeps the
-    output directory clean; the ``.attempts`` root is likewise removed when it
-    is empty, so a returned build leaves ONLY ``<zone_id>/v<version>/`` (and the
-    failure log) behind — the Property 2 invariant. A still-populated
-    ``.attempts`` (another zone's in-flight scratch) is left untouched.
+    The scratch tree is removed through the junction-safe
+    ``OutputRoot.remove_tree`` (never ``shutil.rmtree``, so a stray junction in
+    scratch is unlinked, not followed). Removing the ``.attempts/<zone_id>``
+    parent when it is empty keeps the output directory clean; the ``.attempts``
+    root is likewise removed when it is empty, so a returned build leaves ONLY
+    ``<zone_id>/v<version>/`` (and the failure log) behind — the Property 2
+    invariant. A still-populated ``.attempts`` (another zone's in-flight
+    scratch) is left untouched.
     """
     if scratch.exists():
-        shutil.rmtree(scratch, ignore_errors=True)
+        root.remove_tree(scratch)
     attempts_root = output_dir / ".attempts"
     for pruned in (attempts_root / zone_id, attempts_root):
         try:
@@ -394,6 +414,10 @@ def generate_validated(
     if zone_type is None:
         raise TypeError("generate_validated() requires zone_type")
     output_dir = Path(output_dir)
+    # Every scratch create / move / remove below is confined to this root
+    # (Req 10.1): the scratch dir, the per-build final dir and the move/cleanup
+    # all resolve inside ``output_dir`` or an ``OutsideOutputError`` is raised.
+    root = OutputRoot(output_dir)
     if gated_zone_types is None:
         gated_zone_types = ENABLED_ZONE_TYPES
     if timeout_s is None:
@@ -418,14 +442,14 @@ def generate_validated(
                                      scratch / f"{spec.name.lower()}.zone.json")
             all_warnings = base_warnings + list(result.warnings)
             moved = _finalize_build(
-                result, scratch, final_dir, fmt=fmt, warnings=all_warnings,
-                validated=False, attempts=1, seed=use_seed,
-                planned_zone_type=planned_zone_type, mode=mode,
+                root, result, scratch, final_dir, fmt=fmt,
+                warnings=all_warnings, validated=False, attempts=1,
+                seed=use_seed, planned_zone_type=planned_zone_type, mode=mode,
             )
-            _remove_scratch(output_dir, zone_id, scratch)
+            _remove_scratch(root, output_dir, zone_id, scratch)
         except Exception:
             # Builder crash: leave nothing behind, re-raise.
-            _remove_scratch(output_dir, zone_id, scratch)
+            _remove_scratch(root, output_dir, zone_id, scratch)
             raise
 
         note = ("validation disabled" if not validate_enabled
@@ -464,11 +488,12 @@ def generate_validated(
             if passed:
                 all_warnings = base_warnings + list(result.warnings)
                 moved = _finalize_build(
-                    result, scratch, final_dir, fmt=fmt, warnings=all_warnings,
-                    validated=True, attempts=attempt, seed=use_seed,
-                    planned_zone_type=planned_zone_type, mode=mode,
+                    root, result, scratch, final_dir, fmt=fmt,
+                    warnings=all_warnings, validated=True, attempts=attempt,
+                    seed=use_seed, planned_zone_type=planned_zone_type,
+                    mode=mode,
                 )
-                _remove_scratch(output_dir, zone_id, scratch)
+                _remove_scratch(root, output_dir, zone_id, scratch)
                 if attempt > 1:
                     logger.info("gate PASS zone=%s zone_type=%s seed=%s on "
                                 "attempt %d", zone_id, zone_type, use_seed, attempt)
@@ -485,10 +510,10 @@ def generate_validated(
                 failure_log, zone_id=zone_id, zone_type=zone_type,
                 seed=use_seed, attempt=attempt, report=report, checks=checks,
             ))
-            _remove_scratch(output_dir, zone_id, scratch)
+            _remove_scratch(root, output_dir, zone_id, scratch)
         except Exception:
             # Builder crash mid-attempt: leave nothing behind, re-raise.
-            _remove_scratch(output_dir, zone_id, scratch)
+            _remove_scratch(root, output_dir, zone_id, scratch)
             raise
 
         # A pinned seed is an explicit request: don't swap it, error out.
@@ -504,22 +529,29 @@ def generate_validated(
         # else: pick a new fresh seed and retry.
 
 
-def _finalize_build(result: BuildResult, scratch: Path, final_dir: Path, *,
+def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
+                    final_dir: Path, *,
                     fmt: _FormatStub, warnings: Sequence[str], validated: bool,
                     attempts: int, seed: int,
                     planned_zone_type: Optional[str] = None,
                     mode: Optional[str] = None) -> BuildResult:
     """Move a passing/ungated build out of scratch into ``final_dir``.
 
-    ``os.replace`` every file from ``scratch`` into ``final_dir`` (atomic on the
-    same volume), merge the pipeline fields (``format``/``warnings``/
-    ``validated``/``attempts``/``seed``, plus ``planned_zone_type`` when a
-    substitution occurred) into the Sidecar there, and rewrite the
-    BuildResult paths to point at their new home. The scratch directory is
-    removed by the caller (so the one ``finally`` cleanup covers both the
-    success and failure exits).
+    Moves every file from ``scratch`` into ``final_dir`` through
+    ``OutputRoot.replace`` (atomic on the same volume, both endpoints confined),
+    merges the pipeline fields (``format``/``warnings``/``validated``/
+    ``attempts``/``seed``, plus ``planned_zone_type`` when a substitution
+    occurred) into the Sidecar there, and rewrites the BuildResult paths to
+    point at their new home. The scratch directory is removed by the caller (so
+    the one ``finally`` cleanup covers both the success and failure exits).
     """
-    _move_into(scratch, final_dir)
+    _move_into(root, scratch, final_dir)
+
+    # Resolve to absolute so the derived Sidecar / relocated paths are absolute
+    # and ``OutputRoot.write_text`` takes its checked (non-rejoining) branch — a
+    # relative ``final_dir`` would otherwise be re-joined onto the root and
+    # double the output segment.
+    final_dir = final_dir.resolve()
 
     name = result.spec.name.lower()
 
@@ -557,6 +589,7 @@ def _finalize_build(result: BuildResult, scratch: Path, final_dir: Path, *,
         # CLI and ungated builds may omit it).
         if mode is not None:
             data["mode"] = mode
-        sidecar.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        # Rewrite in place, confined to the Output_Directory.
+        root.write_text(str(sidecar), json.dumps(data, indent=2))
 
     return result

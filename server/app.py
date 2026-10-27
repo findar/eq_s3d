@@ -22,6 +22,7 @@ import hashlib
 import re
 import subprocess
 from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -32,7 +33,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
-from core.paths import new_zone_id
+from core.env import env_value
+from core.paths import OutputRoot, assert_output_allowed, new_zone_id
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type,
@@ -51,7 +53,17 @@ ROOT        = Path(__file__).parent.parent
 OUTPUT_DIR  = ROOT / "output" / "web"
 WEB_DIST    = ROOT / "web" / "dist"      # built front-end (Vite build)
 FAILURE_LOG = ROOT / "output" / "validation_failures.jsonl"  # triage feed
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# Refusal (Req 10.2): BEFORE the OUTPUT_DIR is created, at IMPORT time, refuse
+# an output directory that overlaps the EQ_PATH install — so importing
+# ``server.app`` with an overlapping EQ_PATH raises ``OutsideOutputError`` and
+# the server never starts (uvicorn fails to load the app). EQ_PATH unset (or
+# non-overlapping) ⇒ the check passes and import proceeds normally.
+assert_output_allowed(OUTPUT_DIR, env_value("EQ_PATH"))
+
+# Create the output dir through an OutputRoot so the creation itself is
+# confinement-checked (it is the root, so this is a plain mkdir of the root).
+OutputRoot(OUTPUT_DIR).mkdir()
 
 # The available zone types come from the single source of truth
 # (generators/zone_types.py); the server no longer keeps its own list.
@@ -188,7 +200,23 @@ WEB_APP_ORIGINS = (
 # App
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="eq_s3d zone generator", version="0.3.0")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Server startup: point process temp files at ``OUTPUT_DIR/.tmp`` (Req 10.1).
+
+    Runs on the server's STARTUP path (when the ASGI server starts the app),
+    never at import — so merely importing ``server.app`` (as the test suite
+    does) does NOT mutate the global ``tempfile.tempdir`` and the suite's own
+    temp dirs are untouched. The ``.tmp`` dir is confinement-checked and created
+    through the OutputRoot.
+    """
+    import tempfile
+    tempfile.tempdir = str(OutputRoot(OUTPUT_DIR).mkdir(".tmp"))
+    yield
+
+
+app = FastAPI(title="eq_s3d zone generator", version="0.3.0",
+              lifespan=_lifespan)
 
 
 class LocalCORSMiddleware(CORSMiddleware):
