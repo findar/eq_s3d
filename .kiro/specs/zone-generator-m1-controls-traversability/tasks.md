@@ -1612,7 +1612,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Interpretation:** the wave-6 Build_Name naming + Tier-1 format gate work end-to-end through BOTH real entry points — every artifact is named by the Build_Name, one directory per build, all eleven format checks pass and `normals_resolve` is absent. No mis-named artifact and no failed check, i.e. consistent with the 20.4 (`test_enabled_builds_pass_format`) and 20.6 (`test_build_name_and_directories`) property tests — no bug surfaced.
       - **Suite:** `python -m pytest tests/ -q -n0` → **435 passed** (906.15 s), 2 pre-existing unrelated warnings (Starlette/httpx deprecation, runpy re-import). Matches the 435 effective baseline; 20.9 adds no test. Run single-process (`-n0`) so the known xdist CORS timing flake does not surface, per the task note.
       - Single-writer: only this `tasks.md` touched; no code change, branch not pushed. The throwaway recording script and all tmp build dirs live outside the repo and are not committed.
-      - Commit: recorded in the tracker self-reference follow-up below.
+      - Commit: `5e87a59` (tracker only; this self-reference hash is recorded in a follow-up amend-free edit).
 
 - [ ] 21. Checkpoint: wave 6 closed
   - Suite green; Default_Run median recorded; frontend builds. Write the wave-6 integration note (Done-table row, "Pick up here" line, commit hash and count, and whether wilderness is still enabled after 20.4). Ask the user if questions arise.
