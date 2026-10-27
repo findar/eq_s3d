@@ -1343,9 +1343,28 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **Fork-point hash:** `eddc09cc4dd97f00e9d1bab359cd5425ac791d85` (`eddc09c`) — the wave-6 fork point (includes waves 1–5).
       - Health: imports OK (`core.eqg`, `generators.pipeline`, `generators.builder`, `server.app`, `ai.planner`).
       - **Wave-6 fork-point baseline:** `python -m pytest tests/ -q` → **380 passed, 1 failed in 173.38s** (wall ~174.5 s, parallel via pytest-xdist). The single failure is the known pre-existing xdist CORS timing flake `test_server.py::test_foreign_origins_get_no_cors` (`DeadlineExceeded`, 346 ms > 200 ms deadline on first parallel call). Re-run isolated (`-n0`): **1 passed in 1.96s** — confirmed NOT a regression. Effective baseline **381 passing**.
-  - [ ] 19.2 Add `core/env.py` and read keys through it
+  - [x] 19.2 Add `core/env.py` and read keys through it
     - `DOTENV_PATH`, `env_value(name, default)` (`os.environ` first, then `dotenv_values`; never mutates `os.environ`). Switch `ai/llm_planner.py`, `ai/planner.py`, `generators/textures/ai.py` and `generators/textures/factory.py` to it. `no_api_keys` also patches `core.env.DOTENV_PATH` to a missing file. `LLMPlanner` error logs print the exception type and HTTP status only. Add a precedence test with a temp `.env`.
     - _Requirements: 10.2_
+    - **Deliverables:**
+      - `core/env.py` (new) — module-level `DOTENV_PATH: Path = <repo root>/.env` (so tests can monkeypatch it to a missing file) and `env_value(name, default=None)`: reads `os.environ` first, then falls back to `dotenv_values(DOTENV_PATH)` (python-dotenv, which parses the file and does NOT mutate the process env). Returns `default` when neither source has the key. No `load_dotenv()` anywhere, so `os.environ` is never mutated. `dotenv_values` wrapped in a try/except that degrades to an empty mapping if the parse ever raises.
+      - Four call-site switches from `os.environ.get(...)` to `core.env.env_value(...)`:
+        - `ai/llm_planner.py` — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` in `LLMPlanner.__init__`.
+        - `ai/planner.py` — `EQ_S3D_PLANNER` override in `get_planner`.
+        - `generators/textures/ai.py` — `OPENAI_API_KEY`, `STABILITY_API_KEY` in `AIProvider.__init__`.
+        - `generators/textures/factory.py` — `EQ_S3D_TEXTURE_PROVIDER` override in `get_provider`.
+        - (`import os` dropped from all four where it became unused.)
+      - **Log redaction:** the planner fallback log in `ai/planner.py::make_plan` previously printed `({e})` (SDK exceptions stringify to the request URL + response body, which can echo the prompt or an auth header). Added `_redacted_error(exc)` which prints only the exception **type** and, if the SDK attached one, the HTTP status (`status_code`, or `response.status_code`) — never `str(exc)`. The fallback log now reads `[planner] llm failed (<Type> (HTTP <n>)); falling back to rule planner`.
+      - **`no_api_keys` fixture** (`tests/conftest.py`) now also `monkeypatch.setattr(core.env, "DOTENV_PATH", <missing path>)` so a developer's real `.env` can never leak a key into a test asserting no-key behaviour. (Existing env-var deletions and forced-global resets unchanged.)
+      - **Precedence test** (`tests/test_env.py`, new): with a temp `.env` holding `EQ_S3D_TEST_KEY=from-dotenv`, asserts (1) `os.environ` wins (env var set → reads `from-environ`), (2) falls back to the `.env` value when the env var is absent (`from-dotenv`), (3) returns the `default` (and `None`) when neither source has the key, and (4) `os.environ` is NOT mutated by `env_value` (the `.env` key never appears in `os.environ`; the full `os.environ` snapshot is unchanged). A second test pins the no-API-by-default invariant: missing `.env` + absent env var → `default`/`None`, no mutation.
+      - **Env note:** `python-dotenv==1.0.1` (pinned in `requirements.txt` but previously not installed in the shared env — design finding 7 "pinned but unused") installed to run. No `requirements.txt` change.
+      - **Verify:**
+        - `python -m pytest tests/test_env.py tests/test_planner.py tests/test_textures.py -q -n0` → **122 passed**.
+        - `python -m pytest tests/test_properties_pipeline.py::test_no_api_default_selection tests/test_properties_pipeline.py::test_no_api_prompt_and_cli -q -n0` → **2 passed** (the no-API fixture path still holds with `.env` neutralised).
+        - `python -m pytest tests/ -q` → **383 passed** (163.71 s, parallel). +2 over the 381 effective baseline (the two new `test_env.py` tests); the known xdist CORS flake passed in this run.
+      - Touched only `core/env.py`, `ai/llm_planner.py`, `ai/planner.py`, `generators/textures/ai.py`, `generators/textures/factory.py`, `tests/conftest.py`, `tests/test_env.py` and this `tasks.md` entry. NOT `core/paths.py` (19.3) or `core/pfs.py` (20.1).
+      - Not a geometry/viewer change — nothing to eyeball in 3D.
+      - Commit: `2c4dd00`.
   - [ ] 19.3 Add `core/paths.py`
     - `OutsideOutputError`, `OutputRoot` (`contains`, `path`, `mkdir`, `write_bytes`, `write_text`, `replace`, `remove_tree` that unlinks junctions/symlinks and never recurses through them), `assert_output_allowed(output_dir, eq_path)`, and `new_zone_id(prefix="gen")` (`<prefix>_<ts>_<hex6>`, lowercase; the design names it without a home module).
     - _Requirements: 10.1, 10.2_
