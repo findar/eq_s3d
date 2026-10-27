@@ -1335,9 +1335,14 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 ### Wave 6 — Build naming, format gate and file-system confinement (Requirements 8, 9, 10)
 
 - [ ] 19. Build_Name naming and confinement
-  - [ ] 19.1 Create the worktree
+  - [x] 19.1 Create the worktree
     - `./scripts/new-worktree.ps1 -Branch agent/m1-format`. Record the fork-point hash.
     - _Requirements: 8.2_
+    - **Deliverables:**
+      - Worktree `agent/m1-format` created at `F:\Dev Projects\eq_s3d-worktrees\agent-m1-format`, forked from `master` head.
+      - **Fork-point hash:** `eddc09cc4dd97f00e9d1bab359cd5425ac791d85` (`eddc09c`) — the wave-6 fork point (includes waves 1–5).
+      - Health: imports OK (`core.eqg`, `generators.pipeline`, `generators.builder`, `server.app`, `ai.planner`).
+      - **Wave-6 fork-point baseline:** `python -m pytest tests/ -q` → **380 passed, 1 failed in 173.38s** (wall ~174.5 s, parallel via pytest-xdist). The single failure is the known pre-existing xdist CORS timing flake `test_server.py::test_foreign_origins_get_no_cors` (`DeadlineExceeded`, 346 ms > 200 ms deadline on first parallel call). Re-run isolated (`-n0`): **1 passed in 1.96s** — confirmed NOT a regression. Effective baseline **381 passing**.
   - [ ] 19.2 Add `core/env.py` and read keys through it
     - `DOTENV_PATH`, `env_value(name, default)` (`os.environ` first, then `dotenv_values`; never mutates `os.environ`). Switch `ai/llm_planner.py`, `ai/planner.py`, `generators/textures/ai.py` and `generators/textures/factory.py` to it. `no_api_keys` also patches `core.env.DOTENV_PATH` to a missing file. `LLMPlanner` error logs print the exception type and HTTP status only. Add a precedence test with a temp `.env`.
     - _Requirements: 10.2_
