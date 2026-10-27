@@ -567,3 +567,204 @@ def test_serialized_output_has_no_theme_key():
             assert cf in sidecar["content"], (
                 f"sidecar content block dropped {cf!r}"
             )
+
+# ======================================================================
+# Surface guards (task 17.10, Req 2.3 / 8.1)
+# ======================================================================
+#
+# Wave 5 rebuilt the controls surface down to the geometry slice (tasks 17.7
+# CLI, 17.9 Web_App). These guards pin that the surface STAYS that small: no
+# richer "mode"-style control leaked in (topology / district / purpose /
+# builder / inhabitants / condition / element), and no ``target`` field exists
+# on any plan / spec / request surface — the server IGNORES an incoming
+# ``target_shortname`` via ``extra="ignore"`` (task 17.6), which is fine; the
+# guard is only that ``target`` is never a real FIELD.
+#
+# As elsewhere in this module the forbidden names are assembled by string
+# CONCATENATION so this file never contains the literal control id / option
+# name, and it stays excluded from the generic ``*.py`` scans by ``_THIS_REL``.
+
+# The seven forbidden control ids / CLI option names (Req 2.3). Built so the
+# literals don't appear verbatim in this file.
+_FORBIDDEN_CONTROLS = (
+    "top" + "ology",
+    "dis" + "trict",
+    "pur" + "pose",
+    "buil" + "der",
+    "inhab" + "itants",
+    "cond" + "ition",
+    "ele" + "ment",
+)
+
+# The target field name (and its longer serialized form). Built by
+# concatenation for the same reason.
+_TOK_TARGET = "tar" + "get"
+_TOK_TARGET_SHORT = "tar" + "get_shortname"
+
+# The geometry-slice control ids the Web_App is allowed to carry, plus the two
+# header controls (description/prompt + seed) — the ONLY <... id="..."> values
+# that drive generation. Everything else in index.html is a display/overlay id
+# (m-*, t-*, status, panel, …) and is not an input control.
+_ALLOWED_WEB_INPUT_IDS = {
+    "zone-type", "rooms", "size", "verticality", "locks",  # geometry slice
+    "prompt", "seed",                                      # description + seed
+}
+
+# The CLI ``generate`` option/flag names the geometry slice is allowed to add,
+# plus the non-geometry housekeeping options the task names explicitly.
+_ALLOWED_CLI_OPTIONS = {
+    # geometry slice
+    "--zone-type", "--rooms", "--size", "--verticality", "--locks", "--seed",
+    # housekeeping the task allows
+    "--output", "--ter-version", "--no-validate",
+    # deprecated aliases that share a dest (still a legacy input surface)
+    "--theme", "--allow-invalid",
+}
+
+
+def _web_input_ids():
+    """The GENERATION-driving controls in web/index.html.
+
+    Every ``id="..."`` on an <input>/<select>/<textarea>, minus the viewport
+    overlay toggles (the established ``t-`` prefix: wireframe, lights, regions,
+    gates, room-id labels). Those toggles change what the 3D view DRAWS — they
+    never feed a generate — so they're out of scope for the geometry-slice
+    guard, which is about the controls that build a zone. Display spans and
+    buttons aren't <input>/<select>/<textarea>, so they're already excluded.
+    """
+    html = _read("web/index.html")
+    ids = set()
+    for m in re.finditer(r"<(input|select|textarea)\b([^>]*)>", html, re.I):
+        attrs = m.group(2)
+        idm = re.search(r'\bid="([^"]+)"', attrs)
+        if idm and not idm.group(1).startswith("t-"):
+            ids.add(idm.group(1))
+    return ids
+
+
+def _all_web_ids():
+    """Every ``id="..."`` anywhere in web/index.html (any element)."""
+    return set(re.findall(r'\bid="([^"]+)"', _read("web/index.html")))
+
+
+def _cli_option_strings():
+    """Every ``--option`` string argparse registers in main.py.
+
+    Parsed from source via AST: collect the string literals passed positionally
+    to any ``add_argument(...)`` call that begin with ``--`` (the option names
+    and flags). Importing main.py would run CLI-construction code, so reading
+    the source is the safe, robust approach the sibling theme-surface guard also
+    uses.
+    """
+    tree = ast.parse(_read("main.py"))
+    opts = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            fn = node.func
+            name = getattr(fn, "attr", None) or getattr(fn, "id", None)
+            if name != "add_argument":
+                continue
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    if arg.value.startswith("--"):
+                        opts.add(arg.value)
+    return opts
+
+
+def test_no_forbidden_control_ids_in_web_app():
+    """web/index.html carries no richer-mode control (Req 2.3).
+
+    None of topology / district / purpose / builder / inhabitants / condition /
+    element may appear as a control id, and the input controls must be exactly
+    the geometry slice (zone-type, rooms, size, verticality, locks) plus the
+    header description (prompt) and seed. A leak here means a control from a
+    wider surface slipped into the Web_App.
+    """
+    all_ids = _all_web_ids()
+    for tok in _FORBIDDEN_CONTROLS:
+        offenders = {i for i in all_ids if tok in i}
+        assert not offenders, (
+            f"forbidden control token {tok!r} appears in a web/index.html id: "
+            f"{sorted(offenders)}"
+        )
+
+    input_ids = _web_input_ids()
+    extra = input_ids - _ALLOWED_WEB_INPUT_IDS
+    assert not extra, (
+        f"web/index.html has input/select controls outside the geometry slice "
+        f"+ description/seed: {sorted(extra)} (allowed: "
+        f"{sorted(_ALLOWED_WEB_INPUT_IDS)})"
+    )
+
+
+def test_no_forbidden_options_in_cli():
+    """main.py's generate command carries no richer-mode option (Req 2.3).
+
+    None of topology / district / purpose / builder / inhabitants / condition /
+    element may appear as an option name, and the registered options must be a
+    subset of the geometry slice plus name/output/ter-version/no-validate (and
+    the deprecated aliases). A leak means a wider-surface option was added to
+    the CLI.
+    """
+    opts = _cli_option_strings()
+    for tok in _FORBIDDEN_CONTROLS:
+        offenders = {o for o in opts if tok in o}
+        assert not offenders, (
+            f"forbidden control token {tok!r} appears in a main.py CLI option: "
+            f"{sorted(offenders)}"
+        )
+
+    extra = opts - _ALLOWED_CLI_OPTIONS
+    assert not extra, (
+        f"main.py generate has options outside the geometry slice + "
+        f"housekeeping: {sorted(extra)} (allowed: {sorted(_ALLOWED_CLI_OPTIONS)})"
+    )
+
+
+def test_no_target_field_on_any_surface():
+    """No ``target`` field exists on any plan / spec / request / UI surface.
+
+    Req 8.1: the per-zone ``target_shortname`` escape hatch is GONE as a field.
+    Checked on five surfaces:
+      1. ``ZonePlan`` dataclass fields,
+      2. ``ZoneSpec`` dataclass fields,
+      3. ``GenerateRequest`` model fields,
+      4. the main.py CLI option names,
+      5. web/index.html control ids.
+
+    The server still ACCEPTS an incoming ``target_shortname`` (ignored via
+    ``extra="ignore"``, task 17.6) — that is fine and is NOT a field, so it does
+    not appear in ``GenerateRequest.model_fields``. This guard only forbids a
+    real field named ``target`` (or ``target_shortname``).
+    """
+    from ai.schema import ZonePlan
+    from generators.zone_spec import ZoneSpec
+    from server.app import GenerateRequest
+
+    forbidden = {_TOK_TARGET, _TOK_TARGET_SHORT}
+
+    plan_fields = set(ZonePlan.__dataclass_fields__)
+    assert not (plan_fields & forbidden), (
+        f"ZonePlan has a target field: {sorted(plan_fields & forbidden)}"
+    )
+
+    spec_fields = set(ZoneSpec.__dataclass_fields__)
+    assert not (spec_fields & forbidden), (
+        f"ZoneSpec has a target field: {sorted(spec_fields & forbidden)}"
+    )
+
+    req_fields = set(GenerateRequest.model_fields)
+    assert not (req_fields & forbidden), (
+        f"GenerateRequest has a target field: {sorted(req_fields & forbidden)}"
+    )
+
+    cli_opts = _cli_option_strings()
+    cli_offenders = {o for o in cli_opts if _TOK_TARGET in o}
+    assert not cli_offenders, (
+        f"main.py CLI has a target option: {sorted(cli_offenders)}"
+    )
+
+    web_offenders = {i for i in _all_web_ids() if _TOK_TARGET in i}
+    assert not web_offenders, (
+        f"web/index.html has a target control id: {sorted(web_offenders)}"
+    )
