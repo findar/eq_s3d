@@ -1234,7 +1234,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **369 passed** (162.56 s) — 343 baseline + 26 new (the new example tests incl. parametrized variants). No failures; the known xdist CORS flake `test_foreign_origins_get_no_cors` did not surface this parallel run (passes isolated at `-n0` if it ever does).
       - Touched only `tests/test_server.py`, `server/app.py` (the `_require_int` root fix), and this `tasks.md` entry. Not `main.py`, `web/`, `tests/test_pipeline.py` or `tests/test_hygiene.py` (17.8/17.10). `tests/strategies.py` not needed (these are example tests, no new strategies).
       - NOT verified in the live browser — these are server request/response wiring checks via `TestClient`; the human-gated modes pass is 18.2.
-      - Commit: `__PENDING__` (filled after commit).
+      - Commit: `eacf166` (code + tests; this self-reference line recorded in a follow-up edit).
   - [x] 17.7 Add the geometry-slice CLI options
     - `main.py generate`: `--rooms` (1–30), `--size`, `--verticality` (flat/moderate/dramatic), `--locks` (0–5), `--seed` (0–2,147,483,647) as range-checked `type=` functions; `_zone_type_arg` maps `outdoor` and rejects undefined or disabled values listing the enabled set; the plan is `ZonePlan.from_controls({...})`, built through `plan_to_spec` + `generate_validated`. Out-of-domain options exit 2 before any write. No target, topology, district or content options.
     - _Requirements: 2.2, 2.3, 2.5, 3.3, 5.3_
