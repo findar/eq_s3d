@@ -360,3 +360,415 @@ origins_outside = st.one_of(
     st.text(alphabet=_ORIGIN_ALPHABET, min_size=1, max_size=64),
     st.sampled_from(_ORIGIN_NEAR_MISSES),
 ).filter(lambda o: o not in _web_app_origins())
+
+
+# ---------------------------------------------------------------------------
+# Archive corruptions (Property 14 / M1-P5 / Req 9.3)
+# ---------------------------------------------------------------------------
+#
+# A corruption is a transform applied to a VALID built ``.eqg``'s bytes to make
+# the RoF2 Format_Checker (``analyzer.rof2check.check_eqg``) see a damaged
+# archive. ``archive_corruptions`` draws one such transform; the Property-14
+# test (``test_properties_core.py::test_format_checker_total``) applies it to a
+# freshly built small dungeon and asserts the checker is TOTAL (never raises,
+# one entry per check name) and SPECIFIC (a failed check names itself; a check
+# whose inputs the corruption did not touch reports the same verdict as on the
+# clean archive).
+#
+# Each corruption carries the set of check names its damage may legitimately
+# reach (``affected``), so the "untouched checks unchanged" assertion can be
+# scoped: a corruption that makes the archive / TER / ZON unreadable also flips
+# that input's DEPENDENTS to skipped, which is a legitimate change — those
+# dependents are listed in ``affected`` too. A corruption marked with the
+# sentinel ``ALL_CHECKS`` (generic byte garbage that can cascade anywhere) is
+# exempt from the untouched-check comparison entirely; it still exercises
+# totality + presence + self-naming.
+#
+# The set mirrors the design's Property-14 list
+# (``.kiro/specs/zone-generator-m1-controls-traversability/design.md``):
+#   truncate at an offset, flip bytes in a range, drop an entry, rename an
+#   entry, set a wrong CRC, replace the TER or ZON entry with random bytes,
+#   shrink a DDS dimension to a non-power-of-two, set a polygon's material to −1
+#   or past the end — plus a few neighbours that each pin a specific check
+#   (zero the header, break the ZON model ref, push a coordinate past MAX_COORD,
+#   break name consistency via the Sidecar).
+
+import struct as _struct
+
+from core.pfs import (
+    PfsArchive as _PfsArchive,
+    RawEntry as _RawEntry,
+    _DIR_SENTINEL_CRC as _PFS_SENTINEL_CRC,
+    _PFS_MAGIC as _PFS_MAGIC_BYTES,
+    read_directory as _read_directory,
+)
+from core.ter import (
+    PROP_DIFFUSE as _PROP_DIFFUSE,
+    PROP_TYPE_STRING as _PROP_TYPE_STRING,
+    TerFile as _TerFile,
+)
+from core.zon import ZonFile as _ZonFile
+
+#: Sentinel ``affected`` value: this corruption may cascade to ANY check, so the
+#: untouched-check comparison is skipped for it (totality / presence / naming
+#: are still asserted).
+ALL_CHECKS = frozenset({"*"})
+
+
+def _ter_entry_name(build: str) -> str:
+    return f"ter_{build.lower()}.ter"
+
+
+def _zon_entry_name(build: str) -> str:
+    return f"{build.lower()}.zon"
+
+
+def _rebuild_with(build: str, mutate) -> "callable":
+    """Return a transform that parses the eqg to a ``PfsArchive``, lets
+    ``mutate(arc)`` change it, and re-serialises. ``mutate`` may return a new
+    archive or mutate in place."""
+
+    def _xf(data: bytes) -> bytes:
+        arc = _PfsArchive.from_bytes(data)
+        result = mutate(arc)
+        if result is not None:
+            arc = result
+        return arc.to_bytes()
+
+    return _xf
+
+
+# --- Archive-level byte corruptions (generic / specific pfs_reads) ----------
+
+def _c_truncate(frac: float):
+    def _xf(data: bytes) -> bytes:
+        n = max(0, int(len(data) * frac))
+        return data[:n]
+    # A truncation lands somewhere in the deflated payload / directory: the
+    # archive no longer reads cleanly, so everything may cascade.
+    return ("truncate", _xf, ALL_CHECKS)
+
+
+def _c_zero_header():
+    def _xf(data: bytes) -> bytes:
+        b = bytearray(data)
+        for i in range(min(12, len(b))):
+            b[i] = 0
+        return bytes(b)
+    # Zeroed magic/version/dir-offset: pfs_reads fails, every dependent skips.
+    return ("zero_header", _xf, ALL_CHECKS)
+
+
+def _c_flip_bytes(seed: int):
+    def _xf(data: bytes) -> bytes:
+        if len(data) <= 16:
+            return data
+        b = bytearray(data)
+        rng = random.Random(seed)
+        # Flip a short run of bytes somewhere in the deflated body (after the
+        # 12-byte header, before the final footer) so a payload/stream is hit.
+        lo = 12
+        hi = max(13, len(b) - 9)
+        start = rng.randrange(lo, hi)
+        for i in range(start, min(start + 8, len(b))):
+            b[i] ^= 0xFF
+        return bytes(b)
+    return ("flip_bytes", _xf, ALL_CHECKS)
+
+
+# --- Directory / entry corruptions ------------------------------------------
+
+def _c_drop_entry(which: str):
+    """Drop a required member (the TER or the ZON) from the archive."""
+
+    def _mutate(build):
+        target = _ter_entry_name(build) if which == "ter" else _zon_entry_name(build)
+
+        def _m(arc: _PfsArchive):
+            arc.remove(target)
+        return _m
+
+    # Dropping the TER makes required_files + name_consistent fail and every
+    # TER-dependent check skip; dropping the ZON hits required_files,
+    # zon_roundtrip, zon_model_ref and name_consistent.
+    if which == "ter":
+        affected = frozenset({
+            "required_files", "ter_roundtrip", "material_indices",
+            "diffuse_textures", "collision_policy", "safe_point",
+            "bounds_sane", "name_consistent",
+        })
+    else:
+        affected = frozenset({
+            "required_files", "zon_roundtrip", "zon_model_ref", "name_consistent",
+        })
+    return (f"drop_{which}_entry", _mutate, affected)
+
+
+def _c_rename_entry(which: str):
+    """Rename a required member so required_files/name_consistent see it gone."""
+
+    def _mutate(build):
+        target = _ter_entry_name(build) if which == "ter" else _zon_entry_name(build)
+
+        def _m(arc: _PfsArchive):
+            for f in arc.files:
+                if f.name.lower() == target:
+                    f.name = "renamed_" + f.name
+                    break
+        return _m
+
+    if which == "ter":
+        affected = frozenset({
+            "required_files", "ter_roundtrip", "material_indices",
+            "diffuse_textures", "collision_policy", "safe_point",
+            "bounds_sane", "name_consistent",
+        })
+    else:
+        affected = frozenset({
+            "required_files", "zon_roundtrip", "zon_model_ref", "name_consistent",
+        })
+    return (f"rename_{which}_entry", _mutate, affected)
+
+
+def _c_wrong_crc():
+    """Set a directory record's CRC to a value that matches no name, so the
+    entry survives as data but loses its name (name block has no entry for it).
+    Done at the raw byte level on the directory block."""
+
+    def _xf(data: bytes) -> bytes:
+        entries, errors = _read_directory(data)
+        if errors or not entries:
+            return data
+        (dir_offset,) = _struct.unpack_from("<I", data, 0)
+        (file_count,) = _struct.unpack_from("<I", data, dir_offset)
+        b = bytearray(data)
+        # Flip the CRC of the first NON-sentinel directory record to a value no
+        # filename hashes to. Record i sits at dir_offset + 4 + i*12.
+        for i in range(file_count):
+            rec_at = dir_offset + 4 + i * 12
+            (crc,) = _struct.unpack_from("<I", b, rec_at)
+            if crc != _PFS_SENTINEL_CRC:
+                _struct.pack_into("<I", b, rec_at, crc ^ 0xA5A5A5A5)
+                break
+        return bytes(b)
+
+    # A record whose CRC matches no name: that member is unnamed, so
+    # required_files and name_consistent notice the required file "missing",
+    # and its TER/ZON-dependent checks skip. Scope to all members' dependents.
+    affected = frozenset({
+        "required_files", "ter_roundtrip", "zon_roundtrip", "zon_model_ref",
+        "material_indices", "diffuse_textures", "collision_policy",
+        "safe_point", "bounds_sane", "name_consistent",
+    })
+    return ("wrong_crc", ("raw", _xf), affected)
+
+
+def _c_replace_member_random(which: str, seed: int):
+    """Replace the TER or ZON member's payload with random bytes."""
+
+    def _mutate(build):
+        target = _ter_entry_name(build) if which == "ter" else _zon_entry_name(build)
+        rng = random.Random(seed)
+        blob = rng.randbytes(256)
+
+        def _m(arc: _PfsArchive):
+            arc.add(target, blob)
+        return _m
+
+    if which == "ter":
+        # Random TER: it no longer parses -> ter_roundtrip fails and every
+        # TER-derived check skips. required_files/zon unaffected.
+        affected = frozenset({
+            "ter_roundtrip", "material_indices", "diffuse_textures",
+            "collision_policy", "safe_point", "bounds_sane",
+        })
+    else:
+        # Random ZON: zon_roundtrip fails, zon_model_ref skips, name_consistent
+        # can no longer read the model ref.
+        affected = frozenset({"zon_roundtrip", "zon_model_ref", "name_consistent"})
+    return (f"replace_{which}_random", _mutate, affected)
+
+
+# --- TER-content corruptions (parse, mutate the model, re-serialise) --------
+
+def _c_bad_material_index(build_rel: int):
+    """Set a polygon's material index to −1 or past the end of the material
+    list, so material_indices fails but the TER still round-trips."""
+
+    def _mutate(build):
+        target = _ter_entry_name(build)
+
+        def _m(arc: _PfsArchive):
+            raw = arc.get(target)
+            ter = _TerFile.from_bytes(raw, name=build.lower())
+            if ter.polygons:
+                if build_rel < 0:
+                    ter.polygons[0].material = -1
+                else:
+                    ter.polygons[0].material = len(ter.materials) + 5
+            arc.add(target, ter.to_bytes())
+        return _m
+
+    # Only material_indices should flip (and collision_policy reads the material
+    # name of a passable poly — a bad index can change its lookup, so scope it
+    # in too, conservatively).
+    affected = frozenset({"material_indices", "collision_policy"})
+    kind = "neg" if build_rel < 0 else "over"
+    return (f"material_index_{kind}", _mutate, affected)
+
+
+def _c_coord_past_max():
+    """Push a TER vertex coordinate past MAX_COORD so bounds_sane fails while
+    the TER still round-trips and materials stay valid."""
+
+    def _mutate(build):
+        target = _ter_entry_name(build)
+
+        def _m(arc: _PfsArchive):
+            raw = arc.get(target)
+            ter = _TerFile.from_bytes(raw, name=build.lower())
+            if ter.vertices:
+                ter.vertices[0].x = 40000.0  # > MAX_COORD (30000)
+            arc.add(target, ter.to_bytes())
+        return _m
+
+    # Moving a vertex far out can also drag the safe-point floor and the DDS /
+    # collision are untouched. safe_point reads geometry near the spec safe
+    # point, which is unlikely to be vertex 0, but scope it in conservatively.
+    affected = frozenset({"bounds_sane", "safe_point"})
+    return ("coord_past_max", _mutate, affected)
+
+
+def _c_shrink_dds_dimension():
+    """Rewrite a diffuse DDS member's width to a non-power-of-two so
+    diffuse_textures fails. The DDS entry is a packed member named by the
+    material's e_TextureDiffuse0 property."""
+
+    def _mutate(build):
+        ter_name = _ter_entry_name(build)
+
+        def _m(arc: _PfsArchive):
+            raw = arc.get(ter_name)
+            ter = _TerFile.from_bytes(raw, name=build.lower())
+            dds_name = None
+            for mat in ter.materials:
+                for prop in mat.properties:
+                    if prop.name == _PROP_DIFFUSE and prop.type == _PROP_TYPE_STRING:
+                        dds_name = prop.value_s
+                        break
+                if dds_name:
+                    break
+            if not dds_name:
+                return
+            dds = arc.get(dds_name)
+            if dds is None or len(dds) < 20 or dds[:4] != b"DDS ":
+                return
+            b = bytearray(dds)
+            # width is at file offset 16 (after 4-byte magic + 12 into the
+            # 124-byte header). Set it to 130 (not a power of two).
+            _struct.pack_into("<I", b, 16, 130)
+            arc.add(dds_name, bytes(b))
+        return _m
+
+    affected = frozenset({"diffuse_textures"})
+    return ("shrink_dds_dimension", _mutate, affected)
+
+
+# --- ZON-content corruptions ------------------------------------------------
+
+def _c_break_model_ref():
+    """Change the ZON models[0] away from TER_<NAME>.TER so zon_model_ref and
+    name_consistent fail while zon_roundtrip still holds."""
+
+    def _mutate(build):
+        target = _zon_entry_name(build)
+
+        def _m(arc: _PfsArchive):
+            raw = arc.get(target)
+            zon = _ZonFile.from_bytes(raw)
+            if zon.models:
+                zon.models[0] = "WRONG_MODEL.TER"
+            arc.add(target, zon.to_bytes())
+        return _m
+
+    affected = frozenset({"zon_model_ref", "name_consistent"})
+    return ("break_model_ref", _mutate, affected)
+
+
+# --- Sidecar corruption (name_consistent) -----------------------------------
+
+def _c_break_sidecar_name():
+    """A Sidecar-side corruption: the test rewrites the Sidecar ``name`` to a
+    mismatching value. Expressed as a sentinel the test recognises (the eqg
+    bytes are returned unchanged)."""
+
+    def _xf(data: bytes) -> bytes:
+        return data
+
+    # The test detects the "sidecar" kind and edits the .zone.json instead.
+    return ("break_sidecar_name", ("sidecar", _xf), frozenset({"name_consistent"}))
+
+
+def _corruption_list(build: str) -> list:
+    """Materialise every corruption for a given Build_Name as
+    ``(label, apply, affected)`` where ``apply(eqg_bytes) -> eqg_bytes`` (or a
+    special ``("sidecar", fn)`` the test handles)."""
+    out: list = []
+
+    # Archive-level byte corruptions.
+    for label, xf, aff in (
+        _c_truncate(0.5),
+        _c_truncate(0.9),
+        _c_zero_header(),
+        _c_flip_bytes(1),
+        _c_flip_bytes(2),
+    ):
+        out.append((label, xf, aff))
+
+    # Directory / entry corruptions that need the Build_Name.
+    for maker in (
+        _c_drop_entry("ter"),
+        _c_drop_entry("zon"),
+        _c_rename_entry("ter"),
+        _c_rename_entry("zon"),
+        _c_replace_member_random("ter", 11),
+        _c_replace_member_random("zon", 12),
+        _c_bad_material_index(-1),
+        _c_bad_material_index(1),
+        _c_coord_past_max(),
+        _c_shrink_dds_dimension(),
+        _c_break_model_ref(),
+    ):
+        label, mutate, aff = maker
+        out.append((label, _rebuild_with(build, mutate(build)), aff))
+
+    # wrong_crc operates on raw bytes (directory record), not via a rebuild.
+    label, (kind, xf), aff = _c_wrong_crc()
+    out.append((label, xf, aff))
+
+    # Sidecar-name corruption: the test edits the .zone.json, not the eqg.
+    label, (kind, xf), aff = _c_break_sidecar_name()
+    out.append(("__sidecar__" + label, xf, aff))
+
+    return out
+
+
+def archive_corruptions(build: str) -> st.SearchStrategy:
+    """A Hypothesis strategy over the Property-14 corruption set for a given
+    Build_Name ``build``. Draws one ``(label, apply, affected)`` tuple:
+
+      * ``label`` — a stable id for the corruption (for diagnostics / events);
+        a ``__sidecar__`` prefix marks the Sidecar-name corruption the test
+        must apply to the ``.zone.json`` instead of the ``.eqg`` bytes.
+      * ``apply`` — ``apply(eqg_bytes) -> eqg_bytes`` (for the ``__sidecar__``
+        one it is the identity; the test edits the Sidecar directly).
+      * ``affected`` — the set of check names whose verdict the corruption may
+        legitimately change. ``ALL_CHECKS`` (``{"*"}``) means "may cascade
+        anywhere" — the test then skips the untouched-check comparison for that
+        draw but still asserts totality, presence and self-naming.
+
+    The build is passed in because the TER/ZON entry names and the ZON model
+    ref are all derived from the Build_Name, so the entry-targeting corruptions
+    need it.
+    """
+    return st.sampled_from(_corruption_list(build))

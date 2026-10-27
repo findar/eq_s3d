@@ -1494,9 +1494,46 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Touched ONLY `tests/strategies.py` (added `build_names`) and `tests/test_properties_build.py` (added the test). No `generators/`, no `test_properties_core.py` (20.5), no `test_properties_pipeline.py` (20.6). Wilderness remains DISABLED in `ENABLED_ZONE_TYPES` — no enablement change.
       - NOT a geometry/viewer change — an analytical format-gate property over the built binary; nothing to eyeball in 3D (see `docs/ACCEPTANCE.md`).
       - Commit: `e63c6f2` (strategy + test + this entry; this self-reference line is recorded in a follow-up amend-free edit, so the content commit is `e63c6f2`).
-  - [ ] 20.5 Write property test for Property 14: The Format_Checker is total and specific (M1-P5)
+  - [x] 20.5 Write property test for Property 14: The Format_Checker is total and specific (M1-P5)
     - `tests/strategies.py::archive_corruptions` (the design's list). `test_properties_core.py::test_format_checker_total`, `slow`, budget 25, archives built once per example: no exception, one entry per check name, every failed check has a message starting with its name, untouched checks report the same result as on the clean archive.
     - **Validates: Requirements 9.3**
+    - **Deliverables:**
+      - **New strategy `tests/strategies.py::archive_corruptions(build)`** — a `st.sampled_from` over the design's Property-14 corruption set, parametrised by the Build_Name (the TER/ZON entry names and the ZON model ref are all derived from it). Each draw is a `(label, apply, affected)` tuple: `label` is a stable id; `apply(eqg_bytes) -> eqg_bytes` performs the corruption; `affected` is the set of check names whose verdict the corruption may legitimately change (so the "untouched checks unchanged" assertion is scoped). A `__sidecar__`-prefixed label marks the one corruption the test applies to the `.zone.json` instead of the `.eqg`. The sentinel `ALL_CHECKS` (`{"*"}`) on a corruption means "may cascade anywhere" — the test then skips the untouched-check comparison for that draw (still asserting totality/presence/self-naming). Helper `_corruption_list(build)` materialises the list; entry-level corruptions parse the archive to a `PfsArchive`/`TerFile`/`ZonFile`, mutate the model and re-serialise (robust against binary-offset details); archive-level ones mutate raw bytes.
+      - **The 18-corruption set (matches the design's list; each verified to flip `report.passed` to False — none is a silent no-op — and never raise):**
+
+        | label | what it does | targets (actual failed checks) |
+        |-------|--------------|-------------------------------|
+        | `truncate` ×2 (0.5, 0.9) | cut the archive to a fraction of its length | archive unreadable → all checks (ALL_CHECKS) |
+        | `zero_header` | zero the 12-byte header (dir-offset/magic/version) | `pfs_reads` + all dependents skip (ALL_CHECKS) |
+        | `flip_bytes` ×2 | XOR an 8-byte run in the deflated body | cascades (ALL_CHECKS) |
+        | `drop_ter_entry` | remove `ter_<name>.ter` | `required_files`, `ter_roundtrip`, 4 TER-derived skip, `name_consistent` |
+        | `drop_zon_entry` | remove `<name>.zon` | `required_files`, `zon_roundtrip`, `zon_model_ref`, `name_consistent` |
+        | `rename_ter_entry` / `rename_zon_entry` | prefix the entry name | same as the matching drop |
+        | `replace_ter_random` | TER payload ← 256 random bytes | `ter_roundtrip` + 5 TER-derived |
+        | `replace_zon_random` | ZON payload ← 256 random bytes | `zon_roundtrip`, `zon_model_ref` |
+        | `material_index_neg` | polygon[0].material = −1 | `material_indices` only |
+        | `material_index_over` | polygon[0].material = n+5 | `material_indices` only |
+        | `coord_past_max` | vertex[0].x = 40000 (> MAX_COORD 30000) | `bounds_sane` only |
+        | `shrink_dds_dimension` | diffuse DDS width ← 130 (non-pow-2) | `diffuse_textures` only |
+        | `break_model_ref` | ZON models[0] ← "WRONG_MODEL.TER" | `zon_model_ref`, `name_consistent` |
+        | `wrong_crc` | flip a directory record's CRC so its member loses its name | `diffuse_textures` (the unnamed member) — scoped broadly |
+        | `__sidecar__break_sidecar_name` | rewrite the Sidecar `name` to a mismatch | `name_consistent` only |
+
+      - **New test `tests/test_properties_core.py::test_format_checker_total`** — `@pytest.mark.slow`, `@build_settings(25)`, `@given(corruption=archive_corruptions("fmtprobe"))`. Builds ONE valid small dungeon (`RulePlanner().plan("create a dungeon with 6 rooms")` → `plan_to_spec(…, 7)`, name `fmtprobe`) per example, runs `check_eqg` on the CLEAN archive to get the baseline (asserting it passes), applies the drawn corruption to a COPY written as `<build>.eqg` in a sibling dir (so the harness's own filename never moves `name_consistent` — only the corruption can), then runs `check_eqg` on the corrupted archive and asserts:
+        1. **TOTAL** — `check_eqg` does NOT raise for any corruption (a raise is reported as a totality bug to fix at the root in `analyzer/rof2check.py`).
+        2. **Complete** — the report's check names equal `CHECK_NAMES` exactly (one entry per name, canonical order, no duplicates) and `normals_resolve` is absent (Req 9.4).
+        3. **Specific (self-naming)** — every FAILED check carries ≥1 message whose first line starts with `"<name>:"`.
+        4. **Specific (untouched unchanged)** — for every check NOT in the corruption's `affected` set, the corrupted report's `(passed, skipped)` equals the clean baseline's; an `ALL_CHECKS` corruption is exempt from this facet only.
+      - Docstring begins `Feature: zone-generator-m1-controls-traversability, Property 14: The Format_Checker is total and specific`, names **M1-P5** and **Requirements 9.3**.
+      - **Pinned `@example`s (anchors, pinned by label from `_corruption_list` so each is a genuine member of the drawn domain):** `zero_header` (the TOTALITY half — nothing raises even when the whole archive is unreadable) and `material_index_neg` (the SPECIFICITY half — exactly `material_indices` flips, every untouched check stays unchanged).
+      - **No totality bug found.** `check_eqg` was already total across all 18 corruptions (it returned a complete `FormatReport` every time, never raising), so NO root fix to `analyzer/rof2check.py` was needed and there is **no `@example(...).via("discovered failure")` Regression_Example** on this property. `analyzer/rof2check.py` was NOT modified.
+      - **Verify:**
+        - `python -m pytest tests/test_properties_core.py::test_format_checker_total -q -n0` → **1 passed** (5.63 s).
+        - `python -m pytest tests/test_properties_core.py -q -n0` → **5 passed** (168.62 s) — the 4 prior core properties + this one.
+        - `python -m pytest tests/ -q` → **426 passed, 1 failed** (304.57 s, parallel); the single failure is the KNOWN xdist CORS timing flake `test_server.py::test_foreign_origins_get_no_cors` (`DeadlineExceeded`, 340 ms > 200 ms), which **passes in isolation at `-n0`** (re-confirmed: 1 passed, 5.38 s). Effective **426 passing** = 425 wave-6 baseline + this test.
+      - Touched ONLY `tests/strategies.py` (added `archive_corruptions`, `ALL_CHECKS`, `_corruption_list` + helpers) and `tests/test_properties_core.py` (added the test + `_corruption_by_label`/`_check_map` helpers and the module-docstring M1-P5 line). Did NOT touch `analyzer/rof2check.py` (20.2 — no totality bug to fix), `tests/test_properties_build.py` (20.4), `tests/test_properties_pipeline.py` (20.6), or any `generators/` / `core/` code.
+      - NOT a geometry/viewer change — an analytical property over the format checker on built binaries; nothing to eyeball in 3D (see `docs/ACCEPTANCE.md`).
+      - Commit: `__PENDING__` (filled after commit).
   - [ ] 20.6 Write property test for Property 9: Every artifact carries the Build_Name, one directory per build (umbrella P41, Build_Name form)
     - `test_properties_pipeline.py::test_build_name_and_directories`, `slow`, budget 15, over enabled zone types, seeds and `build_names` (incl. `gen_<ts>_<hex6>` shapes): the accepted build is in `<output>/<zone_id>/v1/`, every artifact, entry name, model reference and Sidecar `name` agree, and a second build with the same Build_Name lands in a different directory without changing the first.
     - **Validates: Requirements 8.2, 8.3, 9.1**
