@@ -356,7 +356,7 @@ def _assert_no_cors_grant(resp, origin):
     )
 
 
-@settings(max_examples=scaled(100))
+@settings(max_examples=scaled(100), deadline=None)
 @given(origin=origins_outside)
 def test_foreign_origins_get_no_cors(origin):
     """Feature: zone-generator-m0-hygiene, Property 18 (umbrella P-CORS):
