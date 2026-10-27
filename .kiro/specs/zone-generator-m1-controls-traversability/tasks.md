@@ -1571,7 +1571,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **428 passed, 1 failed** (258.64 s) — the one failure is the known wave-6 xdist CORS flake `test_server.py::test_foreign_origins_get_no_cors` (`DeadlineExceeded` under parallel load); it passes in isolation: `python -m pytest tests/test_server.py::test_foreign_origins_get_no_cors -q -n0` → **1 passed** (7.50 s). 428 = 427 effective baseline + this one new property.
       - The audit hook is inert outside the measured region (flag-gated), so it adds no measurable cost to the rest of the suite.
       - NOT verified in the live 3D viewer — this is an analytical filesystem-confinement property over the pipeline, not geometry (see `docs/ACCEPTANCE.md`).
-      - Commit: `__PENDING__` (filled after commit).
+      - Commit: `09286c9` (test + helpers + this entry; this self-reference line is recorded in a follow-up amend-free edit, so the content commit is `09286c9`).
   - [ ] 20.8 Add the confinement, key and format example tests
     - CLI and Server refusal with `EQ_PATH` containing the output dir (CLI exit 2; importing `server.app` raises); sentinel key values (`sk-SENTINEL-…`, rule planner, procedural textures) through one prompt generate and one CLI generate appear in no output file, response, captured log or stdout/stderr; CLI positional `bad-name` → exit 2, `MyZone` builds `myzone.*`; hygiene: no `normals_resolve` in `rof2check`, no `shortname` key in the Sidecar.
     - _Requirements: 8.2, 9.4, 10.2_
