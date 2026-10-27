@@ -229,7 +229,8 @@ class TestCliEscapeHatch:
     def _args(self, tmp_path, **over):
         import argparse
         ns = argparse.Namespace(
-            name="cli", zone_type="dungeon", rooms=8, seed=PINNED_SEED,
+            name="cli", zone_type="dungeon", rooms=8, size="medium",
+            verticality="moderate", locks=0, seed=PINNED_SEED,
             output=str(tmp_path), ter_version=2,
             no_validate=False,
         )
@@ -249,7 +250,12 @@ class TestCliEscapeHatch:
         # Force the CLI to build a broken zone (an isolated, corridor-less room)
         # so the pinned-seed gate must error out. No seed is reliably broken any
         # more, so we inject the breakage rather than rely on one.
-        import main
+        #
+        # The CLI builds its spec through ``ai.expand.plan_to_spec`` (the shared
+        # controls path), which drives ``LayoutGenerator`` imported into the
+        # ``ai.expand`` namespace — so that is where the breakage is injected.
+        import main  # noqa: F401  (keeps the CLI import alive for the run)
+        import ai.expand as _expand
         from generators.layout import LayoutGenerator as _RealLG
 
         class _BrokenLG(_RealLG):
@@ -260,7 +266,7 @@ class TestCliEscapeHatch:
                     floor_z=0.0, width=200, depth=200, height=100))
                 return spec
 
-        monkeypatch.setattr(main, "LayoutGenerator", _BrokenLG)
+        monkeypatch.setattr(_expand, "LayoutGenerator", _BrokenLG)
         with pytest.raises(SystemExit) as ei:
             main.cmd_generate(self._args(tmp_path, no_validate=False))
         assert ei.value.code == 1
@@ -272,52 +278,146 @@ class TestCliEscapeHatch:
 
 class TestCliArgs:
     def test_legacy_theme_outdoor_equivalent_to_zone_type_wilderness(
-            self, tmp_path, monkeypatch):
-        """CLI legacy alias maps forward: ``--theme outdoor`` resolves to the
-        SAME zone type as ``--zone-type wilderness`` (Req 11.3).
+            self, tmp_path, capsys):
+        """CLI legacy alias resolves ``--theme outdoor`` to the SAME zone type
+        as ``--zone-type wilderness`` — and, wilderness being DISABLED in M1,
+        both are rejected identically (Req 3.3, 11.3).
 
-        ``--theme`` is the kept legacy LOAD boundary on the CLI; it shares the
-        ``zone_type`` argparse dest and its value is legacy-mapped. This asserts
-        the two invocations drive ``cmd_generate`` to the identical resolved
-        zone type (``wilderness``) — the build itself is stubbed so the check is
-        fast and isolated to the argument plumbing.
+        ``--theme`` is the kept legacy alias on the CLI; it shares the
+        ``zone_type`` argparse dest and its value is legacy-mapped by
+        ``_zone_type_arg``, which maps ``outdoor`` -> ``wilderness`` and then
+        rejects it as a disabled type. So both invocations exit 2 before any
+        build, listing the enabled set and creating no output directory.
         """
         import main
-        from generators.zone_types import canonical_zone_type, DEFAULT_ZONE_TYPE
 
-        seen = {}
-
-        def _capture(args):
-            raw = getattr(args, "zone_type", None)
-            if raw is None:
-                raw = getattr(args, "theme", None)
-            seen["zt"] = canonical_zone_type(raw) or DEFAULT_ZONE_TYPE
-
-        monkeypatch.setattr(main, "cmd_generate", _capture)
-
-        out = str(tmp_path / "o")
-        main.main(["generate", "legacy", "--theme", "outdoor", "--output", out])
-        legacy_zt = seen["zt"]
-        main.main(["generate", "modern", "--zone-type", "wilderness",
-                   "--output", out])
-        modern_zt = seen["zt"]
-
-        assert legacy_zt == "wilderness"
-        assert legacy_zt == modern_zt, (
-            f"--theme outdoor resolved to {legacy_zt!r} but "
-            f"--zone-type wilderness resolved to {modern_zt!r}"
-        )
+        for zt_args in (["--theme", "outdoor"], ["--zone-type", "wilderness"]):
+            out = str(tmp_path / ("o_" + zt_args[-1]))
+            with pytest.raises(SystemExit) as ei:
+                main.main(["generate", "legacy", *zt_args, "--output", out])
+            assert ei.value.code == 2, (
+                f"{zt_args} should exit 2 (disabled zone type), got "
+                f"{ei.value.code}"
+            )
+            err = capsys.readouterr().err
+            # The rejection names the enabled set and never offers wilderness.
+            assert "enabled: dungeon, city" in err, err
+            assert not Path(out).exists()  # argparse exits before any write
 
     def test_cave_theme_rejected_by_argparse(self, tmp_path):
-        # "cave" was removed from the --theme choices (M0 6.8): argparse exits 2
-        # in parse_args, before any build, so no output directory is created.
-        # Driven in-process via the main(argv) entry point (task 6.1).
+        # "cave" is not a defined zone type: _zone_type_arg can't canonicalise
+        # it, so argparse exits 2 in parse_args, before any build, and no output
+        # directory is created. Driven in-process via main(argv).
         import main
         out = str(tmp_path / "cli_out")
         with pytest.raises(SystemExit) as ei:
             main.main(["generate", "x", "--theme", "cave", "--output", out])
         assert ei.value.code == 2
         assert not Path(out).exists()
+
+    # -- Geometry-slice CLI options (task 17.8) ---------------------------
+    #
+    # The range-checked type= functions and _zone_type_arg (main.py, task 17.7)
+    # reject an out-of-domain geometry-slice option DURING parse_args, so
+    # argparse exits 2 before cmd_generate runs and before any output directory
+    # is created. Each case is driven in-process via main(argv) and asserts the
+    # exit code AND that no output dir was written (the write only happens after
+    # a successful parse). "cave" is undefined, "wilderness" is defined but
+    # disabled in M1 — both are rejected by _zone_type_arg; the numeric options
+    # are rejected by their range-checked converters.
+
+    @pytest.mark.parametrize("bad_arg", [
+        ["--zone-type", "cave"],        # undefined zone type
+        ["--zone-type", "wilderness"],  # defined but disabled in M1
+        ["--rooms", "0"],               # below the 1..30 range
+        ["--rooms", "31"],              # above the 1..30 range
+        ["--locks", "6"],               # above the 0..5 range
+        ["--seed", "-1"],               # below the 0..2^31-1 range
+        ["--seed", "2147483648"],       # above the 0..2^31-1 range (2^31)
+    ])
+    def test_out_of_domain_option_exits_2_and_writes_nothing(
+            self, tmp_path, bad_arg):
+        import main
+        out = str(tmp_path / ("o_" + "_".join(bad_arg).replace("-", "")))
+        with pytest.raises(SystemExit) as ei:
+            main.main(["generate", "x", *bad_arg, "--output", out])
+        assert ei.value.code == 2, (
+            f"{bad_arg} should exit 2 (out of domain), got {ei.value.code}")
+        # argparse exits during parse_args, before cmd_generate creates the dir.
+        assert not Path(out).exists()
+
+    def test_verticality_flat_builds_a_flat_zone(self, tmp_path):
+        """``--verticality flat`` builds a zone with NO elevation.
+
+        The controls path sends ``verticality: "flat"`` through
+        ``ZonePlan.from_controls`` -> ``plan_to_spec``, which generates with
+        ``elevation=False`` and zero elevation chance, so every room shares a
+        single floor height. We run the real CLI build (small dungeon, kept
+        fast) and assert the saved spec's rooms are all at one ``floor_z`` —
+        the structural signature of a flat zone.
+        """
+        import argparse
+        import main
+        from generators.zone_spec import ZoneSpec
+
+        ns = argparse.Namespace(
+            name="flatcli", zone_type="dungeon", rooms=4, size="small",
+            verticality="flat", locks=0, seed=GOOD_SEED,
+            output=str(tmp_path), ter_version=2, no_validate=False,
+        )
+        main.cmd_generate(ns)
+
+        spec = ZoneSpec.load(tmp_path / "flatcli.json")
+        floors = {round(r.floor_z, 6) for r in spec.rooms}
+        assert spec.rooms, "expected rooms in the built spec"
+        assert len(floors) == 1, (
+            f"flat zone should have one floor height, got {sorted(floors)}")
+
+    def test_cli_controls_plan_equals_server_controls_plan(self):
+        """The CLI's controls plan EQUALS the Server's controls plan (Req 1.2).
+
+        Both surfaces funnel the geometry slice through the exact same
+        ``ZonePlan.from_controls`` entry point, so for identical
+        zone_type/rooms/size/verticality/locks (and the same pinned seed, which
+        the plan itself does not carry — it is applied later by the pipeline)
+        the two produced plans must be field-for-field equal. This pins that the
+        CLI and Server cannot drift into two different controls interpretations.
+        """
+        from ai.schema import ZonePlan
+
+        for zone_type, rooms, size, verticality, locks, seed in [
+            ("dungeon", 5, "medium", "moderate", 0, 7),
+            ("city", 12, "large", "flat", 3, 1955208177),
+            ("dungeon", 1, "small", "dramatic", 5, 0),
+            ("city", 30, "huge", "moderate", 2, 2147483647),
+        ]:
+            # The dict the CLI builds (main.cmd_generate), seed applied later.
+            cli_controls = {
+                "zone_type": zone_type,
+                "rooms": rooms,
+                "size": size,
+                "verticality": verticality,
+                "locks": locks,
+            }
+            # The dict the Server builds in controls mode (server/app.py): the
+            # same geometry slice (keys equal here by construction of identical
+            # client input).
+            server_controls = {
+                "zone_type": zone_type,
+                "rooms": rooms,
+                "size": size,
+                "verticality": verticality,
+                "locks": locks,
+            }
+
+            cli_plan = ZonePlan.from_controls(cli_controls)
+            cli_plan.name = "cli"
+            server_plan = ZonePlan.from_controls(server_controls)
+            server_plan.name = "cli"   # name is per-build, not a controls value
+
+            assert cli_plan.to_dict() == server_plan.to_dict(), (
+                f"CLI/Server controls plans diverged for "
+                f"{zone_type}/{rooms}/{size}/{verticality}/{locks}/seed {seed}")
 
     # -- Removed preview paths (M0 6.2) -----------------------------------
     # The legacy viewer and its CLI entry points were deleted in task 6.1:

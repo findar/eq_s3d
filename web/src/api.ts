@@ -1,10 +1,23 @@
 // api.ts — client for the eq_s3d FastAPI backend
 
-export interface GenerateParams {
-  prompt?: string;
+// The Controls sub-object the server's controls path drives generation from
+// (server/app.py GenerateRequest.controls). Matches ZonePlan.from_controls:
+// zone_type/room_count/size/verticality/locks (the web app sends these names).
+export interface GenerateControls {
   zone_type?: string;
-  rooms?: number;
-  elevation?: boolean;
+  room_count?: number;
+  size?: string;
+  verticality?: string;
+  locks?: number;
+}
+
+// The /api/generate request body. The server resolves `mode` explicitly:
+// "prompt" uses `prompt`, "controls" uses `controls`. `seed` pins randomness
+// in either mode (omit for a fresh random seed).
+export interface GenerateParams {
+  mode?: "prompt" | "controls";
+  prompt?: string;
+  controls?: GenerateControls;
   seed?: number;
 }
 
@@ -21,6 +34,8 @@ export interface ZonePlan {
 
 export interface GenerateResult {
   id: string;
+  version: number;             // per-build version (output/<id>/v<version>/)
+  mode: string;                // resolved mode: "prompt" | "controls"
   zone_type: string;
   rooms: number;
   seed: number;
@@ -30,9 +45,16 @@ export interface GenerateResult {
   glb_url: string;
   zone_url: string;
   map_url: string;             // top-down SVG layout map
-  source: string;              // "prompt" | "controls"
+  source: string;              // back-compat mirror of `mode`
   planner?: string | null;     // "rule" | "llm"
   plan?: ZonePlan | null;
+  gates?: number;
+  validated?: boolean;
+  attempts?: number;
+  // Non-fatal advisories for the UI, e.g. "zone_type_substituted:<planned>->
+  // dungeon" or "backend_fallback: <name> unavailable, built with box".
+  warnings: string[];
+  format_passed: boolean;      // cleared the format gate?
   build_commit?: string;       // short commit of the code the server loaded
 }
 
@@ -132,8 +154,16 @@ export async function fetchSidecar(url: string): Promise<ZoneSidecar> {
   return res.json();
 }
 
+// One availability entry per defined zone type (server zone_type_listing()):
+// disabled types carry a human-readable `reason`, enabled types carry null.
+export interface ZoneTypeAvailability {
+  name: string;
+  enabled: boolean;
+  reason: string | null;
+}
+
 export interface ZoneTypeListing {
-  zone_types: string[];
+  zone_types: ZoneTypeAvailability[];
   default: string;
   reference_zones: Record<string, unknown>;
 }

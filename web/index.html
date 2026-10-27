@@ -13,7 +13,17 @@
 
     <input type="text" id="prompt" placeholder="e.g. a flooded temple with lots of chambers" />
 
-    <button id="generate">Generate</button>
+    <!-- Two explicit Generate actions: one for the free-text description
+         (prompt mode), one for the Controls panel (controls mode). The seed
+         box lives in the header because both modes send it. -->
+    <button id="generate-description" title="Generate from the description (prompt mode)">Generate from description</button>
+    <button id="generate-controls" class="secondary" title="Generate from the Controls panel (controls mode)">Generate from controls</button>
+
+    <label>Seed
+      <input type="number" id="seed" min="0" step="1"
+             placeholder="blank = random" />
+    </label>
+
     <button id="reset-view" class="secondary" title="Return to the starting view (R)">Reset View</button>
     <button id="show-map" class="secondary" title="Top-down layout map (M)">Map</button>
 
@@ -21,21 +31,34 @@
       <summary>Controls</summary>
       <div class="adv-body">
         <label>Zone type
+          <!-- Populated from /api/zone_types on load (disabled options carry
+               their reason). These static options are the offline fallback. -->
           <select id="zone-type">
             <option value="dungeon">Dungeon</option>
             <option value="city">City</option>
-            <option value="wilderness">Wilderness</option>
+            <option value="wilderness" disabled>Wilderness (not offered yet)</option>
           </select>
         </label>
         <label>Rooms
           <input type="number" id="rooms" min="1" max="30" step="1" value="5" />
         </label>
-        <label class="checkbox">
-          <input type="checkbox" id="elevation" checked /> Elevation
+        <label>Size
+          <select id="size">
+            <option>small</option>
+            <option selected>medium</option>
+            <option>large</option>
+            <option>huge</option>
+          </select>
         </label>
-        <label>Seed
-          <input type="number" id="seed" min="0" step="1"
-                 placeholder="blank = random" />
+        <label>Verticality
+          <select id="verticality">
+            <option>flat</option>
+            <option selected>moderate</option>
+            <option>dramatic</option>
+          </select>
+        </label>
+        <label>Locks
+          <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
       </div>
     </details>
@@ -49,8 +72,12 @@
   <!-- Metrics / overlay panel -->
   <aside id="panel">
     <div id="build-line" title="Code the server loaded vs. the frontend build">server … · web …</div>
+
+    <!-- Non-fatal advisories from the last response, in plain words. -->
+    <div id="warnings" role="status"></div>
+
     <h3>Plan</h3>
-    <div class="row"><span>Source</span><span id="m-source">—</span></div>
+    <div class="row"><span>Mode</span><span id="m-mode">—</span></div>
     <div class="row"><span>Zone type</span><span id="m-zone-type">—</span></div>
     <div class="row"><span>Rooms</span><span id="m-rooms">—</span></div>
     <div id="m-plan-extra"></div>

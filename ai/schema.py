@@ -15,7 +15,7 @@ has to fill a handful of fields) and easy to validate.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Mapping
 
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type, read_zone_type,
@@ -40,6 +40,14 @@ VALID_DUNGEON_RACES = [
     "ogre", "giant",
 ]
 VALID_ELEMENTAL_TINTS = ["lava", "ice", "water"]
+
+# Control-key aliases for the geometry-slice controls path (Req 1.2, 2.3, 2.4).
+# Each key is a flat control name that maps to its ZonePlan field. A plan key
+# present in the dict WINS over its alias (if both ``room_count`` and ``rooms``
+# appear, ``room_count`` wins; same for ``zone_type`` vs ``theme``). This is the
+# only layer ``from_controls`` adds over ``from_dict`` besides the legacy
+# ``elevation: false`` -> ``verticality: "flat"`` translation below.
+CONTROL_ALIASES = {"rooms": "room_count", "theme": "zone_type"}
 
 
 @dataclass
@@ -74,8 +82,16 @@ class ZonePlan:
     # The original prompt, retained for provenance
     prompt: str = ""
 
-    def validate(self) -> "ZonePlan":
-        """Clamp/normalise fields to valid ranges. Returns self."""
+    def validate(self, warnings: Optional[List[str]] = None) -> "ZonePlan":
+        """Clamp/normalise fields to valid ranges. Returns self.
+
+        ``warnings`` is an optional accumulator the Server/CLI pass so the
+        shared ``cls(**clean).validate(warnings)`` path can record normalisation
+        notes (e.g. a substituted zone type) for the response/Sidecar. It is
+        kept optional so the many bare ``.validate()`` callers (planners,
+        ``plan_to_spec``) are unaffected; normalisation itself is identical
+        whether or not an accumulator is supplied.
+        """
         # Normalise + legacy-map the zone type: an undefined value (or the
         # legacy "outdoor") falls back through canonical_zone_type to the
         # default (Req 11.2).
@@ -101,16 +117,67 @@ class ZonePlan:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "ZonePlan":
+    def from_dict(cls, d: Mapping[str, Any],
+                  warnings: Optional[List[str]] = None) -> "ZonePlan":
         # Legacy LOAD boundary (Req 11.1 / Property 12): a stored plan may still
         # carry the legacy ``theme`` key and/or the ``outdoor`` value. Both are
         # accepted here and mapped forward; ``zone_type`` wins when both keys
-        # are present.
+        # are present. Every other unknown key (``target_shortname`` and
+        # friends, Req 8.1) is dropped.
         allowed = {f for f in cls.__dataclass_fields__}
         clean = {k: v for k, v in d.items() if k in allowed and k != "theme"}
         clean.pop("zone_type", None)
-        zt = canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE
-        return cls(zone_type=zt, **clean).validate()
+        clean["zone_type"] = canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE
+        return cls(**clean).validate(warnings)
+
+    @classmethod
+    def from_controls(cls, d: Mapping[str, Any],
+                      warnings: Optional[List[str]] = None) -> "ZonePlan":
+        """Controls dict -> ZonePlan through the same ``validate()`` as
+        ``from_dict`` (Req 1.2, 2.3, 2.4).
+
+        ``from_controls`` is just ``from_dict`` with two extra layers on top, so
+        on every key both paths name directly they agree by construction
+        (Property 5 / umbrella P12):
+
+        1. **Control aliases** (``CONTROL_ALIASES``): a flat control name maps to
+           its plan field (``rooms`` -> ``room_count``, ``theme`` -> ``zone_type``).
+           A plan key present in ``d`` WINS over its alias, so if both
+           ``room_count`` and ``rooms`` (or ``zone_type`` and ``theme``) appear,
+           the plan key is kept and the alias ignored.
+        2. **Legacy ``elevation`` translation**: a legacy ``elevation: false``
+           WITHOUT a ``verticality`` key means ``verticality = "flat"`` — the
+           boolean is translated into the verticality vocabulary. ``verticality``
+           present always wins, and ``elevation: true`` leaves verticality at its
+           default.
+
+        Content fields (``dungeon_theme``, ``dungeon_race``, ``elemental_tint``,
+        …) keep their names and rules — they flow through unchanged and are
+        normalised by ``validate()`` exactly as in ``from_dict``. Unknown keys
+        (target/topology/district and any other non-plan key) are dropped by the
+        shared ``from_dict`` filter, so ``from_controls`` never carries them
+        (enforced by the surface guards in task 17.10).
+        """
+        merged: Dict[str, Any] = dict(d)
+
+        # (1) Control aliases: fold each alias into its plan field unless the
+        # plan key is already present (plan key wins), then drop the alias so it
+        # doesn't survive as an unknown key.
+        for alias, field_name in CONTROL_ALIASES.items():
+            if alias in merged:
+                if field_name not in merged:
+                    merged[field_name] = merged[alias]
+                merged.pop(alias, None)
+
+        # (2) Legacy elevation -> verticality: ``elevation: false`` with no
+        # explicit ``verticality`` means flat. ``elevation`` itself is still a
+        # real plan field, so it stays; only the derived verticality is set.
+        if "verticality" not in merged and merged.get("elevation") is False:
+            merged["verticality"] = "flat"
+
+        # Funnel into the SAME path as from_dict so the two agree by
+        # construction and share one normalisation/validate step.
+        return cls.from_dict(merged, warnings)
 
 
 # JSON schema an LLM is asked to fill (structured output / tool use).
