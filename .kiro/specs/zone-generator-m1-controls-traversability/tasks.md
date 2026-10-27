@@ -1267,7 +1267,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - **No root fix needed** — 17.7's CLI passed every example; no `main.py` change, no assertion weakened.
       - `python -m pytest tests/test_pipeline.py -q`: **31 passed** (7.77 s). `python -m pytest tests/ -q`: **378 passed** (165.31 s) — 369 baseline + 9 new items; the known xdist CORS flake did not surface this run. 13 warnings pre-existing/unrelated.
       - NOT verified in the live 3D viewer — these are CLI-surface example tests (argparse rejection, plan equality, and a structural flatness check on the built spec), no geometry to eyeball (per `docs/ACCEPTANCE.md`).
-      - Commit (worktree only, not pushed): `fb25477` (tests + this tracker entry).
+      - Commit (worktree only, not pushed): `2ac80d2` (tests + this tracker entry).
   - [x] 17.9 Rebuild the Web_App header and Controls panel
     - `web/index.html`, `web/src/{main,api}.ts`: `#generate-description` and `#generate-controls`, `#seed` in the header; Controls panel `#zone-type` (from `fetchZoneTypes()`, disabled options with `disabled`, reason in text and `title`, first enabled preselected), `#rooms`, `#size`, `#verticality` (replaces `#elevation`), `#locks`; `doGenerate(mode)`, Enter routing per field, on-load generation in controls mode; `#m-mode` replaces `#m-source`; `#warnings` (`role="status"`) shows `zone_type_substituted` and `backend_fallback` in words. `controls.ts::_typingTarget` keeps suppressing movement keys. Run `cd web; npx vite build`.
     - _Requirements: 1.4, 2.1, 2.3, 2.6, 3.3_
