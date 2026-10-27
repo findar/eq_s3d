@@ -271,15 +271,19 @@ def _require_int(d: dict, key: str) -> None:
     """Reject a controls value that is present but not a JSON integer.
 
     Mirrors the ``StrictInt`` guard the top-level fields get from pydantic: a
-    ``bool`` (an ``int`` subclass in Python) and any non-int kind (float, string,
-    list, null) raise an :class:`HTTPException` 400 that names the field, so a
-    malformed ``controls.room_count`` / ``controls.locks`` is a 400 — never a
-    silent coercion and never a raw 422 (Req 2.5).
+    ``bool`` (an ``int`` subclass in Python), ``null`` and any other non-int
+    kind (float, string, list) raise an :class:`HTTPException` 400 that names
+    the field, so a malformed ``controls.room_count`` / ``controls.locks`` is a
+    400 — never a silent coercion, never a downstream ``int(None)`` crash, and
+    never a raw 422 (Req 2.5). An ABSENT key (not in ``d``) is fine: the plan
+    default fills it. A present ``null`` is NOT absent — it is a supplied
+    non-integer value and is refused, because ``ZonePlan.validate`` would other-
+    wise ``int(None)`` on it and 500.
     """
-    if key not in d or d[key] is None:
+    if key not in d:
         return
     v = d[key]
-    if isinstance(v, bool) or not isinstance(v, int):
+    if v is None or isinstance(v, bool) or not isinstance(v, int):
         raise HTTPException(400, f"{key} must be an integer")
 
 

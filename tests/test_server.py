@@ -454,3 +454,239 @@ class TestZoneFileGuards:
             client.get("/api/zones/gen_missing/v1/gen_missing.glb")
         )
         assert resp.status_code == 404, resp.text
+
+
+# ---------------------------------------------------------------------------
+# Mode routing + per-field validation (task 17.6, Req 1.1, 1.3, 2.5, 8.1)
+# ---------------------------------------------------------------------------
+#
+# These are deterministic EXAMPLE tests (not property tests) over the mode
+# resolution and body validation the 17.5 server exposes. They use the shared
+# ``client`` fixture, which points OUTPUT_DIR at an isolated tmp dir — so the
+# "nothing written on a 400" assertions (``OUTPUT_DIR`` empty afterwards) are
+# reliable: a rejected request must leave the per-build output tree untouched.
+
+# A prompt that the rule planner turns into a small dungeon (verified: zone_type
+# "dungeon", room_count 3), so a prompt-mode build is the same small, gate-
+# passing 3-room dungeon the controls/legacy path uses with PINNED_SEED.
+DUNGEON_PROMPT = "a dungeon with 3 rooms"
+
+
+def _output_is_empty():
+    """True when the (tmp) OUTPUT_DIR holds no artifacts — the post-400 state."""
+    return list(app_mod.OUTPUT_DIR.iterdir()) == []
+
+
+class TestModeRouting:
+    """The mode routing table (Req 1.1): the resolved mode is explicit-wins,
+    else inferred from a non-empty prompt, and the response ``mode`` reflects
+    the resolved mode in every case."""
+
+    def test_explicit_prompt_mode_builds_from_prompt(self, client):
+        """mode="prompt" with a prompt -> prompt build; response mode=prompt,
+        and the planner/plan provenance is present (prompt path)."""
+        resp = assert_no_wildcard(
+            client.post("/api/generate",
+                        json={"mode": "prompt", "prompt": DUNGEON_PROMPT,
+                              "seed": PINNED_SEED})
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["mode"] == "prompt"
+        assert body["source"] == "prompt"
+        # Prompt provenance: a planner ran and produced a plan.
+        assert body["planner"] is not None
+        assert body["plan"] is not None
+        assert body["zone_type"] == "dungeon"
+
+    def test_explicit_controls_mode_builds_from_controls(self, client):
+        """mode="controls" with a controls sub-object -> controls build;
+        response mode=controls, no planner ran."""
+        resp = assert_no_wildcard(
+            client.post("/api/generate",
+                        json={"mode": "controls",
+                              "controls": {"zone_type": "dungeon",
+                                           "room_count": ROOMS},
+                              "seed": PINNED_SEED})
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["mode"] == "controls"
+        assert body["source"] == "controls"
+        assert body["planner"] is None
+        assert body["zone_type"] == "dungeon"
+        assert body["rooms"] == ROOMS
+
+    def test_absent_mode_with_prompt_infers_prompt(self, client):
+        """mode absent + a non-empty prompt -> inferred prompt mode; response
+        mode=prompt."""
+        resp = assert_no_wildcard(
+            client.post("/api/generate",
+                        json={"prompt": DUNGEON_PROMPT, "seed": PINNED_SEED})
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["mode"] == "prompt"
+        assert body["planner"] is not None
+
+    def test_absent_mode_without_prompt_infers_controls(self, client):
+        """mode absent + no prompt -> inferred controls mode (the on-load /
+        dropdown path); response mode=controls, no planner."""
+        resp = assert_no_wildcard(
+            client.post("/api/generate",
+                        json={"zone_type": "dungeon", "rooms": ROOMS,
+                              "seed": PINNED_SEED})
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["mode"] == "controls"
+        assert body["planner"] is None
+
+    def test_mode_present_in_response(self, client):
+        """Every generate response carries a resolved ``mode`` field (Req 1.1)."""
+        resp = assert_no_wildcard(
+            client.post("/api/generate",
+                        json={"zone_type": "dungeon", "rooms": ROOMS,
+                              "seed": PINNED_SEED})
+        )
+        assert resp.status_code == 200, resp.text
+        assert "mode" in resp.json()
+
+
+class TestModeRejections:
+    """400s raised before any build/write: unknown mode and an empty prompt in
+    prompt mode (Req 1.3). Each leaves OUTPUT_DIR empty."""
+
+    def test_unknown_mode_is_400(self, client):
+        """mode="banana" (not prompt|controls) is a 400, nothing written."""
+        resp = assert_no_wildcard(
+            client.post("/api/generate",
+                        json={"mode": "banana", "prompt": DUNGEON_PROMPT})
+        )
+        assert resp.status_code == 400, resp.text
+        # The detail names the valid modes.
+        detail = resp.json()["detail"]
+        assert "prompt" in detail and "controls" in detail, detail
+        assert _output_is_empty()
+
+    def test_empty_prompt_in_prompt_mode_is_400(self, client):
+        """mode="prompt" with an empty/blank prompt is a 400, nothing written
+        (Req 1.3)."""
+        for prompt in ("", "   "):
+            resp = assert_no_wildcard(
+                client.post("/api/generate",
+                            json={"mode": "prompt", "prompt": prompt})
+            )
+            assert resp.status_code == 400, f"{prompt!r} -> {resp.text}"
+            assert _output_is_empty()
+
+
+class TestNonIntegerFieldRejections:
+    """A non-integer value of any kind fed to an integer field is a 400 that
+    NAMES the field, before any build/write (Req 2.5). ``seed`` and ``rooms``
+    are StrictInt (rejected by the RequestValidationError -> 400 handler);
+    ``controls.room_count`` / ``controls.locks`` are rejected by ``_require_int``.
+
+    A JSON ``bool`` is an ``int`` subclass in Python but must still be rejected
+    (StrictInt and ``_require_int`` both refuse it) — otherwise ``true`` would
+    silently build one room.
+
+    ``null`` is split out: ``seed`` is ``Optional[StrictInt]`` so a ``null``
+    seed is the documented "omit for random" sentinel (a 200, covered by
+    ``test_seed_null_is_random_not_400``), while a ``null`` on the controls
+    numeric fields is a supplied non-integer and is refused 400 by
+    ``_require_int`` (otherwise ``ZonePlan.validate`` would ``int(None)`` and
+    500) — so those keep ``None`` in their matrix."""
+
+    # Kinds every integer field must refuse via its StrictInt / _require_int
+    # guard. ``True``/``False`` cover the bool-is-an-int-subclass trap.
+    NON_INT_KINDS = (3.5, "7", True, False, [1, 2])
+    # Controls numeric fields additionally refuse a present ``null`` (seed does
+    # not — see test_seed_null_is_random_not_400).
+    CONTROLS_NON_INT_VALUES = NON_INT_KINDS + (None,)
+
+    def _assert_names_field_400(self, client, payload, field):
+        resp = assert_no_wildcard(client.post("/api/generate", json=payload))
+        assert resp.status_code == 400, f"{payload!r} -> {resp.text}"
+        assert field in resp.json()["detail"], (
+            f"400 detail must name {field!r}: {resp.json()['detail']!r}"
+        )
+        assert _output_is_empty()
+
+    @pytest.mark.parametrize("value", NON_INT_KINDS)
+    def test_seed_non_integer_is_400(self, client, value):
+        """A non-integer ``seed`` (StrictInt) is a 400 naming ``seed``."""
+        self._assert_names_field_400(
+            client, {"zone_type": "dungeon", "rooms": ROOMS, "seed": value},
+            "seed")
+
+    def test_seed_null_is_random_not_400(self, client):
+        """``seed: null`` is the documented "omit for random" sentinel
+        (``Optional[StrictInt]``): a 200 with a server-chosen seed, NOT a 400
+        (Req 2.5 bounds the seed *kind* and range for a PINNED seed; an absent
+        pin is legal)."""
+        resp = assert_no_wildcard(
+            client.post("/api/generate",
+                        json={"zone_type": "dungeon", "rooms": ROOMS,
+                              "seed": None})
+        )
+        assert resp.status_code == 200, resp.text
+        assert isinstance(resp.json()["seed"], int)
+
+    @pytest.mark.parametrize("value", CONTROLS_NON_INT_VALUES)
+    def test_controls_room_count_non_integer_is_400(self, client, value):
+        """A non-integer ``controls.room_count`` (_require_int) is a 400 naming
+        ``room_count`` — including a present ``null``."""
+        self._assert_names_field_400(
+            client,
+            {"mode": "controls",
+             "controls": {"zone_type": "dungeon", "room_count": value}},
+            "room_count")
+
+    @pytest.mark.parametrize("value", CONTROLS_NON_INT_VALUES)
+    def test_controls_locks_non_integer_is_400(self, client, value):
+        """A non-integer ``controls.locks`` (_require_int) is a 400 naming
+        ``locks`` — including a present ``null``."""
+        self._assert_names_field_400(
+            client,
+            {"mode": "controls",
+             "controls": {"zone_type": "dungeon", "room_count": ROOMS,
+                          "locks": value}},
+            "locks")
+
+
+# ---------------------------------------------------------------------------
+# Req 8.1 — a legacy target field is ignored, not honoured
+# ---------------------------------------------------------------------------
+
+def test_target_shortname_is_ignored(client):
+    """A request carrying the forbidden/legacy ``target_shortname: "arena"``
+    returns 200 (the field is dropped via ``extra="ignore"``), and every build
+    file is named by the generated ``<id>`` — never "arena" (Req 8.1)."""
+    resp = assert_no_wildcard(
+        client.post("/api/generate",
+                    json={"zone_type": "dungeon", "rooms": ROOMS,
+                          "seed": PINNED_SEED, "target_shortname": "arena"})
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    zone_id = body["id"]
+    assert zone_id != "arena"
+
+    # The returned URLs are named by the zone id, not the legacy target.
+    for url_field in ("glb_url", "zone_url", "map_url"):
+        url = body[url_field]
+        assert zone_id in url, f"{url_field} ({url}) is not named by the id"
+        assert "arena" not in url, f"{url_field} ({url}) leaked the target name"
+
+    # On disk the build directory and every artifact is <id>.*; nothing is
+    # named "arena".
+    build_dir = app_mod.OUTPUT_DIR / zone_id / "v1"
+    assert build_dir.is_dir(), f"missing build dir {build_dir}"
+    produced = list(build_dir.iterdir())
+    assert produced, "no artifacts written"
+    for f in produced:
+        assert f.name.startswith(f"{zone_id}."), (
+            f"artifact not named by the id: {f.name}"
+        )
+        assert "arena" not in f.name, f"artifact leaked the target name: {f.name}"
