@@ -1301,9 +1301,33 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Commit (worktree only, not pushed): `76948a8` (the guards + this tracker entry; this self-reference hash is recorded in a follow-up edit).
 
 - [ ] 18. Checkpoint: wave 5 closed
-  - [ ] 18.1 Run the suite, build the frontend and write the wave-5 integration note
+  - [x] 18.1 Run the suite, build the frontend and write the wave-5 integration note
     - Suite green; `cd web; npx vite build` succeeds. Integration note: Done-table row, "Pick up here" line, commit hash and count, and the golden-test result.
     - _Requirements: 1.4, 2.1_
+    - **Deliverables — wave-5 integration note (tracker/measurement task; no code change):**
+      - **Suite:** `python -m pytest tests/ -q` → **381 passed** (131.56 s), 13 warnings (the pre-existing Starlette/httpx deprecation and runpy re-import; unrelated). Matches the expected 381. The known xdist CORS timing flake `tests/test_server.py::test_foreign_origins_get_no_cors` did **not** surface this parallel run; it remains the pre-existing flake (passes isolated at `-n0`), not a regression.
+      - **Frontend build:** `cd web; npx vite build` → **exit 0** (type-checks + bundles: `dist/index.html` 5.91 kB, `dist/assets/index-*.css` 5.40 kB, `dist/assets/index-*.js` 577.30 kB). The >500 kB three.js chunk notice is advisory, not an error. `web/dist/` is per-worktree and gitignored. No `npm install` run (shared `web/node_modules` junction left untouched).
+      - **Branch / fork / commits:** branch `agent/m1-modes`, forked from `master` at **`43df9ec`**. Head commit **`703c21fd12eb36cf92e7c46802474448daa096a6`** (short `703c21f`). **20 commits** since the fork point (`git rev-list --count 43df9ec..HEAD` = 20), spanning tasks 17.1–17.10 (each content commit + its tracker self-reference follow-up). Not pushed (worktree branch; merged into `master` from the MAIN checkout).
+
+      - **Done-table row (for the integrator to apply in the single-writer step — not written here):**
+
+        | Wave | Scope | Branch | Head | Commits | Suite | Frontend |
+        |------|-------|--------|------|---------|-------|----------|
+        | 5 | Modes + `from_controls` + geometry-slice controls | `agent/m1-modes` | `703c21f` | 20 (since `43df9ec`) | 381 passed | build exit 0 |
+
+      - **Pick up here:** wave 6 — **task 19.1** (create the `agent/m1-format` worktree; Build_Name naming, Tier-1 format gate and file-system confinement, Requirements 8/9/10). Wave 5's human-gated modes/controls pass is **task 18.2** (next, user-signed) — the agent wrote no checklist sign-off; 18.2 stays unchecked for the user.
+
+      - **What wave 5 delivered:**
+        - **`ZonePlan.from_controls` (17.2):** `CONTROL_ALIASES = {"rooms":"room_count","theme":"zone_type"}` with a direct plan key winning over its alias; legacy `elevation: false` without `verticality` normalises to `flat` (→ `verticality`); funnels into the SAME `cls(**clean).validate(warnings)` as `from_dict`, so both entry paths agree by construction. Target keys dropped as unknown.
+        - **Controls golden test (17.4):** `tests/test_planner.py::test_controls_golden` — dungeon/city/wilderness × seeds {7, 1955208177, 1949459644} × rooms {1, 5, 12, 30} × elevation on/off = **72 cases, ALL EQUAL** `to_dict()` between the legacy `LayoutGenerator(...).generate(...)` and `plan_to_spec(ZonePlan.from_controls(...), seed)`. **No divergence, no documented seed break** — switching every caller to `from_controls` moved **no geometry**. Wilderness is exercised at the spec level (disabled only at the gate), and stays disabled in `ENABLED_ZONE_TYPES`.
+        - **Property 5 (17.3, umbrella P12):** `test_zoneplan_normalisation` extended (budget 100) — both `from_dict(d)` and `from_controls(d)` land every field in its domain, agree on every key `d` names directly, and are fixed points of `validate()`.
+        - **Server mode resolution (17.5):** explicit `mode` (`prompt`|`controls`) plus inference (non-empty prompt → prompt, else controls); `StrictInt` seed + `_require_int` for `controls.room_count`/`controls.locks`; seed range 0–2,147,483,647; a `RequestValidationError` handler turning any `/api/generate` validation error into a **400 naming the field**; `mode` recorded in the sidecar. **Every 400 happens before any build or write.**
+        - **Root bug the server tests caught (17.6):** a controls numeric `null` (`room_count: null` / `locks: null`) fell through `_require_int`'s early-return to `int(None)` → a **500**; fixed at the root to a clean **400** naming the field. `seed: null` stays the "omit for random" sentinel → 200.
+        - **Geometry-slice CLI options (17.7/17.8):** `main.py generate` gains `--rooms` (1–30), `--size`, `--verticality` (flat/moderate/dramatic), `--locks` (0–5), `--seed` (0–2,147,483,647) as range-checked `type=` converters; `_zone_type_arg` maps `outdoor`→wilderness and **rejects undefined or disabled** zone types (exit 2, listing the enabled set). The plan is built through `ZonePlan.from_controls({...})` — the same controls path the server uses. Out-of-domain options **exit 2 before any write**. No target/topology/district/content options.
+        - **Web header + Controls panel (17.9):** two explicit Generate actions (`#generate-description`, `#generate-controls`) + `#seed` in the header; Controls panel `#zone-type` dropdown from `fetchZoneTypes()` (disabled options show their reason in text and `title`, first enabled preselected), `#rooms`/`#size`/`#verticality` (replaces `#elevation`)/`#locks`; `doGenerate(mode)` + per-field Enter routing + on-load controls-mode generation; `#m-mode` replaces `#m-source`; a `#warnings` `role="status"` region renders `zone_type_substituted` and `backend_fallback` in words. `controls.ts::_typingTarget` still suppresses movement keys in every field.
+        - **Surface guards (17.10):** `tests/test_hygiene.py` now forbids topology/district/purpose/builder/inhabitants/condition/element control ids in `web/index.html` and the CLI options, and forbids a `target` field on `ZonePlan`/`ZoneSpec`/`GenerateRequest`/CLI/web surfaces. All pass — no leak.
+
+      - **Single-writer:** only this `tasks.md` touched. `ROADMAP.md`, `README.md`, `tasks/README.md` NOT edited — the Done-table row and "Pick up here" line above are for the integrator's one serialized step. Branch not pushed. Not eyeballed in the live browser/3D viewer — that is the human-gated task 18.2.
   - [ ] 18.2 **HUMAN-GATED:** modes and controls pass
     - Checklist, PENDING-HUMAN: both Generate actions do what they say; the panel shows which one produced the zone; a blank seed gives a fresh seed; typing in every field moves no camera; a disabled zone type (forced in a dev build) shows its reason; a flat 30-room zone from the controls walks end to end.
     - _Requirements: 1.4, 2.1, 2.6, 3.3_
