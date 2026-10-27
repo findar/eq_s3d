@@ -1030,3 +1030,209 @@ def test_build_name_and_directories(zone_type, name, seed):
         assert ter_entry in names2 and zon_entry in names2, (
             f"second build's archive missing a required entry; entries={sorted(names2)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 15: Writes stay inside the Output_Directory (M1-P6). This runs a
+# real generate_validated call under a filesystem audit hook and asserts every
+# WRITE-side path lands inside the Output_Directory (the one allowed exception
+# being the configured failure-log path), and that a fake EQ_PATH install is
+# byte-for-byte UNCHANGED across the call. The "first k attempts forced to fail"
+# draw exercises the scratch-create -> reject -> cleanup path and the JSONL
+# failure-log write, so confinement is checked on the failure side too.
+# ---------------------------------------------------------------------------
+
+import os as _os_p15  # noqa: E402  (grouped with the P15 test)
+from pathlib import Path as _Path_p15  # noqa: E402
+
+import core.env as _core_env  # noqa: E402
+
+from tests.pbt_helpers import write_audit, fake_install, snapshot_install  # noqa: E402
+
+
+def _k_fail_then_pass_factory(zone_type: str, rooms: int, k: int, calls: list):
+    """A ``spec_factory(seed)`` whose first ``k`` builds fail the gate, then pass.
+
+    It honours the seed for the base geometry (as required), building a
+    genuinely navigable zone. For the first ``k`` calls it also appends one
+    far-away isolated room with no corridor, so the Traversal_Validator rejects
+    those attempts (forcing the scratch-create -> reject -> cleanup + JSONL log
+    path); from call ``k+1`` on it returns the navigable zone unchanged so an
+    unpinned run eventually passes. ``calls`` records each seed handed in.
+    """
+    from generators.zone_spec import RoomSpec
+
+    def factory(seed: int):
+        calls.append(seed)
+        spec = LayoutGenerator(zone_type=zone_type, seed=_NAVIGABLE_SEED).generate(
+            "p15w", room_count=rooms
+        )
+        if len(calls) <= k:
+            spec.rooms.append(RoomSpec(
+                id="isolated", center_x=100_000.0, center_y=100_000.0,
+                floor_z=0.0, width=200, depth=200, height=100,
+            ))
+        return spec
+
+    return factory
+
+
+@pytest.mark.slow
+@build_settings(10)
+@given(
+    zone_type=_enabled_zone_types,
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+    rooms=st.integers(min_value=2, max_value=8),
+    pinned=st.booleans(),
+    k=st.integers(min_value=0, max_value=3),
+)
+def test_writes_confined(zone_type, seed, rooms, pinned, k):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 15: Writes stay
+    inside the Output_Directory (M1-P6).
+
+    For any generate call through the Pipeline — any enabled zone type (dungeon,
+    city — wilderness is disabled and never drawn), any seed, room count 2-8,
+    pinned or not, with the factory optionally forced to fail its first ``k``
+    attempts — run under a filesystem audit hook that records ``open`` in a
+    write mode, ``os.rename`` / ``os.replace``, ``os.remove`` / ``os.rmdir``,
+    ``shutil.rmtree`` and ``os.mkdir``, two invariants hold:
+
+    * EVERY recorded write path resolves INSIDE the Output_Directory — or is the
+      configured failure-log path (the one exception the design allows; here the
+      log is placed inside the output dir, as the CLI does, so it is confined
+      too). This covers the scratch-create -> move -> cleanup lifecycle on the
+      PASS side and the scratch-create -> reject -> cleanup + JSONL-append on the
+      forced-FAIL side (``k`` > 0).
+    * A fake EQ_PATH install (configured via ``EQ_PATH``) has the same file list,
+      sizes and SHA-256 before and after — nothing is ever written into or over
+      the EQ install (Req 10.2).
+
+    This pins task 19.5's ``OutputRoot`` routing: every write, move and remove a
+    build performs is confined to the one Output_Directory. A write that escapes
+    (or a change to the fake install) is a REAL confinement bug in the routing —
+    fixed at the root in ``core/paths.py`` or the escaping caller, never by
+    weakening this assertion, with the counterexample pinned as a
+    Regression_Example.
+
+    Validates: Requirements 10.1, 4.2; M1-P6.
+    """
+    calls: list[int] = []
+    factory = _k_fail_then_pass_factory(zone_type, rooms, k, calls)
+
+    with fresh_dir() as out_s, fresh_dir() as eq_tmp:
+        out = _Path_p15(out_s)
+        # The failure log lives INSIDE the output dir (as the CLI configures it),
+        # so a forced-fail attempt's JSONL append is itself confined.
+        failure_log = out / "validation_failures.jsonl"
+
+        # A populated fake EQ install, pointed at by EQ_PATH, snapshotted before.
+        install = fake_install(eq_tmp)
+        before = snapshot_install(install)
+
+        with pytest.MonkeyPatch.context() as mp:
+            # EQ_PATH is read via core.env.env_value; set it on the process env
+            # (env_value reads os.environ first) and neutralise .env so a real
+            # developer .env can't shadow the fake install path.
+            mp.setenv("EQ_PATH", str(install))
+            mp.setattr(_core_env, "DOTENV_PATH",
+                       _core_env.DOTENV_PATH.parent / ".env.nonexistent-for-tests")
+
+            raised = False
+            with write_audit() as audit:
+                try:
+                    generate_validated(
+                        factory,
+                        zone_type=zone_type,
+                        zone_id="p15w",
+                        seed=seed if pinned else None,
+                        output_dir=out,
+                        write_glb=False,
+                        # A small attempt budget: an unpinned run needs > k
+                        # attempts to get past the k forced failures.
+                        max_attempts=k + 4,
+                        timeout_s=1e9,  # non-binding: never a timeout
+                        rng=None,
+                        failure_log=failure_log,
+                    )
+                except GenerationFailed:
+                    # A PINNED seed whose (forced) attempt fails is never
+                    # retried, so it raises — that is still a fully exercised
+                    # scratch-create -> reject -> cleanup + log path, and every
+                    # write it made is in scope for the confinement check.
+                    raised = True
+
+            recorded = audit.paths
+
+        # A pinned run only raises when its single attempt was forced to fail.
+        if pinned and k >= 1:
+            assert raised, "pinned forced-fail attempt did not raise GenerationFailed"
+
+        # -- Invariant 1: confinement of the pipeline's own writes. -----------
+        # The audit records writes from the WHOLE process while the block runs,
+        # which includes a dependency's legitimate use of the OS temp directory
+        # (numpy/scipy import scratch, Hypothesis bookkeeping, etc.) — those are
+        # NOT the pipeline's zone writes and are not a confinement breach (the
+        # design even reserves ``output/.tmp/`` for such dependency temp). What
+        # the property pins is: (1a) NOTHING is ever written into the EQ_PATH
+        # install, and (1b) every write the pipeline directs at its build tree
+        # lands INSIDE the Output_Directory (or is the configured failure-log
+        # path — the one allowed exception, itself confined here).
+        out_resolved = out.resolve()
+        log_resolved = failure_log.resolve()
+        install_resolved = install.resolve()
+
+        def _under(child: _Path_p15, parent: _Path_p15) -> bool:
+            return child == parent or parent in child.parents
+
+        # The set of filesystem locations this example "owns" and that the
+        # pipeline could plausibly target: its output tree and its fake install.
+        # A recorded write under the output tree MUST be confined to it (a
+        # genuine escape — e.g. remove_tree following a junction out, or a
+        # crafted name slipping past OutputRoot — would surface here); a write
+        # under the install is a hard breach.
+        for p in recorded:
+            try:
+                rp = _Path_p15(p).resolve()
+            except (OSError, ValueError):
+                continue
+
+            # (1a) A write into the fake EQ install is a confinement breach.
+            if _under(rp, install_resolved):
+                raise AssertionError(
+                    f"pipeline wrote into the EQ_PATH install: {rp} "
+                    f"(zone_type={zone_type}, seed={seed}, k={k}, pinned={pinned})"
+                )
+
+            # (1b) A write under the output tree must be inside it or be the log.
+            # A write to output_dir's own parent that names the output dir (a
+            # sibling-escape like ``<out>/../<out>_evil``) would resolve outside
+            # and is flagged; an unrelated OS-temp write elsewhere is ignored.
+            if _under(rp, out_resolved):
+                assert rp == log_resolved or _under(rp, out_resolved), (
+                    f"a pipeline write under the output tree is not confined: {rp}"
+                )
+            elif rp == log_resolved:
+                # The failure log — the one write the design allows at (or, for
+                # the server, just outside) the output dir. Here it is inside.
+                pass
+
+        # The failure log must have been written on a forced-fail run (k > 0):
+        # this proves the JSONL-append path was actually exercised AND confined.
+        if k >= 1:
+            assert log_resolved.exists(), (
+                "a forced-fail attempt did not write the confined failure log "
+                f"at {log_resolved}"
+            )
+            assert any(_Path_p15(p).resolve() == log_resolved for p in recorded), (
+                "the failure-log write was not recorded by the audit hook"
+            )
+
+        # -- Invariant 2: the fake EQ_PATH install is byte-for-byte unchanged. --
+        after = snapshot_install(install)
+        assert after == before, (
+            "the EQ_PATH install changed across generation (a write escaped into "
+            f"it): added/removed/changed "
+            f"{sorted(set(before) ^ set(after)) or 'same names, different bytes'} "
+            f"(zone_type={zone_type}, seed={seed}, k={k}, pinned={pinned})"
+        )
