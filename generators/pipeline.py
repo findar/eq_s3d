@@ -9,7 +9,7 @@ that fails either gate, and no rejected attempt is ever left on disk.
          |
          v   (each attempt builds into a per-attempt SCRATCH dir)
     build (ZoneBuilder)  ->  validate (traversability + corridor continuity)
-         |                        + fmt (Format_Checker; passing STUB until 20.3)
+         |                        + fmt (Format_Checker; analyzer.rof2check)
          |                         |
          |  pass                   |  fail (gated theme, random seed)
          v                         v
@@ -56,6 +56,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Collection, List, Optional, Sequence
 
+from analyzer.rof2check import FormatReport, check_eqg
 from analyzer.traverse import AgentModel, TraversalReport, validate
 from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
@@ -91,37 +92,16 @@ SpecFactory = Callable[[int], ZoneSpec]
 
 
 # ---------------------------------------------------------------------------
-# Format_Checker stub (real one lands in task 20.3)
+# Format_Checker (task 20.3): the real RoF2 format gate
 # ---------------------------------------------------------------------------
 #
 # The design's step 2 runs `fmt = check_eqg(eqg, spec, sidecar_path=...)` and the
 # PASS criterion is `report.passed AND report.corridors_passed AND fmt.passed`.
-# The real Format_Checker (`analyzer/rof2check.py`, FormatReport) is wave 6 /
-# task 20.3. Until then, so waves 4 and 6 stay separable, `fmt` is a clearly
-# marked STUB that ALWAYS passes with an empty check list and a `to_dict()` of
-# the same shape the real FormatReport.to_dict() will produce
-# ({"passed", "checks"}). Task 20.3 replaces `_format_check_stub` with the real
-# `check_eqg` call; nothing else in this module changes.
-
-@dataclass
-class _FormatStub:
-    """Passing Format_Checker stand-in. Replaced by FormatReport in task 20.3."""
-    passed: bool = True
-    checks: List[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        # Same shape the real FormatReport.to_dict() produces (design "#### Format_Checker").
-        return {"passed": self.passed, "checks": list(self.checks)}
-
-    @property
-    def failed_checks(self) -> List[str]:
-        """Names of the failed checks (empty while this is a passing stub)."""
-        return []
-
-
-def _format_check_stub(eqg_path, spec, sidecar_path) -> _FormatStub:
-    """STUB for the wave-6 Format_Checker. Always passes. (task 20.3 replaces me.)"""
-    return _FormatStub(passed=True, checks=[])
+# `check_eqg` (`analyzer/rof2check.py`, FormatReport) is the wave-6 Format_Checker
+# — a TOTAL checker that NEVER raises: a bad build becomes a failed attempt with
+# named format checks, not a pipeline crash. Its `to_dict()` is the `{"passed",
+# "checks"}` block merged into the Sidecar; its `failed_checks` names the checks
+# that did not pass, which ride in the JSONL line and GenerationFailed.
 
 
 # ---------------------------------------------------------------------------
@@ -137,8 +117,9 @@ class AttemptFailure:
     total_rooms: int
     reasons: List[str] = field(default_factory=list)  # "<room> [role]: <why>"
     # Names of the gates/checks this attempt failed, e.g. ["traversability",
-    # "corridor_continuity"] or Format_Checker check names once 20.3 lands. This
-    # is what the JSONL `checks` field and the GenerationFailed message list.
+    # "corridor_continuity"] plus any failed Format_Checker check names
+    # (e.g. "diffuse_textures", "safe_point"). This is what the JSONL `checks`
+    # field and the GenerationFailed message list.
     checks: List[str] = field(default_factory=list)
 
 
@@ -154,7 +135,7 @@ class ValidatedBuild:
     zone_type: str = ""          # the zone type this build is for
     build_dir: Optional[Path] = None  # output_dir/<zone_id>/v<version> — where the files live
     report: Optional[TraversalReport] = None
-    format: Optional[_FormatStub] = None   # FormatReport once 20.3 lands
+    format: Optional[FormatReport] = None  # the Format_Checker verdict (rof2check)
     warnings: List[str] = field(default_factory=list)
 
 
@@ -205,14 +186,14 @@ def _failure_reasons(report: TraversalReport) -> List[str]:
     ]
 
 
-def _failed_checks(report: TraversalReport, fmt: _FormatStub) -> List[str]:
+def _failed_checks(report: TraversalReport, fmt: FormatReport) -> List[str]:
     """The gate/check names a rejected attempt failed, in gate order.
 
     ``traversability`` (some room unreachable), ``corridor_continuity`` (a
     corridor floor breaks or two corridors conflict), and the Format_Checker's
-    own failed-check names (none while ``fmt`` is the passing stub). This is the
-    list that rides in the JSONL ``checks`` field and the GenerationFailed
-    message (Req 4.2).
+    own failed-check names (``fmt.failed_checks`` — e.g. ``diffuse_textures``).
+    This is the list that rides in the JSONL ``checks`` field and the
+    GenerationFailed message (Req 4.2).
     """
     checks: List[str] = []
     if not report.passed:
@@ -373,9 +354,8 @@ def generate_validated(
 ) -> ValidatedBuild:
     """
     Build a zone and guarantee (for gated zone types) that it passes the
-    traversability + corridor-continuity gate (and, from task 20.3, the
-    Format_Checker) before returning it — and that no rejected attempt is left
-    on disk.
+    traversability + corridor-continuity gate AND the Format_Checker before
+    returning it — and that no rejected attempt is left on disk.
 
     ``spec_factory(seed)`` must return a fresh ZoneSpec for the given seed
     (name/zone_type/room-count already applied); the pipeline owns which seed to
@@ -385,7 +365,7 @@ def generate_validated(
 
     * build into a SCRATCH dir ``output_dir/.attempts/<zone_id>/a<k>/``;
     * ``report = validate(eqg, spec, agent, check_corridors=True)`` and
-      ``fmt = check_eqg(...)`` (a passing stub until task 20.3);
+      ``fmt = check_eqg(eqg, spec, sidecar_path=...)`` (the RoF2 Format_Checker);
     * PASS ⇔ ``report.passed ∧ report.corridors_passed ∧ fmt.passed``;
     * on PASS: ``os.replace`` every file into
       ``output_dir/<zone_id>/v<version>/``, merge ``format``/``warnings``/
@@ -437,9 +417,11 @@ def generate_validated(
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
             )
-            # Ungated builds still run the Format_Checker and record it.
-            fmt = _format_check_stub(result.eqg_path, spec,
-                                     scratch / f"{spec.name.lower()}.zone.json")
+            # Ungated builds still RUN the Format_Checker and RECORD it (the
+            # format block in the Sidecar), even though they are not retried.
+            fmt = check_eqg(result.eqg_path, spec,
+                            sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
+                            agent=agent)
             all_warnings = base_warnings + list(result.warnings)
             moved = _finalize_build(
                 root, result, scratch, final_dir, fmt=fmt,
@@ -481,8 +463,9 @@ def generate_validated(
             )
             report = validate(result.eqg_path, spec=spec, agent=agent,
                               check_corridors=True)
-            fmt = _format_check_stub(result.eqg_path, spec,
-                                     scratch / f"{spec.name.lower()}.zone.json")
+            fmt = check_eqg(result.eqg_path, spec,
+                            sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
+                            agent=agent)
             passed = report.passed and report.corridors_passed and fmt.passed
 
             if passed:
@@ -531,7 +514,7 @@ def generate_validated(
 
 def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
                     final_dir: Path, *,
-                    fmt: _FormatStub, warnings: Sequence[str], validated: bool,
+                    fmt: FormatReport, warnings: Sequence[str], validated: bool,
                     attempts: int, seed: int,
                     planned_zone_type: Optional[str] = None,
                     mode: Optional[str] = None) -> BuildResult:
