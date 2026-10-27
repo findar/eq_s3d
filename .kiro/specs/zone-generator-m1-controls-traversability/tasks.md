@@ -1402,7 +1402,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Property 9 (20.6) is NOT implemented here (separate task) but the naming is now consistent enough for it: the eqg stem, both archive entries, the ZON model ref, the glb, the Sidecar `name` and the map all agree on `<name>`.
       - NOT verified in the live 3D viewer — this is a NAMING change, no geometry moved (box TER builder untouched); nothing to eyeball in 3D (see `docs/ACCEPTANCE.md`).
       - Touched only `generators/builder.py`, `main.py`, `server/app.py`, `tests/test_pipeline.py`, `tests/test_properties_pipeline.py`, and this `tasks.md` entry. NOT `analyzer/rof2check.py` (20.2), NOT `core/paths.py` (imported only).
-      - Commit: `__PENDING__`.
+      - Commit: `78be440` (code + tests + this entry; this self-reference line is updated in a follow-up amend-free edit).
   - [ ] 19.5 Route every write through `OutputRoot` and add the refusal
     - `ZoneBuilder.build`, `EqgZone.write` / `write_sidecar` (checked paths), the Pipeline's scratch / move / remove and failure log, the CLI spec save and the Server's `OUTPUT_DIR` creation. Set `tempfile.tempdir` to `<output>/.tmp` in the CLI `main()` and the Server's startup path (never at import). `assert_output_allowed(out, env_value("EQ_PATH"))` in the CLI after parsing (exit 2, both paths named) and in `server/app.py` before `OUTPUT_DIR.mkdir`.
     - _Requirements: 10.1, 10.2_
