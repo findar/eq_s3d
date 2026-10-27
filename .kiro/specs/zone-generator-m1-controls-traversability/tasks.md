@@ -1653,24 +1653,133 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
 ### M1 exit
 
 - [ ] 22. Exit checks and hand-off
-  - [ ] 22.1 Run the final suite and record the budget
+  - [x] 22.1 Run the final suite and record the budget
     - On `master` after the wave-6 merge, `python -m pytest tests/ -q` green. Record the result, the median of 3 Default_Runs against the 1.1 baseline, the commit count since the M1 fork point and the head hash.
     - _Requirements: Exit criteria 1_
-  - [ ] 22.2 Run the thorough profile once and record it
+    - **Deliverables (run on MAIN checkout `master`, head `b89ccd8`, all six M1 waves merged):**
+      - **Suite GREEN — 435 passed, 0 failed, every run.** The xdist CORS flake (`test_server.py::test_foreign_origins_get_no_cors`) was fixed at head `b89ccd8` (`deadline=None` on the foreign-origin CORS property), so all three Default_Runs were a clean 435 — no flaky failure, no isolation re-run needed. 13 warnings each run, all pre-existing and unrelated (Starlette/httpx testclient deprecation ×12, `runpy` re-import ×1).
+      - **Three Default_Runs** (`python -m pytest tests/ -q`, suite runs IN PARALLEL via pytest-xdist; pytest-reported wall / stopwatch wall):
+        - Run 1: **313.41 s** (435 passed) · stopwatch 316.83 s
+        - Run 2: **291.03 s** (435 passed) · stopwatch 294.19 s
+        - Run 3: **320.53 s** (435 passed) · stopwatch 323.88 s
+        - **Median (pytest-reported): 313.41 s.** (Stopwatch wall median: 316.83 s — same picture.)
+      - **Budget note — HONEST comparison caveat.** The task-1.1 M0-exit baseline was **88.21 s**, but that baseline was measured **SINGLE-PROCESS** (pre-xdist). The suite now runs **in parallel via pytest-xdist** across ~37 workers, so the parallel wall time and the single-process baseline are **not directly comparable**, and the "+120 s single-process ceiling" (208.21 s) is not a like-for-like bar against these numbers. Reported here as the **current reality**: the parallel Default_Run median is **313.41 s** on this machine (machine-dependent; NOT the Reference_Machine). The test count also grew M0→M1 (249 → 435) as the M1 property/example tests landed. The single-process budget lever was last exercised analytically inside the waves (notably 9.2); at M1 exit the suite is parallel and the parallel wall time is what this records. No attempt is made to reconcile the parallel median to the single-process ceiling — they measure different things.
+      - **Commit count since the M1 fork point:** `git rev-list --count 5dabd21..HEAD` = **144** commits since the M1 fork point `5dabd2145d6543cd9e7ae8a661bd8015329b33e9` (`5dabd21`, the wave-1 fork from `master`).
+      - **Head hash:** `b89ccd846b88791785bbeb468736b6346f7748b6` (`b89ccd8`). Confirmed unchanged across all three runs and after.
+      - NOT a 3D-viewer check — this is the analytical suite; the live human pass is task 22.5 (PENDING-HUMAN).
+  - [x] 22.2 Run the thorough profile once and record it
     - `python -m pytest tests/ -q --hypothesis-profile=thorough`. Record the result, duration and commit hash. A counterexample goes through the root-fix rule, then this run is repeated.
     - _Requirements: Exit criteria 1_
-  - [ ] 22.3 Build the frontend
+    - **Deliverables (MAIN `master`, head `b89ccd8`):**
+      - `python -m pytest tests/ -q --hypothesis-profile=thorough` → **435 passed, 0 failed, 13 pre-existing unrelated warnings.** **No counterexample surfaced** under the thorough profile — the property suite holds at the higher example budget, so the root-fix-then-repeat path was not needed; recorded GREEN.
+      - **Duration:** pytest-reported **1136.94 s** (18:56); stopwatch wall **1140.18 s**. Single run, parallel via pytest-xdist, this machine.
+      - **Commit hash:** `b89ccd846b88791785bbeb468736b6346f7748b6` (`b89ccd8`) — same head as 22.1/22.3.
+  - [x] 22.3 Build the frontend
     - `cd web; npx vite build` succeeds on the same head.
     - _Requirements: Exit criteria 2_
-  - [ ] 22.4 Add the M1 section to `docs/ACCEPTANCE.md`
+    - **Deliverables (MAIN `master`, head `b89ccd8`):**
+      - `cd web; npx vite build` → **exit 0 (SUCCESS)** on the same head as 22.1/22.2. Production build: **10 modules transformed**, `dist/index.html` 5.91 kB (gzip 1.99 kB), `dist/assets/index-*.css` 5.40 kB (gzip 1.64 kB), `dist/assets/index-*.js` 577.30 kB (gzip 149.87 kB); **built in 4.08 s**. The only warning is the pre-existing >500 kB chunk-size advisory (three.js bundle) — advisory, not an error, unchanged by M1. `web/dist/` is per-checkout and gitignored. No `npm install` run (shared `web/node_modules` untouched). No long-running process started.
+  - [x] 22.4 Add the M1 section to `docs/ACCEPTANCE.md`
     - New section "M1 — Controls, zone types, connectivity" with the design's human-pass table rows (flat and elevated 30-room dungeons on the M0 seeds and every moved seed, wilderness pads and trails, city walk, both Generate actions, consistent file names, one `<zone_id>/v1/` folder per build), plus the moved-seed list from 9.1.
     - _Requirements: Exit criteria 3, 4_
+    - **Deliverables:**
+      - Appended a new top-level section **"M1 — Controls, zone types, connectivity"** to `docs/ACCEPTANCE.md` (after the Quick-seed-sweep block), in the existing `[MUST]`/`[SHOULD]` checkbox style. Opens with a restart/`stale:false`/`build_commit`-match preamble, a vocabulary note (`theme`→`zone_type`, `outdoor`→`wilderness`; offered = dungeon + city; **wilderness ships DISABLED**, deferred to `zone-generator-wilderness`), and the **one-time seed break (Decision 13)** note (pre-M1 pinned seeds generally re-route; eyeball M1 layouts as fresh).
+      - Sub-sections and the human-pass rows the design calls for:
+        - **M1.A Zone-type gate & availability** — picker lists all defined types in order; `dungeon`/`city` build; **`wilderness` shows DISABLED with its reason** and cannot be generated (forcing it is rejected before any write).
+        - **M1.B Dungeon walk (flat AND elevated, 30 rooms)** — the two M0 seeds `1949459644` (`create a dungeon with 30 rooms`) and `1510177507` (`a dungeon with 30 rooms and long halls`), each flat and elevated; the three navigability bars (walks end-to-end / ramps flush+subdivided / no corridor through a third room or across another); the **moved-seed spot-checks** (loop-edge-drop flat 30-room dungeons `2,41,64,110,159,160,173`; crosses-room split spread `5,8,9`); and the elevated moved cases (dungeon 26/seed 2985/dramatic reachability, dungeon 13/seed 13/dramatic short-ramp flush).
+        - **M1.C City walk** — flat and elevated at 12 AND 30 rooms; the loop-edge-drop city seeds `41,64,93,110,159,160`.
+        - **M1.D Both Generate actions** — description (prompt) mode and controls mode, panel shows which produced the zone; blank seed = fresh; typing-is-safe (prompt + seed box); the `zone_type_substituted` warning reads in words.
+        - **M1.E Naming & per-build folders** — consistent `<name>.*` file names across every artifact; exactly one `<zone_id>/v1/` folder per build; the Tier-1 format gate (`format_passed`).
+      - **Wilderness pads/trails:** the design's "wilderness pads and trails" rows are intentionally NOT asserted as pass-required in M1 — wilderness is DISABLED/deferred (15.8 descope), so the section instead requires that wilderness appears disabled with its reason and is not buildable. Recorded as a deliberate M1 adjustment, consistent with the wilderness-descope banner above task 13.
+      - **Moved-seed list used (from task 9.1, Decision 13):** both M0 seeds were moved by the crosses-room split; the enumerated loop-edge-drop seeds (`93509ef`) are dungeon/12: 22,189; dungeon/20: 195; dungeon/30: 2,41,64,110,159,160,173; city/12: 22,189; city/20: 195; city/30: 41,64,93,110,159,160; the crosses-room split (`20760a5`) moved 756 of the 1200 flat builds (union 765) and is spot-checked rather than enumerated (the full list was not committed). 8.3 moved ZERO geometry.
+      - Touched only `docs/ACCEPTANCE.md` (MAIN checkout, allowed at this integration step) and this task-22.4 entry. No `ROADMAP.md`/`README.md`/`tasks/README.md`.
+      - NOT a 3D check — this task writes the checklist; the live pass is 22.5.
   - [ ] 22.5 **HUMAN-GATED:** the M1 `docs/ACCEPTANCE.md` pass
     - Checklist, PENDING-HUMAN, on a restarted Server running the merged code: walk the 22.4 section. Every offered zone type (dungeon, city, wilderness) walks end to end, including flat and elevated 30-room dungeons and seeds 1949459644 and 1510177507; wilderness rooms sit on their pads; downloaded files carry the build's name consistently. State that the agent verified none of this in the live viewer.
     - _Requirements: Exit criteria 3_
-  - [ ] 22.6 Write the M1 integration note (don't apply it)
+    - **Status: PENDING-HUMAN — the agent wrote the checklist below; it does NOT tick this box. The user signs it off in the live browser / 3D viewer. Leave the checkbox `[ ]` until the user confirms. M1 does not fully exit until this is signed off.**
+    - **The agent verified NONE of the below in the live 3D viewer or browser.** Tasks 22.1–22.4 are analytical only: the suite is green (435), the thorough profile is green, the frontend builds, and the `docs/ACCEPTANCE.md` M1 section is written — but no zone was walked, no file was downloaded, and no picker was eyeballed by the agent. Everything in this checklist is for the user to confirm at the live Server running the merged `master` (head `b89ccd8`).
+    - **HUMAN-PASS CHECKLIST (M1 `docs/ACCEPTANCE.md`, live browser + viewer)**
+
+      Before you start:
+      - Restart the Server on the merged `master` (head `b89ccd8`). Open `/api/version` and confirm `stale` is `false` (a moved HEAD or uncommitted edits show as `stale: true` — restart first).
+      - For each build, confirm the panel's `build_commit` matches the `master` head you are testing.
+      - Walk the full **"M1 — Controls, zone types, connectivity"** section of `docs/ACCEPTANCE.md`; this is the same list, keyed to sign-off here.
+
+      A — Zone-type gate (M1.A):
+      - `( )` Picker lists `dungeon`, `city`, `wilderness` in defined order.
+      - `( )` `dungeon` and `city` are selectable and build end to end.
+      - `( )` **`wilderness` appears DISABLED with its reason visible** (deferred to the open-world wilderness milestone) and CANNOT be generated. (Wilderness ships DISABLED in M1 — do NOT expect it to build or to show pads; confirm it is offered-but-disabled.)
+
+      B — Dungeon, flat AND elevated, 30 rooms (M1.B) — three bars each: walks end to end / ramps flush+subdivided / no corridor through a third room or across another:
+      - `( )` flat  `( )` elevated — `create a dungeon with 30 rooms`, **seed 1949459644** (prompt mode). M1-moved layout — eyeball fresh.
+      - `( )` flat  `( )` elevated — `a dungeon with 30 rooms and long halls`, **seed 1510177507** (prompt mode). Long ramps — watch flush.
+      - `( )` Moved flat 30-room dungeons (loop-edge-drop): seeds 2, 41, 64, 110, 159, 160, 173.
+      - `( )` Crosses-room spread: flat 30-room dungeons 5, 8, 9 — no corridor clips a third room.
+      - `( )` Elevated moved cases: dungeon 26 / seed 2985 / dramatic (every room reachable); dungeon 13 / seed 13 / dramatic (corr_13 flush at both ends).
+
+      C — City, flat AND elevated, 12 and 30 rooms (M1.C):
+      - `( )` City flat, 12 and 30 rooms — walks end to end; no corridor through a third room or across another.
+      - `( )` City elevated, 12 and 30 rooms — ramps flush; every room reachable.
+      - `( )` City moved seeds (loop-edge-drop): city 30 rooms flat, seeds 41, 64, 93, 110, 159, 160.
+
+      D — Both Generate actions (M1.D):
+      - `( )` Generate from description (prompt) builds from the prompt; panel shows **prompt** mode.
+      - `( )` Generate from controls builds from the panel fields; panel shows **controls** mode.
+      - `( )` Blank seed yields a fresh seed and different geometry each time.
+      - `( )` Typing in the prompt box OR the seed box edits text and moves NO camera.
+      - `( )` A prompt for a disabled zone type is substituted to `dungeon` with a plain-words `zone_type_substituted` warning.
+
+      E — Naming and per-build folders (M1.E):
+      - `( )` **Downloaded files carry the build's name consistently:** `<name>.eqg`, `ter_<name>.ter`, `<name>.zon`, `<name>.glb`, `<name>.zone.json`, `<name>.map.svg`.
+      - `( )` **One folder per build:** each build lands in exactly one `<zone_id>/v1/`; a second generate makes a new one and never scatters files outside it.
+      - `( )` A served/accepted build reports `format_passed` (Tier-1 format gate).
+
+      Sign-off:
+      - `( )` When every row above holds, the user ticks the `22.5` checkbox. **The agent must NOT tick it.** Until then this stays `[ ]` PENDING-HUMAN.
+      - If any row fails, note the zone type / rooms / seed / verticality and the failing bar; that is a real bug for a root fix, not a checklist to loosen.
+  - [x] 22.6 Write the M1 integration note (don't apply it)
     - In the final report give the integrator: the Done-table row, the "Pick up here" line, the commit hash and count, the per-wave notes (9.4, 11, 14.1, 16.1, 18.1, 21), the moved-seed list and the Decision 13 seed break, and whether wilderness shipped enabled. Don't edit `ROADMAP.md`, `README.md` or `tasks/README.md`.
     - _Requirements: Exit criteria 4_
+    - **Deliverables — M1 INTEGRATION NOTE (authored here, NOT applied).** This note is for the single-writer integration step run from the MAIN checkout. Per the task and tracker-ownership rule, this worker does NOT edit `ROADMAP.md`, `README.md` or `tasks/README.md`; the human integrator applies the rows below. Assembled from the exit measurements (22.1–22.4) and the six per-wave notes (9.4, 11, 14.1, 16.1, 18.1, 21).
+
+      - **Done-table row (for ROADMAP's Done table):**
+        > **M1 — Controls + all-zone-type traversability + format gate.** Controls/prompt modes with `from_controls` (golden-equal, no geometry moved); zone-type rename (`theme`→`zone_type`, `outdoor`→`wilderness`) with legacy load retained; one Enabled-set gate (dungeon + city offered; **wilderness DISABLED/deferred**); large-zone connectivity through 30 rooms, flat and elevated (union-find walk surface — 6-room outdoor validate 118 s → <1 s, proven equivalent to a frozen reference; single corridor router proven byte-identical; corridor continuity + corridor–corridor conflict gates); Build_Name naming of every artifact, per-build `<zone_id>/v1/` folders, Tier-1 format gate (`analyzer.rof2check.check_eqg`, eleven checks, no `normals_resolve`/`shortname`), and Output_Directory confinement (junction-safe). **Head `b89ccd8`; 144 commits since the M1 fork point `5dabd21`.** Suite **435 passed** (clean ×3; thorough profile green); frontend builds.
+
+      - **"Pick up here" line (for ROADMAP):**
+        > Pick up here: M1 is landed on `master` (head `b89ccd8`; waves 1–6 merged). The only open M1 item is the HUMAN-GATED acceptance pass, **task 22.5** — walk the new `docs/ACCEPTANCE.md` "M1 — Controls, zone types, connectivity" section in the live viewer and tick 22.5. **Next milestone: `zone-generator-followup` (runway), then `zone-generator-wilderness` (the open-world wilderness generator)** — per ROADMAP. Wilderness shipped **DISABLED** in M1 and is deferred to its own milestone.
+
+      - **Commit hash and count.**
+        - MAIN `master` head: `b89ccd846b88791785bbeb468736b6346f7748b6` (`b89ccd8`).
+        - M1 fork point: `5dabd2145d6543cd9e7ae8a661bd8015329b33e9` (`5dabd21`, the wave-1 fork from `master`).
+        - Commits since the fork point: **144** (`git rev-list --count 5dabd21..HEAD`). (This exit-task tracker commit lands on top; the integrator should read the then-current head when merging the Done-table row.)
+
+      - **Exit-criteria status (tasks 22.1–22.4):** suite **435 passed** on all three Default_Runs, median **313.41 s** pytest-reported (parallel via pytest-xdist — see the 22.1 caveat: the M0-exit "+120 s" ceiling was a single-process baseline and is not directly comparable); thorough profile **435 passed, no counterexample**; frontend `npx vite build` **exit 0**; `docs/ACCEPTANCE.md` M1 section written. HUMAN-GATED 22.5 is PENDING-HUMAN (checkbox unticked).
+
+      - **Per-wave integration notes already recorded (apply each from MAIN):**
+        - **Wave 1 (9.4) — large-zone connectivity (Req 5).** Branch `agent/m1-connectivity`, head `c314703`, 39 commits since fork `5dabd21`. Faster walk surface (union-find, M1-P4 equivalence vs a frozen reference); single corridor router (`generators/routing.py`, 32 TER hashes byte-identical); corridor continuity + conflict gates (Decision 12/16); flat AND elevated connectivity through 30 rooms; flat (7.2) and elevated (9.3) 3D passes.
+        - **Wave 2 (11) — zone-type rename (Req 11).** Branch `agent/m1-rename`, head `ec7d186`, 12 commits since fork `5705ce4`. `theme`→`zone_type`, `outdoor`→`wilderness` across plan/planner/spec/layout/builder/pipeline/sidecar/server/CLI/web; legacy load retained (Req 11.1); serialized output carries no `theme` key; Property 12 pins the legacy round-trip; 35/35 TER hashes prove no geometry moved. Suite 259 passed.
+        - **Wave 3 (14.1) — backend registry only; wilderness terrain DESCOPED.** Only the geometry-backend registry (task 12) landed (merge `fbadf63`): `generators/backends.py` (`BoxBackend`/`TerrainBackend`, `backend_for`, fallback-to-box warning, no cave backend). The wilderness TERRAIN work (13.x) and its 3D pass (14.x) were REJECTED by the user (wilderness must be open scenic landscape, not a room-graph in grass) and ABANDONED; wilderness ships present-but-DISABLED. The real wilderness generator is its own milestone (`.kiro/specs/zone-generator-wilderness/`), sequenced after M1 and `zone-generator-followup`.
+        - **Wave 4 (16.1) — all-zone-type gate + availability (Req 3, 4).** Branch `agent/m1-gate`, head `a0823f0`, 16 commits since fork `3e7a427`. `ENABLED_ZONE_TYPES = {dungeon, city}` + `zone_type_listing()`; sidecar on every build; rebuilt `generate_validated` (scratch-attempt gate, atomic move into `<zone_id>/v<version>/`, continuity gate wired on); server gating (disabled type → 400 before any write; prompt-planned disabled → substituted to dungeon with a warning) and per-build versioned route; Properties 2 & 7. **Wilderness did NOT ship enabled.** Suite 271 passed.
+        - **Wave 5 (18.1) — modes + `from_controls` + geometry-slice controls (Req 1, 2).** Branch `agent/m1-modes`, head `703c21f`, 20 commits since fork `43df9ec`. `ZonePlan.from_controls`; controls golden test (72 cases, all equal — **no geometry moved, no seed break**); Property 5; server mode resolution with field-named 400s before any write; geometry-slice CLI options; web header + Controls panel (two Generate actions, `#seed`, zone-type dropdown with disabled reasons); surface guards forbidding topology/district/target controls. Suite 381 passed; frontend builds.
+        - **Wave 6 (21) — build naming + format gate + confinement (Req 8, 9, 10).** Branch `agent/m1-format`, head `bf74aeb`, 28 commits since fork `eddc09c`. `core/env.py` (non-mutating `.env`), `core/paths.py` (`OutputRoot`, junction-safe `remove_tree`, EQ_PATH-overlap refusal), Build_Name naming of every artifact + per-build `<zone_id>/v1/`, `analyzer/rof2check.py` Tier-1 Format_Checker (eleven checks, no `normals_resolve`/`shortname`) wired into the pipeline gate, Properties 8/9/14/15. **Wilderness still DISABLED after 20.4.** Suite 435 passing (1 known xdist CORS flake at that head, since fixed on `master` at `b89ccd8`); frontend builds.
+
+      - **Moved-seed list + the Decision 13 seed break (one-time M1 break; from task 9.1).**
+        - Pinned seeds saved BEFORE M1 are **NOT expected to reproduce** — the wave-1 connectivity fixes deliberately re-route corridors. Intended one-time break, not a regression.
+        - **Flat (wave 1 / task 6.5): geometry moved on 765 of the 1200 flat builds** (dungeon + city × rooms 12/20/30 × 200 seeds/cell):
+          - 756 by the crosses-room A→C→B split (`20760a5`, the dominant mover — ~63% of flat builds get at least one split; full list reproducible from the 6.5 recorder, not committed).
+          - 19 by the loop-edge conflict drop (`93509ef`), enumerated: dungeon/12: 22, 189; dungeon/20: 195; dungeon/30: 2, 41, 64, 110, 159, 160, 173; city/12: 22, 189; city/20: 195; city/30: 41, 64, 93, 110, 159, 160.
+          - inverted-stub wall choice (`1ba4db4`) shifts endpoints wherever the better-separated axis differs (subsumed in the 765 union); gate-route fix (`da05a84`) moved 0.
+          - **Union across movers: 765 of 1200 flat builds.**
+        - **Elevation (wave 1 / task 8.3): ZERO seeds moved** — both root fixes were validator/probe-only (`5afd5ff` `analyzer/traverse.py`; `20e43e0` `tests/pbt_helpers.py`), no `generators/` change.
+        - **Both M0 human-pass seeds moved by the crosses-room split:** `create a dungeon with 30 rooms` seed 1949459644 (34→33 corridors, 1→0 third-room crossing) and `a dungeon with 30 rooms and long halls` seed 1510177507 (34→33, 1→0). Waves 2 and 5 moved NO geometry (35/35 and 72/72 golden-equal respectively).
+        - **Combined moved-seed total: 765 flat builds (all from wave-1 6.5); 0 from elevation.**
+
+      - **Did wilderness ship enabled? NO.** Wilderness ships **present-but-DISABLED** in M1 (`ENABLED_ZONE_TYPES = {dungeon, city}`; `DISABLED_REASON`/`ZONE_TYPE_REASONS` deferral text). Its terrain generator was descoped during wave 3 and deferred to its own milestone `.kiro/specs/zone-generator-wilderness/`, sequenced after M1 and `zone-generator-followup`.
+
+      - **`tasks/README.md` status change (for the integrator to apply from MAIN):** mark the M1 milestone (waves 1–6) complete / merged; the only open item is the HUMAN-GATED 22.5 acceptance pass.
+
+      - Touched only this `tasks.md` (and `docs/ACCEPTANCE.md` for 22.4) on the MAIN checkout. NOT applied to `ROADMAP.md`/`README.md`/`tasks/README.md`.
 
 ## Notes
 

@@ -153,3 +153,102 @@ for seed in [1,5,42,99,678358326]:
 
 Expect `comps=1` and `watertight=True` for every seed. Then clean up:
 `Remove-Item output/q.*`
+---
+
+## M1 — Controls, zone types, connectivity
+
+Walk this section after the M1 milestone (controls + all-zone-type
+traversability + format gate) lands on `master`. It is the human-pass companion
+to the structural suite: the suite proves connectivity/continuity/format
+analytically; this list is what only a person at the viewer and the browser can
+confirm. Restart the Server on the merged code first and confirm `/api/version`
+reports `stale: false` before you start; confirm each build's panel
+`build_commit` matches the `master` head you are testing.
+
+> **Vocabulary note.** M1 renamed `theme` → `zone_type` and `outdoor` →
+> `wilderness`. In M1 the **offered** zone types are **dungeon** and **city**;
+> **wilderness ships DISABLED** (its open-world generator is deferred to the
+> `zone-generator-wilderness` milestone) and must appear in the picker greyed
+> out with its reason, never buildable.
+
+> **One-time seed break (Decision 13).** The wave-1 connectivity fixes
+> deliberately re-route corridors, so a seed pinned before M1 generally produces
+> a *different* layout on M1. This is intended, not a regression. The two M0
+> human-pass seeds below were both moved by the crosses-room split; eyeball them
+> as *fresh* M1 layouts, not as a match to any pre-M1 screenshot.
+
+### M1.A — Zone-type gate and availability
+
+- [ ] **[MUST] Picker lists all defined zone types** — The Controls zone-type
+      dropdown lists `dungeon`, `city`, `wilderness` in defined order.
+- [ ] **[MUST] Enabled types build** — `dungeon` and `city` are selectable and
+      build end to end.
+- [ ] **[MUST] Wilderness shows DISABLED with its reason** — `wilderness` is
+      present but disabled; its reason text is visible (deferred to the
+      open-world wilderness milestone) and it cannot be generated from the
+      controls. Forcing a disabled zone type (dev build / direct request) is
+      rejected before any file is written.
+
+### M1.B — Dungeon walk (flat and elevated, 30 rooms)
+
+Generate each at **flat (Elevation unchecked)** and **elevated (Elevation
+checked, at moderate and dramatic where exposed)**. Confirm all three bars:
+(1) walks end to end — every room reachable on foot, no floating island, no
+unclimbable ramp; (2) ramps land flush at both openings and are subdivided
+finely enough to climb; (3) no corridor runs through a third room or crosses
+another corridor.
+
+- [ ] **[MUST] M0 seed — `create a dungeon with 30 rooms`, seed `1949459644`**
+      — prompt-driven, flat AND elevated. (M1-moved layout; see the seed-break
+      note.)
+- [ ] **[MUST] M0 seed — `a dungeon with 30 rooms and long halls`, seed
+      `1510177507`** — prompt-driven, flat AND elevated. Long halls mean long
+      ramps; watch bar 2.
+- [ ] **[MUST] Moved seeds — flat 30-room dungeons** — spot-check a spread of
+      the loop-edge-drop seeds that the wave-1 conflict fix re-routed: dungeon,
+      30 rooms, flat, seeds `2`, `41`, `64`, `110`, `159`, `160`, `173`. All
+      three bars hold on each.
+- [ ] **[SHOULD] Moved seeds — crosses-room split spread** — a handful of flat
+      30-room dungeons in seeds 1–200 (e.g. `5`, `8`, `9`) that the A→C→B split
+      re-routed; confirm no corridor clips a third room.
+- [ ] **[SHOULD] Elevated moved cases** — dungeon 26 rooms seed `2985` dramatic
+      (reachability case) walks end to end; dungeon 13 rooms seed `13` dramatic
+      (short-ramp case, corr_13) lands flush at both ends.
+
+### M1.C — City walk (flat and elevated, 12 and 30 rooms)
+
+- [ ] **[MUST] City flat** — city, 12 rooms and 30 rooms, flat, walk end to end;
+      no corridor through a third room or across another corridor.
+- [ ] **[MUST] City elevated** — city, 12 rooms and 30 rooms, elevated; ramps
+      land flush and every room is reachable.
+- [ ] **[SHOULD] City moved seeds** — spot-check the loop-edge-drop city seeds:
+      city 30 rooms flat, seeds `41`, `64`, `93`, `110`, `159`, `160`.
+
+### M1.D — Both Generate actions
+
+- [ ] **[MUST] Generate from description (prompt)** — The header's description
+      Generate action builds from the prompt text; the panel shows the build was
+      produced in **prompt** mode.
+- [ ] **[MUST] Generate from controls** — The Controls Generate action builds
+      from the panel fields (zone type / rooms / size / verticality / locks /
+      seed); the panel shows the build was produced in **controls** mode.
+- [ ] **[MUST] Blank seed is fresh** — Generating with the seed box empty yields
+      a new seed and visibly different geometry each time.
+- [ ] **[MUST] Typing is safe** — While typing in the prompt box or the seed
+      box, WASD/Space/R edit the text and do NOT move the camera.
+- [ ] **[SHOULD] Substitution warning reads in words** — If a prompt asks for a
+      disabled zone type, the build is substituted to `dungeon` and the warning
+      region says so in plain words (`zone_type_substituted`).
+
+### M1.E — Naming and per-build folders
+
+- [ ] **[MUST] Consistent file names** — For one build with name `<name>`, every
+      downloaded/served artifact carries that name consistently: `<name>.eqg`,
+      `ter_<name>.ter`, `<name>.zon`, `<name>.glb`, `<name>.zone.json`,
+      `<name>.map.svg`.
+- [ ] **[MUST] One folder per build** — Each build lands in exactly one
+      `<zone_id>/v1/` folder; a second generate makes a new `<zone_id>/v1/`, it
+      never overwrites or scatters files outside that folder.
+- [ ] **[SHOULD] Format gate honoured** — A served/accepted build passes the
+      Tier-1 format check (`analyzer.rof2check.check_eqg`); the panel/sidecar
+      reports `format_passed`.
