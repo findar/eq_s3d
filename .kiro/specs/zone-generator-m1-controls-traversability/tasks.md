@@ -1298,7 +1298,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/test_hygiene.py -q` → **19 passed** (6.28 s) — 16 prior + 3 new guards.
         - `python -m pytest tests/ -q` → **381 passed** (163.14 s) — 378 baseline (task 17.8) + 3 new guards; 13 warnings pre-existing/unrelated. The known xdist CORS flake `test_foreign_origins_get_no_cors` did not surface this run (passes isolated at `-n0` if it ever does).
       - NOT verified in the live browser / 3D viewer — these are static source-surface guards (HTML ids, argparse option literals, dataclass/model field names), no geometry or UI behaviour to eyeball (per `docs/ACCEPTANCE.md`).
-      - Commit (worktree only, not pushed): `__PENDING__`.
+      - Commit (worktree only, not pushed): `76948a8` (the guards + this tracker entry; this self-reference hash is recorded in a follow-up edit).
 
 - [ ] 18. Checkpoint: wave 5 closed
   - [ ] 18.1 Run the suite, build the frontend and write the wave-5 integration note
