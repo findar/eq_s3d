@@ -241,10 +241,17 @@ class TestCliEscapeHatch:
     def test_no_validate_builds_broken_seed(self, tmp_path):
         import main
         main.cmd_generate(self._args(tmp_path, no_validate=True))
-        # task 15.4 moves accepted/ungated builds into <zone_id>/v<version>/;
-        # the .eqg lives there now. The spec is still saved flat by main.py.
-        assert (tmp_path / "cli" / "v1" / "cli.eqg").exists()
-        assert (tmp_path / "cli.json").exists()
+        # task 19.4: the zone id (the per-build directory) is
+        # new_zone_id(prefix=<name>) = cli_<ts>_<hex6>, so two runs with the
+        # same name land in different directories (Req 8.3). Every artifact
+        # inside is still named by the Build_Name stem "cli", and the spec is
+        # saved as <name>.json IN the build directory (not flat).
+        build_dirs = [p for p in tmp_path.iterdir()
+                      if p.is_dir() and p.name.startswith("cli_")]
+        assert len(build_dirs) == 1, f"expected one cli_* build dir, got {build_dirs}"
+        bd = build_dirs[0] / "v1"
+        assert (bd / "cli.eqg").exists()
+        assert (bd / "cli.json").exists()
 
     def test_gate_blocks_pinned_bad_seed(self, tmp_path, monkeypatch):
         # Force the CLI to build a broken zone (an isolated, corridor-less room)
@@ -367,7 +374,12 @@ class TestCliArgs:
         )
         main.cmd_generate(ns)
 
-        spec = ZoneSpec.load(tmp_path / "flatcli.json")
+        # task 19.4: the spec is saved as <name>.json inside the per-build
+        # directory <output>/<zone_id>/v1/, where <zone_id> = flatcli_<ts>_<hex6>.
+        build_dirs = [p for p in tmp_path.iterdir()
+                      if p.is_dir() and p.name.startswith("flatcli_")]
+        assert len(build_dirs) == 1, f"expected one flatcli_* dir, got {build_dirs}"
+        spec = ZoneSpec.load(build_dirs[0] / "v1" / "flatcli.json")
         floors = {round(r.floor_z, 6) for r in spec.rooms}
         assert spec.rooms, "expected rooms in the built spec"
         assert len(floors) == 1, (

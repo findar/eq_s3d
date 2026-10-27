@@ -21,8 +21,6 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
-import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -34,6 +32,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
+from core.paths import new_zone_id
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type,
@@ -415,7 +414,11 @@ def _resolve_mode(req: GenerateRequest) -> str:
 
 @app.post("/api/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest):
-    zone_id = f"gen_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+    # The zone id is both the per-build directory and the Build_Name on the
+    # Server (design "Server"). Drawn from the shared ``new_zone_id`` helper
+    # (``gen_<ts>_<hex6>``, lowercase) so the CLI and Server share one id shape
+    # and one home for it (task 19.3 / 19.4).
+    zone_id = new_zone_id()
 
     # --- Mode + seed resolution: every 400 here happens BEFORE any build/write.
     mode = _resolve_mode(req)

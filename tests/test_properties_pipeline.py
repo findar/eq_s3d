@@ -356,13 +356,18 @@ def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
     cli_out = tmp_path / "cli"
     main.main(["generate", "p16", "--rooms", "5", "--output", str(cli_out)])
 
-    # Accepted_Build artifacts written under the CLI output dir. task 15.4
-    # moves accepted builds into <zone_id>/v<version>/; the .eqg/.glb live
-    # there now, while main.py still saves the spec flat for inspection.
-    build_dir = cli_out / "p16" / "v1"
+    # Accepted_Build artifacts written under the CLI output dir. task 19.4:
+    # the zone id (the per-build directory) is new_zone_id(prefix=<name>) =
+    # p16_<ts>_<hex6>, so every artifact inside — including the spec
+    # <name>.json — is named by the Build_Name stem "p16".
+    cli_build_dirs = [p for p in cli_out.iterdir()
+                      if p.is_dir() and p.name.startswith("p16_")]
+    assert len(cli_build_dirs) == 1, (
+        f"expected one p16_* build dir, got {cli_build_dirs}")
+    build_dir = cli_build_dirs[0] / "v1"
     eqg = build_dir / "p16.eqg"
     glb = build_dir / "p16.glb"
-    spec_json = cli_out / "p16.json"
+    spec_json = build_dir / "p16.json"
     assert eqg.exists(), f"CLI did not write the .eqg: {eqg}"
     assert glb.exists(), f"CLI did not write the .glb: {glb}"
     assert spec_json.exists(), f"CLI did not write the spec: {spec_json}"

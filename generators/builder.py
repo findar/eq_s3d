@@ -11,6 +11,7 @@ This is the single entry point the CLI and (later) the AI agent call.
 
 from __future__ import annotations
 
+import re
 import zlib
 from pathlib import Path
 from typing import Optional, Tuple
@@ -27,6 +28,14 @@ _REGION_PREFIX = {
     "water": "AWT", "lava": "ALV", "pvp": "APK",
     "zoneline": "ATP", "ice": "ASL", "generic": "APV",
 }
+
+# The Build_Name alphabet (umbrella glossary; design "Build_Name artifact
+# naming", Req 8.1/8.2). Every artifact a build writes — the ``.eqg`` archive,
+# its ``ter_<name>.ter`` / ``<name>.zon`` entries, the ZON model reference, the
+# ``.glb``, the ``.zone.json`` Sidecar and the ``.map.svg`` — is named by this
+# ONE stem, so a bad name can never reach a file (``ZoneBuilder.build`` checks
+# it with ``fullmatch`` and raises ``ValueError`` *before* any write).
+BUILD_NAME_RE = re.compile(r"[a-z0-9_]+")
 
 
 def _stable_seed(*parts) -> int:
@@ -69,10 +78,19 @@ class ZoneBuilder:
               output_dir: str | Path = "output",
               write_glb: bool = True,
               ter_version: int = 2) -> "BuildResult":
+        # Build_Name gate (Req 8.2): validate BEFORE any mkdir / write, so an
+        # invalid name produces no partial output. The Build_Name is the one
+        # stem every artifact is named by.
+        name = self.spec.name.lower()
+        if not BUILD_NAME_RE.fullmatch(name):
+            raise ValueError(
+                f"invalid Build_Name {self.spec.name!r}: must match "
+                f"{BUILD_NAME_RE.pattern} (lower-case a-z, 0-9, underscore)"
+            )
+
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        name = self.spec.name.lower()
         ter_filename = f"ter_{name}.ter"
 
         # 1. Geometry → TER (named ter_<zone> per RoF2 convention).
@@ -242,9 +260,12 @@ class ZoneBuilder:
     def _build_zon(self, ter_filename: str) -> ZonFile:
         zon = ZonFile()
 
-        # The terrain mesh is the ZON's first model (RoF2 convention).
-        # Stored uppercase to match how the client references it.
-        zon.models.append(ter_filename.upper().replace(".TER", ".TER"))
+        # The terrain mesh is the ZON's first model (RoF2 convention):
+        # ``TER_<NAME>.TER`` — the Build_Name upper-cased, the ONLY uppercase
+        # form of the stem (design "Build_Name artifact naming", Req 8.2). The
+        # ``ter_filename`` is already ``ter_<name>.ter`` so upper-casing it
+        # yields exactly ``TER_<NAME>.TER``.
+        zon.models.append(ter_filename.upper())
 
         for light in self.spec.lights:
             zon.lights.append(ZonLight(
