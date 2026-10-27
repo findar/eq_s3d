@@ -1588,7 +1588,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **434 passed, 1 failed** (270.08 s, parallel). The one failure is the KNOWN pre-existing xdist CORS timing flake `test_server.py::test_foreign_origins_get_no_cors` (`DeadlineExceeded` 276 ms > 200 ms on a first parallel call); re-run isolated `-n0` → **1 passed** (7.40 s), confirmed NOT a regression. Effective **435 passing** = 428 baseline + 7 new tests.
       - Touched ONLY `tests/test_pipeline.py`, `tests/test_hygiene.py`, and this `tasks.md` entry. No `tests/test_server.py` change was needed (the 19.5 server-import refusal tests already cover the subprocess pattern; the confinement example reuses it in `test_pipeline.py` to assert both halves together). No production code touched.
       - NOT verified in the live 3D viewer — these are confinement/leak/naming/hygiene example tests over the pipeline, filesystem, response and Sidecar, not geometry (see `docs/ACCEPTANCE.md`).
-      - Commit: `<pending>` (tests + this entry).
+      - Commit: `b6235a0` (tests + this entry).
   - [ ] 20.9 Record one Server build and one CLI build
     - Directory listings (file names) and `check_eqg` reports for one Server build and one CLI build on the branch head.
     - _Requirements: 8.2, 8.3, 9.1_
