@@ -813,3 +813,220 @@ def _run_availability_example(enabled, t, rooms, tmp_path_factory, monkeypatch):
     assert pbody["zone_type"] in enabled, (
         f"prompt 200 zone_type {pbody['zone_type']!r} not in E={sorted(enabled)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# M1 Property 9: Every artifact carries the Build_Name, one directory per build
+# (umbrella P41, Build_Name form). This PINS the task-19.4 naming (every
+# artifact, archive entry, ZON model reference and Sidecar `name` agree on the
+# one Build_Name stem) AND the pipeline's per-build directory: a build lives in
+# <output>/<zone_id>/v1/, and a SECOND build with the SAME Build_Name lands in a
+# DIFFERENT directory (a fresh new_zone_id(prefix=<name>)) without touching the
+# first build's directory or files (one directory per build — Req 8.3).
+# ---------------------------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+from core.pfs import read_directory as _read_directory  # noqa: E402
+from core.paths import new_zone_id as _new_zone_id  # noqa: E402
+from core.zon import ZonFile as _ZonFile  # noqa: E402
+from tests.strategies import build_names as _build_names  # noqa: E402
+
+
+def _dir_snapshot(build_dir):
+    """Map ``{filename: bytes}`` for every file directly in ``build_dir``.
+
+    Used to prove a second same-name build does NOT mutate the first build's
+    directory: the snapshot is captured before the second build and compared
+    byte-for-byte after it (the PFS footer stamps ``int(time.time())`` only when
+    the archive is (re)written, so an untouched file's bytes are stable).
+    """
+    return {
+        p.name: p.read_bytes()
+        for p in sorted(build_dir.iterdir())
+        if p.is_file()
+    }
+
+
+def _drive_named_build(spec_factory, *, zone_type, zone_id, out):
+    """Drive ``generate_validated`` the way the CLI does (task 19.4): an explicit
+    per-build ``zone_id`` (``new_zone_id(prefix=<name>)``), the Build_Name on the
+    spec. Returns the ``ValidatedBuild`` (raises through ``GenerationFailed``)."""
+    return generate_validated(
+        spec_factory,
+        zone_type=zone_type,
+        zone_id=zone_id,
+        output_dir=out,
+        write_glb=True,          # exercise the <name>.glb artifact too
+        failure_log=None,
+    )
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    zone_type=_enabled_zone_types,
+    name=_build_names,
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+)
+def test_build_name_and_directories(zone_type, name, seed):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 9: Every
+    artifact carries the Build_Name, one directory per build (umbrella P41,
+    Build_Name form).
+
+    For any enabled zone type (dungeon, city — wilderness is disabled and never
+    drawn), any valid Build_Name (lower-case ``[a-z0-9_]+``, INCLUDING the
+    server ``gen_<ts>_<hex6>`` id shape) and any seed, a validated build is
+    internally consistent in its naming and isolated in its own directory:
+
+    * the accepted build lives in ``<output>/<zone_id>/v1/`` — ``vb.build_dir``
+      is exactly that directory, and every artifact file is inside it;
+    * EVERY artifact, archive entry name, ZON model reference and the Sidecar
+      ``name`` AGREE on the one Build_Name stem ``<name>``:
+        - the archive is ``<name>.eqg``; it holds ``ter_<name>.ter`` and
+          ``<name>.zon`` (and no required entry under any other stem);
+        - the ZON ``models[0]`` is ``TER_<NAME>.TER`` (the stem upper-cased);
+        - the ``.glb``, ``.zone.json`` and ``.map.svg`` are ``<name>.*``;
+        - the Sidecar ``name`` field equals ``<name>``;
+      read back off the BUILT ``.eqg`` and Sidecar so this does not merely trust
+      the pipeline's bookkeeping (Req 8.2, 9.1);
+    * a SECOND build with the SAME Build_Name — driven, as the CLI does, with a
+      fresh ``new_zone_id(prefix=<name>)`` — lands in a DIFFERENT directory and
+      leaves the first build's directory and files byte-for-byte unchanged (one
+      directory per build — Req 8.3). Building ``arena`` twice never overwrites
+      the first ``arena`` build.
+
+    This pins task 19.4 (artifact naming) and the pipeline's per-build
+    directory. A disagreement between an artifact's stem and ``<name>``, or a
+    second same-name build clobbering the first, is a real bug in
+    ``generators/builder.py`` / ``generators/pipeline.py`` — fixed at the root,
+    with the counterexample pinned as a Regression_Example.
+
+    Validates: Requirements 8.2, 8.3, 9.1; umbrella P41.
+    """
+    def spec_factory(s: int):
+        # Spy idiom (as the sibling P2/P15 tests): honour the seed for the
+        # pipeline's bookkeeping, but build a genuinely navigable small zone so
+        # both gates pass on the first attempt. The Build_Name flows onto the
+        # spec via LayoutGenerator.generate(name, ...), so every artifact is
+        # stemmed from <name>.
+        return LayoutGenerator(zone_type=zone_type, seed=_NAVIGABLE_SEED).generate(
+            name, room_count=3
+        )
+
+    ter_entry = f"ter_{name}.ter"
+    zon_entry = f"{name}.zon"
+    model_ref = f"TER_{name.upper()}.TER"
+
+    with fresh_dir() as out:
+        out = Path(out)
+
+        # -- Build 1: an explicit per-build zone_id, exactly as the CLI forms it.
+        zone_id_1 = _new_zone_id(prefix=name)
+        vb = _drive_named_build(
+            spec_factory, zone_type=zone_type, zone_id=zone_id_1, out=out,
+        )
+        assert isinstance(vb, ValidatedBuild)
+        assert vb.validated, "returned enabled build is not marked validated"
+
+        # -- The build lives in <output>/<zone_id>/v1/ and nowhere else. --------
+        expected_dir = (out / zone_id_1 / "v1").resolve()
+        assert vb.build_dir is not None
+        assert vb.build_dir.resolve() == expected_dir, (
+            f"build_dir {vb.build_dir} != expected {expected_dir}"
+        )
+        assert expected_dir.is_dir(), f"build dir is not a directory: {expected_dir}"
+
+        eqg_path = expected_dir / f"{name}.eqg"
+        glb_path = expected_dir / f"{name}.glb"
+        sidecar_path = expected_dir / f"{name}.zone.json"
+        map_path = expected_dir / f"{name}.map.svg"
+        for artifact in (eqg_path, glb_path, sidecar_path, map_path):
+            assert artifact.exists(), (
+                f"artifact not named by the Build_Name / not in the build dir: "
+                f"{artifact}"
+            )
+
+        # Every file in the build dir is stemmed from <name> (the spec <name>.json
+        # the CLI saves is written by main.py, not the pipeline, so it is not
+        # here; the pipeline's four artifacts all are).
+        for p in expected_dir.iterdir():
+            if p.is_file():
+                assert p.name.startswith(name + "."), (
+                    f"a file in the build dir is not named by the Build_Name "
+                    f"{name!r}: {p.name}"
+                )
+
+        # -- Read the BUILT eqg: entry names + ZON model ref agree on <name>. ---
+        entries, archive_errors = _read_directory(eqg_path.read_bytes())
+        assert archive_errors == [], (
+            f"the built {eqg_path.name} did not read cleanly: {archive_errors}"
+        )
+        entry_names = {e.name.lower() for e in entries if e.name is not None}
+        assert ter_entry in entry_names, (
+            f"archive missing the TER entry {ter_entry!r}; entries={sorted(entry_names)}"
+        )
+        assert zon_entry in entry_names, (
+            f"archive missing the ZON entry {zon_entry!r}; entries={sorted(entry_names)}"
+        )
+
+        zon_bytes = next(
+            e.data for e in entries
+            if e.name is not None and e.name.lower() == zon_entry
+        )
+        zon = _ZonFile.from_bytes(zon_bytes)
+        assert zon.models, f"{zon_entry} has no models"
+        assert zon.models[0] == model_ref, (
+            f"ZON models[0] {zon.models[0]!r} != TER_<NAME>.TER {model_ref!r} "
+            f"(model reference disagrees with the Build_Name)"
+        )
+
+        # -- The Sidecar `name` field equals <name>. ----------------------------
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        assert sidecar.get("name") == name, (
+            f"Sidecar name {sidecar.get('name')!r} != Build_Name {name!r}"
+        )
+
+        # -- One directory per build: a SECOND same-name build is isolated. -----
+        # Snapshot build 1 BEFORE the second build so a clobber is detectable.
+        before = _dir_snapshot(expected_dir)
+
+        zone_id_2 = _new_zone_id(prefix=name)
+        # new_zone_id stamps a fresh <hex6> (and seconds ts), so two ids built
+        # from the same name differ — the CLI's "building <name> twice" case.
+        assert zone_id_2 != zone_id_1, (
+            f"new_zone_id(prefix={name!r}) returned the same id twice: {zone_id_1}"
+        )
+
+        vb2 = _drive_named_build(
+            spec_factory, zone_type=zone_type, zone_id=zone_id_2, out=out,
+        )
+        assert isinstance(vb2, ValidatedBuild)
+        second_dir = (out / zone_id_2 / "v1").resolve()
+        assert vb2.build_dir is not None and vb2.build_dir.resolve() == second_dir, (
+            f"second build_dir {vb2.build_dir} != expected {second_dir}"
+        )
+        assert second_dir != expected_dir, (
+            "second same-name build reused the first build's directory "
+            "(one directory per build broken)"
+        )
+
+        # The first build's directory and every file in it are UNCHANGED.
+        assert expected_dir.is_dir(), (
+            "second same-name build removed the first build's directory"
+        )
+        after = _dir_snapshot(expected_dir)
+        assert after == before, (
+            "second same-name build mutated the first build's files "
+            f"(changed/added/removed: "
+            f"{sorted(set(before) ^ set(after)) or 'same names, different bytes'})"
+        )
+
+        # The second build is ALSO correctly named (same invariants, its own dir).
+        entries2, errors2 = _read_directory((second_dir / f"{name}.eqg").read_bytes())
+        assert errors2 == [], f"second built eqg did not read cleanly: {errors2}"
+        names2 = {e.name.lower() for e in entries2 if e.name is not None}
+        assert ter_entry in names2 and zon_entry in names2, (
+            f"second build's archive missing a required entry; entries={sorted(names2)}"
+        )
