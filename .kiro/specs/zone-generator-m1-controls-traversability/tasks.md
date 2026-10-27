@@ -1387,9 +1387,23 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
     - _Requirements: 10.1, 10.2_
 
 - [ ] 20. Tier-1 format check in the gate
-  - [ ] 20.1 Add the non-raising PFS directory reader
+  - [x] 20.1 Add the non-raising PFS directory reader
     - `core/pfs.py`: `RawEntry` and `read_directory(data) -> (entries, archive_errors)`; `PfsArchive.from_bytes` unchanged.
     - _Requirements: 9.3_
+    - **Deliverables:**
+      - `core/pfs.py` (new, additive) — `RawEntry` dataclass and `read_directory`. `PfsArchive.from_bytes`/`to_bytes` and all existing helpers are byte-for-byte unchanged; the new code is a SEPARATE, fault-tolerant read path (the `pfs_reads` check in 20.2 consumes it).
+      - **`RawEntry` shape** (matches design.md Req 9.3): `crc: int`, `offset: int`, `size: int` read straight from the 12-byte directory record; `name: str | None` recovered from the name block (`None` for the name-block sentinel itself or when the name block is missing/corrupt); `data: bytes | None` = inflated payload (`None` if unrecoverable); `error: str | None` = per-entry fault description (`None` when the entry read cleanly). All three `name`/`data`/`error` default to `None`.
+      - **`read_directory(data) -> (entries, archive_errors)` — NON-RAISING guarantee.** It never throws for any input. Structural faults become recorded strings instead:
+        - Archive-level (`archive_errors`, read stops): `< 12`-byte header (truncated), bad magic, unsupported version, directory offset out of range (`< 12` or past EOF), impossible entry count (claimed count exceeds the 12-byte records that physically fit — it clamps to what fits and records the error), directory truncated mid-record, name block missing/unreadable.
+        - Per-entry (`RawEntry.error`, other entries still read): offset out of range, deflate error (`zlib.error`/`struct.error` from `_inflate_chunks` caught), inflated length != recorded size.
+        - Name recovery is best-effort: sentinel-CRC block first, else the block whose first `uint32 == file_count - 1`; `name_count` is bounded so a corrupt header can't drive a huge loop; names decode `errors="replace"`.
+      - **Test coverage** — `tests/test_pfs.py::TestReadDirectory` (new, 14 cases): a VALID archive (built via `PfsArchive`) returns three named entries with matching payloads/sizes/CRCs and **no** errors, and agrees with `PfsArchive.from_bytes`; a parametrized set of CORRUPT inputs — empty bytes, `< 12` bytes, zeroed/garbage bytes, bad magic, bad version, out-of-range dir offset, impossible (0x7FFFFFFF) entry count — each returns `(list, list)` with a recorded `archive_errors` and **never raises**; a half-truncated real archive and a payload with a flipped deflate byte each return gracefully with the fault surfaced (archive- or entry-level). `PfsArchive` round-trip tests (8) stay green — `from_bytes` behavior intact.
+      - **Verify:**
+        - `python -m pytest tests/test_pfs.py -q` → **22 passed** (8 existing + 14 new).
+        - `python -m pytest tests/ -q` → **410 passed, 1 failed**; the single failure is the known xdist CORS deadline flake (`test_server.py::test_foreign_origins_get_no_cors`), which **passes in isolation** at `-n0` (confirmed: 1 passed, 7.77 s). Effective **+14** over the branch baseline (383 → 397 non-flake; 410 reported under xdist with the server/CORS suite).
+      - Touched only `core/pfs.py` and `tests/test_pfs.py` (and this `tasks.md` entry). NOT `core/env.py`/`core/paths.py` (19.x, done) and NOT `analyzer/rof2check.py` (20.2).
+      - Not a geometry/viewer change — nothing to eyeball in 3D.
+      - Commit: `__PENDING__`.
   - [ ] 20.2 Add `analyzer/rof2check.py`
     - `FormatCheck`, `FormatReport` (`messages`, `to_dict`), `LIQUID_SURFACE_PREFIXES`, `MAX_COORD`, `SAFE_POINT_XY`, `SAFE_POINT_DZ`, and `check_eqg(eqg_path, spec, *, sidecar_path, agent)` with the design's ten checks (`pfs_reads`, `required_files`, `ter_roundtrip`, `zon_roundtrip`, `zon_model_ref`, `material_indices`, `diffuse_textures`, `collision_policy`, `safe_point`, `bounds_sane`, `name_consistent`). Each check is wrapped so an exception becomes a failed check with a named message; dependents of an unreadable input report "skipped"; independent checks still run. No `normals_resolve`.
     - _Requirements: 9.1, 9.3, 9.4_
