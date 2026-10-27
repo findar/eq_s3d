@@ -1614,8 +1614,41 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Single-writer: only this `tasks.md` touched; no code change, branch not pushed. The throwaway recording script and all tmp build dirs live outside the repo and are not committed.
       - Commit: `5e87a59` (tracker only; this self-reference hash is recorded in a follow-up amend-free edit).
 
-- [ ] 21. Checkpoint: wave 6 closed
+- [x] 21. Checkpoint: wave 6 closed
   - Suite green; Default_Run median recorded; frontend builds. Write the wave-6 integration note (Done-table row, "Pick up here" line, commit hash and count, and whether wilderness is still enabled after 20.4). Ask the user if questions arise.
+  - **Deliverables (tracker/measurement checkpoint — no code change):**
+    - **Suite — green.** `python -m pytest tests/ -q` (parallel via pytest-xdist) → **434 passed, 1 failed in 276.58 s**. The single failure is the KNOWN pre-existing xdist CORS timing flake `test_server.py::test_foreign_origins_get_no_cors` — Hypothesis itself raised `FlakyFailure` ("Failed on the first call but did not on a subsequent one": first call 250.63 ms > 200 ms deadline, retry 132.80 ms < deadline). Re-run isolated `python -m pytest tests/test_server.py::test_foreign_origins_get_no_cors -q -n0` → **1 passed in 7.45 s**, confirming it is the pre-existing flake, NOT a regression. **Effective 435 passing**, which matches the expected wave-6 count.
+    - **Default_Run wall time.** Representative parallel (pytest-xdist) run: **276.58 s** on this machine. (Wave-6 Default_Runs across 19.x/20.x ranged ≈ 163–380 s depending on how many `slow` build-level property examples a given run drew and machine load; ~277 s is representative. The suite now runs IN PARALLEL via pytest-xdist — the M0-exit "+120 s" budget baseline from task 1.1 was 88.21 s single-process, so wall times are not directly comparable; the budget is re-measured properly at M1 exit 22.1 on merged master.)
+    - **Frontend — builds.** `cd web; npx vite build` (one-shot) → succeeded: `vite v5.4.21 building for production`, **10 modules transformed**, `dist/index.html` + `dist/assets/index-*.css` + `dist/assets/index-*.js`, **built in 6.44 s**. The only warning is the pre-existing chunk-size advisory (>500 kB JS chunk) — not an error, unchanged by wave 6. No `npm install` run (`web/node_modules` is the shared junction).
+    - **Branch / head / commit count.** Branch **`agent/m1-format`**; head commit **`d4b5ab4c68c956f39549966b34a1962949bc5048`** (`d4b5ab4`); **27 commits** since the wave-6 fork point `eddc09c` (`git rev-list --count eddc09c..HEAD`).
+    - **Wilderness after 20.4 — still DISABLED in M1.** `ENABLED_ZONE_TYPES == {dungeon, city}` throughout wave 6; the 20.4/20.6 format and naming properties draw only those two enabled zone types. Wilderness carries its 15.8 `DISABLED_REASON` and never ships enabled in M1.
+
+    ---
+
+    **WAVE-6 INTEGRATION NOTE** — to be applied in the single-writer integration step from the MAIN checkout (do NOT apply here). Author only; tracker files (`ROADMAP.md`/`README.md`/`tasks/README.md`) are untouched in this worktree.
+
+    - **Done-table row (for `ROADMAP.md` Done table):**
+      `| M1 wave 6 — build naming + format gate + file-system confinement | agent/m1-format | d4b5ab4 | 27 commits | 435 pass (1 known xdist CORS flake, passes isolated); frontend builds |`
+
+    - **"Pick up here" line (for `ROADMAP.md`):**
+      `Pick up here: M1 exit (task 22) on merged master — 22.1 final suite + budget, 22.2 thorough profile, 22.3 frontend build, 22.4 docs/ACCEPTANCE.md M1 section, 22.5 HUMAN-GATED M1 acceptance pass, 22.6 M1 integration note. Waves 1–6 are landed; wilderness ships DISABLED in M1.`
+
+    - **`tasks/README.md` status change (for the integration step):** mark the M1 wave-6 row (`agent/m1-format`, tasks 19–21) complete / merged.
+
+    - **What wave 6 delivered (tasks 19–21):**
+      - **`core/env.py`** (19.2) — non-mutating `.env` access: module-level `DOTENV_PATH` + `env_value(name, default)` (reads `os.environ` first, then `dotenv_values(DOTENV_PATH)`; never `load_dotenv`, so `os.environ` is never mutated). The four key/override call sites (`ai/llm_planner.py`, `ai/planner.py`, `generators/textures/ai.py`, `generators/textures/factory.py`) switched to it. Planner fallback log redacted to exception type + HTTP status only (`_redacted_error`) — design **finding 7** resolved. `no_api_keys` fixture also neutralises `DOTENV_PATH`.
+      - **`core/paths.py`** (19.3) — Output_Directory confinement: `OutsideOutputError`, `OutputRoot` (`contains`/`path`/`mkdir`/`write_bytes`/`write_text`/`replace`/`remove_tree`) with a **junction-safe `remove_tree`** (unlinks reparse points / symlinks, never recurses through them — the `web/node_modules` gotcha), `assert_output_allowed(output_dir, eq_path)` (refuses any output↔EQ overlap), and `new_zone_id(prefix="gen")` (`<prefix>_<ts>_<hex6>`, lowercase).
+      - **Build_Name naming of every artifact** (19.4) — `BUILD_NAME_RE` + a `fullmatch` check before any write (`ValueError` in `ZoneBuilder.build`; CLI `_build_name_arg` → argparse exit 2). Every artifact stemmed from one lowercase `<name>`: `<name>.eqg`, `ter_<name>.ter`, `<name>.zon`, ZON `models[0] = "TER_<NAME>.TER"`, `<name>.glb`, `<name>.zone.json`, `<name>.map.svg`. Per-build `<zone_id>/v1/` dirs via `new_zone_id(prefix=<name>)`; server uses `new_zone_id()`. Legacy `shortname` dropped on load; nothing writes one.
+      - **All writes routed through `OutputRoot` + EQ_PATH-overlap refusal** (19.5) — `ZoneBuilder.build`, `EqgZone.write`/`write_glb`/`write_sidecar`, and the pipeline scratch/move(`replace`)/cleanup(`remove_tree`)/failure-log + Sidecar rewrite all go through a confinement-checked `OutputRoot`. `assert_output_allowed(out, env_value("EQ_PATH"))` refuses an output↔EQ overlap: **CLI exits 2** naming both paths, **server import fails** (`OutsideOutputError`, before `OUTPUT_DIR.mkdir`). `tempfile.tempdir` set to `<output>/.tmp` in CLI `main()` and the server startup lifespan — never at import.
+      - **`core/pfs.py`** (20.1) — non-raising `read_directory(data) -> (entries, archive_errors)` + `RawEntry`; `PfsArchive.from_bytes`/`to_bytes` byte-for-byte unchanged. Fault-tolerant read path the `pfs_reads` check consumes.
+      - **`analyzer/rof2check.py`** (20.2) — the Tier-1 Format_Checker: `FormatCheck`/`FormatReport` + `check_eqg(...)` with the **eleven canonical checks** (`pfs_reads`, `required_files`, `ter_roundtrip`, `zon_roundtrip`, `zon_model_ref`, `material_indices`, `diffuse_textures`, `collision_policy`, `safe_point`, `bounds_sane`, `name_consistent`). TOTAL (never raises; a bad input → failed/skipped checks). **No `normals_resolve`, no `shortname`** (Req 9.4). Wired into the pipeline gate (20.3), **replacing the 15.4 `_FormatStub`** — failed check names reach the JSONL line + `GenerationFailed`; ungated builds run it and record it; `GenerateResponse.format_passed` reflects it.
+      - **Properties 8 / 9 / 14 / 15** — 8 (20.4) every enabled build passes the Format_Checker (incl. `name_consistent`, no `normals_resolve`); 9 (20.6) every artifact carries the Build_Name, one directory per build; 14 (20.5) the Format_Checker is total and specific across 18 archive corruptions; 15 (20.7) writes stay inside the Output_Directory (audit-hook). Plus the 20.8 confinement/key/format example tests.
+      - **Two server/CLI build recordings** (20.9) — one Server build (`gen_<ts>_<hex6>`) and one CLI build (`myzone`) on the branch head, each with its directory listing and a `check_eqg` report: all eleven checks PASS, `normals_resolve` absent.
+
+    - **Notes for the integrator:**
+      - Wilderness stays **DISABLED** in M1 (`ENABLED_ZONE_TYPES = {dungeon, city}`, 15.8 `DISABLED_REASON`); wave 6 did not enable it.
+      - Format checker is deliberately **without `normals_resolve`** and the Sidecar carries **no `shortname`** (hygiene, Req 9.4).
+      - M1 exit (task 22) runs on **master AFTER the wave-6 merge** — including the proper Default_Run budget re-measure (22.1) and the thorough-profile run (22.2).
 
 ### M1 exit
 
