@@ -63,15 +63,21 @@ def no_api_keys(monkeypatch):
 
     Deletes every API-key / provider-override environment variable and resets
     the forced planner and texture provider to ``None`` so auto-selection runs
-    with no key present. No ``load_dotenv`` call exists in ``ai``,
-    ``generators`` or ``server`` (verified), so ``.env`` cannot re-populate the
-    keys mid-test.
+    with no key present. Keys are read through ``core.env.env_value`` (``os``
+    environment first, then ``.env``); this fixture also points
+    ``core.env.DOTENV_PATH`` at a missing file so a developer's real ``.env``
+    can never leak a key into a test asserting no-key behaviour.
     """
     import ai.planner
+    import core.env
     import generators.textures.factory as texture_factory
 
     for name in _API_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+
+    # Neutralise the project .env: point the reader at a path that does not
+    # exist, so dotenv_values() returns an empty mapping.
+    monkeypatch.setattr(core.env, "DOTENV_PATH", core.env.DOTENV_PATH.parent / ".env.nonexistent-for-tests")
 
     ai.planner.set_planner(None)
     texture_factory.set_provider(None)

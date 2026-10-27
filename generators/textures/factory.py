@@ -13,9 +13,9 @@ in-process to avoid repeat work (and repeat API cost for the AI provider).
 
 from __future__ import annotations
 
-import os
 from typing import Dict, Optional, Tuple
 
+from core.env import env_value
 from .base import TextureProvider, TextureSpec
 from .procedural import ProceduralProvider
 from .ai import AIProvider
@@ -33,7 +33,7 @@ def get_provider(prefer_ai: bool = True) -> TextureProvider:
     if _forced is not None:
         return _forced
 
-    override = os.environ.get("EQ_S3D_TEXTURE_PROVIDER", "").lower()
+    override = (env_value("EQ_S3D_TEXTURE_PROVIDER") or "").lower()
     if override == "procedural":
         return ProceduralProvider()
     if override == "ai":

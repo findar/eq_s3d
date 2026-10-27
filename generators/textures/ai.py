@@ -21,11 +21,11 @@ back to procedural rather than crashing a generation.
 
 from __future__ import annotations
 
-import os
 from typing import Optional
 
 import numpy as np
 
+from core.env import env_value
 from .base import TextureProvider, TextureSpec
 from .dds import rgba_to_dds, make_tileable
 
@@ -34,8 +34,8 @@ class AIProvider(TextureProvider):
     name = "ai"
 
     def __init__(self):
-        self.openai_key = os.environ.get("OPENAI_API_KEY")
-        self.stability_key = os.environ.get("STABILITY_API_KEY")
+        self.openai_key = env_value("OPENAI_API_KEY")
+        self.stability_key = env_value("STABILITY_API_KEY")
 
     def available(self) -> bool:
         return bool(self.openai_key or self.stability_key)
