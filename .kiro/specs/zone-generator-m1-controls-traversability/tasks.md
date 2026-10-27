@@ -1589,9 +1589,30 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
       - Touched ONLY `tests/test_pipeline.py`, `tests/test_hygiene.py`, and this `tasks.md` entry. No `tests/test_server.py` change was needed (the 19.5 server-import refusal tests already cover the subprocess pattern; the confinement example reuses it in `test_pipeline.py` to assert both halves together). No production code touched.
       - NOT verified in the live 3D viewer — these are confinement/leak/naming/hygiene example tests over the pipeline, filesystem, response and Sidecar, not geometry (see `docs/ACCEPTANCE.md`).
       - Commit: `b6235a0` (tests + this entry).
-  - [ ] 20.9 Record one Server build and one CLI build
+  - [x] 20.9 Record one Server build and one CLI build
     - Directory listings (file names) and `check_eqg` reports for one Server build and one CLI build on the branch head.
     - _Requirements: 8.2, 8.3, 9.1_
+    - **Deliverables (recording task — no code change; evidence captured on the branch head `141cd19` via a throwaway script `F:\Dev Projects\_m1_task209_tmp\record_builds.py`, run from the worktree, NOT committed; both builds generated into `%TEMP%` tmp dirs, since cleaned, so the repo `output/` was not polluted):**
+      - **Server build** — FastAPI `TestClient` POST `/api/generate`, `mode="controls"`, `controls={zone_type: dungeon, rooms: 5, size: small, verticality: flat}`, `seed: 1955208177` → **HTTP 200**, response `format_passed: true`. Response `id` (the Build_Name, server `new_zone_id()` shape) = `gen_1793074069_68b29b`; on-disk build dir `<OUTPUT_DIR>/web/gen_1793074069_68b29b/v1/`.
+        - **Directory listing** — every artifact named by the Build_Name, one dir per build:
+          - `gen_1793074069_68b29b.eqg`
+          - `gen_1793074069_68b29b.glb`
+          - `gen_1793074069_68b29b.map.svg`
+          - `gen_1793074069_68b29b.zone.json`
+          - (No CLI `<name>.json` spec — the Server does not save a spec file; that is a CLI-only artifact.)
+        - **`check_eqg` FormatReport** — `passed=True`, 11 checks, **all PASS**, in order: `pfs_reads`, `required_files`, `ter_roundtrip`, `zon_roundtrip`, `zon_model_ref`, `material_indices`, `diffuse_textures`, `collision_policy`, `safe_point`, `bounds_sane`, `name_consistent`. **No `normals_resolve` check** (confirmed absent — hygiene per 20.2/20.8). Spec reconstructed independently for the check via `plan_to_spec(ZonePlan.from_controls(controls){name=zone_id}, seed=response.seed)`, i.e. the same path the server built from.
+      - **CLI build** — `main.main(["generate", "myzone", "--zone-type", "dungeon", "--rooms", "5", "--size", "small", "--verticality", "flat", "--seed", "1955208177", "--output", <tmp>])` → built, `Traversability: validated (seed 1955208177, 1 attempt(s))`. Build_Name = `myzone`; per-build dir `<tmp>/myzone_1793074073_2106b6/v1/` (zone id `new_zone_id(prefix="myzone")`, so the dir differs from the Build_Name while every file carries the `myzone` stem — Req 8.3).
+        - **Directory listing** — every artifact named by the Build_Name, incl. the CLI-only `<name>.json` spec:
+          - `myzone.eqg`
+          - `myzone.glb`
+          - `myzone.json`  (the CLI-saved passing `ZoneSpec`)
+          - `myzone.map.svg`
+          - `myzone.zone.json`
+        - **`check_eqg` FormatReport** — `passed=True`, 11 checks, **all PASS**, same order as the Server build: `pfs_reads`, `required_files`, `ter_roundtrip`, `zon_roundtrip`, `zon_model_ref`, `material_indices`, `diffuse_textures`, `collision_policy`, `safe_point`, `bounds_sane`, `name_consistent`. **No `normals_resolve` check.** Spec loaded straight from the CLI-saved `myzone.json` (a real `ZoneSpec` round-trip).
+      - **Interpretation:** the wave-6 Build_Name naming + Tier-1 format gate work end-to-end through BOTH real entry points — every artifact is named by the Build_Name, one directory per build, all eleven format checks pass and `normals_resolve` is absent. No mis-named artifact and no failed check, i.e. consistent with the 20.4 (`test_enabled_builds_pass_format`) and 20.6 (`test_build_name_and_directories`) property tests — no bug surfaced.
+      - **Suite:** `python -m pytest tests/ -q -n0` → **435 passed** (906.15 s), 2 pre-existing unrelated warnings (Starlette/httpx deprecation, runpy re-import). Matches the 435 effective baseline; 20.9 adds no test. Run single-process (`-n0`) so the known xdist CORS timing flake does not surface, per the task note.
+      - Single-writer: only this `tasks.md` touched; no code change, branch not pushed. The throwaway recording script and all tmp build dirs live outside the repo and are not committed.
+      - Commit: recorded in the tracker self-reference follow-up below.
 
 - [ ] 21. Checkpoint: wave 6 closed
   - Suite green; Default_Run median recorded; frontend builds. Write the wave-6 integration note (Done-table row, "Pick up here" line, commit hash and count, and whether wilderness is still enabled after 20.4). Ask the user if questions arise.
