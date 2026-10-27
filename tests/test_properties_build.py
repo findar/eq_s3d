@@ -568,3 +568,132 @@ def test_advisory_clearing(s, zone_type, n, locks, semantic):
         f"semantic={semantic}): advisory (pacing/gating) data leaked into "
         f"geometry — this is a real bug, advisory data is suggestions-only"
     )
+
+
+from pathlib import Path
+
+from analyzer.rof2check import check_eqg
+from generators.zone_types import ENABLED_ZONE_TYPES
+from tests.strategies import build_names
+
+#: The enabled box zone types, as a sorted sampling domain. In M1
+#: ``ENABLED_ZONE_TYPES`` is ``{dungeon, city}`` (wilderness is DEFINED but
+#: DISABLED — its heightfield generator is deferred to the wilderness milestone,
+#: so it is never drawn and the design's wilderness ``@example`` does NOT apply
+#: here). Read from the production set so if the gate ever changes, this follows.
+_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES))
+
+
+def _format_case(zone_type, n, name, verticality="flat", size="medium"):
+    """A ``(spec, label)`` case for Property 8, built through the real plan path.
+
+    Expands a ``ZonePlan`` (whose ``name`` is the drawn Build_Name) through
+    ``ai.expand.plan_to_spec`` — the same path the pipeline uses — so a passing
+    property exercises an input the production path can genuinely see. The
+    Build_Name flows unchanged into ``ZoneBuilder`` (``validate()`` never
+    touches ``name``), so every artifact is stemmed from it and
+    ``name_consistent`` is exercised on a real legal name.
+    """
+    plan = ZonePlan(
+        name=name,
+        zone_type=zone_type,
+        room_count=n,
+        size=size,
+        verticality=verticality,
+        elevation=verticality != "flat",
+    )
+    # Build the spec OUTSIDE the budget-sensitive path; seed is derived from the
+    # drawn inputs so the case is reproducible without a separate seed draw.
+    return plan, f"zone_type={zone_type}, rooms={n}, name={name!r}, size={size}"
+
+
+@pytest.mark.slow
+@build_settings(15)
+@example(
+    zone_type="dungeon", n=30, name="huge_dungeon", seed=0, size="huge",
+).via("huge 30-room enabled box zone (design risk table)")
+@given(
+    zone_type=_enabled_zone_types,
+    n=room_counts(2, 30),
+    name=build_names,
+    seed=seeds,
+    size=st.just("medium"),
+)
+def test_enabled_builds_pass_format(zone_type, n, name, seed, size):
+    """
+    Feature: zone-generator-m1-controls-traversability, Property 8: Every
+    enabled build passes the Format_Checker (umbrella P20).
+
+    For any zone type in ``ENABLED_ZONE_TYPES`` ({dungeon, city} in M1 —
+    wilderness is DISABLED, so it is never drawn), seed, room count (box 2-30)
+    and Build_Name (``build_names``, ``^[a-z0-9_]+$``), the Raw_Build
+    (``ZonePlan`` -> ``ai.expand.plan_to_spec`` -> ``build_raw``) clears the real
+    RoF2 Format_Checker: ``analyzer.rof2check.check_eqg`` on the built ``.eqg``
+    returns a report with ``report.passed is True`` — every one of the eleven
+    format checks (archive reads, required files, TER/ZON round-trip, ZON model
+    ref, material indices, diffuse textures, collision policy, safe point,
+    bounds sane, name consistent) holds on a normal enabled build.
+
+    Three things are asserted head-on:
+
+    * ``report.passed`` — the whole gate (Req 9.1): an enabled build is a build
+      the Tier-1 format gate (task 20.3) accepts.
+    * ``name_consistent`` specifically passes (its ``FormatCheck`` is present and
+      ``passed``) — the archive stem, the TER/ZON entry names, the ZON model ref
+      (``TER_<NAME>.TER``) and the ``.zone.json`` Sidecar's ``name`` all agree on
+      the drawn Build_Name. The Sidecar is passed to ``check_eqg`` so its name is
+      actually compared, not skipped (umbrella Req 9.7, build half).
+    * NO ``normals_resolve`` check — M1 deliberately drops the umbrella's
+      ``normals_resolve`` check (Req 9.4); its name must be absent from the
+      report's check names. (The dedicated totality/absence hygiene lives in
+      Property 14 / task 20.8; this property pins the exclusion on a real enabled
+      build too.)
+
+    Domain note: the design's Property 8 also covers wilderness 2-12, but
+    wilderness is DISABLED in M1 (task 15.8) so it is not drawn and the design's
+    wilderness ``@example`` does not apply. Per the design risk table ("one
+    pinned ``huge`` 30-room example in P20 shows whether the bound holds"), one
+    ``huge`` 30-room example is pinned — for an ENABLED box zone type (dungeon),
+    not wilderness — so ``bounds_sane`` is exercised at the largest footprint M1
+    builds. If a normal enabled build fails a format check that is a REAL finding
+    (fix the root — the builder packs what's missing, or the check is corrected
+    to the true RoF2 policy — never weaken the assertion or disable the check),
+    pinned here as a Regression_Example.
+
+    NOTE: this is an ANALYTICAL check (the structural RoF2 format gate on the
+    built ``.eqg``), not a live 3D viewer confirmation — see docs/ACCEPTANCE.md.
+
+    Validates: Requirements 9.1, 9.4; umbrella P20.
+    """
+    plan, label = _format_case(zone_type, n, name, verticality="flat", size=size)
+    spec = plan_to_spec(plan, seed=seed)
+
+    with fresh_dir() as out:
+        result, _ter_bytes, _zon_bytes = build_raw(spec, out)
+        report = check_eqg(
+            Path(result.eqg_path), spec, sidecar_path=result.sidecar_path
+        )
+
+        check_names = [c.name for c in report.checks]
+
+        assert report.passed, (
+            f"enabled build failed the Format_Checker ({label}):\n"
+            f"  failed checks: {report.failed_checks}\n"
+            + "\n".join(f"  {m}" for m in report.messages)
+        )
+
+        name_consistent = next(
+            (c for c in report.checks if c.name == "name_consistent"), None
+        )
+        assert name_consistent is not None, (
+            f"report has no name_consistent check ({label}): {check_names}"
+        )
+        assert name_consistent.passed, (
+            f"name_consistent failed ({label}): "
+            + "; ".join(name_consistent.messages)
+        )
+
+        assert "normals_resolve" not in check_names, (
+            f"report must NOT carry a normals_resolve check (Req 9.4), but it "
+            f"did ({label}): {check_names}"
+        )

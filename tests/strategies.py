@@ -73,6 +73,18 @@ verticality_all = st.sampled_from(["flat", "moderate", "dramatic"])
 #: The box-geometry zone types (M0_Box_Themes): dungeon + city.
 box_zone_types = st.sampled_from(["dungeon", "city"])
 
+#: A valid Build_Name: lowercase ``[a-z0-9_]+`` (the umbrella Build_Name
+#: alphabet, matching ``generators.builder.BUILD_NAME_RE`` — ``^[a-z0-9_]+$``).
+#: Every artifact (archive, TER/ZON entries, ZON model ref, GLB, Sidecar, SVG)
+#: is named from this stem, so the Format_Checker's ``name_consistent`` check is
+#: exercised across many legal names rather than one fixed literal. Includes the
+#: server zone-id shape ``gen_<ts>_<hex6>`` as an explicit sample so the generated
+#: id form is covered too.
+build_names = st.one_of(
+    st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=24),
+    st.sampled_from(["gen_1700000000_a1b2c3", "zone", "z0", "test_build_1"]),
+)
+
 # ---------------------------------------------------------------------------
 # Enabled-set gating (Property 7 / Req 3.1, 3.3, 3.4)
 # ---------------------------------------------------------------------------
