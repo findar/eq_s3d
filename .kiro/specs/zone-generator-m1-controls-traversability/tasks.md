@@ -1403,7 +1403,7 @@ minimum test edits to stay green"). Still owned by 10.9/10.10:
         - `python -m pytest tests/ -q` → **410 passed, 1 failed**; the single failure is the known xdist CORS deadline flake (`test_server.py::test_foreign_origins_get_no_cors`), which **passes in isolation** at `-n0` (confirmed: 1 passed, 7.77 s). Effective **+14** over the branch baseline (383 → 397 non-flake; 410 reported under xdist with the server/CORS suite).
       - Touched only `core/pfs.py` and `tests/test_pfs.py` (and this `tasks.md` entry). NOT `core/env.py`/`core/paths.py` (19.x, done) and NOT `analyzer/rof2check.py` (20.2).
       - Not a geometry/viewer change — nothing to eyeball in 3D.
-      - Commit: `__PENDING__`.
+      - Commit: `e7772b4` (the content commit; this self-reference line is updated in a follow-up edit, amend-free).
   - [ ] 20.2 Add `analyzer/rof2check.py`
     - `FormatCheck`, `FormatReport` (`messages`, `to_dict`), `LIQUID_SURFACE_PREFIXES`, `MAX_COORD`, `SAFE_POINT_XY`, `SAFE_POINT_DZ`, and `check_eqg(eqg_path, spec, *, sidecar_path, agent)` with the design's ten checks (`pfs_reads`, `required_files`, `ter_roundtrip`, `zon_roundtrip`, `zon_model_ref`, `material_indices`, `diffuse_textures`, `collision_policy`, `safe_point`, `bounds_sane`, `name_consistent`). Each check is wrapped so an exception becomes a failed check with a named message; dependents of an unreadable input report "skipped"; independent checks still run. No `normals_resolve`.
     - _Requirements: 9.1, 9.3, 9.4_
