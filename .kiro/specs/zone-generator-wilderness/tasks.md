@@ -237,9 +237,15 @@ checkpoint.
 > Needs wave 1. Hotspot: `generators/wilderness/rewrite.py` (new).
 
 - [ ] 5. Graph_Replacement over the Design_Matrix
-  - [ ] 5.1 Set up wave 2
+  - [x] 5.1 Set up wave 2
     - Run `./scripts/new-worktree.ps1 -Branch agent/wild-rewrite`. Record the fork-point hash. Run `python -m pytest tests/ -q` once; record the baseline.
     - _Requirements: 7.1_
+    - **Deliverables:**
+      - **Worktree:** `F:\Dev Projects\eq_s3d-worktrees\agent-wild-rewrite` on branch `agent/wild-rewrite`, created from the MAIN checkout with `./scripts/new-worktree.ps1 -Branch agent/wild-rewrite` (web/node_modules junctioned, global Python env shared, no `.env` in main so procedural defaults apply). STAY in this worktree for all wave-2 work; do NOT push the branch (local-only, merged into `master` from MAIN later); tear down only with `./scripts/remove-worktree.ps1`.
+      - **Fork-point commit:** `5e76b825a839b652ced5eb6876c714ac873c06cc` (`5e76b82` — "wilderness wave 1 checkpoint: close task 4 with integration note"), forked from `master` tip. This is the current master tip, so the fork includes all of wave 1.
+      - **Wave-2 baseline:** `python -m pytest tests/ -q` → **460 passed**, 13 warnings, **147.61s** (0:02:27) reported by pytest; wall ~148.5s. Matches the expected 460 on `master` (wave 1's tests — biome + matrix + rewrite-adjacent — are now merged). Suite runs in parallel via pytest-xdist. (A first full-suite invocation tripped the known xdist collection race — "Different tests were collected between gw2 and gw0" surfacing as a transient `OutsideOutputError` during parallel collection; a clean rerun was fully green, and `tests/test_properties_pipeline.py` passes 10/10 on its own under xdist. Not a real failure.)
+      - **Wave 1 present in the fork (sanity):** `generators/wilderness/` contains `matrix.py`, `biome_resolve.py`, `__init__.py`; `python -c "from generators.wilderness import build_matrix"` resolves to `generators.wilderness.matrix.build_matrix` — wave 1's wilderness package is present and importable in the fork, so wave-2 work (`generators/wilderness/rewrite.py`) can build on it.
+      - **No `LayoutEngine` / 3D `Envelope`:** wave 2 implements the rewrite layer INSIDE the wilderness module; it does not use or build the shared `LayoutEngine` seam (roadmap step 6) or a 3D `Envelope` (steps 5/7).
   - [ ] 5.2 Implement the region graph over the terrain vocabulary
     - Build the region graph from the matrix inside `generators/wilderness/rewrite.py`: a node is a connected set of same-type cells (so rules reason about "the cliff region", "the river", not single cells); edges are adjacency + a small typed relation set — `borders` (regions touch), `approaches` (a graded ramp/pass provides a playable approach), `flows_into` (river → off-map/junction). This is a wilderness-local graph model — it does NOT import or depend on a dungeon `LayoutEngine` or typed-edge seam (none exists on `master`; those are step 6).
     - _Requirements: 7.1_
