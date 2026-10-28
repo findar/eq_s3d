@@ -135,12 +135,25 @@ checkpoint.
 > edit (the backend wiring is wave 5). Matrix-level only — NO geometry built.
 
 - [ ] 1. Set up wave 1 and capture the fork-point baseline
-  - [ ] 1.1 Create the worktree and record the baseline
+  - [x] 1.1 Create the worktree and record the baseline
     - Run `./scripts/new-worktree.ps1 -Branch agent/wild-matrix`. Record the fork-point commit hash here.
     - Run `python -m pytest tests/ -q` once; record the pass count and wall time as the wave-1 baseline (expect ≈ 435 pass on `master`).
     - **Verify the reused seams against the actual code** (the repo can advance past the docs): confirm `TerrainBackend` / `backend_for("wilderness")` in `generators/backends.py`, the FBM/thermal/`_enforce_walkable` core in `generators/field/terrain.py`, the `_REGION_PREFIX` map (`water→AWT`, `lava→ALV`, `zoneline→ATP`, generic→`APV`) in `generators/builder.py`, the `AgentModel`/`build_walk_surface`/`flood_reachable` trio in `analyzer/traverse.py`, and the `make_plan`/`get_planner` planner seam in `ai/planner.py`. Record exactly what you found (symbol + file). Confirm wilderness is present-but-DISABLED in `ENABLED_ZONE_TYPES`.
     - **Confirm step 1 does NOT need a `LayoutEngine` seam or a 3D `Envelope`** — neither exists on `master` and neither is built here (they are roadmap steps 6 and 5/7). If a worker thinks a wave needs one, that is a misread of the design: STOP and surface it.
     - _Requirements: 2.1_
+    - **Deliverables:**
+      - **Worktree:** `F:\Dev Projects\eq_s3d-worktrees\agent-wild-matrix` on branch `agent/wild-matrix`.
+      - **Fork-point commit:** `74e5e0a8312545a27ce0861277a515e9e5db39b7` (`74e5e0a` — "docs(spec): revise wilderness tasks.md to the executable step-1 Karanas plan"), forked from `master`.
+      - **Wave-1 baseline:** `python -m pytest tests/ -q` → **435 passed**, 13 warnings, **177.53s** (0:02:57) reported by pytest; wall ~179.3s. Matches the expected ≈435 on `master`. (Suite runs in parallel via pytest-xdist; no xdist CORS flake observed.)
+      - **Seam verification (symbol + file, verified against code on `master` @ `74e5e0a`):**
+        - `TerrainBackend` class + `BACKENDS["wilderness"] = TerrainBackend()` + `backend_for(zone_type)` — `generators/backends.py`. `backend_for("wilderness")` resolves to `TerrainBackend`; `TerrainBackend.build` returns `None` when numpy is absent (degrades to box). Matches design.
+        - `_generate_heightfield` (vectorised FBM), `_thermal_erosion` (talus), `_enforce_walkable` (slope relax) — all three present in `generators/field/terrain.py`, wired through `build_terrain`. Matches design.
+        - `_REGION_PREFIX` map — `generators/builder.py` line 28: `{"water":"AWT", "lava":"ALV", "pvp":"APK", "zoneline":"ATP", "ice":"ASL", "generic":"APV"}`. The four the design names (`water→AWT`, `lava→ALV`, `zoneline→ATP`, generic→`APV`) are present exactly; the map also carries `pvp→APK` and `ice→ASL` (superset — not drift that affects step 1). Lookup falls back to `"APV"` for unknown kinds (`builder.py` line 289). Matches design.
+        - `AgentModel` (`walkable_slope_deg=40.0`, `max_step_up=3.0`, `min_up_normal` property = `cos(slope)`), `build_walk_surface(ter, agent)`, `flood_reachable(surf, seed_face)` — all present in `analyzer/traverse.py`. Matches design.
+        - `make_plan(prompt, name)` + `get_planner(prefer_llm=True)` (rule planner default, LLM optional with automatic fallback) — `ai/planner.py`. Matches design.
+      - **Wilderness present-but-DISABLED confirmed:** `generators/zone_types.py` — `DEFINED_ZONE_TYPES = ("dungeon", "city", "wilderness")` (defined) but `ENABLED_ZONE_TYPES = frozenset({"dungeon", "city"})` (wilderness absent → disabled), with `ZONE_TYPE_REASONS["wilderness"]` pointing at this spec. Matches design.
+      - **No `LayoutEngine` / 3D `Envelope` needed:** confirmed neither symbol exists on `master` (grep: no `LayoutEngine` class, no 3D `Envelope`). Step 1 is `TerrainBackend`-hosted and builds neither — they are roadmap steps 6 and 5/7. No STOP condition hit.
+      - **Drift from the design reuse table:** none that affects step 1. Only addition: `_REGION_PREFIX` carries two extra kinds (`pvp→APK`, `ice→ASL`) beyond the four the table names — a benign superset.
 
 - [ ] 2. Biome resolution + the Design_Matrix data model
   - [ ] 2.1 Extend the planner seam for plains-Karana biome resolution
