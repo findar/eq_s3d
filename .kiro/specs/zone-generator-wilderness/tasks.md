@@ -213,9 +213,19 @@ checkpoint.
     - **Tests:** `python -m pytest tests/test_wilderness_matrix.py -q` → **9 passed** (7 new properties + 2 pre-existing scaffolding smoke tests), ~3.8s; also green under `--hypothesis-profile thorough` (5× examples). Full suite `python -m pytest tests/ -q` → **460 passed**, 13 warnings, 147.71s (xdist) — 453 baseline (task 3.1) + 7 new property tests.
     - **Commit:** `1a8ac74` on `agent/wild-matrix` (not pushed — merged into `master` from the MAIN checkout per worktree rules).
 
-- [ ] 4. Checkpoint — wave 1 closed
+- [x] 4. Checkpoint — wave 1 closed
   - Run `python -m pytest tests/ -q` (green). Confirm the matrix properties (1–6, 17) pass with **NO geometry built**. Write the wave-1 integration note (Done-table row, "Pick up here" line, commit hash/count, the chosen matrix resolution) in Deliverables WITHOUT editing `ROADMAP.md`/`README.md`/`tasks/README.md`. Ask the user if questions arise.
   - _Requirements: 2.5_
+  - **Deliverables — WAVE 1 INTEGRATION NOTE (for the single-writer integration step from MAIN; NOT applied here):**
+    - **Suite:** `python -m pytest tests/ -q` → **460 passed**, 13 warnings, 147.60s (xdist). GREEN.
+    - **Matrix properties are geometry-free (confirmed):** `python -m pytest tests/test_wilderness_matrix.py -q` → **9 passed**, 3.91s. All tests in `tests/test_wilderness_matrix.py` (Properties 1–6 + 17, plus 2 scaffolding smoke tests) are pure matrix-data checks over `DesignMatrix` — no heightfield, no TER/mesh, no `.eqg`/`.glb`, no `TerrainBackend`/`build_terrain`, no `build_settings`; they import only the matrix IR (`DesignMatrix`/`build_matrix`/node+intent vocabularies) and operate on the object-grid cells. Verified by inspection: the only `terrain`/`heightfield`/`mesh` tokens in the file are inside comments and docstrings, never code imports or calls. **NO geometry built.**
+    - **Chosen matrix resolution (Open Decision resolved in task 2.3):** **2400 u zone / 150 u per cell → 16×16 matrix** (`DEFAULT_ZONE_SIZE = 2400.0`, `DEFAULT_CELL_SIZE = 150.0` in `generators/wilderness/matrix.py`). 150 u/cell sits at the low end of the design's ~150–250 u/cell, ~12–20 cells/side band — re-tunable against the upsample + 3D pass in task 8.3.
+    - **Done-table row (for the integrator to add from MAIN):**
+      `| zone-generator-wilderness wave 1 (Matrix IR, tasks 1–3) | done | agent/wild-matrix | 1a8ac74 | 348 commits |`
+    - **"Pick up here" line (for ROADMAP.md, written from MAIN):**
+      Pick up here → **wave 2 / task 5** — Graph_Replacement over the Design_Matrix (branch `agent/wild-rewrite`, `generators/wilderness/rewrite.py`, matrix-level still; NO geometry).
+    - **Full tip commit hash:** `627adba18bd9cd86d40fbd25f68c0443facb80d9` on `agent/wild-matrix` (short `627adba`). Commit count on branch: **348**. Branch is local-only — merged into `master` from the MAIN checkout per worktree rules; NOT pushed.
+    - **NOT touched here (single-writer rule):** `ROADMAP.md`, `README.md`, `tasks/README.md` — the integrator applies the Done-table row + "Pick up here" + `tasks/README.md` status change in one serialized step from MAIN.
 
 ### Wave 2 — Graph_Replacement over terrain regions (terminate; preserve reachability + sealed Rim by construction) (Requirement 7, Properties 7–9)
 
