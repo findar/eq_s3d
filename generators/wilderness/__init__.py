@@ -72,6 +72,33 @@ __all__ = [
     "DesignMatrix",
 ]
 
+# --- Graph_Replacement rewrite layer (wave 2, tasks 5.2-5.4) ---------------
+from generators.wilderness.rewrite import (
+    Region,
+    RegionEdge,
+    RegionGraph,
+    RewriteError,
+    RewriteResult,
+    build_region_graph,
+    invariants_hold,
+    rewrite_matrix,
+    rim_is_sealed,
+    stranded_playable_cells,
+)
+
+__all__ += [
+    "Region",
+    "RegionEdge",
+    "RegionGraph",
+    "RewriteError",
+    "RewriteResult",
+    "build_region_graph",
+    "rewrite_matrix",
+    "stranded_playable_cells",
+    "rim_is_sealed",
+    "invariants_hold",
+]
+
 # --- Terrain-first constructor (task 2.3, same worktree) -------------------
 # build_matrix is added by task 2.3 (it owns matrix.py). Re-export it when it is
 # present so ``from generators.wilderness import build_matrix`` works once 2.3
