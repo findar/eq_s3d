@@ -2,605 +2,588 @@
 
 ## Overview
 
-This design makes **wilderness real**: an open, scenic EverQuest outdoor
-landscape built around a central landmark (an oasis in the desert, a river fork
-in the plains), driven by a natural-language prompt and rendered in the browser
-preview. It is the post-M1, post-`zone-generator-followup` milestone that
-replaces the rejected "heightfield draped under a TinyKeep room graph" approach
-with a genuinely different layout architecture: **landmark-first,
-landscape-around-a-landmark**.
+This design makes **wilderness real** as **roadmap step 1**: a believable,
+walkable, **sealed, eroded open Karana** — a procedural plains heightfield for
+the RoF2 client, driven by a natural-language prompt and rendered in the browser
+preview. It is **terrain-first**: the deliverable is **the land itself** — a
+heightfield carved by erosion, ringed by an impassable **Rim** (the bowl),
+broken only at declared **zoneline** exits. The lead (and only v1) biome is
+**plains (the Karanas)**.
 
 The core idea — and the thing that keeps this from being "a room graph in a
 grass skin" — is a 2D governing IR, the **Design_Matrix**. Intent resolves to a
-matrix of typed cells; graph-replacement rules refine it; a noise/erosion pass
-synthesizes a heightfield that is *subordinate* to the matrix (frozen cells
-masked, edges blended); the result upsamples to terrain, gets biome texturing +
-a water plane + vegetation, and flows through the existing `ZoneSpec` to EQG +
-sidecar. Playability, not full connectivity, is the invariant — cliffs, deep
-water, and invisible walls are first-class scenery barriers, the way real EQ
-outdoor zones are.
+matrix of typed **terrain** cells; graph-replacement rules refine it; a
+value-noise FBM pass synthesizes a base heightfield that is *subordinate* to the
+matrix (frozen cells masked, edges blended); a **first-class erosion pass**
+(hydraulic flow-accumulation + thermal talus, vectorised) carves it so valleys
+and ridgelines read water-and-weather-made; the coarse field upsamples with
+sharp cliff/rim/shore edges; the **bowl assembly** builds the Rim per declared
+Edge_Connection and seals it; biome texturing + a visual water plane finish it;
+and the whole thing flows through the existing `ZoneSpec` to EQG + sidecar. The
+**bowl invariant** — interior fully reachable from Spawn, no path crossing a
+non-`zoneline` Rim segment — is proved on the built mesh by the project
+traversability agent.
 
-This design **reuses** `zone-generator-followup` and does not invent a parallel
-layout architecture:
+This step deliberately **reuses the existing terrain core and backend
+registry** and does **not** stand up the dispersed architecture runway. Per
+`ROADMAP.md`, the pluggable `LayoutEngine` seam lands with **step 6**, and the
+3D `Envelope` + gate-learns-connectors land with **steps 5/7** — step 1 must not
+invent or depend on them. Concretely, what this design reuses, verified against
+the code:
 
-- The generator is a `LayoutEngine` implementation (followup Req F1) selected by
-  `zone_type` through the existing `GeometryBackend` registry
-  (`generators/backends.py`).
-- The Design_Matrix is a biome/intent-tagged **specialization of followup's
-  `Envelope`** (followup Req F2).
-- Graph-replacement reuses followup's **dimension-free mission-grammar /
-  graph-rewrite layer** (followup "Mission grammar"), not a fresh rewrite engine.
-- Where wilderness diverges — the reachability amendment (Requirement 3) — it
-  says so explicitly and shows how it interacts with followup's connector-aware
-  gate (F4).
+- Geometry routing is unchanged: `backend_for("wilderness")` already resolves to
+  `TerrainBackend` (`generators/backends.py`). Wilderness is a
+  **`TerrainBackend`-hosted path**, not a new engine seam.
+- Terrain synthesis extends the existing vectorised FBM + thermal-erosion +
+  `_enforce_walkable` core (`generators/field/terrain.py`).
+- Rim / lava / Invisible_Wall / zoneline records ride the existing `RegionSpec`
+  machinery and its `kind → ZON-prefix` map (`generators/builder.py`:
+  `water→AWT`, `lava→ALV`, `zoneline→ATP`, generic→`APV`) and the `.zone.json`
+  sidecar writer.
+- The bowl gate **extends** the per-triangle walk surface and reachability in
+  `analyzer/traverse.py` (the `AgentModel` with `walkable_slope_deg` / `max_step_up`
+  and `build_walk_surface` / flood); it does not invent a new agent.
+- Biome resolution reuses the existing planner drop-in seam
+  (`ai/planner.py`: `make_plan` / `get_planner`, rule planner default, LLM
+  optional with automatic fallback).
 
 It is a **geometry-producing** spec. Per the standing project rule, a passing
 structural and property suite is **necessary but not sufficient**: every
-geometry-producing change takes a Human_3D_Pass per `docs/ACCEPTANCE.md`
-(Requirement 14.4).
+geometry-producing change takes a **Human_3D_Pass** per `docs/ACCEPTANCE.md`
+(Requirement 13.4).
 
 ## Research: what existing work does
 
-The design borrows four established techniques and cites them where they
-genuinely shape a decision. Content from these sources was rephrased for
-compliance with licensing restrictions.
-
-### Graph grammars own the "refine a layout by rules" layer (Dormans / Boris the Brave)
-
-Joris Dormans' mission/space split — reused wholesale by `zone-generator-followup`
-— separates a **dimension-free** rewrite of an abstract graph (the mission
-grammar) from the geometry that embeds it (the space grammar). Boris the Brave's
-deconstruction of Unexplored confirms the rewrite rules operate on a
-coordinate-free graph; geometry is assigned afterward. See [Joris Dormans,
-"Engineering Emergence" / generative grammars for game
-content](http://www.jorisdormans.nl/) and [Boris the Brave, "Unexplored's
-Secret: 'Cyclic' Dungeon
-Generation"](https://www.boristhebrave.com/2021/04/10/dungeon-generation-in-unexplored/).
-
-**Consequence for wilderness:** the Graph_Replacement pass (Requirement 4) is a
-*specialization of followup's mission-grammar rewrite* over a terrain vocabulary
-(`river`, `cliff`, `oasis`, …) rather than a dungeon vocabulary (`lock`, `key`,
-`boss`). The dimension-free rewrite machinery, the termination bound, and the
-"preserve an invariant at every step" discipline all transfer. We do **not**
-reuse Dormans' 2D space grammar (it is the tile-grid embedding; wilderness
-embeds continuously via noise synthesis).
+The design borrows established techniques and cites them where they genuinely
+shape a decision. Content from these sources was rephrased for compliance with
+licensing restrictions.
 
 ### Terrain is a heightfield shaped by FBM noise + erosion (Musgrave / Olsen)
 
 The project already uses fractional-Brownian-motion value noise plus thermal
-erosion for outdoor terrain (`generators/field/terrain.py`). This matches the
-classic procedural-terrain recipe: layered noise for the base relief, then an
-erosion relaxation so slopes slump to a natural angle of repose. See [Musgrave,
-Kolb & Mace, "The synthesis and rendering of eroded fractal
-terrains" (SIGGRAPH 1989)](https://dl.acm.org/doi/10.1145/74333.74337) and
-[Jacob Olsen, "Realtime Procedural Terrain Generation"
-(2004)](https://web.mit.edu/cesium/Public/terrain.pdf). The project's own
-performance lesson stands: noise must stay **vectorised numpy value-noise**, never
-a per-voxel Python loop (`generators/field/noise.py`; lessons-learned).
+erosion for outdoor terrain (`generators/field/terrain.py`:
+`_generate_heightfield`, `_thermal_erosion`). This matches the classic
+procedural-terrain recipe: layered noise for base relief, then an erosion
+relaxation so slopes slump to a natural angle of repose and ridgelines/valleys
+read weathered rather than blobby. See [Musgrave, Kolb & Mace, "The synthesis
+and rendering of eroded fractal terrains" (SIGGRAPH
+1989)](https://dl.acm.org/doi/10.1145/74333.74337) and [Jacob Olsen, "Realtime
+Procedural Terrain Generation" (2004)](https://web.mit.edu/cesium/Public/terrain.pdf).
+The project's own performance lesson stands: noise and erosion must stay
+**vectorised numpy**, never a per-voxel Python loop (`generators/field/noise.py`;
+lessons-learned).
 
-**Consequence:** the Noise_Pass (Requirement 5) reuses the existing FBM +
-thermal-erosion + `_enforce_walkable` core, but subordinated to the matrix via a
-freeze mask (new) and edge blend (new). No new noise primitive is introduced.
+**Consequence:** the Noise_Pass (Requirement 8) reuses the existing FBM core,
+subordinated to the matrix by a freeze mask + edge blend. The Erosion pass
+(Requirement 5) builds **on** the existing thermal-erosion relaxation and adds a
+vectorised **hydraulic flow-accumulation** pass. No per-voxel loop is introduced.
 
-### Rivers are drainage features; a spline approximates them before full hydrology (Mei / St'ava)
+### Hydraulic erosion is flow accumulation now, full droplet simulation later (Musgrave / Mei)
 
-Real hydraulic erosion carves valleys by simulating water flow and sediment
-transport — expensive, and overkill for v1. The cheap, well-understood
-approximation is to treat a river as a **drainage spline** that governs a carved
-channel and locally eroded banks. See [Xing Mei et al., "Fast Hydraulic Erosion
-Simulation and Visualization on GPU" (Pacific Graphics
+Real per-droplet hydraulic erosion simulates water and sediment transport —
+expensive, and more than v1 needs. The cheap, well-understood approximation that
+still reads water-made is **flow accumulation**: estimate how much upslope area
+drains through each cell (steepest-descent routing), then lower high-flow cells
+to incise channels and valleys. See [Musgrave et al.
+(1989)](https://dl.acm.org/doi/10.1145/74333.74337) for the eroded-terrain
+model and [Xing Mei et al., "Fast Hydraulic Erosion Simulation and Visualization
+on GPU" (Pacific Graphics
 2007)](https://hal.inria.fr/inria-00402079/document) for the full simulation we
-defer, and the spline-channel approximation as the standard first cut.
+defer behind the same seam.
 
-**Consequence:** rivers are splines with local bank erosion behind **one
-interface** (Requirement 9.4) so full hydraulic erosion drops in later without
-changing callers — the same "replaceable backend behind a stable seam" shape the
-project uses for textures and geometry.
+**Consequence:** v1 hydraulic erosion is **vectorised flow-accumulation incision**
+layered with the existing thermal talus pass; full droplet simulation is a named
+fast-follow that drops in behind the same erosion entry point without changing
+callers.
+
+### Graph grammars own the "refine a layout by rules" layer (Dormans / Boris the Brave)
+
+Joris Dormans' mission/space split separates a **dimension-free** rewrite of an
+abstract graph from the geometry that embeds it. Boris the Brave's deconstruction
+of Unexplored confirms the rewrite rules operate on a coordinate-free graph;
+geometry is assigned afterward. See [Joris Dormans, "Engineering Emergence" /
+generative grammars for game content](http://www.jorisdormans.nl/) and [Boris
+the Brave, "Unexplored's Secret: 'Cyclic' Dungeon
+Generation"](https://www.boristhebrave.com/2021/04/10/dungeon-generation-in-unexplored/).
+
+**Consequence for wilderness:** the Graph_Replacement pass (Requirement 7) is a
+rewrite over a **terrain** vocabulary (`plains`, `river`, `cliff`,
+`mountain_rim`, `lava`, `zoneline_gap`, `water`) rather than a dungeon one
+(`lock`, `key`, `boss`). The "preserve an invariant at every step" discipline
+transfers directly: here the preserved invariants are **playable-reachability**
+and **the sealed Rim**. v1 implements this rewrite layer in the wilderness
+module; the shared dungeon `LayoutEngine` seam is **step 6**, so step 1 does not
+reuse or depend on it.
 
 ### Biome identity is mostly texture splatting over one terrain core (Bloom / slope-height splat)
 
 Distinct-looking biomes rarely need distinct terrain generators; they need
 distinct **splat maps** — ground textures blended by slope, height, and moisture
-over one shared heightfield. This is the standard terrain-texturing approach in
-engines and is how EQ outdoor zones read as distinct (sand vs grass) over similar
-relief. See the general technique in [Charles Bloom, "Texture
+over one shared heightfield. This is how EQ outdoor zones read as distinct over
+similar relief. See [Charles Bloom, "Texture
 Splatting"](https://cbloomrants.blogspot.com/) and common engine terrain-material
 documentation.
 
-**Consequence:** Biomes are data-driven **kits** (Requirement 7) — ground-texture
-set, water flag, skybox/fog tint, vegetation kit — applied over one
-terrain+hydrology core, with texturing routed through the existing AI-texture
-drop-in seam (`generators/textures/factory.py`).
+**Consequence:** biomes are data-driven **kits** (Requirement 11) — ground-texture
+set, water flag, skybox/fog tint, vegetation-kit identity — applied over one
+terrain core, routed through the existing texture seam. v1 ships one kit:
+`plains`.
 
 ## Architecture
 
-(Architecture & where it plugs in.)
-
-Wilderness is a `LayoutEngine` (followup F1) that produces the Design_Matrix and
-derives POI anchors + a heightfield plan from it, selected by `zone_type ==
-"wilderness"` through the existing `GeometryBackend` registry. The downstream
-ZoneSpec → EQG + sidecar flow (Requirement 13) is the same pipeline every zone
-uses.
+Wilderness is a **`TerrainBackend`-hosted path** (`generators/backends.py`): the
+generator constructs the Design_Matrix and synthesizes a heightfield from it,
+and `TerrainBackend.build` is extended so that **when the spec carries a
+wilderness Design_Matrix it synthesizes from the matrix** instead of the current
+"FBM over the room footprint" path. With no matrix (a plain terrain spec) it
+behaves exactly as today — additive, no regression. There is **no new
+`LayoutEngine` seam** here (that is roadmap step 6).
 
 ```mermaid
 flowchart TD
     P["Prompt (natural language)"] --> RP["Rule planner / LLM drop-in<br/>(ai/planner.py seam)"]
-    RP --> LI["Landmark_Intent<br/>(biome + landmark, R1)"]
-    LI --> DM["Design_Matrix construction<br/>(landmark-first, R2)"]
-    DM --> GR["Graph_Replacement<br/>(followup mission-grammar rewrite, R4)"]
-    GR --> RA["Reachability amendment<br/>(playable vs scenic, R3)"]
-    RA --> NP["Noise_Pass + local erosion<br/>(subordinate: freeze-mask + edge-blend, R5)"]
-    NP --> US["Upsample to terrain resolution<br/>(smooth flatland / sharp cliff + shore, R6)"]
-    US --> RIV["River splines + bank erosion<br/>(behind one interface, R9)"]
-    RIV --> BK["Biome kit: slope/height/moisture texturing,<br/>water plane, vegetation scatter (R7/R8/R10)"]
-    BK --> POI["POI_Anchors + Spawn<br/>(instead of rooms, R11)"]
-    POI --> WG["Open-ground walkability gate<br/>(traversability over playable regions, R12)"]
-    WG --> ZS["ZoneSpec (the IR, R13)"]
-    ZS --> OUT["EQG (Z-up) + .zone.json sidecar (R13)"]
-    OUT --> H3D["Human_3D_Pass (docs/ACCEPTANCE.md, R14.4)"]
+    RP --> BI["Biome resolution → plains<br/>(R1)"]
+    BI --> DM["Design_Matrix construction<br/>(plains interior + typed terrain regions<br/>+ perimeter Rim cells per Edge_Connection, R2/R3)"]
+    DM --> GR["Graph_Replacement over terrain regions<br/>(terminate; preserve reachability + sealed Rim, R7)"]
+    GR --> NP["Noise_Pass: vectorised FBM<br/>(matrix-subordinate: freeze-mask + edge-blend, R8)"]
+    NP --> ER["Erosion: hydraulic flow-accumulation<br/>+ thermal talus (vectorised, rim-respecting, R5)"]
+    ER --> RC["Re-assert / re-clamp non-zoneline Rim impassable<br/>(after every pass, R5.4/5.5)"]
+    RC --> US["Upsample to terrain resolution<br/>(smooth plains / sharp cliff + rim + shore, de-gridded, R9)"]
+    US --> BA["Bowl assembly: Rim per Edge_Connection<br/>(mountain seals by slope; river = water edge + Invisible_Wall;<br/>zoneline = flat walkable gap off-map), R3/R6"]
+    BA --> LV["Lava regions: impassable interior + damaging flag<br/>(RegionSpec ALV, never a rim type, R10)"]
+    LV --> BK["Biome kit: plains splat texturing (slope/height/moisture),<br/>visual water plane, veg-kit identity (R11/R13.1)"]
+    BK --> ZS["ZoneSpec (the IR, R14.1)"]
+    ZS --> MESH["TerrainBackend builds the ground mesh (TER)"]
+    MESH --> WG["Bowl gate: traversability agent on the built mesh<br/>(interior reachable from Spawn; Rim sealed except zonelines, R4/R12)"]
+    WG --> OUT["EQG (Z-up) + .zone.json sidecar<br/>(intent, edge types, invisible walls, lava-damaging, R14)"]
+    OUT --> H3D["Human_3D_Pass (docs/ACCEPTANCE.md, R13.4)"]
 ```
 
 The seam placement, concretely:
 
-- **`WildernessLayoutEngine` implements followup's `LayoutEngine` protocol**
-  (followup "The engine seam"). It owns the Design_Matrix, Graph_Replacement,
-  the reachability amendment, and the derivation of POI anchors. It does **not**
-  return `(rooms, edges)` the way TinyKeep does — wilderness has no rooms
-  (Requirement 11.2). This is the one place the contract bends: see *Open
-  decisions* on whether wilderness is a full `LayoutEngine` or a **sibling layout
-  stage** behind the same `zone_type` routing. The deciding constraint is that
-  followup's `(rooms, edges)` contract is dungeon-shaped; wilderness emits a
-  Design_Matrix + POI anchors instead, so it most likely lands as a sibling
-  stage selected by the same registry rather than a literal `LayoutEngine`
-  return. Either way it sits **behind the F1 seam**, not beside a reinvented one.
-- **Geometry routing is unchanged:** `backend_for("wilderness")` already resolves
-  to `TerrainBackend` (`generators/backends.py`). This design *extends*
-  `TerrainBackend.build` so that, when the spec carries a Design_Matrix, it
-  synthesizes from the matrix instead of the current "FBM over the room
-  footprint" path. With no matrix (a plain terrain spec) it behaves exactly as
-  today — additive, no regression.
-- **Textures route through the existing factory** (`generate_texture` /
-  `generators/textures/factory.py`), so the AI drop-in seam is preserved with
-  zero code change on the texture side (Requirement 10.3).
+- **Backend routing is unchanged.** `BACKENDS["wilderness"] = TerrainBackend()`
+  already exists (`generators/backends.py`); `backend_for("wilderness")` resolves
+  to it. This design extends `TerrainBackend.build` to detect a wilderness
+  Design_Matrix on the spec and synthesize from it. The `numpy`-absent degrade
+  (returns `None` → box backend) is inherited unchanged.
+- **Terrain synthesis extends the existing core.** The Noise_Pass reuses
+  `_generate_heightfield` (vectorised FBM) and `_thermal_erosion`; the hydraulic
+  pass is a new vectorised function alongside them; `_enforce_walkable` is reused
+  for the playable interior. The matrix-subordination (freeze mask, edge blend)
+  and Rim re-clamp are new wrappers around these existing calls.
+- **Region records reuse `RegionSpec` + the prefix map.** The Rim's river edges,
+  lava regions, zoneline gaps, and Invisible_Wall barriers are emitted as
+  `RegionSpec` entries whose `kind` routes through the existing `_REGION_PREFIX`
+  in `generators/builder.py` (`water→AWT`, `lava→ALV`, `zoneline→ATP`,
+  generic→`APV`), and the `.zone.json` sidecar is written by the existing
+  `write_sidecar` path on every build.
+- **The gate extends `analyzer/traverse.py`.** The bowl gate runs the existing
+  `AgentModel` + `build_walk_surface` + flood on the real TER, with a new,
+  defaulted parameter set (required-reachable seeds, excluded scenic regions,
+  and off-map Rim markers) so that absent the parameters it behaves exactly as
+  the dungeon full-connectivity gate (no regression).
 
 ## Components and Interfaces
 
-The generator is a pipeline of components, each a seam that can be tested and
-replaced on its own: **intent resolution** (prompt → Landmark_Intent), the
-**Design_Matrix IR** (the governing 2D layout), **Graph_Replacement** (rule
-refinement), the **reachability amendment** (playable-vs-scenic + POI anchors),
-the **Noise_Pass + upsample** (matrix → heightfield), and the **biome kit /
-water / river (`DrainageModel`) / texturing** stage. Each is specified below
-with its data model and interface.
+The generator is a pipeline of seams, each testable and replaceable on its own:
+**biome resolution** (prompt → biome), the **Design_Matrix IR** (the governing
+2D terrain layout + Rim), **Graph_Replacement** (rule refinement), the
+**Noise_Pass + Erosion + upsample** (matrix → heightfield), **bowl assembly**
+(Rim realized per Edge_Connection), **lava**, the **biome kit / visual water**,
+and the **bowl gate** on the built mesh.
+
+### Component: biome resolution (R1)
+
+Prompt → resolved biome reuses the existing planner seam (`ai/planner.py`,
+`ai/rule_planner.py`), not a new parser:
+
+- **Rule planner (default, zero-key — R1.2):** the existing rule planner routes
+  plains/Karana wording toward `wilderness`; wilderness resolves the biome to
+  `plains` (the only v1 biome). No external service required.
+- **LLM drop-in (R1.3):** an LLM planner may propose the biome through the
+  existing `make_plan` / `get_planner` seam, with the rule planner as the
+  automatic fallback on any failure — identical to how planning already
+  degrades. No new provider plumbing.
+- **Fallback + substitution record (R1.4):** a biome outside the v1 set resolves
+  to `plains`, and the substitution (`requested` vs `resolved`) is written to the
+  `.zone.json` sidecar so the user sees what was swapped.
+- **Recorded on ZoneSpec (R1.5):** the resolved biome is stored on the ZoneSpec
+  (new defaulted `biome` field — see Data Models) so downstream stages and the
+  sidecar read one source of truth.
 
 ### Component: the Design_Matrix IR (R2)
 
 #### What it is
 
-The Design_Matrix is a **2D grid of cells**, each carrying exactly one
+The Design_Matrix is a **2D grid of cells**, each carrying exactly one terrain
 `Node_Type` and exactly one `Intent_Tag`:
 
 ```python
 # generators/wilderness/matrix.py  (new module)
 
-NodeType = Literal["river", "cliff", "flatland", "oasis",
-                   "landmark_pad", "water", "backdrop"]   # R2.2 v1 set
-IntentTag = Literal["playable", "scenic"]                 # R2.3
+NodeType = Literal["plains", "river", "cliff", "mountain_rim",
+                   "lava", "zoneline_gap", "water"]   # R2.2 v1 set
+IntentTag = Literal["playable", "scenic"]             # R2.3
 
 @dataclass
 class MatrixCell:
     node_type: NodeType
     intent: IntentTag
-    # Height constraint for Frozen_Cells (landmark_pad, river, water):
-    #   frozen=True means the Noise_Pass is masked out of this cell (R5.2).
+    # Frozen cells (river channel, zoneline_gap floor, mountain_rim ridge target)
+    # are masked out of the Noise_Pass (R8.2); their terrain is set by frozen_z.
     frozen: bool = False
-    frozen_z: Optional[float] = None     # constraint height when frozen
-    biome: str = ""                      # "desert" | "plains" (kit selection)
+    frozen_z: Optional[float] = None
+    # For perimeter cells only: which Edge_Connection segment they belong to.
+    edge_segment: Optional[int] = None
+
+EdgeType = Literal["mountain", "river", "zoneline"]   # R3, v1 connection types
+
+@dataclass
+class EdgeConnection:
+    """One user-declared Rim segment (R3.1). N segments supported; the 4-side
+    N/E/S/W default (R3.2) is just N=4 with one segment per side."""
+    side: str                 # "N" | "E" | "S" | "W" (or a segment span)
+    edge_type: EdgeType       # undeclared perimeter -> "mountain" (R3.3)
 
 @dataclass
 class DesignMatrix:
     cells: np.ndarray            # shape (nx, ny), dtype=object -> MatrixCell
     cell_size: float             # world units per matrix cell
     origin: Tuple[float, float]  # world XY of cell (0,0)
-    water_level: float           # R8 Water_Level
-    biome: str
-    landmark: str                # "oasis" | "river_fork"
+    water_level: float           # R13 Water_Level
+    biome: str                   # v1: "plains"
+    edges: List[EdgeConnection]  # the Rim, as N perimeter segments (R3.1)
+    spawn: Tuple[int, int]       # matrix cell holding Spawn (reachability root)
     intent_overrides: Dict[Tuple[int, int], IntentTag] = field(default_factory=dict)
 ```
 
-### Why a 2D grid and how it specializes followup's `Envelope`
+### Why a 2D cell grid, and why inspectable before geometry (R2.5)
 
-Followup's `Envelope` is a bounded 3D volume with a `contains(x, y, z)` predicate
-and left the "continuous predicate vs discrete cell grid" question **open**
-(followup "Open decisions": *continuous preferred… revisit if the connector
-router needs cells*). Wilderness is the case that needs cells: Graph_Replacement
-rewrites discrete typed nodes, the freeze mask is per-cell, and the matrix must
-be **inspectable and property-testable before any geometry exists**
-(Requirement 2.5). A pure continuous predicate cannot carry a per-cell
-`Node_Type`/`Intent_Tag` or be asserted "oasis ringed by desert" without
-geometry.
-
-So wilderness realizes the `Envelope` as **an Envelope with a 2D authoring
-face** — a thin 3D volume (ground is a surface, Z is up) whose authoring
-representation is this 2D cell grid:
-
-- The matrix is the **authoring face**: the grid of typed cells the designer and
-  property tests reason about.
-- The `Envelope.contains(x, y, z)` predicate is **derived** from the matrix after
-  synthesis (a point is inside the volume if it is within XY bounds and below the
-  synthesized surface + headroom). This keeps wilderness honestly *behind*
-  followup's `Envelope` concept rather than beside a parallel one, and it answers
-  followup's open question concretely for this consumer: **wilderness needs
-  cells; it exposes them as the authoring face of a thin Envelope.**
-
-This is the justified choice over the two alternatives: a bare 2D grid (would not
-be an `Envelope` at all, violating Requirement 2.1's "specialization of the
-followup `Envelope`") and a full dense 3D Envelope (wasteful — ground is a
-surface, not a volume; verticality here is height, not stacked floors).
+The matrix governs **layout** — where the river runs, where a cliff is, which
+perimeter edges are mountain vs zoneline — not surface detail. Graph_Replacement
+rewrites discrete typed regions, the freeze mask is per-cell, and the layout must
+be **inspectable and property-testable before any geometry exists** (R2.5). A
+coarse cell grid is the natural representation; it is plain data (a `numpy`
+object array of dataclasses), serializable and assertable with no heightfield
+built. The matrix is exposed on the generator output for inspection before the
+Noise_Pass runs. This is the design's central guard against the rejected
+room-graph-drape approach: the *layout* is validated as an open, sealed landscape
+before a single triangle exists.
 
 ### Grid resolution and world-frame mapping
 
-- `cell_size` is coarse (**matrix resolution ≪ terrain resolution**): the matrix
-  governs *layout* (where the oasis is, where the cliff runs), not surface
-  detail. A starting point is ~1 matrix cell per 150–250 world units over a
-  ~2000–3000u zone (so ~12–20 cells per side); the exact value is tuned in the
-  tasks phase (see *Open decisions*, and adversarial risk #2 below). The coarse
-  matrix is *why* the upsample (Requirement 6) must preserve sharp edges.
-- World mapping: cell `(i, j)` covers world XY `[origin_x + i*cell_size,
-  origin_x + (i+1)*cell_size) × [origin_y + j*cell_size, …)`. Z is up
-  (Requirement 13.3); the matrix is the XY authoring face and carries only the
-  frozen-Z constraints, never a per-cell surface height — that is the Noise_Pass's
-  job.
+- `cell_size` is coarse (**matrix resolution ≪ terrain resolution**): a starting
+  point is ~1 matrix cell per 150–250 world units over a ~2000–3000 u zone
+  (~12–20 cells per side). The TER resolution stays ~40–50 u/cell (as in
+  `TerrainBackend` today). The coarse matrix is *why* the upsample (R9) must
+  preserve sharp edges. Exact value is tuned in the tasks phase (see *Open
+  decisions*).
+- World mapping: cell `(i, j)` covers world XY
+  `[origin_x + i*cell_size, origin_x + (i+1)*cell_size) × [origin_y + j*cell_size, …)`.
+  **Z is up** (R14.3); the matrix is the XY authoring face and carries only
+  frozen-Z constraints, never a per-cell surface height — that is the
+  Noise_Pass/Erosion job.
 
-### Landmark-first construction order (R2.4)
+### Terrain-first construction order (R2.4 / R2.6 / R2.7)
 
-Construction places the **Landmark node first**, then derives supporting geography
-around it:
+Construction leads with the **interior plains**, derives terrain regions within
+it, then tags the perimeter as Rim:
 
-1. Place the landmark at/near matrix center: `oasis` + a ring of `water`, or a
-   `river` seed node. Mark its `landmark_pad` cells frozen (Requirement 5.4).
-2. Derive biome backdrop outward: desert+oasis rings the oasis with
-   `flatland`/`backdrop` desert cells so **no oasis cell touches the matrix
-   boundary** (Requirement 2.6).
-3. Place supporting features (a `cliff` edge, a `backdrop` horizon band) as
-   scenic framing.
-4. Assign a default `Intent_Tag` to every region (Requirement 3.4): the landmark
-   and the ground around it `playable`; distant backdrop / far cliffs / deep
-   water `scenic`.
-5. Enforce the single-connected-`water`-region invariant (Requirement 2.7) as a
+1. Fill the interior with `plains` cells and place **Spawn** near interior
+   center (R2.4).
+2. Derive terrain regions *within* the plains interior: optionally a `river`
+   (boundary-hugging in v1), `cliff` scenic framing, `lava` hazard region(s),
+   and `water` cells (R2.4).
+3. Tag every **perimeter** cell as Rim according to its Edge_Connection (R2.6):
+   `mountain` → `mountain_rim`; `river` → boundary `water` + the sealing edge;
+   `zoneline` → `zoneline_gap`. Undeclared perimeter edges default to `mountain`
+   (R3.3).
+4. Assign a default `Intent_Tag` to every region (R2.3): the plains interior and
+   the ground around Spawn `playable`; the Rim / distant mountains / deep water
+   `scenic`.
+5. Enforce the single-connected-`water`-region invariant (R2.7) as a
    construction post-condition.
 
-### Why inspectable / property-testable before geometry (R2.5/2.6/2.7)
+### Component: the Bowl via declared Edge Connections (R3)
 
-The matrix is plain data (`numpy` object array of dataclasses), serializable and
-assertable **with no heightfield built**. Property tests (below) assert
-"oasis ringed by desert," "water is one connected region," "every region has an
-intent tag," "landmark placed first" directly on the matrix. This is the design's
-central guard against the rejected approach: the *layout* is validated as an open
-landscape before a single triangle exists. `DesignMatrix` is exposed on the
-engine output for inspection before the Noise_Pass runs (Requirement 2.5).
+The Rim is the impassable perimeter boundary, modeled as **N user-declared
+Edge_Connection segments** (R3.1). The four-side N/E/S/W layout is the simple
+default (R3.2, `N=4`). Each segment has a typed behavior; an undeclared perimeter
+edge defaults to `mountain` (R3.3). How each type is **realized** on the
+heightfield/regions:
 
-### Component: landmark-first intent resolution (R1)
+- **`mountain` (R3.4):** the perimeter cells are `mountain_rim`, frozen to a
+  ridge target height, and the **upsampled edge is raised to a slope steeper
+  than `AgentModel.walkable_slope_deg`** (~40°, `min_up_normal` threshold in
+  `traverse.py`) so the geometry itself seals the edge — the agent classifies
+  those faces as non-standable. No barrier record needed; collision truth is the
+  slope.
+- **`river` (R3.5):** a **boundary-hugging visual water edge** at Water_Level,
+  backed by an **Invisible_Wall `RegionSpec`** that seals the edge. Because v1
+  water is visual-only (no collision volume, R13.1), the Invisible_Wall is what
+  actually stops the player; the water is scenery. The Invisible_Wall is recorded
+  in the sidecar (R3.7) as region metadata.
+- **`zoneline` (R3.6):** a **flat walkable gap** in the Rim leading off-map — the
+  deliberate leak where an adjacent zone connects. Realized as `zoneline_gap`
+  cells held flat (R8.4), walkable, and reachable from Spawn (R4.5), emitted as a
+  `RegionSpec(kind="zoneline")` (→ `ATP` prefix).
 
-Prompt → `Landmark_Intent` reuses the existing planner seam
-(`ai/planner.py`, `ai/rule_planner.py`) rather than a new parser:
-
-- **Rule planner (default, zero-key — R1.2):** extends the existing keyword maps
-  in `ai/rule_planner.py`. It already routes `desert`, `plains`, `oasis`-ish and
-  `river` words toward `wilderness`. We add a **landmark lexicon** that resolves
-  the biome+landmark pairing: desert words + "oasis" → `desert`+`oasis`; plains
-  words + "river"/"fork" → `plains`+`river_fork`. The result is a
-  `LandmarkIntent(biome, landmark)` carried on the `ZonePlan`.
-- **LLM drop-in (R1.3):** the LLM planner proposes the same `LandmarkIntent`
-  through the existing `get_planner()` / `make_plan()` drop-in seam
-  (`ai/planner.py`), with the rule planner as the automatic fallback on any
-  failure — identical to how planning already degrades. No new provider plumbing.
-- **Fallback + substitution record (R1.4):** a biome or landmark outside the v1
-  set resolves to the **nearest supported** `LandmarkIntent` (e.g. "jungle" →
-  nearest of {desert, plains}), and the substitution (`requested` vs `resolved`)
-  is written to the `.zone.json` sidecar so the user sees what was swapped.
-- **Recorded on ZoneSpec (R1.5):** the resolved biome and landmark are stored on
-  the ZoneSpec (new defaulted fields — see Data Models) so downstream stages and
-  the sidecar read a single source of truth.
-
-```python
-@dataclass
-class LandmarkIntent:
-    biome: str       # "desert" | "plains"
-    landmark: str    # "oasis" | "river_fork"
-    requested_biome: str = ""     # for the sidecar substitution record (R1.4)
-    requested_landmark: str = ""
-    substituted: bool = False
-```
-
-### Component: graph-replacement (R4)
-
-Graph_Replacement refines the Design_Matrix by **reusing followup's
-dimension-free mission-grammar / graph-rewrite layer** (Requirement 4.1), applied
-over a terrain vocabulary rather than a dungeon one. It is not a new rewrite
-engine — it is the followup rewrite machinery parameterized with wilderness
-rules.
-
-#### Node / edge vocabulary
-
-- **Nodes:** the `Node_Type` set attached to matrix regions
-  (`river | cliff | flatland | oasis | landmark_pad | water | backdrop`).
-  A graph node is a *region* (a connected set of same-type cells), so the
-  rewrite reasons about "the cliff region," "the river," not individual cells.
-- **Edges:** adjacency + a small typed relation set reused from followup's typed
-  edges (followup F2) adapted to terrain: `borders` (regions touch),
-  `approaches` (a ramp/pass provides a playable approach from one region to
-  another), `flows_into` (river → junction). This keeps the edge vocabulary a
-  specialization of followup's, not a parallel invention.
-
-#### Example rules
-
-- **`cliff → ramp/pass approach` (R4.4):** when a `cliff` region would strand a
-  `playable` region (cut its only reachable approach), the rule spawns a
-  ramp/pass node (a graded `flatland` corridor of cells through/around the cliff)
-  carrying an `approaches` edge, restoring a playable approach. Mirrors the
-  dungeon corridor-routing lesson that a slope must be *graded* (and later
-  subdivided at mesh time) to stay climbable.
-- **`river → fork` (R4.5):** in a `plains`+`river_fork` zone, the rule grows the
-  single `river` node into two branches meeting at a junction node
-  (`flows_into` edges), realized downstream as two river splines (Requirement 9.3).
-
-#### Termination bound (R4.2)
-
-Each rule is **monotone-bounded**: every rule either (a) consumes a trigger node
-and marks it resolved, or (b) adds at most a bounded number of nodes keyed to the
-v1 feature count. The rewrite runs to a fixed-point with a hard iteration cap
-(e.g. `max_iters = C · region_count`); exceeding the cap is a construction error,
-never a silent loop. This is the followup termination discipline applied to
-terrain rules and directly closes **adversarial risk #3** (rules looping).
-
-#### Reachability-preservation by construction (R4.3 / R4.6)
-
-This is the heart of adversarial risk #3. We adopt the **solvability-invariant
-discipline the dungeon gating already uses**: the dungeon `GateSpec` guarantees
-"the key is always reachable before the lock" by *construction* — a gate is only
-placed where the invariant provably still holds. Wilderness uses the identical
-pattern for the playable-reachability invariant:
-
-- Before applying a rule, compute the playable-reachability relation on the
-  current matrix (connected `playable` regions reachable from Spawn via
-  non-barrier cells).
-- **Apply-then-check-then-commit:** apply the rule to a candidate matrix, recheck
-  the invariant; if any `playable` region became stranded, **reject the rule
-  application and keep the prior matrix** (Requirement 4.6). The invariant holds
-  at *every* committed step (Requirement 4.3).
-- The `cliff → ramp` rule (R4.4) is the *repair* counterpart: cliffs that would
-  strand a playable region are only committed together with the approach node
-  that keeps it reachable, so a cliff never lands as a stranding barrier for
-  playable ground.
-
-This makes reachability-preservation a construction property (checked each step),
-not a post-hoc hope — exactly the dungeon gating stance.
-
-### Component: reachability amendment (R3) + open-ground walkability (R11/R12)
-
-#### Playable vs scenic, and how it amends followup
-
-Followup's gate (F4) assumes **full walkable connectivity** — every room
-reachable. Wilderness **amends** that: mutual reachability from Spawn is required
-for **Playable_Regions only** (Requirement 3.1). Scenic regions MAY be
-unreachable (Requirement 3.2). This is represented by the per-cell `Intent_Tag`
-and enforced in two places:
-
-1. **On the matrix (pre-geometry):** the reachability relation used by
-   Graph_Replacement (above) is computed over `playable` cells only; `scenic`
-   cells are excluded. A `playable` region unreachable from Spawn on the matrix is
-   a **reachability failure naming the stranded region** (Requirement 3.6); a
-   `playable` landmark unreachable from Spawn is likewise a failure
-   (Requirement 3.7).
-2. **On the built mesh (post-geometry):** the project traversability agent
-   (`analyzer/traverse.py`) is run with Scenic_Regions **excluded** from the
-   reachability requirement (Requirement 12.3).
-
-#### Interaction with followup's F4 connector-aware gate
-
-Followup F4 taught `analyzer/traverse.py` to understand vertical connectors
-(staircase/bridge) and to be *connector-aware*. Wilderness **narrows the gate's
-scope** rather than changing its connector logic:
-
-- The gate still proves reachability on the real mesh per-triangle (unchanged).
-- Wilderness passes the gate a **playable mask** (the set of POI anchors + ground
-  in Playable_Regions) and tells it to prove reachability **among those anchors
-  only**, excluding scenic ground. Concretely this is a new, defaulted parameter
-  to the traverse entry point (a set of "required-reachable" seed points +
-  "excluded" regions); with the parameter absent it behaves exactly as the
-  dungeon full-connectivity gate (no regression to F4's behavior for dungeons).
-- The connector vocabulary F4 added (bridge/ramp walkability by rise/run/headroom)
-  is exactly what the `cliff → ramp` approach relies on at mesh time, so the two
-  compose: the matrix guarantees a *graded approach exists*; the F4-aware gate
-  proves that approach is *actually walkable on the mesh*.
-
-#### POI anchors instead of rooms (R11)
-
-Wilderness represents points of interest as named **POI_Anchors** (the landmark
-plus a few camps / spawn clearings), **not rooms**, and **does not use the
-TinyKeep room-and-corridor layout** (Requirement 11.1/11.2). One anchor is
-designated **Spawn** (Requirement 11.3). Navigability is **open-ground
-walkability among the POI anchors in Playable_Regions** (Requirement 11.4) —
-the traversability agent walks the real ground mesh between anchor footprints,
-not room-to-room corridors.
+Every Edge_Connection type and every Invisible_Wall barrier is recorded in the
+`.zone.json` sidecar as region metadata suitable for later export as region
+records (R3.7).
 
 ```python
 @dataclass
 class POIAnchor:
-    name: str                 # "oasis", "north_camp", "spawn_clearing"
+    name: str                 # v1: "spawn", optional spawn clearings (R-glossary)
     x: float; y: float        # world XY; z sampled from the built surface
     is_spawn: bool = False
     intent: IntentTag = "playable"
 ```
 
-#### Barriers as first-class scenery (R3.3)
+### Component: the Bowl Invariant and how the gate proves it (R4, R12)
 
-Deliberate unreachability of a Scenic_Region is realized by **cliffs, deep water,
-or Invisible_Wall barriers** (Requirement 3.3). Cliffs and deep water are
-geometry the agent already rejects (slope too steep / below water). Invisible
-walls are **authored barrier records** (an EQ convention) carried in the sidecar
-(Requirement 13.5) — no visible geometry — suitable for later export as region
-records (fast-follow, umbrella M6). User intent overrides (Requirement 3.5) are
-honored by `DesignMatrix.intent_overrides` feeding both the matrix check and the
-mesh gate.
+This is the heart of the revision. The bowl gate **extends** the existing
+per-triangle reachability in `analyzer/traverse.py` — it does not invent a new
+engine. Two guarantees, proved on the **built mesh**:
 
-#### Walkable slopes (R12.4)
+1. **Interior reachable (R4.2, R4.6, R12.1):** every `playable` cell / POI anchor
+   is reachable from Spawn by the traversability agent. The gate floods walkable
+   adjacency from the Spawn face (`build_walk_surface` + the existing flood). A
+   `playable` cell/anchor not in the reachable set is a **reachability /
+   walkability failure naming the stranded region or anchor** (R4.6 / R12.2).
+2. **Rim sealed except zonelines (R4.3, R4.4):** **no path from Spawn crosses a
+   non-`zoneline` Rim segment.** 
 
-Playable ground stays within the traversability agent's slope cap
-(`AgentModel.walkable_slope_deg`, ~40°). The Noise_Pass's existing
-`_enforce_walkable` relaxation (`generators/field/terrain.py`) is applied **to
-playable cells only** (scenic cliffs are deliberately left steep). A Playable
-anchor unreachable on the built mesh is a **walkability failure naming that
-anchor** (Requirement 12.2).
+How "the rim is sealed" is tested against the per-triangle walk surface,
+precisely:
 
-### Component: noise/erosion subordinate to the matrix (R5) + upsample (R6)
+- Place an **off-map marker** just outside each non-`zoneline` Rim segment — a
+  reference point in the exterior band beyond the rim ridge. (Representation is
+  an open decision; a candidate is a thin strip of sentinel faces, or an
+  exterior XY band the flood is checked against.)
+- Flood walkable faces from the Spawn face across the built mesh.
+- **The flood must not reach any exterior/off-map marker except through a
+  `zoneline_gap` segment.** For a `mountain` segment the rim faces are
+  non-standable by slope, so the flood stops at the ridge; for a `river` segment
+  the Invisible_Wall excludes the beyond-edge faces from adjacency. If the flood
+  reaches the exterior through a non-`zoneline` segment, that segment's ridge was
+  breached → a **bowl-leak failure naming the breached Rim segment** (R4.4).
+- For each `zoneline` segment the gate asserts the gap **is** reachable from
+  Spawn and **does** lead off-map (R4.5) — the intended leak, not a failure.
 
-#### Freeze/mask discipline (R5) — closes adversarial risk #1
+Scenic regions (the Rim, distant mountains) are **excluded** from the reachability
+requirement (R4.1, R12.3): the gate is given the `playable` mask (Spawn + the set
+of playable anchors/ground) and proves reachability among those only. This is the
+new, defaulted gate parameter — required-reachable seeds + excluded scenic
+regions + off-map markers; absent them, `traverse.py` behaves exactly as the
+dungeon full-connectivity gate (no regression). Playable interior slopes stay
+within the agent's slope cap via `_enforce_walkable` applied **to playable cells
+only** (R12.4); scenic cliffs/rim are deliberately left steep.
 
-The Noise_Pass reuses the existing FBM + thermal-erosion + `_enforce_walkable`
-core (`generators/field/terrain.py`) but is made **subordinate to the matrix** so
-hills never push through a river or tilt the landmark pad:
+### Component: Erosion — first-class, vectorised, rim-respecting (R5)
 
-- **Mask (R5.2):** `Frozen_Cell`s (landmark pad, river channel, water) are masked
-  out of the noise write — their terrain is set by their constraint
-  (`frozen_z`), not by noise. This reuses the project's existing frozen-cell /
-  `_enforce_walkable` masking pattern (the `np.where(too_steep, …)` idiom in
-  `terrain.py`) rather than a new mechanism.
-- **Edge blend (R5.3):** where noise terrain abuts a frozen cell, the noise value
-  is blended toward the frozen value across a short falloff band (a distance-field
+The erosion stage carves the base heightfield so valleys and ridgelines read
+water-and-weather-made, building **on** the existing `_thermal_erosion` in
+`generators/field/terrain.py`:
+
+- **Hydraulic (flow-accumulation) pass (R5.1):** a new **vectorised** function
+  estimates drainage — for each cell, route a unit of "water+area" to its
+  steepest-descent neighbour and accumulate flow across the grid (an iterative
+  numpy scatter, not a per-cell Python loop), then **incise** high-flow cells
+  (lower them proportional to accumulated flow) so channels and valleys cut in.
+  The accumulation iterates a bounded number of times; each iteration is whole-grid
+  array ops (`np.roll`/masked adds), matching the style of `_thermal_erosion`'s
+  four-neighbour `np.roll` relaxation and `_enforce_walkable`'s `np.where` idiom.
+- **Thermal (talus) pass (R5.1):** the existing `_thermal_erosion` relaxation —
+  slopes above the talus angle slump to neighbours — reused directly.
+- **Vectorised, no per-voxel loop (R5.2):** every pass is whole-grid numpy array
+  operations. This is the hard lessons-learned rule (opensimplex per-voxel loop
+  was the historical bottleneck; value-noise vectorisation fixed it).
+
+**Order and the re-clamp discipline (R5.4, R5.5):** the pipeline is **noise →
+hydraulic erosion → thermal erosion → re-assert the Rim**. After **each** pass,
+every non-`zoneline` Rim cell is **re-clamped to its impassable ridge target**
+(frozen_z), so no pass can carve a passable gully through the Rim. This mirrors
+M1's "re-clamp to the floor half-space after every lobe/noise blend" discipline
+(lessons-learned): an erosion pass that would incise a channel through a
+`mountain_rim` segment is undone for that segment on the clamp step, preserving
+the bowl (R5.5). Frozen cells (river channel, zoneline_gap) are likewise
+re-asserted so erosion smooths only non-frozen interior terrain.
+
+**Budget (R5.3 / R13.3):** the whole generate stays under five minutes. The
+levers are **grid size** (TER resolution; coarser = fewer cells = faster) and
+**iteration count** (flow-accumulation passes and thermal iterations). Because
+every pass is vectorised, cost scales with grid cells × iterations, not with a
+Python loop over cells — a 2000–3000 u zone at ~40–50 u/cell is ~40–75 cells per
+side, well inside budget for tens of iterations. The exact iteration/grid tuning
+is an open decision for the tasks phase; the constraint is "stays vectorised and
+under budget."
+
+### Component: Noise subordinate to the matrix (R8)
+
+The Noise_Pass synthesizes the base heightfield with the existing vectorised
+value-noise FBM (`_generate_heightfield`) **before** erosion (R8.1), made
+**subordinate to the matrix**:
+
+- **Mask (R8.2):** `Frozen_Cell`s (river channel, `zoneline_gap`, `mountain_rim`
+  ridge target) are masked out of the noise write — their terrain is set by
+  `frozen_z`, not noise. Reuses the project's frozen-cell / `np.where` masking
+  idiom from `terrain.py`, not a new mechanism.
+- **Edge blend (R8.3):** where noise terrain abuts a frozen cell, the noise value
+  is blended toward the frozen value across a short falloff band (distance-field
   weighted lerp near the shared edge), so there is no step discontinuity at the
   frozen boundary.
-- **Flatness guarantee (R5.4):** `landmark_pad` cells are held flat to a stated
-  tolerance *after* the noise pass completes (asserted by property test).
-- **River below bank (R5.5):** `river` channel cells are clamped at/below adjacent
+- **Flat zoneline gaps (R8.4):** `zoneline_gap` cells are held flat to a stated
+  tolerance after the pass (asserted by property test).
+- **River below bank (R8.5):** `river` channel cells are clamped at/below adjacent
   bank height after the pass, so terrain cannot rise through the river.
-- **Vectorised (performance):** all masking/blending is numpy array ops over the
-  grid — no per-cell Python loop (lessons-learned performance rule).
+- **Vectorised:** all masking/blending is whole-grid numpy ops (no per-cell loop).
 
-The local erosion pass (thermal erosion already in `terrain.py`) runs **after**
-masking so it smooths only non-frozen terrain; river bank erosion is the
-spline-driven local carve (Requirement 9).
+### Component: matrix-to-terrain upsample preserving sharp transitions (R9)
 
-#### Upsample preserving sharp transitions (R6) — closes adversarial risk #2
+The coarse matrix upsamples to TER resolution with a **type-aware** interpolation:
 
-The coarse matrix upsamples to terrain resolution with a **type-aware**
-interpolation, so flatland reads smooth but cliffs and shorelines stay sharp:
-
-- **Smooth across flatland↔flatland (R6.1):** bilinear/bicubic interpolation of
+- **Smooth across `plains`↔`plains` (R9.1):** bilinear/bicubic interpolation of
   the synthesized height — rolling hills, no facets.
-- **Sharp across cliff↔non-cliff (R6.2):** the boundary is treated as a
-  **discontinuity**: the two sides are interpolated independently and the height
-  step is preserved (no smoothing across the edge). Implemented by not sampling
-  neighbors across a cliff boundary during upsample (a per-edge mask).
-- **Sharp across water↔non-water shoreline (R6.3):** same discontinuity treatment
-  at the Water_Level boundary so the shoreline is crisp.
-- **No axis-aligned stair-steps (R6.4):** cliff/shore boundaries are traced as a
-  **polyline through the coarse grid and jittered/smoothed along the edge
+- **Sharp across `cliff`/`mountain_rim`↔non-cliff/rim (R9.2):** the boundary is
+  treated as a **discontinuity** — the two sides interpolate independently and
+  the height step is preserved (no smoothing across the edge; a per-edge mask
+  prevents sampling neighbours across the boundary).
+- **Sharp across `water`↔non-`water` shoreline (R9.3):** same discontinuity
+  treatment at the Water_Level boundary so the shoreline is crisp.
+- **No axis-aligned stair-steps (R9.4):** cliff/rim/shore boundaries are traced as
+  a **polyline through the coarse grid and jittered/smoothed along the edge
   direction** before the height step is applied, so the sharp edge follows a
-  natural contour instead of the matrix's axis-aligned cell walls. This is the
-  specific fix for "blocky grid artifacts": sharpness is preserved *across* the
-  edge while the edge *itself* is de-gridded along its length.
+  natural contour instead of the matrix's axis-aligned cell walls. Sharpness is
+  preserved *across* the edge while the edge *itself* is de-gridded along its
+  length.
 
-Adversarial risks #1 and #2 are thus both addressed by construction: #1 by the
-freeze/mask + edge blend (noise cannot fight the matrix), #2 by the type-aware
-upsample with edge de-gridding (coarse matrix, sharp features, no stair-steps).
+### Component: visual softness — open interior, rim set back (R6)
 
-### Component: biome kits, water, rivers, texturing (R7–R10)
+The generator keeps the bowl a **collision truth, not a crater wall at the play
+edge**. Concretely:
 
-#### Biome kit data model (R7)
+- **Interior basin vs rim band.** The playable interior is a generous flat-enough
+  basin occupying the bulk of the footprint; the Rim is a **band** around the
+  perimeter, **set back from the interior by a stated margin** (R6.2) so the
+  mountain/river/zoneline edge is beyond the normal roaming area (R6.1). For a
+  ~2000–3000 u zone a candidate split is an interior basin of most of the
+  footprint with a rim band of a few hundred units and an additional set-back
+  margin of flat playable plains between the roaming area and the rim rise —
+  exact widths tuned in tasks (*Open decisions*).
+- **Interior slopes within cap (R6.3):** `_enforce_walkable` runs over the
+  playable interior so interior undulation stays within the agent's slope cap
+  (R12.4); the steepness is confined to the scenic rim band.
 
-```python
-@dataclass
-class BiomeKit:
-    name: str                          # "desert" | "plains"
-    ground_textures: List[str]         # splat set: e.g. ["sand", "sand_rocky", "dune"]
-    water_present: bool                # R7.5 -> place the water plane
-    sky_fog_tint: Tuple[int, int, int] # skybox / fog colour
-    vegetation_kit: List[str]          # scatter palette: e.g. ["palm", "cactus"]
-```
+### Component: interior lava (R10)
 
-Kits are **data** (a small JSON table under `styles/` or a new `biomes/` table),
-applied over **one shared terrain+hydrology core** (Requirement 7.2) — not a
-generator per biome. `desert` and `plains` select their texture set, tint, and
-vegetation kit from this table (Requirement 7.3/7.4). A kit with `water_present`
-triggers the water plane (Requirement 7.5).
+Lava is an **interior** impassable + damaging hazard (Lavastorm/Nagafen), never a
+Rim/Edge_Connection type:
 
-#### Visual-only water plane (R8)
+- `lava` cells are **impassable interior terrain** (R10.1): realized as a
+  `RegionSpec(kind="lava")` (→ `ALV` prefix) plus terrain the agent rejects
+  (treated as a barrier, not walkable floor), so the flood does not cross it.
+- Every `lava` region is recorded in the sidecar **flagged damaging** for later
+  runtime use (R10.2).
+- `lava` is **not offered as an Edge_Connection type in v1** (R10.3).
+- Graph_Replacement preserves a **playable approach around lava** so no
+  `playable` region is stranded by a lava region (R10.4) — the same
+  apply-check-commit discipline used for cliffs.
 
-A zone with `water`/`oasis` cells gets a **flat visual water plane at
-Water_Level** (Requirement 8.1) with the biome water material (8.2). Terrain
-meeting Water_Level gets a **shoreline texture blend** across the land-water
-boundary (8.3). Real walkable-shallows / swimmable-deep **volumes are explicitly
-out of scope for v1** (8.4) — the plane is visual, keeping cost down. The water
-plane rides the ZoneSpec (as a `RegionSpec(kind="water")` plus the plane geometry)
-so it renders in the browser preview like any other zone.
+### Component: Graph_Replacement over terrain regions (R7)
 
-#### Rivers as splines with local erosion, behind one interface (R9)
+Graph_Replacement refines the Design_Matrix by applying rewrite rules over the
+terrain `Node_Type` vocabulary (R7.1). It preserves two invariants at **every
+committed step**: playable-reachability (R7.3) and the sealed Rim on every
+non-`zoneline` segment (R7.4). v1 implements this rewrite layer inside the
+wilderness module (the shared `LayoutEngine` seam is step 6 and is **not** used
+here).
 
-```python
-class DrainageModel(Protocol):
-    """R9.4: the replaceable river/drainage interface. v1 = SplineDrainage;
-    full hydraulic erosion drops in later behind this same seam, callers
-    unchanged."""
-    def carve(self, matrix: DesignMatrix, heights: np.ndarray) -> np.ndarray: ...
+#### Node / edge vocabulary
 
-class SplineDrainage:   # v1 implementation
-    # R9.1 define river as a drainage spline governing the valley
-    # R9.2 carve the channel along the spline + locally erode banks
-    # R9.3 river_fork -> two spline branches meeting at a junction
-    ...
-```
+- **Nodes:** `plains | river | cliff | mountain_rim | lava | zoneline_gap | water`,
+  attached to **regions** (connected sets of same-type cells), so rules reason
+  about "the cliff region," "the river," not individual cells.
+- **Edges:** adjacency + a small typed relation set: `borders` (regions touch),
+  `approaches` (a graded ramp/pass provides a playable approach between regions),
+  `flows_into` (river → off-map/junction).
 
-The spline governs the valley; the channel is carved along it and banks locally
-eroded so the valley reads **water-made** (Requirement 9.2); a fork is two
-branches meeting at a junction (9.3). Because carving is behind `DrainageModel`,
-a full hydraulic-erosion drainage-network simulation replaces `SplineDrainage`
-later **without changing callers** (9.4).
+#### Termination bound (R7.2)
 
-#### Procedural-only texturing with the AI seam preserved (R10)
+Each rule is **monotone-bounded**: it either consumes a trigger node and marks it
+resolved, or adds at most a bounded number of nodes keyed to the v1 feature count.
+The rewrite runs to a fixed point with a hard iteration cap
+(`max_iters = C · region_count`); exceeding the cap is a construction error, never
+a silent loop.
 
-Texturing is **procedural by default, zero-key** (Requirement 10.1), blending
-ground textures by **slope, height, and moisture** (10.2) — the standard splat
-approach. It routes through the **existing AI-texture drop-in seam**
-(`generators/textures/factory.py` `generate` / `generate_texture`), so an AI
-provider can be supplied without changing the generator (10.3) — no texture-side
-code change needed. Moisture is **raised near Water_Level** so water-adjacent
-surfaces read as damp ground / shoreline (10.4). Vegetation/feature scatter is
-keyed to **biome + moisture** (sparse cactus on dry desert flat, denser growth
-near the oasis / river), carried as placement data.
+#### Reachability + sealed-Rim preservation by construction (R7.3–R7.6)
+
+**Apply-then-check-then-commit:** apply a rule to a candidate matrix, recheck both
+invariants (playable-reachability over `playable` cells from Spawn; every
+non-`zoneline` Rim segment still impassable); if a `playable` region became
+stranded **or** a non-`zoneline` Rim segment was breached, **reject the rule and
+keep the prior matrix** (R7.6). The invariants hold at every committed step
+(R7.3/R7.4).
+
+- **`cliff → graded approach` (R7.5):** when a `cliff` region would strand a
+  `playable` region, the rule spawns a graded approach (a `plains` corridor of
+  cells through/around the cliff) carrying an `approaches` edge, restoring a
+  playable approach. (The grade must stay within the slope cap; at mesh time the
+  terrain path is naturally subdivided by the TER grid — the M1 lesson that a
+  ramp must be subdivided to stay climbable applies to the dungeon box backend,
+  not to the already-fine heightfield, but the *grade cap* still binds.)
+
+This makes reachability-and-seal preservation a construction property checked
+each step, not a post-hoc hope.
 
 ## Data Models
 
 New, **additive and defaulted** fields on `ZoneSpec` so dungeon/city are
-unaffected (Requirement 13.1; follows followup F2's "tolerated-and-defaulted on
-load" rule and the existing `from_dict` legacy tolerance in `zone_spec.py`):
+unaffected (R14.1; the existing `from_dict` legacy tolerance in `zone_spec.py`
+already tolerates absent keys). The resolved biome rides a new `biome` field;
+the matrix, edges, Water_Level, and POI anchors flow **through** the spec to the
+backend:
 
 ```python
 # ZoneSpec additions (all defaulted; absent on load -> degenerate/empty):
-biome: str = ""                       # R1.5 resolved biome
-landmark: str = ""                    # R1.5 resolved landmark
-water_level: Optional[float] = None   # R8 Water_Level (None = no water plane)
-poi_anchors: List[POIAnchor] = field(default_factory=list)   # R11
-# The Design_Matrix is engine-internal; what persists to the sidecar:
-#   intent tags per region, POI names, biome kit identity, invisible-wall regions
+biome: str = ""                       # R1.5 resolved biome ("plains")
+water_level: Optional[float] = None   # R13 Water_Level (None = no water plane)
+poi_anchors: List[POIAnchor] = field(default_factory=list)   # R-glossary (Spawn)
+# The Design_Matrix + EdgeConnections are the wilderness generator's working IR,
+# carried to TerrainBackend (engine-internal); what persists to the sidecar:
+#   intent tags per region, POI names, biome kit identity, edge-connection types,
+#   invisible-wall regions, lava-damaging flags (R14.4).
 ```
 
-Existing structures reused unchanged: `RegionSpec(kind="water")` for the water
-plane; `MaterialSpec` for biome ground/water/shoreline textures; `seed` for
-reproducibility (Requirement 14.1/14.2). The Design_Matrix, POI anchors, and
-heightfield plan flow **through** the ZoneSpec to the backend (Requirement 13.1).
+Existing structures reused unchanged:
 
-### Sidecar (`.zone.json`) additions (R13.4/13.5)
+- `RegionSpec(kind=...)` for the Rim's `river` water edges (`water`→`AWT`), lava
+  (`lava`→`ALV`), zoneline gaps (`zoneline`→`ATP`), and Invisible_Wall barriers
+  (`generic`→`APV`, flagged in the sidecar) — all through the existing
+  `_REGION_PREFIX` map in `generators/builder.py`.
+- `seed` on `ZoneSpec` for reproducibility (R13.2/13.3); `TerrainBackend` already
+  threads `spec.seed` into `TerrainSpec.seed`.
+- `MaterialSpec` for the plains ground/water/shoreline textures.
 
-Advisory data rides the sidecar, never the binary geometry
-(project convention):
+The visual water plane is a `RegionSpec(kind="water")` at Water_Level plus the
+plane geometry, so it renders in the browser preview like any other zone region.
 
-- `intent` tags per region (Requirement 13.4),
-- `poi_anchors` names (13.4),
-- `biome` kit identity (13.4),
-- `invisible_walls`: barrier region metadata suitable for later export as region
-  records (13.5) — `{min_xy, max_xy, kind: "invisible_wall"}`.
+### Sidecar (`.zone.json`) additions (R14.4)
+
+Advisory data rides the sidecar, never the binary geometry (project convention;
+written by the existing `write_sidecar` path):
+
+- `intent` tags per region (R14.4),
+- `poi_anchors` names incl. Spawn (R14.4),
+- `biome` kit identity (R14.4),
+- `edge_connections`: the per-segment Rim types (`mountain | river | zoneline`)
+  (R3.7),
+- `invisible_walls`: barrier region metadata for later export as region records
+  (R3.7) — `{min_xy, max_xy, kind: "invisible_wall"}`,
+- `lava`: per-region metadata flagged `damaging` (R10.2),
+- biome substitution record (`requested` vs `resolved`) when a fallback fired
+  (R1.4).
 
 ## Correctness Properties
 
@@ -609,128 +592,136 @@ valid executions of a system — essentially, a formal statement about what the
 system should do. Properties serve as the bridge between human-readable
 specifications and machine-verifiable correctness guarantees.*
 
-The high-value guarantees here are **on the Design_Matrix** (pure data,
-testable before geometry) and **on the synthesized heightfield** (invariants the
-noise/upsample must preserve). These are the project's PBT sweet spot: pure
-functions over a large structured input space (seeds, prompts), where 100+
-iterations find edge cases a handful of examples miss.
+The high-value guarantees here are **on the Design_Matrix** (pure data, testable
+before geometry), **on the synthesized/eroded heightfield** (invariants the
+noise/erosion/upsample must preserve), and **the one built-mesh bowl property**
+(reachability + seal on the real triangles). These are the project's PBT sweet
+spot: pure functions over a large structured input space (seeds, prompts, edge
+declarations), where 100+ iterations find edge cases a handful of examples miss.
 
-### Property 1: Oasis is ringed by desert, never on the boundary
+### Property 1: Every cell has exactly one Node_Type and one Intent_Tag
 
-*For any* resolved `desert`+`oasis` Landmark_Intent and seed, the constructed
-Design_Matrix SHALL surround every `oasis` cell with `desert`-appropriate
-`flatland`/`backdrop` cells such that no `oasis` cell lies on the matrix boundary.
+*For any* resolved biome and seed, every cell of the constructed Design_Matrix
+SHALL carry exactly one `Node_Type` from the v1 set and exactly one `Intent_Tag`.
 
-**Validates: Requirements 2.6**
+**Validates: Requirements 2.2, 2.3**
 
-### Property 2: Water forms a single connected region
+### Property 2: Plains-led interior with terrain regions derived within it
 
-*For any* constructed Design_Matrix, the set of `water` cells SHALL form exactly
-one connected region (4-connectivity).
-
-**Validates: Requirements 2.7**
-
-### Property 3: Every cell has exactly one Node_Type and one Intent_Tag
-
-*For any* constructed Design_Matrix, every cell SHALL carry exactly one
-`Node_Type` from the v1 set and exactly one `Intent_Tag`, and every region SHALL
-have a proposed default Intent_Tag.
-
-**Validates: Requirements 2.2, 2.3, 3.4**
-
-### Property 4: Landmark is placed first and is central
-
-*For any* resolved Landmark_Intent and seed, the Design_Matrix SHALL contain the
-landmark node and derive supporting geography around it (the landmark node exists
-and no supporting feature displaces it from its central placement).
+*For any* constructed Design_Matrix, the interior SHALL be led by `plains` cells
+with the other terrain regions (`river` / `cliff` / `lava` / `water`) derived
+inside that plains interior (no non-plains region replaces the whole interior).
 
 **Validates: Requirements 2.4**
 
+### Property 3: Water forms a single connected region
+
+*For any* constructed Design_Matrix containing `water` cells, the set of `water`
+cells SHALL form exactly one connected region (4-connectivity).
+
+**Validates: Requirements 2.7**
+
+### Property 4: Every perimeter cell is Rim, typed by its Edge_Connection
+
+*For any* constructed Design_Matrix, every perimeter cell SHALL be tagged as Rim
+according to its Edge_Connection, and any perimeter edge with no declared
+Edge_Connection SHALL default to an impassable `mountain` Rim.
+
+**Validates: Requirements 2.6, 3.1, 3.2, 3.3**
+
 ### Property 5: Playable regions are mutually reachable from Spawn on the matrix
 
-*For any* constructed Design_Matrix, every `playable` region (and a `playable`
-landmark) SHALL be reachable from Spawn through non-barrier cells; an unreachable
-`playable` region SHALL be reported as a failure naming that region.
+*For any* constructed Design_Matrix, every `playable` region SHALL be reachable
+from Spawn through non-barrier cells; an unreachable `playable` region SHALL be
+reported as a failure naming that region. Scenic regions MAY be unreachable
+without failing the check.
 
-**Validates: Requirements 3.1, 3.6, 3.7**
+**Validates: Requirements 4.1, 4.6, 12.3**
 
-### Property 6: Scenic regions may be unreachable without breaking the invariant
-
-*For any* Design_Matrix containing `scenic` regions, the reachability check SHALL
-pass even when those scenic regions are unreachable from Spawn.
-
-**Validates: Requirements 3.2, 12.3**
-
-### Property 7: Intent override is honored
+### Property 6: Intent override is honored
 
 *For any* Design_Matrix and any user override of a region's Intent_Tag, the
 reachability invariant SHALL be enforced using the overridden tag.
 
-**Validates: Requirements 3.5**
+**Validates: Requirements 4.1**
 
-### Property 8: Graph_Replacement terminates
+### Property 7: Graph_Replacement terminates
 
 *For any* starting Design_Matrix and seed, Graph_Replacement SHALL reach a
-fixed-point within the bounded iteration cap (never looping).
+fixed point within the bounded iteration cap (never looping).
 
-**Validates: Requirements 4.2**
+**Validates: Requirements 7.2**
 
-### Property 9: Graph_Replacement preserves playable reachability at every step
+### Property 8: Graph_Replacement preserves reachability and the sealed Rim at every step
 
 *For any* starting Design_Matrix and any sequence of applicable rules, mutual
-reachability among `playable` regions SHALL hold after every committed rewrite
-step; a rule application that would strand a `playable` region SHALL be rejected
-and the prior matrix preserved.
+reachability among `playable` regions AND the impassability of every
+non-`zoneline` Rim segment SHALL hold after every committed rewrite step; a rule
+application that would strand a `playable` region or breach a non-`zoneline` Rim
+segment SHALL be rejected and the prior matrix preserved.
 
-**Validates: Requirements 4.3, 4.6**
+**Validates: Requirements 7.3, 7.4, 7.6**
 
-### Property 10: Cliffs never strand playable regions
+### Property 9: Cliffs and lava never strand playable regions
 
-*For any* Design_Matrix containing a `cliff` that would strand a `playable`
-region, Graph_Replacement SHALL spawn a ramp/pass approach so that region remains
-reachable.
+*For any* Design_Matrix containing a `cliff` or `lava` region that would strand a
+`playable` region, Graph_Replacement SHALL spawn a graded approach so that region
+remains reachable.
 
-**Validates: Requirements 4.4**
+**Validates: Requirements 7.5, 10.4**
 
-### Property 11: Noise is masked out of frozen cells
+### Property 10: Noise is masked out of frozen cells and blended at their edges
 
 *For any* finalized Design_Matrix and seed, the Noise_Pass SHALL leave every
-`Frozen_Cell`'s terrain equal to its constraint height (noise does not alter
-constraint-governed terrain).
+`Frozen_Cell`'s terrain equal to its constraint height, and terrain adjacent to a
+frozen cell SHALL be blended toward the frozen value (no step discontinuity).
 
-**Validates: Requirements 5.2**
+**Validates: Requirements 8.2, 8.3**
 
-### Property 12: Landmark pad stays flat after noise
+### Property 11: Zoneline gaps stay flat, rivers stay at or below banks
 
-*For any* synthesized heightfield, every `landmark_pad` cell SHALL be flat to
-within the stated flatness tolerance after the Noise_Pass completes.
+*For any* synthesized heightfield, every `zoneline_gap` cell SHALL be flat to
+within the stated tolerance AND every `river` channel cell SHALL be at or below
+its adjacent bank height after the Noise_Pass completes.
 
-**Validates: Requirements 5.4**
+**Validates: Requirements 8.4, 8.5**
 
-### Property 13: River stays at or below its banks
+### Property 12: Erosion never breaches the Rim
 
-*For any* synthesized heightfield containing a `river`, every river-channel cell
-SHALL be at or below its adjacent bank height after the Noise_Pass completes.
+*For any* synthesized heightfield and seed, after every noise, hydraulic-erosion,
+and thermal-erosion pass, every non-`zoneline` Rim cell SHALL remain impassable
+(re-clamped to its ridge target); no pass SHALL leave a passable gully through a
+non-`zoneline` Rim segment.
 
-**Validates: Requirements 5.5**
+**Validates: Requirements 5.4, 5.5**
 
-### Property 14: Upsample smooths flatland and preserves sharp cliff/shore edges
+### Property 13: Upsample smooths plains and preserves sharp cliff/rim/shore edges
 
 *For any* Design_Matrix upsampled to terrain resolution: height SHALL interpolate
-smoothly across `flatland`↔`flatland` boundaries, AND the height discontinuity
-across a `cliff`↔non-`cliff` boundary and the `water`↔non-`water` shoreline SHALL
-be preserved as a sharp transition (not smoothed away).
+smoothly across `plains`↔`plains` boundaries, AND the height discontinuity across
+a `cliff`/`mountain_rim`↔non-cliff/rim boundary and the `water`↔non-`water`
+shoreline SHALL be preserved as a sharp transition (not smoothed away).
 
-**Validates: Requirements 6.1, 6.2, 6.3**
+**Validates: Requirements 9.1, 9.2, 9.3**
 
-### Property 15: Open-ground walkability — playable POIs reachable, slopes within cap
+### Property 14: Interior slopes stay within the agent's cap
 
-*For any* built wilderness mesh, every Playable_Region POI_Anchor SHALL be
-reachable from Spawn by the traversability agent with Scenic_Regions excluded,
-and walkable playable slopes SHALL stay within the agent's slope cap; an
-unreachable playable anchor SHALL be reported as a walkability failure naming it.
+*For any* built wilderness heightfield, every walkable playable-interior cell's
+local slope SHALL stay within the traversability agent's slope cap.
 
-**Validates: Requirements 12.1, 12.2, 12.3, 12.4**
+**Validates: Requirements 6.3, 12.4**
+
+### Property 15: The bowl holds on the built mesh — reachable interior, sealed Rim
+
+*For any* built wilderness mesh, every Playable_Region cell / POI anchor SHALL be
+reachable from Spawn by the traversability agent (Scenic_Regions excluded), AND
+no path from Spawn SHALL reach an off-map marker except through a `zoneline`
+segment; a path crossing a non-`zoneline` Rim segment SHALL be reported as a
+bowl-leak failure naming that segment, and an unreachable playable cell/anchor as
+a reachability/walkability failure naming it; every `zoneline` gap SHALL be
+reachable from Spawn and lead off-map.
+
+**Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6, 12.1, 12.2**
 
 ### Property 16: Seeded reproducibility
 
@@ -738,49 +729,52 @@ unreachable playable anchor SHALL be reported as a walkability failure naming it
 landscape, and generating without a pinned seed SHALL draw a fresh seed (repeated
 generation differs).
 
-**Validates: Requirements 14.1, 14.2**
+**Validates: Requirements 13.2, 13.3**
 
-### Property 17: Fallback substitution is recorded
+### Property 17: Biome fallback substitution is recorded
 
-*For any* prompt naming a biome or landmark outside the v1 set, the resolved
-Landmark_Intent SHALL be the nearest supported one AND the substitution SHALL be
-recorded in the sidecar.
+*For any* prompt naming a biome outside the v1 set, the resolved biome SHALL be
+`plains` AND the substitution SHALL be recorded in the sidecar.
 
 **Validates: Requirements 1.4**
 
 ## Error Handling
 
-- **Stranded playable region (matrix, R3.6/3.7):** construction reports a
-  reachability failure identifying the stranded region / landmark; it does not
-  emit geometry for a matrix that fails the playable invariant.
-- **Rewrite would strand a region (R4.6):** the offending rule application is
-  rejected and the prior matrix state is kept; the rewrite continues with other
-  applicable rules.
-- **Rewrite exceeds the iteration cap (R4.2):** a construction error is raised
+- **Stranded playable region (matrix, R4.6):** construction reports a reachability
+  failure identifying the stranded region; it does not emit geometry for a matrix
+  that fails the playable invariant.
+- **Rewrite would strand a region or breach the Rim (R7.6):** the offending rule
+  application is rejected and the prior matrix state is kept; the rewrite
+  continues with other applicable rules.
+- **Rewrite exceeds the iteration cap (R7.2):** a construction error is raised
   (bounded-loop guarantee) rather than looping silently.
+- **Erosion/noise would breach the Rim (R5.5):** the Rim re-clamp after each pass
+  restores the segment; a breach that persists post-clamp is a construction error.
+- **Bowl-leak on the built mesh (R4.4):** reported with the breached Rim segment
+  named, surfaced for the Human_3D_Pass; the zone fails the gate.
 - **Walkability failure on the built mesh (R12.2):** reported with the stranded
-  POI anchor named, surfaced for the Human_3D_Pass.
+  POI anchor / region named.
 - **No numpy (`TerrainBackend` dependency):** the existing registry already
   degrades `TerrainBackend.build` to `None` → box backend; wilderness inherits
   this guard unchanged (`generators/backends.py`).
 - **Planner / LLM failure (R1.3):** falls back to the rule planner via the
   existing `make_plan` seam; planning never breaks.
-- **Unsupported biome/landmark (R1.4):** nearest-supported fallback + sidecar
-  record, never a hard failure.
+- **Unsupported biome (R1.4):** resolves to `plains` + sidecar record, never a
+  hard failure.
 
 ## Testing Strategy
 
-**Dual approach.** Property tests carry the correctness load (pure Design_Matrix
-and heightfield functions over a large seed/prompt space); example and
-integration tests cover specific scenarios, wiring, and the things only a human
-can confirm.
+**Dual approach.** Property tests carry the correctness load (pure Design_Matrix,
+heightfield, and erosion functions over a large seed/prompt/edge-declaration
+space); example and integration tests cover specific scenarios, wiring, and the
+things only a human can confirm.
 
-**Property-based testing applies here** and is the right tool: the
-Design_Matrix construction, Graph_Replacement, the freeze/mask + upsample, and
-reachability are **pure functions over structured inputs** (seed, prompt,
-intent) with clear invariants (round-trip-like reachability preservation,
-masking identity, connectivity, flatness). These are exactly the "for all inputs
-X, property P(X) holds" cases PBT is built for.
+**Property-based testing applies here** and is the right tool: Design_Matrix
+construction, Graph_Replacement, the freeze/mask + erosion + upsample, and
+reachability are **pure functions over structured inputs** (seed, prompt, edge
+declarations) with clear invariants (connectivity, masking identity, flatness,
+reachability preservation, rim seal). These are exactly the "for all inputs X,
+property P(X) holds" cases PBT is built for.
 
 - **Library:** Hypothesis (already in use — `.hypothesis/` is present in the
   repo), Python.
@@ -789,91 +783,131 @@ X, property P(X) holds" cases PBT is built for.
   **`Feature: zone-generator-wilderness, Property {n}: {property text}`** and
   references the design property it implements.
 - **Coverage:** one property-based test per correctness property (Properties
-  1–17). Matrix properties (1–10, 16, 17) run with **no geometry built** —
-  the central guard that layout is validated as an open landscape first.
-  Heightfield properties (11–14) run on the synthesized field. Mesh property
-  (15) runs the real traversability agent on the built mesh.
+  1–17). Matrix properties (1–9, 16, 17) run with **no geometry built** — the
+  central guard that layout is validated as a sealed open landscape first.
+  Heightfield/erosion properties (10–14) run on the synthesized field. The bowl
+  property (15) runs the real traversability agent on the built mesh.
 
 **Example / integration tests (not PBT):**
 
-- Biome kit selection (desert vs plains picks the right texture set / tint /
-  vegetation) — example-based, config-driven.
-- Water plane placement and material (an oasis zone has a water plane at
-  Water_Level with the biome water material) — example-based.
-- Texturing routes through the AI-texture seam (forcing a provider via the
-  existing `set_provider` seam produces the expected call path) — mock-based,
-  since the *wiring* doesn't vary with input.
-- Sidecar contents (intent tags, POI names, biome identity, invisible-wall
-  regions present) — example-based assertion on the emitted `.zone.json`.
+- Biome kit selection (`plains` picks the right texture set / tint / vegetation
+  identity) — example-based, config-driven.
+- Water plane placement and material (a zone with `water` cells has a water plane
+  at Water_Level with the biome water material) — example-based.
+- Texturing routes through the existing texture seam — mock-based, since the
+  *wiring* doesn't vary with input.
+- Sidecar contents (intent tags, POI names, biome identity, edge-connection
+  types, invisible-wall regions, lava-damaging flags present) — example-based
+  assertion on the emitted `.zone.json`.
 - EQG output loads and is Z-up — example/integration smoke on a built zone.
-- Performance budget: one timed integration test asserting a full generate of
-  each v1 pair completes **well within five minutes** (Requirement 14.3).
+- Performance budget: one timed integration test asserting a full wilderness
+  generate completes **well within five minutes** (R13.3), including the erosion
+  passes.
 
-**Structural tests are necessary but NOT sufficient (R14.4).** Per the standing
+**Structural tests are necessary but NOT sufficient (R13.4).** Per the standing
 project rule, no geometry-producing change is accepted on a green suite alone.
 Every such change walks `docs/ACCEPTANCE.md` for a **Human_3D_Pass**, with new
 wilderness rows the suite cannot verify:
 
-- the desert+oasis zone reads as an open desert with a central oasis (not a
-  room-graph in a grass skin);
-- the plains+river-fork zone reads as an open plain with a forking river valley;
-- cliffs/shorelines are sharp, not blocky/stair-stepped (eyeballs Property 14);
-- the landmark pad is flat and the water reads as water with a clean shoreline;
-- scenic backdrops are visibly out of reach while every playable POI is walkable.
+- the Karana reads **open** — a wide, flat-enough plains interior you roam
+  without bumping the rim (not a claustrophobic crater, not a room-graph in a
+  grass skin);
+- eroded valleys and ridgelines read **natural / water-and-weather-made**, not
+  noise-blobby;
+- the **Rim is a distant backdrop** — mountains/river edge set back beyond the
+  roaming area;
+- **zoneline gaps** read as flat walkable openings that lead off-map;
+- **no visible leak** — you cannot walk out over the mountains or across a river
+  edge anywhere except a zoneline;
+- cliffs/shorelines are **sharp, not blocky/stair-stepped** (eyeballs Property 13);
+- water reads as water with a clean shoreline; lava reads as an impassable hazard.
 
 ## Open decisions / risks left for the tasks phase
 
-- **`LayoutEngine` vs sibling stage.** Followup's `LayoutEngine` returns
-  `(rooms, edges)`, which is dungeon-shaped; wilderness emits a Design_Matrix +
-  POI anchors. The likely resolution is a **sibling layout stage** selected by
-  the same `zone_type` registry (behind the F1 seam, not beside a reinvented
-  one), but the exact contract — and whether a thin `rooms=[], edges=[]` adapter
-  satisfies the protocol — is settled when the code lands.
-- **Matrix resolution (adversarial risk #2).** The ~150–250 u/cell starting
-  point is a guess; the real value trades matrix inspectability against feature
-  sharpness and is tuned against the upsample and the 3D pass.
-- **Envelope: continuous predicate vs cell grid.** This design commits
-  wilderness to the **cell-grid authoring face** of a thin Envelope (answering
-  followup's open question for this consumer). If F2 lands the Envelope as a
-  pure continuous predicate, wilderness supplies the cell-grid specialization;
-  confirm the shared type when F2 lands.
-- **How much of followup F2/F4 must land first.** Wilderness depends on F2 (the
-  `Envelope` type, typed edges) and F4 (the connector-aware, now
-  scope-narrowable, traversability gate). The tasks phase sequences wilderness
-  behind whichever of F2/F4 it actually consumes, and specifies the defaulted
-  `required-reachable / excluded-regions` parameter the gate needs for the
-  reachability amendment.
-- **Erosion parameters.** Thermal-erosion iterations, talus angle, and river
-  bank-erosion falloff are tuned for "reads water-made / weathered" against the
-  3D pass, not fixed here.
-- **River spline representation.** Exact spline type (Catmull-Rom vs Bézier) and
-  junction blending for the fork are an implementation choice behind
-  `DrainageModel`.
-- **Vegetation realization.** v1 carries vegetation as placement data (scatter
-  points keyed to biome+moisture); whether v1 emits placed vegetation MODs or
-  defers actual mesh placement to a fast-follow is a scope call for the tasks
-  phase.
+- **Erosion iteration / grid tuning vs budget (R5.3).** The flow-accumulation
+  iteration count, thermal-erosion iterations, talus angle, and the incision
+  strength are tuned for "reads water-made / weathered" against the 3D pass while
+  staying under five minutes; the grid resolution (TER cell size) is the other
+  lever. Fixed in tasks, not here. Constraint: stays vectorised, no per-voxel loop.
+- **Rim-band width / interior set-back margin (R6.1, R6.2).** The split between
+  interior basin, set-back margin, and rim band is a guess (most-of-footprint
+  basin, few-hundred-unit rim band) tuned against the 3D "open Karana, distant
+  rim" pass.
+- **Off-map / zoneline marker representation for the gate (R4.3, R4.4).** How the
+  exterior/off-map marker is represented on the mesh for the flood (sentinel
+  faces beyond each non-`zoneline` segment vs an exterior XY band the reachable
+  set is checked against) is settled when the gate extension lands.
+- **Matrix resolution (R2.1).** The ~150–250 u/cell starting point trades matrix
+  inspectability against feature sharpness; tuned against the upsample and the 3D
+  pass.
+- **Graph_Replacement rule set.** The exact v1 terrain rules beyond
+  `cliff/lava → graded approach` (e.g. whether `river` grows interior tributaries
+  — deferred as out-of-scope v1, boundary-hugging only) and the fixed-point order
+  are an implementation choice.
+- **Hydraulic-erosion backend seam.** v1 flow-accumulation lives behind the same
+  erosion entry point so full per-droplet simulation (the named fast-follow) can
+  replace it without changing callers; the exact function signature is settled
+  when the code lands.
+- **Vegetation realization.** v1 carries the plains vegetation-kit *identity*
+  (R11.1/11.3); whether v1 emits placed vegetation or defers mesh placement to
+  roadmap step 2 (trees for wilderness) is a scope call for the tasks phase.
+
+## Scope note — what v1 bounds (fast-follows named)
+
+v1 is deliberately bounded (from `requirements.md` *Out of scope*): **plains
+biome only**; **boundary-hugging rivers** (interior-crossing South-Karana rivers
+are a named fast-follow); **visual-only water** (no collision volumes — edges seal
+via the Invisible_Wall pattern); **approximated-but-real erosion**
+(flow-accumulation + thermal; full per-droplet simulation is a fast-follow behind
+the same seam); **named POIs/landmarks are roadmap step 10**; and the **dispersed
+architecture runway** (the `LayoutEngine` seam at step 6, the 3D `Envelope` +
+gate-learns-connectors at steps 5/7) is **not** stood up here — step 1 reuses the
+existing terrain core and backend registry. Region-record export of
+Invisible_Wall / lava barriers rides the later SQL-export capstone; v1 records
+them in the sidecar.
 
 ## Sources
 
-- `.kiro/specs/zone-generator-followup/requirements.md` and `design.md` — the
-  reused `LayoutEngine` seam (F1), typed edges + 3D `Envelope` (F2), the
-  side-by-side harness (F3), the gate-learns-connectors discipline (F4), and the
-  dimension-free mission-grammar / graph-rewrite layer. This design AMENDS
-  followup's full-connectivity assumption (Requirement 3).
-- `ROADMAP.md` / `.kiro/steering/lessons-learned.md` — M1 ships wilderness
-  present-but-disabled; the `GeometryBackend` registry seam; "structural tests
-  pass is necessary but NOT sufficient — eyeball it in 3D"; Z is up; EQG
-  collision is per-triangle; value-noise over opensimplex for performance.
+- `.kiro/specs/zone-generator-wilderness/requirements.md` — the 14 requirements
+  this design realizes (terrain-first Karana, the bowl via Edge_Connections,
+  first-class rim-respecting erosion, matrix-subordinate noise, sharp-edge
+  upsample, interior lava, plains biome kit, visual-only water).
+- `ROADMAP.md` — this is **step 1 (Wilderness/Karanas)**; the `LayoutEngine` seam
+  is step 6 and the 3D `Envelope` + gate-learns-connectors are steps 5/7
+  (dispersed runway), so step 1 does not stand them up; M1 ships wilderness
+  present-but-disabled; the `GeometryBackend` registry seam kept on master.
+- `.kiro/steering/lessons-learned.md` — "structural tests pass is necessary but
+  NOT sufficient — eyeball it in 3D"; Z is up; EQG written, EQG collision is
+  per-triangle; value-noise over opensimplex and **no per-voxel Python loops**;
+  the "re-clamp / re-assert the invariant after every blend/pass" discipline
+  (M1's floor re-clamp).
+- `generators/field/terrain.py` — the existing vectorised FBM
+  (`_generate_heightfield`), thermal erosion (`_thermal_erosion`), and
+  `_enforce_walkable` core this step reuses; the hydraulic flow-accumulation pass
+  is added alongside in the same vectorised style.
+- `generators/backends.py` — `TerrainBackend` (wilderness routes here via
+  `backend_for("wilderness")`); the numpy-absent degrade to box backend.
+- `generators/zone_spec.py`, `generators/builder.py` — `RegionSpec` and the
+  `kind → ZON prefix` map (`water→AWT`, `lava→ALV`, `zoneline→ATP`,
+  generic→`APV`); the `.zone.json` sidecar writer; `ZoneSpec` additive/defaulted
+  load tolerance.
+- `analyzer/traverse.py` — the `AgentModel` (`walkable_slope_deg` / `max_step_up`
+  / `min_up_normal`), `build_walk_surface`, and the flood/reachability the bowl
+  gate extends with the required-reachable / excluded-scenic / off-map-marker
+  parameters.
+- `ai/planner.py`, `ai/rule_planner.py` — the planner drop-in seam (`make_plan` /
+  `get_planner`, rule planner default, LLM optional with automatic fallback) used
+  for biome resolution.
 - `docs/ACCEPTANCE.md` — the Human_3D_Pass manual UAT checklist.
-- [Joris Dormans — generative grammars / mission-space split](http://www.jorisdormans.nl/)
-  and [Boris the Brave — "Unexplored's Secret: Cyclic Dungeon Generation"](https://www.boristhebrave.com/2021/04/10/dungeon-generation-in-unexplored/)
-  — the dimension-free graph-rewrite layer reused for Graph_Replacement.
 - [Musgrave, Kolb & Mace — "The synthesis and rendering of eroded fractal terrains" (SIGGRAPH 1989)](https://dl.acm.org/doi/10.1145/74333.74337)
   and [Olsen — "Realtime Procedural Terrain Generation" (2004)](https://web.mit.edu/cesium/Public/terrain.pdf)
   — FBM-noise + erosion terrain synthesis.
 - [Mei et al. — "Fast Hydraulic Erosion Simulation and Visualization on GPU" (2007)](https://hal.inria.fr/inria-00402079/document)
-  — the full hydraulic erosion deferred behind the `DrainageModel` interface.
+  — the full per-droplet hydraulic simulation deferred behind the v1
+  flow-accumulation approximation.
+- [Joris Dormans — generative grammars / mission-space split](http://www.jorisdormans.nl/)
+  and [Boris the Brave — "Unexplored's Secret: Cyclic Dungeon Generation"](https://www.boristhebrave.com/2021/04/10/dungeon-generation-in-unexplored/)
+  — the dimension-free graph-rewrite layer the terrain Graph_Replacement reuses.
 - [Charles Bloom — "Texture Splatting"](https://cbloomrants.blogspot.com/)
   — slope/height/moisture splat biome texturing.
 
