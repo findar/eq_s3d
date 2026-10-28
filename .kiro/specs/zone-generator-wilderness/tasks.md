@@ -1,4 +1,4 @@
-# Implementation Plan: zone-generator-wilderness — the open-world wilderness engine
+# Implementation Plan: zone-generator-wilderness — the sealed, eroded open Karana
 
 ## Overview
 
@@ -7,435 +7,485 @@ means this spec's acceptance criterion. "Property N" means this spec's design
 Correctness Property N (tagged in each test's docstring as
 `Feature: zone-generator-wilderness, Property N: ...`). The implementation
 language is **Python** throughout — the design is written in concrete Python
-(dataclasses, `Protocol`s, numpy), matching the existing `generators/` / `ai/`
-code; no language choice is open.
+(dataclasses, numpy), matching the existing `generators/` / `ai/` code; no
+language choice is open.
 
-The generator builds a genuinely open, scenic EQ outdoor landscape around a
-central landmark (an oasis in the desert, a river fork in the plains). The
-governing idea is a 2D IR, the **Design_Matrix**: intent resolves to a matrix of
-typed cells; graph-replacement refines it; a noise/erosion pass synthesizes a
-heightfield *subordinate* to the matrix; the result upsamples to terrain, gets
-biome texturing + a water plane + rivers, and flows through the existing
-`ZoneSpec` to EQG + sidecar. **Playability, not full connectivity, is the
-invariant** (Requirement 3 amends followup). It is a **geometry-producing** spec:
-a green structural + property suite is **necessary but NOT sufficient** — every
-geometry-producing milestone takes a Human_3D_Pass per `docs/ACCEPTANCE.md`
-(Requirement 14.4).
+The generator builds a genuinely open, sealed, eroded EQ outdoor landscape — an
+open **Karana (plains)**. It is **terrain-first**: the deliverable is **the land
+itself** — a heightfield carved by erosion, ringed by an impassable **Rim** (the
+bowl), broken only at declared **zoneline** exits. The governing idea is a 2D
+IR, the **Design_Matrix**: intent resolves to a matrix of typed *terrain* cells;
+graph-replacement refines terrain regions; a value-noise FBM pass synthesizes a
+base heightfield *subordinate* to the matrix; a first-class vectorised **erosion
+pass** (hydraulic flow-accumulation + thermal talus) carves it; the coarse field
+upsamples with sharp cliff/rim/shore edges; the **bowl assembly** realizes the
+Rim per declared Edge_Connection and seals it; biome texturing + a visual water
+plane finish it; and the whole thing flows through the existing `ZoneSpec` to
+EQG + sidecar. The **bowl invariant** — interior fully reachable from Spawn, no
+path crossing a non-`zoneline` Rim segment — is proved on the built mesh by the
+project traversability agent. It is a **geometry-producing** spec: a green
+structural + property suite is **necessary but NOT sufficient** — every
+geometry-producing wave takes a Human_3D_Pass per `docs/ACCEPTANCE.md`
+(Requirement 13.4).
 
-### HARD PREREQUISITE — do not start this spec until M1 and the followup runway land
+### This is roadmap STEP 1 — and what it does NOT build
 
-This is a **POST-M1, POST-`zone-generator-followup` milestone.** It must not
-begin until BOTH land on `master`:
+This is **roadmap step 1** of the 11-step content sequence (`ROADMAP.md`). The
+architecture runway that was `zone-generator-followup` is **dispersed into later
+steps** and is **NOT a prerequisite of, or built by, step 1**:
 
-```
-M1 (dungeon + city shipping; wilderness present-but-DISABLED)
-  -> zone-generator-followup runway (F1 LayoutEngine seam, F2 3D Envelope +
-     typed edges, F3 harness, F4 gate-learns-connectors)
-    -> THIS spec (the wilderness engine)
-```
+- The pluggable **`LayoutEngine` seam** lands with **step 6** (graph-replacement
+  dungeon gen) — NOT here.
+- The **3D `Envelope`** and **gate-learns-connectors** (staircase/bridge) land
+  with **steps 5/7** (outdoor dungeon carved into terrain; multi-level
+  verticality) — NOT here.
 
-Wilderness sits **behind followup's F1 seam**, specializes F2's `Envelope`, and
-**narrows** F4's gate. The exact followup pieces that are hard predecessors, and
-the wilderness wave each gates:
+Step 1 therefore MUST NOT invent or depend on a `LayoutEngine` seam or a 3D
+`Envelope`. It is **`TerrainBackend`-hosted** and reuses, verified against the
+code on `master`:
 
-| followup task | what it lands | wilderness wave that needs it | why |
-|---------------|---------------|-------------------------------|-----|
-| **F1** (followup task 1: `LayoutEngine` seam + registry routing) | the pluggable layout-engine protocol selected by `zone_type` | **Wave 1** (Design_Matrix engine) | wilderness is a `LayoutEngine` (or sibling layout stage) behind this seam, not a reinvented one (design "Architecture") |
-| **F2.1** (followup task 2.1: typed edges `(i,j,kind,vhint)`) | the typed-edge vocabulary | **Wave 2** (Graph_Replacement) | the `borders`/`approaches`/`flows_into` relations specialize F2's typed edges, not a parallel edge set (design "Graph-replacement") |
-| **F2.2** (followup task 2.2: `Envelope` 3D-volume interface) | the `Envelope` type | **Wave 1** (Design_Matrix as a specialization of `Envelope`) | the Design_Matrix is the cell-grid authoring face of a thin `Envelope` (Req 2.1; design "how it specializes followup's `Envelope`") |
-| **F4** (followup task 3: gate learns vertical connectors) | the connector-aware traverse gate | **Wave 5** (reachability amendment on the mesh) | wilderness narrows the F4 gate's scope with a defaulted required-reachable/excluded-regions parameter; the `cliff -> ramp` approach rides F4's bridge/ramp walkability (design "Interaction with followup's F4 connector-aware gate") |
+| reused seam | what it is | where | how step 1 uses it |
+|-------------|------------|-------|--------------------|
+| `TerrainBackend` / `backend_for("wilderness")` | geometry backend registry | `generators/backends.py` | `TerrainBackend.build` is extended ADDITIVELY to synthesize from a wilderness Design_Matrix when the spec carries one; no matrix → unchanged (no regression) |
+| terrain core | vectorised FBM (`_generate_heightfield`), thermal erosion (`_thermal_erosion`), `_enforce_walkable` | `generators/field/terrain.py` | the Noise_Pass reuses FBM; the hydraulic pass is added ALONGSIDE in the same vectorised style; `_enforce_walkable` runs over the playable interior |
+| `RegionSpec` + prefix map | `kind → ZON prefix` (`water→AWT`, `lava→ALV`, `zoneline→ATP`, generic→`APV`) + `.zone.json` sidecar | `generators/builder.py`, `core/eqg.py` (`write_sidecar`) | Rim river edges, lava, zoneline gaps, Invisible_Wall barriers ride existing `RegionSpec` records + the sidecar writer |
+| traversability agent | `AgentModel` (`walkable_slope_deg`/`max_step_up`/`min_up_normal`), `build_walk_surface`, `flood_reachable` | `analyzer/traverse.py` | the bowl gate EXTENDS these with a defaulted required-reachable / excluded-scenic / off-map-marker parameter set; absent them, behaves exactly as the dungeon gate (no regression) |
+| planner seam | `make_plan` / `get_planner`, rule planner default, LLM optional with automatic fallback | `ai/planner.py`, `ai/rule_planner.py` | biome resolution routes plains/Karana wording → `plains`; no new provider plumbing |
 
-followup F3 (the side-by-side harness) is **not** a wilderness predecessor — it
-settles the typed-vs-abstract embedding question for the dungeon path and does
-not gate any wilderness wave. If F1/F2/F4 have not landed when a worker picks up
-a wave below, that wave is **blocked**: stop and surface it, do not reinvent the
-seam.
+If a worker finds the code has drifted from this table (the repo can advance
+past the docs), VERIFY against the actual code before building and record the
+delta in Deliverables — do not reinvent a seam that already exists, and do not
+stand up a `LayoutEngine`/`Envelope` that step 1 is forbidden to build.
 
 ### Delivery waves
 
-The plan follows the design's pipeline as six waves, in order. Each wave is one
+The plan follows the design's pipeline as five waves, in order. Each wave is one
 branch in its own worktree, forked from `master`, merged back before the next
 wave starts. The partition is by module so parallel workers (if any) don't
-collide; the cross-branch code hotspots are called out per wave.
+collide; the cross-branch code hotspots are called out per wave. New code lives
+in a new `generators/wilderness/` package plus the hydraulic-erosion addition to
+`generators/field/terrain.py` plus tests.
 
 | Wave | Tasks | Branch | Module partition / hotspot owner |
 |------|-------|--------|----------------------------------|
-| 1 Matrix IR | 1–3 | `agent/wild-matrix` | `generators/wilderness/` (new package); owns the F1/F2 seam wiring in `generators/backends.py` |
-| 2 Graph_Replacement | 4–5 | `agent/wild-rewrite` | `generators/wilderness/rewrite.py` (new); reuses followup's rewrite layer |
-| 3 Noise + upsample | 6–7 | `agent/wild-noise` | `generators/wilderness/synth.py` (new); reads `generators/field/` but does not edit it |
-| 4 Biome + water + rivers + texturing | 8–9 | `agent/wild-biome` | `generators/wilderness/biome.py`, `drainage.py` (new); `biomes/` data table; reuses `generators/textures/factory.py` |
-| 5 POI + reachability on the mesh | 10–11 | `agent/wild-reach` | `generators/wilderness/poi.py` (new); narrows `analyzer/traverse.py` (hotspot — single owner) |
-| 6 Integration + end-to-end + 3D passes | 12–13 | `agent/wild-integrate` | `generators/zone_spec.py`, `generators/backends.py`, `core/eqg.py` sidecar (hotspots — single owner), `generators/pipeline.py` |
-| Exit | 14 | MAIN checkout after wave 6 merges | none |
+| 1 Matrix IR | 1–3 | `agent/wild-matrix` | `generators/wilderness/` (new package); pre-geometry matrix properties |
+| 2 Graph_Replacement | 4–6 | `agent/wild-rewrite` | `generators/wilderness/rewrite.py` (new); matrix-level still |
+| 3 Noise + erosion + upsample | 7–9 | `agent/wild-synth` | `generators/wilderness/synth.py` (new); **`generators/field/terrain.py`** (hydraulic pass — single owner, additive). First geometry wave → HUMAN-GATED 3D pass |
+| 4 Bowl assembly + the built-mesh gate | 10–12 | `agent/wild-bowl` | `generators/wilderness/bowl.py` (new); **`analyzer/traverse.py`** (bowl-gate extension — single owner). HUMAN-GATED 3D pass |
+| 5 Biome + water + backend wiring + end-to-end | 13–15 | `agent/wild-integrate` | `generators/wilderness/biome.py` (new); **`generators/zone_spec.py`, `generators/backends.py`, `generators/builder.py`** (single owner); `generators/pipeline.py`; `web/`. Final HUMAN-GATED 3D pass + step-1 close |
+| Exit | 16 | MAIN checkout after wave 5 merges | none |
 
 `requirements.txt` changes in no wave (numpy + Hypothesis are already pinned),
-so no wave needs `-Venv`. No wave changes `web/package.json`, so the shared
-`web/node_modules` junction is fine; wave 6 does touch `web/` (water/biome
-preview), so it runs `cd web; npx vite build` at its checkpoint.
+so no wave needs `-Venv`. Only wave 5 touches `web/` (the visual water plane in
+the preview); it does not change `web/package.json`, so the shared
+`web/node_modules` junction is fine and it runs `cd web; npx vite build` at its
+checkpoint.
 
 ### Working rules for every task
 
 - Create each wave's worktree from the MAIN checkout with
   `./scripts/new-worktree.ps1 -Branch agent/wild-<wave>`. Stay in it. Don't push
   the branch. Tear down only with `./scripts/remove-worktree.ps1`.
-- Commit one logical change at a time. Write the message to
-  `.git/COMMIT_EDITMSG_TMP`, run `git commit -F .git/COMMIT_EDITMSG_TMP`, then
-  delete the file. Messages must not contain the words blocked by the
-  commit-message hook (the frontend build tool name and "dev server").
+- Commit one logical change at a time. In a worktree `.git` is a FILE (a
+  gitdir pointer), not a directory — write the message to a temp file at the
+  **worktree root** (`.git/COMMIT_EDITMSG_TMP` resolves through the gitdir
+  pointer; if your shell can't write there, use a worktree-root temp file like
+  `./COMMIT_EDITMSG_TMP`), run `git commit -F <that file>`, then delete it.
+  Messages must not contain the words blocked by the commit-message hook (the
+  frontend build tool name and "dev server").
 - **Tracker writes go to this `tasks.md` only** (checkboxes, measurements,
   hashes, Deliverables). Don't edit `ROADMAP.md`, `README.md` or
   `tasks/README.md`; those are integration state, written once per landed branch
-  in the single-writer integration step (each wave's checkpoint note + task 14).
-- Run `python -m pytest tests/ -q` before each commit. After any `web/` change
-  run `cd web; npx vite build` (one-shot, never a watch process).
+  in the single-writer integration step (each wave's checkpoint note + task 16).
+- Run `python -m pytest tests/ -q` before each commit (suite ≈ 435 on `master`,
+  run IN PARALLEL via pytest-xdist; the known xdist CORS flake is fixed on
+  `master`). After any `web/` change run `cd web; npx vite build` (one-shot,
+  never a watch process).
 - **A failing property is a real bug: fix it at the root** and pin the
   counterexample as a Regression_Example (`@example(...).via("discovered
   failure")`). Never weaken an assertion, never `xfail`, never `assume` a builder
-  exception away. When a walkability/reachability property fails, that is almost
-  always a real geometry/graph bug, not a test to loosen (lessons-learned).
+  exception away. When a walkability / reachability / bowl-seal property fails,
+  that is almost always a real geometry/graph bug, not a test to loosen
+  (lessons-learned). Record every seed a fix moves for the 3D pass.
 - Every property test has a docstring starting
   `Feature: zone-generator-wilderness, Property N: <title>`, naming the
-  requirement ids it validates. **Matrix properties (1–10, 16, 17) run with NO
-  geometry built** — plain data over a seed/prompt space, default profile
-  ≥ 100 examples. Heightfield properties (11–14) run on the synthesized field.
-  The mesh property (15) runs the real traversability agent on the built mesh
-  under `@pytest.mark.slow` + `build_settings(n)` (n 10–25).
+  requirement ids it validates. **Matrix properties (1–9, 16, 17) run with NO
+  geometry built** — plain data over a seed/prompt/edge-declaration space,
+  default profile ≥ 100 examples: the central guard that the layout is validated
+  as a sealed open landscape FIRST. **Heightfield/erosion properties (10–14)**
+  run on the synthesized field (vectorised, fast; default profile ≥ 100
+  examples). **The one built-mesh property (15)** runs the real traversability
+  agent on the real TER under `@pytest.mark.slow` + `build_settings(n)`
+  (n 10–25).
 - Human-gated subtasks (marked **HUMAN-GATED**) are signed off by the user in
   the live 3D viewer or browser. The agent writes the checklist, marks it
   PENDING-HUMAN and leaves the checkbox unchecked. **The agent never ticks one.**
 - **Structural tests passing is necessary but NOT sufficient — eyeball it in
   3D.** No geometry-producing wave closes until its Human_3D_Pass is signed off
-  (Requirement 14.4; lessons-learned).
+  (Requirement 13.4; lessons-learned).
 
 ## Tasks
 
-### Wave 1 — Design_Matrix IR + intent resolution + matrix properties (Requirements 1, 2, 3.4)
+### Wave 1 — Design_Matrix IR + biome resolution + pre-geometry matrix properties (Requirements 1, 2, 3.1–3.3)
 
-> Intent: land the governing 2D IR and prove its matrix-level invariants BEFORE
-> any geometry exists — the central guard against "a room graph in a grass skin."
-> Behind followup F1 (engine seam) + F2.2 (`Envelope` type). New package
-> `generators/wilderness/`; the only shared-file edit is the registry wiring in
-> `generators/backends.py` (owned here).
+> Intent: land the governing 2D terrain IR and prove its matrix-level invariants
+> BEFORE any geometry exists — the central guard against "a room graph in a
+> grass skin." Plains-led interior, Rim tagged per Edge_Connection, water one
+> region, spawn placed. New package `generators/wilderness/`; no shared-file
+> edit (the backend wiring is wave 5). Matrix-level only — NO geometry built.
 
-- [ ] 1. Set up wave 1, confirm the followup runway, and resolve the first open decision
-  - [ ] 1.1 Create the worktree and capture prerequisites + baselines
+- [ ] 1. Set up wave 1 and capture the fork-point baseline
+  - [ ] 1.1 Create the worktree and record the baseline
     - Run `./scripts/new-worktree.ps1 -Branch agent/wild-matrix`. Record the fork-point commit hash here.
-    - **Confirm the runway is present on the fork point** before any wilderness work: verify followup F1 (`LayoutEngine` protocol + registry routing in `generators/backends.py`) and F2.2 (`Envelope` interface) exist, and that M1 ships wilderness present-but-disabled. If either is absent, STOP and surface it — this spec is blocked. Record exactly which followup symbols/types you found and where.
-    - Run `python -m pytest tests/ -q` once; record the pass count and wall time as the wave-1 baseline.
-    - _Requirements: 2.1_
-  - [ ] 1.2 Resolve open decision: `LayoutEngine` vs sibling layout stage, and the `Envelope` shared type
-    - Read followup's landed `LayoutEngine` contract and `Envelope` type. Decide and RECORD here whether wilderness is a literal `LayoutEngine` (with a thin `rooms=[], edges=[]` adapter) or a **sibling layout stage** selected by the same `zone_type` registry (design "Open decisions" favours the sibling stage). Confirm the shared `Envelope` type wilderness will specialize (continuous predicate vs cell grid — design commits wilderness to the cell-grid authoring face; confirm F2.2's actual shape).
-    - This is a decision-recording subtask: no code beyond a stub module header. The decision governs tasks 1.3 and 12.
+    - Run `python -m pytest tests/ -q` once; record the pass count and wall time as the wave-1 baseline (expect ≈ 435 pass on `master`).
+    - **Verify the reused seams against the actual code** (the repo can advance past the docs): confirm `TerrainBackend` / `backend_for("wilderness")` in `generators/backends.py`, the FBM/thermal/`_enforce_walkable` core in `generators/field/terrain.py`, the `_REGION_PREFIX` map (`water→AWT`, `lava→ALV`, `zoneline→ATP`, generic→`APV`) in `generators/builder.py`, the `AgentModel`/`build_walk_surface`/`flood_reachable` trio in `analyzer/traverse.py`, and the `make_plan`/`get_planner` planner seam in `ai/planner.py`. Record exactly what you found (symbol + file). Confirm wilderness is present-but-DISABLED in `ENABLED_ZONE_TYPES`.
+    - **Confirm step 1 does NOT need a `LayoutEngine` seam or a 3D `Envelope`** — neither exists on `master` and neither is built here (they are roadmap steps 6 and 5/7). If a worker thinks a wave needs one, that is a misread of the design: STOP and surface it.
     - _Requirements: 2.1_
 
-- [ ] 2. The Design_Matrix data model and landmark-first construction
-  - [ ] 2.1 Create `generators/wilderness/matrix.py` — the IR data model
-    - Define `NodeType` (`river|cliff|flatland|oasis|landmark_pad|water|backdrop`), `IntentTag` (`playable|scenic`), `MatrixCell` (node_type, intent, frozen, frozen_z, biome) and `DesignMatrix` (cells `np.ndarray` object grid, cell_size, origin, water_level, biome, landmark, intent_overrides) per the design's data model. The matrix is the cell-grid authoring face of a thin `Envelope`: add the `Envelope.contains(x,y,z)` derivation stub (filled after synthesis in wave 3) so the type relationship to F2.2 is explicit.
-    - _Requirements: 2.1, 2.2, 2.3_
-    - **Deliverables:** `generators/wilderness/matrix.py` with the dataclasses above; a `DesignMatrix` is constructible and serializable to plain data with no heightfield built (Req 2.5).
-  - [ ] 2.2 Implement landmark-first construction (`build_matrix(intent, seed)`)
-    - Place the landmark node first at/near matrix center (oasis + water ring, or a river seed), mark its `landmark_pad` cells frozen; derive biome backdrop outward; place scenic framing (`cliff` edge, `backdrop` band); assign a default Intent_Tag to every region (landmark + surrounding ground `playable`, distant backdrop/far cliff/deep water `scenic`). Enforce as post-conditions: desert+oasis rings every `oasis` cell so none touches the boundary (Req 2.6); `water` cells form one connected region (Req 2.7).
-    - Expose the finished `DesignMatrix` on the engine output for inspection before any noise pass (Req 2.5).
-    - _Requirements: 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 3.4_
-    - **Deliverables:** `build_matrix` produces a desert+oasis and a plains+river-fork matrix from a resolved intent + seed; both satisfy the Req 2.6/2.7 post-conditions (proven by the properties in task 3).
-  - [ ] 2.3 Wire the wilderness engine behind the F1 seam
-    - Per the task-1.2 decision, add `WildernessLayoutEngine` (or sibling stage) that owns `build_matrix` and exposes the `DesignMatrix`, selected by `zone_type == "wilderness"` through `generators/backends.py`. With no matrix (a plain terrain spec) the existing `TerrainBackend` path is unchanged — additive, no regression to dungeon/city/plain-terrain.
-    - _Requirements: 2.1, 11.2_
-    - **Deliverables:** `backend_for("wilderness")` resolves the engine; a dungeon/city build is byte-unchanged (spot-check one TER hash against master); `generators/backends.py` is the only shared file touched.
+- [ ] 2. Biome resolution + the Design_Matrix data model
+  - [ ] 2.1 Extend the planner seam for plains-Karana biome resolution
+    - Extend the existing rule-planner lexicon (`ai/rule_planner.py`) so a prompt naming an open plains / Karana wilderness resolves to the `plains` Biome via `wilderness` (Req 1.1), zero-key through the rule planner with no external service (Req 1.2). The LLM drop-in proposes the biome through the existing `get_planner()`/`make_plan()` seam with rule-planner fallback (Req 1.3). A prompt naming a biome outside the v1 set falls back to `plains` and records the `requested` vs `resolved` substitution for the sidecar (Req 1.4). The resolved biome is stored on the `ZoneSpec` `biome` field (Req 1.5 — new defaulted field added in wave 5's data-model task; here carry it on the wilderness intent object).
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+    - **Deliverables:** biome resolution works zero-key via the rule planner; the intent object carries the substitution record; `plains` is the only v1 biome and every out-of-set name resolves to it.
+  - [ ] 2.2 Create `generators/wilderness/matrix.py` — the IR data model
+    - Define `NodeType` (`plains | river | cliff | mountain_rim | lava | zoneline_gap | water` — the v1 set, Req 2.2), `IntentTag` (`playable | scenic`, Req 2.3), `EdgeType` (`mountain | river | zoneline`, Req 3), `MatrixCell` (node_type, intent, frozen, frozen_z, edge_segment), `EdgeConnection` (side, edge_type), `POIAnchor` (name, x, y, is_spawn, intent), and `DesignMatrix` (cells `np.ndarray` object grid, cell_size, origin, water_level, biome, edges, spawn, intent_overrides) per the design's Data Models. The matrix carries only frozen-Z constraints and typed cells — never a per-cell surface height (that is the Noise_Pass/Erosion job; Z is up, Req 14.3).
+    - _Requirements: 2.1, 2.2, 2.3, 3.1_
+    - **Deliverables:** `generators/wilderness/matrix.py`; a `DesignMatrix` is constructible and serializable to plain data with NO heightfield built (Req 2.5).
+  - [ ] 2.3 Implement terrain-first construction (`build_matrix(intent, edges, seed)`)
+    - Construct in the design's terrain-first order: (1) fill the interior with `plains` and place **Spawn** near interior center (Req 2.4); (2) derive terrain regions *within* the plains interior — optionally a boundary-hugging `river`, `cliff` scenic framing, `lava` hazard region(s), `water` cells (Req 2.4); (3) tag every perimeter cell as Rim per its Edge_Connection — `mountain`→`mountain_rim` frozen to a ridge target, `river`→boundary `water` + sealing edge, `zoneline`→`zoneline_gap`; any perimeter edge with no declared Edge_Connection defaults to impassable `mountain` (Req 2.6, 3.2, 3.3); (4) assign a default Intent_Tag to every region — plains interior + Spawn ground `playable`, Rim / distant mountains / deep water `scenic` (Req 2.3); (5) enforce the single-connected-`water`-region invariant as a construction post-condition (Req 2.7).
+    - Support the N-segment Rim model with the four-side N/E/S/W default (Req 3.1, 3.2). Expose the finished `DesignMatrix` on the generator output for inspection before the Noise_Pass runs (Req 2.5).
+    - **Resolve Open Decision — matrix resolution.** Pick a starting `cell_size` (~150–250 u/cell over a ~2000–3000 u zone → ~12–20 cells/side) and RECORD the chosen value and why; it is re-tuned against the upsample and the 3D pass in task 8.3.
+    - _Requirements: 2.4, 2.5, 2.6, 2.7, 3.1, 3.2, 3.3_
+    - **Deliverables:** `build_matrix` produces a plains-Karana matrix from a resolved biome + edge declarations + seed; the interior leads with `plains`, every perimeter cell is Rim typed by its Edge_Connection (undeclared → mountain), water is one region (proven by the properties in task 3). Records the chosen matrix resolution.
 
 - [ ] 3. Prove the matrix-level invariants (pre-geometry properties)
-  - [ ] 3.1 Create `generators/wilderness/__init__.py` + `tests/test_wilderness_matrix.py` scaffolding and intent resolution
-    - Extend the existing planner seam (`ai/rule_planner.py` landmark lexicon) so a prompt resolves to a `LandmarkIntent(biome, landmark, requested_*, substituted)`: desert words + "oasis" -> `desert`+`oasis`; plains words + "river"/"fork" -> `plains`+`river_fork` (Req 1.1/1.2); LLM drop-in proposes the same intent through the existing `get_planner()`/`make_plan()` seam with rule-planner fallback (Req 1.3); an out-of-set biome/landmark resolves to the nearest supported intent and records the substitution for the sidecar (Req 1.4); the resolved biome+landmark are stored on the `ZoneSpec` (Req 1.5, additive defaulted fields).
-    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
-    - **Deliverables:** intent resolution works zero-key via the rule planner; `LandmarkIntent` carries the substitution record; `ZoneSpec` gains defaulted `biome`/`landmark` fields.
-  - [ ]* 3.2 Write property test for Property 4: Landmark is placed first and is central
-    - **Property 4: Landmark is placed first and is central** — for any resolved intent + seed the matrix contains the landmark node and derives supporting geography around it (no supporting feature displaces it from central placement).
+  - [ ] 3.1 Create `generators/wilderness/__init__.py` + `tests/test_wilderness_matrix.py` scaffolding
+    - Wire the package exports and a Hypothesis strategy module (biome, edge-declaration sets incl. the 4-side default and all-mountain and mixed river/zoneline cases, seeds). These feed every matrix property below. No production logic beyond re-exports.
+    - _Requirements: 2.1_
+  - [ ]* 3.2 Write property test for Property 1: Every cell has exactly one Node_Type and one Intent_Tag
+    - **Property 1: Every cell has exactly one Node_Type and one Intent_Tag** — for any resolved biome + seed, every cell carries exactly one `Node_Type` from the v1 set and exactly one `Intent_Tag`.
+    - **Validates: Requirements 2.2, 2.3**
+  - [ ]* 3.3 Write property test for Property 2: Plains-led interior with terrain regions derived within it
+    - **Property 2: Plains-led interior with terrain regions derived within it** — the interior is led by `plains` cells with the other regions (`river`/`cliff`/`lava`/`water`) derived inside that plains interior; no non-plains region replaces the whole interior.
     - **Validates: Requirements 2.4**
-  - [ ]* 3.3 Write property test for Property 3: Every cell has exactly one Node_Type and one Intent_Tag
-    - **Property 3: Every cell has exactly one Node_Type and one Intent_Tag** — every cell carries exactly one `Node_Type` from the v1 set and exactly one `Intent_Tag`, and every region has a proposed default Intent_Tag.
-    - **Validates: Requirements 2.2, 2.3, 3.4**
-  - [ ]* 3.4 Write property test for Property 1: Oasis is ringed by desert, never on the boundary
-    - **Property 1: Oasis is ringed by desert, never on the boundary** — for any desert+oasis intent + seed, every `oasis` cell is surrounded by desert `flatland`/`backdrop` cells and no `oasis` cell lies on the matrix boundary.
-    - **Validates: Requirements 2.6**
-  - [ ]* 3.5 Write property test for Property 2: Water forms a single connected region
-    - **Property 2: Water forms a single connected region** — for any constructed matrix the `water` cells form exactly one connected region (4-connectivity).
+  - [ ]* 3.4 Write property test for Property 3: Water forms a single connected region
+    - **Property 3: Water forms a single connected region** — for any constructed matrix containing `water` cells, the `water` cells form exactly one connected region (4-connectivity).
     - **Validates: Requirements 2.7**
-  - [ ]* 3.6 Write property test for Property 17: Fallback substitution is recorded
-    - **Property 17: Fallback substitution is recorded** — for any prompt naming an out-of-set biome/landmark, the resolved intent is the nearest supported one AND the substitution is recorded (asserted on the `LandmarkIntent`; the sidecar emission is checked in wave 6).
+  - [ ]* 3.5 Write property test for Property 4: Every perimeter cell is Rim, typed by its Edge_Connection
+    - **Property 4: Every perimeter cell is Rim, typed by its Edge_Connection** — every perimeter cell is tagged Rim according to its Edge_Connection, and any perimeter edge with no declared Edge_Connection defaults to an impassable `mountain` Rim.
+    - **Validates: Requirements 2.6, 3.1, 3.2, 3.3**
+  - [ ]* 3.6 Write property test for Property 5: Playable regions are mutually reachable from Spawn on the matrix
+    - **Property 5: Playable regions are mutually reachable from Spawn on the matrix** — every `playable` region is reachable from Spawn through non-barrier cells; an unreachable `playable` region is reported as a failure naming it. Scenic regions MAY be unreachable without failing.
+    - **Validates: Requirements 4.1, 4.6, 12.3**
+  - [ ]* 3.7 Write property test for Property 6: Intent override is honored
+    - **Property 6: Intent override is honored** — for any user override of a region's Intent_Tag, the reachability invariant is enforced using the overridden tag.
+    - **Validates: Requirements 4.1**
+  - [ ]* 3.8 Write property test for Property 17: Biome fallback substitution is recorded
+    - **Property 17: Biome fallback substitution is recorded** — for any prompt naming a biome outside the v1 set, the resolved biome is `plains` AND the substitution is recorded (asserted on the intent object; the sidecar emission is checked in wave 5).
     - **Validates: Requirements 1.4**
 
 - [ ] 4. Checkpoint — wave 1 closed
-  - Run `python -m pytest tests/ -q` (green). Confirm the matrix properties (1–4, 17) pass with NO geometry built, and the dungeon/city TER hash spot-check is unchanged. Write the wave-1 integration note (Done-table row, "Pick up here" line, commit hash/count) in Deliverables WITHOUT editing `ROADMAP.md`/`README.md`/`tasks/README.md`. Ask the user if questions arise.
+  - Run `python -m pytest tests/ -q` (green). Confirm the matrix properties (1–6, 17) pass with **NO geometry built**. Write the wave-1 integration note (Done-table row, "Pick up here" line, commit hash/count, the chosen matrix resolution) in Deliverables WITHOUT editing `ROADMAP.md`/`README.md`/`tasks/README.md`. Ask the user if questions arise.
   - _Requirements: 2.5_
 
-### Wave 2 — Graph_Replacement rules (terminate; preserve reachability by construction) (Requirement 4, Property 5–10)
+### Wave 2 — Graph_Replacement over terrain regions (terminate; preserve reachability + sealed Rim by construction) (Requirement 7, Properties 7–9)
 
-> Intent: refine the matrix with rewrite rules that cannot loop or strand
-> playable regions, reusing followup's dimension-free graph-rewrite layer over a
-> terrain vocabulary. Matrix-level still — no geometry. Needs wave 1 + followup
-> F2.1 (typed edges). Hotspot: `generators/wilderness/rewrite.py` (new).
+> Intent: refine the terrain matrix with rewrite rules that cannot loop, strand a
+> playable region, or breach the Rim — the preserved invariants are
+> playable-reachability AND the sealed non-`zoneline` Rim. Matrix-level still —
+> NO geometry. v1 implements this rewrite layer INSIDE the wilderness module (the
+> shared `LayoutEngine` seam is roadmap step 6 and is NOT used or built here).
+> Needs wave 1. Hotspot: `generators/wilderness/rewrite.py` (new).
 
 - [ ] 5. Graph_Replacement over the Design_Matrix
-  - [ ] 5.1 Set up wave 2 and bind to followup's rewrite layer
-    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-rewrite`. Record the fork-point hash. Confirm followup's dimension-free mission-grammar/graph-rewrite layer and F2.1 typed edges are present; record the symbols reused. If absent, STOP — wave 2 is blocked.
-    - _Requirements: 4.1_
-  - [ ] 5.2 Implement the region graph + typed-edge adapter
-    - Build the region graph from the matrix: a node is a connected set of same-type cells; edges specialize followup's typed edges adapted to terrain — `borders`, `approaches`, `flows_into`. This reuses F2.1's edge model, not a parallel one.
-    - _Requirements: 4.1_
+  - [ ] 5.1 Set up wave 2
+    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-rewrite`. Record the fork-point hash. Run `python -m pytest tests/ -q` once; record the baseline.
+    - _Requirements: 7.1_
+  - [ ] 5.2 Implement the region graph over the terrain vocabulary
+    - Build the region graph from the matrix inside `generators/wilderness/rewrite.py`: a node is a connected set of same-type cells (so rules reason about "the cliff region", "the river", not single cells); edges are adjacency + a small typed relation set — `borders` (regions touch), `approaches` (a graded ramp/pass provides a playable approach), `flows_into` (river → off-map/junction). This is a wilderness-local graph model — it does NOT import or depend on a dungeon `LayoutEngine` or typed-edge seam (none exists on `master`; those are step 6).
+    - _Requirements: 7.1_
   - [ ] 5.3 Implement termination-bounded rewrite with apply-then-check-then-commit
-    - Run the followup rewrite machinery parameterized with wilderness rules to a fixed-point under a hard iteration cap (`max_iters = C * region_count`); exceeding the cap raises a construction error, never a silent loop (Req 4.2). Before committing each rule, compute the playable-reachability relation (connected `playable` regions reachable from Spawn via non-barrier cells); apply to a candidate, recheck, and **reject the application keeping the prior matrix if any playable region became stranded** (Req 4.3/4.6). Honor `intent_overrides` in the reachability relation (Req 3.5).
-    - _Requirements: 4.1, 4.2, 4.3, 4.6, 3.5_
-  - [ ] 5.4 Implement the two v1 rules
-    - `cliff -> ramp/pass approach` (Req 4.4): when a `cliff` region would strand a `playable` region, spawn a graded `flatland` ramp/pass corridor carrying an `approaches` edge so the region stays reachable — committed only together with its approach. `river -> fork` (Req 4.5): in a plains+river-fork zone, grow the single `river` node into two branches meeting at a junction (`flows_into` edges), realized downstream as two splines.
-    - _Requirements: 4.4, 4.5_
-    - **Deliverables:** both rules run inside the bounded rewrite; a desert+oasis and a plains+river-fork matrix refine to a fixed-point with the invariant held at every committed step.
-  - [ ]* 5.5 Write property test for Property 8: Graph_Replacement terminates
-    - **Property 8: Graph_Replacement terminates** — for any starting matrix + seed the rewrite reaches a fixed-point within the bounded iteration cap (never looping).
-    - **Validates: Requirements 4.2**
-  - [ ]* 5.6 Write property test for Property 9: Graph_Replacement preserves playable reachability at every step
-    - **Property 9: Graph_Replacement preserves playable reachability at every step** — mutual reachability among `playable` regions holds after every committed rewrite step; a rule application that would strand a `playable` region is rejected and the prior matrix preserved.
-    - **Validates: Requirements 4.3, 4.6**
-  - [ ]* 5.7 Write property test for Property 10: Cliffs never strand playable regions
-    - **Property 10: Cliffs never strand playable regions** — for any matrix with a `cliff` that would strand a `playable` region, the rewrite spawns a ramp/pass approach so that region stays reachable.
-    - **Validates: Requirements 4.4**
-  - [ ]* 5.8 Write property test for Property 5: Playable regions are mutually reachable from Spawn on the matrix
-    - **Property 5: Playable regions are mutually reachable from Spawn on the matrix** — every `playable` region (and a `playable` landmark) is reachable from Spawn through non-barrier cells; an unreachable `playable` region is reported as a failure naming it.
-    - **Validates: Requirements 3.1, 3.6, 3.7**
-  - [ ]* 5.9 Write property test for Property 6: Scenic regions may be unreachable without breaking the invariant
-    - **Property 6: Scenic regions may be unreachable without breaking the invariant** — the reachability check passes even when scenic regions are unreachable from Spawn.
-    - **Validates: Requirements 3.2, 12.3**
-  - [ ]* 5.10 Write property test for Property 7: Intent override is honored
-    - **Property 7: Intent override is honored** — for any user override of a region's Intent_Tag, the reachability invariant is enforced using the overridden tag.
-    - **Validates: Requirements 3.5**
+    - Run the rewrite to a fixed point under a hard iteration cap (`max_iters = C · region_count`); exceeding the cap raises a construction error, never a silent loop (Req 7.2). Each rule is monotone-bounded (consumes a trigger node and marks it resolved, or adds at most a bounded number of nodes keyed to the v1 feature count). Before committing each rule, apply it to a candidate matrix and recheck BOTH invariants: playable-reachability over `playable` cells from Spawn, and every non-`zoneline` Rim segment still impassable. **Reject the application and keep the prior matrix if a `playable` region became stranded OR a non-`zoneline` Rim segment was breached** (Req 7.3, 7.4, 7.6). Honor `intent_overrides` in the reachability relation.
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.6_
+  - [ ] 5.4 Implement the v1 terrain rule(s)
+    - `cliff → graded approach` (Req 7.5): when a `cliff` region would strand a `playable` region, spawn a graded approach (a `plains` corridor of cells through/around the cliff) carrying an `approaches` edge, committed only together with its approach so reachability is restored at that step. The grade must stay within the slope cap (the mesh-time subdivision is the heightfield's job, not a box ramp — the M1 ramp-subdivision lesson binds the dungeon box backend, not the fine TER). Apply the same `apply-check-commit` discipline to any `lava` region that would strand a `playable` region (preserve a playable approach around lava — Req 10.4; the lava realization itself lands in wave 4).
+    - **Resolve Open Decision — the v1 rule set and fixed-point order.** Record which rules beyond `cliff/lava → graded approach` ship in v1 (v1 keeps rivers boundary-hugging — interior tributaries are an out-of-scope fast-follow) and the order the fixed point applies them.
+    - _Requirements: 7.5, 10.4_
+    - **Deliverables:** the rule(s) run inside the bounded rewrite; a plains-Karana matrix refines to a fixed point with BOTH invariants held at every committed step. Records the v1 rule set + order.
+  - [ ]* 5.5 Write property test for Property 7: Graph_Replacement terminates
+    - **Property 7: Graph_Replacement terminates** — for any starting matrix + seed, the rewrite reaches a fixed point within the bounded iteration cap (never looping).
+    - **Validates: Requirements 7.2**
+  - [ ]* 5.6 Write property test for Property 8: Graph_Replacement preserves reachability and the sealed Rim at every step
+    - **Property 8: Graph_Replacement preserves reachability and the sealed Rim at every step** — mutual reachability among `playable` regions AND the impassability of every non-`zoneline` Rim segment hold after every committed rewrite step; a rule application that would strand a `playable` region or breach a non-`zoneline` Rim segment is rejected and the prior matrix preserved.
+    - **Validates: Requirements 7.3, 7.4, 7.6**
+  - [ ]* 5.7 Write property test for Property 9: Cliffs and lava never strand playable regions
+    - **Property 9: Cliffs and lava never strand playable regions** — for any matrix with a `cliff` or `lava` region that would strand a `playable` region, the rewrite spawns a graded approach so that region stays reachable.
+    - **Validates: Requirements 7.5, 10.4**
 
 - [ ] 6. Checkpoint — wave 2 closed
-  - Run `python -m pytest tests/ -q` (green). Confirm the rewrite properties (5–10) pass with NO geometry built. Write the wave-2 integration note (Done-table row, "Pick up here", commit hash/count) in Deliverables WITHOUT editing the three tracker files. Ask the user if questions arise.
-  - _Requirements: 4.3_
+  - Run `python -m pytest tests/ -q` (green). Confirm the rewrite properties (7–9) pass with **NO geometry built**. Write the wave-2 integration note (Done-table row, "Pick up here", commit hash/count, the v1 rule set) in Deliverables WITHOUT editing the three tracker files. Ask the user if questions arise.
+  - _Requirements: 7.3_
 
-### Wave 3 — Noise/erosion subordinate to the matrix + sharp-edge upsample (Requirements 5, 6, Property 11–14)
+### Wave 3 — Noise + first-class erosion + sharp-edge upsample (Requirements 5, 6, 8, 9, Properties 10–14)
 
 > Intent: synthesize the heightfield FROM the finished matrix — frozen cells
-> masked, edges blended, sharp cliff/shore edges preserved, hills everywhere
-> else. First geometry wave: it ends with a HUMAN-GATED 3D pass. Needs wave 2.
-> Hotspot: `generators/wilderness/synth.py` (new); reads `generators/field/`
-> (FBM noise + thermal erosion) without editing it.
+> masked, edges blended, hills everywhere else — then carve it with first-class
+> vectorised erosion (hydraulic flow-accumulation + thermal talus), re-clamping
+> the Rim after every pass, and upsample preserving sharp cliff/rim/shore edges.
+> **First geometry wave: it ends with a HUMAN-GATED 3D pass.** Needs wave 2.
+> Hotspots: `generators/wilderness/synth.py` (new) AND
+> `generators/field/terrain.py` (the new hydraulic pass — single owner,
+> additive; reads/extends the FBM + thermal core without breaking the existing
+> plain-terrain path).
 
-- [ ] 7. Noise_Pass + upsample
+- [ ] 7. Noise_Pass + erosion + upsample
   - [ ] 7.1 Set up wave 3 and capture synthesis baselines
-    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-noise`. Record the fork-point hash. Capture the existing `generators/field/terrain.py` FBM + thermal-erosion + `_enforce_walkable` behavior on one plain-terrain spec (timing + a height-array checksum) so the subordinated path can be compared against it.
+    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-synth`. Record the fork-point hash. Capture the existing `generators/field/terrain.py` FBM + thermal-erosion + `_enforce_walkable` behavior on one plain-terrain spec (timing + a height-array checksum) so the matrix-subordinated path and the new hydraulic pass can be compared against it (prove the plain-terrain path is unchanged).
     - _Requirements: 5.1_
-  - [ ] 7.2 Implement freeze/mask + edge-blend (Noise_Pass subordinate to the matrix)
-    - Reuse the FBM + thermal-erosion + `_enforce_walkable` core but mask the write out of every `Frozen_Cell` (terrain set by `frozen_z`, not noise — Req 5.2); blend noise toward the frozen value across a short distance-field falloff band at shared edges (Req 5.3); run erosion AFTER masking so it smooths only non-frozen terrain. Hold `landmark_pad` cells flat to a stated tolerance after the pass (Req 5.4); clamp `river` channel cells at/below adjacent bank height (Req 5.5). All masking/blending is vectorised numpy — no per-cell Python loop (lessons-learned performance rule).
-    - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5_
-    - **Deliverables:** a finalized matrix synthesizes a heightfield where frozen cells equal their constraint height and non-frozen terrain is weathered FBM; vectorised, well within budget.
-  - [ ] 7.3 Implement type-aware upsample preserving sharp transitions
-    - Upsample the coarse matrix to terrain resolution: bilinear/bicubic across `flatland`<->`flatland` (Req 6.1); treat `cliff`<->non-`cliff` and `water`<->non-`water` boundaries as discontinuities — interpolate each side independently, preserve the height step (Req 6.2/6.3); trace cliff/shore boundaries as a polyline through the coarse grid and jitter/smooth along the edge direction before applying the step, so edges follow a natural contour with no axis-aligned stair-steps (Req 6.4). Resolve the open decision on matrix resolution here: tune `cell_size` (~150–250 u/cell starting point) against the upsample and the 3D pass; record the chosen value and why.
-    - _Requirements: 6.1, 6.2, 6.3, 6.4_
-    - **Deliverables:** upsampled terrain is smooth on flatland and sharp at cliffs/shorelines, free of grid stair-steps; the chosen matrix resolution is recorded.
-  - [ ] 7.4 Derive the `Envelope.contains` predicate from the synthesized surface
-    - Fill the task-2.1 stub: a point is inside the thin `Envelope` if within XY bounds and below the synthesized surface + headroom. This closes the Req 2.1 "specialization of followup's `Envelope`" relationship against real geometry.
-    - _Requirements: 2.1_
-  - [ ]* 7.5 Write property test for Property 11: Noise is masked out of frozen cells
-    - **Property 11: Noise is masked out of frozen cells** — for any finalized matrix + seed, every `Frozen_Cell`'s terrain equals its constraint height after the Noise_Pass.
-    - **Validates: Requirements 5.2**
-  - [ ]* 7.6 Write property test for Property 12: Landmark pad stays flat after noise
-    - **Property 12: Landmark pad stays flat after noise** — every `landmark_pad` cell is flat to within the stated tolerance after the Noise_Pass.
-    - **Validates: Requirements 5.4**
-  - [ ]* 7.7 Write property test for Property 13: River stays at or below its banks
-    - **Property 13: River stays at or below its banks** — every river-channel cell is at or below its adjacent bank height after the Noise_Pass.
-    - **Validates: Requirements 5.5**
-  - [ ]* 7.8 Write property test for Property 14: Upsample smooths flatland and preserves sharp cliff/shore edges
-    - **Property 14: Upsample smooths flatland and preserves sharp cliff/shore edges** — height interpolates smoothly across `flatland`<->`flatland` boundaries, AND the discontinuity across `cliff`<->non-`cliff` and the `water`<->non-`water` shoreline is preserved as a sharp transition.
-    - **Validates: Requirements 6.1, 6.2, 6.3**
+  - [ ] 7.2 Implement the Noise_Pass subordinate to the matrix (freeze/mask + edge-blend)
+    - In `generators/wilderness/synth.py`: synthesize the base heightfield with the existing vectorised value-noise FBM (`_generate_heightfield`) **before** erosion (Req 8.1), made subordinate to the matrix — mask the write out of every `Frozen_Cell` (terrain set by `frozen_z`, not noise — Req 8.2) using the project's `np.where` freeze-mask idiom; blend noise toward the frozen value across a short distance-field falloff band at shared edges (Req 8.3); hold `zoneline_gap` cells flat to a stated tolerance after the pass (Req 8.4); clamp `river` channel cells at/below adjacent bank height (Req 8.5). All masking/blending is vectorised numpy — **no per-cell Python loop** (lessons-learned performance rule).
+    - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+    - **Deliverables:** a finalized matrix synthesizes a base heightfield where frozen cells equal their constraint height, zoneline gaps are flat, rivers sit at/below their banks, and non-frozen terrain is FBM; vectorised, well within budget.
+  - [ ] 7.3 Implement first-class vectorised erosion (hydraulic flow-accumulation + thermal) in `generators/field/terrain.py`
+    - Add a new **vectorised** hydraulic flow-accumulation pass ALONGSIDE `_thermal_erosion`: route a unit of "water+area" to each cell's steepest-descent neighbour and accumulate flow across the grid (an iterative numpy scatter via `np.roll`/masked adds — NOT a per-cell Python loop), then incise high-flow cells (lower proportional to accumulated flow) so channels and valleys cut in. The accumulation iterates a bounded number of times; each iteration is whole-grid array ops, matching `_thermal_erosion`'s four-neighbour `np.roll` relaxation and `_enforce_walkable`'s `np.where` idiom. Reuse the existing `_thermal_erosion` talus relaxation directly for the thermal pass. The addition is additive: the existing plain-terrain `build_terrain` path is unchanged unless the new pass is explicitly invoked (prove against the 7.1 checksum).
+    - Pipeline order is **noise → hydraulic → thermal** (Req 5.1); every pass is whole-grid numpy (Req 5.2); the whole generate stays under five minutes (Req 5.3, 13.3).
+    - _Requirements: 5.1, 5.2, 5.3_
+    - **Deliverables:** a vectorised hydraulic flow-accumulation incision pass + thermal talus pass carve the field so valleys/ridgelines read water-and-weather-made; no per-voxel loop; the plain-terrain checksum from 7.1 is unchanged (additive).
+  - [ ] 7.4 Implement the Rim re-clamp after every pass
+    - After EACH noise / hydraulic / thermal pass, re-assert every non-`zoneline` Rim cell to its impassable ridge target (`frozen_z`) and re-assert all frozen cells (river channel, zoneline gap) so erosion smooths only non-frozen interior terrain (Req 5.4). An erosion pass that would incise a channel through a `mountain_rim` segment is undone for that segment on the clamp step, preserving the bowl (Req 5.5). This mirrors M1's "re-clamp to the floor half-space after every lobe/noise blend" discipline. Run `_enforce_walkable` over the **playable interior only** so interior slopes stay within the agent's cap while the scenic rim band stays deliberately steep (Req 6.3).
+    - **Resolve Open Decision — erosion iteration / grid tuning vs budget.** Tune the flow-accumulation iteration count, thermal iterations, talus angle, and incision strength for "reads water-made" against the 3D pass while staying vectorised and under five minutes; record the chosen values. Grid resolution (TER cell size) is the other lever.
+    - _Requirements: 5.4, 5.5, 6.3_
+    - **Deliverables:** after every pass the Rim is re-clamped impassable; interior-only `_enforce_walkable` keeps playable slopes within cap; records the erosion tuning.
+  - [ ] 7.5 Implement type-aware upsample preserving sharp transitions
+    - Upsample the coarse matrix to TER resolution: bilinear/bicubic across `plains`↔`plains` (Req 9.1); treat `cliff`/`mountain_rim`↔non-cliff/rim and `water`↔non-`water` boundaries as discontinuities — interpolate each side independently, preserve the height step, a per-edge mask preventing sampling across the boundary (Req 9.2, 9.3); trace cliff/rim/shore boundaries as a polyline through the coarse grid and jitter/smooth along the edge direction before applying the step, so edges follow a natural contour with no axis-aligned stair-steps while sharpness is preserved across the edge (Req 9.4).
+    - **Resolve Open Decision — interior basin vs rim-band / set-back margin widths (visual softness, Req 6.1, 6.2).** Size the split so the playable interior is a generous flat-enough basin occupying the bulk of the footprint and the Rim is a band set back from the roaming area by a stated margin (candidate: most-of-footprint basin, few-hundred-unit rim band, plus a flat set-back margin). Record the chosen widths; they are re-tuned against the 3D "open Karana, distant rim" pass.
+    - _Requirements: 6.1, 6.2, 9.1, 9.2, 9.3, 9.4_
+    - **Deliverables:** upsampled terrain is smooth on plains and sharp at cliffs/rim/shorelines, free of grid stair-steps; the playable interior is open with the Rim set back; records the basin/rim-band/set-back widths.
+  - [ ]* 7.6 Write property test for Property 10: Noise is masked out of frozen cells and blended at their edges
+    - **Property 10: Noise is masked out of frozen cells and blended at their edges** — for any finalized matrix + seed, every `Frozen_Cell`'s terrain equals its constraint height after the Noise_Pass, and terrain adjacent to a frozen cell is blended toward the frozen value (no step discontinuity).
+    - **Validates: Requirements 8.2, 8.3**
+  - [ ]* 7.7 Write property test for Property 11: Zoneline gaps stay flat, rivers stay at or below banks
+    - **Property 11: Zoneline gaps stay flat, rivers stay at or below banks** — for any synthesized heightfield, every `zoneline_gap` cell is flat to within the stated tolerance AND every `river` channel cell is at or below its adjacent bank height after the Noise_Pass.
+    - **Validates: Requirements 8.4, 8.5**
+  - [ ]* 7.8 Write property test for Property 12: Erosion never breaches the Rim
+    - **Property 12: Erosion never breaches the Rim** — for any synthesized heightfield + seed, after every noise, hydraulic-erosion, and thermal-erosion pass, every non-`zoneline` Rim cell remains impassable (re-clamped to its ridge target); no pass leaves a passable gully through a non-`zoneline` Rim segment.
+    - **Validates: Requirements 5.4, 5.5**
+  - [ ]* 7.9 Write property test for Property 13: Upsample smooths plains and preserves sharp cliff/rim/shore edges
+    - **Property 13: Upsample smooths plains and preserves sharp cliff/rim/shore edges** — height interpolates smoothly across `plains`↔`plains` boundaries, AND the height discontinuity across a `cliff`/`mountain_rim`↔non-cliff/rim boundary and the `water`↔non-`water` shoreline is preserved as a sharp transition (not smoothed away).
+    - **Validates: Requirements 9.1, 9.2, 9.3**
+  - [ ]* 7.10 Write property test for Property 14: Interior slopes stay within the agent's cap
+    - **Property 14: Interior slopes stay within the agent's cap** — for any built wilderness heightfield, every walkable playable-interior cell's local slope stays within the traversability agent's slope cap.
+    - **Validates: Requirements 6.3, 12.4**
 
 - [ ] 8. Checkpoint — wave 3 closed (first geometry pass)
   - [ ] 8.1 Run the suite and check the budget
-    - `python -m pytest tests/ -q` green; the heightfield properties (11–14) pass. Record the Default_Run median against the wave-1 baseline; if build-level properties push it up, note the cost (budgets, not weakened assertions).
-    - _Requirements: 14.3_
-  - [ ] 8.2 **HUMAN-GATED:** terrain shape 3D pass
-    - The user, in the live viewer: a synthesized wilderness terrain (desert+oasis and plains+river-fork, a few seeds) reads as an open landscape with weathered hills; the landmark pad is flat; cliffs and shorelines are SHARP, not blocky/stair-stepped (eyeballs Property 14); noise has not pushed through the river or tilted the pad (eyeballs Properties 11–13). The agent writes the checklist, marks it PENDING-HUMAN, leaves the box unchecked.
-    - _Requirements: 14.4_
+    - `python -m pytest tests/ -q` green; the heightfield/erosion properties (10–14) pass. Record the Default_Run median against the wave-1 baseline; if the erosion passes push generation time up, record the cost (iterations/grid levers, NOT weakened assertions) and confirm a full synthesize stays well under five minutes (Req 5.3, 13.3).
+    - _Requirements: 5.3, 13.3_
+  - [ ] 8.2 **HUMAN-GATED:** terrain-shape 3D pass
+    - The user, in the live viewer, on a few seeds: a synthesized wilderness terrain reads as an **open** plains landscape with weathered hills; eroded valleys and ridgelines read **natural / water-and-weather-made**, not noise-blobby; cliffs and shorelines are **sharp**, not blocky/stair-stepped (eyeballs Property 13); noise has not pushed through the river or tilted a zoneline gap (eyeballs Properties 10–11); the interior is flat-enough and open. The agent writes the checklist, marks it PENDING-HUMAN, leaves the box unchecked. The agent verified NONE of this in the live viewer.
+    - _Requirements: 13.4_
   - [ ] 8.3 Write the wave-3 integration note (don't apply it)
-    - Done-table row, "Pick up here", commit hash/count, matrix-resolution decision, and the seeds to eyeball. No edit to the three tracker files.
-    - _Requirements: 14.4_
+    - Done-table row, "Pick up here", commit hash/count, the re-tuned matrix-resolution + erosion + basin/rim-band decisions, and the seeds to eyeball. No edit to the three tracker files.
+    - _Requirements: 13.4_
 
-### Wave 4 — Biome kits + visual water + rivers-as-splines + texturing (Requirements 7, 8, 9, 10)
+### Wave 4 — Bowl assembly + the built-mesh bowl gate (Requirements 3, 4, 10, Property 15)
 
-> Intent: give desert and plains distinct identity over one terrain core — ground
-> splat by slope/height/moisture, a flat visual water plane, rivers as splines
-> behind one interface, all zero-key with the AI-texture seam preserved. Needs
-> wave 3. Ends with a HUMAN-GATED look pass. Hotspots: new
-> `generators/wilderness/{biome,drainage}.py`, a `biomes/` data table; reuses
-> `generators/textures/factory.py` (no texture-side code change).
+> Intent: realize the Rim per declared Edge_Connection on the heightfield
+> (mountain seals by slope; river = visual water edge + Invisible_Wall; zoneline =
+> flat walkable gap off-map), place lava as an impassable damaging interior
+> hazard, and PROVE the bowl on the built mesh — interior reachable, Rim sealed
+> except zonelines. Ends with a HUMAN-GATED 3D pass. Needs wave 3. Hotspots:
+> `generators/wilderness/bowl.py` (new) AND `analyzer/traverse.py` (the bowl-gate
+> extension — single owner, defaulted so the dungeon gate is unchanged).
 
-- [ ] 9. Biome kits, water plane, river splines, texturing
+- [ ] 9. Bowl assembly + lava
   - [ ] 9.1 Set up wave 4
-    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-biome`. Record the fork-point hash. No `requirements.txt`/`web/package.json` change expected.
-    - _Requirements: 7.2_
-  - [ ] 9.2 Implement the BiomeKit data table and selection
-    - Add `BiomeKit` (name, ground_textures, water_present, sky_fog_tint, vegetation_kit) as a data table (JSON under `styles/` or a new `biomes/`), applied over one shared terrain+hydrology core — not a generator per biome (Req 7.1/7.2). `desert` and `plains` select their texture set, tint, vegetation kit from the table (Req 7.3/7.4). Vegetation/feature scatter is carried as placement data keyed to biome+moisture (resolve the open decision: v1 carries placement data; whether it emits placed MODs or defers is recorded here).
-    - _Requirements: 7.1, 7.2, 7.3, 7.4_
-  - [ ] 9.3 Implement the visual-only water plane
-    - A zone with `water`/`oasis` cells gets a flat visual water plane at `Water_Level` (Req 8.1) with the biome water material (Req 8.2), carried as a `RegionSpec(kind="water")` + plane geometry on the `ZoneSpec` so it renders in the preview. Blend the shoreline texture across the land-water boundary where terrain meets `Water_Level` (Req 8.3). A kit with `water_present` triggers the plane (Req 7.5). Mark real walkable-shallows/swimmable-deep volumes out of scope for v1 in a code comment (Req 8.4).
-    - _Requirements: 7.5, 8.1, 8.2, 8.3, 8.4_
-  - [ ] 9.4 Implement `DrainageModel` + `SplineDrainage`
-    - Define the `DrainageModel` Protocol (`carve(matrix, heights) -> heights`) and a v1 `SplineDrainage`: define the river as a drainage spline governing the valley (Req 9.1); carve the channel along the spline and locally erode banks so the valley reads water-made (Req 9.2); realize a river fork as two spline branches meeting at a junction (Req 9.3). Keep carving behind the `DrainageModel` seam so full hydraulic erosion drops in later without changing callers (Req 9.4). Resolve the open decision: record the spline type (Catmull-Rom vs Bezier) and fork-junction blending chosen.
-    - _Requirements: 9.1, 9.2, 9.3, 9.4_
-  - [ ] 9.5 Implement procedural texturing through the AI seam
-    - Texture procedurally, zero-key (Req 10.1), blending ground textures by slope, height, and moisture (Req 10.2); route generation through the existing `generators/textures/factory.py` AI drop-in seam so an AI provider can be supplied without changing the generator (Req 10.3, no texture-side code change); raise the moisture input near `Water_Level` so water-adjacent surfaces read as damp shoreline (Req 10.4). Tune erosion/bank-erosion params here against the look (open decision — record the values).
-    - _Requirements: 10.1, 10.2, 10.3, 10.4_
-    - **Deliverables:** a desert+oasis build reads sandy with a central water plane; a plains+river-fork build reads grassy with a forking river valley; both zero-key.
-  - [ ]* 9.6 Write the biome/water/texturing example tests (not PBT)
-    - Example/config tests: biome kit selection picks the right texture set/tint/vegetation for desert vs plains; the water plane is placed at `Water_Level` with the biome water material on an oasis zone; texturing routes through the AI-texture seam (force a provider via the existing `set_provider` seam, assert the call path) — these are wiring/config, not input-varying, so example/mock-based not PBT.
-    - _Requirements: 7.3, 7.4, 7.5, 8.1, 8.2, 10.3_
+    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-bowl`. Record the fork-point hash. Run `python -m pytest tests/ -q` once; record the baseline.
+    - _Requirements: 4.1_
+  - [ ] 9.2 Realize the Rim per Edge_Connection in `generators/wilderness/bowl.py`
+    - For each declared Edge_Connection, realize its behavior on the upsampled heightfield / regions:
+      - `mountain` (Req 3.4): raise the perimeter edge to a slope steeper than `AgentModel.walkable_slope_deg` (~40°, the `min_up_normal` threshold) so the geometry itself seals the edge — the agent classifies those faces as non-standable. Collision truth is the slope; no barrier record needed.
+      - `river` (Req 3.5): place a boundary-hugging visual water edge at `Water_Level` backed by an Invisible_Wall `RegionSpec` (emitted `generic`→`APV`, flagged in the sidecar) that actually seals the edge — water is visual-only (Req 13.1), so the Invisible_Wall is what stops the player.
+      - `zoneline` (Req 3.6): a flat walkable gap in the Rim leading off-map, emitted as `RegionSpec(kind="zoneline")` (→ `ATP`), held flat (Req 8.4) and reachable from Spawn (Req 4.5).
+    - Record every Edge_Connection type and every Invisible_Wall barrier as region metadata for the `.zone.json` sidecar (Req 3.7; the sidecar wiring lands in wave 5).
+    - _Requirements: 3.4, 3.5, 3.6, 3.7, 13.1_
+    - **Deliverables:** each Edge_Connection type is realized on the heightfield — mountain sealed by slope, river by Invisible_Wall, zoneline as a flat off-map gap; edge types + Invisible_Wall barriers collected for the sidecar.
+  - [ ] 9.3 Realize interior lava as an impassable, damaging hazard
+    - `lava` cells become impassable interior terrain — a `RegionSpec(kind="lava")` (→ `ALV`) plus terrain the agent rejects (treated as a barrier, not walkable floor) so the flood does not cross it (Req 10.1). Record every `lava` region in the sidecar flagged **damaging** for later runtime use (Req 10.2; sidecar wiring in wave 5). `lava` is an interior hazard only — never offered as an Edge_Connection type in v1 (Req 10.3).
+    - _Requirements: 10.1, 10.2, 10.3_
+    - **Deliverables:** a `lava` region is impassable interior terrain + an `ALV` region flagged damaging; never a Rim type.
 
-- [ ] 10. Checkpoint — wave 4 closed (biome look pass)
-  - [ ] 10.1 Run the suite and build the frontend
-    - `python -m pytest tests/ -q` green; the example tests pass. `cd web; npx vite build` (one-shot) since the water/biome preview touches `web/`. Record results.
-    - _Requirements: 14.3_
-  - [ ] 10.2 **HUMAN-GATED:** biome + water 3D/browser pass
-    - The user, in the live viewer/browser: the desert biome reads as desert and plains as plains (ground texture, fog/sky tint) over the same terrain engine; the water plane reads as WATER with a clean shoreline blend (not a flat sheet with a hard grid edge); the river valley reads water-made with eroded banks and a believable fork. The agent writes the checklist, marks it PENDING-HUMAN, leaves the box unchecked.
-    - _Requirements: 14.4_
-  - [ ] 10.3 Write the wave-4 integration note (don't apply it)
-    - Done-table row, "Pick up here", commit hash/count, the spline/erosion-param decisions, seeds to eyeball. No edit to the three tracker files.
-    - _Requirements: 14.4_
+- [ ] 10. The built-mesh bowl gate (extends `analyzer/traverse.py`)
+  - [ ] 10.1 Extend the traverse gate with a defaulted required-reachable / excluded-scenic / off-map-marker parameter set
+    - Extend `analyzer/traverse.py` so the gate accepts (all defaulted, so absent them it behaves EXACTLY as the dungeon full-connectivity gate — no regression): a `playable` mask (Spawn + the set of playable anchors/ground) to prove reachability among ONLY (Req 4.1, 12.3, excluding scenic regions), and an off-map-marker set for the Rim-seal check. Reuse the existing `AgentModel` + `build_walk_surface` + `flood_reachable` — do NOT invent a new agent.
+    - **Resolve Open Decision — off-map / zoneline marker representation.** Settle how the exterior/off-map marker is represented for the flood (sentinel faces beyond each non-`zoneline` segment vs an exterior XY band the reachable set is checked against). Record the choice and why.
+    - _Requirements: 4.1, 4.2, 12.1, 12.3_
+    - **Deliverables:** `analyzer/traverse.py` gains the defaulted gate parameters; the existing dungeon/city gate behavior is proven unchanged (spot-check one dungeon `validate` result against `master`). Records the off-map-marker representation.
+  - [ ] 10.2 Implement the bowl invariant on the built mesh
+    - On the real TER: flood walkable faces from the Spawn face. (1) Every `playable` cell / POI anchor must be in the reachable set — one that is not is a reachability / walkability failure naming the stranded region or anchor (Req 4.2, 4.6, 12.1, 12.2). (2) The flood must NOT reach any exterior/off-map marker except through a `zoneline_gap` segment — a `mountain` segment stops the flood at the ridge (non-standable by slope), a `river` segment excludes beyond-edge faces via the Invisible_Wall; if the flood reaches the exterior through a non-`zoneline` segment, report a **bowl-leak failure naming the breached Rim segment** (Req 4.3, 4.4). (3) For each `zoneline` segment assert the gap IS reachable from Spawn and DOES lead off-map — the intended leak, not a failure (Req 4.5).
+    - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6, 12.1, 12.2_
+    - **Deliverables:** the bowl gate proves interior reachability + Rim seal on the built mesh; a breach names the segment; a stranded region/anchor is named; every zoneline is reachable and leads off-map.
+  - [ ]* 10.3 Write property test for Property 15: The bowl holds on the built mesh — reachable interior, sealed Rim
+    - `tests/` build-level property, `@pytest.mark.slow` + `build_settings(n)` (n 10–25), over a plains-Karana spec with varied edge declarations and seeds; builds the real TER via the project build path.
+    - **Property 15: The bowl holds on the built mesh — reachable interior, sealed Rim** — every Playable_Region cell / POI anchor is reachable from Spawn by the traversability agent (Scenic_Regions excluded), AND no path from Spawn reaches an off-map marker except through a `zoneline` segment; a path crossing a non-`zoneline` Rim segment is reported as a bowl-leak failure naming that segment, an unreachable playable cell/anchor as a reachability/walkability failure naming it, and every `zoneline` gap is reachable from Spawn and leads off-map.
+    - **Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6, 12.1, 12.2**
 
-### Wave 5 — POI anchors + reachability amendment wired into the traverse gate (Requirements 11, 12, 3.1–3.3, Property 15)
+- [ ] 11. Checkpoint — wave 4 closed (bowl geometry pass)
+  - [ ] 11.1 Run the suite and check the budget
+    - `python -m pytest tests/ -q` green; Property 15 passes on the built mesh. Record the Default_Run median against the prior baseline; the slow built-mesh property's cost goes in budgets, not weakened assertions.
+    - _Requirements: 13.3_
+  - [ ] 11.2 **HUMAN-GATED:** bowl / rim / zoneline 3D pass
+    - The user, in the live viewer, on a few seeds + edge declarations: the **Rim reads as a distant backdrop**, not a crater wall at the play edge; you **cannot walk out** over the mountains or across a river edge anywhere except a zoneline (no bowl leak you can walk through); **river edges are sealed** (an invisible wall) while still visible as water; **zoneline gaps** read as flat walkable openings that lead off-map; a `lava` region reads as an impassable hazard. The agent writes the checklist, marks it PENDING-HUMAN, leaves the box unchecked. The agent verified NONE of this in the live viewer.
+    - _Requirements: 13.4_
+  - [ ] 11.3 Write the wave-4 integration note (don't apply it)
+    - Done-table row, "Pick up here", commit hash/count, the off-map-marker-representation decision, and the seeds/edge-declarations to eyeball. No edit to the three tracker files.
+    - _Requirements: 13.4_
 
-> Intent: wilderness navigability is open-ground walkability among named POI
-> anchors in playable regions — not rooms. Narrows the F4 gate to prove
-> reachability among playable anchors only, scenic ground excluded. Needs wave 4
-> + followup F4. Hotspot: `analyzer/traverse.py` (SINGLE OWNER — the gate
-> parameter is a shared seam); new `generators/wilderness/poi.py`.
+### Wave 5 — Biome kit + visual water + backend wiring + end-to-end Karana + step-1 close (Requirements 11, 13, 14)
 
-- [ ] 11. POI anchors + narrowed reachability gate
-  - [ ] 11.1 Set up wave 5 and confirm F4
-    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-reach`. Record the fork-point hash. Confirm followup F4 (the connector-aware traverse gate, bridge/ramp walkability by rise/run/headroom) is present and record its entry-point signature — wave 5 adds a defaulted parameter to it. If F4 is absent, STOP — wave 5 is blocked.
-    - _Requirements: 12.1_
-  - [ ] 11.2 Implement POI anchors + Spawn
-    - Add `POIAnchor` (name, x, y, is_spawn, intent) and derive anchors from the matrix: the landmark plus a small number of camps/spawn clearings, NOT rooms (Req 11.1); do not use the TinyKeep room-and-corridor layout (Req 11.2); designate one anchor as Spawn (Req 11.3). Carry anchors on the `ZoneSpec` (additive defaulted `poi_anchors` field).
+> Intent: give the Karana its plains identity (ground splat over the one terrain
+> core), place the visual water plane, wire a wilderness Design_Matrix through
+> `TerrainBackend.build` additively, carry everything through `ZoneSpec` to EQG +
+> sidecar, build an end-to-end Karana, and CLOSE step 1 (final 3D pass + the
+> conditional enable). Needs wave 4. Hotspots:
+> `generators/{zone_spec,backends,builder}.py` and `generators/pipeline.py`
+> (single owner); `web/` (preview). Ends with the final HUMAN-GATED 3D pass.
+
+- [ ] 12. Biome kit + visual water + ZoneSpec/backend integration
+  - [ ] 12.1 Set up wave 5
+    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-integrate`. Record the fork-point hash. Run `python -m pytest tests/ -q` once; record the baseline. No `requirements.txt`/`web/package.json` change expected.
+    - _Requirements: 14.1_
+  - [ ] 12.2 Add the additive, defaulted `ZoneSpec` fields
+    - Add to `ZoneSpec` (all defaulted so dungeon/city/plain-terrain are unaffected; the existing `from_dict` legacy tolerance already tolerates absent keys — Req 14.1): `biome: str = ""` (Req 1.5), `water_level: Optional[float] = None` (Req 13), `poi_anchors: List[POIAnchor] = []` (Spawn). Confirm a dungeon/city `from_dict` round-trip is byte-unchanged and no serialized output gains these keys when empty.
+    - _Requirements: 1.5, 14.1_
+    - **Deliverables:** `ZoneSpec` gains three defaulted fields; a dungeon/city spec round-trips unchanged (spot-check).
+  - [ ] 12.3 Implement the BiomeKit data table and the plains kit
+    - Add `BiomeKit` (ground-texture set, water-present flag, skybox/fog tint, vegetation-kit identity) as a data table (JSON under `styles/` or a new `biomes/`), applied over the one shared terrain core — NOT a generator per biome (Req 11.1, 11.2). The `plains` kit selects its ground-texture set, skybox/fog tint, and vegetation-kit identity from the table (Req 11.3). Texture procedurally through the existing `generators/textures/factory.py` AI drop-in seam (no texture-side code change) blending ground textures by slope/height/moisture.
+    - **Resolve Open Decision — vegetation realization.** Record whether v1 emits placed vegetation or carries only the plains vegetation-kit *identity* and defers mesh placement to roadmap step 2 (trees); v1 at minimum carries the identity (Req 11.1, 11.3).
     - _Requirements: 11.1, 11.2, 11.3_
-  - [ ] 11.3 Narrow the F4 gate with a defaulted playable-mask parameter
-    - Add a defaulted parameter to the `analyzer/traverse.py` entry point: a set of required-reachable seed points (playable POI anchors) + excluded regions (scenic ground). With the parameter absent the gate behaves EXACTLY as the dungeon full-connectivity gate — no regression to F4/dungeon behavior (spot-check one dungeon validate result unchanged). With it present, the gate proves reachability among the playable anchors only, excluding scenic regions (Req 3.1/3.2/12.3). Realize deliberate scenic unreachability through cliffs/deep water (geometry the agent already rejects) and Invisible_Wall barriers (Req 3.3 — barriers carried as sidecar records in wave 6). Apply `_enforce_walkable` to playable cells only so scenic cliffs stay steep (Req 12.4). Report a stranded playable anchor as a walkability failure naming it (Req 12.2).
-    - _Requirements: 3.1, 3.2, 3.3, 12.1, 12.2, 12.3, 12.4_
-    - **Deliverables:** the gate runs over a built wilderness mesh proving every playable anchor reachable from Spawn with scenic excluded; a dungeon build's gate result is unchanged.
-  - [ ]* 11.4 Write property test for Property 15: Open-ground walkability — playable POIs reachable, slopes within cap
-    - **Property 15: Open-ground walkability** — for any built wilderness mesh, every Playable_Region POI_Anchor is reachable from Spawn by the traversability agent with Scenic_Regions excluded, walkable playable slopes stay within the agent's slope cap, and an unreachable playable anchor is reported as a walkability failure naming it. `@pytest.mark.slow` + `build_settings(n)` (n 10–25) — this runs the real agent on the built mesh.
-    - **Validates: Requirements 12.1, 12.2, 12.3, 12.4**
-
-- [ ] 12. Checkpoint — wave 5 closed (walkability pass)
-  - [ ] 12.1 Run the suite and check the budget
-    - `python -m pytest tests/ -q` green; Property 15 passes on the built mesh; the dungeon gate regression spot-check holds. Record the Default_Run median.
-    - _Requirements: 14.3_
-  - [ ] 12.2 **HUMAN-GATED:** reachability 3D pass
-    - The user, in the live viewer: spawn into a desert+oasis and a plains+river-fork zone and walk — every playable POI (landmark + camps) is reachable on foot, slopes are climbable; scenic backdrops/far cliffs/deep water are visibly OUT OF REACH but visible (the playable-vs-scenic split reads right, not a walled-off box). The agent writes the checklist, marks it PENDING-HUMAN, leaves the box unchecked.
-    - _Requirements: 14.4_
-  - [ ] 12.3 Write the wave-5 integration note (don't apply it)
-    - Done-table row, "Pick up here", commit hash/count, the gate-parameter shape, seeds to eyeball. No edit to the three tracker files.
-    - _Requirements: 14.4_
-
-### Wave 6 — ZoneSpec/EQG/sidecar integration + end-to-end builds + final 3D passes (Requirements 13, 14, Property 16)
-
-> Intent: flow everything through the existing `ZoneSpec` to EQG (Z-up) + sidecar,
-> wire the full pipeline, prove the two v1 pairs build end to end within budget,
-> and close with the human 3D acceptance passes. Needs wave 5. Hotspots:
-> `generators/zone_spec.py`, `generators/backends.py`, `core/eqg.py` sidecar,
-> `generators/pipeline.py` (SINGLE OWNER each).
-
-- [ ] 13. Integration, end-to-end builds, and close
-  - [ ] 13.1 Set up wave 6
-    - Run `./scripts/new-worktree.ps1 -Branch agent/wild-integrate`. Record the fork-point hash.
-    - _Requirements: 13.1_
-  - [ ] 13.2 Flow the full pipeline through ZoneSpec to EQG (Z-up)
-    - Flow the Design_Matrix, heightfield, water plane, POI anchors, and biome kit through the `ZoneSpec` IR (Req 13.1); write the zone as EQG in the format the project produces (Req 13.2); emit geometry with Z as the up axis (Req 13.3). Wire intent resolution -> matrix -> rewrite -> synth -> biome/water/river/texture -> POI -> gate -> ZoneSpec -> EQG so there is no orphaned stage — a prompt produces a built zone through `generators/pipeline.py`.
-    - _Requirements: 13.1, 13.2, 13.3_
-  - [ ] 13.3 Write the sidecar advisory data
-    - Carry Intent_Tags per region, POI_Anchor names, and biome kit identity in the `.zone.json` sidecar, not the binary (Req 13.4); record Invisible_Wall barriers as sidecar region metadata (`{min_xy, max_xy, kind:"invisible_wall"}`) suitable for later export as region records (Req 13.5). The matrix substitution record (task 3) is emitted here too (Req 1.4).
-    - _Requirements: 13.4, 13.5, 1.4_
-  - [ ] 13.4 Wire seed/reproducibility and the performance budget
-    - A generate without a pinned seed draws a fresh seed (repeated generation differs — Req 14.1); a pinned seed reproduces the same landscape (Req 14.2); a full generate of each v1 pair completes within five minutes (Req 14.3).
+    - **Deliverables:** the `plains` kit applies over the terrain core; records the vegetation-realization decision.
+  - [ ] 12.4 Implement the visual-only water plane
+    - Where the biome kit declares water present (Req 11.4) / the matrix has `water` cells, place a flat visual water plane at `Water_Level` (Req 13.1) with the biome water material, carried as a `RegionSpec(kind="water")` (→ `AWT`) + plane geometry on the `ZoneSpec` so it renders in the preview. Mark real walkable-shallows / swimmable-deep volumes out of scope for v1 in a code comment — **no water collision volumes** (Req 13.1).
+    - _Requirements: 11.4, 13.1_
+    - **Deliverables:** an `water`-bearing build gets a flat visual water plane at `Water_Level`; no collision volume.
+  - [ ] 12.5 Wire a wilderness Design_Matrix through `TerrainBackend.build` additively
+    - Extend `TerrainBackend.build` (`generators/backends.py`) to detect a wilderness `Design_Matrix` carried on the spec and synthesize from the matrix (Noise_Pass → erosion → Rim re-clamp → upsample → bowl assembly → lava → biome kit → water plane) instead of the current "FBM over the room footprint" path. **With no matrix (a plain terrain spec) it behaves exactly as today — additive, no regression.** The `numpy`-absent degrade (returns `None` → box backend) is inherited unchanged. Flow the Design_Matrix, heightfield, water plane, Edge_Connections, POI_Anchors, and biome kit through `ZoneSpec` (Req 14.1); write EQG (Req 14.2) with Z up (Req 14.3).
     - _Requirements: 14.1, 14.2, 14.3_
-  - [ ]* 13.5 Write property test for Property 16: Seeded reproducibility
-    - **Property 16: Seeded reproducibility** — generating with the same pinned seed reproduces the same landscape; generating without a pinned seed draws a fresh seed (repeated generation differs). `@pytest.mark.slow` + `build_settings(n)`.
-    - **Validates: Requirements 14.1, 14.2**
-  - [ ]* 13.6 Write the integration/smoke example tests (not PBT)
-    - Example/integration: the sidecar carries intent tags, POI names, biome identity, and invisible-wall regions; the EQG output loads and is Z-up; one timed test asserts a full generate of each v1 pair completes well within five minutes.
-    - _Requirements: 13.4, 13.5, 14.3_
-  - [ ] 13.7 Walk `docs/ACCEPTANCE.md` — add the wilderness rows
-    - Add the new wilderness UAT rows the suite cannot verify (design "Testing Strategy"): desert+oasis reads as an open desert with a central oasis (not a room-graph in a grass skin); plains+river-fork reads as an open plain with a forking river valley; cliffs/shorelines sharp; landmark pad flat and water reads as water with a clean shoreline; scenic backdrops visibly out of reach while every playable POI is walkable. The agent writes the rows; they are human-signed in task 13.8.
-    - _Requirements: 14.4_
-  - [ ] 13.8 **HUMAN-GATED:** final end-to-end desert+oasis and plains+river-fork 3D pass
-    - The user, in the live viewer: build each v1 pair end to end from a prompt and confirm every `docs/ACCEPTANCE.md` wilderness row — the whole zone reads as a hand-crafted open EQ outdoor landscape built around its landmark, walkable where playable, scenic where not, within the time budget. The agent writes the checklist, marks it PENDING-HUMAN, leaves the box unchecked. The spec does not close until this is signed off.
-    - _Requirements: 14.4_
+    - **Deliverables:** `backend_for("wilderness")` with a Design_Matrix synthesizes the Karana; a plain-terrain / dungeon / city build is byte-unchanged (spot-check one TER hash against `master`); EQG is Z-up.
+  - [ ] 12.6 Carry the advisory data in the `.zone.json` sidecar
+    - Through the existing `write_sidecar` path, carry (never in the binary — Req 14.4): per-region `intent` tags, `poi_anchors` names incl. Spawn, `biome` kit identity, `edge_connections` (per-segment Rim types), `invisible_walls` (`{min_xy, max_xy, kind: "invisible_wall"}`), `lava` per-region metadata flagged `damaging`, and the biome substitution record (`requested` vs `resolved`) when a fallback fired.
+    - _Requirements: 3.7, 10.2, 13.1, 14.4_
+    - **Deliverables:** a built Karana's `.zone.json` carries intent tags, POI names, biome identity, edge-connection types, invisible-wall regions, lava-damaging flags, and any substitution record.
+  - [ ]* 12.7 Write the biome / water / sidecar example + integration tests (not PBT)
+    - Example/config/integration (the wiring doesn't vary with input, so example/mock-based, not PBT): the `plains` kit picks the right texture set / tint / vegetation identity; a `water`-bearing zone has a water plane at `Water_Level` with the biome water material; texturing routes through the AI-texture seam (force a provider via the existing seam, assert the call path); the emitted `.zone.json` carries the intent tags / POI names / biome identity / edge types / invisible-wall regions / lava-damaging flags; a built EQG loads and is Z-up.
+    - _Requirements: 11.3, 11.4, 13.1, 14.2, 14.3, 14.4_
+  - [ ]* 12.8 Write property test for Property 16: Seeded reproducibility
+    - **Property 16: Seeded reproducibility** — for any prompt, generating with the same pinned seed reproduces the same landscape, and generating without a pinned seed draws a fresh seed (repeated generation differs). (Byte-identity scope matches the project rule: TER reproduces; `.eqg`/`.glb` need not be byte-identical.)
+    - **Validates: Requirements 13.2, 13.3**
+  - [ ]* 12.9 Write the performance-budget integration test
+    - One timed integration test asserting a full wilderness generate (including the erosion passes) completes **well within five minutes** (Req 13.3). `@pytest.mark.slow`.
+    - _Requirements: 5.3, 13.3_
 
-- [ ] 14. Checkpoint — wave 6 closed, spec complete
-  - Run `python -m pytest tests/ -q` (green) and `cd web; npx vite build`. Confirm all 17 properties pass (matrix 1–10/16/17 pre-geometry, heightfield 11–14, mesh 15), and both HUMAN-GATED final passes (13.8) are signed off. Write the wave-6 and spec-exit integration note (Done-table row, "Pick up here" retiring the spec, commit hash/count, the resolved open decisions: LayoutEngine-vs-sibling, matrix resolution, F2/F4 consumption, spline/erosion params) in Deliverables WITHOUT editing `ROADMAP.md`/`README.md`/`tasks/README.md`. Ask the user if questions arise.
-  - _Requirements: 14.4_
+- [ ] 13. End-to-end Karana build + the step-1 enable decision
+  - [ ] 13.1 Build an end-to-end Karana through the pipeline
+    - Through `generators/pipeline.py`, generate a plains-Karana wilderness zone end to end (prompt → biome → matrix → rewrite → synth → erosion → upsample → bowl → lava → biome kit → water → EQG + sidecar), unpinned (fresh seed) and pinned (reproducible). Record the build name, seed, the `.map.svg` path, and that the bowl gate (Property 15 path) passes on the built mesh.
+    - _Requirements: 13.2, 13.3, 14.1, 14.2_
+    - **Deliverables:** one unpinned + one pinned Karana build, each with its artifact listing and a passing bowl gate; recorded here.
+  - [ ] 13.2 Flip wilderness to ENABLED (conditional on green properties + the human 3D passes)
+    - Mirror M1 task 15.8's conditional-enable pattern, but ENABLING on success: once all wilderness properties (1–17) are green AND the wave-3/4/final human 3D passes are signed off, add `wilderness` to `ENABLED_ZONE_TYPES` (`generators/pipeline.py`) and update its availability reason. **If any human 3D pass is still PENDING-HUMAN, leave wilderness DISABLED and record "enable blocked on <which pass>" here** — do not enable on a green suite alone (Req 13.4). The pipeline's existing wilderness timeout (`DEFAULT_TIMEOUT_S["wilderness"]`) already exists; confirm it covers the erosion budget.
+    - _Requirements: 13.4_
+    - **Deliverables:** wilderness is either ENABLED (all properties green + all human passes signed) or recorded DISABLED-pending-<pass>; the decision and its gating state are recorded here.
 
-## Not in this cut (fast-follow — scoped, not implemented here)
+- [ ] 14. Checkpoint — wave 5 closed (final geometry pass)
+  - [ ] 14.1 Run the suite and build the frontend
+    - `python -m pytest tests/ -q` green; all wilderness properties (1–17) pass. `cd web; npx vite build` succeeds (the visual water plane in the preview is the only `web/` change). Record the Default_Run median and the build result.
+    - _Requirements: 13.3_
+  - [ ] 14.2 **HUMAN-GATED:** the final open-Karana 3D pass
+    - The user, in the live viewer / browser, on a few seeds: the Karana reads as an **open landscape** you roam without bumping the rim (not a crater, not a room-graph in a grass skin); eroded valleys/ridgelines read **natural**; the **Rim is a distant backdrop**; **zoneline gaps** lead off-map; **no bowl leak** you can walk through; **river edges are sealed (invisible wall) while visible**; water reads as water with a clean shoreline; lava reads as an impassable hazard. Confirm wilderness is selectable (if enabled in 13.2) and builds end to end from the browser. The agent writes the checklist, marks it PENDING-HUMAN, leaves the box unchecked. The agent verified NONE of this in the live viewer.
+    - _Requirements: 13.4_
+  - [ ] 14.3 Write the wave-5 integration note (don't apply it)
+    - Done-table row, "Pick up here", commit hash/count, the vegetation-realization decision, whether wilderness shipped ENABLED (and if not, which pass blocks it), and the seeds to eyeball. No edit to the three tracker files.
+    - _Requirements: 13.4_
 
-Per requirements.md "Out of scope." Named so v1 stays bounded; these build on the
-same v1 core and are NOT tasks in this plan:
+### Step-1 exit
 
-- **Fast-follow biomes:** `forest`, `coast`, `tundra` (new BiomeKit entries over
-  the same terrain core).
-- **Fast-follow landmarks:** `temple`/`ruin`, `lake`, `mountain_pass` (new
-  landmark-first construction + rewrite rules).
-- **Real water volumes:** walkable-shallows and swimmable-deep volumes — v1 is
-  the visual-only flat water plane (Requirement 8).
-- **Full hydraulic erosion:** drainage-network simulation replacing
-  `SplineDrainage` behind the same `DrainageModel` seam (Requirement 9.4).
-- **AI textures by default:** the seam is preserved (Requirement 10.3) but
-  procedural stays the zero-key default.
-- **Region-record export:** Invisible_Wall barriers are recorded in the sidecar
-  (Requirement 13.5); exporting them as live EQEmu region records rides with the
-  SQL-export capstone (umbrella M6).
+- [ ] 15. Exit checks and hand-off
+  - [ ] 15.1 Run the final suite, the thorough profile, and build the frontend
+    - On `master` after the wave-5 merge: `python -m pytest tests/ -q` green; `python -m pytest tests/ -q --hypothesis-profile=thorough` green (a counterexample goes through the root-fix rule, then repeat); `cd web; npx vite build` succeeds. Record each result, duration, the commit count since the step-1 fork point, and the head hash.
+    - _Requirements: 13.3, 13.4_
+  - [ ] 15.2 Add the wilderness section to `docs/ACCEPTANCE.md`
+    - New section "Step 1 — Wilderness (open Karana)" with the design's human-pass rows: the Karana reads open; eroded valleys/ridgelines read natural; the Rim is a distant backdrop; zoneline gaps lead off-map; no bowl leak you can walk through; river edges sealed (invisible wall) while visible; sharp (not blocky) cliffs/shorelines; water reads as water; lava reads as an impassable hazard — plus whether wilderness ships enabled. Allowed from the MAIN checkout at this integration step.
+    - _Requirements: 13.4_
+  - [ ] 15.3 **HUMAN-GATED:** the step-1 `docs/ACCEPTANCE.md` pass
+    - Checklist, PENDING-HUMAN, on a restarted Server running the merged code: walk the 15.2 section on a few seeds. State that the agent verified none of this in the live viewer. Step 1 does not fully exit until this is signed off.
+    - _Requirements: 13.4_
+  - [ ] 15.4 Write the step-1 integration note (don't apply it)
+    - In the final report give the integrator: the Done-table row, the "Pick up here" line (next is roadmap step 2), the commit hash and count, the per-wave notes (4, 6, 8.3, 11.3, 14.3), the resolved Open Decisions (matrix resolution, erosion tuning, rim-band/set-back widths, off-map-marker representation, v1 rule set, vegetation realization), the "not in this cut" fast-follow list, and **whether wilderness shipped ENABLED**. Don't edit `ROADMAP.md`, `README.md` or `tasks/README.md`.
+    - _Requirements: 13.4_
 
 ## Notes
 
-- Tasks marked with `*` are optional test sub-tasks and can be deferred for a
-  faster first build; core implementation sub-tasks are never marked optional.
-  Per the house rule the worker MUST implement unmarked sub-tasks and MUST NOT
-  implement `*`-marked ones unless doing the testing pass.
-- Each task references the specific requirement sub-clauses it satisfies for
-  traceability; every design Correctness Property (1–17) has its own task.
-- **Matrix correctness is proven before synthesis:** Properties 1–10 (and 16, 17)
-  run on plain matrix data with NO geometry built (waves 1–2), so the open
-  landscape is validated as layout before a triangle exists. Heightfield
-  properties (11–14) gate wave 3's geometry; the mesh property (15) gates wave 5.
-- **Structural + property tests passing is necessary but NOT sufficient.** Every
-  geometry-producing wave (3, 4, 5, 6) ends with a HUMAN-GATED 3D pass the agent
-  writes and the user signs — the agent never ticks a human gate.
-- **Tracker single-writer discipline:** task work updates ONLY this `tasks.md`
-  (checkboxes, measurements, hashes, Deliverables). `ROADMAP.md`, `README.md`,
-  and `tasks/README.md` are integration state, applied once per landed branch in
-  the serialized integration step from the MAIN checkout — each wave's checkpoint
-  writes its integration note here for that step, never edits those files.
-- **Blocked-until-runway:** any wave whose followup predecessor (F1/F2/F4) is not
-  on `master` is blocked — the worker stops and surfaces it rather than
-  reinventing the seam (see the HARD PREREQUISITE table).
+- **This is roadmap STEP 1.** It is `TerrainBackend`-hosted and reuses the
+  existing terrain core, backend registry, `RegionSpec` machinery, traverse
+  agent, and planner seam. It does **NOT** create a `LayoutEngine` seam (step 6)
+  or a 3D `Envelope` / gate-learns-connectors (steps 5/7). A worker who thinks a
+  wave needs one has misread the design — stop and surface it.
+- The property tests are the step-1 gate. Core implementation subtasks are never
+  optional; the `*`-marked subtasks are the property/example tests (the convention
+  for test subtasks), which a worker still writes — they carry the correctness
+  load and gate each wave.
+- **Matrix properties (1–9, 16, 17) run with NO geometry built** — the central
+  guard that the layout is validated as a sealed open landscape first.
+  Heightfield/erosion properties (10–14) run on the synthesized field. The one
+  built-mesh property (15) runs the real traversability agent on the real TER
+  (slow, `build_settings`).
+- **Structural tests pass is necessary but NOT sufficient — eyeball it in 3D.**
+  Geometry waves (3, 4, 5) each end with a HUMAN-GATED 3D pass the agent writes
+  but never ticks; the step-1 exit adds one more (15.3).
+- **Open Decisions are assigned to specific tasks:** matrix resolution → 2.3
+  (re-tuned 7.5/8.3); erosion iteration/grid tuning → 7.4; rim-band / interior
+  set-back widths → 7.5; off-map-marker representation for the gate → 10.1; the
+  v1 Graph_Replacement rule set + fixed-point order → 5.4; vegetation realization
+  → 12.3.
+- **Wilderness enablement:** wilderness ships DISABLED (M1) and flips ENABLED
+  only at 13.2 on success — all 17 properties green AND every human 3D pass
+  signed. If any 3D pass is PENDING-HUMAN at step-1 close, wilderness stays
+  DISABLED with the blocking pass recorded; it does not enable on a green suite
+  alone (Req 13.4).
+- **Not in this cut (fast-follows, from the design scope note):** `plains` biome
+  only (other biomes are a fast-follow); **boundary-hugging rivers** only
+  (interior-crossing South-Karana rivers are a named fast-follow);
+  **visual-only water** (no collision volumes — edges seal via the Invisible_Wall
+  pattern); **approximated-but-real erosion** (flow-accumulation + thermal; full
+  per-droplet simulation is a fast-follow behind the same seam); **named
+  POIs/landmarks are roadmap step 10**; the **dispersed architecture runway**
+  (`LayoutEngine` step 6, 3D `Envelope` + gate-learns-connectors steps 5/7) is
+  **not** stood up here; **region-record export** of Invisible_Wall / lava
+  barriers rides the later SQL-export capstone (v1 records them in the sidecar).
+- Single-writer: only this file is updated during task work. `ROADMAP.md`,
+  `README.md` and `tasks/README.md` changes go in the integration notes (each
+  wave's checkpoint + task 15.4).
 
 ## Task Dependency Graph
 
 ```json
 {
   "waves": [
-    { "id": 0, "tasks": ["1.1", "1.2"] },
-    { "id": 1, "tasks": ["2.1"] },
-    { "id": 2, "tasks": ["2.2", "2.3", "3.1"] },
-    { "id": 3, "tasks": ["3.2", "3.3", "3.4", "3.5", "3.6"] },
-    { "id": 4, "tasks": ["5.1", "5.2"] },
-    { "id": 5, "tasks": ["5.3", "5.4"] },
-    { "id": 6, "tasks": ["5.5", "5.6", "5.7", "5.8", "5.9", "5.10"] },
-    { "id": 7, "tasks": ["7.1", "7.2"] },
-    { "id": 8, "tasks": ["7.3", "7.4"] },
-    { "id": 9, "tasks": ["7.5", "7.6", "7.7", "7.8", "8.1"] },
-    { "id": 10, "tasks": ["9.1", "9.2", "9.3", "9.4"] },
-    { "id": 11, "tasks": ["9.5", "9.6", "10.1"] },
-    { "id": 12, "tasks": ["11.1", "11.2", "11.3"] },
-    { "id": 13, "tasks": ["11.4", "12.1"] },
-    { "id": 14, "tasks": ["13.1", "13.2", "13.3", "13.4"] },
-    { "id": 15, "tasks": ["13.5", "13.6", "13.7"] }
+    { "id": 0, "tasks": ["2.1", "2.2"] },
+    { "id": 1, "tasks": ["2.3", "3.1"] },
+    { "id": 2, "tasks": ["3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8"] },
+    { "id": 3, "tasks": ["5.2", "5.3", "5.4"] },
+    { "id": 4, "tasks": ["5.5", "5.6", "5.7"] },
+    { "id": 5, "tasks": ["7.2", "7.3"] },
+    { "id": 6, "tasks": ["7.4", "7.5"] },
+    { "id": 7, "tasks": ["7.6", "7.7", "7.8", "7.9", "7.10"] },
+    { "id": 8, "tasks": ["9.2", "9.3", "10.1"] },
+    { "id": 9, "tasks": ["10.2"] },
+    { "id": 10, "tasks": ["10.3"] },
+    { "id": 11, "tasks": ["12.2", "12.3", "12.4"] },
+    { "id": 12, "tasks": ["12.5", "12.6"] },
+    { "id": 13, "tasks": ["12.7", "12.8", "12.9", "13.1"] },
+    { "id": 14, "tasks": ["13.2"] }
   ]
 }
 ```
