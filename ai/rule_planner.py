@@ -28,7 +28,15 @@ from .schema import ZonePlan
 # the open-air bucket moved from `outdoor` to `wilderness` (Req 11.1).
 _ZONE_TYPE_WORDS = {
     "wilderness": ["outdoor", "forest", "field", "meadow", "hills", "plains",
-                   "valley", "mountain", "wilderness", "swamp", "desert", "coast"],
+                   "valley", "mountain", "wilderness", "swamp", "desert", "coast",
+                   # Plains / Karana wording routes an open-wilderness prompt to
+                   # the wilderness zone type so biome resolution lands on
+                   # `plains` (Req 1.1). "karana"/"karanas" are the EQ zone name;
+                   # the rest are generic open-grassland synonyms.
+                   "karana", "karanas", "grassland", "grasslands", "prairie",
+                   "steppe", "steppes", "savanna", "savannah", "pasture",
+                   "moor", "moors", "heath", "grassy", "open plain",
+                   "rolling hills"],
     "city": ["city", "town", "village", "market", "bazaar", "streets", "plaza"],
     "dungeon": ["dungeon", "crypt", "catacomb", "ruin", "temple", "keep",
                 "fortress", "lair", "stronghold", "vault",
