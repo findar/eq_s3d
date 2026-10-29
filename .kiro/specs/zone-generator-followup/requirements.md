@@ -1,5 +1,7 @@
 # Requirements Document
 
+> **STATUS: superseded** by the 11-step content roadmap in `ROADMAP.md`. This runway is no longer a milestone; its pieces land with roadmap steps 5, 6 and 7. Kept for reference — don't run these tasks.
+
 ## Introduction
 
 `zone-generator-followup` is a **research + runway** spec for the next major

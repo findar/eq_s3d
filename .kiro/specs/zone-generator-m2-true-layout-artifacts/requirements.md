@@ -1,5 +1,7 @@
 # Requirements Document
 
+> **STATUS: scheduled as roadmap step 1b** (after wilderness, step 1) — user decision. No task index yet; write one in card format (see `.kiro/steering/project.md`) when the work starts. Verify the requirements against the code first: they predate wilderness, so the mesh-outline extractor must also handle open terrain.
+
 ## Introduction
 
 M2 — True-layout artifacts. Third milestone spec under the umbrella spec

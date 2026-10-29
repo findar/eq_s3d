@@ -1,5 +1,7 @@
 # Design Document: zone-generator-followup
 
+> **STATUS: superseded** by the 11-step content roadmap in `ROADMAP.md`. This runway is no longer a milestone; its pieces land with roadmap steps 5, 6 and 7. Kept for reference — don't run these tasks.
+
 ## Overview
 
 This design turns the room-and-topology generation step into a pluggable

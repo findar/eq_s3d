@@ -18,8 +18,8 @@ as done.
 - [ ] `docs/ACCEPTANCE.md` M1.A no longer expects wilderness to show as disabled.
 - [ ] The integration note is generated, not hand-written:
       `python scripts/task_status.py zone-generator-wilderness --note 2-11`.
-      Apply it to `ROADMAP.md` (Done row + "Pick up here" → roadmap step 2,
-      Trees) and the `tasks/README.md` status.
+      Apply it to `ROADMAP.md` (Done row + "Pick up here" → roadmap step 1b,
+      true-layout artifacts, the M2 spec) and the `tasks/README.md` status.
 - [ ] `git push origin master`.
 
 ## Result

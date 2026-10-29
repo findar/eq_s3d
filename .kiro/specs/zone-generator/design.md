@@ -2336,6 +2336,9 @@ single-writer and unconditional. Sources: `.kiro/steering/lessons-learned.md`
 
 ## Delivery Plan
 
+> **STATUS: superseded** by the 11-step content roadmap in `ROADMAP.md`. M0 and M1 shipped as planned; the M2–M6 ordering below no longer drives work. Kept for reference.
+
+
 Each milestone lands something usable and verifiable. Exit criteria always
 include the full suite green (`python -m pytest tests/ -q`), a frontend build
 when `web/` changed, and the human pass in `docs/ACCEPTANCE.md` — structural

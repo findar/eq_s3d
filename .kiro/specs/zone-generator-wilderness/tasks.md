@@ -20,7 +20,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 
 ## Tasks
 
-- [ ] 1. Housekeeping: land waves 1–4 on the trackers
+- [x] 1. Housekeeping: land waves 1–4 on the trackers
   - Card: [cards/01-housekeeping.md](cards/01-housekeeping.md)
   - Type: agent · Size: S · Depends: — · Where: MAIN checkout
   - Owns: ROADMAP.md, README.md, tasks/README.md, .kiro/specs/
