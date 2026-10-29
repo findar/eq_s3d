@@ -92,7 +92,8 @@ output is a starting point for a human authoring pass, not a finished zone.
   you directly (see tracker ownership above).
 - **Task tracking** for NEW work lives in `.kiro/specs/<feature>/tasks.md` — the
   spec task list is the unit of work. When you start work on something, open or
-  create its entry in that spec's `tasks.md`; keep its `Status:`/checkbox state,
+  create its entry in that spec's `tasks.md` (card-format specs: see the section
+  below — it replaces this bookkeeping); keep its `Status:`/checkbox state,
   subtask checkboxes, and Deliverables (commit hashes) current as you go. (The
   `tasks/README.md` index row is integration state — updated in the single-writer
   integration step, not here; see tracker ownership.) Mark a task done only when
@@ -112,6 +113,41 @@ output is a starting point for a human authoring pass, not a finished zone.
   to do; this always-on steering supplies the *how* (workflow, verification, the
   "structural tests pass ≠ done — eyeball it in 3D" rule). No per-task kickoff
   prompt is needed — pointing at the file is the trigger.
+
+## Card-format specs (index + cards + archive)
+
+A spec whose `tasks.md` links each task to a `cards/` file is in **card
+format** (`zone-generator-wilderness` is the first). For these specs, the rules
+below REPLACE the Status/Deliverables bookkeeping described under "Task
+tracking" above. Other specs keep their existing format until they're converted.
+
+- **`tasks.md` is an index only.** One checkbox per task, plus metadata bullets:
+  `Card`, `Type` (agent | human), `Size` (S ≤ 2 files, M ≤ 5, L = split it),
+  `Depends` (task numbers), `Owns` (the files/folders the task may edit), and
+  optionally `Where: MAIN checkout`. The checkbox is the ONLY status.
+- **The card is what to do:** Goal, "Done when" (each item names the exact
+  command that proves it), Pitfalls (link to lessons-learned; don't restate it),
+  and a one-line **Result** that the worker fills in (`✔ <hash> · <N> passed`).
+  Nothing else gets written back into the card or the index: no logs, no
+  timings, no rationale essays.
+- **Evidence goes in git.** Every commit for a task carries the trailer
+  `Task: <spec-folder>/<n>` (e.g. `Task: zone-generator-wilderness/2`) on its
+  own line in the message body. Measurements, decisions and seed lists go in
+  the commit message body. A decision later tasks depend on ALSO goes in the
+  spec's `archive.md` "Decisions" list, in one or two lines.
+- **Integration notes are generated:**
+  `python scripts/task_status.py <spec> --note <range>` lists the trailed
+  commits and a Done-row skeleton. Don't write a "write the integration note"
+  task.
+- **Human gates are their own tasks** (`Type: human`), never subtasks of agent
+  work. Agents never tick them; an agent task that needs a sign-off lists it
+  in `Depends`.
+- **Pick work with** `python scripts/task_status.py`: it shows the ready tasks
+  and which can run side by side (disjoint `Owns`). Stay inside your task's
+  `Owns`. If you need another file, stop and say so; don't widen the task
+  silently.
+- **Finished work moves to `archive.md`:** a summary table plus key decisions.
+  The full old log stays in git history.
 
 ## Parallel agents (git worktrees)
 
