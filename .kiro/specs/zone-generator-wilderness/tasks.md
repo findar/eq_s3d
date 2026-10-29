@@ -60,10 +60,10 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/wilderness/build.py, generators/wilderness/biome.py, styles/, generators/textures/, tests/test_wilderness_biome_kit.py
   - Reqs: 11.1, 11.2, 11.3
 
-- [ ] 8. Wilderness advisory data in the `.zone.json` sidecar
+- [x] 8. Wilderness advisory data in the `.zone.json` sidecar
   - Card: [cards/08-sidecar.md](cards/08-sidecar.md)
   - Type: agent · Size: S · Depends: 2
-  - Owns: core/eqg.py, generators/builder.py, tests/test_wilderness_sidecar.py
+  - Owns: core/eqg.py, generators/builder.py, ai/expand.py, tests/test_wilderness_sidecar.py
   - Reqs: 1.4, 3.7, 10.2, 14.4
 
 - [ ] 9. Release prep: reproducibility, budget, acceptance checklist
