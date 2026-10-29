@@ -138,6 +138,149 @@ def _thermal_erosion(h: np.ndarray, talus: float, iterations: int) -> np.ndarray
 
 
 # ---------------------------------------------------------------------------
+# Hydraulic erosion — vectorised flow-accumulation incision (wave 3, task 7.3)
+# ---------------------------------------------------------------------------
+#
+# ADDITIVE: this pass is a NEW first-class erosion stage used by the wilderness
+# synthesis path (generators/wilderness/synth.py). It is NOT called from
+# build_terrain's default plain-terrain path — that path (FBM -> _thermal_erosion
+# -> _enforce_walkable) is BYTE-UNCHANGED, proven by the task-7.1 checksum. The
+# hydraulic pass is invoked explicitly by the wilderness Noise_Pass/Erosion
+# pipeline; a plain TerrainSpec never reaches it.
+#
+# The approach is the cheap, well-understood flow-accumulation approximation
+# (Musgrave 1989; Olsen 2004): estimate how much upslope area drains through
+# each cell by routing a unit of water+area to each cell's steepest-descent
+# neighbour and accumulating it across the grid, then lower high-flow cells
+# proportional to the accumulated flow so channels and valleys incise. Full
+# per-droplet simulation is a named fast-follow behind this same seam.
+#
+# Every iteration is WHOLE-GRID numpy array ops (np.roll / masked adds), matching
+# _thermal_erosion's four-neighbour relaxation and _enforce_walkable's np.where.
+# There is NO per-cell Python loop (the hard lessons-learned performance rule).
+
+#: The four orthogonal neighbour shifts (di, dj) used by the vectorised passes.
+_NEIGHBOR_SHIFTS: Tuple[Tuple[int, int], ...] = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
+
+def _steepest_descent_flow(h: np.ndarray) -> np.ndarray:
+    """Accumulate drainage area across the grid by steepest-descent routing.
+
+    Fully vectorised. For each cell we find its lowest 4-neighbour (its
+    steepest-descent receiver) and build a one-hot routing field; then we push a
+    unit of area from every cell to its receiver repeatedly, so area accumulates
+    downslope the way a river basin gathers its tributaries. ``iterations``
+    bounded passes approximate the full accumulation (each pass moves area one
+    more cell downstream); a basin that drains in ``k`` hops is fully summed
+    after ``k`` passes, and real terrain drains in far fewer hops than the grid
+    is wide.
+
+    Returns a float32 flow field (same shape as ``h``) with every cell >= 1
+    (its own unit of rainfall) plus whatever drained through it from upslope.
+    """
+    nx, ny = h.shape
+    # Drop to each of the 4 neighbours (how much LOWER the neighbour is). A
+    # positive drop means water flows that way; the max drop is the steepest
+    # descent. Out-of-grid neighbours get -inf so they are never chosen.
+    drops = np.full((4, nx, ny), -np.inf, dtype=np.float32)
+    # neighbour heights via np.roll, with the wrapped edge invalidated.
+    # shift=(di,dj): np.roll moves data so that result[i,j] = h[i-di, j-dj];
+    # to read the neighbour at (i+di, j+dj) we roll by (-di, -dj).
+    for k, (di, dj) in enumerate(_NEIGHBOR_SHIFTS):
+        nb = np.roll(h, shift=(-di, -dj), axis=(0, 1))
+        d = h - nb  # positive where the neighbour is lower (water flows out)
+        # Invalidate the wrapped border row/col for this shift direction.
+        if di == 1:
+            d[-1, :] = -np.inf
+        elif di == -1:
+            d[0, :] = -np.inf
+        elif dj == 1:
+            d[:, -1] = -np.inf
+        elif dj == -1:
+            d[:, 0] = -np.inf
+        drops[k] = d
+
+    best = np.max(drops, axis=0)  # steepest descent per cell
+    # A cell with no downhill neighbour (a pit / flat) keeps its water (no out).
+    has_out = best > 0.0
+    # One-hot receiver direction: the first neighbour achieving the max drop.
+    receiver = np.argmax(drops, axis=0)  # in [0,4); ties -> lowest index
+
+    # Accumulate: start every cell with one unit of rainfall, then iteratively
+    # push the current water of each cell to its receiver. Whole-grid per pass.
+    flow = np.ones((nx, ny), dtype=np.float32)
+    # Precompute, per direction, the mask of cells that route that way AND have
+    # an outlet — so a pass is four masked shifted-adds, no per-cell loop.
+    route_masks = [
+        (has_out & (receiver == k)).astype(np.float32) for k in range(4)
+    ]
+    # Bound the accumulation hops to the grid diameter (water cannot travel
+    # farther than the grid is wide); clamp to a sane ceiling for huge grids.
+    hops = min(int(nx + ny), 256)
+    for _ in range(hops):
+        moved = np.zeros((nx, ny), dtype=np.float32)
+        for k, (di, dj) in enumerate(_NEIGHBOR_SHIFTS):
+            out = flow * route_masks[k]  # water leaving cells routing dir k
+            # Deposit into the receiver at (i+di, j+dj): roll the outgoing field
+            # by (+di,+dj) so it lands on the downstream cell.
+            moved += np.roll(out, shift=(di, dj), axis=(0, 1))
+        # New water field: each cell keeps its rainfall unit + inflow from
+        # upslope. Cells that routed their water out no longer hold it.
+        kept = flow * (1.0 - sum(route_masks))  # pits/flats keep their water
+        flow = np.ones((nx, ny), dtype=np.float32) + kept + moved - 1.0
+        # The "- 1.0 / + ones" keeps every cell's own rainfall unit present
+        # while letting through-flow accumulate; clamp tiny negatives from fp.
+        np.maximum(flow, 1.0, out=flow)
+    return flow
+
+
+def hydraulic_erosion(
+    h: np.ndarray,
+    *,
+    iterations: int = 3,
+    incision: float = 18.0,
+    flow_exponent: float = 0.5,
+    protect: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Vectorised hydraulic (flow-accumulation) erosion — ADDITIVE first-class.
+
+    Carves channels and valleys by lowering cells in proportion to the drainage
+    area that flows through them, so the result reads water-made (dendritic
+    valleys, incised ridgelines) rather than noise-blobby. Repeats the
+    flow-accumulation + incision ``iterations`` times so channels deepen and
+    migrate; each iteration is whole-grid numpy (no per-cell Python loop).
+
+    Parameters
+    ----------
+    h : the heightfield (float array, Z up).
+    iterations : number of flow-accumulate-and-incise passes (bounded).
+    incision : world-unit scale of the deepest channel cut per iteration.
+    flow_exponent : <1 compresses the flow range so moderate valleys cut too,
+        not only the single largest trunk channel (0.5 ~ sqrt of flow).
+    protect : optional bool mask (same shape) of cells NEVER incised (frozen /
+        Rim cells). Where True, the cell height is left exactly as-is. This is
+        how the Rim and frozen cells stay out of the hydraulic carve even
+        before the re-clamp step re-asserts them.
+
+    Returns a NEW array; ``h`` is not modified.
+    """
+    out = h.astype(np.float32, copy=True)
+    for _ in range(max(0, int(iterations))):
+        flow = _steepest_descent_flow(out)
+        # Normalise flow to [0,1] with a compressing exponent, then incise.
+        f = flow - 1.0  # drop the baseline rainfall unit so plains ~ 0 cut
+        fmax = float(f.max())
+        if fmax <= 1e-6:
+            break  # perfectly flat: nothing to incise
+        norm = (f / fmax) ** float(flow_exponent)
+        cut = norm * float(incision)
+        if protect is not None:
+            cut = np.where(protect, 0.0, cut)
+        out = out - cut
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Walkability — relax cells whose gradient exceeds the walkable cap
 # ---------------------------------------------------------------------------
 
