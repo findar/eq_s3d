@@ -310,3 +310,16 @@ button.secondary:hover { border-color: var(--accent); color: var(--text); }
   height: auto;
   width: auto;
 }
+
+/* Wilderness map-edge selectors (Controls panel; hidden for other types). */
+#edges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+}
+#edges[hidden] { display: none; }
+#edges legend { padding: 0 4px; }

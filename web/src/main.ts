@@ -269,6 +269,22 @@ function readSeed(): number | undefined {
   return Number.isFinite(n) ? Math.abs(Math.trunc(n)) : undefined;
 }
 
+// Wilderness map edges: one selector per side, shown only for wilderness.
+const EDGE_SIDES = ["N", "E", "S", "W"];
+
+function readEdges(): Record<string, string> {
+  const edges: Record<string, string> = {};
+  for (const s of EDGE_SIDES) {
+    edges[s] = ($(`edge-${s.toLowerCase()}`) as HTMLSelectElement).value;
+  }
+  return edges;
+}
+
+function syncEdgesVisibility(): void {
+  const wild = ($("zone-type") as HTMLSelectElement).value === "wilderness";
+  $("edges").hidden = !wild;
+}
+
 async function doGenerate(mode: Mode) {
   const seed = readSeed();
   const prompt = ($("prompt") as HTMLInputElement).value.trim();
@@ -302,14 +318,19 @@ async function doGenerate(mode: Mode) {
       : 0;
     const size = ($("size") as HTMLSelectElement).value;
     const verticality = ($("verticality") as HTMLSelectElement).value;
+    const edges = zoneType === "wilderness" ? readEdges() : undefined;
     params = {
       mode,
-      controls: { zone_type: zoneType, room_count: rooms, size, verticality, locks },
+      controls: {
+        zone_type: zoneType, room_count: rooms, size, verticality, locks,
+        ...(edges ? { edges } : {}),
+      },
       ...(seed !== undefined ? { seed } : {}),
     };
     console.log(
       `[input] controls: zone_type=${zoneType} rooms=${rooms} size=${size} ` +
-      `verticality=${verticality} locks=${locks}${seedNote}`,
+      `verticality=${verticality} locks=${locks}` +
+      (edges ? ` edges=${JSON.stringify(edges)}` : "") + seedNote,
     );
   }
 
@@ -402,7 +423,10 @@ async function refreshZoneTypes(): Promise<void> {
   } catch (err) {
     console.warn("[zone_types]", err);   // keep the static options
   }
+  syncEdgesVisibility();
 }
+
+($("zone-type") as HTMLSelectElement).addEventListener("change", syncEdgesVisibility);
 
 // The two Generate actions choose the mode explicitly.
 genDescBtn.addEventListener("click", () => doGenerate("prompt"));
@@ -420,7 +444,8 @@ $("reset-view").addEventListener("click", () => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate("prompt");
 });
 
-for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed"]) {
+for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
+                  "edge-n", "edge-e", "edge-s", "edge-w"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });

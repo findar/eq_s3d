@@ -31,10 +31,10 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/wilderness/build.py, generators/backends.py, generators/zone_spec.py, generators/zone_types.py, generators/pipeline.py, main.py, ai/expand.py, tests/test_wilderness_build.py, tests/test_planner.py, tests/test_hygiene.py
   - Reqs: 14.1, 14.2, 14.3
 
-- [ ] 3. Edge declarations in the server and the web Controls panel
+- [x] 3. Edge declarations in the server and the web Controls panel
   - Card: [cards/03-web-edges.md](cards/03-web-edges.md)
   - Type: agent · Size: M · Depends: 2
-  - Owns: server/app.py, web/src/, tests/test_server.py
+  - Owns: server/app.py, web/index.html, web/src/, tests/test_server.py, tests/test_hygiene.py, tests/conftest.py
   - Reqs: 3.1, 3.2
 
 - [ ] 4. HUMAN: first look at a Karana (terrain + bowl)

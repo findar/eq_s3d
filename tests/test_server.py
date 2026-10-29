@@ -744,3 +744,51 @@ def test_target_shortname_is_ignored(client):
             f"artifact not named by the id: {f.name}"
         )
         assert "arena" not in f.name, f"artifact leaked the target name: {f.name}"
+
+
+# ---------------------------------------------------------------------------
+# Wilderness map edges in controls mode (wilderness spec task 3)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def wild_client(client, monkeypatch):
+    monkeypatch.setenv("EQ_S3D_DEV_WILDERNESS", "1")
+    return client
+
+
+def test_controls_edges_reach_the_wilderness_build(wild_client):
+    """``controls.edges`` declares the Rim; the built zone carries it (and the
+    zoneline/river regions it implies)."""
+    resp = wild_client.post("/api/generate", json={
+        "mode": "controls", "seed": 2024,
+        "controls": {"zone_type": "wilderness",
+                     "edges": {"N": "zoneline", "e": "river"}},
+    })
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["zone_type"] == "wilderness" and body["validated"]
+    build_dir = app_mod.OUTPUT_DIR / body["id"] / "v1"
+    assert (build_dir / f"{body['id']}.zone.json").exists()
+    # The materials count reflects the extra zoneline + water region kinds.
+    assert body["materials"] >= 5
+
+
+@pytest.mark.parametrize("controls, needle", [
+    ({"zone_type": "wilderness", "edges": {"Q": "river"}}, "side"),
+    ({"zone_type": "wilderness", "edges": {"N": "lake"}}, "type"),
+    ({"zone_type": "wilderness", "edges": ["N", "river"]}, "object"),
+    ({"zone_type": "dungeon", "edges": {"N": "river"}}, "wilderness"),
+])
+def test_bad_edges_are_a_400_naming_the_field(wild_client, controls, needle):
+    resp = wild_client.post("/api/generate",
+                            json={"mode": "controls", "controls": controls})
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert "edges" in detail and needle in detail, detail
+    assert list(app_mod.OUTPUT_DIR.iterdir()) == []
+
+
+def test_dev_flag_lists_wilderness_as_enabled(wild_client):
+    listing = wild_client.get("/api/zone_types").json()["zone_types"]
+    wild = next(z for z in listing if z["name"] == "wilderness")
+    assert wild["enabled"] is True

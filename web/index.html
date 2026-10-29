@@ -60,6 +60,15 @@
         <label>Locks
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
+        <!-- Wilderness only: what each side of the map is. Mountain and river
+             sides are sealed; a zoneline is a walkable exit off the map. -->
+        <fieldset id="edges" hidden>
+          <legend>Map edges</legend>
+          <label>N <select id="edge-n"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+          <label>E <select id="edge-e"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+          <label>S <select id="edge-s"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+          <label>W <select id="edge-w"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        </fieldset>
       </div>
     </details>
 

@@ -9,6 +9,8 @@ export interface GenerateControls {
   size?: string;
   verticality?: string;
   locks?: number;
+  // Wilderness only: side (N/E/S/W) -> mountain | river | zoneline.
+  edges?: Record<string, string>;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:

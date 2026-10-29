@@ -314,6 +314,31 @@ def _require_int(d: dict, key: str) -> None:
         raise HTTPException(400, f"{key} must be an integer")
 
 
+def _require_edges(c: dict[str, Any], zone_type: Optional[str]) -> Optional[dict]:
+    """Pop and validate ``controls.edges`` (the wilderness Rim declaration).
+
+    Absent -> ``None`` (every side mountain). Present on a non-wilderness zone
+    type, not an object, or naming an unknown side/type -> a 400 that names the
+    field, before any build or write (the M1 controls convention).
+    """
+    if "edges" not in c:
+        return None
+    raw = c.pop("edges")
+    if raw is None:
+        return None
+    if zone_type != "wilderness":
+        raise HTTPException(400, "edges only applies to zone_type wilderness")
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            400, "edges must be an object mapping a side (N/E/S/W) to "
+                 "mountain, river or zoneline")
+    from generators.wilderness.build import normalise_edges
+    try:
+        return normalise_edges(raw)
+    except ValueError as exc:
+        raise HTTPException(400, f"edges: {exc}")
+
+
 class GenerateRequest(BaseModel):
     # An extra/unknown key (e.g. a legacy ``target_shortname``) is ignored like
     # any other non-field key rather than rejected (Req 8.1).
@@ -330,7 +355,8 @@ class GenerateRequest(BaseModel):
     controls: Optional[dict[str, Any]] = Field(
         default=None,
         description="Controls sub-object: zone_type, room_count, size, "
-                    "verticality, locks, …",
+                    "verticality, locks, edges (wilderness Rim, e.g. "
+                    "{\"N\": \"zoneline\"}), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.
@@ -534,6 +560,10 @@ def generate(req: GenerateRequest):
                 f"{_enabled_zone_type_names()}",
             )
 
+        # The wilderness Rim rides in the controls but isn't a plan field, so
+        # it is taken out (and validated) before from_controls sees the dict.
+        edges = _require_edges(c, canonical_zone_type(raw_zone_type))
+
         # Proven equal to the legacy LayoutGenerator path by the 17.4 golden test.
         plan = ZonePlan.from_controls(c, warnings)
         plan.name = zone_id
@@ -542,7 +572,7 @@ def generate(req: GenerateRequest):
         rooms = plan.room_count
 
         def factory(s: int):
-            return plan_to_spec(plan, seed=s)
+            return plan_to_spec(plan, seed=s, edges=edges)
 
     # Build + traversability gate. On gated themes a failing dungeon seed is
     # never returned: the pipeline retries on fresh seeds (bounded by attempts +

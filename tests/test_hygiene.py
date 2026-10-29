@@ -608,6 +608,7 @@ _TOK_TARGET_SHORT = "tar" + "get_shortname"
 _ALLOWED_WEB_INPUT_IDS = {
     "zone-type", "rooms", "size", "verticality", "locks",  # geometry slice
     "prompt", "seed",                                      # description + seed
+    "edge-n", "edge-e", "edge-s", "edge-w",  # wilderness map edges (task 3)
 }
 
 # The CLI ``generate`` option/flag names the geometry slice is allowed to add,
