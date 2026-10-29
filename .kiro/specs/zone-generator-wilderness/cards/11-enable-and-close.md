@@ -13,7 +13,9 @@ as done.
       green suite alone** (Requirement 13.4).
 - [ ] `wilderness` is in `ENABLED_ZONE_TYPES`
       (`generators/zone_types.py`), and its entry in `ZONE_TYPE_REASONS` is
-      removed. The dev flag from task 2 is deleted, along with its test.
+      removed. The dev flag from task 2 is deleted, along with its test, the
+      clearing fixture in `tests/conftest.py`, and the `DEV_FLAGS` default in
+      `web/dev.mjs`.
       → verify: `pytest tests/ -q` green. `/api/zone_types` lists wilderness as enabled.
 - [ ] `docs/ACCEPTANCE.md` M1.A no longer expects wilderness to show as disabled.
 - [ ] The integration note is generated, not hand-written:
