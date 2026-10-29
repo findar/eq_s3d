@@ -99,6 +99,23 @@ __all__ += [
     "invariants_hold",
 ]
 
+# --- Matrix -> heightfield synthesis (wave 3, tasks 7.2-7.5) ---------------
+from generators.wilderness.synth import (
+    SynthResult,
+    hydraulic_erosion,
+    noise_pass,
+    reclamp_rim,
+    synthesize_heightfield,
+)
+
+__all__ += [
+    "SynthResult",
+    "synthesize_heightfield",
+    "noise_pass",
+    "reclamp_rim",
+    "hydraulic_erosion",
+]
+
 # --- Terrain-first constructor (task 2.3, same worktree) -------------------
 # build_matrix is added by task 2.3 (it owns matrix.py). Re-export it when it is
 # present so ``from generators.wilderness import build_matrix`` works once 2.3
