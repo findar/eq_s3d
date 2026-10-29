@@ -116,6 +116,21 @@ __all__ += [
     "hydraulic_erosion",
 ]
 
+# --- Bowl assembly (wave 4, tasks 9.2-9.3) --------------------------------
+from generators.wilderness.bowl import (
+    BarrierMetadata,
+    BowlResult,
+    EdgeMetadata,
+    assemble_bowl,
+)
+
+__all__ += [
+    "assemble_bowl",
+    "BowlResult",
+    "EdgeMetadata",
+    "BarrierMetadata",
+]
+
 # --- Terrain-first constructor (task 2.3, same worktree) -------------------
 # build_matrix is added by task 2.3 (it owns matrix.py). Re-export it when it is
 # present so ``from generators.wilderness import build_matrix`` works once 2.3
