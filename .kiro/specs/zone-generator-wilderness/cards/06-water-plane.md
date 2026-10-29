@@ -22,8 +22,13 @@ purely visual.
 - [ ] `python -m pytest tests/ -q` is green.
 
 ## Hints
-- EQG collision is per-triangle, from the polygon `0x01` flag
-  (lessons-learned, File formats). Water polygons without that flag are visual only.
+- EQG collision is per-triangle: `core/ter.py` `FLAG_PASSABLE = 0x01` marks a
+  polygon NON-collidable, so the water polygons carry `flags=FLAG_PASSABLE`.
+  Every existing mesh uses `flags=0` (solid).
+- `analyzer/traverse.build_walk_surface` ignores polygon flags today, so the
+  agent would stand on the water plane. Teach it to skip `FLAG_PASSABLE` faces
+  (defaulted, so no dungeon/city result changes) or Property 15 becomes
+  meaningless for river edges. This adds `analyzer/traverse.py` to Owns.
 - Extend `generators/wilderness/build.py` (from task 2), not `backends.py`.
 - Real swimmable or shallow-water volumes are out of scope; say so in a code
   comment.

@@ -25,10 +25,10 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Type: agent · Size: S · Depends: — · Where: MAIN checkout
   - Owns: ROADMAP.md, README.md, tasks/README.md, .kiro/specs/
 
-- [ ] 2. Build a wilderness zone end to end (behind a dev flag)
+- [x] 2. Build a wilderness zone end to end (behind a dev flag)
   - Card: [cards/02-build-end-to-end.md](cards/02-build-end-to-end.md)
   - Type: agent · Size: M · Depends: 1
-  - Owns: generators/wilderness/build.py, generators/backends.py, generators/zone_spec.py, generators/zone_types.py, generators/pipeline.py, main.py, tests/test_wilderness_build.py
+  - Owns: generators/wilderness/build.py, generators/backends.py, generators/zone_spec.py, generators/zone_types.py, generators/pipeline.py, main.py, ai/expand.py, tests/test_wilderness_build.py, tests/test_planner.py, tests/test_hygiene.py
   - Reqs: 14.1, 14.2, 14.3
 
 - [ ] 3. Edge declarations in the server and the web Controls panel
@@ -51,7 +51,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 - [ ] 6. Visual water plane
   - Card: [cards/06-water-plane.md](cards/06-water-plane.md)
   - Type: agent · Size: M · Depends: 2
-  - Owns: generators/wilderness/build.py, generators/wilderness/water.py, generators/zone_spec.py, tests/test_wilderness_water.py
+  - Owns: generators/wilderness/build.py, generators/wilderness/water.py, generators/zone_spec.py, analyzer/traverse.py, tests/test_wilderness_water.py
   - Reqs: 11.4, 13.1
 
 - [ ] 7. Plains biome kit and ground textures
