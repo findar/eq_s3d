@@ -1,0 +1,34 @@
+{
+  "_comment": "Wilderness biome kits (wilderness spec task 7, Requirement 11). One entry per biome; adding a biome means adding an entry here, not a generator. 'ground' layers dress the playable plains cells by slope, height and moisture; 'regions' gives the material for every other region kind. Colours are the GLB preview base colours and the procedural texture palette; descriptions are the texture-prompt hints.",
+  "plains": {
+    "description": "The Karanas: rolling grassland under a wide sky",
+    "water": true,
+    "sky_tint": [150, 186, 220],
+    "fog_tint": [178, 190, 196],
+    "fog_range": [600, 4200],
+    "ambient_light": [0.55, 0.55, 0.5],
+    "vegetation_kit": "plains_grassland",
+    "ground": {
+      "grass":    {"material": "wild_plains",   "color": [104, 132, 70],  "description": "grassy plains, short green grass"},
+      "dry":      {"material": "wild_drygrass", "color": [146, 140, 84],  "description": "dry upland grass, sun-bleached meadow"},
+      "dirt":     {"material": "wild_dirt",     "color": [122, 100, 72],  "description": "bare packed dirt and earth on a slope"},
+      "mud":      {"material": "wild_mud",      "color": [88, 78, 60],    "description": "wet mud and dark earth by the water"},
+      "rock":     {"material": "wild_rock",     "color": [124, 116, 104], "description": "exposed rock outcrop, weathered stone"}
+    },
+    "rules": {
+      "dirt_slope": 0.36,
+      "rock_slope": 0.62,
+      "dry_height_quantile": 0.8,
+      "wet_distance": 2
+    },
+    "regions": {
+      "cliff":         {"material": "wild_cliff",    "color": [118, 106, 92],  "description": "weathered rock cliff face"},
+      "mountain_rim":  {"material": "wild_rim",      "color": [128, 120, 112], "description": "distant mountain rock and scree"},
+      "water":         {"material": "wild_water",    "color": [58, 92, 138],   "description": "river bed, wet silt and stones"},
+      "river":         {"material": "wild_water",    "color": [58, 92, 138],   "description": "river bed, wet silt and stones"},
+      "lava":          {"material": "wild_lava",     "color": [196, 72, 28],   "description": "molten lava crust"},
+      "zoneline_gap":  {"material": "wild_zoneline", "color": [196, 182, 128], "description": "packed dirt road"},
+      "water_surface": {"material": "liquid_water",  "color": [70, 140, 190],  "description": "calm river water surface"}
+    }
+  }
+}

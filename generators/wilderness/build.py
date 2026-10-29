@@ -16,7 +16,8 @@ landscape from the spec's ``wilderness`` payload + seed, so the spec JSON stays
 small and the three can never disagree. A small cache makes the repeat calls
 free (a full landscape is ~50 ms anyway).
 
-Later tasks extend THIS module (water plane, biome kit), not ``backends.py``.
+Later tasks extend THIS module, not ``backends.py``. Materials come from the
+biome kit (``biome.py`` over ``styles/biomes.json``, task 7).
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ import numpy as np
 
 from analyzer.traverse import AgentModel, RoomResult, TraversalReport
 from core.ter import MAGIC_TERRAIN, SHADER_ALPHA, Material, Polygon, TerFile, Vertex
+from generators.wilderness.biome import BiomeKit, ground_materials, load_biome_kit
 from generators.wilderness.bowl import (
     BowlResult,
     _spawn_world_point,
@@ -54,31 +56,6 @@ from generators.wilderness.water import (
 from generators.zone_spec import MaterialSpec, ZoneSpec
 
 DEFAULT_BIOME = "plains"
-
-# Fine-cell Node_Type -> TER material. One material per region kind so the
-# flat-colour preview tells plains, rim, water, lava and zoneline apart (the
-# biome kit replaces these with real textures in task 7).
-_NODE_MATERIAL: Dict[str, str] = {
-    "plains": "wild_plains",
-    "cliff": "wild_cliff",
-    "mountain_rim": "wild_rim",
-    "water": "wild_water",
-    "river": "wild_water",
-    "lava": "wild_lava",
-    "zoneline_gap": "wild_zoneline",
-}
-
-# material -> (base colour, texture-prompt hint)
-_MATERIALS: Dict[str, Tuple[Tuple[int, int, int], str]] = {
-    "wild_plains": ((104, 132, 70), "grassy plains, short grass and dirt"),
-    "wild_cliff": ((118, 106, 92), "weathered rock cliff face"),
-    "wild_rim": ((128, 120, 112), "distant mountain rock and scree"),
-    "wild_water": ((58, 92, 138), "river bed, wet silt and stones"),
-    "wild_lava": ((196, 72, 28), "molten lava crust"),
-    "wild_zoneline": ((196, 182, 128), "packed dirt road"),
-    WATER_SURFACE_MATERIAL: ((70, 140, 190), "calm river water surface"),
-}
-
 
 # ---------------------------------------------------------------------------
 # Edge declarations
@@ -160,11 +137,17 @@ def landscape_for(spec: ZoneSpec) -> Landscape:
                                 spec.wilderness.get("biome", DEFAULT_BIOME))
 
 
-def _fine_materials(land: Landscape) -> np.ndarray:
-    """Per fine cell, the TER material name its quad uses."""
-    node = land.synth.node_type
-    lookup = np.vectorize(lambda t: _NODE_MATERIAL.get(t, "wild_plains"), otypes=[object])
-    return lookup(node)
+def _quad_materials(land: Landscape, kit: BiomeKit) -> np.ndarray:
+    """Per fine quad, the TER material name its two triangles use (task 7:
+    from the biome kit, by region kind, slope, height and moisture)."""
+    return ground_materials(kit, land.synth.node_type, land.bowl.heights,
+                            land.synth.resolution)
+
+
+def _wet_quads(land: Landscape, kit: BiomeKit) -> np.ndarray:
+    """Quads that get the visual water plane: none if the kit has no water."""
+    wet = water_quad_mask(land.synth.node_type)
+    return wet if kit.water else np.zeros_like(wet)
 
 
 # ---------------------------------------------------------------------------
@@ -177,22 +160,25 @@ def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = N
     one material per region kind present, Spawn as the safe point."""
     norm = normalise_edges(edges)
     land = synthesize_landscape(seed, norm, biome)
+    kit = load_biome_kit(biome)
     spec = ZoneSpec(name=name, zone_type="wilderness", style_profile="outdoor",
                     seed=seed, wilderness={"biome": biome, "edges": norm})
-    spec.ambient_light = (0.55, 0.55, 0.5)
-    for mat_name in sorted(set(_fine_materials(land).ravel())):
-        color, hint = _MATERIALS[mat_name]
+    spec.ambient_light = kit.ambient_light
+    kit_mats = kit.materials()
+    for mat_name in sorted(set(_quad_materials(land, kit).ravel())):
+        m = kit_mats[mat_name]
         spec.materials[mat_name] = MaterialSpec(
-            name=mat_name, texture=f"{mat_name}.dds", color=color, description=hint)
+            name=mat_name, texture=f"{mat_name}.dds", color=m.color,
+            description=m.description)
     spec.regions = list(land.bowl.regions)
     spec.water_level = float(land.matrix.water_level)
-    if water_quad_mask(land.synth.node_type).any():
+    if _wet_quads(land, kit).any():
         # Task 6: the visual water plane gets its own (alpha) material and an
-        # AWT region per water body.
-        color, hint = _MATERIALS[WATER_SURFACE_MATERIAL]
+        # AWT region per water body — only where the kit declares water (11.4).
+        m = kit_mats[WATER_SURFACE_MATERIAL]
         spec.materials[WATER_SURFACE_MATERIAL] = MaterialSpec(
             name=WATER_SURFACE_MATERIAL, texture=f"{WATER_SURFACE_MATERIAL}.dds",
-            shader=SHADER_ALPHA, color=color, description=hint)
+            shader=SHADER_ALPHA, color=m.color, description=m.description)
         spec.regions += water_regions(land.synth.node_type, land.synth.origin,
                                       land.synth.resolution, spec.water_level)
     spec.safe_point = _spawn_world_point(land.synth, land.matrix, land.bowl.heights)
@@ -200,21 +186,22 @@ def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = N
 
 
 def build_wilderness_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> TerFile:
-    """Triangulate the spec's bowl heightfield into a TER, one material per
-    region kind. Same vertex frame and triangulation as ``build_bowl_ter`` (so
+    """Triangulate the spec's bowl heightfield into a TER, materials from the
+    biome kit. Same vertex frame and triangulation as ``build_bowl_ter`` (so
     the bowl gate's bands and Spawn line up), vectorised. Water quads also get
     a flat, passable surface at the water level (task 6, see ``water.py``)."""
     land = landscape_for(spec)
+    kit = load_biome_kit(spec.wilderness.get("biome", DEFAULT_BIOME))
     res = float(land.synth.resolution)
     ox, oy = land.synth.origin
     water_level = float(land.matrix.water_level)
-    wet = water_quad_mask(land.synth.node_type)
+    wet = _wet_quads(land, kit)
     h = sink_water_bed(np.asarray(land.bowl.heights, dtype=np.float64), wet, water_level)
     nx, ny = h.shape
 
     ter = TerFile(name=ter_name, magic=MAGIC_TERRAIN, version=ter_version)
-    cell_mat = _fine_materials(land)
-    names = sorted(set(cell_mat.ravel()) | ({WATER_SURFACE_MATERIAL} if wet.any() else set()))
+    quad_mat = _quad_materials(land, kit)
+    names = sorted(set(quad_mat.ravel()) | ({WATER_SURFACE_MATERIAL} if wet.any() else set()))
     index = {n: i for i, n in enumerate(names)}
     for n in names:
         shader = spec.materials[n].shader if n in spec.materials else "Opaque_MaxCB1.fx"
@@ -233,20 +220,20 @@ def build_wilderness_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> Ter
     nxs = (-gx / nlen).ravel().tolist()
     nys = (-gy / nlen).ravel().tolist()
     nzs = (1.0 / nlen).ravel().tolist()
-    # Planar UVs, one texture repeat per 128 u (replaced by the biome kit).
+    # Planar UVs, one texture repeat per 128 u.
     us = [x / 128.0 for x in xs]
     vs = [y / 128.0 for y in ys]
     ter.vertices = [Vertex(x=x, y=y, z=z, nx=a, ny=b, nz=c, u=u, v=v)
                     for x, y, z, a, b, c, u, v
                     in zip(xs, ys, zs, nxs, nys, nzs, us, vs)]
 
-    # Two CCW (from +Z) triangles per quad, material from the quad's cell.
+    # Two CCW (from +Z) triangles per quad, material from the biome kit.
     qi, qj = np.meshgrid(np.arange(nx - 1), np.arange(ny - 1), indexing="ij")
     a = (qi * ny + qj).ravel()
     b = ((qi + 1) * ny + qj).ravel()
     c = ((qi + 1) * ny + qj + 1).ravel()
     d = (qi * ny + qj + 1).ravel()
-    mats = [index[m] for m in cell_mat[:-1, :-1].ravel()]
+    mats = [index[m] for m in quad_mat.ravel()]
     polys = []
     for va, vb, vc, vd, m in zip(a.tolist(), b.tolist(), c.tolist(), d.tolist(), mats):
         polys.append(Polygon(va, vb, vc, material=m, flags=0))
