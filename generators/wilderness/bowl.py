@@ -58,7 +58,14 @@ try:
 except Exception:  # pragma: no cover - numpy is pinned
     np = None  # type: ignore
 
-from analyzer.traverse import AgentModel
+from analyzer.traverse import (
+    AgentModel,
+    OffMapBand,
+    build_walk_surface,
+    flood_reachable,
+    reached_off_map_segments,
+)
+from core.ter import MAGIC_TERRAIN, Material, Polygon, TerFile, Vertex
 from generators.wilderness.matrix import DesignMatrix
 from generators.wilderness.synth import SynthResult
 from generators.zone_spec import RegionSpec
@@ -506,3 +513,476 @@ def assemble_bowl(
         edges=edges,
         barriers=rim_barriers + lava_barriers,
     )
+
+
+# ===========================================================================
+# task 10.2 — the bowl invariant ON THE BUILT MESH
+# ===========================================================================
+#
+# Tasks 9.2/9.3 (above) REALIZE the bowl on the fine heightfield; task 10.1
+# (``analyzer/traverse.py``) added the defaulted bowl-gate PRIMITIVES
+# (``OffMapBand`` + ``reached_off_map_segments``, plus the ``build_walk_surface``
+# / ``flood_reachable`` the dungeon gate already uses). Task 10.2 — HERE — turns
+# a built wilderness TER into a pass/fail VERDICT on the real mesh:
+#
+#   (1) every ``playable`` cell / POI anchor is reachable from Spawn — one that
+#       is NOT is a reachability / walkability failure NAMING the stranded
+#       region or anchor (Req 4.2, 4.6, 12.1, 12.2);
+#   (2) the Spawn flood must NOT reach any exterior / off-map marker EXCEPT
+#       through a ``zoneline`` segment — a ``mountain`` segment stops the flood
+#       at the ridge (sealed by slope), a ``river`` segment excludes beyond-edge
+#       faces via the Invisible_Wall; a reached non-``zoneline`` band is a
+#       BOWL-LEAK failure NAMING the breached Rim segment (Req 4.3, 4.4);
+#   (3) every ``zoneline`` segment's gap IS reachable from Spawn AND DOES lead
+#       off-map — the intended leak, not a failure (Req 4.5).
+#
+# The verdict POLICY lives here (the wilderness module), reading the reusable
+# ``reached_off_map_segments`` primitive from ``traverse.py`` — keeping the gate
+# primitive generic and the bowl semantics in the bowl module, exactly as the
+# off-map-band Open Decision (task 10.1) intended.
+#
+# --- Building the real TER for the gate ------------------------------------
+#
+# The full wilderness backend -> TER path (matrix carried on the spec, EQG
+# written) is wave-5 task 12.5 and is NOT wired yet. So the gate builds the TER
+# the MOST DIRECT available way: :func:`build_bowl_ter` triangulates the bowl's
+# Rim-sealed / lava-spiked fine heightfield into an in-memory ``TerFile`` with
+# the terrain core's own :func:`_heightfield_to_ter`, then the gate runs the
+# project traversability agent (``build_walk_surface`` + ``flood_reachable``)
+# DIRECTLY on that ``TerFile`` — the identical per-triangle walk surface the
+# dungeon/city gate uses on a shipped ``.eqg``, just skipping the PFS packaging
+# step wave 5 adds. This is the REAL built mesh (the collision-truth triangles),
+# not a matrix-level proxy: the flood climbs (or fails to climb) the exact
+# sealed-by-slope ridge and lava spikes the bowl assembly produced.
+#
+# World frame: :func:`_heightfield_to_ter` places height sample ``(i, j)`` at
+# world ``(i * resolution, j * resolution, heights[i, j])`` (origin at 0,0). The
+# matrix origin is a pure translation applied identically to the mesh, the Spawn
+# point AND the off-map bands, so the seal check (a point-in-rect of reached
+# centroids against the bands) is translation-invariant — we therefore compute
+# Spawn and the bands in that SAME ``i * resolution`` frame and drop the matrix
+# origin offset uniformly. Z is up throughout (EverQuest convention).
+
+
+@dataclass
+class BowlLeak:
+    """A breached non-``zoneline`` Rim segment (Req 4.4)."""
+
+    segment_id: str
+    side: str
+    edge_type: str
+
+    def __str__(self) -> str:  # pragma: no cover - trivial formatting
+        return (
+            f"BOWL-LEAK: Rim segment {self.segment_id!r} "
+            f"(side {self.side}, {self.edge_type}) is reachable from Spawn — "
+            f"the flood escaped the bowl through it"
+        )
+
+
+@dataclass
+class ReachabilityFailure:
+    """A stranded playable region / anchor (Req 4.6 / 12.2)."""
+
+    region: str
+    detail: str = ""
+
+    def __str__(self) -> str:  # pragma: no cover - trivial formatting
+        return f"UNREACHABLE: playable {self.region} not reachable from Spawn — {self.detail}"
+
+
+@dataclass
+class ZonelineFailure:
+    """A ``zoneline`` gap that is not reachable or does not lead off-map (Req 4.5)."""
+
+    segment_id: str
+    side: str
+    reason: str
+
+    def __str__(self) -> str:  # pragma: no cover - trivial formatting
+        return (
+            f"ZONELINE: gap {self.segment_id!r} (side {self.side}) {self.reason} "
+            f"— a zoneline must be reachable from Spawn AND lead off-map"
+        )
+
+
+@dataclass
+class BowlCheckResult:
+    """The verdict of :func:`check_bowl` on the built mesh.
+
+    ``passed`` is True iff the interior is fully reachable (no
+    :class:`ReachabilityFailure`), the Rim is sealed (no :class:`BowlLeak`) and
+    every ``zoneline`` gap is reachable-and-off-map (no :class:`ZonelineFailure`).
+    The failure lists NAME the offending segment / region (Req 4.4 / 4.5 / 4.6 /
+    12.2); the diagnostic counts help a 3D-pass reviewer.
+    """
+
+    passed: bool
+    leaks: List[BowlLeak] = field(default_factory=list)
+    unreachable: List[ReachabilityFailure] = field(default_factory=list)
+    zoneline_failures: List[ZonelineFailure] = field(default_factory=list)
+    # Diagnostics (not pass/fail): the built mesh + flood shape.
+    total_faces: int = 0
+    standable_faces: int = 0
+    reachable_faces: int = 0
+    playable_faces: int = 0
+    seed_face: Optional[int] = None
+    segment_reached: Dict[str, bool] = field(default_factory=dict)
+    notes: List[str] = field(default_factory=list)
+
+    def summary(self) -> str:
+        status = "PASS" if self.passed else "FAIL"
+        lines = [f"[{status}] bowl invariant on the built mesh"]
+        lines.append(
+            f"  mesh: {self.total_faces} faces  {self.standable_faces} standable  "
+            f"{self.reachable_faces} reachable from Spawn (seed_face={self.seed_face})"
+        )
+        lines.append(
+            f"  playable faces: {self.playable_faces}  "
+            f"unreachable={len(self.unreachable)}  leaks={len(self.leaks)}  "
+            f"zoneline_failures={len(self.zoneline_failures)}"
+        )
+        for leak in self.leaks:
+            lines.append(f"    XX {leak}")
+        for ur in self.unreachable:
+            lines.append(f"    XX {ur}")
+        for zf in self.zoneline_failures:
+            lines.append(f"    XX {zf}")
+        for n in self.notes:
+            lines.append(f"  note: {n}")
+        return "\n".join(lines)
+
+
+def build_bowl_ter(
+    bowl: BowlResult,
+    synth: SynthResult,
+    *,
+    name: str = "wild_bowl",
+) -> TerFile:
+    """Triangulate the bowl's Rim-sealed fine heightfield into a ``TerFile``.
+
+    The most direct available TER path for the bowl gate (the full
+    backend->TER wiring is wave-5 task 12.5): height sample ``(i, j)`` becomes a
+    vertex at the CELL-CENTRE world XY ``_cell_world_xy(i, j, origin, res)``
+    (``origin + ((i+0.5)*res, (j+0.5)*res)``) at height ``heights[i, j]``, with
+    gradient normals and two CCW (from +Z) triangles per grid quad — the SAME
+    triangulation the terrain core ships. Crucially the vertex frame is the
+    EXACT frame the bowl assembly's ``RegionSpec`` footprints and ``_cell_world_xy``
+    use, so the mesh, the off-map bands, the Spawn point, the playable mask AND
+    the Invisible_Wall rects all live in ONE world frame — no translation to
+    reconcile. Z is up.
+    """
+    if np is None:  # pragma: no cover - numpy is pinned
+        raise RuntimeError("numpy is required to build a wilderness bowl TER")
+
+    h = np.asarray(bowl.heights, dtype=np.float32)
+    res = float(synth.resolution)
+    ox, oy = synth.origin
+    nx, ny = h.shape
+
+    ter = TerFile(name=name, magic=MAGIC_TERRAIN, version=2)
+    mat = Material(index=0, name="ground", shader="Opaque_MaxCB1.fx")
+    mat.add_diffuse("ground.dds")
+    ter.materials.append(mat)
+
+    # Gradient normals (central differences), matching _heightfield_to_ter.
+    gx, gy = np.gradient(h, res)
+    nlen = np.sqrt(gx ** 2 + gy ** 2 + 1.0)
+    nx_n = -gx / nlen
+    ny_n = -gy / nlen
+    nz_n = np.ones_like(h) / nlen
+
+    def vid(i: int, j: int) -> int:
+        return i * ny + j
+
+    for i in range(nx):
+        for j in range(ny):
+            x = ox + (i + 0.5) * res
+            y = oy + (j + 0.5) * res
+            ter.vertices.append(Vertex(
+                x=float(x), y=float(y), z=float(h[i, j]),
+                nx=float(nx_n[i, j]), ny=float(ny_n[i, j]), nz=float(nz_n[i, j]),
+                u=0.0, v=0.0,
+            ))
+
+    for i in range(nx - 1):
+        for j in range(ny - 1):
+            a = vid(i, j)
+            b = vid(i + 1, j)
+            c = vid(i + 1, j + 1)
+            d = vid(i, j + 1)
+            ter.polygons.append(Polygon(a, b, c, material=0, flags=0))
+            ter.polygons.append(Polygon(a, c, d, material=0, flags=0))
+
+    return ter
+
+
+def _segment_band(
+    synth: SynthResult, matrix: DesignMatrix, seg_idx: int
+) -> Optional[Tuple[float, float, float, float]]:
+    """Off-map XY band for Rim segment ``seg_idx`` in the TER's ``i*res`` frame.
+
+    The band is the axis-aligned bounding rect of that segment's fine perimeter
+    cells (the Rim ridge / zoneline floor), padded by half a cell so a reached
+    face centroid sitting on the outer node row lands inside it. Returns ``None``
+    when the segment owns no fine cells (degenerate declaration).
+
+    This is the faithful proxy for "the flood escaped the bowl HERE" (module
+    note in ``analyzer/traverse.py``): for a sealed ``mountain`` segment the
+    ridge faces are non-standable (steep) so the flood never climbs into the
+    band; a breached segment leaks a standable, reachable face into it. For a
+    ``zoneline`` segment the flat gap faces ARE standable and the flood is
+    REQUIRED to reach the band (Req 4.5).
+    """
+    cells = _fine_cells_for_side(synth, matrix, seg_idx)
+    if not cells:
+        return None
+    res = float(synth.resolution)
+    xy = [_cell_world_xy(i, j, synth.origin, res) for (i, j) in cells]
+    xs = [p[0] for p in xy]
+    ys = [p[1] for p in xy]
+    half = 0.5 * res
+    return (min(xs) - half, min(ys) - half, max(xs) + half, max(ys) + half)
+
+
+def _spawn_world_point(
+    synth: SynthResult, matrix: DesignMatrix, heights: "np.ndarray"
+) -> Tuple[float, float, float]:
+    """Spawn's world XY (TER ``i*res`` frame) + its surface Z from the bowl field.
+
+    The matrix Spawn cell ``(cx, cy)`` maps to the fine-node near the centre of
+    its fine block; Z is read from the built heightfield so the flood seeds from
+    the floor the player actually stands on (Z is up).
+    """
+    factor = max(1, int(round(matrix.cell_size / synth.resolution)))
+    cx, cy = matrix.spawn
+    fi = int(round((cx + 0.5) * factor))
+    fj = int(round((cy + 0.5) * factor))
+    fi = min(max(fi, 0), heights.shape[0] - 1)
+    fj = min(max(fj, 0), heights.shape[1] - 1)
+    res = float(synth.resolution)
+    x, y = _cell_world_xy(fi, fj, synth.origin, res)
+    return (x, y, float(heights[fi, fj]))
+
+
+def _playable_face_set(
+    surf, synth: SynthResult, matrix: DesignMatrix
+) -> set:
+    """Standable face indices whose centroid lies on a PLAYABLE fine cell.
+
+    Playable = ``synth.playable_interior_mask`` (plains + zoneline_gap ground)
+    PLUS the Spawn cell, so Spawn ground always counts (Req 4.1 / 12.3). Scenic
+    rim / mountains / water / lava / cliff are excluded — they are deliberately
+    unreachable and must NOT be required (Req 4.1). Built in the TER ``i*res``
+    frame: a face's centroid XY -> owning fine cell -> is that cell playable?
+    """
+    if np is None:  # pragma: no cover
+        raise RuntimeError("numpy is required for the bowl gate")
+
+    playable_mask = np.asarray(synth.playable_interior_mask, dtype=bool).copy()
+    # Ensure the Spawn fine block is playable (Spawn ground is playable by R2.4).
+    factor = max(1, int(round(matrix.cell_size / synth.resolution)))
+    cx, cy = matrix.spawn
+    i0, i1 = cx * factor, (cx + 1) * factor
+    j0, j1 = cy * factor, (cy + 1) * factor
+    playable_mask[i0:min(i1, playable_mask.shape[0]),
+                  j0:min(j1, playable_mask.shape[1])] = True
+
+    res = float(synth.resolution)
+    ox, oy = synth.origin
+    nx, ny = playable_mask.shape
+    std_idx = np.nonzero(surf.standable)[0]
+    out: set = set()
+    if len(std_idx) == 0:
+        return out
+    cen = surf.centroids[std_idx]
+    # Face centroid XY -> owning fine cell index. A vertex (i,j) sits at
+    # origin + (i+0.5)*res; a quad centroid sits ~ a half-cell further, so the
+    # owning cell is floor((xy - origin) / res) clamped to the grid.
+    gi = np.clip(np.floor((cen[:, 0] - ox) / res).astype(np.int64), 0, nx - 1)
+    gj = np.clip(np.floor((cen[:, 1] - oy) / res).astype(np.int64), 0, ny - 1)
+    for k in range(len(std_idx)):
+        if playable_mask[gi[k], gj[k]]:
+            out.add(int(std_idx[k]))
+    return out
+
+
+def _invisible_wall_faces(surf, bowl: BowlResult) -> set:
+    """Standable face indices the Invisible_Wall barriers exclude from the flood.
+
+    A ``river`` Edge_Connection seals by an Invisible_Wall ``RegionSpec`` (Req
+    3.5), NOT by mesh slope — the boundary water sits flush at ``Water_Level``,
+    so the walkable floor would otherwise run right onto it and the flood would
+    escape across the visible water edge. The design's seal mechanism is that
+    the Invisible_Wall "excludes the beyond-edge faces from adjacency": the gate
+    HONORS that here by dropping every standable face whose centroid XY lies
+    inside an invisible-wall region's footprint, so the flood stops at the wall
+    exactly as a player does. (Water is visual-only — no collision volume — so
+    the wall is the only thing that seals a river edge; a gate that ignored it
+    would wrongly report a leak the client never has.)
+    """
+    if np is None:  # pragma: no cover
+        raise RuntimeError("numpy is required for the bowl gate")
+    rects: List[Tuple[float, float, float, float]] = []
+    wall_ids = {b.region_id for b in bowl.barriers if b.kind == "invisible_wall"}
+    by_id = {r.id: r for r in bowl.regions}
+    for rid in wall_ids:
+        r = by_id.get(rid)
+        if r is None:
+            continue
+        rects.append((
+            r.center_x - r.extent_x, r.center_y - r.extent_y,
+            r.center_x + r.extent_x, r.center_y + r.extent_y,
+        ))
+    if not rects:
+        return set()
+    std_idx = np.nonzero(surf.standable)[0]
+    if len(std_idx) == 0:
+        return set()
+    cen = surf.centroids[std_idx]
+    walled: set = set()
+    for (x0, y0, x1, y1) in rects:
+        inside = ((cen[:, 0] >= x0) & (cen[:, 0] <= x1) &
+                  (cen[:, 1] >= y0) & (cen[:, 1] <= y1))
+        for k in np.nonzero(inside)[0]:
+            walled.add(int(std_idx[k]))
+    return walled
+
+
+def _flood_excluding(surf, seed_face: int, exclude: set) -> set:
+    """BFS from ``seed_face`` across walkable adjacency, never entering
+    ``exclude`` (the Invisible_Wall faces). Mirrors ``flood_reachable`` but
+    treats the excluded faces as impassable — the barrier the client has."""
+    reached: set = set()
+    if seed_face is None or seed_face in exclude or seed_face not in surf.adjacency:
+        return reached
+    stack = [seed_face]
+    reached.add(seed_face)
+    while stack:
+        f = stack.pop()
+        for nb in surf.adjacency.get(f, ()):
+            if nb not in reached and nb not in exclude:
+                reached.add(nb)
+                stack.append(nb)
+    return reached
+
+
+def check_bowl(
+    bowl: BowlResult,
+    synth: SynthResult,
+    matrix: DesignMatrix,
+    *,
+    agent: Optional[AgentModel] = None,
+    ter: Optional[TerFile] = None,
+) -> BowlCheckResult:
+    """Prove the bowl invariant on the REAL built mesh (task 10.2, Req 4.2-4.6 / 12).
+
+    Builds (or accepts) the bowl's TER, runs the project traversability agent on
+    it, floods walkable faces from the Spawn face, and returns a
+    :class:`BowlCheckResult`:
+
+    1. **Interior reachable** (Req 4.2 / 4.6 / 12.1 / 12.2): every playable fine
+       cell with standable floor must have at least one of its faces in the
+       reachable set. A playable cell with floor but no reached face is a
+       :class:`ReachabilityFailure` NAMING the stranded cell.
+    2. **Rim sealed** (Req 4.3 / 4.4): for every non-``zoneline`` segment, the
+       flood must NOT reach the segment's off-map band. A reached band is a
+       :class:`BowlLeak` NAMING the breached segment.
+    3. **Zonelines lead off-map** (Req 4.5): every ``zoneline`` segment's band
+       MUST be reached from Spawn (reachable AND leading off-map). A zoneline
+       band the flood never reaches is a :class:`ZonelineFailure`.
+
+    This is ANALYTICAL (the per-triangle agent on the built TER). The VISUAL 3D
+    confirmation is the human-gated task 11.2 — nothing here is eyeballed in the
+    live viewer.
+    """
+    if np is None:  # pragma: no cover - numpy is pinned
+        raise RuntimeError("numpy is required to check a wilderness bowl")
+
+    agent = agent or AgentModel()
+    if ter is None:
+        ter = build_bowl_ter(bowl, synth)
+
+    surf = build_walk_surface(ter, agent)
+    result = BowlCheckResult(
+        passed=False,
+        total_faces=len(surf.faces),
+        standable_faces=int(surf.standable.sum()),
+    )
+
+    # Seed the flood from the Spawn face (the floor under Spawn).
+    from analyzer.traverse import _nearest_standable_face  # internal primitive
+
+    spawn_pt = _spawn_world_point(synth, matrix, bowl.heights)
+    seed_face = _nearest_standable_face(
+        surf, np.asarray(spawn_pt, dtype=np.float64), xy_radius=float(synth.resolution) * 8.0
+    )
+    result.seed_face = seed_face
+    if seed_face is None:
+        result.notes.append("no standable face under Spawn — the built mesh has no walkable floor")
+        return result
+
+    # Honor the Invisible_Wall barriers (river-edge seal, Req 3.5): the flood
+    # cannot cross a wall, exactly as a player cannot. See _invisible_wall_faces.
+    walled = _invisible_wall_faces(surf, bowl)
+    if walled:
+        result.notes.append(f"{len(walled)} face(s) behind Invisible_Wall(s) excluded from the flood")
+    reached = _flood_excluding(surf, seed_face, walled)
+    result.reachable_faces = len(reached)
+
+    # --- (1) interior reachability among PLAYABLE faces only ---------------
+    playable_faces = _playable_face_set(surf, synth, matrix)
+    result.playable_faces = len(playable_faces)
+    # Group playable faces by owning fine cell so a stranded cell is NAMED.
+    res = float(synth.resolution)
+    ox, oy = synth.origin
+    nx_f, ny_f = synth.heights.shape
+    std_cell: Dict[Tuple[int, int], List[int]] = {}
+    for f in playable_faces:
+        c = surf.centroids[f]
+        gi = int(min(max(int((c[0] - ox) // res), 0), nx_f - 1))
+        gj = int(min(max(int((c[1] - oy) // res), 0), ny_f - 1))
+        std_cell.setdefault((gi, gj), []).append(f)
+    for (gi, gj), faces in sorted(std_cell.items()):
+        if not any(f in reached for f in faces):
+            result.unreachable.append(ReachabilityFailure(
+                region=f"playable cell ({gi},{gj})",
+                detail=f"{len(faces)} standable floor face(s), none reachable from Spawn",
+            ))
+
+    # --- (2)/(3) Rim seal + zoneline via the off-map bands -----------------
+    bands: List[OffMapBand] = []
+    seg_meta: Dict[str, Tuple[str, str]] = {}  # segment_id -> (side, edge_type)
+    for seg_idx, ec in enumerate(matrix.edges):
+        band = _segment_band(synth, matrix, seg_idx)
+        if band is None:
+            continue
+        seg_id = f"{ec.side}:{seg_idx}:{ec.edge_type}"
+        is_zone = ec.edge_type == "zoneline"
+        bands.append(OffMapBand(segment_id=seg_id, band=band, is_zoneline=is_zone))
+        seg_meta[seg_id] = (ec.side, ec.edge_type)
+
+    reached_segments = reached_off_map_segments(surf, reached, bands)
+    result.segment_reached = dict(reached_segments)
+    for seg_id, did_reach in reached_segments.items():
+        side, etype = seg_meta[seg_id]
+        if etype == "zoneline":
+            # The intended leak: MUST be reached (reachable + leads off-map).
+            if not did_reach:
+                result.zoneline_failures.append(ZonelineFailure(
+                    segment_id=seg_id, side=side,
+                    reason="is not reachable from Spawn (or does not lead off-map)",
+                ))
+        else:
+            # mountain / river: reaching the exterior band is a bowl leak.
+            if did_reach:
+                result.leaks.append(BowlLeak(
+                    segment_id=seg_id, side=side, edge_type=etype,
+                ))
+
+    result.passed = (
+        not result.unreachable
+        and not result.leaks
+        and not result.zoneline_failures
+    )
+    return result
