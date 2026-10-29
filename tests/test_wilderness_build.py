@@ -9,13 +9,16 @@ plain-terrain path staying byte-identical is pinned separately by
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from analyzer.traverse import load_ter_from_eqg
-from generators.pipeline import generate_validated
+from generators.pipeline import DEFAULT_TIMEOUT_S, generate_validated
 from generators.wilderness.build import (
+    _landscape,
     bowl_report,
     build_wilderness_ter,
     normalise_edges,
@@ -114,3 +117,48 @@ def test_generate_validated_gates_wilderness_on_the_bowl(dev_wilderness, tmp_pat
     ter, _ = load_ter_from_eqg(vb.result.eqg_path)
     assert len(ter.materials) >= 3
     assert vb.result.glb_path is not None and vb.result.glb_path.exists()
+
+
+def _generate(tmp_path, zone_id, seed):
+    plan = ZonePlan(name="karana", zone_type="wilderness")
+    return generate_validated(
+        lambda s: plan_to_spec(plan, seed=s, edges={"N": "zoneline", "E": "river"}),
+        zone_type="wilderness", zone_id=zone_id, seed=seed,
+        output_dir=tmp_path, failure_log=None,
+    )
+
+
+def _ter_bytes(vb) -> bytes:
+    ter, _ = load_ter_from_eqg(vb.result.eqg_path)
+    return ter.to_bytes()
+
+
+@pytest.mark.slow
+def test_seeded_reproducibility(dev_wilderness, tmp_path):
+    """Feature: zone-generator-wilderness, Property 16: Seeded reproducibility.
+
+    The same pinned seed rebuilds the same TER (the landscape cache cleared in
+    between, so it really is re-derived); no seed draws a fresh one and the
+    landscape differs. The ``.eqg``/``.glb`` need not be byte-identical.
+    """
+    first = _generate(tmp_path, "karana_a", 2024)
+    _landscape.cache_clear()
+    again = _generate(tmp_path, "karana_b", 2024)
+    assert first.seed == again.seed == 2024
+    assert _ter_bytes(first) == _ter_bytes(again)
+
+    fresh = [_generate(tmp_path, f"karana_r{i}", None) for i in range(2)]
+    assert fresh[0].seed != fresh[1].seed
+    assert _ter_bytes(fresh[0]) != _ter_bytes(fresh[1])
+
+
+@pytest.mark.slow
+def test_full_generate_fits_the_time_budget(dev_wilderness, tmp_path):
+    """A full gated wilderness generate (build, bowl gate, format check, GLB)
+    is far under the 5-minute budget and inside the pipeline's own timeout."""
+    _landscape.cache_clear()  # time a cold build, not a cache hit
+    t0 = time.perf_counter()
+    vb = _generate(tmp_path, "karana_t", 1337)
+    elapsed = time.perf_counter() - t0
+    assert vb.validated
+    assert elapsed < DEFAULT_TIMEOUT_S["wilderness"] < 300.0, elapsed

@@ -252,3 +252,77 @@ another corridor.
 - [ ] **[SHOULD] Format gate honoured** — A served/accepted build passes the
       Tier-1 format check (`analyzer.rof2check.check_eqg`); the panel/sidecar
       reports `format_passed`.
+
+## Step 1 — Wilderness (open Karana)
+
+> The `zone-generator-wilderness` milestone (roadmap step 1). Walk this before
+> wilderness is enabled for everyone (wilderness task 10 → task 11). Until
+> then it is offered only behind the dev flag: `npm run dev` sets
+> `EQ_S3D_DEV_WILDERNESS=1` for the backend (the launcher prints
+> `wilderness (dev): on`). Check the side panel shows no stale-code banner.
+
+### Cases
+
+Pick **wilderness**, set the edges in the Edges box, pin the seed. Task 5
+changed no settings, so no seed moved since the first look.
+
+| # | Edges | Seeds |
+|---|-------|-------|
+| a | all mountain (default) | 1337, 1, 42, 20250126 |
+| b | N zoneline | 7, 2985 |
+| c | N zoneline, E river | 1955208177, 123456789, 2024 |
+| d | any (the matrix seeds lava) | 99, 2024 |
+| e | S river (water and mud banks) | 7 |
+
+### W.1 — Landform and bowl
+
+- [ ] **[MUST] Open plain** — Reads as an open plain with weathered hills, not a
+      crater and not a room graph in a grass skin.
+- [ ] **[SHOULD] Water-made relief** — Valleys and ridges look carved by water
+      (branching drainage), not noise blobs.
+- [ ] **[SHOULD] Sharp edges** — Cliffs and shorelines are sharp, not
+      stair-stepped.
+- [ ] **[MUST] Rim is a backdrop** — The mountain Rim reads as a distant
+      backdrop, not a wall right at the play edge.
+- [ ] **[MUST] Sealed** — You can't walk out over a mountain edge or across a
+      river edge.
+- [ ] **[MUST] Zoneline gap** — A zoneline edge is a flat, walkable opening
+      leading off the map.
+- [ ] **[MUST] Lava** — Lava reads as a hazard you can't walk onto.
+- [ ] **[SHOULD] Size** — The zone feels big enough to be a Karana (2400 u today).
+
+### W.2 — Water
+
+- [ ] **[MUST] Water plane** — Every river and water body has a flat, see-through
+      surface at one level; the bed under it is visibly lower.
+- [ ] **[SHOULD] Shoreline** — The water edge meets the bank. Known issue: on
+      some seeds part of the shore sits below the water level, so the surface
+      hovers over the bank (tracked, fix belongs in `synth.py`). Note how bad it
+      looks, not just whether it happens.
+- [ ] **[MUST] Water doesn't block** — You can walk into the shallows; the
+      surface is not a floor and not a wall.
+
+### W.3 — Ground textures (biome kit)
+
+The preview shows each material's base colour, not the real DDS textures.
+
+- [ ] **[MUST] Layered ground** — The plains are not one flat colour: dry grass
+      on the high ground, bare dirt and rock where it is steep, dark mud along
+      the water.
+- [ ] **[SHOULD] Layers sit where they should** — Rock hugs the foot of the Rim
+      and steep slopes, not the open flats; mud only beside water.
+- [ ] **[SHOULD] Region kinds read apart** — Rim, cliff, lava, zoneline and the
+      river bed are each distinct from the plains.
+
+### W.4 — Sidecar and reproducibility
+
+- [ ] **[MUST] Sidecar** — `<name>.zone.json` carries `biome: plains`, the four
+      `edge_connections` as set, an `invisible_walls` box per river edge, `lava`
+      regions marked `damaging`, `region_intent` for every region (water and
+      lava scenic, zoneline playable) and a `Spawn` POI anchor.
+- [ ] **[MUST] Pinned seed repeats** — Generating the same pinned seed and edges
+      twice gives the same landscape.
+- [ ] **[MUST] Blank seed is fresh** — With the seed box empty, each generate
+      gives a different landscape.
+- [ ] **[SHOULD] Snappy** — A wilderness generate returns in a few seconds (the
+      pipeline budget is 60 s).
