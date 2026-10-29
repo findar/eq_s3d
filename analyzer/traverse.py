@@ -85,6 +85,151 @@ class AgentModel:
 
 
 # ---------------------------------------------------------------------------
+# Bowl-gate parameters (wilderness; defaulted so the dungeon gate is unchanged)
+# ---------------------------------------------------------------------------
+#
+# The dungeon/city gate asks one question: "is every ROOM reachable from the
+# safe point?" — a full-connectivity flood over the whole walk surface. A
+# wilderness zone needs two MORE guarantees proved on the same built mesh
+# (Requirement 4): reachability among ONLY the playable interior (scenic rim /
+# distant mountains are deliberately unreachable and must NOT be required —
+# Req 4.1/12.3), and that the Spawn flood does NOT escape the bowl except
+# through a declared `zoneline` gap (the Rim-seal check — Req 4.3/4.4).
+#
+# ``BowlGateParams`` carries exactly those extra inputs, and NOTHING about it
+# touches the default path: ``validate(bowl=None)`` runs the identical flood and
+# produces the identical ``TraversalReport`` the dungeon gate always has. The
+# params are supplied (by wave-4 task 10.2, which implements the invariant on
+# top of this plumbing) only for a wilderness build.
+#
+# --- Off-map / zoneline marker representation (Open Decision, RESOLVED here) ---
+#
+# The design left open how the "exterior / off-map" marker the Rim-seal check
+# floods against is represented on the mesh. The two candidates were:
+#
+#   (a) SENTINEL FACES — synthesize a thin strip of fake triangles just beyond
+#       each non-`zoneline` Rim segment and splice them into the walk surface so
+#       the flood can "reach the exterior" as ordinary adjacency.
+#   (b) EXTERIOR XY BAND — declare a 2D region (an axis-aligned XY rect per
+#       non-`zoneline` segment) sitting OUTSIDE the rim ridge, and after the
+#       normal Spawn flood, check whether any REACHED face's centroid XY falls
+#       inside that band. No mesh mutation at all.
+#
+# CHOICE: **(b) exterior XY band.** Why:
+#   * It reuses the existing surface and flood UNTOUCHED — ``build_walk_surface``
+#     and ``flood_reachable`` run exactly as for a dungeon; the bowl check is a
+#     pure post-flood test over ``surf.centroids`` of the reached set. The task's
+#     hard rule is "reuse the existing agent + surface builder, do NOT invent a
+#     parallel surface builder"; sentinel faces would mean synthesizing geometry
+#     and wiring it into the union-find/adjacency — exactly a parallel builder.
+#   * Soundness matches the sealing mechanism. A `mountain` segment seals by
+#     slope (its rim faces are non-standable, so the flood never climbs the
+#     ridge); a `river` segment seals via the Invisible_Wall excluding
+#     beyond-edge faces from adjacency. In BOTH cases the walkable floor simply
+#     stops before the exterior band — so "did a reached face land in the band?"
+#     is a faithful proxy for "did the flood escape the bowl here?" A sentinel
+#     face would have to be glued on with the SAME adjacency rules to be
+#     faithful anyway, buying nothing over testing the band directly.
+#   * It is the cleaner thing for 10.2 to consume: the band is plain data
+#     (rects), trivially derived from the matrix perimeter geometry, and the
+#     check is a vectorised point-in-rect over the reached centroids. A zoneline
+#     gap, by contrast, is asserted reachable-and-leading-off-map by placing its
+#     OWN band and requiring a reached face in it — the same primitive, inverted.
+#
+# So an off-map marker IS an ``OffMapBand`` (an XY rect tagged with the Rim
+# segment it guards and whether it is the intended `zoneline` leak). 10.2 floods
+# as today, then checks the reached centroids against these bands.
+
+
+@dataclass
+class OffMapBand:
+    """An exterior XY region just beyond one Rim segment, for the seal check.
+
+    The band is an axis-aligned rectangle ``(x0, y0, x1, y1)`` in world XY lying
+    OUTSIDE the rim ridge of segment ``segment_id``. ``is_zoneline`` marks the
+    one intended leak: for a `zoneline` segment the gate REQUIRES a reached face
+    in the band (the gap leads off-map, Req 4.5); for every other (`mountain` /
+    `river`) segment the gate FORBIDS any reached face in the band (reaching it
+    is a bowl-leak, Req 4.4). This is the resolved representation of the off-map
+    marker — an exterior band the reachable set is checked against, not a
+    sentinel face spliced into the mesh (see the module note above).
+
+    Produced from the matrix perimeter by task 10.2 / the bowl assembler; a
+    verdict is computed by :func:`reached_off_map_segments`.
+    """
+    segment_id: str
+    band: Tuple[float, float, float, float]   # (x0, y0, x1, y1) world XY
+    is_zoneline: bool = False
+
+
+@dataclass
+class BowlGateParams:
+    """The defaulted extra inputs that turn the dungeon gate into the bowl gate.
+
+    Every field defaults to empty/None so that a ``validate`` call that does not
+    pass a ``BowlGateParams`` (the dungeon/city path) is byte-for-byte the
+    gate it always was — no field here is consulted on that path.
+
+    playable_mask
+        The set of standable face indices that count as *playable* interior
+        (Spawn ground + playable POI anchors/ground). When supplied, the bowl
+        gate (10.2) proves reachability among ONLY these faces, so scenic rim /
+        distant-mountain faces are not required to be reachable (Req 4.1, 12.3).
+        ``None`` means "no playable restriction" — the whole walk surface, i.e.
+        today's full-connectivity semantics.
+    off_map_bands
+        The exterior XY bands guarding each Rim segment (one per non-`zoneline`
+        segment to forbid, plus one per `zoneline` gap to require). Empty means
+        the Rim-seal check is not run.
+    spawn_point
+        The world point the bowl flood seeds from (Spawn). ``None`` falls back to
+        the spec's ``safe_point`` — the same seed the dungeon gate already uses —
+        so leaving it unset changes nothing.
+    """
+    playable_mask: Optional[set] = None
+    off_map_bands: List[OffMapBand] = field(default_factory=list)
+    spawn_point: Optional[Tuple[float, float, float]] = None
+
+
+def reached_off_map_segments(surf: "WalkSurface", reached: set,
+                             bands: List[OffMapBand]) -> Dict[str, bool]:
+    """Which off-map bands the Spawn flood landed in — the Rim-seal primitive.
+
+    Pure helper (no verdict, no pass/fail): given a completed reachable set
+    (face indices from :func:`flood_reachable`) and the exterior ``bands``,
+    returns ``{segment_id: reached_into_band}`` — True iff at least one reached
+    standable face has its centroid XY inside that band's rectangle. This is the
+    single point-in-rect-over-reached-centroids test the resolved off-map-band
+    representation needs; the ACTUAL bowl invariant (task 10.2) interprets the
+    result: for a non-`zoneline` segment ``True`` is a bowl-leak naming the
+    segment (Req 4.4); for a `zoneline` segment ``True`` is the required,
+    intended leak (Req 4.5).
+
+    Separated out here (rather than in 10.2) because it is the mechanical
+    consequence of CHOOSING the exterior-XY-band representation, and keeping it
+    beside the dataclass lets 10.2's invariant read as plain policy over this
+    primitive. It never mutates the surface or the reached set.
+    """
+    result: Dict[str, bool] = {}
+    if not bands:
+        return result
+    if reached:
+        reached_idx = np.fromiter(reached, dtype=np.int64, count=len(reached))
+        cen = surf.centroids[reached_idx]
+        rx, ry = cen[:, 0], cen[:, 1]
+    else:
+        rx = ry = np.zeros(0, dtype=np.float64)
+    for b in bands:
+        x0, y0, x1, y1 = b.band
+        if len(rx):
+            inside = ((rx >= x0) & (rx <= x1) & (ry >= y0) & (ry <= y1))
+            result[b.segment_id] = bool(inside.any())
+        else:
+            result[b.segment_id] = False
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Report structures
 # ---------------------------------------------------------------------------
 
@@ -1304,7 +1449,9 @@ def validate(eqg_path: str | Path,
              spec: Optional[ZoneSpec] = None,
              spec_path: Optional[str | Path] = None,
              agent: Optional[AgentModel] = None,
-             check_corridors: bool = False) -> TraversalReport:
+             check_corridors: bool = False,
+             *,
+             bowl: Optional[BowlGateParams] = None) -> TraversalReport:
     """
     Load the mesh and room graph, walk the mesh from the safe point, and report
     per-room reachability.
@@ -1315,6 +1462,16 @@ def validate(eqg_path: str | Path,
     ``report.checked_corridors``. ``report.passed`` keeps its umbrella Req 4.2
     meaning (every room reachable) regardless; ``report.corridors_passed``
     reflects the extra checks (and is ``True`` when they were not run).
+
+    ``bowl`` is the defaulted wilderness bowl-gate parameter set (keyword-only).
+    **When it is ``None`` — the dungeon/city path — this function behaves
+    EXACTLY as it always has: the Spawn flood seeds from the spec's safe point,
+    reachability is reported over the whole walk surface, and the returned
+    ``TraversalReport`` is unchanged (no regression).** When supplied, it carries
+    the playable mask, the exterior off-map bands, and an optional Spawn-point
+    override that the bowl invariant (task 10.2) consumes; task 10.1 only threads
+    the parameters through (flood seed + the reachable set are exposed on the
+    report for 10.2 to test) and does not yet compute a bowl pass/fail verdict.
     """
     agent = agent or AgentModel()
     ter, zone_name = load_ter_from_eqg(eqg_path)
@@ -1340,7 +1497,15 @@ def validate(eqg_path: str | Path,
         standable_faces=int(surf.standable.sum()),
     )
 
-    safe = np.array(spec.safe_point, dtype=np.float64)
+    # Flood seed. The dungeon/city path (``bowl is None``) uses the spec's safe
+    # point EXACTLY as before — no behaviour change. A wilderness build may hand
+    # the bowl gate a Spawn point to seed from instead; when it doesn't, the
+    # safe point is used, so even a supplied ``bowl`` without a spawn_point keeps
+    # the historic seed.
+    if bowl is not None and bowl.spawn_point is not None:
+        safe = np.array(bowl.spawn_point, dtype=np.float64)
+    else:
+        safe = np.array(spec.safe_point, dtype=np.float64)
     # XY search radius for the start face: generous so a safe point placed at the
     # entrance room centre still lands on its floor.
     seed_face = _nearest_standable_face(surf, safe, xy_radius=400.0)
