@@ -37,12 +37,12 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: server/app.py, web/index.html, web/src/, tests/test_server.py, tests/test_hygiene.py, tests/conftest.py
   - Reqs: 3.1, 3.2
 
-- [ ] 4. HUMAN: first look at a Karana (terrain + bowl)
+- [x] 4. HUMAN: first look at a Karana (terrain + bowl)
   - Card: [cards/04-human-first-look.md](cards/04-human-first-look.md)
   - Type: human · Depends: 2, 3
   - Reqs: 13.4
 
-- [ ] 5. Tune from the first look (time-boxed)
+- [x] 5. Tune from the first look (time-boxed)
   - Card: [cards/05-tuning.md](cards/05-tuning.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/wilderness/matrix.py, generators/wilderness/synth.py, generators/wilderness/bowl.py, generators/field/terrain.py

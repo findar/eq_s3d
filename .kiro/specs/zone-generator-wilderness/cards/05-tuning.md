@@ -10,7 +10,7 @@ here.
 
 ## Findings to address
 <!-- copied from card 04 Result, one checkbox each, with the case/seed -->
-- [ ] _(fill from task 4)_
+_None. Task 4 was signed off with no findings._
 
 ## Done when
 - [ ] Every finding above is either fixed or split out as a new task.
@@ -29,4 +29,4 @@ here.
   bigger zone or a finer grid.
 
 ## Result
-<!-- worker: one line + moved seeds -->
+✔ Nothing to tune: task 4 had no findings. No settings changed, no seeds moved.
