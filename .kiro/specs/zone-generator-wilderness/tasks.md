@@ -48,7 +48,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/wilderness/matrix.py, generators/wilderness/synth.py, generators/wilderness/bowl.py, generators/field/terrain.py
   - Reqs: 5.1, 6.1, 12.1, 13.3
 
-- [ ] 6. Visual water plane
+- [x] 6. Visual water plane
   - Card: [cards/06-water-plane.md](cards/06-water-plane.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/wilderness/build.py, generators/wilderness/water.py, generators/zone_spec.py, analyzer/traverse.py, tests/test_wilderness_water.py
