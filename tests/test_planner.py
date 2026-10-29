@@ -125,10 +125,18 @@ class TestRulePlanner:
 
 class TestExpand:
     def test_plan_to_spec_basic(self):
+        plan = ZonePlan(name="t", zone_type="dungeon", room_count=4)
+        spec = plan_to_spec(plan, seed=1)
+        assert spec.zone_type == "dungeon"
+        assert len(spec.rooms) == 4
+
+    def test_plan_to_spec_wilderness_is_open_land(self):
+        # Wilderness is an open landscape from the wilderness pipeline, not a
+        # room graph: room_count does not apply (wilderness spec task 2).
         plan = ZonePlan(name="t", zone_type="wilderness", room_count=4)
         spec = plan_to_spec(plan, seed=1)
         assert spec.zone_type == "wilderness"
-        assert len(spec.rooms) == 4
+        assert spec.rooms == [] and spec.wilderness is not None
 
     def test_regions_added(self):
         plan = ZonePlan(name="t", zone_type="dungeon", room_count=3, regions=["water"])
@@ -185,7 +193,10 @@ class TestControlsGolden:
     and the same seed makes the geometry directly comparable.
     """
 
-    ZONE_TYPES = ["dungeon", "city", "wilderness"]
+    # Room-graph zone types only. Wilderness no longer goes through the
+    # LayoutGenerator at all (wilderness spec task 2): it is an open landscape,
+    # covered by tests/test_wilderness_build.py.
+    ZONE_TYPES = ["dungeon", "city"]
     SEEDS = [7, 1955208177, 1949459644]
     ROOMS = [1, 5, 12, 30]
     ELEVATION = [True, False]

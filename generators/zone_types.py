@@ -18,6 +18,7 @@ and ``zone_type_listing`` is what the server's ``/api/zone_types`` serves.
 
 from __future__ import annotations
 
+import os
 from typing import Mapping
 
 # The three defined zone types, in canonical listing order. Everything that
@@ -93,6 +94,21 @@ ZONE_TYPE_REASONS: dict[str, str] = {
 # ZONE_TYPE_REASONS.
 DISABLED_REASON = "Not yet offered: its builds don't pass the traversability sweep."
 
+# Dev-only override (wilderness task 2). With EQ_S3D_DEV_WILDERNESS=1 in the
+# environment, wilderness is offered so a Karana can be built and looked at in
+# the viewer before it is enabled for real. Task 11 deletes this when wilderness
+# joins ENABLED_ZONE_TYPES.
+DEV_WILDERNESS_ENV = "EQ_S3D_DEV_WILDERNESS"
+
+
+def enabled_zone_types() -> frozenset[str]:
+    """The zone types offered right now: ``ENABLED_ZONE_TYPES`` plus the dev
+    override. Reads both at call time, so a monkeypatched set or environment is
+    honoured."""
+    if os.environ.get(DEV_WILDERNESS_ENV) == "1":
+        return ENABLED_ZONE_TYPES | {"wilderness"}
+    return ENABLED_ZONE_TYPES
+
 
 def is_enabled(zone_type: object) -> bool:
     """Whether ``zone_type`` is currently offered (Req 3.1).
@@ -105,7 +121,7 @@ def is_enabled(zone_type: object) -> bool:
     canonical = canonical_zone_type(zone_type)
     if canonical is None:
         return False
-    return canonical in ENABLED_ZONE_TYPES
+    return canonical in enabled_zone_types()
 
 
 def zone_type_listing() -> list[dict]:
@@ -119,7 +135,7 @@ def zone_type_listing() -> list[dict]:
     """
     listing: list[dict] = []
     for name in DEFINED_ZONE_TYPES:
-        enabled = name in ENABLED_ZONE_TYPES
+        enabled = name in enabled_zone_types()
         reason = None if enabled else ZONE_TYPE_REASONS.get(name, DISABLED_REASON)
         listing.append({"name": name, "enabled": enabled, "reason": reason})
     return listing

@@ -31,7 +31,8 @@ on top of it.
 
 Zone-type scope: a zone type is *gated* (its builds must pass the
 traversability + continuity gate) iff it is in ``gated_zone_types``, which
-defaults to ``ENABLED_ZONE_TYPES`` — the one Enabled set (wave 4, Req 3.1);
+defaults to ``enabled_zone_types()`` — the one Enabled set (wave 4, Req 3.1)
+plus the dev-only wilderness override;
 there is no separate "gated" set any more. Wilderness is DEFINED but DISABLED
 in M1, so it is not in the Enabled set and simply isn't offered. A non-gated
 build (zone type outside the gated set, or ``validate_enabled=False``) runs
@@ -57,11 +58,13 @@ from pathlib import Path
 from typing import Callable, Collection, List, Optional, Sequence
 
 from analyzer.rof2check import FormatReport, check_eqg
-from analyzer.traverse import AgentModel, TraversalReport, validate
+from analyzer.traverse import (
+    AgentModel, TraversalReport, load_ter_from_eqg, validate,
+)
 from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
 from generators.zone_spec import ZoneSpec
-from generators.zone_types import ENABLED_ZONE_TYPES
+from generators.zone_types import enabled_zone_types
 
 logger = logging.getLogger("eq_s3d.pipeline")
 
@@ -176,6 +179,22 @@ class GenerationFailed(Exception):
 # ---------------------------------------------------------------------------
 # Failure logging
 # ---------------------------------------------------------------------------
+
+def _traversal_report(eqg_path: Path, spec: ZoneSpec,
+                      agent: Optional[AgentModel]) -> TraversalReport:
+    """The traversability verdict for a built zone.
+
+    Room-graph zones: every room reachable + corridor continuity
+    (``analyzer.traverse.validate``). Open wilderness (the spec carries a
+    ``wilderness`` payload): the bowl invariant on the shipped mesh — interior
+    reachable from Spawn, Rim sealed except at zonelines — as one "bowl" room.
+    """
+    if spec.wilderness is not None:
+        from generators.wilderness.build import bowl_report
+        ter, _ = load_ter_from_eqg(eqg_path)
+        return bowl_report(spec, ter, agent)
+    return validate(eqg_path, spec=spec, agent=agent, check_corridors=True)
+
 
 def _failure_reasons(report: TraversalReport) -> List[str]:
     """Per-room failure reasons from the report (only the unreachable rooms)."""
@@ -399,7 +418,7 @@ def generate_validated(
     # all resolve inside ``output_dir`` or an ``OutsideOutputError`` is raised.
     root = OutputRoot(output_dir)
     if gated_zone_types is None:
-        gated_zone_types = ENABLED_ZONE_TYPES
+        gated_zone_types = enabled_zone_types()
     if timeout_s is None:
         timeout_s = DEFAULT_TIMEOUT_S.get(zone_type, _FALLBACK_TIMEOUT_S)
 
@@ -461,8 +480,7 @@ def generate_validated(
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
             )
-            report = validate(result.eqg_path, spec=spec, agent=agent,
-                              check_corridors=True)
+            report = _traversal_report(result.eqg_path, spec, agent)
             fmt = check_eqg(result.eqg_path, spec,
                             sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
                             agent=agent)

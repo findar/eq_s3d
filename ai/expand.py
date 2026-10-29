@@ -12,7 +12,7 @@ same ZoneSpec the dropdowns produce — so everything downstream is unchanged.
 from __future__ import annotations
 
 import random
-from typing import Optional
+from typing import Mapping, Optional
 
 from generators.layout import LayoutGenerator
 from generators.zone_spec import ZoneSpec, RegionSpec
@@ -30,10 +30,23 @@ _VERTICALITY = {
 }
 
 
-def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None) -> ZoneSpec:
-    """Build a ZoneSpec from a validated ZonePlan."""
+def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
+                 edges: Optional[Mapping[str, str]] = None) -> ZoneSpec:
+    """Build a ZoneSpec from a validated ZonePlan.
+
+    ``edges`` declares the Rim of a wilderness zone (``{"N": "zoneline", ...}``;
+    undeclared sides are mountain). It is ignored for room-graph zone types.
+    """
     plan.validate()
     rng_seed = seed if seed is not None else random.randint(0, 2 ** 31 - 1)
+
+    # Open-world wilderness: no room layout; the wilderness pipeline describes
+    # the whole landscape (generators/wilderness/build.py).
+    if plan.zone_type == "wilderness":
+        from generators.wilderness.biome_resolve import resolve_biome
+        from generators.wilderness.build import wilderness_spec
+        biome = resolve_biome(plan).biome
+        return wilderness_spec(plan.name, rng_seed, edges, biome=biome)
 
     gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed)
 

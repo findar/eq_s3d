@@ -29,8 +29,8 @@ from core.paths import (
 from generators.builder import BUILD_NAME_RE
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
-    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, ENABLED_ZONE_TYPES,
-    canonical_zone_type, is_enabled,
+    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE,
+    canonical_zone_type, enabled_zone_types, is_enabled,
 )
 
 
@@ -45,7 +45,7 @@ from generators.zone_types import (
 
 def _enabled_set_str() -> str:
     """The enabled zone types in canonical listing order, comma-joined."""
-    return ", ".join(z for z in DEFINED_ZONE_TYPES if z in ENABLED_ZONE_TYPES)
+    return ", ".join(z for z in DEFINED_ZONE_TYPES if z in enabled_zone_types())
 
 
 def _build_name_arg(value: str) -> str:
@@ -111,6 +111,16 @@ _locks_arg = _int_in_range("--locks", 0, 5)
 _seed_arg = _int_in_range("--seed", 0, 2_147_483_647)
 
 
+def _edges_arg(value: str) -> dict:
+    """``--edges`` converter: ``N=zoneline,E=river`` -> four-side Rim
+    declaration (unnamed sides are mountain). Exit 2 on a bad side/type."""
+    from generators.wilderness.build import parse_edges
+    try:
+        return parse_edges(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc))
+
+
 def cmd_generate(args) -> None:
     # Resolve the zone type. ``--zone-type`` / ``--theme`` share one dest and
     # are already converted + validated by ``_zone_type_arg`` (so a disabled or
@@ -145,8 +155,10 @@ def cmd_generate(args) -> None:
     plan.name = args.name
     zone_id = new_zone_id(prefix=args.name)
 
+    edges = getattr(args, "edges", None)
+
     def factory(seed):
-        return plan_to_spec(plan, seed=seed)
+        return plan_to_spec(plan, seed=seed, edges=edges)
 
     # Build through the shared validated pipeline, so the CLI gets the same
     # "every room reachable on foot" guarantee as the server (dungeon/box
@@ -242,6 +254,10 @@ def main(argv: list[str] | None = None) -> None:
                    help="Number of locked gates (0-5)")
     g.add_argument("--seed", type=_seed_arg, default=None,
                    help="Random seed (0-2147483647)")
+    g.add_argument("--edges", type=_edges_arg, default=None,
+                   help="Wilderness Rim per side, e.g. N=zoneline,E=river "
+                        "(types: mountain, river, zoneline; unnamed sides "
+                        "are mountain)")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -251,6 +267,9 @@ def main(argv: list[str] | None = None) -> None:
     g.set_defaults(func=cmd_generate)
 
     args = parser.parse_args(argv)
+    if (getattr(args, "edges", None) is not None
+            and canonical_zone_type(args.zone_type) != "wilderness"):
+        parser.error("--edges only applies to --zone-type wilderness")
 
     # Refusal (Req 10.2): right after parsing — before any build or write —
     # refuse an output directory that resolves to, inside, or around the

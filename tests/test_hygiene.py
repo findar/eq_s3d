@@ -615,6 +615,7 @@ _ALLOWED_WEB_INPUT_IDS = {
 _ALLOWED_CLI_OPTIONS = {
     # geometry slice
     "--zone-type", "--rooms", "--size", "--verticality", "--locks", "--seed",
+    "--edges",  # wilderness Rim declaration (wilderness spec task 2)
     # housekeeping the task allows
     "--output", "--ter-version", "--no-validate",
     # deprecated aliases that share a dest (still a legacy input surface)

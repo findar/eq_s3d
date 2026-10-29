@@ -239,6 +239,12 @@ class ZoneSpec:
     regions: List[RegionSpec]   = field(default_factory=list)
     gates: List["GateSpec"]     = field(default_factory=list)
 
+    # Open-world wilderness payload (wilderness spec task 2). ``None`` for every
+    # room-graph zone. When set it carries the inputs the wilderness pipeline
+    # rebuilds the landscape from: ``{"biome": str, "edges": {side: type}}``.
+    # Omitted from ``to_dict()`` when unset so dungeon/city output is unchanged.
+    wilderness: Optional[Dict[str, Any]] = None
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
@@ -260,6 +266,7 @@ class ZoneSpec:
             "lights": [asdict(l) for l in self.lights],
             "regions": [asdict(r) for r in self.regions],
             "gates": [asdict(g) for g in self.gates],
+            **({"wilderness": self.wilderness} if self.wilderness is not None else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -285,6 +292,7 @@ class ZoneSpec:
             elemental_tint=d.get("elemental_tint", ""),
             ambient_light=tuple(d.get("ambient_light", (0.1, 0.1, 0.12))),
             safe_point=tuple(d.get("safe_point", (0.0, 0.0, 0.0))),
+            wilderness=d.get("wilderness"),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)

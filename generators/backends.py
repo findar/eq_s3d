@@ -90,6 +90,13 @@ class TerrainBackend:
         if not _NUMPY_AVAILABLE:
             return None
 
+        # An open-world wilderness spec (it carries a ``wilderness`` payload)
+        # builds from the wilderness pipeline; every other spec takes the
+        # room-footprint terrain path below, unchanged.
+        if spec.wilderness is not None:
+            from .wilderness.build import build_wilderness_ter
+            return build_wilderness_ter(spec, ter_name, ter_version)
+
         # Imported lazily: terrain.py imports numpy at module load, which would
         # raise on a numpy-less machine before we get the chance to degrade.
         from .field.terrain import TerrainSpec, build_terrain
