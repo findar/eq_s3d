@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SPECS = ROOT / ".kiro" / "specs"
 
 _TASK = re.compile(r"^- \[([ x\-])\]\*? (\d+)\. (.+?)\s*$")
-_META = re.compile(r"^\s+- (Card|Type|Owns|Depends|Size|Where)\b")
+_META = re.compile(r"^\s+- (Card|Type|Owns|Depends|Size|Where|Reqs)\b")
 _ANY_BOX = re.compile(r"^\s*- \[([ x\-])\]")
 _STATE = {" ": "open", "-": "doing", "x": "done"}
 

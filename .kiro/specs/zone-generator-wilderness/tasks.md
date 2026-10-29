@@ -29,59 +29,59 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Card: [cards/02-build-end-to-end.md](cards/02-build-end-to-end.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/wilderness/build.py, generators/backends.py, generators/zone_spec.py, generators/zone_types.py, generators/pipeline.py, main.py, tests/test_wilderness_build.py
-  - _Requirements: 14.1, 14.2, 14.3_
+  - Reqs: 14.1, 14.2, 14.3
 
 - [ ] 3. Edge declarations in the server and the web Controls panel
   - Card: [cards/03-web-edges.md](cards/03-web-edges.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: server/app.py, web/src/, tests/test_server.py
-  - _Requirements: 3.1, 3.2_
+  - Reqs: 3.1, 3.2
 
 - [ ] 4. HUMAN: first look at a Karana (terrain + bowl)
   - Card: [cards/04-human-first-look.md](cards/04-human-first-look.md)
   - Type: human · Depends: 2, 3
-  - _Requirements: 13.4_
+  - Reqs: 13.4
 
 - [ ] 5. Tune from the first look (time-boxed)
   - Card: [cards/05-tuning.md](cards/05-tuning.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/wilderness/matrix.py, generators/wilderness/synth.py, generators/wilderness/bowl.py, generators/field/terrain.py
-  - _Requirements: 5.1, 6.1, 12.1, 13.3_
+  - Reqs: 5.1, 6.1, 12.1, 13.3
 
 - [ ] 6. Visual water plane
   - Card: [cards/06-water-plane.md](cards/06-water-plane.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/wilderness/build.py, generators/wilderness/water.py, generators/zone_spec.py, tests/test_wilderness_water.py
-  - _Requirements: 11.4, 13.1_
+  - Reqs: 11.4, 13.1
 
 - [ ] 7. Plains biome kit and ground textures
   - Card: [cards/07-biome-kit.md](cards/07-biome-kit.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/wilderness/build.py, generators/wilderness/biome.py, styles/, generators/textures/, tests/test_wilderness_biome_kit.py
-  - _Requirements: 11.1, 11.2, 11.3_
+  - Reqs: 11.1, 11.2, 11.3
 
 - [ ] 8. Wilderness advisory data in the `.zone.json` sidecar
   - Card: [cards/08-sidecar.md](cards/08-sidecar.md)
   - Type: agent · Size: S · Depends: 2
   - Owns: core/eqg.py, generators/builder.py, tests/test_wilderness_sidecar.py
-  - _Requirements: 1.4, 3.7, 10.2, 14.4_
+  - Reqs: 1.4, 3.7, 10.2, 14.4
 
 - [ ] 9. Release prep: reproducibility, budget, acceptance checklist
   - Card: [cards/09-release-prep.md](cards/09-release-prep.md)
   - Type: agent · Size: M · Depends: 5, 6, 7, 8
   - Owns: tests/test_wilderness_build.py, docs/ACCEPTANCE.md
-  - _Requirements: 5.3, 13.2, 13.3_
+  - Reqs: 5.3, 13.2, 13.3
 
 - [ ] 10. HUMAN: final Karana acceptance pass
   - Card: [cards/10-human-final-pass.md](cards/10-human-final-pass.md)
   - Type: human · Depends: 9
-  - _Requirements: 13.4_
+  - Reqs: 13.4
 
 - [ ] 11. Enable wilderness and close step 1
   - Card: [cards/11-enable-and-close.md](cards/11-enable-and-close.md)
   - Type: agent · Size: S · Depends: 10 · Where: MAIN checkout
   - Owns: generators/zone_types.py, tests/test_wilderness_build.py, docs/ACCEPTANCE.md, ROADMAP.md, tasks/README.md
-  - _Requirements: 13.4_
+  - Reqs: 13.4
 
 ## Out of scope for step 1
 Named POIs (roadmap step 10), rivers crossing the interior, swimmable water
