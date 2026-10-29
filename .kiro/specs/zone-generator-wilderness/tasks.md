@@ -426,9 +426,15 @@ checkpoint.
 > extension — single owner, defaulted so the dungeon gate is unchanged).
 
 - [ ] 9. Bowl assembly + lava
-  - [ ] 9.1 Set up wave 4
+  - [x] 9.1 Set up wave 4
     - Run `./scripts/new-worktree.ps1 -Branch agent/wild-bowl`. Record the fork-point hash. Run `python -m pytest tests/ -q` once; record the baseline.
     - _Requirements: 4.1_
+    - **Deliverables:**
+      - **Worktree:** `F:\Dev Projects\eq_s3d-worktrees\agent-wild-bowl` on branch `agent/wild-bowl`, created from the MAIN checkout with `./scripts/new-worktree.ps1 -Branch agent/wild-bowl` (shared global Python env, `web/node_modules` junctioned; no `.env` in main, procedural defaults apply).
+      - **Fork-point commit:** `69a3843086809bf984804db84827a2a7888603a3` (`69a3843` — "wilderness wave 3: record real task-8.3 commit hash in the integration note"), forked from `master` (master tip at fork time = `69a3843`). Waves 1–3 are merged into this fork.
+      - **Wave-4 baseline:** `python -m pytest tests/ -q` → **497 passed**, 13 warnings, **166.79s** (0:02:46) via pytest-xdist. Clean single run — no xdist worker-collection flake observed, no re-run needed. Matches the expected 497.
+      - **Waves 1–3 code present in the fork (verified by import, not just file presence):** `generators/wilderness/` contains `matrix.py`, `biome_resolve.py`, `rewrite.py`, `synth.py`, `__init__.py`. Confirmed importable: `synthesize_heightfield` (`synth.py`), `rewrite_matrix` (`rewrite.py`), `build_matrix` (`matrix.py`) all resolve. The hydraulic-erosion addition is present in `generators/field/terrain.py`.
+      - **NOT touched here (single-writer rule):** `ROADMAP.md`, `README.md`, `tasks/README.md` — integration state, applied by the integrator from MAIN.
   - [ ] 9.2 Realize the Rim per Edge_Connection in `generators/wilderness/bowl.py`
     - For each declared Edge_Connection, realize its behavior on the upsampled heightfield / regions:
       - `mountain` (Req 3.4): raise the perimeter edge to a slope steeper than `AgentModel.walkable_slope_deg` (~40°, the `min_up_normal` threshold) so the geometry itself seals the edge — the agent classifies those faces as non-standable. Collision truth is the slope; no barrier record needed.
