@@ -249,7 +249,9 @@ class ZoneBuilder:
         if "substitution" in rec:
             out["biome_substitution"] = rec["substitution"]
 
-        regions = {r.id: r for r in land.bowl.regions}
+        # The regions the build actually ships: the bowl's plus any the spec
+        # adds on top (e.g. the task-6 water-plane AWT regions).
+        regions = {r.id: r for r in self.spec.regions}
 
         def box(rid: str) -> dict:
             r = regions[rid]
@@ -269,7 +271,7 @@ class ZoneBuilder:
         out["region_intent"] = [
             {"region_id": r.id, "kind": r.kind, **box(r.id),
              "intent": self._region_intent(land, r)}
-            for r in land.bowl.regions
+            for r in self.spec.regions
         ]
         sx, sy, sz = self.spec.safe_point
         spawn = POIAnchor(name="Spawn", x=sx, y=sy, is_spawn=True,
