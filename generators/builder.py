@@ -167,6 +167,10 @@ class ZoneBuilder:
             "elemental_tint": self.spec.elemental_tint,
         }
 
+        # Wilderness advisory data (biome, edges, barriers, region intent, POI
+        # anchors). Empty for room-graph zones, so their sidecars gain no keys.
+        wild_meta = self._wilderness_sidecar()
+
         # 6. GLB preview — pass per-material base colours so the preview shows
         #    the real palette rather than arbitrary hues. The GLB path also
         #    writes its own <name>.zone.json next to the .glb.
@@ -178,6 +182,7 @@ class ZoneBuilder:
                                    room_pacing=room_pacing, gates=gates,
                                    content=content_meta,
                                    zone_type=self.spec.zone_type,
+                                   extra=wild_meta or None,
                                    root=root)
             if result is None:
                 glb_path = None  # trimesh not available
@@ -193,7 +198,7 @@ class ZoneBuilder:
             rooms=room_pacing,
             gates=gates,
             content=content_meta,
-            extra={"zone_type": self.spec.zone_type},
+            extra={"zone_type": self.spec.zone_type, **wild_meta},
             root=root,
         )
 
@@ -216,6 +221,86 @@ class ZoneBuilder:
             backend=backend_name,
             warnings=warnings,
         )
+
+    def _wilderness_sidecar(self) -> dict:
+        """The wilderness advisory keys for the ``.zone.json`` sidecar
+        (Req 1.4, 3.7, 10.2, 14.4), or ``{}`` for a room-graph zone.
+
+        Re-derived from the spec's cached landscape (the same one the mesh was
+        built from), so it always describes the shipped terrain. Advisory only:
+        none of it reaches the ``.eqg``.
+        """
+        payload = self.spec.wilderness
+        if payload is None:
+            return {}
+        from generators.wilderness.biome_resolve import (
+            BiomeSubstitution, WildernessIntent)
+        from generators.wilderness.build import DEFAULT_BIOME, landscape_for
+        from generators.wilderness.matrix import POIAnchor
+
+        land = landscape_for(self.spec)
+        biome = payload.get("biome", DEFAULT_BIOME)
+        sub = payload.get("biome_substitution")
+        intent = WildernessIntent(
+            biome=biome, requested_biome=(sub or {}).get("requested", biome),
+            substitution=BiomeSubstitution(**sub) if sub else None)
+        rec = intent.sidecar_record()
+        out: dict = {"biome": rec["biome"]}
+        if "substitution" in rec:
+            out["biome_substitution"] = rec["substitution"]
+
+        regions = {r.id: r for r in land.bowl.regions}
+
+        def box(rid: str) -> dict:
+            r = regions[rid]
+            return {"min_xy": [r.center_x - r.extent_x, r.center_y - r.extent_y],
+                    "max_xy": [r.center_x + r.extent_x, r.center_y + r.extent_y]}
+
+        out["edge_connections"] = {e.side: e.edge_type for e in land.bowl.edges}
+        out["invisible_walls"] = [
+            {"region_id": b.region_id, "side": b.side, **box(b.region_id),
+             "kind": "invisible_wall"}
+            for b in land.bowl.barriers if b.kind == "invisible_wall"
+        ]
+        out["lava"] = [
+            {"region_id": b.region_id, **box(b.region_id), "damaging": True}
+            for b in land.bowl.barriers if b.kind == "lava"
+        ]
+        out["region_intent"] = [
+            {"region_id": r.id, "kind": r.kind, **box(r.id),
+             "intent": self._region_intent(land, r)}
+            for r in land.bowl.regions
+        ]
+        sx, sy, sz = self.spec.safe_point
+        spawn = POIAnchor(name="Spawn", x=sx, y=sy, is_spawn=True,
+                          intent=land.matrix.cell(*land.matrix.spawn).intent)
+        out["poi_anchors"] = [{**spawn.to_dict(), "z": sz}]
+        return out
+
+    @staticmethod
+    def _region_intent(land, region) -> str:
+        """A region's Intent_Tag: the majority tag of the matrix cells under
+        the fine cells its XY box covers. Read through the fine grid (the frame
+        the mesh and regions are built in, ``factor`` fine cells per matrix
+        cell), not the matrix's own world coordinates."""
+        matrix, synth = land.matrix, land.synth
+        factor = max(1, int(round(matrix.cell_size / synth.resolution)))
+        ox, oy = synth.origin
+        res = float(synth.resolution)
+        nx, ny = synth.node_type.shape
+
+        def span(c, e, o, n):
+            lo = int((c - e - o) // res)
+            hi = int((c + e - o) // res) - 1
+            return range(max(lo, 0), min(max(hi, lo), n - 1) + 1)
+
+        tags = [
+            matrix.cell(min(fi // factor, matrix.nx - 1),
+                        min(fj // factor, matrix.ny - 1)).intent
+            for fi in span(region.center_x, region.extent_x, ox, nx)
+            for fj in span(region.center_y, region.extent_y, oy, ny)
+        ]
+        return max(sorted(set(tags)), key=tags.count) if tags else "playable"
 
     def _material_color_map(self, ter: TerFile) -> dict:
         """

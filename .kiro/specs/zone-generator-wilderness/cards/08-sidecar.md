@@ -11,7 +11,7 @@ scenic. None of it reaches the sidecar yet. Write it there. It must never go
 into the binary.
 
 ## Done when
-- [ ] A wilderness build's `.zone.json` contains:
+- [x] A wilderness build's `.zone.json` contains:
       - `biome`, plus `biome_substitution` (`requested` / `resolved`) when a fallback fired
       - `edge_connections` (side → type)
       - `invisible_walls` (`{min_xy, max_xy, kind: "invisible_wall"}`)
@@ -19,9 +19,9 @@ into the binary.
       - per-region `intent` (`playable` / `scenic`)
       - `poi_anchors`, including Spawn
       → verify: an example test in `tests/test_wilderness_sidecar.py` (example-based, not PBT).
-- [ ] Dungeon and city sidecars are unchanged (no new empty keys).
+- [x] Dungeon and city sidecars are unchanged (no new empty keys).
       → verify: the existing sidecar tests are still green.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Hints
 - The source data is on `BowlResult.edges` / `.barriers` (`generators/wilderness/bowl.py`)
@@ -30,4 +30,4 @@ into the binary.
   `generators/builder.py`.
 
 ## Result
-<!-- worker: one line -->
+✔ branch `claude/wild-8-sidecar-09881f` · 498 passed · keys `biome`/`biome_substitution`/`edge_connections`/`invisible_walls`/`lava`/`region_intent`/`poi_anchors`, built in `ZoneBuilder._wilderness_sidecar`. Owns widened to `ai/expand.py` (keeps the substitution on `spec.wilderness`).

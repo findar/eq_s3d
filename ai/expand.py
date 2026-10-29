@@ -45,8 +45,12 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     if plan.zone_type == "wilderness":
         from generators.wilderness.biome_resolve import resolve_biome
         from generators.wilderness.build import wilderness_spec
-        biome = resolve_biome(plan).biome
-        return wilderness_spec(plan.name, rng_seed, edges, biome=biome)
+        intent = resolve_biome(plan)
+        spec = wilderness_spec(plan.name, rng_seed, edges, biome=intent.biome)
+        # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
+        if intent.substitution is not None:
+            spec.wilderness["biome_substitution"] = intent.substitution.to_dict()
+        return spec
 
     gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed)
 

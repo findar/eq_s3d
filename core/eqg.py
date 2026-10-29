@@ -139,6 +139,7 @@ class EqgZone:
                   gates: Optional[list] = None,
                   content: Optional[dict] = None,
                   zone_type: Optional[str] = None,
+                  extra: Optional[dict] = None,
                   root: Optional["OutputRoot"] = None) -> Optional[Path]:
         """
         Export the zone terrain as a GLB file for browser preview.
@@ -148,6 +149,9 @@ class EqgZone:
         The GLB does not carry the actual DDS textures (that would need UV
         unwrap + texture packing); per-material base colour is a faithful,
         lightweight stand-in that shows the intended look.
+
+        *extra* is merged into the companion sidecar exactly as for
+        ``write_sidecar`` (e.g. the wilderness advisory keys).
 
         Requires *trimesh*.  Returns None if trimesh is unavailable or there is
         no terrain data.
@@ -215,7 +219,7 @@ class EqgZone:
         # <zone>.zone.json next to the GLB (its parent is already created and
         # confined, so it rides inside the same Output_Directory).
         self._write_glb_sidecar(out_path, room_pacing, gates, content,
-                                zone_type, root=root)
+                                zone_type, extra=extra, root=root)
 
         return out_path
 
@@ -320,12 +324,14 @@ class EqgZone:
                            gates: Optional[list] = None,
                            content: Optional[dict] = None,
                            zone_type: Optional[str] = None,
+                           extra: Optional[dict] = None,
                            root: Optional["OutputRoot"] = None) -> None:
         """Write a <name>.zone.json next to the GLB with lights/regions/metrics."""
         import json
 
         data = self._build_sidecar_dict(
             rooms=room_pacing, gates=gates, content=content, zone_type=zone_type,
+            extra=extra,
         )
 
         sidecar = glb_path.with_suffix("")  # strip .glb
