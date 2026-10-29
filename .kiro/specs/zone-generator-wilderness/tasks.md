@@ -66,7 +66,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: core/eqg.py, generators/builder.py, ai/expand.py, tests/test_wilderness_sidecar.py
   - Reqs: 1.4, 3.7, 10.2, 14.4
 
-- [ ] 9. Release prep: reproducibility, budget, acceptance checklist
+- [x] 9. Release prep: reproducibility, budget, acceptance checklist
   - Card: [cards/09-release-prep.md](cards/09-release-prep.md)
   - Type: agent · Size: M · Depends: 5, 6, 7, 8
   - Owns: tests/test_wilderness_build.py, docs/ACCEPTANCE.md
