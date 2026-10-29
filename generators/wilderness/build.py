@@ -28,7 +28,7 @@ from typing import Dict, Mapping, Optional, Tuple
 import numpy as np
 
 from analyzer.traverse import AgentModel, RoomResult, TraversalReport
-from core.ter import MAGIC_TERRAIN, Material, Polygon, TerFile, Vertex
+from core.ter import MAGIC_TERRAIN, SHADER_ALPHA, Material, Polygon, TerFile, Vertex
 from generators.wilderness.bowl import (
     BowlResult,
     _spawn_world_point,
@@ -44,6 +44,13 @@ from generators.wilderness.matrix import (
 )
 from generators.wilderness.rewrite import rewrite_matrix
 from generators.wilderness.synth import SynthResult, synthesize_heightfield
+from generators.wilderness.water import (
+    WATER_SURFACE_MATERIAL,
+    add_water_surface,
+    sink_water_bed,
+    water_quad_mask,
+    water_regions,
+)
 from generators.zone_spec import MaterialSpec, ZoneSpec
 
 DEFAULT_BIOME = "plains"
@@ -69,6 +76,7 @@ _MATERIALS: Dict[str, Tuple[Tuple[int, int, int], str]] = {
     "wild_water": ((58, 92, 138), "river bed, wet silt and stones"),
     "wild_lava": ((196, 72, 28), "molten lava crust"),
     "wild_zoneline": ((196, 182, 128), "packed dirt road"),
+    WATER_SURFACE_MATERIAL: ((70, 140, 190), "calm river water surface"),
 }
 
 
@@ -177,6 +185,16 @@ def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = N
         spec.materials[mat_name] = MaterialSpec(
             name=mat_name, texture=f"{mat_name}.dds", color=color, description=hint)
     spec.regions = list(land.bowl.regions)
+    spec.water_level = float(land.matrix.water_level)
+    if water_quad_mask(land.synth.node_type).any():
+        # Task 6: the visual water plane gets its own (alpha) material and an
+        # AWT region per water body.
+        color, hint = _MATERIALS[WATER_SURFACE_MATERIAL]
+        spec.materials[WATER_SURFACE_MATERIAL] = MaterialSpec(
+            name=WATER_SURFACE_MATERIAL, texture=f"{WATER_SURFACE_MATERIAL}.dds",
+            shader=SHADER_ALPHA, color=color, description=hint)
+        spec.regions += water_regions(land.synth.node_type, land.synth.origin,
+                                      land.synth.resolution, spec.water_level)
     spec.safe_point = _spawn_world_point(land.synth, land.matrix, land.bowl.heights)
     return spec
 
@@ -184,19 +202,23 @@ def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = N
 def build_wilderness_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> TerFile:
     """Triangulate the spec's bowl heightfield into a TER, one material per
     region kind. Same vertex frame and triangulation as ``build_bowl_ter`` (so
-    the bowl gate's bands and Spawn line up), vectorised."""
+    the bowl gate's bands and Spawn line up), vectorised. Water quads also get
+    a flat, passable surface at the water level (task 6, see ``water.py``)."""
     land = landscape_for(spec)
-    h = np.asarray(land.bowl.heights, dtype=np.float64)
     res = float(land.synth.resolution)
     ox, oy = land.synth.origin
+    water_level = float(land.matrix.water_level)
+    wet = water_quad_mask(land.synth.node_type)
+    h = sink_water_bed(np.asarray(land.bowl.heights, dtype=np.float64), wet, water_level)
     nx, ny = h.shape
 
     ter = TerFile(name=ter_name, magic=MAGIC_TERRAIN, version=ter_version)
     cell_mat = _fine_materials(land)
-    names = sorted(set(cell_mat.ravel()))
+    names = sorted(set(cell_mat.ravel()) | ({WATER_SURFACE_MATERIAL} if wet.any() else set()))
     index = {n: i for i, n in enumerate(names)}
     for n in names:
-        mat = Material(index=index[n], name=n, shader="Opaque_MaxCB1.fx")
+        shader = spec.materials[n].shader if n in spec.materials else "Opaque_MaxCB1.fx"
+        mat = Material(index=index[n], name=n, shader=shader)
         tex = spec.materials[n].texture if n in spec.materials else f"{n}.dds"
         mat.add_diffuse(tex)
         ter.materials.append(mat)
@@ -230,6 +252,9 @@ def build_wilderness_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> Ter
         polys.append(Polygon(va, vb, vc, material=m, flags=0))
         polys.append(Polygon(va, vc, vd, material=m, flags=0))
     ter.polygons = polys
+    if wet.any():
+        add_water_surface(ter, wet, (ox, oy), res, water_level,
+                          material=index[WATER_SURFACE_MATERIAL])
     return ter
 
 

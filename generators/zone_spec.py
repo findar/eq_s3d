@@ -245,6 +245,10 @@ class ZoneSpec:
     # Omitted from ``to_dict()`` when unset so dungeon/city output is unchanged.
     wilderness: Optional[Dict[str, Any]] = None
 
+    # Height of the visual water plane (wilderness spec task 6). ``None`` for
+    # zones with no water level; omitted from ``to_dict()`` when unset.
+    water_level: Optional[float] = None
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
@@ -267,6 +271,7 @@ class ZoneSpec:
             "regions": [asdict(r) for r in self.regions],
             "gates": [asdict(g) for g in self.gates],
             **({"wilderness": self.wilderness} if self.wilderness is not None else {}),
+            **({"water_level": self.water_level} if self.water_level is not None else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -293,6 +298,7 @@ class ZoneSpec:
             ambient_light=tuple(d.get("ambient_light", (0.1, 0.1, 0.12))),
             safe_point=tuple(d.get("safe_point", (0.0, 0.0, 0.0))),
             wilderness=d.get("wilderness"),
+            water_level=d.get("water_level"),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)

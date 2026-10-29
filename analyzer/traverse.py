@@ -45,7 +45,7 @@ from typing import Dict, List, Mapping, Optional, Tuple
 import numpy as np
 
 from core.pfs import PfsArchive
-from core.ter import TerFile
+from core.ter import FLAG_PASSABLE, TerFile
 from generators.routing import Rect, corridor_route, route_footprint
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
@@ -526,7 +526,8 @@ def _plane_z_at(tri: np.ndarray, px: float, py: float) -> float:
     return float(l1 * tri[0, 2] + l2 * tri[1, 2] + l3 * tri[2, 2])
 
 
-def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
+def build_walk_surface(ter: TerFile, agent: AgentModel, *,
+                       skip_passable: bool = True) -> WalkSurface:
     """
     Classify standable triangles and build walkable adjacency between them.
 
@@ -541,6 +542,11 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     bounding-box clip is what keeps the gate sound: faces that merely overlap in
     XY while offset on the other axis, or stacked at different heights, do not
     connect.
+
+    Polygons flagged ``FLAG_PASSABLE`` (non-collidable, e.g. a visual water
+    plane) are never standable when ``skip_passable`` is set — the client walks
+    through them. Generated dungeon/city meshes are all solid, so this leaves
+    their results unchanged.
     """
     verts = np.array([[v.x, v.y, v.z] for v in ter.vertices], dtype=np.float64)
     faces = np.array([[p.v1, p.v2, p.v3] for p in ter.polygons], dtype=np.int64)
@@ -564,6 +570,9 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
     # horizontal and faces the sky.
     nz = np.abs(normals[:, 2])
     standable = safe & (nz >= agent.min_up_normal)
+    if skip_passable:
+        passable = np.array([bool(p.flags & FLAG_PASSABLE) for p in ter.polygons])
+        standable &= ~passable
 
     std_idx = np.nonzero(standable)[0]
 
