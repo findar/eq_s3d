@@ -311,9 +311,20 @@ checkpoint.
 > plain-terrain path).
 
 - [ ] 7. Noise_Pass + erosion + upsample
-  - [ ] 7.1 Set up wave 3 and capture synthesis baselines
+  - [x] 7.1 Set up wave 3 and capture synthesis baselines
     - Run `./scripts/new-worktree.ps1 -Branch agent/wild-synth`. Record the fork-point hash. Capture the existing `generators/field/terrain.py` FBM + thermal-erosion + `_enforce_walkable` behavior on one plain-terrain spec (timing + a height-array checksum) so the matrix-subordinated path and the new hydraulic pass can be compared against it (prove the plain-terrain path is unchanged).
     - _Requirements: 5.1_
+    - **Deliverables:**
+      - **Worktree:** `F:\Dev Projects\eq_s3d-worktrees\agent-wild-synth` on branch `agent/wild-synth` (created from the MAIN checkout with `./scripts/new-worktree.ps1 -Branch agent/wild-synth`). Contains the wave-1/2 package `generators/wilderness/{__init__.py,biome_resolve.py,matrix.py,rewrite.py}` as expected (waves 1 & 2 merged).
+      - **Fork-point commit:** `0e97431d365f32ca945b309dae63c38170dd93fe` (`0e97431` — "wilderness wave 2: record task-6 checkpoint tip hash in integration note"), forked from `master` (master tip at fork time = `0e97431`).
+      - **Terrain BASELINE (the existing plain-terrain FBM + thermal-erosion + `_enforce_walkable` path, to prove waves 7.2/7.3 are ADDITIVE):**
+        - **Entry point (verified against code on `master` @ `0e97431`):** `build_terrain(spec, name)` in `generators/field/terrain.py` runs `_generate_heightfield` → `_thermal_erosion` (when `erosion_iterations > 0`) → `_enforce_walkable` → `_heightfield_to_ter`. The height stages are the three named functions; triangulation follows.
+        - **Pinned seed:** `1337`.
+        - **Exact invocation:** `build_terrain(TerrainSpec(width=2400.0, depth=2400.0, resolution=40.0, seed=1337, height_scale=220.0, noise_scale=900.0, octaves=5, erosion_iterations=25, talus_angle=0.6, max_walkable_grad=0.70, walkable_passes=4), name="baseline_karana")`. Grid resolves to **61×61** cells.
+        - **Height checksum:** `sha256:2af33e685befdecff23b25853e190930276123ff29ddb12ba085fd28d74b6dec` — computed over the height ndarray AFTER the full `_generate_heightfield → _thermal_erosion → _enforce_walkable` pipeline, as `sha256(str(shape) + np.round(heights.astype(float64), 3).tobytes())`. Deterministic: the capture self-checks by running the pipeline twice and asserting the two checksums agree (they do). Height min/max = `18.656 / 204.409`.
+        - **Timing:** full `build_terrain` = **0.0162 s** (height pipeline + triangulation; 3721 verts / 7200 polys). Well under the five-minute budget — the baseline for the additivity/perf diff in 7.3/8.1.
+        - **Capture harness:** `capture_baseline.py` at the worktree root reproduces the checksum + timing; wave-3 tasks 7.2/7.3 re-run it on the plain-terrain (no-matrix) path and MUST reproduce `sha256:2af33e68…` to prove the additive change left `build_terrain` untouched.
+      - **Wave-3 suite baseline:** `python -m pytest tests/ -q` → **492 passed**, 13 warnings, **177.18s** (0:02:57) via pytest-xdist. Matches the expected 492 on `master`. (First run hit the known transient xdist worker-collection flake — `OutsideOutputError` / "Different tests were collected between gw workers"; a clean re-run was 492 green, and `tests/test_properties_pipeline.py` alone is 10 passed serially, confirming it is the startup flake, not a real failure.)
   - [ ] 7.2 Implement the Noise_Pass subordinate to the matrix (freeze/mask + edge-blend)
     - In `generators/wilderness/synth.py`: synthesize the base heightfield with the existing vectorised value-noise FBM (`_generate_heightfield`) **before** erosion (Req 8.1), made subordinate to the matrix — mask the write out of every `Frozen_Cell` (terrain set by `frozen_z`, not noise — Req 8.2) using the project's `np.where` freeze-mask idiom; blend noise toward the frozen value across a short distance-field falloff band at shared edges (Req 8.3); hold `zoneline_gap` cells flat to a stated tolerance after the pass (Req 8.4); clamp `river` channel cells at/below adjacent bank height (Req 8.5). All masking/blending is vectorised numpy — **no per-cell Python loop** (lessons-learned performance rule).
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
