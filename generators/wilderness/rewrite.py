@@ -452,6 +452,41 @@ def invariants_hold(matrix: DesignMatrix) -> bool:
     return not stranded_playable_cells(matrix) and rim_is_sealed(matrix)
 
 
+def _monotone_progress(
+    prior_stranded: Set[Coord], candidate: DesignMatrix
+) -> bool:
+    """The PER-STEP commit gate: does ``candidate`` make monotone progress
+    toward the fixed point WITHOUT regressing the sealed Rim (R7.3/R7.6)?
+
+    Two conditions, both required:
+
+    * **Rim stays sealed** — every non-``zoneline`` Rim segment is still
+      impassable. This is HARD and never relaxed: a carve that breaches the Rim
+      is always rejected, even if it would reduce stranding.
+    * **The stranded-playable set STRICTLY SHRINKS** — ``|stranded(candidate)|
+      < |prior_stranded|`` — OR, when nothing was stranded to begin with, the
+      step is valid and strands no one (``stranded(candidate)`` stays empty).
+
+    This loosens the old gate (which required the candidate to be FULLY reachable
+    — zero stranded — at every single step). That all-or-nothing rule rejected
+    any step that reconnected only one of several independent blockers, so a
+    matrix stranded by TWO blockers (a cliff wall AND a lava wall on separate
+    flanks) terminated with stranding unresolved even though the rules could
+    resolve it. Strict decrease preserves BOTH progress (each commit removes at
+    least one stranded cell) and termination (the stranded count is a bounded,
+    strictly-decreasing measure). The FINAL fixed point still satisfies full
+    :func:`invariants_hold` for any solvable matrix — only the per-step gate is
+    loosened from "fully reachable" to "strictly-fewer-stranded + sealed Rim".
+    """
+    if not rim_is_sealed(candidate):
+        return False
+    new_stranded = stranded_playable_cells(candidate)
+    if prior_stranded:
+        return len(new_stranded) < len(prior_stranded)
+    # Nothing was stranded before: a valid step must not strand anyone.
+    return not new_stranded
+
+
 def _clone_matrix(matrix: DesignMatrix) -> DesignMatrix:
     """A deep-enough copy to serve as a rewrite CANDIDATE.
 
@@ -491,18 +526,26 @@ def rewrite_matrix(matrix: DesignMatrix, *, max_iters: Optional[int] = None) -> 
        v1 order (cliffs before lava, anchor order within a type).
     2. For the first trigger whose region currently strands a playable region,
        apply its rule to a CANDIDATE clone.
-    3. Re-check BOTH invariants on the candidate. If they hold AND the stranded
-       set strictly shrank, COMMIT (the candidate becomes the live matrix) and
-       re-scan from the top. Otherwise REJECT (keep the prior matrix) and mark
-       that trigger region resolved so the loop makes progress (monotone).
+    3. Re-check the per-step gate on the candidate (:func:`_monotone_progress`):
+       the Rim must stay sealed AND the stranded set must strictly shrink (or,
+       when nothing was stranded, the step must strand no one). If so, COMMIT
+       (the candidate becomes the live matrix) and re-scan from the top.
+       Otherwise REJECT (keep the prior matrix) and mark that trigger region
+       resolved so the loop makes progress (monotone). A step need NOT fully
+       reconnect every flank in one carve — two independent blockers are
+       resolved one per committed step, each strictly shrinking the stranded
+       set, so partial-but-strictly-better repairs are no longer rejected.
     4. Stop at a fixed point (no applicable trigger) or raise
        :class:`RewriteError` if the hard cap ``max_iters = C * region_count`` is
        exceeded (R7.2) — never a silent loop.
 
-    The invariants hold at EVERY committed step because a candidate that would
-    strand a playable region or breach a non-``zoneline`` Rim segment is never
-    committed (R7.3/R7.4/R7.6). ``intent_overrides`` are honored throughout via
-    the shared :func:`_is_passable` relation.
+    The Rim stays sealed at EVERY committed step (a candidate that breaches a
+    non-``zoneline`` Rim segment is never committed, R7.4/R7.6) and reachability
+    is monotone-non-decreasing (each committed step strictly shrinks the
+    stranded set, so it can only grow or keep the reachable set, R7.3). The
+    FINAL fixed point therefore satisfies full :func:`invariants_hold` — zero
+    stranded + sealed Rim — for any solvable matrix. ``intent_overrides`` are
+    honored throughout via the shared :func:`_is_passable` relation.
     """
     current = matrix
     graph = build_region_graph(current)
@@ -538,19 +581,23 @@ def rewrite_matrix(matrix: DesignMatrix, *, max_iters: Optional[int] = None) -> 
         changed = rule(candidate, region)
 
         prior_stranded = stranded_playable_cells(current)
-        if changed and invariants_hold(candidate):
-            new_stranded = stranded_playable_cells(candidate)
-            if len(new_stranded) < len(prior_stranded):
-                # Commit: reachability strictly improved and both invariants hold.
-                current = candidate
-                graph = build_region_graph(current)
-                result.committed += 1
-                result.steps.append((rule_name, region.anchor, True))
-                # A commit can change region ids/anchors; clear resolved markers
-                # for still-unresolved triggers so newly-exposed stranding is
-                # retried. Monotone because the stranded set strictly shrank.
-                resolved = _carry_resolved(current, resolved)
-                continue
+        if changed and _monotone_progress(prior_stranded, candidate):
+            # Commit: the Rim stayed sealed and the step made monotone progress
+            # (the stranded set strictly shrank, or — when nothing was stranded
+            # — it changed something without stranding anyone). A step need NOT
+            # fully reconnect every flank; with two independent blockers each
+            # single carve resolves one and the next pass resolves the other,
+            # so the gate no longer rejects partial-but-strictly-better repairs.
+            current = candidate
+            graph = build_region_graph(current)
+            result.committed += 1
+            result.steps.append((rule_name, region.anchor, True))
+            # A commit can change region ids/anchors; clear resolved markers
+            # for still-unresolved triggers so newly-exposed stranding is
+            # retried. Monotone because the stranded set strictly shrank (or,
+            # when it was already empty, the carve retires its own trigger).
+            resolved = _carry_resolved(current, resolved)
+            continue
 
         # Reject: keep the prior matrix (R7.6). Record the rejected attempt.
         result.rejected += 1

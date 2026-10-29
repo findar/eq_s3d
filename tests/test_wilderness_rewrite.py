@@ -169,6 +169,47 @@ def _build_stranding(seed: int, kind: str, axis: str, offset: int):
     return m
 
 
+def _build_two_blocker_stranding(seed: int = 13579):
+    """Build a plains matrix and carve TWO independent interior walls — a CLIFF
+    wall on one flank and a LAVA wall on another — each strictly inside the
+    perimeter ring, together stranding two SEPARATE playable regions from Spawn.
+
+    The cliff wall is a vertical column two cells LEFT of Spawn (``offset=-2``)
+    and the lava wall is a vertical column three cells RIGHT of Spawn
+    (``offset=+3``); both span the full interior height, so they sever the left
+    flank and the right flank independently. Neither touches the perimeter, so
+    the Rim stays sealed by construction.
+
+    This is the arm that FAILED before the monotone-progress gate fix: the old
+    all-or-nothing gate rejected a single carve that reconnected only one flank
+    (the other stayed stranded, so the candidate failed the full-reachability
+    re-check), and the rewrite terminated with stranding unresolved. Returns the
+    mutated matrix after asserting both walls landed and two distinct regions
+    are stranded.
+    """
+    m = build_matrix("plains", [], seed)
+    left = _interior_wall(m, "cliff", axis="col", offset=-2)
+    right = _interior_wall(m, "lava", axis="col", offset=3)
+    assert left > 0 and right > 0, (
+        f"two-blocker walls not both placed (cliff={left}, lava={right}) for "
+        f"seed {seed}"
+    )
+    stranded = stranded_playable_cells(m)
+    assert stranded, "two-blocker construction stranded no playable cell"
+    # The two walls must strand cells on BOTH flanks, not merely one — otherwise
+    # it is really a single-blocker case in disguise and would not exercise the
+    # gate fix. Split the stranded set by column relative to Spawn.
+    sx, _sy = m.spawn
+    left_stranded = {(i, j) for (i, j) in stranded if i < sx}
+    right_stranded = {(i, j) for (i, j) in stranded if i > sx}
+    assert left_stranded and right_stranded, (
+        f"two-blocker construction did not strand BOTH flanks "
+        f"(left={len(left_stranded)}, right={len(right_stranded)}) — not a "
+        f"genuine two-blocker case"
+    )
+    return m
+
+
 # ===========================================================================
 # Property 7 (task 5.5): Graph_Replacement terminates
 # ===========================================================================
@@ -514,3 +555,45 @@ def test_property9_every_playable_cell_reachable_after_reconnect():
     # Every playable cell is in the reachable flood (stranded set is empty).
     assert playable <= reachable, "a playable cell is outside the reachable flood"
     assert not stranded_playable_cells(result.matrix)
+
+
+def test_property9_two_independent_blockers_both_reconnected():
+    """Feature: zone-generator-wilderness, Property 9: cliffs and lava never
+    strand playable regions (TWO-independent-blocker arm — the monotone-progress
+    gate).
+
+    A matrix seeded with TWO independent interior blockers — a CLIFF wall on one
+    flank AND a LAVA wall on another — each stranding a SEPARATE playable region
+    from Spawn. No single rule application can resolve both: carving the cliff
+    reconnects the left flank but leaves the right flank stranded (and vice
+    versa). Under the old all-or-nothing commit gate (which required the
+    candidate to be FULLY reachable at every step) each single carve was
+    REJECTED and the rewrite terminated with stranding UNRESOLVED — a direct
+    violation of strict Property 9 and Req 7.3.
+
+    With the monotone-progress gate, each carve is committed because it strictly
+    shrinks the stranded set while keeping the Rim sealed, so the rewrite
+    resolves BOTH flanks across at least two committed steps and reaches a fully
+    reachable fixed point. Asserts: ``committed >= 2``, the stranded set is
+    EMPTY after the rewrite, and the Rim stays sealed.
+
+    Validates: Requirements 7.3, 7.5, 10.4
+    """
+    m = _build_two_blocker_stranding()
+    pre_stranded = stranded_playable_cells(m)
+    assert pre_stranded, "precondition: the two walls must strand playable cells"
+
+    result = rewrite_matrix(m)
+    assert result.committed >= 2, (
+        f"two independent blockers should drive >= 2 committed steps, got "
+        f"{result.committed} (the old all-or-nothing gate committed 0 and left "
+        f"stranding unresolved)"
+    )
+    post_stranded = stranded_playable_cells(result.matrix)
+    assert not post_stranded, (
+        f"two-blocker matrix left {len(post_stranded)} playable cells stranded "
+        f"after rewrite: {sorted(post_stranded)[:10]}"
+    )
+    assert rim_is_sealed(result.matrix), (
+        "rewrite breached the Rim while reconnecting two independent blockers"
+    )
