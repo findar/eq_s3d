@@ -54,7 +54,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/wilderness/build.py, generators/wilderness/water.py, generators/zone_spec.py, analyzer/traverse.py, tests/test_wilderness_water.py
   - Reqs: 11.4, 13.1
 
-- [ ] 7. Plains biome kit and ground textures
+- [x] 7. Plains biome kit and ground textures
   - Card: [cards/07-biome-kit.md](cards/07-biome-kit.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/wilderness/build.py, generators/wilderness/biome.py, styles/, generators/textures/, tests/test_wilderness_biome_kit.py

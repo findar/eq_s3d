@@ -59,6 +59,13 @@ Suite at the wave-4 tip: **502 passed**, ~151 s (pytest-xdist).
   `flood_reachable` unchanged.
 - **Timing budget:** a full build (matrix → rewrite → synth → bowl → gate) has a
   median of ~0.26 s, far under the 5-minute budget.
+- **Biome kit (task 7):** biomes are entries in `styles/biomes.json`, read by
+  `generators/wilderness/biome.py`. Plains quads are layered by their own
+  triangle slope (dirt > 0.36, rock > 0.62), height (top 20% → dry grass) and
+  moisture (≤ 2 cells from water → mud). **Vegetation in v1 is the kit's id
+  only** (`plains_grassland`); trees are roadmap step 2. Sky/fog tint is kit
+  data re-derived from the biome name, not stored on the spec or written to
+  the sidecar yet.
 
 ## Old task → new task
 
