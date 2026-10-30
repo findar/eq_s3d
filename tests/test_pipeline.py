@@ -178,10 +178,9 @@ class TestPinnedSeed:
 class TestGating:
     def test_dungeon_is_gated_by_default(self):
         # task 15.4 removed the separate DEFAULT_GATED_ZONE_TYPES: the gated set
-        # now defaults to the one Enabled set (Req 3.1). Dungeon is enabled and
-        # therefore gated; wilderness is disabled in M1 and so ungated.
-        assert "dungeon" in ENABLED_ZONE_TYPES
-        assert "wilderness" not in ENABLED_ZONE_TYPES
+        # now defaults to the one Enabled set (Req 3.1). Dungeon and wilderness
+        # are enabled and therefore gated.
+        assert {"dungeon", "wilderness"} <= ENABLED_ZONE_TYPES
 
     def test_ungated_zone_type_passes_through_without_retry(self, tmp_path):
         # Force "dungeon" to be ungated: even a would-fail zone is returned as-is
@@ -284,32 +283,19 @@ class TestCliEscapeHatch:
 # ---------------------------------------------------------------------------
 
 class TestCliArgs:
-    def test_legacy_theme_outdoor_equivalent_to_zone_type_wilderness(
-            self, tmp_path, capsys):
+    def test_legacy_theme_outdoor_equivalent_to_zone_type_wilderness(self):
         """CLI legacy alias resolves ``--theme outdoor`` to the SAME zone type
-        as ``--zone-type wilderness`` — and, wilderness being DISABLED in M1,
-        both are rejected identically (Req 3.3, 11.3).
+        as ``--zone-type wilderness``, and both are accepted now that
+        wilderness is enabled (Req 3.3, 11.3).
 
         ``--theme`` is the kept legacy alias on the CLI; it shares the
-        ``zone_type`` argparse dest and its value is legacy-mapped by
-        ``_zone_type_arg``, which maps ``outdoor`` -> ``wilderness`` and then
-        rejects it as a disabled type. So both invocations exit 2 before any
-        build, listing the enabled set and creating no output directory.
+        ``zone_type`` argparse dest and its value is converted by
+        ``_zone_type_arg``.
         """
         import main
 
-        for zt_args in (["--theme", "outdoor"], ["--zone-type", "wilderness"]):
-            out = str(tmp_path / ("o_" + zt_args[-1]))
-            with pytest.raises(SystemExit) as ei:
-                main.main(["generate", "legacy", *zt_args, "--output", out])
-            assert ei.value.code == 2, (
-                f"{zt_args} should exit 2 (disabled zone type), got "
-                f"{ei.value.code}"
-            )
-            err = capsys.readouterr().err
-            # The rejection names the enabled set and never offers wilderness.
-            assert "enabled: dungeon, city" in err, err
-            assert not Path(out).exists()  # argparse exits before any write
+        assert main._zone_type_arg("outdoor") == "wilderness"
+        assert main._zone_type_arg("wilderness") == "wilderness"
 
     def test_cave_theme_rejected_by_argparse(self, tmp_path):
         # "cave" is not a defined zone type: _zone_type_arg can't canonicalise
@@ -380,13 +366,12 @@ class TestCliArgs:
     # argparse exits 2 before cmd_generate runs and before any output directory
     # is created. Each case is driven in-process via main(argv) and asserts the
     # exit code AND that no output dir was written (the write only happens after
-    # a successful parse). "cave" is undefined, "wilderness" is defined but
-    # disabled in M1 — both are rejected by _zone_type_arg; the numeric options
+    # a successful parse). "cave" is undefined and rejected by _zone_type_arg;
+    # the numeric options
     # are rejected by their range-checked converters.
 
     @pytest.mark.parametrize("bad_arg", [
         ["--zone-type", "cave"],        # undefined zone type
-        ["--zone-type", "wilderness"],  # defined but disabled in M1
         ["--rooms", "0"],               # below the 1..30 range
         ["--rooms", "31"],              # above the 1..30 range
         ["--locks", "6"],               # above the 0..5 range
@@ -673,9 +658,8 @@ class TestPipelineLifecycle:
 
         A wilderness spec routes through ``TerrainBackend``; monkeypatching its
         ``build`` to return ``None`` (the numpy-less machine) makes the builder
-        fall back to box and emit a ``backend_fallback`` warning. Wilderness is
-        not in the Enabled set, so the build is ungated and runs once; the
-        pipeline merges ``result.warnings`` into both ``vb.warnings`` and the
+        fall back to box and emit a ``backend_fallback`` warning. The gate is
+        switched off so the build runs once; the pipeline merges ``result.warnings`` into both ``vb.warnings`` and the
         written Sidecar (Req 4.3)."""
         from generators.backends import TerrainBackend
 
@@ -686,9 +670,10 @@ class TestPipelineLifecycle:
             return LayoutGenerator(zone_type="wilderness", seed=GOOD_SEED).generate(
                 "pipe", room_count=5)
 
-        vb = _run(factory, tmp_path, zone_type="wilderness", max_attempts=8)
+        vb = _run(factory, tmp_path, zone_type="wilderness",
+                  gated_zone_types=frozenset(), max_attempts=8)
 
-        # Ungated (wilderness is disabled in M1), built once via the box fallback.
+        # Ungated, built once via the box fallback.
         assert vb.validated is False
         assert vb.result.backend == "box"
 

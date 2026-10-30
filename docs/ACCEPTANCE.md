@@ -166,10 +166,9 @@ reports `stale: false` before you start; confirm each build's panel
 `build_commit` matches the `master` head you are testing.
 
 > **Vocabulary note.** M1 renamed `theme` → `zone_type` and `outdoor` →
-> `wilderness`. In M1 the **offered** zone types are **dungeon** and **city**;
-> **wilderness ships DISABLED** (its open-world generator is deferred to the
-> `zone-generator-wilderness` milestone) and must appear in the picker greyed
-> out with its reason, never buildable.
+> `wilderness`. M1 offered only **dungeon** and **city**; **wilderness** was
+> enabled when the `zone-generator-wilderness` milestone closed (roadmap step
+> 1), so all three are offered now. Walk wilderness under "Step 1" below.
 
 > **One-time seed break (Decision 13).** The wave-1 connectivity fixes
 > deliberately re-route corridors, so a seed pinned before M1 generally produces
@@ -181,13 +180,11 @@ reports `stale: false` before you start; confirm each build's panel
 
 - [ ] **[MUST] Picker lists all defined zone types** — The Controls zone-type
       dropdown lists `dungeon`, `city`, `wilderness` in defined order.
-- [ ] **[MUST] Enabled types build** — `dungeon` and `city` are selectable and
-      build end to end.
-- [ ] **[MUST] Wilderness shows DISABLED with its reason** — `wilderness` is
-      present but disabled; its reason text is visible (deferred to the
-      open-world wilderness milestone) and it cannot be generated from the
-      controls. Forcing a disabled zone type (dev build / direct request) is
-      rejected before any file is written.
+- [ ] **[MUST] Enabled types build** — `dungeon`, `city` and `wilderness` are
+      selectable and build end to end; none shows a disabled reason.
+- [ ] **[MUST] Undefined types are refused** — A direct request for an
+      undefined zone type (e.g. `cave`) is rejected before any file is written,
+      and the error lists the enabled set.
 
 ### M1.B — Dungeon walk (flat and elevated, 30 rooms)
 
@@ -255,11 +252,9 @@ another corridor.
 
 ## Step 1 — Wilderness (open Karana)
 
-> The `zone-generator-wilderness` milestone (roadmap step 1). Walk this before
-> wilderness is enabled for everyone (wilderness task 10 → task 11). Until
-> then it is offered only behind the dev flag: `npm run dev` sets
-> `EQ_S3D_DEV_WILDERNESS=1` for the backend (the launcher prints
-> `wilderness (dev): on`). Check the side panel shows no stale-code banner.
+> The `zone-generator-wilderness` milestone (roadmap step 1), signed off on
+> 2026-10-29 and enabled for everyone. Re-walk it after a major change to the
+> wilderness pipeline. Check the side panel shows no stale-code banner.
 
 ### Cases
 

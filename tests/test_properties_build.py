@@ -576,12 +576,11 @@ from analyzer.rof2check import check_eqg
 from generators.zone_types import ENABLED_ZONE_TYPES
 from tests.strategies import build_names
 
-#: The enabled box zone types, as a sorted sampling domain. In M1
-#: ``ENABLED_ZONE_TYPES`` is ``{dungeon, city}`` (wilderness is DEFINED but
-#: DISABLED — its heightfield generator is deferred to the wilderness milestone,
-#: so it is never drawn and the design's wilderness ``@example`` does NOT apply
-#: here). Read from the production set so if the gate ever changes, this follows.
-_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES))
+#: The enabled box zone types, as a sorted sampling domain: ``{dungeon, city}``.
+#: Wilderness is enabled but builds from its own pipeline (no rooms, the bowl
+#: gate), so it is excluded here; its properties live in tests/test_wilderness_*.
+#: Read from the production set so if the gate ever changes, this follows.
+_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES - {"wilderness"}))
 
 
 def _format_case(zone_type, n, name, verticality="flat", size="medium"):
@@ -624,8 +623,8 @@ def test_enabled_builds_pass_format(zone_type, n, name, seed, size):
     Feature: zone-generator-m1-controls-traversability, Property 8: Every
     enabled build passes the Format_Checker (umbrella P20).
 
-    For any zone type in ``ENABLED_ZONE_TYPES`` ({dungeon, city} in M1 —
-    wilderness is DISABLED, so it is never drawn), seed, room count (box 2-30)
+    For any room-graph zone type in ``ENABLED_ZONE_TYPES`` ({dungeon, city} —
+    wilderness has its own pipeline and is not drawn), seed, room count (box 2-30)
     and Build_Name (``build_names``, ``^[a-z0-9_]+$``), the Raw_Build
     (``ZonePlan`` -> ``ai.expand.plan_to_spec`` -> ``build_raw``) clears the real
     RoF2 Format_Checker: ``analyzer.rof2check.check_eqg`` on the built ``.eqg``
@@ -650,7 +649,7 @@ def test_enabled_builds_pass_format(zone_type, n, name, seed, size):
       build too.)
 
     Domain note: the design's Property 8 also covers wilderness 2-12, but
-    wilderness is DISABLED in M1 (task 15.8) so it is not drawn and the design's
+    wilderness builds from its own pipeline, so it is not drawn and the design's
     wilderness ``@example`` does not apply. Per the design risk table ("one
     pinned ``huge`` 30-room example in P20 shows whether the bound holds"), one
     ``huge`` 30-room example is pinned — for an ENABLED box zone type (dungeon),

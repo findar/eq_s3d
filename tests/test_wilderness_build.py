@@ -1,7 +1,7 @@
 """Wilderness end-to-end build (wilderness spec task 2).
 
 The wilderness pipeline (matrix -> rewrite -> synth -> bowl) wired into the
-real build: the dev flag, the CLI edge declaration, the backend hook, the bowl
+real build: the zone-type gate, the CLI edge declaration, the backend hook, the bowl
 gate in ``generate_validated`` and the per-region preview materials. The
 plain-terrain path staying byte-identical is pinned separately by
 ``test_hygiene.py::test_outdoor_ter_matches_fork_point``.
@@ -25,26 +25,10 @@ from generators.wilderness.build import (
     parse_edges,
     wilderness_spec,
 )
-from generators.zone_types import (
-    DEV_WILDERNESS_ENV,
-    is_enabled,
-    zone_type_listing,
-)
+from generators.zone_types import is_enabled, zone_type_listing
 
 
-@pytest.fixture
-def dev_wilderness(monkeypatch):
-    monkeypatch.setenv(DEV_WILDERNESS_ENV, "1")
-
-
-def test_wilderness_disabled_without_the_dev_flag(monkeypatch):
-    monkeypatch.delenv(DEV_WILDERNESS_ENV, raising=False)
-    assert not is_enabled("wilderness")
-    wild = next(z for z in zone_type_listing() if z["name"] == "wilderness")
-    assert wild["enabled"] is False and wild["reason"]
-
-
-def test_dev_flag_offers_wilderness(dev_wilderness):
+def test_wilderness_is_offered():
     assert is_enabled("wilderness")
     wild = next(z for z in zone_type_listing() if z["name"] == "wilderness")
     assert wild == {"name": "wilderness", "enabled": True, "reason": None}
@@ -103,7 +87,7 @@ def test_bowl_gate_rejects_a_flattened_rim():
 
 
 @pytest.mark.slow
-def test_generate_validated_gates_wilderness_on_the_bowl(dev_wilderness, tmp_path):
+def test_generate_validated_gates_wilderness_on_the_bowl(tmp_path):
     plan = ZonePlan(name="karana", zone_type="wilderness")
     edges = {"N": "zoneline", "E": "river"}
     vb = generate_validated(
@@ -134,7 +118,7 @@ def _ter_bytes(vb) -> bytes:
 
 
 @pytest.mark.slow
-def test_seeded_reproducibility(dev_wilderness, tmp_path):
+def test_seeded_reproducibility(tmp_path):
     """Feature: zone-generator-wilderness, Property 16: Seeded reproducibility.
 
     The same pinned seed rebuilds the same TER (the landscape cache cleared in
@@ -153,7 +137,7 @@ def test_seeded_reproducibility(dev_wilderness, tmp_path):
 
 
 @pytest.mark.slow
-def test_full_generate_fits_the_time_budget(dev_wilderness, tmp_path):
+def test_full_generate_fits_the_time_budget(tmp_path):
     """A full gated wilderness generate (build, bowl gate, format check, GLB)
     is far under the 5-minute budget and inside the pipeline's own timeout."""
     _landscape.cache_clear()  # time a cold build, not a cache hit

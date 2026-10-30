@@ -64,22 +64,14 @@ function prefixStream(stream, prefix, color) {
   });
 }
 
-// Dev-only: offer the wilderness zone type before it is enabled for real
-// (EQ_S3D_DEV_WILDERNESS, generators/zone_types.py). A value already set in the
-// shell wins, so EQ_S3D_DEV_WILDERNESS=0 hides it again. Remove this when
-// wilderness joins ENABLED_ZONE_TYPES (wilderness task 11).
-const DEV_FLAGS = { EQ_S3D_DEV_WILDERNESS: "1" };
-
 function startBackend() {
   const python = resolvePython();
-  const env = { ...DEV_FLAGS, ...process.env };
   console.log(`\x1b[36m[launcher]\x1b[0m starting backend: ${python} -m uvicorn server.app:app --host 127.0.0.1 --port ${BACKEND_PORT}`);
-  console.log(`\x1b[36m[launcher]\x1b[0m wilderness (dev): ${env.EQ_S3D_DEV_WILDERNESS === "1" ? "on" : "off"}`);
 
   const proc = spawn(
     python,
     ["-m", "uvicorn", "server.app:app", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)],
-    { cwd: PROJECT_ROOT, env }
+    { cwd: PROJECT_ROOT, env: process.env }
   );
 
   prefixStream(proc.stdout, "api", "\x1b[32m");

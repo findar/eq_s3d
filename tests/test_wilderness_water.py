@@ -19,7 +19,6 @@ from generators.builder import _REGION_PREFIX, ZoneBuilder
 from generators.wilderness.build import bowl_report, build_wilderness_ter, wilderness_spec
 from generators.wilderness.water import WATER_SURFACE_MATERIAL
 from generators.zone_spec import ZoneSpec
-from generators.zone_types import DEV_WILDERNESS_ENV
 
 RIVER = {"N": "zoneline", "E": "river"}
 
@@ -82,9 +81,8 @@ def test_water_level_serializes_only_when_set(river_build):
     assert "water_level" not in dungeon.to_dict()
 
 
-def test_water_shows_in_the_glb_preview(monkeypatch, tmp_path):
+def test_water_shows_in_the_glb_preview(tmp_path):
     trimesh = pytest.importorskip("trimesh")
-    monkeypatch.setenv(DEV_WILDERNESS_ENV, "1")
     spec = wilderness_spec("karana_w", 2024, RIVER)
     result = ZoneBuilder(spec).build(output_dir=tmp_path)
     assert result.glb_path is not None and result.glb_path.exists()

@@ -253,34 +253,15 @@ def test_controls_cave_zone_type_rejected(client):
     After the wave-4 gate (task 15.5) the controls path refuses any zone type
     whose canonical form is not in ``ENABLED_ZONE_TYPES`` — ``cave`` is
     undefined (canonicalises to None) and is refused, listing the enabled set
-    (``dungeon, city``); ``wilderness`` is DEFINED but DISABLED and therefore no
-    longer appears in that list (Req 3.3)."""
+    (``dungeon, city, wilderness``) (Req 3.3)."""
     resp = assert_no_wildcard(
         client.post("/api/generate", json={"zone_type": "cave", "rooms": ROOMS})
     )
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
-    for zt in ("dungeon", "city"):
+    for zt in ("dungeon", "city", "wilderness"):
         assert zt in detail, f"detail does not name enabled {zt!r}: {detail!r}"
-    # Wilderness is disabled in M1, so the enabled list must not offer it.
-    assert "wilderness" not in detail, (
-        f"400 detail should not list the disabled wilderness: {detail!r}"
-    )
     # The 400 is raised before the factory runs, so no artifacts are produced.
-    assert list(app_mod.OUTPUT_DIR.iterdir()) == []
-
-
-def test_controls_wilderness_zone_type_rejected(client):
-    """A control-driven generate with zone_type="wilderness" (DEFINED but
-    DISABLED in M1) is a 400 listing the enabled set, before any write (Req
-    3.3)."""
-    resp = assert_no_wildcard(
-        client.post("/api/generate",
-                    json={"zone_type": "wilderness", "rooms": ROOMS})
-    )
-    assert resp.status_code == 400, resp.text
-    detail = resp.json()["detail"]
-    assert "dungeon" in detail and "city" in detail, detail
     assert list(app_mod.OUTPUT_DIR.iterdir()) == []
 
 
@@ -312,9 +293,8 @@ def test_zone_types_and_themes_listings_are_identical(client):
     by_name = {z["name"]: z for z in listing}
     assert by_name["dungeon"]["enabled"] is True
     assert by_name["city"]["enabled"] is True
-    # Wilderness is DEFINED but DISABLED in M1 and carries a reason.
-    assert by_name["wilderness"]["enabled"] is False
-    assert by_name["wilderness"]["reason"]
+    assert by_name["wilderness"] == {"name": "wilderness", "enabled": True,
+                                     "reason": None}
 
 # ---------------------------------------------------------------------------
 # Property 18 (Req 9.3, 9.4) — foreign origins get no CORS grant
@@ -750,16 +730,10 @@ def test_target_shortname_is_ignored(client):
 # Wilderness map edges in controls mode (wilderness spec task 3)
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def wild_client(client, monkeypatch):
-    monkeypatch.setenv("EQ_S3D_DEV_WILDERNESS", "1")
-    return client
-
-
-def test_controls_edges_reach_the_wilderness_build(wild_client):
+def test_controls_edges_reach_the_wilderness_build(client):
     """``controls.edges`` declares the Rim; the built zone carries it (and the
     zoneline/river regions it implies)."""
-    resp = wild_client.post("/api/generate", json={
+    resp = client.post("/api/generate", json={
         "mode": "controls", "seed": 2024,
         "controls": {"zone_type": "wilderness",
                      "edges": {"N": "zoneline", "e": "river"}},
@@ -779,8 +753,8 @@ def test_controls_edges_reach_the_wilderness_build(wild_client):
     ({"zone_type": "wilderness", "edges": ["N", "river"]}, "object"),
     ({"zone_type": "dungeon", "edges": {"N": "river"}}, "wilderness"),
 ])
-def test_bad_edges_are_a_400_naming_the_field(wild_client, controls, needle):
-    resp = wild_client.post("/api/generate",
+def test_bad_edges_are_a_400_naming_the_field(client, controls, needle):
+    resp = client.post("/api/generate",
                             json={"mode": "controls", "controls": controls})
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
@@ -788,7 +762,7 @@ def test_bad_edges_are_a_400_naming_the_field(wild_client, controls, needle):
     assert list(app_mod.OUTPUT_DIR.iterdir()) == []
 
 
-def test_dev_flag_lists_wilderness_as_enabled(wild_client):
-    listing = wild_client.get("/api/zone_types").json()["zone_types"]
+def test_zone_types_lists_wilderness_as_enabled(client):
+    listing = client.get("/api/zone_types").json()["zone_types"]
     wild = next(z for z in listing if z["name"] == "wilderness")
-    assert wild["enabled"] is True
+    assert wild == {"name": "wilderness", "enabled": True, "reason": None}

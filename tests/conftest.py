@@ -18,7 +18,6 @@ Two responsibilities (M0 design, "tests/conftest.py"):
 
 from __future__ import annotations
 
-import os
 import socket
 
 import pytest
@@ -178,22 +177,3 @@ def no_network(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
 
     yield attempts
-
-
-# ---------------------------------------------------------------------------
-# 3. Isolation from the developer's shell
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(autouse=True, scope="session")
-def _no_dev_wilderness_flag():
-    """Run every test with the dev-only wilderness override OFF.
-
-    ``EQ_S3D_DEV_WILDERNESS=1`` is set in the shell that runs the server, so it
-    can leak into a suite run from that shell and flip "wilderness is disabled"
-    assertions. Tests that want it on set it themselves (monkeypatch.setenv).
-    Session-scoped so Hypothesis tests don't see a function-scoped fixture.
-    """
-    saved = os.environ.pop("EQ_S3D_DEV_WILDERNESS", None)
-    yield
-    if saved is not None:
-        os.environ["EQ_S3D_DEV_WILDERNESS"] = saved

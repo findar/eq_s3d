@@ -18,7 +18,6 @@ and ``zone_type_listing`` is what the server's ``/api/zone_types`` serves.
 
 from __future__ import annotations
 
-import os
 from typing import Mapping
 
 # The three defined zone types, in canonical listing order. Everything that
@@ -71,42 +70,25 @@ def read_zone_type(d: Mapping[str, object]) -> object:
 #
 # A zone type is *offered* only if it is in ENABLED_ZONE_TYPES. Everything that
 # gates a zone type (CLI, server, pipeline) reads this one set; there is no
-# second "gated" set (Req 3.1). Wilderness is DEFINED but DISABLED in M1: its
-# heightfield generator is deferred to the open-world wilderness milestone, so
-# it ships present-but-disabled with a reason the Web_App can surface.
+# second "gated" set (Req 3.1). Wilderness joined the set when the open-world
+# wilderness milestone closed (zone-generator-wilderness task 11).
 
-# The zone types offered in M1. Wilderness is intentionally absent — see
-# ZONE_TYPE_REASONS["wilderness"]. Kept a frozenset so it can't be mutated in
-# place; a test that needs a different gate monkeypatches this whole name, which
-# is why is_enabled() re-reads it at call time rather than capturing it.
-ENABLED_ZONE_TYPES: frozenset[str] = frozenset({"dungeon", "city"})
+# The zone types offered. Kept a frozenset so it can't be mutated in place; a
+# test that needs a different gate monkeypatches this whole name, which is why
+# is_enabled() re-reads it at call time rather than capturing it.
+ENABLED_ZONE_TYPES: frozenset[str] = frozenset({"dungeon", "city", "wilderness"})
 
 # Human-readable reason per DISABLED zone type, explaining why it is unavailable.
 # Only disabled zone types need an entry; enabled ones never show a reason.
-ZONE_TYPE_REASONS: dict[str, str] = {
-    "wilderness": (
-        "Wilderness is deferred to the open-world wilderness milestone "
-        "(.kiro/specs/zone-generator-wilderness/); it is not offered yet."
-    ),
-}
+ZONE_TYPE_REASONS: dict[str, str] = {}
 
 # Fallback reason for a defined-but-disabled zone type with no specific entry in
 # ZONE_TYPE_REASONS.
 DISABLED_REASON = "Not yet offered: its builds don't pass the traversability sweep."
 
-# Dev-only override (wilderness task 2). With EQ_S3D_DEV_WILDERNESS=1 in the
-# environment, wilderness is offered so a Karana can be built and looked at in
-# the viewer before it is enabled for real. Task 11 deletes this when wilderness
-# joins ENABLED_ZONE_TYPES.
-DEV_WILDERNESS_ENV = "EQ_S3D_DEV_WILDERNESS"
-
-
 def enabled_zone_types() -> frozenset[str]:
-    """The zone types offered right now: ``ENABLED_ZONE_TYPES`` plus the dev
-    override. Reads both at call time, so a monkeypatched set or environment is
-    honoured."""
-    if os.environ.get(DEV_WILDERNESS_ENV) == "1":
-        return ENABLED_ZONE_TYPES | {"wilderness"}
+    """The zone types offered right now. Reads ``ENABLED_ZONE_TYPES`` at call
+    time, so a monkeypatched set is honoured."""
     return ENABLED_ZONE_TYPES
 
 

@@ -392,10 +392,11 @@ import os  # noqa: E402
 from generators.zone_types import ENABLED_ZONE_TYPES  # noqa: E402
 import analyzer.traverse as _traverse  # noqa: E402
 
-# The gated zone types this property ranges over. Sorted for a stable sample
-# order; wilderness is absent from ENABLED_ZONE_TYPES, so this is (city,
-# dungeon) and the property never touches a disabled type (task note).
-_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES))
+# The gated ROOM-GRAPH zone types these properties range over (city, dungeon),
+# sorted for a stable sample order. Wilderness is enabled but builds from its
+# own pipeline (no rooms, the bowl gate), so a LayoutGenerator spec for it is
+# not a real wilderness build; its properties live in tests/test_wilderness_*.
+_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES - {"wilderness"}))
 
 
 @pytest.mark.slow
@@ -413,8 +414,8 @@ def test_returned_build_passed_both_gates(zone_type, rooms, max_attempts, rng):
     returned half).
 
     When ``generate_validated`` RETURNS a ``ValidatedBuild`` for a zone type in
-    ``ENABLED_ZONE_TYPES`` (dungeon, city — wilderness is disabled and never
-    drawn), that build provably cleared BOTH gates and its files live only where
+    ``ENABLED_ZONE_TYPES`` (dungeon, city — wilderness has its own pipeline
+    and is not drawn), that build provably cleared BOTH gates and its files live only where
     they should:
 
     * ``vb.validated`` is True — the traversability gate ran and passed;
@@ -875,8 +876,8 @@ def test_build_name_and_directories(zone_type, name, seed):
     artifact carries the Build_Name, one directory per build (umbrella P41,
     Build_Name form).
 
-    For any enabled zone type (dungeon, city — wilderness is disabled and never
-    drawn), any valid Build_Name (lower-case ``[a-z0-9_]+``, INCLUDING the
+    For any enabled room-graph zone type (dungeon, city — wilderness has its
+    own pipeline and is not drawn), any valid Build_Name (lower-case ``[a-z0-9_]+``, INCLUDING the
     server ``gen_<ts>_<hex6>`` id shape) and any seed, a validated build is
     internally consistent in its naming and isolated in its own directory:
 
@@ -1092,8 +1093,8 @@ def test_writes_confined(zone_type, seed, rooms, pinned, k):
     inside the Output_Directory (M1-P6).
 
     For any generate call through the Pipeline — any enabled zone type (dungeon,
-    city — wilderness is disabled and never drawn), any seed, room count 2-8,
-    pinned or not, with the factory optionally forced to fail its first ``k``
+    city — wilderness has its own pipeline and is not drawn), any seed, room
+    count 2-8, pinned or not, with the factory optionally forced to fail its first ``k``
     attempts — run under a filesystem audit hook that records ``open`` in a
     write mode, ``os.rename`` / ``os.replace``, ``os.remove`` / ``os.rmdir``,
     ``shutil.rmtree`` and ``os.mkdir``, two invariants hold:
