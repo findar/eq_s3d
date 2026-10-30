@@ -72,12 +72,12 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: tests/test_wilderness_build.py, docs/ACCEPTANCE.md
   - Reqs: 5.3, 13.2, 13.3
 
-- [ ] 10. HUMAN: final Karana acceptance pass
+- [x] 10. HUMAN: final Karana acceptance pass
   - Card: [cards/10-human-final-pass.md](cards/10-human-final-pass.md)
   - Type: human · Depends: 9
   - Reqs: 13.4
 
-- [ ] 11. Enable wilderness and close step 1
+- [x] 11. Enable wilderness and close step 1
   - Card: [cards/11-enable-and-close.md](cards/11-enable-and-close.md)
   - Type: agent · Size: S · Depends: 10 · Where: MAIN checkout
   - Owns: generators/zone_types.py, tests/test_wilderness_build.py, docs/ACCEPTANCE.md, ROADMAP.md, tasks/README.md
