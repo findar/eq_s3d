@@ -47,7 +47,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: generators/mapgeom.py, analyzer/traverse.py, tests/strategies.py, tests/pbt_helpers.py, tests/test_properties_mapgeom.py
   - Reqs: 1, 2
 
-- [ ] 4. Outline on box builds
+- [x] 4. Outline on box builds
   - Card: [cards/04-outline-box-builds.md](cards/04-outline-box-builds.md)
   - Type: agent · Size: M · Depends: 2, 3
   - Owns: generators/mapgeom.py, tests/pbt_helpers.py, tests/test_properties_mapgeom.py

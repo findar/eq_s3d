@@ -6,20 +6,28 @@ Property tests for the outline extractor and depth bands
 known by construction.
 
 Design reference: ``.kiro/specs/zone-generator-m2-true-layout-artifacts/design.md``,
-"Correctness Properties" 2-7 and "Testing Strategy". The box-build examples of
-Properties 1-3 are task 4.
+"Correctness Properties" 1-7 and "Testing Strategy". Properties 2 and 3 also
+draw real box builds (dungeon and city) in the same ``@given``, weighted so the
+build count stays inside the build budget; Property 1 runs on builds only.
+Those three tests build zones, so they carry the ``slow`` marker.
+
+Box builds assert no depth-band count: they have real stacked floors until the
+corridors-inside-rooms layout fix (spec task 14), which owns that check.
 """
 
 from __future__ import annotations
 
 import math
 import random
+from dataclasses import dataclass
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
+from ai.expand import plan_to_spec
+from ai.schema import ZonePlan
 from analyzer.traverse import AgentModel, build_walk_surface, flood_reachable, seed_face_for
 from core.ter import Polygon, TerFile, Vertex
 from generators.mapgeom import (
@@ -32,12 +40,24 @@ from generators.mapgeom import (
     outline_summary,
 )
 from tests.pbt_helpers import (
+    build_raw,
+    build_settings,
+    clear_advisory,
+    doorway_spans,
     floor_boundary_samples,
+    fresh_dir,
     on_floor_boundary,
     reference_bands,
     scaled,
 )
-from tests.strategies import slab_worlds, stacked_worlds
+from tests.strategies import (
+    box_zone_types,
+    room_counts_wide,
+    seeds,
+    slab_worlds,
+    stacked_worlds,
+    verticality_all,
+)
 
 
 def _synthetic_settings(n: int = 100) -> settings:
@@ -46,6 +66,160 @@ def _synthetic_settings(n: int = 100) -> settings:
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
     )
+
+
+# ---------------------------------------------------------------------------
+# Box builds
+# ---------------------------------------------------------------------------
+
+#: Built TERs by case, shared by Properties 1-3 on one worker (a build is the
+#: expensive part; the same pinned seeds are drawn by all three).
+_BUILDS: dict = {}
+
+
+def _plan_spec(zone_type: str, rooms: int, seed: int, verticality: str):
+    plan = ZonePlan(name="mapgeom", zone_type=zone_type, room_count=rooms,
+                    verticality=verticality, elevation=verticality != "flat")
+    return plan_to_spec(plan, seed=seed)
+
+
+def _build_ter(spec) -> bytes:
+    with fresh_dir() as out:
+        _result, ter_bytes, _zon = build_raw(spec, out)
+    return ter_bytes
+
+
+@dataclass(frozen=True)
+class BoxBuild:
+    """A box build drawn by its plan parameters, built on first use. Quacks
+    like a synthetic world for the oracles (``ter``, ``safe_point``)."""
+    zone_type: str
+    rooms: int
+    seed: int
+    verticality: str
+
+    def _built(self):
+        key = (self.zone_type, self.rooms, self.seed, self.verticality)
+        if key not in _BUILDS:
+            spec = _plan_spec(*key)
+            _BUILDS[key] = (spec, _build_ter(spec))
+        return _BUILDS[key]
+
+    @property
+    def spec(self):
+        return self._built()[0]
+
+    @property
+    def ter_bytes(self) -> bytes:
+        return self._built()[1]
+
+    @property
+    def ter(self) -> TerFile:
+        return TerFile.from_bytes(self.ter_bytes)
+
+    @property
+    def safe_point(self):
+        return tuple(self.spec.safe_point)
+
+
+@st.composite
+def box_builds(draw) -> BoxBuild:
+    return BoxBuild(draw(box_zone_types), draw(room_counts_wide), draw(seeds),
+                    draw(verticality_all))
+
+
+#: Share of mixed-property examples that are builds: 15 per 100 synthetic, so
+#: the build count stays inside the build budget (and scales x5 with the
+#: thorough profile like everything else).
+_BUILD_SHARE = 15
+
+
+def worlds_or_builds():
+    """One strategy for the mixed properties; shrinks toward synthetic worlds."""
+    return st.integers(0, 99).flatmap(
+        lambda k: box_builds() if k >= 100 - _BUILD_SHARE else slab_worlds())
+
+
+#: The design's test seeds (finding 5), pinned on every build property.
+_PINNED = tuple(BoxBuild("dungeon", 12, s, "moderate")
+                for s in (1955208177, 1516796975, 678358326))
+
+
+def _pinned(f):
+    for case in reversed(_PINNED):
+        f = example(world=case)(f)
+    return f
+
+
+# ---------------------------------------------------------------------------
+# Doorway_Span oracle plumbing
+# ---------------------------------------------------------------------------
+
+DOOR_DZ = 3.0      # a span and an outline point meet within the step-up in Z
+
+
+def _spans(world) -> np.ndarray:
+    if not isinstance(world, BoxBuild):
+        return np.zeros((0, 2, 3))
+    return np.array(doorway_spans(world.spec), dtype=float).reshape(-1, 2, 3)
+
+
+def _seg_seg_dist2d(P, Q, a, b) -> np.ndarray:
+    """XY distance from each segment ``P[i]-Q[i]`` to the one segment ``a-b``."""
+    def pt_seg(X, A, B):
+        AB = B - A
+        L2 = np.maximum(np.einsum("...k,...k->...", AB, AB), 1e-18)
+        t = np.clip(np.einsum("...k,...k->...", X - A, AB) / L2, 0.0, 1.0)
+        return np.linalg.norm(A + t[..., None] * AB - X, axis=-1)
+
+    def cross(u, v):
+        return u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]
+
+    d = np.minimum.reduce([pt_seg(P, a, b), pt_seg(Q, a, b),
+                           pt_seg(a[None], P, Q), pt_seg(b[None], P, Q)])
+    r, s = Q - P, b - a
+    den = cross(r, s[None])
+    ok = np.abs(den) > 1e-12
+    den = np.where(ok, den, 1.0)
+    t = cross(a[None] - P, s[None]) / den
+    u = cross(a[None] - P, r) / den
+    hit = ok & (t >= 0) & (t <= 1) & (u >= 0) & (u <= 1)
+    return np.where(hit, 0.0, d)
+
+
+def _span_crossings(outline, spans: np.ndarray, end_gap: float = 0.1,
+                    tol: float = 0.05):
+    """Emitted segments that meet a Doorway_Span's interior: within ``tol`` in
+    XY of the span shrunk by ``end_gap`` at each side edge, at a height within
+    the step-up of the span. Touching only at a side edge is allowed."""
+    segs = _segments(outline)
+    bad = []
+    if len(segs) == 0:
+        return bad
+    P, Q = segs[:, 0], segs[:, 1]
+    for a, b in spans:
+        L = np.linalg.norm(b[:2] - a[:2])
+        if L <= 2 * end_gap:
+            continue
+        d = (b[:2] - a[:2]) / L
+        a2, b2 = a[:2] + end_gap * d, b[:2] - end_gap * d
+        near_z = ((np.minimum(P[:, 2], Q[:, 2]) <= a[2] + DOOR_DZ)
+                  & (np.maximum(P[:, 2], Q[:, 2]) >= a[2] - DOOR_DZ))
+        dist = _seg_seg_dist2d(P[:, :2], Q[:, :2], a2, b2)
+        for i in np.nonzero(near_z & (dist <= tol))[0]:
+            bad.append((segs[i].tolist(), (a.tolist(), b.tolist())))
+    return bad
+
+
+def _in_spans(pts: np.ndarray, spans: np.ndarray, tol: float = 0.05) -> np.ndarray:
+    """Is each point on a Doorway_Span (XY within ``tol``, Z within the step-up)?"""
+    out = np.zeros(len(pts), bool)
+    for a, b in spans:
+        ab = b[:2] - a[:2]
+        t = np.clip((pts[:, :2] - a[:2]) @ ab / max(ab @ ab, 1e-18), 0.0, 1.0)
+        d = np.linalg.norm(a[:2] + t[:, None] * ab - pts[:, :2], axis=1)
+        out |= (d <= tol) & (np.abs(pts[:, 2] - a[2]) <= DOOR_DZ)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +270,12 @@ def _segment_samples(outline, spacing: float = 1.0) -> np.ndarray:
     return np.array(pts, dtype=float).reshape(-1, 3)
 
 
-def _covered_fraction(world, region, outline) -> float:
+def _covered_fraction(world, region, outline, spans=None) -> float:
+    """Share of the Floor_Boundary length outside Doorway_Spans that lies
+    within 0.05 u of an emitted segment."""
     pts, w, boundary = floor_boundary_samples(world.ter, region, 0.5)
+    if spans is not None and len(spans):
+        boundary &= ~_in_spans(pts, spans)
     if not boundary.any():
         return 1.0
     near = _dist_to_segments(pts[boundary], _segments(outline)) <= 0.05
@@ -105,46 +283,85 @@ def _covered_fraction(world, region, outline) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Property 1: the outline is a function of the TER and the safe point
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+@build_settings(15)
+@_pinned
+@given(world=box_builds())
+def test_outline_function_of_ter(world):
+    """Feature: zone-generator-m2-true-layout-artifacts, Property 1: The
+    outline is a function of the TER and the safe point (umbrella P21).
+
+    For box builds: extracting from the built TER, from its byte round trip,
+    with the validator's walk surface passed in, and from the build of the same
+    spec with every Advisory_Data field cleared gives equal outlines. (The
+    Pipeline-written SVG clause waits for the post-pass, task 7.)
+
+    Validates: Requirements 1.1
+    """
+    ter = world.ter
+    sp = world.safe_point
+    base = extract_outline(ter, sp)
+    assert extract_outline(TerFile.from_bytes(ter.to_bytes()), sp) == base
+    surf = build_walk_surface(ter, AgentModel())
+    assert extract_outline(ter, sp, surface=surf) == base
+
+    cleared = clear_advisory(world.spec)
+    ter2 = TerFile.from_bytes(_build_ter(cleared))
+    assert extract_outline(ter2, tuple(cleared.safe_point)) == base
+
+
+# ---------------------------------------------------------------------------
 # Property 2: fidelity
 # ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 @_synthetic_settings()
-@given(world=slab_worlds())
+@_pinned
+@given(world=worlds_or_builds())
 def test_outline_fidelity(world):
     """Feature: zone-generator-m2-true-layout-artifacts, Property 2: Outline
     fidelity — sound and clear of doorways (umbrella P22).
 
-    Synthetic part: every point of every emitted segment lies within 0.05 u of
-    the Floor_Boundary, checked by its definition. (The doorway clause and the
-    box-build examples are task 4.)
+    For synthetic worlds and box builds: every point of every emitted segment
+    lies within 0.05 u of the Floor_Boundary, checked by its definition; for
+    builds, no emitted segment meets the interior of a Doorway_Span from
+    ``routing.corridor_route`` (touching a side edge is allowed).
 
-    Validates: Requirements 1.2, 1.7
+    Validates: Requirements 1.2, 1.3, 1.7
     """
-    outline = extract_outline(world.ter, world.safe_point)
+    ter = world.ter
+    outline = extract_outline(ter, world.safe_point)
     region = _region(world)
     pts = _segment_samples(outline)
-    ok = on_floor_boundary(world.ter, region, pts, tol=0.05)
+    ok = on_floor_boundary(ter, region, pts, tol=0.05)
     assert ok.all(), f"outline points off the Floor_Boundary: {pts[~ok][:5].tolist()}"
+    crossings = _span_crossings(outline, _spans(world))
+    assert not crossings, f"segments cross a Doorway_Span: {crossings[:3]}"
 
 
 # ---------------------------------------------------------------------------
 # Property 3: completeness
 # ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 @_synthetic_settings()
-@given(world=slab_worlds())
+@_pinned
+@given(world=worlds_or_builds())
 def test_outline_completeness(world):
     """Feature: zone-generator-m2-true-layout-artifacts, Property 3: Outline
     completeness (M2-P1).
 
-    Synthetic part: at least 99 % of the Floor_Boundary length, sampled every
-    0.5 u along every Floor_Region edge, lies within 0.05 u of an emitted
-    segment.
+    For synthetic worlds and box builds: of the Floor_Boundary length outside
+    Doorway_Spans, sampled every 0.5 u along every Floor_Region edge, at least
+    99 % lies within 0.05 u of an emitted segment.
 
     Validates: Requirements 1.4, 1.7
     """
     outline = extract_outline(world.ter, world.safe_point)
-    frac = _covered_fraction(world, _region(world), outline)
+    frac = _covered_fraction(world, _region(world), outline, _spans(world))
     assert frac >= 0.99, f"only {frac:.4f} of the Floor_Boundary is drawn"
 
 
