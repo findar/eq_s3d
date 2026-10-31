@@ -200,3 +200,20 @@ def test_bend_walls_when_jog_is_short_or_long(dy):
     # Both rooms are reachable: the walls did not seal the corridor.
     pts = np.array([q for p in outline.polylines for q in p.points])
     assert pts[:, 0].max() > 400.0
+
+
+def test_tight_bands_stay_within_grade_cap():
+    # Seed 22, 22 dramatic rooms: zero-run Z jogs pin their rooms level, and the
+    # relax clamp stalled at a conflicting-neighbours midpoint, leaving corr_0
+    # 0.03 u over run * 0.5. The exact projection fallback must clear it.
+    plan = ZonePlan(name="grade22", zone_type="dungeon", room_count=22,
+                    elevation=True, verticality="dramatic",
+                    dungeon_theme="sunken_ruin", dungeon_race="froglok")
+    spec = plan_to_spec(plan, seed=22)
+    gen = LayoutGenerator("dungeon")
+    gen.size_multiplier = 1.0
+    gen._apply_room_scale(22)
+    rooms = {r.id: r for r in spec.rooms}
+    for c in spec.corridors:
+        run = gen._elevation_run(rooms[c.from_room], rooms[c.to_room])
+        assert abs(c.from_z - c.to_z) <= run * 0.5 + 0.01, c.id
