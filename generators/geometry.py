@@ -132,31 +132,51 @@ class MeshBuilder:
             normal=(0, 0, -1), material=ceiling_mat,
         )
 
-        # Walls (inward-facing). Skip any listed in open_walls.
-        # South wall (y=y0), normal +Y (facing into room)
-        if "S" not in room.open_walls:
-            self.add_quad(
-                (x0, y0, z0), (x0, y0, z1), (x1, y0, z1), (x1, y0, z0),
-                normal=(0, 1, 0), material=wall_mat,
-            )
-        # North wall (y=y1), normal -Y
-        if "N" not in room.open_walls:
-            self.add_quad(
-                (x1, y1, z0), (x1, y1, z1), (x0, y1, z1), (x0, y1, z0),
-                normal=(0, -1, 0), material=wall_mat,
-            )
-        # West wall (x=x0), normal +X
-        if "W" not in room.open_walls:
-            self.add_quad(
-                (x0, y1, z0), (x0, y1, z1), (x0, y0, z1), (x0, y0, z0),
-                normal=(1, 0, 0), material=wall_mat,
-            )
-        # East wall (x=x1), normal -X
-        if "E" not in room.open_walls:
-            self.add_quad(
-                (x1, y0, z0), (x1, y0, z1), (x1, y1, z1), (x1, y1, z0),
-                normal=(-1, 0, 0), material=wall_mat,
-            )
+        # Walls (inward-facing). A side in open_walls is cut only where a
+        # corridor meets it: wall pieces either side of each doorway and a
+        # lintel above it, so the floor never ends at a drop beside a door. An
+        # open side no corridor reaches (hand-authored specs) stays fully open.
+        doors = _door_openings(room, spec)
+        extents = {
+            "S": (x0, x1), "N": (x0, x1),   # along X
+            "W": (y0, y1), "E": (y0, y1),   # along Y
+        }
+        for side in ("S", "N", "W", "E"):
+            lo, hi = extents[side]
+            if side not in room.open_walls:
+                self._add_room_wall(room, side, lo, hi, z0, z1, wall_mat)
+                continue
+            cuts = _merge_openings(doors.get(side, []), lo, hi)
+            if not cuts:
+                continue
+            pos = lo
+            for c0, c1, top in cuts:
+                if c0 > pos:
+                    self._add_room_wall(room, side, pos, c0, z0, z1, wall_mat)
+                if top < z1:
+                    self._add_room_wall(room, side, c0, c1, top, z1, wall_mat)
+                pos = c1
+            if pos < hi:
+                self._add_room_wall(room, side, pos, hi, z0, z1, wall_mat)
+
+    def _add_room_wall(self, room: RoomSpec, side: str, a: float, b: float,
+                       lo: float, hi: float, wall_mat: int) -> None:
+        """One inward-facing rectangle of a room wall, spanning a..b along the
+        wall (a < b) and lo..hi in Z. Corner order matches the whole-wall quads
+        so an uncut wall is byte-identical to the historic build."""
+        (x0, y0, _), (x1, y1, _) = room.bounds
+        if side == "S":     # y = y0, normal +Y
+            self.add_quad((a, y0, lo), (a, y0, hi), (b, y0, hi), (b, y0, lo),
+                          normal=(0, 1, 0), material=wall_mat)
+        elif side == "N":   # y = y1, normal -Y
+            self.add_quad((b, y1, lo), (b, y1, hi), (a, y1, hi), (a, y1, lo),
+                          normal=(0, -1, 0), material=wall_mat)
+        elif side == "W":   # x = x0, normal +X
+            self.add_quad((x0, b, lo), (x0, b, hi), (x0, a, hi), (x0, a, lo),
+                          normal=(1, 0, 0), material=wall_mat)
+        else:               # "E": x = x1, normal -X
+            self.add_quad((x1, a, lo), (x1, a, hi), (x1, b, hi), (x1, b, lo),
+                          normal=(-1, 0, 0), material=wall_mat)
 
     # ------------------------------------------------------------------
     # Primitive: a corridor (floor + ceiling + two side walls)
@@ -214,6 +234,17 @@ class MeshBuilder:
         (x0, y0), (x1, y1) = waypoints[k], waypoints[k + 1]
         return abs(x1 - x0) + abs(y1 - y0)   # axis-aligned → one term is 0
 
+    @classmethod
+    def _waypoint_zs(cls, waypoints, carry, from_z, to_z):
+        """Floor height at each waypoint, and the resolved carry leg: from_z up
+        to (and including) the start of the carry leg, to_z from the end of the
+        carry leg onward. `carry` None means the longest leg."""
+        n_legs = len(waypoints) - 1
+        if carry is None:
+            carry = max(range(n_legs), key=lambda k: cls._seg_len(waypoints, k))
+        zs = [from_z if i <= carry else to_z for i in range(len(waypoints))]
+        return zs, carry
+
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
                     steps, floor_mat, wall_mat, ceiling_mat):
         """
@@ -232,13 +263,7 @@ class MeshBuilder:
         the flush landings (seed 481893615 verified both openings stay flush).
         Corner fills join consecutive legs at their shared height.
         """
-        n_legs = len(waypoints) - 1
-        if carry is None:
-            carry = max(range(n_legs), key=lambda k: self._seg_len(waypoints, k))
-
-        # Floor height at each waypoint: from_z up to (and including) the start
-        # of the carry leg, to_z from the end of the carry leg onward.
-        zs = [from_z if i <= carry else to_z for i in range(len(waypoints))]
+        zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
 
         for k in range(len(waypoints) - 1):
             (x0, y0), (x1, y1) = waypoints[k], waypoints[k + 1]
@@ -445,6 +470,74 @@ def build_mesh(spec: ZoneSpec) -> MeshBuilder:
         mb.add_corridor(cor, spec)
 
     return mb
+
+
+def _door_openings(room: RoomSpec, spec: ZoneSpec
+                   ) -> Dict[str, List[Tuple[float, float, float]]]:
+    """Where each corridor attached to *room* passes through its walls.
+
+    Returns {side: [(c0, c1, top), ...]}: the corridor's end leg spans c0..c1
+    along that wall (its own width, centred on the leg's cross coordinate as
+    `_add_straight_leg` builds it) and its ceiling meets the wall plane at
+    `top`. The ceiling of a ramp or staircase is linear along the leg, so it is
+    interpolated at the wall plane; a lintel from there up stays clear of it.
+    Only sides listed in room.open_walls are reported.
+    """
+    rooms = {r.id: r for r in spec.rooms}
+    (x0, y0, _), (x1, y1, _) = room.bounds
+    out: Dict[str, List[Tuple[float, float, float]]] = {}
+    for cor in spec.corridors:
+        ends = []
+        if cor.from_room == room.id:
+            ends.append("from")
+        if cor.to_room == room.id:
+            ends.append("to")
+        if not ends:
+            continue
+        route = corridor_route(cor, rooms)
+        wps = list(route.waypoints)
+        zs, _ = MeshBuilder._waypoint_zs(
+            wps, None if route.carry < 0 else route.carry,
+            cor.from_z, cor.to_z)
+        hw = cor.width / 2
+        for end in ends:
+            k = 0 if end == "from" else len(wps) - 2
+            along_x = route.axes[k]
+            (ax, ay), (bx, by) = wps[k], wps[k + 1]
+            ex, ey = wps[0] if end == "from" else wps[-1]
+            if along_x:
+                side = "E" if ex >= room.center_x else "W"
+                plane, pa, pb, cross = (x1 if side == "E" else x0), ax, bx, ay
+            else:
+                side = "N" if ey >= room.center_y else "S"
+                plane, pa, pb, cross = (y1 if side == "N" else y0), ay, by, ax
+            if side not in room.open_walls:
+                continue
+            za, zb = zs[k], zs[k + 1]
+            if abs(pb - pa) > 1e-9:
+                t = min(1.0, max(0.0, (plane - pa) / (pb - pa)))
+            else:
+                t = 0.0
+            top = za + (zb - za) * t + cor.height
+            out.setdefault(side, []).append((cross - hw, cross + hw, top))
+    return out
+
+
+def _merge_openings(openings, lo: float, hi: float
+                    ) -> List[Tuple[float, float, float]]:
+    """Clip openings to the wall's extent lo..hi and merge overlaps, sorted
+    along the wall. A merged opening takes the higher top, so its lintel stays
+    clear of every corridor ceiling it covers."""
+    clipped = sorted((max(lo, c0), min(hi, c1), top)
+                     for c0, c1, top in openings if min(hi, c1) > max(lo, c0))
+    merged: List[Tuple[float, float, float]] = []
+    for c0, c1, top in clipped:
+        if merged and c0 <= merged[-1][1]:
+            m0, m1, mt = merged[-1]
+            merged[-1] = (m0, max(m1, c1), max(mt, top))
+        else:
+            merged.append((c0, c1, top))
+    return merged
 
 
 def _ensure_materials(spec: ZoneSpec) -> None:
