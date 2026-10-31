@@ -30,7 +30,7 @@ design's "interim if M1 is late" column no longer applies.
 
 ## Tasks
 
-- [ ] 1. EQ map core: convention, grounding, format, parse
+- [x] 1. EQ map core: convention, grounding, format, parse
   - Card: [cards/01-eqmap-core.md](cards/01-eqmap-core.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/eqmap.py, tests/test_eqmap.py
