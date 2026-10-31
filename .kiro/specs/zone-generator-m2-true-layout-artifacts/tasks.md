@@ -65,7 +65,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: generators/eqmap.py, tests/test_eqmap.py
   - Reqs: 5.1, 5.3–5.7
 
-- [ ] 7. Pipeline post-pass: map artifacts for accepted builds only
+- [x] 7. Pipeline post-pass: map artifacts for accepted builds only
   - Card: [cards/07-pipeline-post-pass.md](cards/07-pipeline-post-pass.md)
   - Type: agent · Size: M · Depends: 5, 6
   - Owns: generators/pipeline.py, generators/builder.py, analyzer/traverse.py, tests/test_pipeline.py, tests/test_properties_pipeline.py

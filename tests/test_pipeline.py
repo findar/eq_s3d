@@ -869,3 +869,123 @@ class TestBuildNameExample:
         for artifact in ("myzone.eqg", "myzone.glb", "myzone.zone.json",
                          "myzone.map.svg", "myzone.json"):
             assert (bd / artifact).exists(), f"missing {artifact} in {bd}"
+
+
+# ---------------------------------------------------------------------------
+# M2 map post-pass (zone-generator-m2-true-layout-artifacts task 7)
+# ---------------------------------------------------------------------------
+
+class TestMapPostPass:
+    """The Pipeline post-pass writes the map SVG and ``maps/<name>*.txt`` for
+    the accepted build only, and never fails a build over them (Req 3, 8)."""
+
+    @staticmethod
+    def _sidecar(vb):
+        return json.loads((vb.build_dir / "pipe.zone.json").read_text())
+
+    def test_accepted_build_gets_svg_and_map_files(self, tmp_path):
+        vb = _run(_flaky_factory(1), tmp_path, rng=random.Random(0))
+        bd = vb.build_dir
+        assert (bd / "pipe.map.svg").exists() and (bd / "maps" / "pipe.txt").exists()
+        data = self._sidecar(vb)
+        assert data["map_files"] == ["pipe.map.svg", "maps/pipe.txt"]
+        assert data["outline"]["bands"][0]["file"] == "maps/pipe.txt"
+        assert not any(w.split(":")[0].endswith("_unavailable")
+                       for w in data["warnings"])
+        # The rejected first attempt left nothing behind.
+        assert not (tmp_path / ".attempts").exists()
+        assert sorted(p.name for p in tmp_path.rglob("*.map.svg")) == ["pipe.map.svg"]
+
+    def test_ungated_build_gets_map_files(self, tmp_path):
+        vb = _run(_good_factory(), tmp_path, validate_enabled=False)
+        assert not vb.validated
+        assert (vb.build_dir / "maps" / "pipe.txt").exists()
+
+    def test_extractor_raises_falls_back_to_schematic(self, tmp_path, monkeypatch):
+        import generators.pipeline as pl
+        from generators.mapview import render_map_svg
+
+        def boom(*a, **k):
+            raise RuntimeError("boom at C:/secret/path=key\nsecond line")
+        monkeypatch.setattr(pl, "extract_outline", boom)
+        vb = _run(_good_factory(), tmp_path)
+
+        bd = vb.build_dir
+        assert (bd / "pipe.map.svg").read_text(encoding="utf-8") == \
+            render_map_svg(vb.spec)
+        assert not (bd / "maps").exists()
+        data = self._sidecar(vb)
+        assert data["map_files"] == ["pipe.map.svg"]
+        assert data["outline"] is None
+        warn = [w for w in data["warnings"] if w.startswith("outline_unavailable:")]
+        assert warn == ["outline_unavailable:RuntimeError: boom at C:secretpathkey"]
+        assert vb.warnings == data["warnings"]
+
+    def test_safe_point_off_floor_falls_back(self, tmp_path):
+        def factory(seed):
+            spec = _good_factory()(seed)
+            spec.safe_point = (1_000_000.0, 1_000_000.0, 0.0)
+            return spec
+        # Ungated: a safe point off the floor would fail the gate itself.
+        vb = _run(factory, tmp_path, validate_enabled=False)
+        assert not (vb.build_dir / "maps").exists()
+        data = self._sidecar(vb)
+        assert data["outline"] is None
+        assert any(w.startswith("outline_unavailable:EmptyFloorRegion")
+                   for w in data["warnings"])
+
+    def test_writer_raises_keeps_outline_svg(self, tmp_path, monkeypatch):
+        import generators.pipeline as pl
+        from generators.mapview import render_map_svg
+
+        real = pl.write_map_files
+
+        def half_write(mf, maps_dir, root):
+            real(mf, maps_dir, root)          # leave files behind, then fail
+            raise OSError("disk full")
+        monkeypatch.setattr(pl, "write_map_files", half_write)
+        vb = _run(_good_factory(), tmp_path)
+
+        bd = vb.build_dir
+        assert not (bd / "maps").exists()
+        svg = (bd / "pipe.map.svg").read_text(encoding="utf-8")
+        assert svg != render_map_svg(vb.spec), "the outline SVG was not kept"
+        data = self._sidecar(vb)
+        assert data["map_files"] == ["pipe.map.svg"]
+        assert data["outline"] is not None
+        assert all(b["file"] is None for b in data["outline"]["bands"])
+        assert "eqmap_unavailable:OSError: disk full" in data["warnings"]
+
+    def test_cli_and_server_map_files_identical(self, tmp_path, monkeypatch):
+        """One plan, seed and name through the CLI and the Server give
+        byte-identical map files (Req 8.5)."""
+        import main
+        import server.app as app_mod
+        from fastapi.testclient import TestClient
+
+        name, seed = "samezone", 1955208177
+        cli_out = tmp_path / "cli"
+        main.main(["generate", name, "--rooms", "6", "--seed", str(seed),
+                   "--size", "medium", "--verticality", "moderate",
+                   "--locks", "0", "--output", str(cli_out)])
+        cli_bd = next(cli_out.glob(f"{name}_*")) / "v1"
+
+        srv_out = tmp_path / "srv"
+        srv_out.mkdir()
+        monkeypatch.setattr(app_mod, "OUTPUT_DIR", srv_out)
+        monkeypatch.setattr(app_mod, "FAILURE_LOG", tmp_path / "f.jsonl")
+        monkeypatch.setattr(app_mod, "new_zone_id", lambda *a, **k: name)
+        r = TestClient(app_mod.app).post("/api/generate", json={
+            "mode": "controls", "seed": seed,
+            "controls": {"zone_type": "dungeon", "rooms": 6, "size": "medium",
+                         "verticality": "moderate", "locks": 0}})
+        assert r.status_code == 200, r.text
+        srv_bd = srv_out / name / "v1"
+
+        def map_files(bd):
+            files = [bd / f"{name}.map.svg", *sorted((bd / "maps").glob("*.txt"))]
+            return {p.relative_to(bd).as_posix(): p.read_bytes() for p in files}
+
+        cli_files, srv_files = map_files(cli_bd), map_files(srv_bd)
+        assert f"maps/{name}.txt" in cli_files
+        assert cli_files == srv_files

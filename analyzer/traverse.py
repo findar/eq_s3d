@@ -295,6 +295,10 @@ class TraversalReport:
     corridors: List[CorridorResult] = field(default_factory=list)
     conflicts: List[Tuple[str, str]] = field(default_factory=list)
     checked_corridors: bool = False
+    # The walk surface ``validate`` built, so the outline extractor can reuse it
+    # (M2 Pipeline post-pass). Not serialised; ``None`` on other report paths.
+    surface: Optional["WalkSurface"] = field(default=None, repr=False,
+                                             compare=False)
 
     @property
     def passed(self) -> bool:
@@ -1510,6 +1514,7 @@ def validate(eqg_path: str | Path,
         reachable_rooms=0,
         total_faces=len(surf.faces),
         standable_faces=int(surf.standable.sum()),
+        surface=surf,
     )
 
     # Flood seed. The dungeon/city path (``bowl is None``) uses the spec's safe

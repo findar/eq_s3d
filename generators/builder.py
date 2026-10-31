@@ -202,19 +202,14 @@ class ZoneBuilder:
             root=root,
         )
 
-        # 8. Top-down schematic map (SVG sidecar) for the UI "Map" view —
-        #    written on every build so the Pipeline can locate it. Routed
-        #    through the OutputRoot like every other artifact.
-        from .mapview import render_map_svg
-        map_path = out_dir / f"{name}.map.svg"
-        root.write_text(map_path.name, render_map_svg(self.spec))
+        # The map SVG and EQ map files are NOT written here: the Pipeline
+        # post-pass writes them for the accepted build only (M2 Decision 8).
 
         return BuildResult(
             spec=self.spec,
             eqg_path=eqg_path,
             glb_path=glb_path,
             sidecar_path=sidecar_path,
-            map_path=map_path,
             vertex_count=len(ter.vertices),
             polygon_count=len(ter.polygons),
             material_count=len(ter.materials),
@@ -397,8 +392,9 @@ class BuildResult:
         self.spec = spec
         self.eqg_path = eqg_path
         self.glb_path = glb_path
-        # The .zone.json sidecar and the .map.svg are written on every build
-        # (not only when a GLB is exported), so callers can always locate them.
+        # The .zone.json sidecar is written on every build (not only when a
+        # GLB is exported). ``map_path`` is set by the Pipeline post-pass,
+        # which writes the .map.svg for accepted builds only.
         self.sidecar_path = sidecar_path
         self.map_path = map_path
         self.vertex_count = vertex_count

@@ -51,6 +51,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -63,6 +64,9 @@ from analyzer.traverse import (
 )
 from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
+from generators.eqmap import build_map_file, write_map_files
+from generators.mapgeom import extract_outline, outline_summary
+from generators.mapview import render_map_svg
 from generators.zone_spec import ZoneSpec
 from generators.zone_types import enabled_zone_types
 
@@ -442,10 +446,13 @@ def generate_validated(
                             sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
                             agent=agent)
             all_warnings = base_warnings + list(result.warnings)
+            map_meta = _write_map_artifacts(root, result, scratch, None, agent,
+                                            all_warnings)
             moved = _finalize_build(
                 root, result, scratch, final_dir, fmt=fmt,
                 warnings=all_warnings, validated=False, attempts=1,
                 seed=use_seed, planned_zone_type=planned_zone_type, mode=mode,
+                map_meta=map_meta,
             )
             _remove_scratch(root, output_dir, zone_id, scratch)
         except Exception:
@@ -488,11 +495,14 @@ def generate_validated(
 
             if passed:
                 all_warnings = base_warnings + list(result.warnings)
+                map_meta = _write_map_artifacts(root, result, scratch,
+                                                report.surface, agent,
+                                                all_warnings)
                 moved = _finalize_build(
                     root, result, scratch, final_dir, fmt=fmt,
                     warnings=all_warnings, validated=True, attempts=attempt,
                     seed=use_seed, planned_zone_type=planned_zone_type,
-                    mode=mode,
+                    mode=mode, map_meta=map_meta,
                 )
                 _remove_scratch(root, output_dir, zone_id, scratch)
                 if attempt > 1:
@@ -530,12 +540,75 @@ def generate_validated(
         # else: pick a new fresh seed and retry.
 
 
+# ---------------------------------------------------------------------------
+# Map post-pass (M2): outline SVG + EQ map files for the accepted build only
+# ---------------------------------------------------------------------------
+
+_CAUSE_JUNK = re.compile(r"[^A-Za-z0-9_ .:-]")
+
+
+def _cause(e: BaseException) -> str:
+    """A warning-safe cause: the exception type plus the first line of its
+    message, ``[A-Za-z0-9_ .:-]`` only, at most 120 characters, so a warning
+    never carries a path outside the Output_Directory or a key."""
+    msg = str(e).splitlines()[0] if str(e) else ""
+    text = f"{type(e).__name__}: {msg}" if msg else type(e).__name__
+    return _CAUSE_JUNK.sub("", text)[:120]
+
+
+def _write_map_artifacts(root: OutputRoot, result: BuildResult, scratch: Path,
+                         surface, agent: Optional[AgentModel],
+                         warnings: List[str]) -> dict:
+    """Write ``<name>.map.svg`` and ``maps/<name>*.txt`` into ``scratch``.
+
+    Runs after the gates pass, before the move out of scratch (design
+    "Pipeline post-pass"). Never fails the build: an extractor failure or an
+    empty floor gives the schematic-only SVG and no ``maps/``
+    (``outline_unavailable:<cause>``); a writer failure keeps the outline SVG
+    and removes ``maps/`` (``eqmap_unavailable:<cause>``). Warnings are
+    appended to ``warnings``; returns the Sidecar's ``map_files``/``outline``.
+    """
+    spec = result.spec
+    name = spec.name.lower()
+    scratch = scratch.resolve()
+    try:
+        ter, _ = load_ter_from_eqg(result.eqg_path)
+        outline = extract_outline(ter, spec.safe_point, agent, surface=surface)
+    except Exception as e:                       # EmptyFloorRegion or a bug
+        logger.warning("outline extraction failed for %s", name, exc_info=True)
+        outline = None
+        warnings.append(f"outline_unavailable:{_cause(e)}")
+    svg_path = root.write_text(str(scratch / f"{name}.map.svg"),
+                               render_map_svg(spec, outline=outline))
+    result.map_path = svg_path
+    map_files = [svg_path.name]
+    if outline is None:
+        return {"map_files": map_files, "outline": None}
+
+    block = outline_summary(outline)
+    maps_dir = scratch / "maps"
+    try:
+        mf = build_map_file(outline, spec, name)
+        written = write_map_files(mf, maps_dir, root)
+        files = {l.index: f"maps/{mf.filename(l.index)}" for l in mf.layers}
+        map_files += [f"maps/{p.name}" for p in written]
+    except Exception as e:
+        logger.warning("EQ map writing failed for %s", name, exc_info=True)
+        root.remove_tree(maps_dir)
+        files = {}
+        warnings.append(f"eqmap_unavailable:{_cause(e)}")
+    for band in block["bands"]:
+        band["file"] = files.get(band["index"])
+    return {"map_files": map_files, "outline": block}
+
+
 def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
                     final_dir: Path, *,
                     fmt: FormatReport, warnings: Sequence[str], validated: bool,
                     attempts: int, seed: int,
                     planned_zone_type: Optional[str] = None,
-                    mode: Optional[str] = None) -> BuildResult:
+                    mode: Optional[str] = None,
+                    map_meta: Optional[dict] = None) -> BuildResult:
     """Move a passing/ungated build out of scratch into ``final_dir``.
 
     Moves every file from ``scratch`` into ``final_dir`` through
@@ -590,6 +663,10 @@ def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
         # CLI and ungated builds may omit it).
         if mode is not None:
             data["mode"] = mode
+        # ``map_files`` (relative to the build dir) and the ``outline`` block
+        # from the map post-pass (M2 Req 8.4).
+        if map_meta is not None:
+            data.update(map_meta)
         # Rewrite in place, confined to the Output_Directory.
         root.write_text(str(sidecar), json.dumps(data, indent=2))
 
