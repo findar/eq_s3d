@@ -29,7 +29,7 @@ from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
@@ -74,39 +74,52 @@ VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)
 # ---------------------------------------------------------------------------
 #
 # The pipeline (task 15.4) moves an accepted build's files into
-# output/web/<zone_id>/v<version>/<zone_id>.*. The route that serves them
-# (`/api/zones/{zone_id}/{version}/{filename}`) is deliberately strict: each URL
-# segment must match SEGMENT_RE (no separators, no `..`), the file extension
-# must be in BUILD_FILE_EXTS, and the resolved path must still lie inside
-# OUTPUT_DIR after resolution — so no crafted segment can read outside the
-# output tree. The detailed traversal example tests are task 15.9; the guards
-# are implemented correctly here.
+# output/web/<zone_id>/v<version>/<zone_id>.*, with the EQ map files under its
+# ``maps/`` subfolder (M2). The routes that serve them
+# (`/api/zones/{zone_id}/{version}/{filename}` and `.../maps/{filename}`) are
+# deliberately strict: each URL segment must match SEGMENT_RE and contain no
+# `..`, the file extension must be in the Build_File_Allow_List for its folder,
+# and the resolved path must still lie inside the build directory under
+# OUTPUT_DIR — so no crafted segment can read outside the output tree.
 
-# A single path segment: letters, digits, underscore, dot and hyphen only, and
-# never exactly "..". Rejects `/`, `\`, drive letters and parent-dir hops.
+# A single path segment: letters, digits, underscore, dot and hyphen only.
+# Rejects `/`, `\`, drive letters; `..` (and a bare `.`) are refused separately.
 SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
-# The artifact extensions a build directory is allowed to serve. Anything else
-# (e.g. a stray ``.py`` or ``.jsonl``) is refused before any file access.
-BUILD_FILE_EXTS = {".glb", ".eqg", ".svg", ".json"}
+# The Build_File_Allow_List, split by folder: the build dir root holds the
+# archive, preview, sidecar and map SVG; ``maps/`` holds only the EQ map
+# ``.txt`` files. Anything else (a stray ``.py``, ``.jsonl``, a ``.txt`` at the
+# root) is refused before any file access.
+BUILD_FILE_EXTS = (".eqg", ".glb", ".zone.json", ".map.svg", ".png", ".sql", ".zip")
+MAPS_FILE_EXTS = (".txt",)
+MAPS_SUBDIR = "maps"
 
-# Extension -> media type for the FileResponse.
+# Final extension -> media type for the FileResponse.
 _MEDIA_BY_EXT = {
-    ".glb": "model/gltf-binary",
+    ".txt": "text/plain; charset=us-ascii",
     ".eqg": "application/octet-stream",
     ".svg": "image/svg+xml",
+    ".glb": "model/gltf-binary",
     ".json": "application/json",
+    ".png": "image/png",
+    ".sql": "application/sql",
+    ".zip": "application/zip",
 }
 
 
 def _file_extension(filename: str) -> str:
-    """The build-file extension for ``filename``.
+    """The final extension of ``filename``, lower-cased (the media-type key).
 
-    Multi-dot names like ``gen_123.zone.json`` / ``gen_123.map.svg`` keep their
-    final extension (``.json`` / ``.svg``), which is what the allow-list checks.
+    Multi-dot names like ``gen_123.zone.json`` / ``gen_123.map.svg`` give
+    ``.json`` / ``.svg``; the allow-list itself checks the double suffix.
     """
     dot = filename.rfind(".")
     return filename[dot:].lower() if dot != -1 else ""
+
+
+def _safe_segment(seg: str) -> bool:
+    """One URL segment is a single safe path component (Req 9.3)."""
+    return bool(SEGMENT_RE.match(seg)) and ".." not in seg and seg != "."
 
 # ---------------------------------------------------------------------------
 # Build identity (which code is this process actually running?)
@@ -377,6 +390,14 @@ class GenerateRequest(BaseModel):
         default=None, description="Legacy flat multi-level flag (controls mode)")
 
 
+class ArtifactRef(BaseModel):
+    """One file of an accepted build, as the Artifacts_Panel lists it."""
+    kind: str                        # "map_svg" | "eqmap" | "eqg" | "glb" | "sidecar"
+    filename: str                    # relative to the build dir ("maps/<name>_1.txt")
+    url: str                         # the build-file route that serves it
+    layer: Optional[int] = None      # eqmap only: 0 = main band, 1..3
+
+
 class GenerateResponse(BaseModel):
     id: str                          # the Build_Name (directory + file stem)
     version: int = 1                 # the per-build version (output/<id>/v<version>/)
@@ -390,6 +411,9 @@ class GenerateResponse(BaseModel):
     glb_url: str
     zone_url: str
     map_url: str
+    eqg_url: str = ""
+    # Every file the build actually wrote, with its URL (M2 Req 9.5).
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
     # What drove the generation (so the UI can show inferred choices). ``source``
     # is kept as a back-compat mirror of ``mode`` for pre-mode clients.
     source: str                      # "prompt" | "controls" (== mode)
@@ -625,6 +649,8 @@ def generate(req: GenerateRequest):
         glb_url=f"/api/zones/{zone_id}/v1/{zone_id}.glb",
         zone_url=f"/api/zones/{zone_id}/v1/{zone_id}.zone.json",
         map_url=f"/api/zones/{zone_id}/v1/{zone_id}.map.svg",
+        eqg_url=f"/api/zones/{zone_id}/v1/{zone_id}.eqg",
+        artifacts=_build_artifacts(vb.build_dir, zone_id, 1),
         source=mode,
         planner=planner_name,
         plan=plan_dict,
@@ -637,44 +663,82 @@ def generate(req: GenerateRequest):
     )
 
 
-@app.get("/api/zones/{zone_id}/{version}/{filename}")
-def get_zone_file(zone_id: str, version: str, filename: str):
-    """Serve one artifact from a per-build directory.
+def _eqmap_layer(stem: str, name: str) -> Optional[int]:
+    """The layer of an EQ map file stem: ``<name>`` is 0, ``<name>_N`` is N."""
+    if stem == name:
+        return 0
+    m = re.fullmatch(re.escape(name) + r"_([1-9])", stem)
+    return int(m.group(1)) if m else None
 
-    An accepted build lives at ``OUTPUT_DIR/<zone_id>/v<version>/<zone_id>.*``
-    (task 15.4). Every URL segment must be a single safe path component
-    (``SEGMENT_RE``, never ``..``), the extension must be in the allow-list, and
-    the path, once resolved, must still lie inside ``OUTPUT_DIR`` — so no
-    crafted segment can read outside the output tree. A well-formed request for
-    a file that is not present is a 404; a malformed segment or a disallowed
-    extension is a 400 (both raised before any file access).
+
+def _build_artifacts(build_dir: Optional[Path], name: str,
+                     version: int) -> list[ArtifactRef]:
+    """The files actually present in an accepted build's directory, in panel
+    order: map SVG, EQ map layers (ascending), archive, preview, sidecar."""
+    if build_dir is None:
+        return []
+    base = f"/api/zones/{name}/v{version}"
+    refs: list[ArtifactRef] = []
+
+    def add(kind: str, rel: str, layer: Optional[int] = None) -> None:
+        if (build_dir / rel).is_file():
+            refs.append(ArtifactRef(kind=kind, filename=rel,
+                                    url=f"{base}/{rel}", layer=layer))
+
+    add("map_svg", f"{name}.map.svg")
+    maps_dir = build_dir / MAPS_SUBDIR
+    if maps_dir.is_dir():
+        layers = sorted((layer, p.name) for p in maps_dir.glob("*.txt")
+                        if (layer := _eqmap_layer(p.stem, name)) is not None)
+        for layer, fname in layers:
+            add("eqmap", f"{MAPS_SUBDIR}/{fname}", layer)
+    add("eqg", f"{name}.eqg")
+    add("glb", f"{name}.glb")
+    add("sidecar", f"{name}.zone.json")
+    return refs
+
+
+@app.api_route("/api/zones/{zone_id}/{version}/{filename}", methods=["GET", "HEAD"])
+@app.api_route("/api/zones/{zone_id}/{version}/{subdir}/{filename}",
+               methods=["GET", "HEAD"])
+def get_zone_file(zone_id: str, version: str, filename: str,
+                  subdir: Optional[str] = None):
+    """Serve one artifact from a per-build directory (GET and HEAD).
+
+    An accepted build lives at ``OUTPUT_DIR/<zone_id>/v<version>/`` with its EQ
+    map files under ``maps/``; ``maps`` is the only subfolder served. Every URL
+    segment must be a single safe component (``SEGMENT_RE``, no ``..``), the
+    extension must be in that folder's allow-list, and the resolved path must
+    lie inside the build directory under ``OUTPUT_DIR``. Any failed check is a
+    400 with no body, decided before any file access; a well-formed request for
+    a file that is not present is a 404, also bodiless so HEAD and GET agree. ``FileResponse`` serves the bytes as
+    stored and answers HEAD with the same headers and no body.
     """
-    # Each segment must be a single safe component — no separators, no parent-dir
-    # hop. (A `/` or `\` in a segment can't even reach here as one path param,
-    # but an explicit check keeps the guard self-evident and covers `..`.)
-    for seg in (zone_id, version, filename):
-        if seg == ".." or not SEGMENT_RE.match(seg):
-            raise HTTPException(400, "Invalid path segment")
+    parts = (zone_id, version) + ((subdir,) if subdir is not None else ()) + (filename,)
+    if not all(_safe_segment(seg) for seg in parts):
+        return Response(status_code=400)
+    if subdir is not None and subdir != MAPS_SUBDIR:
+        return Response(status_code=400)
 
-    # Only build artifacts are served; refuse any other extension outright.
-    ext = _file_extension(filename)
-    if ext not in BUILD_FILE_EXTS:
-        raise HTTPException(400, f"Disallowed file type: {ext or '(none)'}")
+    allowed = MAPS_FILE_EXTS if subdir is not None else BUILD_FILE_EXTS
+    if not filename.lower().endswith(allowed):
+        return Response(status_code=400)
 
-    # Belt-and-braces: resolve the candidate and confirm it is still inside
-    # OUTPUT_DIR. The segment regex already blocks traversal, but resolving and
-    # re-checking means a path can never escape the output root even if the
-    # regex is later loosened.
-    base = OUTPUT_DIR.resolve()
-    candidate = (OUTPUT_DIR / zone_id / version / filename).resolve()
-    if candidate != base and base not in candidate.parents:
-        raise HTTPException(400, "Path escapes the output directory")
+    # Belt-and-braces: resolve the candidate and confirm it is still inside the
+    # build directory within OUTPUT_DIR. The segment checks already block
+    # traversal, but re-checking after resolution means a path can never escape
+    # even if those checks are later loosened.
+    build_dir = (OUTPUT_DIR / zone_id / version).resolve()
+    candidate = (build_dir / Path(*parts[2:])).resolve()
+    if not OutputRoot(OUTPUT_DIR).contains(candidate) or build_dir not in candidate.parents:
+        return Response(status_code=400)
 
     if not candidate.is_file():
-        raise HTTPException(404, "Not found")
+        return Response(status_code=404)
 
     return FileResponse(str(candidate),
-                        media_type=_MEDIA_BY_EXT.get(ext, "application/octet-stream"))
+                        media_type=_MEDIA_BY_EXT.get(_file_extension(filename),
+                                                     "application/octet-stream"))
 
 
 @app.get("/api/health")

@@ -25,6 +25,7 @@ to a ``tmp_path`` keeps generated artifacts out of the worktree.
 
 from __future__ import annotations
 
+import json
 import runpy
 
 import pytest
@@ -768,3 +769,176 @@ def test_zone_types_lists_wilderness_as_enabled(client):
     listing = client.get("/api/zone_types").json()["zone_types"]
     wild = next(z for z in listing if z["name"] == "wilderness")
     assert wild == {"name": "wilderness", "enabled": True, "reason": None}
+
+
+# ---------------------------------------------------------------------------
+# M2 task 8 — build files under maps/, HEAD, and artifact URLs (M2 Req 9)
+# ---------------------------------------------------------------------------
+
+import re  # noqa: E402
+from pathlib import Path  # noqa: E402
+from urllib.parse import quote  # noqa: E402
+
+from hypothesis import strategies as st  # noqa: E402
+
+_P18_NAME = "gen_t"
+# The pre-built build dir's files (relative to OUTPUT_DIR). Besides a full
+# build it holds files the rules must refuse even though they exist: a root
+# ``.txt``, a ``.py``, a plain ``.json``/``.svg``, another subfolder, and a
+# servable-looking file outside any build dir.
+_P18_FILES = [
+    f"{_P18_NAME}/v1/{_P18_NAME}.eqg", f"{_P18_NAME}/v1/{_P18_NAME}.glb",
+    f"{_P18_NAME}/v1/{_P18_NAME}.zone.json", f"{_P18_NAME}/v1/{_P18_NAME}.map.svg",
+    f"{_P18_NAME}/v1/{_P18_NAME}.png",
+    f"{_P18_NAME}/v1/maps/{_P18_NAME}.txt", f"{_P18_NAME}/v1/maps/{_P18_NAME}_1.txt",
+    f"{_P18_NAME}/v1/notes.txt", f"{_P18_NAME}/v1/{_P18_NAME}.py",
+    f"{_P18_NAME}/v1/{_P18_NAME}.json", f"{_P18_NAME}/v1/{_P18_NAME}.svg",
+    f"{_P18_NAME}/v1/other/{_P18_NAME}.txt", f"{_P18_NAME}/v1/maps/{_P18_NAME}.glb",
+    f"{_P18_NAME}/{_P18_NAME}.glb", "secret.glb",
+]
+_ROOT_EXTS = (".eqg", ".glb", ".zone.json", ".map.svg", ".png", ".sql", ".zip")
+_ALL_EXTS = _ROOT_EXTS + (".txt", ".json", ".svg", ".py", ".jsonl", "", ".GLB", ".TXT")
+_WIN_RESERVED = re.compile(r"(?i)^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$")
+
+
+def _p18_junk():
+    """Segments the rules must refuse: parent hops, unicode, separator-free
+    junk and dotted tricks (``/`` is left out: it would split the segment)."""
+    return st.one_of(
+        st.sampled_from(["..", ".", "...", "a..b.glb", "a b.glb", "é.glb",
+                         "%2e%2e", "gen_t.glb.", "~gen_t.glb"]),
+        st.text(st.characters(blacklist_categories=("Cs",), blacklist_characters="/"),
+                min_size=1, max_size=12),
+    ).filter(lambda s: not _WIN_RESERVED.match(s))
+
+
+def build_paths():
+    """Build-file paths below ``/api/zones/``: 3 segments, or 4 with a
+    subfolder, drawn from valid names, the allow-list extensions, ``..``,
+    unicode, empty-extension and bad-extension names (design "build_paths")."""
+    filename = st.one_of(
+        st.builds(lambda stem, ext: stem + ext,
+                  st.sampled_from([_P18_NAME, f"{_P18_NAME}_1", f"{_P18_NAME}_2",
+                                   "notes", "GEN_T", "x"]),
+                  st.sampled_from(_ALL_EXTS)),
+        _p18_junk(),
+    )
+    zone = st.one_of(st.sampled_from([_P18_NAME, "gen_other"]), _p18_junk())
+    version = st.one_of(st.sampled_from(["v1", "v2"]), _p18_junk())
+    subdir = st.one_of(st.none(), st.sampled_from(["maps", "other", "MAPS"]), _p18_junk())
+    return st.builds(
+        lambda z, v, d, f: (z, v, f) if d is None else (z, v, d, f),
+        zone, version, subdir, filename)
+
+
+def _p18_url(parts) -> str:
+    """Percent-encode each segment; all-dot segments as ``%2E`` so the client
+    does not collapse them before they reach the server."""
+    enc = [quote(p, safe="") if p.strip(".") else p.replace(".", "%2E") for p in parts]
+    return "/api/zones/" + "/".join(enc)
+
+
+def _p18_expected(out: Path, parts):
+    """The Req 9.3 / 9.2 model: (status, bytes or None)."""
+    seg_ok = all(re.fullmatch(r"[A-Za-z0-9_.-]+", p) and ".." not in p and p != "."
+                 for p in parts)
+    if not seg_ok:
+        return 400, None
+    if len(parts) == 4 and parts[2] != "maps":
+        return 400, None
+    exts = (".txt",) if len(parts) == 4 else _ROOT_EXTS
+    if not parts[-1].lower().endswith(exts):
+        return 400, None
+    build_dir = (out / parts[0] / parts[1]).resolve()
+    target = (build_dir / Path(*parts[2:])).resolve()
+    if build_dir not in target.parents:
+        return 400, None
+    if not target.is_file():
+        return 404, None
+    return 200, target.read_bytes()
+
+
+def test_build_file_paths_served_or_refused(tmp_path, monkeypatch):
+    """Feature: zone-generator-m2-true-layout-artifacts, Property 18 (M2-P12):
+    Build-file paths are served or refused by the rules.
+
+    Over one pre-built directory, a GET is 400 (no body) exactly when Req 9.3
+    rejects the path, else 200 with the file's exact bytes when it exists, else
+    404 with no body; HEAD gives the same status and headers and no body.
+    """
+    out = tmp_path / "web_out"
+    for i, rel in enumerate(_P18_FILES):
+        f = out / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(f"{rel}\n{i}\n".encode())
+    monkeypatch.setattr(app_mod, "OUTPUT_DIR", out)
+    client = TestClient(app_mod.app)
+
+    @settings(max_examples=scaled(200), deadline=None)
+    @given(parts=build_paths())
+    def check(parts):
+        url = _p18_url(parts)
+        status, data = _p18_expected(out, parts)
+        got = client.get(url)
+        assert got.status_code == status, (parts, url, got.status_code)
+        assert got.content == (data if status == 200 else b""), (parts, url)
+        head = client.head(url)
+        assert head.status_code == status, (parts, url)
+        assert head.content == b""
+        assert dict(head.headers) == dict(got.headers), (parts, url)
+
+    check()
+
+
+def test_maps_route_serves_exact_bytes_as_text(client):
+    """A ``maps/`` GET of an existing ``.txt`` returns its exact bytes as
+    ``text/plain`` (M2 Req 9.1); HEAD matches GET's headers with no body
+    (Req 9.4)."""
+    data = b"L 1.0, 2.0, 0.0, 3.0, 4.0, 0.0, 0, 0, 0\r\nP 0, 0, 0, 0, 0, 0, 2, Gate_A\r\n"
+    maps = app_mod.OUTPUT_DIR / "gen_x" / "v1" / "maps"
+    maps.mkdir(parents=True)
+    (maps / "gen_x_1.txt").write_bytes(data)
+
+    url = "/api/zones/gen_x/v1/maps/gen_x_1.txt"
+    resp = client.get(url)
+    assert resp.status_code == 200, resp.text
+    assert resp.content == data
+    assert resp.headers["content-type"] == "text/plain; charset=us-ascii"
+    head = client.head(url)
+    assert head.status_code == 200 and head.content == b""
+    assert dict(head.headers) == dict(resp.headers)
+
+
+def test_generate_lists_artifacts_with_live_urls(client):
+    """A generate response lists ``map_svg``, ``eqg``, ``glb``, ``sidecar`` and
+    every ``eqmap`` file the build wrote (with its layer), and every URL GETs
+    200 with the file's bytes (M2 Req 9.5). ``map_url`` and ``eqg_url`` stay."""
+    resp = client.post("/api/generate",
+                       json={"theme": "dungeon", "rooms": ROOMS, "seed": PINNED_SEED})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    name, arts = body["id"], body["artifacts"]
+    build_dir = app_mod.OUTPUT_DIR / name / "v1"
+
+    kinds = [a["kind"] for a in arts]
+    for kind in ("map_svg", "eqg", "glb", "sidecar"):
+        assert kinds.count(kind) == 1, kinds
+    eqmaps = [a for a in arts if a["kind"] == "eqmap"]
+    written = sorted(p.name for p in (build_dir / "maps").glob("*.txt"))
+    assert written, "the pinned build wrote no EQ map files"
+    assert sorted(a["filename"] for a in eqmaps) == [f"maps/{n}" for n in written]
+    # Every map file the Sidecar records is listed.
+    sidecar = json.loads((build_dir / f"{name}.zone.json").read_text())
+    assert set(sidecar["map_files"]) <= {a["filename"] for a in arts}
+    assert [a["layer"] for a in eqmaps] == sorted(a["layer"] for a in eqmaps)
+    assert eqmaps[0]["layer"] == 0 and eqmaps[0]["filename"] == f"maps/{name}.txt"
+    assert all(a["layer"] is None for a in arts if a["kind"] != "eqmap")
+
+    for a in arts:
+        assert a["url"] == f"/api/zones/{name}/v1/{a['filename']}"
+        got = client.get(a["url"])
+        assert got.status_code == 200, (a, got.status_code)
+        assert got.content == (build_dir / a["filename"]).read_bytes()
+    by_kind = {a["kind"]: a["url"] for a in arts}
+    assert body["map_url"] == by_kind["map_svg"]
+    assert body["eqg_url"] == by_kind["eqg"]

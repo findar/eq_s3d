@@ -71,7 +71,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: generators/pipeline.py, generators/builder.py, analyzer/traverse.py, tests/test_pipeline.py, tests/test_properties_pipeline.py
   - Reqs: 3, 8
 
-- [ ] 8. Serve build files under `maps/`, HEAD, and artifact URLs
+- [x] 8. Serve build files under `maps/`, HEAD, and artifact URLs
   - Card: [cards/08-serve-build-files.md](cards/08-serve-build-files.md)
   - Type: agent · Size: S · Depends: 7
   - Owns: server/app.py, tests/test_server.py
