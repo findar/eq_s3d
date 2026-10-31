@@ -11,13 +11,23 @@ and any locked doors sit.
 
 North is +Y. The SVG Y axis points down, so we flip Y when projecting so the
 map reads with north up.
+
+Given an `OutlineSet` (the real walls and ledges traced from the mesh by
+`generators.mapgeom.extract_outline`), the map draws it first, under every
+schematic annotation, and lightens the schematic so the true walls read
+through. Without one, the output is byte-for-byte the plain schematic
+(frozen in `tests/reference_mapview.py`).
 """
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from .routing import corridor_route
 from .zone_spec import ZoneSpec
+
+if TYPE_CHECKING:
+    from .mapgeom import OutlineSet
 
 
 def _esc(s: str) -> str:
@@ -42,12 +52,45 @@ _ROLE_STROKE = {
     "standard": "#78909c",
 }
 
+# Outline stroke by depth-band offset from the Main_Band. The Main_Band is a
+# light grey (the EQ map's black would vanish on this background); the others
+# are the in-game map's band colours (design "EQ map layers", BAND_COLOURS).
+_BAND_STROKE = {
+    0: "#d7dee2",
+    +1: "#966400", +2: "#7f4000", +3: "#643200",
+    -1: "#0000f0", -2: "#00007f", -3: "#007f00",
+}
 
-def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
+
+def _outline_group(outline: "OutlineSet", px, py) -> str:
+    """One `<path>` per outline polyline: walls solid, ledges dashed."""
+    offsets = {b.index: b.offset for b in outline.bands}
+    parts = ['<g id="outline" fill="none" stroke-linecap="round" '
+             'stroke-linejoin="round">']
+    for pl in outline.polylines:
+        d = " ".join(f'{"M" if i == 0 else "L"} {px(p[0]):.1f} {py(p[1]):.1f}'
+                     for i, p in enumerate(pl.points))
+        stroke = _BAND_STROKE.get(offsets.get(pl.band, 0), _BAND_STROKE[0])
+        if pl.kind == "ledge":
+            style = 'stroke-width="1.5" stroke-dasharray="6 4"'
+        else:
+            style = 'stroke-width="2"'
+        parts.append(f'<path d="{d}" stroke="{stroke}" {style}/>')
+    parts.append("</g>")
+    return "".join(parts)
+
+
+def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
+                   outline: Optional["OutlineSet"] = None) -> str:
     """
     Build an SVG top-down map of the zone. `size` is the max pixel dimension;
     the map preserves the zone's aspect ratio and is centred in a square-ish
     canvas. Returns the SVG document as a string.
+
+    `outline` (optional) is the traced wall/ledge outline of the built mesh.
+    When given, it is drawn directly over the background, corridors follow
+    their `corridor_route` waypoints, room fills are lightened, the legend
+    gains `wall`/`ledge`, and the frame also covers `outline.bounds`.
     """
     # ---- Gather world-space extents from rooms + corridors ----
     xs: List[float] = []
@@ -58,6 +101,10 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
     for c in spec.corridors:
         xs += [c.from_x, c.to_x]
         ys += [c.from_y, c.to_y]
+    if outline is not None:
+        bx0, by0, _, bx1, by1, _ = outline.bounds
+        xs += [bx0, bx1]
+        ys += [by0, by1]
 
     if not xs or not ys:
         return _empty_svg(size)
@@ -86,15 +133,34 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
     )
     parts.append(f'<rect x="0" y="0" width="{w:.0f}" height="{h:.0f}" fill="#0f0f16"/>')
 
+    # ---- True outline (under every schematic annotation) ----
+    if outline is not None:
+        parts.append(_outline_group(outline, px, py))
+
     # ---- Corridors (drawn first, under the rooms) ----
-    for c in spec.corridors:
-        x1, y1 = px(c.from_x), py(c.from_y)
-        x2, y2 = px(c.to_x), py(c.to_y)
-        cw = max(2.0, c.width * scale)
-        parts.append(
-            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
-            f'stroke="#5c6b73" stroke-width="{cw:.1f}" stroke-linecap="round"/>'
-        )
+    if outline is None:
+        for c in spec.corridors:
+            x1, y1 = px(c.from_x), py(c.from_y)
+            x2, y2 = px(c.to_x), py(c.to_y)
+            cw = max(2.0, c.width * scale)
+            parts.append(
+                f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                f'stroke="#5c6b73" stroke-width="{cw:.1f}" stroke-linecap="round"/>'
+            )
+    else:
+        # Over a real outline, a corridor is a thin centreline along the route
+        # the geometry builder actually cut (straight / Z / L), not a chord.
+        rooms_by_id = {r.id: r for r in spec.rooms}
+        for c in spec.corridors:
+            route = corridor_route(c, rooms_by_id)
+            pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in route.waypoints)
+            cw = max(1.0, c.width * scale * 0.25)
+            parts.append(
+                f'<polyline points="{pts}" fill="none" stroke="#5c6b73" '
+                f'stroke-opacity="0.45" stroke-width="{cw:.1f}" '
+                f'stroke-linecap="round" stroke-linejoin="round"/>'
+            )
+    room_opacity = "0.82" if outline is None else "0.3"
 
     # ---- Rooms ----
     label_rooms = {"entrance", "hub", "climax", "deadend"}
@@ -107,7 +173,7 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
         stroke = _ROLE_STROKE.get(r.role, _ROLE_STROKE["standard"])
         parts.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{rw:.1f}" height="{rh:.1f}" '
-            f'rx="4" fill="{fill}" fill-opacity="0.82" stroke="{stroke}" '
+            f'rx="4" fill="{fill}" fill-opacity="{room_opacity}" stroke="{stroke}" '
             f'stroke-width="1.5"/>'
         )
         # Depth number in the room centre
@@ -167,7 +233,7 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
         )
 
     # ---- Legend ----
-    parts.append(_legend(w, h, bool(spec.gates)))
+    parts.append(_legend(w, h, bool(spec.gates), outline is not None))
 
     # ---- Scale bar (world units) ----
     parts.append(_scale_bar(scale, padding, h))
@@ -176,7 +242,7 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40) -> str:
     return "".join(parts)
 
 
-def _legend(w: float, h: float, has_gates: bool) -> str:
+def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False) -> str:
     items = [
         ("#2e7d32", "entrance"),
         ("#1565c0", "hub"),
@@ -185,19 +251,28 @@ def _legend(w: float, h: float, has_gates: bool) -> str:
     ]
     if has_gates:
         items += [("#e53935", "lock"), ("#ffd24a", "key")]
+    # Outline entries get a line swatch (solid wall, dashed ledge), not a box.
+    lines = [("", "wall"), (' stroke-dasharray="4 3"', "ledge")] if has_outline else []
 
     lx = w - 118
     ly = 14
     parts = [f'<g font-family="sans-serif" font-size="10" fill="#cdd6db">']
     parts.append(
         f'<rect x="{lx - 8:.0f}" y="{ly - 8:.0f}" width="118" '
-        f'height="{len(items) * 16 + 8:.0f}" rx="4" fill="#0a0a12" '
+        f'height="{(len(items) + len(lines)) * 16 + 8:.0f}" rx="4" fill="#0a0a12" '
         f'fill-opacity="0.75" stroke="#2a2a38"/>'
     )
     for i, (color, label) in enumerate(items):
         yy = ly + i * 16
         parts.append(
             f'<rect x="{lx:.0f}" y="{yy:.0f}" width="10" height="10" rx="2" fill="{color}"/>'
+        )
+        parts.append(f'<text x="{lx + 16:.0f}" y="{yy + 9:.0f}">{label}</text>')
+    for j, (dash, label) in enumerate(lines):
+        yy = ly + (len(items) + j) * 16
+        parts.append(
+            f'<line x1="{lx:.0f}" y1="{yy + 5:.0f}" x2="{lx + 10:.0f}" y2="{yy + 5:.0f}" '
+            f'stroke="{_BAND_STROKE[0]}" stroke-width="2"{dash}/>'
         )
         parts.append(f'<text x="{lx + 16:.0f}" y="{yy + 9:.0f}">{label}</text>')
     parts.append("</g>")
