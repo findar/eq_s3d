@@ -38,4 +38,4 @@ Task 6 adds `build_map_file` (outline → layers) on top.
   numbers.
 
 ## Result
-✔ (this commit) · 538 passed (EQ_PATH set; grounding tutoriala 1.42 u / 0.144, bazaar 0.54 u / 0.019)
+✔ a22802e · 538 passed
