@@ -721,6 +721,46 @@ def _region_edges(tris: np.ndarray):
     return A, B, out
 
 
+ORACLE_CELL = 32.0     # bucket size (u) for the oracle's spatial grid
+
+
+def _cell_of(xy: np.ndarray) -> np.ndarray:
+    return np.floor(xy / ORACLE_CELL).astype(np.int64)
+
+
+def _boxes_by_cell(lo: np.ndarray, hi: np.ndarray):
+    """``{cell: indices}`` of the axis-aligned XY boxes overlapping each cell.
+    A bucketing only: every test stays exact on the pairs it returns."""
+    c0, c1 = _cell_of(lo), _cell_of(hi)
+    nx = c1[:, 0] - c0[:, 0] + 1
+    ny = c1[:, 1] - c0[:, 1] + 1
+    cnt = nx * ny
+    idx = np.repeat(np.arange(len(lo)), cnt)
+    k = np.arange(cnt.sum()) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+    cx = c0[idx, 0] + k // ny[idx]
+    cy = c0[idx, 1] + k % ny[idx]
+    order = np.lexsort((idx, cy, cx))
+    cx, cy, idx = cx[order], cy[order], idx[order]
+    out = {}
+    if len(idx):
+        brk = np.nonzero((np.diff(cx) != 0) | (np.diff(cy) != 0))[0] + 1
+        for s, e in zip(np.r_[0, brk], np.r_[brk, len(idx)]):
+            out[(int(cx[s]), int(cy[s]))] = idx[s:e]
+    return out
+
+
+def _points_by_cell(xy: np.ndarray):
+    """``[(cell, point indices)]`` grouping points by the grid cell they lie in."""
+    c = _cell_of(xy)
+    order = np.lexsort((c[:, 1], c[:, 0]))
+    c = c[order]
+    if not len(order):
+        return []
+    brk = np.nonzero((np.diff(c[:, 0]) != 0) | (np.diff(c[:, 1]) != 0))[0] + 1
+    return [((int(c[s, 0]), int(c[s, 1])), order[s:e])
+            for s, e in zip(np.r_[0, brk], np.r_[brk, len(order)])]
+
+
 def _probe_uncovered(tris: np.ndarray, pts: np.ndarray, outs: np.ndarray) -> np.ndarray:
     """For each edge point, is its outward probe covered by no region face
     whose plane there is within the step-up of the point?"""
@@ -729,20 +769,27 @@ def _probe_uncovered(tris: np.ndarray, pts: np.ndarray, outs: np.ndarray) -> np.
     probe = pts[:, :2] + ORACLE_PROBE * outs
     a, b, c = tris[:, 0], tris[:, 1], tris[:, 2]
     det = (b[:, 1] - c[:, 1]) * (a[:, 0] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (a[:, 1] - c[:, 1])
-    good = np.abs(det) > 1e-12
-    a, b, c, det = a[good], b[good], c[good], det[good]
+    good = np.nonzero(np.abs(det) > 1e-12)[0]
+    by_cell = _boxes_by_cell(tris[good, :, :2].min(axis=1), tris[good, :, :2].max(axis=1))
     res = np.ones(len(pts), bool)
-    for s in range(0, len(pts), 512):
-        p = probe[s:s + 512, None, :]
-        l1 = ((b[:, 1] - c[:, 1]) * (p[..., 0] - c[:, 0])
-              + (c[:, 0] - b[:, 0]) * (p[..., 1] - c[:, 1])) / det
-        l2 = ((c[:, 1] - a[:, 1]) * (p[..., 0] - c[:, 0])
-              + (a[:, 0] - c[:, 0]) * (p[..., 1] - c[:, 1])) / det
-        l3 = 1.0 - l1 - l2
-        inside = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
-        z = l1 * a[:, 2] + l2 * b[:, 2] + l3 * c[:, 2]
-        near = np.abs(z - pts[s:s + 512, None, 2]) <= ORACLE_STEP_UP + 1e-6
-        res[s:s + 512] = ~(inside & near).any(axis=1)
+    for cell, pi in _points_by_cell(probe):
+        ti = by_cell.get(cell)
+        if ti is None:
+            continue
+        ti = good[ti]
+        A, B, C, D = a[ti], b[ti], c[ti], det[ti]
+        for s in range(0, len(pi), 512):
+            ii = pi[s:s + 512]
+            p = probe[ii, None, :]
+            l1 = ((B[:, 1] - C[:, 1]) * (p[..., 0] - C[:, 0])
+                  + (C[:, 0] - B[:, 0]) * (p[..., 1] - C[:, 1])) / D
+            l2 = ((C[:, 1] - A[:, 1]) * (p[..., 0] - C[:, 0])
+                  + (A[:, 0] - C[:, 0]) * (p[..., 1] - C[:, 1])) / D
+            l3 = 1.0 - l1 - l2
+            inside = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+            z = l1 * A[:, 2] + l2 * B[:, 2] + l3 * C[:, 2]
+            near = np.abs(z - pts[ii, None, 2]) <= ORACLE_STEP_UP + 1e-6
+            res[ii] = ~(inside & near).any(axis=1)
     return res
 
 
@@ -774,20 +821,35 @@ def on_floor_boundary(ter, region, points, tol: float = 0.05) -> np.ndarray:
     A, B, out = _region_edges(tris)
     AB = B - A
     L2 = np.einsum("ij,ij->i", AB, AB)
-    res = np.zeros(len(points), bool)
+    pts = np.asarray(points, float).reshape(-1, 3)
+    res = np.zeros(len(pts), bool)
     offs = np.linspace(-1.0, 1.0, 9)
-    for i, q in enumerate(np.asarray(points, float)):
-        t = np.clip(np.einsum("ij,ij->i", q - A, AB) / L2, 0.0, 1.0)
-        d = np.linalg.norm(A + t[:, None] * AB - q, axis=1)
-        idx = np.nonzero(d <= tol)[0]
-        if not len(idx):
+    by_cell = _boxes_by_cell(np.minimum(A, B)[:, :2] - tol, np.maximum(A, B)[:, :2] + tol)
+    owners, cands, couts = [], [], []
+    for cell, pi in _points_by_cell(pts[:, :2]):
+        ei = by_cell.get(cell)
+        if ei is None:
             continue
-        smax = np.sqrt(np.maximum(tol * tol - d[idx] ** 2, 0.0)) / np.sqrt(L2[idx])
-        tt = np.clip(t[idx, None] + offs[None, :] * smax[:, None], 0.0, 1.0)
-        ee = np.repeat(idx, len(offs))
-        cand = A[ee] + tt.reshape(-1)[:, None] * AB[ee]
-        ok = np.linalg.norm(cand - q, axis=1) <= tol + 1e-9
-        res[i] = bool(_probe_uncovered(tris, cand[ok], out[ee][ok]).any())
+        q = pts[pi, None, :]                                   # (P, 1, 3)
+        t = np.clip(np.einsum("pek,ek->pe", q - A[ei], AB[ei]) / L2[ei], 0.0, 1.0)
+        d = np.linalg.norm(A[ei] + t[..., None] * AB[ei] - q, axis=2)
+        pp, ee = np.nonzero(d <= tol)
+        if not len(pp):
+            continue
+        e = ei[ee]
+        smax = np.sqrt(np.maximum(tol * tol - d[pp, ee] ** 2, 0.0)) / np.sqrt(L2[e])
+        tt = np.clip(t[pp, ee, None] + offs[None, :] * smax[:, None], 0.0, 1.0).reshape(-1)
+        e = np.repeat(e, len(offs))
+        own = np.repeat(pi[pp], len(offs))
+        cand = A[e] + tt[:, None] * AB[e]
+        ok = np.linalg.norm(cand - pts[own], axis=1) <= tol + 1e-9
+        owners.append(own[ok])
+        cands.append(cand[ok])
+        couts.append(out[e][ok])
+    if owners:
+        own = np.concatenate(owners)
+        unc = _probe_uncovered(tris, np.concatenate(cands), np.concatenate(couts))
+        np.logical_or.at(res, own, unc)
     return res
 
 
@@ -820,3 +882,48 @@ def reference_bands(levels, others=(), max_bands: int = 4):
         slabs[i:i + 2] = [(slabs[i][0], slabs[i + 1][1])]
         ext[i:i + 2] = [(min(ext[i][0], ext[i + 1][0]), max(ext[i][1], ext[i + 1][1]))]
     return [[k for k, z in enumerate(levels) if lo <= z < hi] for lo, hi in slabs]
+
+
+def doorway_spans(spec):
+    """Every Doorway_Span of ``spec``, as ``((x0, y0, z), (x1, y1, z))``.
+
+    For each corridor end, from ``routing.corridor_route`` (D1): the segment on
+    its room's footprint boundary that the end leg crosses, perpendicular to
+    that leg, centred on the leg's axis (the cross coordinate of the leg's
+    first waypoint, as the mesh builds it: a near-collinear "straight" route
+    keeps that axis to its far end), as long as the corridor is wide, at the
+    room's floor height. Its endpoints are the opening's side edges. A span
+    is clipped to its wall's extent: where a corridor end overhangs a room
+    corner, the part past the corner is not on the room's footprint boundary.
+    Only ends whose room is known are returned (a hand-authored corridor
+    without rooms has no footprint boundary to cross).
+    """
+    from generators.routing import corridor_route
+
+    rooms = {r.id: r for r in spec.rooms}
+    spans = []
+    for cor in spec.corridors:
+        route = corridor_route(cor, rooms)
+        wps = route.waypoints
+        hw = cor.width / 2.0
+        for room_id, k, (ex, ey) in ((cor.from_room, 0, wps[0]),
+                                     (cor.to_room, len(wps) - 2, wps[-1])):
+            room = rooms.get(room_id)
+            if room is None:
+                continue
+            x0, x1 = room.center_x - room.width / 2.0, room.center_x + room.width / 2.0
+            y0, y1 = room.center_y - room.depth / 2.0, room.center_y + room.depth / 2.0
+            z = room.floor_z
+            if route.axes[k]:      # end leg runs along X: an E or W wall
+                x = x1 if ex >= room.center_x else x0
+                axis = wps[k][1]
+                lo, hi = max(axis - hw, y0), min(axis + hw, y1)
+                if hi > lo:
+                    spans.append(((x, lo, z), (x, hi, z)))
+            else:                  # end leg runs along Y: an N or S wall
+                y = y1 if ey >= room.center_y else y0
+                axis = wps[k][0]
+                lo, hi = max(axis - hw, x0), min(axis + hw, x1)
+                if hi > lo:
+                    spans.append(((lo, y, z), (hi, y, z)))
+    return spans
