@@ -41,7 +41,7 @@ design's "interim if M1 is late" column no longer applies.
   - Type: agent · Size: S · Depends: —
   - Owns: generators/geometry.py, tests/test_generators.py
 
-- [ ] 3. Outline extractor and depth bands on synthetic worlds
+- [x] 3. Outline extractor and depth bands on synthetic worlds
   - Card: [cards/03-outline-synthetic.md](cards/03-outline-synthetic.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/mapgeom.py, analyzer/traverse.py, tests/strategies.py, tests/pbt_helpers.py, tests/test_properties_mapgeom.py

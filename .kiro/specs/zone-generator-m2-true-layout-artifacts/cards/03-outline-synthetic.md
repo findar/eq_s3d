@@ -11,19 +11,19 @@ depth bands. Prove it on small synthetic worlds where the true answer is known.
 Task 4 runs it on real builds.
 
 ## Done when
-- [ ] `floor_faces`, `extract_outline`, `depth_bands` and `outline_summary`
+- [x] `floor_faces`, `extract_outline`, `depth_bands` and `outline_summary`
       exist as the design specifies; an empty floor region raises
       `EmptyFloorRegion`.
-- [ ] `analyzer/traverse.py` gains only `seed_face_for(surf, safe_point)`, a
+- [x] `analyzer/traverse.py` gains only `seed_face_for(surf, safe_point)`, a
       public wrapper of `_nearest_standable_face`. Nothing else there changes.
-- [ ] `tests/strategies.py` gains `slab_worlds()` and `stacked_worlds(levels)`;
+- [x] `tests/strategies.py` gains `slab_worlds()` and `stacked_worlds(levels)`;
       `tests/pbt_helpers.py` gains `floor_boundary_samples` and
       `reference_bands`.
-- [ ] Properties 2–7 hold on synthetic worlds (≥ 100 examples each):
+- [x] Properties 2–7 hold on synthetic worlds (≥ 100 examples each):
       fidelity, completeness, wall/ledge classification, reachable-only,
       canonical order, depth bands.
       → verify: `python -m pytest tests/test_properties_mapgeom.py -q`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - Coverage is exact interval arithmetic (design Decision 2). A sampled or
@@ -35,3 +35,4 @@ Task 4 runs it on real builds.
   (lessons-learned: "Never reintroduce a per-voxel Python loop").
 
 ## Result
+✔ 22c8462 · 517 passed
