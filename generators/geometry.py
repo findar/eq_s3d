@@ -261,12 +261,19 @@ class MeshBuilder:
         carries. We therefore default `carry` to the LONGEST leg, which gives
         the gentlest ramp grade / most room for stair treads without disturbing
         the flush landings (seed 481893615 verified both openings stay flush).
-        Corner fills join consecutive legs at their shared height.
+        Each bend is a flat corridor-wide square at the waypoint's height, and
+        the legs stop at its edge (`_leg_ends`), so no ramp overlaps a flat
+        bend floor and the carry leg's slope runs only between the squares.
+        The square is walled on the two sides no leg leaves through: without
+        those walls the outer corner of every bend was a hole (task 14).
         """
         zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
 
         for k in range(len(waypoints) - 1):
-            (x0, y0), (x1, y1) = waypoints[k], waypoints[k + 1]
+            ends = self._leg_ends(waypoints, k, hw, zs)
+            if ends is None:
+                continue   # the bend squares already cover this short leg
+            (x0, y0), (x1, y1) = ends
             leg_steps = steps if k == carry else 0
             self._add_straight_leg(
                 x0, y0, zs[k], x1, y1, zs[k + 1],
@@ -275,8 +282,130 @@ class MeshBuilder:
 
         # Fill each interior corner flush with the shared floor height there.
         for i in range(1, len(waypoints) - 1):
-            self._add_corner_fill(waypoints[i][0], waypoints[i][1], zs[i],
-                                  hw, height, floor_mat, ceiling_mat)
+            self._add_corner_fill(self._bend_square(waypoints, i, hw), zs[i],
+                                  height, floor_mat, ceiling_mat)
+            self._add_corner_walls(waypoints, axes, i, zs[i], hw, height,
+                                   wall_mat)
+
+    @staticmethod
+    def _leg_ends(waypoints, k, hw, zs):
+        """The built span of leg k: its waypoints, each end that is a bend
+        pulled back by `hw` to the bend square's edge (a doorway end is kept).
+        None when nothing is left between the squares.
+
+        A leg that rises (`zs[k] != zs[k + 1]`) but is shorter than the two
+        squares is built at full length instead, so the rise isn't lost. The
+        layout never makes one (its grade cap gives such a jog no rise); a
+        hand-authored spec can."""
+        n_legs = len(waypoints) - 1
+        (x0, y0), (x1, y1) = waypoints[k], waypoints[k + 1]
+        length = abs(x1 - x0) + abs(y1 - y0)   # axis-aligned → one term is 0
+        t0 = hw if k > 0 else 0.0
+        t1 = hw if k < n_legs - 1 else 0.0
+        if length - t0 - t1 <= 1e-6:
+            if length > 1e-6 and abs(zs[k + 1] - zs[k]) > 0.01:
+                return (waypoints[k], waypoints[k + 1])
+            return None
+        ux, uy = (x1 - x0) / length, (y1 - y0) / length
+        return ((x0 + ux * t0, y0 + uy * t0), (x1 - ux * t1, y1 - uy * t1))
+
+    @staticmethod
+    def _bend_square(waypoints, i, hw):
+        """The floor square of the bend at waypoint i, (x0, y0, x1, y1): a
+        corridor width across, centred on the waypoint, but cut back to a
+        doorway it would overhang (a doorway leg shorter than `hw`), so the
+        corridor floor never reaches past its opening into the room."""
+        cx, cy = waypoints[i]
+        x0, y0, x1, y1 = cx - hw, cy - hw, cx + hw, cy + hw
+        last = len(waypoints) - 1
+        for j in (i - 1, i + 1):
+            if j not in (0, last):
+                continue
+            px, py = waypoints[j]
+            if abs(px - cx) >= abs(py - cy):
+                if px > cx:
+                    x1 = min(x1, max(px, cx))
+                else:
+                    x0 = max(x0, min(px, cx))
+            elif py > cy:
+                y1 = min(y1, max(py, cy))
+            else:
+                y0 = max(y0, min(py, cy))
+        return (x0, y0, x1, y1)
+
+    def _add_corner_walls(self, waypoints, axes, i, cz, hw, height, wall_mat):
+        """Wall the bend square at waypoint i on its closed sides.
+
+        The two sides facing the previous and next waypoints are where the
+        legs join, so they stay open. The other two are walled, except where
+        another part of the corridor's floor lies right past them (a second
+        bend square sharing an edge when the jog is shorter than a corridor
+        width, and the leg leaving it).
+        """
+        cx, cy = waypoints[i]
+        sq = self._bend_square(waypoints, i, hw)
+        # Floor rectangles of the rest of the route: every leg at full length,
+        # every other bend square.
+        others = []
+        for k in range(len(waypoints) - 1):
+            (ax, ay), (bx, by) = waypoints[k], waypoints[k + 1]
+            if axes[k]:
+                others.append((min(ax, bx), ay - hw, max(ax, bx), ay + hw))
+            else:
+                others.append((ax - hw, min(ay, by), ax + hw, max(ay, by)))
+        for j in range(1, len(waypoints) - 1):
+            if j != i:
+                others.append(self._bend_square(waypoints, j, hw))
+
+        def toward(p):
+            """The side of the square facing waypoint p."""
+            dx, dy = p[0] - cx, p[1] - cy
+            if abs(dx) >= abs(dy):
+                return "E" if dx > 0 else "W"
+            return "N" if dy > 0 else "S"
+
+        open_sides = {toward(waypoints[i - 1]), toward(waypoints[i + 1])}
+        eps = 1e-6
+        for side in ("S", "N", "W", "E"):
+            if side in open_sides:
+                continue
+            along_x = side in "SN"
+            plane = {"S": sq[1], "N": sq[3], "W": sq[0], "E": sq[2]}[side]
+            out = -1.0 if side in "SW" else 1.0
+            lo, hi = (sq[0], sq[2]) if along_x else (sq[1], sq[3])
+            covered = []
+            for (rx0, ry0, rx1, ry1) in others:
+                # Does this rectangle hold the floor just outside the side?
+                n0, n1 = (ry0, ry1) if along_x else (rx0, rx1)
+                inside = (n0 <= plane + eps and n1 > plane + eps) if out > 0 \
+                    else (n0 < plane - eps and n1 >= plane - eps)
+                if inside:
+                    c0, c1 = (rx0, rx1) if along_x else (ry0, ry1)
+                    c0, c1 = max(lo, c0), min(hi, c1)
+                    if c1 > c0:
+                        covered.append((c0, c1))
+            pos = lo
+            for c0, c1 in sorted(covered) + [(hi, hi)]:
+                if c0 > pos + eps:
+                    self._add_bend_wall(side, plane, pos, c0, cz, cz + height,
+                                        wall_mat)
+                pos = max(pos, c1)
+
+    def _add_bend_wall(self, side, plane, a, b, lo, hi, wall_mat):
+        """One wall rectangle on side `side` of a bend square, a..b along the
+        side, lo..hi in Z, facing into the square."""
+        if side == "S":     # y = plane, normal +Y
+            self.add_quad((a, plane, lo), (a, plane, hi), (b, plane, hi),
+                          (b, plane, lo), normal=(0, 1, 0), material=wall_mat)
+        elif side == "N":   # y = plane, normal -Y
+            self.add_quad((b, plane, lo), (b, plane, hi), (a, plane, hi),
+                          (a, plane, lo), normal=(0, -1, 0), material=wall_mat)
+        elif side == "W":   # x = plane, normal +X
+            self.add_quad((plane, b, lo), (plane, b, hi), (plane, a, hi),
+                          (plane, a, lo), normal=(1, 0, 0), material=wall_mat)
+        else:               # "E": x = plane, normal -X
+            self.add_quad((plane, a, lo), (plane, a, hi), (plane, b, hi),
+                          (plane, b, lo), normal=(-1, 0, 0), material=wall_mat)
 
     def _add_straight_leg(self, fx, fy, fz, tx, ty, tz, along_x, hw, height,
                           steps, floor_mat, wall_mat, ceiling_mat):
@@ -313,14 +442,13 @@ class MeshBuilder:
                                     height, along_x,
                                     floor_mat, wall_mat, ceiling_mat)
 
-    def _add_corner_fill(self, cx, cy, cz, hw, height,
-                         floor_mat, ceiling_mat):
+    def _add_corner_fill(self, square, cz, height, floor_mat, ceiling_mat):
         """
         Fill the square where two perpendicular legs meet, so the floor and
         ceiling are continuous through the bend (no hole at the corner).
+        `square` is the bend's (x0, y0, x1, y1) from `_bend_square`.
         """
-        x0, x1 = cx - hw, cx + hw
-        y0, y1 = cy - hw, cy + hw
+        x0, y0, x1, y1 = square
         # Floor
         self.add_quad((x0, y0, cz), (x1, y0, cz), (x1, y1, cz), (x0, y1, cz),
                       normal=(0, 0, 1), material=floor_mat)
@@ -503,7 +631,15 @@ def _door_openings(room: RoomSpec, spec: ZoneSpec
         for end in ends:
             k = 0 if end == "from" else len(wps) - 2
             along_x = route.axes[k]
-            (ax, ay), (bx, by) = wps[k], wps[k + 1]
+            # The leg as built: its bend end stops at the bend square. When the
+            # squares swallow the whole leg, the floor there is the bend's.
+            built = MeshBuilder._leg_ends(wps, k, hw, zs)
+            if built is None:
+                zb_end = zs[k + 1] if end == "from" else zs[k]
+                built, zs_k = (wps[k], wps[k + 1]), (zb_end, zb_end)
+            else:
+                zs_k = (zs[k], zs[k + 1])
+            (ax, ay), (bx, by) = built
             ex, ey = wps[0] if end == "from" else wps[-1]
             if along_x:
                 side = "E" if ex >= room.center_x else "W"
@@ -513,7 +649,7 @@ def _door_openings(room: RoomSpec, spec: ZoneSpec
                 plane, pa, pb, cross = (y1 if side == "N" else y0), ay, by, ax
             if side not in room.open_walls:
                 continue
-            za, zb = zs[k], zs[k + 1]
+            za, zb = zs_k
             if abs(pb - pa) > 1e-9:
                 t = min(1.0, max(0.0, (plane - pa) / (pb - pa)))
             else:

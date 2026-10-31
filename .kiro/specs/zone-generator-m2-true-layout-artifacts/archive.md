@@ -26,3 +26,5 @@ questions on 2026-10-30:
   M3 adds a name field.
 - **Umbrella wording (Open question 3):** the refinements and superseded
   details are recorded in the umbrella spec at the close step (task 13).
+- **Corridor clearance (task 14):** rooms sit a full corridor width apart (every
+  layout moves); a Z middle leg can't fit the old half-width gap.

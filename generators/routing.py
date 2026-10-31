@@ -23,7 +23,8 @@ A corridor route is one of three shapes:
 `Route` records the waypoints (one point per bend, >= 2), which axis each leg
 runs along, which leg carries the entire elevation change, and the kind. The
 geometry builder's `_emit_route` consumes `waypoints`/`axes`/`carry` directly,
-so this module must reproduce them byte-for-byte with the former inline logic.
+and the doorway cuts and layout leg measurements plan through here too, so
+they all agree on one route.
 
 EQ coordinate convention: Z is up; routes live in the XY plane.
 """
@@ -68,12 +69,13 @@ def plan_route(from_xy: Tuple[float, float], to_xy: Tuple[float, float],
     `exit_from_x`      True when the `from` opening is on an E/W wall, so its
                        stub runs along X; likewise `exit_to_x` for `to`.
     `hw`               corridor half-width (sets the straight-vs-bend slack).
-    `steps`            > 0 for a staircase; a Z-corridor staircase must ride the
-                       interior jog (leg 1) so the flat end stubs stay flush.
+    `steps`            > 0 for a staircase (kept for callers; every route
+                       shape now picks its carry leg the same way for ramps
+                       and stairs).
 
-    The straight/Z/L selection and the staircase carry rule mirror the former
-    inline logic in `MeshBuilder.add_corridor` exactly, so the emitted mesh is
-    byte-identical. `carry == -1` means "carry the longest leg" (ramps).
+    A Z-corridor always carries on its interior jog (leg 1), so the flat end
+    stubs stay flush with their rooms. `carry == -1` means "carry the longest
+    leg" (straight and L routes).
     """
     from_x, from_y = from_xy
     to_x, to_y = to_xy
@@ -111,10 +113,10 @@ def plan_route(from_xy: Tuple[float, float], to_xy: Tuple[float, float],
                 (to_x, to_y),
             )
             axes = (False, True, False)  # Y stub, X jog, Y stub
-        # A STAIRCASE must ride the interior jog (leg 1); a smooth RAMP can ride
-        # the longest leg (carry = -1) for the gentlest grade.
-        if steps > 0:
-            carry = 1
+        # The interior jog (leg 1) carries the rise, ramp or staircase alike:
+        # both end stubs then stay flat at their own room's floor, so each
+        # doorway is level, and the layout caps the grade by the jog's run.
+        carry = 1
         kind = "z"
     else:
         # --- L-bend: genuine cross-axis pair (perpendicular walls).
