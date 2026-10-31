@@ -36,7 +36,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: generators/eqmap.py, tests/test_eqmap.py
   - Reqs: 4, 5.2, 6
 
-- [ ] 2. Walls beside and above every doorway
+- [x] 2. Walls beside and above every doorway
   - Card: [cards/02-doorway-walls.md](cards/02-doorway-walls.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/geometry.py, tests/test_generators.py
