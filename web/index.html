@@ -112,6 +112,14 @@
     <h3>Content</h3>
     <div id="m-content"><span style="color:#555;font-size:11px">—</span></div>
 
+    <!-- The latest build's files: native download links, probed per build. -->
+    <section id="artifacts" aria-labelledby="artifacts-h">
+      <h3 id="artifacts-h">Files</h3>
+      <ul id="artifact-list">
+        <li class="empty">No build yet.</li>
+      </ul>
+    </section>
+
     <h3>Overlays</h3>
     <label class="toggle"><input type="checkbox" id="t-wire" /> Wireframe</label>
     <label class="toggle"><input type="checkbox" id="t-lights" checked /> Lights</label>
@@ -139,6 +147,7 @@
       <header>
         <span>Top-down layout</span>
         <a id="map-download" href="#" download="layout.svg" class="secondary">Download SVG</a>
+        <a id="map-download-png" href="#" download="layout.map.png" class="secondary">Download PNG</a>
         <button id="map-close" class="secondary">Close</button>
       </header>
       <div id="map-body"></div>

@@ -10,18 +10,18 @@ the `.eqg`. An artifact that fails to load is marked unavailable without
 breaking the others.
 
 ## Done when
-- [ ] `web/src/artifacts.ts` provides `showArtifacts`, `loadMapSvg`, `svgToPng`
+- [x] `web/src/artifacts.ts` provides `showArtifacts`, `loadMapSvg`, `svgToPng`
       and `markUnavailable`; `index.html` has the `#artifacts` section; the map
       modal gains "Download PNG".
-- [ ] Every download is a native link with a text label naming the file type,
+- [x] Every download is a native link with a text label naming the file type,
       saved as `<name>.*` (the PNG as `<name>.map.png`), and reachable by
       keyboard.
-- [ ] Each entry is probed with HEAD; a failure marks only that entry.
-- [ ] Movement keys don't move the camera while the panel or the dialog has
+- [x] Each entry is probed with HEAD; a failure marks only that entry.
+- [x] Movement keys don't move the camera while the panel or the dialog has
       focus.
-- [ ] The frontend builds.
+- [x] The frontend builds.
       → verify: `cd web; npx vite build`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - lessons-learned: "Movement keys must be suppressed while typing".
@@ -29,3 +29,5 @@ breaking the others.
 - The commit-message hook blocks two frontend tool words; see lessons-learned.
 
 ## Result
+
+✔ 1e3c9ef · 579 passed
