@@ -59,7 +59,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: generators/mapview.py, tests/reference_mapview.py, tests/test_properties_mapview.py
   - Reqs: 7
 
-- [ ] 6. EQ map layers from the outline
+- [x] 6. EQ map layers from the outline
   - Card: [cards/06-eqmap-layers.md](cards/06-eqmap-layers.md)
   - Type: agent · Size: S · Depends: 1, 4
   - Owns: generators/eqmap.py, tests/test_eqmap.py
