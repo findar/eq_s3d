@@ -18,13 +18,11 @@ walls (task 2). Add the build branches of Properties 1–3 and the
       `@given` per property, build branch inside the build budget): no segment
       crosses a Doorway_Span, and coverage is ≥ 99%.
       → verify: `python -m pytest tests/test_properties_mapgeom.py -q`.
-- [ ] Depth bands on box builds are explained, not assumed. Task 3 found real
-      stacked floors in dungeons (seed 1955208177: a floor at z −45.6 overhangs a
-      room floor at z −92.9), so they get up to 4 bands, not the single band the
-      design expects. Find what overhangs what (corridor over a room, or room
-      over room), say in the commit body whether it is intended elevation or a
-      layout bug, and assert the band count against the stacked pairs actually
-      present. If it's a layout bug, stop and report: the fix is outside Owns.
+- [ ] Depth bands on box builds are explained, not assumed. Done: the stacked
+      floors are a layout bug (Z-corridor ramps run inside room footprints,
+      because rooms sit only half a corridor width apart). The fix and the
+      "box builds are single-band" check moved to task 14. This task asserts no
+      band count on builds.
 - [ ] The commit body records extraction time for a 12-room and a 30-room
       dungeon (target ≤ 1 s) and the wall/ledge share on seeds 1955208177,
       1516796975 and 678358326.
