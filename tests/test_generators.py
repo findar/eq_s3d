@@ -865,3 +865,119 @@ class TestCorridorRouting:
                     slope = self._max_floor_slope(mb)
                     assert slope <= 0.6, \
                         f"seed {seed} {cor.id}: ramp slope {slope:.2f} too steep"
+
+
+class TestDoorwayWalls:
+    """An open room side is cut only where a corridor meets it: wall either
+    side of each doorway and a lintel above it, so the only gap is the
+    corridor's own width (its routed end leg) and height."""
+
+    _NORMALS = {"S": (0, 1, 0), "N": (0, -1, 0), "W": (1, 0, 0), "E": (-1, 0, 0)}
+
+    @classmethod
+    def _wall_pieces(cls, mb, side):
+        """(a, b, zlo, zhi) of every wall quad on `side`, `a..b` along it."""
+        pieces = []
+        for q in range(0, len(mb.vertices), 4):
+            vs = mb.vertices[q:q + 4]
+            if (vs[0].nx, vs[0].ny, vs[0].nz) != cls._NORMALS[side]:
+                continue
+            along = [v.x for v in vs] if side in "SN" else [v.y for v in vs]
+            pieces.append((min(along), max(along),
+                           min(v.z for v in vs), max(v.z for v in vs)))
+        return pieces
+
+    @staticmethod
+    def _expected(room, spec):
+        """Doorways from corridor_route: {side: [(c0, c1, ceiling_at_wall)]}."""
+        from generators.routing import corridor_route
+        rooms = {r.id: r for r in spec.rooms}
+        (x0, y0, _), (x1, y1, _) = room.bounds
+        out = {}
+        for cor in spec.corridors:
+            for end, rid in (("from", cor.from_room), ("to", cor.to_room)):
+                if rid != room.id:
+                    continue
+                route = corridor_route(cor, rooms)
+                k = 0 if end == "from" else len(route.axes) - 1
+                cross = (route.waypoints[k][1] if route.axes[k]
+                         else route.waypoints[k][0])
+                ex, ey = route.waypoints[0 if end == "from" else -1]
+                if route.axes[k]:
+                    side = "E" if ex >= room.center_x else "W"
+                else:
+                    side = "N" if ey >= room.center_y else "S"
+                z = cor.from_z if end == "from" else cor.to_z
+                out.setdefault(side, []).append(
+                    (cross - cor.width / 2, cross + cor.width / 2, cor, z))
+        return out
+
+    def _check_room(self, room, spec, label):
+        from generators.geometry import _ensure_materials
+        _ensure_materials(spec)
+        mb = MeshBuilder()
+        mb.add_room(room, spec)
+        (x0, y0, z0), (x1, y1, z1) = room.bounds
+        expected = self._expected(room, spec)
+        for side in room.open_walls:
+            lo, hi = (x0, x1) if side in "SN" else (y0, y1)
+            doors = expected.get(side, [])
+            assert doors, f"{label}: open side {side} has no corridor"
+            pieces = self._wall_pieces(mb, side)
+            # Gaps at floor level = the full-height pieces' complement.
+            full = sorted((a, b) for a, b, zl, zh in pieces
+                          if zl == pytest.approx(z0) and zh == pytest.approx(z1))
+            gaps, pos = [], lo
+            for a, b in full:
+                if a > pos + 1e-6:
+                    gaps.append((pos, a))
+                pos = max(pos, b)
+            if pos < hi - 1e-6:
+                gaps.append((pos, hi))
+            want = sorted({(round(max(lo, c0), 6), round(min(hi, c1), 6))
+                           for c0, c1, _, _ in doors})
+            assert [(round(a, 6), round(b, 6)) for a, b in gaps] == want, \
+                f"{label} side {side}: gaps {gaps} != corridor spans {want}"
+            # Each doorway is exactly as tall as its corridor: a lintel spans
+            # it from the corridor ceiling (within a ramp's rise over the 2u
+            # inset) up to the room ceiling.
+            for c0, c1, cor, zend in doors:
+                lintels = [p for p in pieces
+                           if p[0] == pytest.approx(max(lo, c0))
+                           and p[1] == pytest.approx(min(hi, c1))
+                           and p[2] > z0 + 1e-6]
+                if zend + cor.height >= z1:
+                    continue
+                assert len(lintels) == 1, f"{label} side {side}: no lintel"
+                _, _, zl, zh = lintels[0]
+                assert zh == pytest.approx(z1)
+                assert zl == pytest.approx(zend + cor.height, abs=1.5), \
+                    f"{label} side {side}: lintel at {zl}, corridor top " \
+                    f"{zend + cor.height}"
+
+    @pytest.mark.parametrize("seed", [1955208177, 1516796975, 678358326])
+    def test_doorway_gap_matches_corridor_route(self, seed):
+        spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
+            "dw", room_count=12)
+        assert spec.corridors
+        for room in spec.rooms:
+            self._check_room(room, spec, f"seed {seed} {room.id}")
+
+    def test_two_corridors_on_one_side_get_two_openings(self):
+        spec = ZoneSpec(name="t")
+        a = RoomSpec("a", center_x=0, center_y=0, width=200, depth=200,
+                     height=90)
+        b = RoomSpec("b", center_x=400, center_y=-50, width=100, depth=100,
+                     height=90)
+        c = RoomSpec("c", center_x=400, center_y=60, width=100, depth=100,
+                     height=90)
+        spec.rooms.extend([a, b, c])
+        a.open_walls.append("E")
+        for r, y in ((b, -50), (c, 60)):
+            r.open_walls.append("W")
+            spec.corridors.append(CorridorSpec(
+                f"a{r.id}", from_x=98, from_y=y, to_x=352, to_y=y,
+                width=40, height=60, from_room="a", to_room=r.id))
+        self._check_room(a, spec, "two-door")
+        gaps = self._expected(a, spec)["E"]
+        assert sorted((c0, c1) for c0, c1, _, _ in gaps) == [(-70, -30), (40, 80)]
