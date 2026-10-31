@@ -77,7 +77,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: server/app.py, tests/test_server.py
   - Reqs: 9
 
-- [ ] 9. Artifacts panel in the web app
+- [x] 9. Artifacts panel in the web app
   - Card: [cards/09-artifacts-panel.md](cards/09-artifacts-panel.md)
   - Type: agent · Size: M · Depends: 8
   - Owns: web/index.html, web/src/artifacts.ts, web/src/main.ts, web/src/api.ts, web/src/style.css
