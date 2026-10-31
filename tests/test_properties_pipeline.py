@@ -1237,3 +1237,143 @@ def test_writes_confined(zone_type, seed, rooms, pinned, k):
             f"{sorted(set(before) ^ set(after)) or 'same names, different bytes'} "
             f"(zone_type={zone_type}, seed={seed}, k={k}, pinned={pinned})"
         )
+
+
+# ---------------------------------------------------------------------------
+# zone-generator-m2-true-layout-artifacts, Properties 16 and 17 (task 7): the
+# map post-pass writes ``<name>.map.svg`` and ``maps/<name>*.txt`` for the
+# accepted build only, deterministically.
+# ---------------------------------------------------------------------------
+
+import json as _json_m2  # noqa: E402
+
+from analyzer.traverse import load_ter_from_eqg  # noqa: E402
+from generators.eqmap import build_map_file, format_map_layer  # noqa: E402
+from generators.mapgeom import extract_outline, outline_summary  # noqa: E402
+from generators.mapview import render_map_svg  # noqa: E402
+
+_build_names = st.from_regex(r"[a-z][a-z0-9_]{0,11}", fullmatch=True)
+
+
+def _m2_factory(zone_type: str, seed: int, rooms: int, k: int, name: str,
+                calls: list):
+    """Builds ``seed``'s zone; the first ``k`` calls get an isolated room so
+    the gate rejects them (forcing scratch attempts that must leave nothing)."""
+    from generators.zone_spec import RoomSpec
+
+    def factory(_s: int):
+        calls.append(_s)
+        spec = LayoutGenerator(zone_type=zone_type, seed=seed).generate(
+            name, room_count=rooms)
+        if len(calls) <= k:
+            spec.rooms.append(RoomSpec(
+                id="isolated", center_x=100_000.0, center_y=100_000.0,
+                floor_z=0.0, width=200, depth=200, height=100))
+        return spec
+
+    return factory
+
+
+def _map_artifacts(root: _Path_p15) -> dict:
+    """Every map SVG and EQ map file under ``root``, by relative path."""
+    found = [*root.rglob("*.map.svg"), *(p for p in root.rglob("*.txt")
+                                          if p.parent.name == "maps")]
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in found}
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(
+    zone_type=_enabled_zone_types,
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+    rooms=st.integers(min_value=2, max_value=8),
+    k=st.integers(min_value=0, max_value=3),
+)
+def test_map_artifacts_only_for_accepted(zone_type, seed, rooms, k):
+    """
+    Feature: zone-generator-m2-true-layout-artifacts, Property 16: Map artifacts
+    exist exactly for the accepted build (M2-P11, extends umbrella P2).
+
+    With the first ``k`` attempts forced to fail, the Output_Directory holds
+    ``<name>.map.svg`` and ``maps/*.txt`` only in the accepted build's
+    directory; they equal ``render_map_svg(spec, outline=extract_outline(...))``
+    and ``format_map_layer`` of ``build_map_file(...)`` for the accepted TER;
+    and the Sidecar's ``map_files`` lists exactly them, with per-band counts
+    equal to the outline's.
+
+    Validates: Requirements 8.1, 8.2, 8.4
+    """
+    name = "p16m"
+    calls: list[int] = []
+    factory = _m2_factory(zone_type, seed, rooms, k, name, calls)
+    with fresh_dir() as out_s:
+        out = _Path_p15(out_s)
+        try:
+            vb = generate_validated(
+                factory, zone_type=zone_type, zone_id=name, output_dir=out,
+                write_glb=False, max_attempts=k + 1, timeout_s=1e9,
+                failure_log=None)
+        except GenerationFailed:
+            assume(False)  # the drawn seed's own zone failed the gate
+
+        bd = vb.build_dir.resolve()
+        found = _map_artifacts(out)
+        prefix = bd.relative_to(out.resolve()).as_posix() + "/"
+        assert found and all(p.startswith(prefix) for p in found), (
+            f"map artifacts outside the accepted build dir: {sorted(found)}")
+        assert not (out / ".attempts").exists()
+
+        ter, _ = load_ter_from_eqg(vb.result.eqg_path)
+        outline = extract_outline(ter, vb.spec.safe_point)
+        expected = {f"{name}.map.svg":
+                    render_map_svg(vb.spec, outline=outline).encode("utf-8")}
+        mf = build_map_file(outline, vb.spec, name)
+        for layer in mf.layers:
+            expected[f"maps/{mf.filename(layer.index)}"] = \
+                format_map_layer(layer).encode("ascii")
+        got = {p[len(prefix):]: b for p, b in found.items()}
+        assert got == expected
+
+        data = _json_m2.loads((bd / f"{name}.zone.json").read_text())
+        assert sorted(data["map_files"]) == sorted(expected)
+        bands = [{k2: v for k2, v in b.items() if k2 != "file"}
+                 for b in data["outline"]["bands"]]
+        assert bands == outline_summary(outline)["bands"]
+
+
+@pytest.mark.slow
+@build_settings(10)
+@given(
+    zone_type=_enabled_zone_types,
+    seed=st.integers(min_value=0, max_value=2 ** 31 - 1),
+    rooms=st.integers(min_value=2, max_value=8),
+    name=_build_names,
+)
+def test_map_artifacts_deterministic(zone_type, seed, rooms, name):
+    """
+    Feature: zone-generator-m2-true-layout-artifacts, Property 17: Map
+    artifacts are deterministic (umbrella P9, artifact slice).
+
+    Two independent Pipeline runs into different Output_Directories with the
+    same plan, Pinned_Seed and Build_Name write byte-identical
+    ``<name>.map.svg`` and ``maps/*.txt`` files.
+
+    Validates: Requirements 8.3
+    """
+    def factory(s: int):
+        return LayoutGenerator(zone_type=zone_type, seed=s).generate(
+            name, room_count=rooms)
+
+    runs = []
+    for _ in range(2):
+        with fresh_dir() as out_s:
+            out = _Path_p15(out_s)
+            try:
+                generate_validated(
+                    factory, zone_type=zone_type, zone_id=name, seed=seed,
+                    output_dir=out, write_glb=False, failure_log=None)
+            except GenerationFailed:
+                assume(False)
+            runs.append(_map_artifacts(out))
+    assert runs[0], "no map artifacts written"
+    assert runs[0] == runs[1]

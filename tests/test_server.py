@@ -717,10 +717,12 @@ def test_target_shortname_is_ignored(client):
     # named "arena".
     build_dir = app_mod.OUTPUT_DIR / zone_id / "v1"
     assert build_dir.is_dir(), f"missing build dir {build_dir}"
-    produced = list(build_dir.iterdir())
+    subdirs = [d.name for d in build_dir.iterdir() if d.is_dir()]
+    assert set(subdirs) <= {"maps"}, f"unexpected subdirectories: {subdirs}"
+    produced = [f for f in build_dir.rglob("*") if f.is_file()]
     assert produced, "no artifacts written"
     for f in produced:
-        assert f.name.startswith(f"{zone_id}."), (
+        assert f.name.startswith((f"{zone_id}.", f"{zone_id}_")), (
             f"artifact not named by the id: {f.name}"
         )
         assert "arena" not in f.name, f"artifact leaked the target name: {f.name}"

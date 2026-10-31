@@ -403,13 +403,12 @@ class TestMapView:
         # Gold key diamonds use <path>; two gates → at least two paths
         assert svg.count("<path") >= len(spec.gates)
 
-    def test_builder_writes_map_sidecar(self, tmp_path):
+    def test_builder_writes_no_map_sidecar(self, tmp_path):
+        # The map SVG moved to the Pipeline post-pass (M2 Decision 8).
         gen = LayoutGenerator(zone_type="dungeon", seed=11)
         spec = gen.generate("mapsidecar", room_count=4)
         ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=True)
-        svg_path = tmp_path / "mapsidecar.map.svg"
-        assert svg_path.exists()
-        assert svg_path.read_text(encoding="utf-8").startswith("<svg")
+        assert not (tmp_path / "mapsidecar.map.svg").exists()
 
 
 class TestSemantics:
