@@ -83,7 +83,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: web/index.html, web/src/artifacts.ts, web/src/main.ts, web/src/api.ts, web/src/style.css
   - Reqs: 10
 
-- [ ] 10. `.txt` overlay preview script
+- [x] 10. `.txt` overlay preview script
   - Card: [cards/10-overlay-preview.md](cards/10-overlay-preview.md)
   - Type: agent · Size: S · Depends: 7
   - Owns: scripts/eqmap_preview.py
