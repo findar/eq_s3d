@@ -34,6 +34,15 @@ export interface ZonePlan {
   prompt: string;
 }
 
+// One file of an accepted build (server/app.py ArtifactRef), in panel order:
+// map_svg, eqmap by layer, eqg, glb, sidecar.
+export interface ArtifactRef {
+  kind: string;                // "map_svg" | "eqmap" | "eqg" | "glb" | "sidecar"
+  filename: string;            // relative to the build dir ("maps/<name>_1.txt")
+  url: string;                 // the build-file route that serves it
+  layer?: number | null;       // eqmap only: 0 = main band, 1..3
+}
+
 export interface GenerateResult {
   id: string;
   version: number;             // per-build version (output/<id>/v<version>/)
@@ -47,6 +56,8 @@ export interface GenerateResult {
   glb_url: string;
   zone_url: string;
   map_url: string;             // top-down SVG layout map
+  eqg_url?: string;            // the zone archive ("" when none was written)
+  artifacts?: ArtifactRef[];   // every file the build wrote, with its URL
   source: string;              // back-compat mirror of `mode`
   planner?: string | null;     // "rule" | "llm"
   plan?: ZonePlan | null;

@@ -7,6 +7,7 @@ import {
 } from "./api";
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
+import { showArtifacts, loadMapSvg } from "./artifacts";
 
 // The two generation modes, chosen explicitly by which button (or which
 // field's Enter) fired — the server no longer infers it from the body shape.
@@ -344,6 +345,11 @@ async function doGenerate(mode: Mode) {
   try {
     const result = await generateZone(params);
     currentMapUrl = result.map_url;
+    // Rebuild the Files list (and drop the previous build's map + PNG); a map
+    // dialog left open re-renders with this build's SVG.
+    showArtifacts(result.artifacts ?? [], result.id);
+    mapDownload.download = `${result.id}.map.svg`;
+    if (!mapModal.classList.contains("hidden")) openMap();
     lastSeed = result.seed;
     reproduceBtn.disabled = false;
     statusEl.textContent = "loading…";
@@ -473,9 +479,8 @@ const mapDownload = $("map-download") as HTMLAnchorElement;
 async function openMap() {
   if (!currentMapUrl) return;
   try {
-    const res = await fetch(currentMapUrl);
-    if (!res.ok) throw new Error(`map fetch failed (${res.status})`);
-    mapBody.innerHTML = await res.text();   // inline SVG so it scales crisply
+    // Inline SVG so it scales crisply; fetched once per build (artifacts.ts).
+    mapBody.innerHTML = await loadMapSvg(currentMapUrl);
     mapDownload.href = currentMapUrl;
     mapModal.classList.remove("hidden");
   } catch (err) {
@@ -494,6 +499,20 @@ $("map-close").addEventListener("click", closeMap);
 mapModal.addEventListener("click", (e) => {
   if (e.target === mapModal) closeMap();
 });
+// Movement keys stay out of the camera while a Files link or the map dialog has
+// focus: controls.ts only skips form fields, and links/buttons aren't those.
+// Stop them here, before they bubble to its document listener; the default
+// action (Enter follows the link, arrows scroll) is untouched.
+const MOVE_KEYS = new Set([
+  "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyR", "Space",
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight",
+]);
+for (const id of ["artifacts", "map-dialog"]) {
+  $(id).addEventListener("keydown", (e) => {
+    if (MOVE_KEYS.has((e as KeyboardEvent).code)) e.stopPropagation();
+  });
+}
+
 // M toggles the map, Esc closes it — but not while typing in a field.
 document.addEventListener("keydown", (e) => {
   const ev = e as KeyboardEvent;
