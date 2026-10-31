@@ -24,23 +24,23 @@ Fix both at the root so no corridor floor lies inside a room footprint except
 its doorway end, and every corridor bend is walled.
 
 ## Done when
-- [ ] Decide between keeping rooms at least a full corridor width apart (moves
+- [x] Decide between keeping rooms at least a full corridor width apart (moves
       room layouts) and routing the Z middle leg inside the gap (moves corridors
       only); measure both on the three test seeds and record the choice and why
       in the commit body and in `archive.md` "Decisions".
-- [ ] No corridor's floor overlaps a room footprint beyond its doorway inset,
+- [x] No corridor's floor overlaps a room footprint beyond its doorway inset,
       on any layout seed, flat or elevated.
       → verify: a property in new `tests/test_corridor_clearance.py`, 25 layouts, using `routing.route_footprint`.
-- [ ] Box builds have no Stacked_Floors: `mapgeom.depth_bands` gives one band on
+- [x] Box builds have no Stacked_Floors: `mapgeom.depth_bands` gives one band on
       seeds 1955208177, 1516796975, 678358326 and 7 (30 rooms), and on 15 random
       elevated builds (`slow`).
       → verify: `python -m pytest tests/test_corridor_clearance.py -q`.
-- [ ] Corridor bends are walled: on seed 1516796975, `mapgeom.extract_outline`
+- [x] Corridor bends are walled: on seed 1516796975, `mapgeom.extract_outline`
       reports no ledge pieces (a flat zone has none where walls are complete).
-- [ ] The validator would have caught defect 1: a corridor floor inside a room
+- [x] The validator would have caught defect 1: a corridor floor inside a room
       footprint fails `validate(check_corridors=True)`, or say in the commit body
       why it can't and the new property is the guard instead.
-- [ ] `python -m pytest tests/ -q` is green with no loosened test.
+- [x] `python -m pytest tests/ -q` is green with no loosened test.
 
 ## Pitfalls
 - Read lessons-learned on Z-routes, subdivided ramps, and bounding elevation by
@@ -53,3 +53,4 @@ its doorway end, and every corridor bend is walled.
 - The agent can't check this in 3D; say so in Result. Task 12 eyeballs it.
 
 ## Result
+✔ 25df519, cb1a5ae · 558 passed · not checked in 3D (task 12 eyeballs it)

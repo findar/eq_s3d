@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import random
+from functools import partial
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -26,8 +27,11 @@ from .zone_spec import (
     GateSpec,
 )
 from . import semantics
-from .routing import plan_route, exit_axis_x
+from .routing import plan_route, exit_axis_x, route_footprint
 from .zone_types import STYLE_PROFILE
+
+# Overlap below this (u) is two faces touching, not one inside the other.
+_TOUCH = 1e-6
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -88,6 +92,12 @@ class LayoutGenerator:
         # vocabulary, whatever a caller hands in.
         from .zone_types import canonical_zone_type
         self.zone_type = canonical_zone_type(zone_type) or zone_type
+        # Box zones (dungeon/city) build walled rooms and corridor tubes, so
+        # their corridors must stay clear of rooms and of each other (task 14):
+        # a full-corridor-width room gap, footprint crossings, and no
+        # overlapping corridors. Heightfield zones keep the earlier layout,
+        # byte for byte (tests/test_hygiene.py pins it).
+        self.corridor_clearance = self.zone_type in _SEMANTIC_ZONE_TYPES
         # ``profile`` loads the MEASURED style profile for this zone type
         # (wilderness -> styles/outdoor.json); the profile file name is a style
         # profile, not a zone type (zone_types "Zone-type vocabulary").
@@ -524,13 +534,26 @@ class LayoutGenerator:
         r = (2 - u) if u > 1 else u
         return rx * r * math.cos(t) / 2, ry * r * math.sin(t) / 2
 
-    def _separate_rooms(self, rooms: List[RoomSpec], iterations: int = 60) -> None:
+    def _separate_rooms(self, rooms: List[RoomSpec],
+                        iterations: Optional[int] = None) -> None:
         """
         Step 2: push overlapping rooms apart (no physics engine needed). Each
         iteration nudges any overlapping pair apart along their centre-to-centre
-        vector until the layout settles with a small gap between rooms.
+        vector until the layout settles with a gap between rooms.
+
+        The gap is a FULL corridor width: a Z-corridor's middle leg is a whole
+        corridor wide and sits centred in the gap between the two facing walls,
+        so a narrower gap put that leg (the ramp, when elevated) inside both
+        rooms (task 14, seed 1955208177 corr_4). One unit of slack on top lets
+        the iterative push stop a hair short and still clear the corridor.
+        Heightfield zones keep the earlier half-width gap.
         """
-        gap = max(self.corridor_width * 0.5, 30.0)
+        if self.corridor_clearance:
+            gap = max(self.corridor_width, 30.0) + 1.0
+            iterations = iterations or 200
+        else:
+            gap = max(self.corridor_width * 0.5, 30.0)
+            iterations = iterations or 60
         for _ in range(iterations):
             moved = False
             for a in range(len(rooms)):
@@ -611,7 +634,7 @@ class LayoutGenerator:
 
     def _resolve_crossings(self, rooms: List[RoomSpec],
                            edges: List[Tuple[int, int]]) -> bool:
-        """Split any edge whose corridor route passes through a third room.
+        """Split any edge whose corridor floor overlaps a third room.
 
         Design option (a) for the `crosses room` class (suspect table): when the
         A–B corridor's route footprint penetrates a third room C, replace the
@@ -627,6 +650,45 @@ class LayoutGenerator:
         become duplicates or self-loops after a split are dropped. Returns True
         if any edge changed (the caller re-relaxes elevation on the new graph).
         """
+        crossed_room = partial(
+            self._crossed_room if self.corridor_clearance
+            else self._crossed_room_centreline, rooms)
+
+        changed = False
+        # Work queue of edges to (re)check; splitting pushes the two halves back.
+        pending = list(edges)
+        resolved: List[Tuple[int, int]] = []
+        seen = set()
+        # Bound iterations: each split adds C as a waypoint; with n rooms the
+        # chain through distinct waypoints can't exceed n edges, so cap at n^2.
+        budget = max(64, len(rooms) * len(rooms))
+        while pending and budget > 0:
+            budget -= 1
+            i, j = pending.pop()
+            if i == j:
+                changed = True
+                continue
+            key = (min(i, j), max(i, j))
+            c = crossed_room(i, j)
+            if c is None:
+                if key not in seen:
+                    seen.add(key)
+                    resolved.append((i, j))
+                continue
+            # Split A–B into A–C and C–B; re-check both halves.
+            changed = True
+            pending.append((i, c))
+            pending.append((c, j))
+
+        if changed:
+            edges[:] = resolved
+        return changed
+
+    def _crossed_room_centreline(self, rooms: List[RoomSpec], i: int, j: int
+                                 ) -> Optional[int]:
+        """The first third room the i–j corridor's CENTRELINE passes through
+        for more than a corridor width, or None. Heightfield zones split on
+        this; box zones use the stricter footprint test (`_crossed_room`)."""
         hw = self.corridor_width / 2
         eps = 2.0  # match analyzer.traverse AgentModel.adjacency_eps default
 
@@ -661,78 +723,77 @@ class LayoutGenerator:
             span = ((dx * (t1 - t0)) ** 2 + (dy * (t1 - t0)) ** 2) ** 0.5
             return span > hw
 
-        def crossed_room(i: int, j: int) -> Optional[int]:
-            a, b = rooms[i], rooms[j]
-            fx, fy = self._wall_point(a, b)
-            tx, ty = self._wall_point(b, a)
-            exit_from_x = self._exit_axis_x(a, b)
-            exit_to_x = self._exit_axis_x(b, a)
-            route = plan_route((fx, fy), (tx, ty), exit_from_x, exit_to_x,
-                               hw, steps=0)
-            wps = route.waypoints
-            for k, r in enumerate(rooms):
-                if k == i or k == j:
-                    continue
-                rhw, rhd = r.width / 2, r.depth / 2
-                # Shrink by eps so a centreline merely running ALONG a wall face
-                # (never entering the interior) isn't counted; only a centreline
-                # that passes THROUGH the room's interior is a real cut.
-                x0, y0 = r.center_x - rhw + eps, r.center_y - rhd + eps
-                x1, y1 = r.center_x + rhw - eps, r.center_y + rhd - eps
-                if x0 >= x1 or y0 >= y1:
-                    continue
-                for s in range(len(wps) - 1):
-                    if _seg_enters_rect(wps[s], wps[s + 1], x0, y0, x1, y1):
-                        return k
-            return None
-
-        changed = False
-        # Work queue of edges to (re)check; splitting pushes the two halves back.
-        pending = list(edges)
-        resolved: List[Tuple[int, int]] = []
-        seen = set()
-        # Bound iterations: each split adds C as a waypoint; with n rooms the
-        # chain through distinct waypoints can't exceed n edges, so cap at n^2.
-        budget = max(64, len(rooms) * len(rooms))
-        while pending and budget > 0:
-            budget -= 1
-            i, j = pending.pop()
-            if i == j:
-                changed = True
+        a, b = rooms[i], rooms[j]
+        fx, fy = self._wall_point(a, b)
+        tx, ty = self._wall_point(b, a)
+        route = plan_route((fx, fy), (tx, ty),
+                           self._exit_axis_x(a, b), self._exit_axis_x(b, a),
+                           hw, steps=0)
+        wps = route.waypoints
+        for k, r in enumerate(rooms):
+            if k == i or k == j:
                 continue
-            key = (min(i, j), max(i, j))
-            c = crossed_room(i, j)
-            if c is None:
-                if key not in seen:
-                    seen.add(key)
-                    resolved.append((i, j))
+            rhw, rhd = r.width / 2, r.depth / 2
+            # Shrink by eps so a centreline merely running ALONG a wall face
+            # (never entering the interior) isn't counted; only a centreline
+            # that passes THROUGH the room's interior is a real cut.
+            x0, y0 = r.center_x - rhw + eps, r.center_y - rhd + eps
+            x1, y1 = r.center_x + rhw - eps, r.center_y + rhd - eps
+            if x0 >= x1 or y0 >= y1:
                 continue
-            # Split A–B into A–C and C–B; re-check both halves.
-            changed = True
-            pending.append((i, c))
-            pending.append((c, j))
+            for s in range(len(wps) - 1):
+                if _seg_enters_rect(wps[s], wps[s + 1], x0, y0, x1, y1):
+                    return k
+        return None
 
-        if changed:
-            edges[:] = resolved
-        return changed
+    def _crossed_room(self, rooms: List[RoomSpec], i: int, j: int
+                      ) -> Optional[int]:
+        """The first third room the i–j corridor's FLOOR overlaps, or None.
+
+        The whole footprint counts, not just the centreline: a corridor whose
+        edge clips a room's corner still stacks its floor on (or, elevated,
+        under) that room's and runs its walls through it (task 14).
+        """
+        hw = self.corridor_width / 2
+        a, b = rooms[i], rooms[j]
+        fx, fy = self._wall_point(a, b)
+        tx, ty = self._wall_point(b, a)
+        route = plan_route((fx, fy), (tx, ty),
+                           self._exit_axis_x(a, b), self._exit_axis_x(b, a),
+                           hw, steps=0)
+        rects = route_footprint(route, hw)
+        for k, r in enumerate(rooms):
+            if k == i or k == j:
+                continue
+            rx0, ry0 = r.center_x - r.width / 2, r.center_y - r.depth / 2
+            rx1, ry1 = r.center_x + r.width / 2, r.center_y + r.depth / 2
+            for (x0, y0, x1, y1) in rects:
+                if (min(x1, rx1) - max(x0, rx0) > _TOUCH
+                        and min(y1, ry1) - max(y0, ry0) > _TOUCH):
+                    return k
+        return None
 
     def _resolve_conflicts(self, rooms: List[RoomSpec],
                            edges: List[Tuple[int, int]]) -> bool:
-        """Drop a loop edge from any pair of corridors that cross too close in Z.
+        """Remove every pair of corridors whose floors overlap.
 
-        Design suspect-table conflict row / option (b): two corridors that share
-        no room and whose route footprints overlap in XY while their floors sit
-        within the clearance (design decision 12/16) conflict — on a flat zone,
-        any two tubes crossing at the same height. The through-room split
-        (`_resolve_crossings`) removes most of these, but a pair that crosses in
-        OPEN space (neither passing through a room) survives. Every surviving
-        conflict pair has at least one REMOVABLE loop (non-tree) edge — dropping
-        it never disconnects the graph (both endpoints stay reachable by another
-        path), which is why the MST backbone is kept and only loop edges fall.
+        Design suspect-table conflict row / option (b): two corridors whose
+        route footprints overlap in XY conflict at any height — over or under,
+        the result is stacked floors, and a box build has one depth band (task
+        14 dropped the old Z-clearance exemption). Two corridors from the SAME
+        room may share that room's doorway stub and bend; anywhere else they
+        conflict too (seed 7, 30 rooms: corr_8's far stub crossed corr_2's jog
+        19 u higher). The through-room split (`_resolve_crossings`) removes most
+        conflicts; a pair that crosses in open space survives it.
 
-        Runs after `_resolve_crossings` on the final geometry. A dropped edge can
-        clear several conflicts at once, so it re-detects after each drop.
-        Returns True if any edge was removed (the caller re-relaxes elevation).
+        A conflict drops a REMOVABLE loop (non-tree) edge when either corridor
+        is one, so the graph stays connected. When both are tree edges, one is
+        swapped for the shortest edge that rejoins the two halves without
+        crossing a room or clashing with another corridor.
+
+        Runs after `_resolve_crossings` on the final geometry. A change can
+        clear several conflicts at once, so it re-detects after each one.
+        Returns True if any edge changed (the caller re-relaxes elevation).
         """
         hw = self.corridor_width / 2
 
@@ -760,10 +821,36 @@ class LayoutGenerator:
                         return True
             return False
 
-        def is_removable(idx: int, es: List[Tuple[int, int]]) -> bool:
-            """True when edge es[idx] is a loop edge: its two endpoints stay
-            connected after removing it (so dropping it keeps the graph whole)."""
-            ei, ej = es[idx]
+        def floor_pieces(i: int, j: int, route):
+            """The route's floor as built, as (rect, room) pieces: `room` is the
+            room whose floor a piece is pinned to (a Z-corridor's stub and bend
+            square at each end stay flat at that room's height, whatever the
+            later relax does), or None for floor that may slope."""
+            wps = route.waypoints
+            if route.kind != "z":
+                return [(r, None) for r in route_footprint(route, hw)]
+
+            def box(p, q):
+                return (min(p[0], q[0]) - hw, min(p[1], q[1]) - hw,
+                        max(p[0], q[0]) + hw, max(p[1], q[1]) + hw)
+            return [(box(wps[0], wps[1]), i), (box(wps[1], wps[1]), i),
+                    (box(wps[1], wps[2]), None),
+                    (box(wps[2], wps[2]), j), (box(wps[2], wps[3]), j)]
+
+        def shared_clash(pa, pb, shared: set) -> bool:
+            """Two corridors from the same room may share that room's doorway
+            stub; anywhere else their floors must not overlap."""
+            for (ra, ka) in pa:
+                for (rb, kb) in pb:
+                    if ka is not None and ka == kb and ka in shared:
+                        continue
+                    if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
+                            and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH):
+                        return True
+            return False
+
+        def components_without(idx: int, es: List[Tuple[int, int]]):
+            """Union-find roots of the graph with edge es[idx] left out."""
             parent = list(range(len(rooms)))
 
             def find(x):
@@ -778,49 +865,98 @@ class LayoutGenerator:
                 ru, rv = find(u), find(v)
                 if ru != rv:
                     parent[ru] = rv
-            return find(ei) == find(ej)
+            return [find(x) for x in range(len(rooms))]
 
-        # Clearance (matches analyzer.traverse.corridor_conflicts: the lower
-        # corridor's height + 1 u, floored at ~player height). Flat floors are
-        # all equal so any footprint overlap is within clearance; for elevation
-        # the carry-leg detail is validated on the mesh — here the endpoint Z
-        # band is a conservative proxy that still only ever drops loop edges.
+        def is_removable(idx: int, es: List[Tuple[int, int]]) -> bool:
+            """True when edge es[idx] is a loop edge: its two endpoints stay
+            connected after removing it (so dropping it keeps the graph whole)."""
+            roots = components_without(idx, es)
+            ei, ej = es[idx]
+            return roots[ei] == roots[ej]
+
+        cache = {}
+
+        def shape(e):
+            """(leg rects, floor pieces) of edge e's corridor, cached."""
+            if e not in cache:
+                rt = route_for(*e)
+                cache[e] = (leg_rects(rt), floor_pieces(e[0], e[1], rt))
+            return cache[e]
+
+        # Heightfield zones keep the earlier rule: corridors sharing a room may
+        # meet anywhere, and a pair whose endpoint Z bands sit more than the
+        # clearance apart (matches analyzer.traverse.corridor_conflicts) may
+        # pass over one another.
         clearance = max(self.corridor_height + 1.0, 6.0)
 
+        def clash(ea, eb) -> bool:
+            """Do the corridors of edges ea and eb overlap where they mustn't?"""
+            shared = set(ea) & set(eb)
+            if not self.corridor_clearance:
+                if shared:
+                    return False
+                za = [rooms[ea[0]].floor_z, rooms[ea[1]].floor_z]
+                zb = [rooms[eb[0]].floor_z, rooms[eb[1]].floor_z]
+                if (min(za) - clearance > max(zb)
+                        or min(zb) - clearance > max(za)):
+                    return False
+                return overlaps(shape(ea)[0], shape(eb)[0])
+            if shared:
+                # Corridors from one room meet at its doorway; they conflict
+                # only where they overlap beyond it.
+                return shared_clash(shape(ea)[1], shape(eb)[1], shared)
+            return overlaps(shape(ea)[0], shape(eb)[0])
+
+        def substitute(idx: int, es: List[Tuple[int, int]]):
+            """A replacement for bridge es[idx]: the shortest edge joining the
+            two halves its removal leaves that crosses no room and clashes with
+            no other corridor, or None."""
+            roots = components_without(idx, es)
+            side = roots[es[idx][0]]
+            rest = [e for k, e in enumerate(es) if k != idx]
+            cands = sorted(
+                ((u, v) for u in range(len(rooms)) if roots[u] == side
+                 for v in range(len(rooms)) if roots[v] != side),
+                key=lambda e: (rooms[e[0]].center_x - rooms[e[1]].center_x) ** 2
+                + (rooms[e[0]].center_y - rooms[e[1]].center_y) ** 2)
+            for e in cands:
+                if (self._crossed_room(rooms, *e) is None
+                        and not any(clash(e, o) for o in rest)):
+                    return e
+            return None
+
+        # No Z clearance exemption: two corridors whose floors overlap in XY
+        # are stacked floors (or intersecting ones) at ANY height difference,
+        # and a box build must have one depth band (task 14). Flat floors all
+        # sit at 0, so for them this is the same footprint test as before.
+        # A conflict between two tree edges (neither can drop) is resolved by
+        # swapping one for another edge that rejoins the graph cleanly.
         removed_any = False
-        safety = len(edges) + 4
+        stuck = set()
+        safety = (4 * len(edges) + 8 if self.corridor_clearance
+                  else len(edges) + 4)
         while safety > 0:
-            safety -= 1
-            routes = [route_for(i, j) for (i, j) in edges]
-            rects = [leg_rects(rt) for rt in routes]
-            zlo = [min(rooms[i].floor_z, rooms[j].floor_z) for (i, j) in edges]
-            zhi = [max(rooms[i].floor_z, rooms[j].floor_z) for (i, j) in edges]
-
-            drop = None
-            for a in range(len(edges)):
-                ia, ja = edges[a]
-                for b in range(a + 1, len(edges)):
-                    ib, jb = edges[b]
-                    if {ia, ja} & {ib, jb}:
-                        continue  # share a room → allowed to meet
-                    # Z bands must come within the clearance to conflict.
-                    if zlo[a] - clearance > zhi[b] or zlo[b] - clearance > zhi[a]:
-                        continue
-                    if not overlaps(rects[a], rects[b]):
-                        continue
-                    # Conflict: drop whichever of the two is a removable loop.
-                    if is_removable(a, edges):
-                        drop = a
-                    elif is_removable(b, edges):
-                        drop = b
-                    if drop is not None:
-                        break
-                if drop is not None:
-                    break
-
-            if drop is None:
+            pair = next(((a, b) for a in range(len(edges))
+                         for b in range(a + 1, len(edges))
+                         if (edges[a], edges[b]) not in stuck
+                         and clash(edges[a], edges[b])), None)
+            if pair is None:
                 break
-            del edges[drop]
+            a, b = pair
+            if is_removable(a, edges):
+                del edges[a]
+            elif is_removable(b, edges):
+                del edges[b]
+            else:
+                for k in ((b, a) if self.corridor_clearance else ()):
+                    e = substitute(k, edges)
+                    if e is not None:
+                        edges[k] = e
+                        break
+                else:
+                    stuck.add((edges[a], edges[b]))
+                    continue
+            safety -= 1
             removed_any = True
 
         return removed_any
@@ -975,12 +1111,19 @@ class LayoutGenerator:
 
     def _elevation_run(self, a: RoomSpec, b: RoomSpec) -> float:
         """
-        The run length the elevation cap is measured against: the interior jog
-        of a Z-corridor (where a staircase rides and the steepest case lives),
-        or the single leg of a straight corridor.
+        The run length the elevation cap is measured against: the length of
+        floor that actually slopes. A Z-corridor's middle leg carries the rise,
+        but its two ends lie inside the flat bend squares (a corridor width
+        each), so only the stretch between them ramps; a straight corridor
+        ramps along its single leg. A jog shorter than a corridor width has no
+        ramp at all and its two rooms sit level.
         """
         legs = self._route_legs(a, b)
-        return legs[1] if len(legs) >= 3 else legs[0]
+        if len(legs) >= 3:
+            if not self.corridor_clearance:
+                return legs[1]   # heightfield zones: the earlier whole-jog cap
+            return max(0.0, legs[1] - self.corridor_width)
+        return legs[0]
 
     def _build_corridors(self, spec: ZoneSpec, rooms: List[RoomSpec],
                          edges: List[Tuple[int, int]]) -> None:

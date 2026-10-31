@@ -282,7 +282,7 @@ _elevated_verticality = st.sampled_from(["moderate", "dramatic"])
 
 @pytest.mark.slow
 @build_settings(20)
-@example(s=0, zone_type="dungeon", n=3, verticality="dramatic")
+@example(s=3, zone_type="dungeon", n=3, verticality="dramatic")
 @given(
     s=seeds,
     zone_type=box_zone_types,
@@ -313,8 +313,8 @@ def test_ramp_subdivision(s, zone_type, n, verticality):
     (``box_zone_types``: dungeon/city); verticality stays moderate/dramatic (flat
     would make the ramp path vacuously true), budget 20.
 
-    The pinned ``@example`` (seed 0, dungeon, 3 rooms, dramatic) has a corridor
-    whose total rise is ~71 u, far above 2.5 u, so the subdivision path is
+    The pinned ``@example`` (seed 3, dungeon, 3 rooms, dramatic) has a corridor
+    whose total rise is ~85 u, far above 2.5 u, so the subdivision path is
     genuinely exercised rather than vacuously satisfied. The test asserts that
     precondition (an elevated corridor span > 2.5 u) on every example and that
     no single upward triangle rises past the segment cap.
@@ -335,15 +335,15 @@ def test_ramp_subdivision(s, zone_type, n, verticality):
 
     # Precondition: at least one corridor actually ramps (total rise > 2.5 u),
     # so the subdivision path under test is genuinely exercised. For the pinned
-    # @example (seed 0, dungeon, 3 rooms, dramatic) elevation is deterministic
-    # and the span is ~71 u, so we assert it hard — this proves the subdivision
+    # @example (seed 3, dungeon, 3 rooms, dramatic) elevation is deterministic
+    # and the span is ~85 u, so we assert it hard — this proves the subdivision
     # path ran and the <= 2.51 assertion below is not vacuously true. For the
     # random elevated-verticality draws the elevation roll is probabilistic, so
     # a flat draw is a legitimate (vacuous) pass rather than a failure; we don't
     # `assume` it away (never call assume in a build property).
     spans = [abs(c.from_z - c.to_z) for c in spec.corridors]
     max_span = max(spans) if spans else 0.0
-    if (s, zone_type, n, verticality) == (0, "dungeon", 3, "dramatic"):
+    if (s, zone_type, n, verticality) == (3, "dungeon", 3, "dramatic"):
         assert max_span > 2.5, (
             "pinned subdivision example no longer produces an elevated corridor "
             f"(max corridor span {max_span:.2f} u <= 2.5) — the subdivision path "

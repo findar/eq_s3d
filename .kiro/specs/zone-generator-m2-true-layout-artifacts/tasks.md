@@ -103,7 +103,7 @@ design's "interim if M1 is late" column no longer applies.
   - Type: agent · Size: S · Depends: 12 · Where: MAIN checkout
   - Owns: ROADMAP.md, tasks/README.md, .kiro/specs/zone-generator/, .kiro/specs/zone-generator-m2-true-layout-artifacts/
 
-- [ ] 14. Corridors stay out of rooms; corridor bends have walls
+- [x] 14. Corridors stay out of rooms; corridor bends have walls
   - Card: [cards/14-corridors-clear-of-rooms.md](cards/14-corridors-clear-of-rooms.md)
   - Type: agent · Size: M · Depends: 2, 3
   - Owns: generators/layout.py, generators/routing.py, generators/geometry.py, tests/test_corridor_clearance.py
