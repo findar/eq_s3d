@@ -10,23 +10,23 @@ stock RoF2 zones, the record formatter, the parser and `write_map_files`.
 Task 6 adds `build_map_file` (outline → layers) on top.
 
 ## Done when
-- [ ] `world_to_map` / `map_to_world` are the pinned candidate (negate + swap,
+- [x] `world_to_map` / `map_to_world` are the pinned candidate (negate + swap,
       `(mx, my) = (−y, −x)`), Z unchanged, and round-trip every finite point.
       → verify: `python -m pytest tests/test_eqmap.py -q -k convention` (Property 8).
-- [ ] The Grounding_Check picks the pinned candidate on `tutoriala` with median
+- [x] The Grounding_Check picks the pinned candidate on `tutoriala` with median
       ≤ 5 u and best/runner-up ≤ 0.25, and leaves the install untouched
       (snapshot names, sizes, mtimes before and after). `bazaar` runs the same
       check under `@pytest.mark.slow`. Both skip when `EQ_PATH` is unset
       (`core.env.env_value`) or the zone's files are missing.
       → verify: `python -m pytest tests/test_eqmap.py -q -k grounding`; record the medians in the commit body.
-- [ ] Property 9: the Grounding_Check recovers a known candidate on
+- [x] Property 9: the Grounding_Check recovers a known candidate on
       `asymmetric_wall_meshes()`.
       → verify: `python -m pytest tests/test_eqmap.py -q -k grounding_recovers`.
-- [ ] Format round-trip (Property 10) and parser tolerance (Property 11) hold;
+- [x] Format round-trip (Property 10) and parser tolerance (Property 11) hold;
       every stock `maps/*.txt` parses with zero skipped lines (slow, skips
       without the install).
       → verify: `python -m pytest tests/test_eqmap.py -q`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - Keep this task's strategies (`map_layers`, `garbage_lines`,
@@ -38,3 +38,4 @@ Task 6 adds `build_map_file` (outline → layers) on top.
   numbers.
 
 ## Result
+✔ a22802e · 538 passed
