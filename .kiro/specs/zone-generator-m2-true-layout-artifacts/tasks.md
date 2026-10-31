@@ -53,7 +53,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: generators/mapgeom.py, tests/pbt_helpers.py, tests/test_properties_mapgeom.py
   - Reqs: 1.1–1.4, 1.7
 
-- [ ] 5. Outline layer in the map SVG
+- [x] 5. Outline layer in the map SVG
   - Card: [cards/05-svg-outline-layer.md](cards/05-svg-outline-layer.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: generators/mapview.py, tests/reference_mapview.py, tests/test_properties_mapview.py
