@@ -8,8 +8,10 @@ known by construction.
 Design reference: ``.kiro/specs/zone-generator-m2-true-layout-artifacts/design.md``,
 "Correctness Properties" 1-7 and "Testing Strategy". Properties 2 and 3 also
 draw real box builds (dungeon and city) in the same ``@given``, weighted so the
-build count stays inside the build budget; Property 1 runs on builds only.
-Those three tests build zones, so they carry the ``slow`` marker.
+build count stays inside the build budget; Property 3 also draws wilderness
+builds (the terrain border plus slope breaks over 40 degrees). Property 1 runs
+on builds only. Those three tests build zones, so they carry the ``slow``
+marker.
 
 Box builds assert no depth-band count: they have real stacked floors until the
 corridors-inside-rooms layout fix (spec task 14), which owns that check.
@@ -77,10 +79,11 @@ def _synthetic_settings(n: int = 100) -> settings:
 _BUILDS: dict = {}
 
 
-def _plan_spec(zone_type: str, rooms: int, seed: int, verticality: str):
+def _plan_spec(zone_type: str, rooms: int, seed: int, verticality: str,
+               edges: tuple = ()):
     plan = ZonePlan(name="mapgeom", zone_type=zone_type, room_count=rooms,
                     verticality=verticality, elevation=verticality != "flat")
-    return plan_to_spec(plan, seed=seed)
+    return plan_to_spec(plan, seed=seed, edges=dict(edges) or None)
 
 
 def _build_ter(spec) -> bytes:
@@ -128,16 +131,46 @@ def box_builds(draw) -> BoxBuild:
                     draw(verticality_all))
 
 
+@dataclass(frozen=True)
+class WildBuild(BoxBuild):
+    """A wilderness build drawn by seed and Rim edges. Room count and
+    verticality don't shape the landscape; they stay fixed."""
+    edges: tuple = ()
+
+    def _built(self):
+        key = ("wilderness", self.seed, self.edges)
+        if key not in _BUILDS:
+            spec = _plan_spec("wilderness", 12, self.seed, "moderate", self.edges)
+            _BUILDS[key] = (spec, _build_ter(spec))
+        return _BUILDS[key]
+
+
+#: Rim edges from the Step 1 acceptance cases (undeclared sides are mountain):
+#: zoneline gaps and river edges open the border into ledges.
+_WILD_EDGES = ((), (("N", "zoneline"),), (("E", "river"), ("N", "zoneline")),
+               (("S", "river"),))
+
+
+@st.composite
+def wilderness_builds(draw) -> WildBuild:
+    return WildBuild("wilderness", 12, draw(seeds), "moderate",
+                     draw(st.sampled_from(_WILD_EDGES)))
+
+
 #: Share of mixed-property examples that are builds: 15 per 100 synthetic, so
 #: the build count stays inside the build budget (and scales x5 with the
 #: thorough profile like everything else).
 _BUILD_SHARE = 15
 
 
-def worlds_or_builds():
-    """One strategy for the mixed properties; shrinks toward synthetic worlds."""
+def worlds_or_builds(wild_share: int = 0):
+    """One strategy for the mixed properties; shrinks toward synthetic worlds.
+    ``wild_share`` per 100 examples are wilderness builds."""
+    box_from = 100 - _BUILD_SHARE
     return st.integers(0, 99).flatmap(
-        lambda k: box_builds() if k >= 100 - _BUILD_SHARE else slab_worlds())
+        lambda k: box_builds() if k >= box_from
+        else wilderness_builds() if k >= box_from - wild_share
+        else slab_worlds())
 
 
 #: The design's test seeds (finding 5), pinned on every build property.
@@ -349,12 +382,14 @@ def test_outline_fidelity(world):
 @pytest.mark.slow
 @_synthetic_settings()
 @_pinned
-@given(world=worlds_or_builds())
+@example(world=WildBuild("wilderness", 12, 1955208177, "moderate",
+                         (("E", "river"), ("N", "zoneline"))))
+@given(world=worlds_or_builds(wild_share=5))
 def test_outline_completeness(world):
     """Feature: zone-generator-m2-true-layout-artifacts, Property 3: Outline
     completeness (M2-P1).
 
-    For synthetic worlds and box builds: of the Floor_Boundary length outside
+    For synthetic worlds, box builds and 5 wilderness builds per 100: of the Floor_Boundary length outside
     Doorway_Spans, sampled every 0.5 u along every Floor_Region edge, at least
     99 % lies within 0.05 u of an emitted segment.
 
