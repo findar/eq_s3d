@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: scheduled as roadmap step 1b** (after wilderness, step 1) — user decision. No task index yet; write one in card format (see `.kiro/steering/project.md`) when the work starts. Verify the requirements against the code first: they predate wilderness, so the mesh-outline extractor must also handle open terrain.
+> **STATUS: roadmap step 1b, in progress.** The task index is `tasks.md` (card format, 13 tasks). The user answered the design's open questions on 2026-10-30; see `archive.md` "Decisions". The M1 dependencies D1–D7 are all on master.
 
 ## Introduction
 

@@ -50,13 +50,13 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
 
 **Wilderness (step 1) waves 1–4 are merged** (master `917bae3`): the Design_Matrix IR plus biome resolution, termination-bounded graph replacement, matrix-subordinate noise with hydraulic + thermal erosion and sharp-edge upsample, and bowl assembly proven on a real built mesh (Properties 1–15; suite 502). None of it renders yet: the wilderness package is called only by tests until it's wired into `TerrainBackend`. Summary and decisions: `.kiro/specs/zone-generator-wilderness/archive.md`.
 
-**Pick up here: roadmap step 1b, true-layout artifacts** — the M2 spec (`.kiro/specs/zone-generator-m2-true-layout-artifacts/`) has requirements and design but no task index yet: write one in card format (like `zone-generator-wilderness/tasks.md`) as the first step. Step 1 (wilderness) is done and enabled. Run `python scripts/task_status.py` to see what's ready. The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
+**Pick up here: roadmap step 1b, true-layout artifacts** — the M2 spec (`.kiro/specs/zone-generator-m2-true-layout-artifacts/`) has a card-format task index (`tasks.md`, 13 tasks); tasks 1, 2 and 3 are ready and can run side by side. Step 1 (wilderness) is done and enabled. Run `python scripts/task_status.py` to see what's ready. The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
 
 **Roadmap — the 11-step content sequence (authoritative, in order).** Re-sequenced around visible, demonstrable zone outcomes rather than internal architecture (user decision). Each step ends in something a person can look at and judge against the north-star "indistinguishable from a hand-crafted zone".
 
 1. **Wilderness (Karanas)** — open heightfield: water, lava, cliffs, deformation.
    *(DONE — signed off 2026-10-29 and enabled for everyone; see the Done table)*
-   - **1b. True-layout artifacts** — the M2 spec (`.kiro/specs/zone-generator-m2-true-layout-artifacts/`): a map outline traced from the built mesh, the in-client EQ map file, and the build's files downloadable from the browser. Inserted after step 1 (user decision). It has requirements + design but no task index yet; write one in card format when it starts. Numbered 1b so later step numbers stay stable.
+   - **1b. True-layout artifacts** — the M2 spec (`.kiro/specs/zone-generator-m2-true-layout-artifacts/`): a map outline traced from the built mesh, the in-client EQ map file, and the build's files downloadable from the browser. Inserted after step 1 (user decision). Task index: `tasks.md` (card format, 13 tasks). Numbered 1b so later step numbers stay stable.
 2. **Trees for wilderness.**
 3. **Textures (placeholder)** — enough to identify type (e.g. `gnoll-cave-wall`, `crypt-floor`).
 4. **Interesting textures** — the real procedural / AI texture pass.
