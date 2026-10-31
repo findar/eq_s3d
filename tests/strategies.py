@@ -772,3 +772,222 @@ def archive_corruptions(build: str) -> st.SearchStrategy:
     need it.
     """
     return st.sampled_from(_corruption_list(build))
+
+
+# ---------------------------------------------------------------------------
+# Synthetic slab worlds (M2 outline / depth-band properties)
+# ---------------------------------------------------------------------------
+#
+# Small TERs whose true outline is known: axis-aligned rectangular floor slabs
+# (two up-facing triangles each, random diagonal and start vertex) related to
+# one another the ways a real build relates rooms and corridors — welded or
+# duplicated edge-adjacency, T-junctions, half-unit overlaps (the corridor
+# inset), walkable steps and ledges — plus optional rising wall quads on slab
+# sides and an optional far-away island. Floor winding is always up-facing:
+# the signed Floor_Face rule (M2 Decision 1) makes a down-facing slab a
+# ceiling. Design reference:
+# ``.kiro/specs/zone-generator-m2-true-layout-artifacts/design.md``, Testing
+# Strategy "Strategies".
+
+import math as _math
+from dataclasses import dataclass as _dataclass, field as _field
+
+from core.ter import Polygon as _Polygon, Vertex as _Vertex
+
+
+@_dataclass
+class SyntheticWorld:
+    """A synthetic TER plus the ground truth the oracles need."""
+    ter: _TerFile
+    safe_point: tuple
+    # (x0, y0, x1, y1, z) per slab; slab 0 holds the safe point.
+    slabs: list
+    # Bottom edges ((x, y, z), (x, y, z)) of every rising wall quad.
+    wall_bases: list = _field(default_factory=list)
+    island: int | None = None            # slab index of the disconnected island
+    levels: list = _field(default_factory=list)       # stacked level heights, ascending
+    level_slabs: list = _field(default_factory=list)  # slab index per level
+    main_level: int = 0                  # level holding the safe point
+    others: list = _field(default_factory=list)       # (zmin, zmax) of other floor
+    column: tuple = ()                   # (x0, y0, x1, y1) holding every level
+
+
+class _MeshBuilder:
+    def __init__(self) -> None:
+        self.ter = _TerFile(name="synthetic")
+        self._index: dict = {}
+
+    def vertex(self, p, weld: bool) -> int:
+        p = tuple(float(v) for v in p)
+        if weld and p in self._index:
+            return self._index[p]
+        self.ter.vertices.append(_Vertex(x=p[0], y=p[1], z=p[2]))
+        k = len(self.ter.vertices) - 1
+        self._index.setdefault(p, k)
+        return k
+
+    def quad(self, corners, weld: bool, diag: int, rot: int) -> None:
+        """Two triangles over ``corners`` (in winding order); ``diag`` picks
+        the diagonal and ``rot`` the start vertex of each triangle."""
+        ids = [self.vertex(c, weld) for c in corners]
+        if diag:
+            ids = ids[1:] + ids[:1]
+        for tri in ((ids[0], ids[1], ids[2]), (ids[0], ids[2], ids[3])):
+            tri = tri[rot % 3:] + tri[:rot % 3]
+            self.ter.polygons.append(_Polygon(v1=tri[0], v2=tri[1], v3=tri[2]))
+
+
+def _slab_corners(s):
+    x0, y0, x1, y1, z = s
+    return [(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z)]   # CCW: faces +Z
+
+
+def _side_edges(s):
+    x0, y0, x1, y1, z = s
+    return {"S": ((x0, y0, z), (x1, y0, z)), "E": ((x1, y0, z), (x1, y1, z)),
+            "N": ((x1, y1, z), (x0, y1, z)), "W": ((x0, y1, z), (x0, y0, z))}
+
+
+def _emit_slab(mb, draw, s) -> None:
+    mb.quad(_slab_corners(s), weld=draw(st.booleans()),
+            diag=draw(st.integers(0, 1)), rot=draw(st.integers(0, 2)))
+
+
+def _emit_wall(mb, draw, base, height) -> None:
+    (ax, ay, az), (bx, by, bz) = base
+    corners = [(ax, ay, az), (bx, by, bz), (bx, by, bz + height), (ax, ay, az + height)]
+    if draw(st.booleans()):
+        corners = corners[::-1]
+    mb.quad(corners, weld=draw(st.booleans()),
+            diag=draw(st.integers(0, 1)), rot=draw(st.integers(0, 2)))
+
+
+_HALF = st.integers(1, 8).map(lambda k: k / 2.0)      # 0.5 .. 4 u overlap
+
+
+@st.composite
+def _related_slab(draw, parent):
+    """A slab placed against ``parent`` by one of the build-like relations."""
+    x0, y0, x1, y1, z = parent
+    rel = draw(st.sampled_from(["adjacent", "tjunction", "overlap", "step", "ledge", "free"]))
+    if rel == "free":
+        nx0 = draw(st.integers(-30, 30))
+        ny0 = draw(st.integers(-30, 30))
+        return (nx0, ny0, nx0 + draw(st.integers(1, 16)), ny0 + draw(st.integers(1, 16)),
+                draw(st.integers(0, 10)))
+    side = draw(st.sampled_from("NESW"))
+    depth = draw(st.integers(1, 16))
+    nz = z
+    if rel == "step":
+        nz = z + draw(st.sampled_from([-3, -2, -1, 1, 2, 3]))
+    elif rel == "ledge":
+        nz = z + draw(st.sampled_from([-1, 1])) * draw(st.integers(4, 10))
+    nz = min(10, max(0, nz))
+    inset = draw(_HALF) if rel == "overlap" else 0.0
+    span = (x1 - x0) if side in "NS" else (y1 - y0)
+    if rel == "tjunction":
+        a = draw(st.integers(-8, int(span) + 7))
+        b = a + draw(st.integers(1, 16))
+    else:
+        a, b = 0, span
+    if side == "E":
+        return (x1 - inset, y0 + a, x1 - inset + depth, y0 + b, nz)
+    if side == "W":
+        return (x0 + inset - depth, y0 + a, x0 + inset, y0 + b, nz)
+    if side == "N":
+        return (x0 + a, y1 - inset, x0 + b, y1 - inset + depth, nz)
+    return (x0 + a, y0 + inset - depth, x0 + b, y0 + inset, nz)
+
+
+@st.composite
+def slab_worlds(draw, island=None, walls: bool = True, max_slabs: int = 8):
+    """1-``max_slabs`` related floor slabs at heights 0-10 (so nothing is
+    stacked), optional rising wall quads per slab side, and an optional island
+    slab far from the rest (``island``: True, False or None = either).
+
+    The safe point is the centre of slab 0, 0.25 u above it: closer than any
+    other integer-height slab, so the walk seeds on slab 0 whatever the face
+    order.
+    """
+    n = draw(st.integers(1, max_slabs))
+    s0 = (0, 0, draw(st.integers(1, 16)), draw(st.integers(1, 16)), draw(st.integers(0, 10)))
+    slabs = [s0]
+    for _ in range(n - 1):
+        parent = slabs[draw(st.integers(0, len(slabs) - 1))]
+        slabs.append(draw(_related_slab(parent)))
+    has_island = draw(st.booleans()) if island is None else island
+    island_idx = None
+    if has_island:
+        xmax = max(s[2] for s in slabs)
+        ix0 = xmax + draw(st.integers(10, 20))
+        iy0 = draw(st.integers(-10, 10))
+        slabs.append((ix0, iy0, ix0 + draw(st.integers(1, 12)), iy0 + draw(st.integers(1, 12)),
+                      draw(st.integers(0, 10))))
+        island_idx = len(slabs) - 1
+
+    mb = _MeshBuilder()
+    for s in slabs:
+        _emit_slab(mb, draw, s)
+    wall_bases = []
+    if walls:
+        for s in slabs:
+            for side, base in sorted(_side_edges(s).items()):
+                if draw(st.booleans()):
+                    _emit_wall(mb, draw, base, draw(st.integers(4, 16)))
+                    wall_bases.append(base)
+    x0, y0, x1, y1, z = s0
+    safe = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, z + 0.25)
+    return SyntheticWorld(ter=mb.ter, safe_point=safe, slabs=slabs,
+                          wall_bases=wall_bases, island=island_idx)
+
+
+@st.composite
+def stacked_worlds(draw, levels=st.one_of(st.integers(1, 3), st.integers(4, 7))):
+    """``levels`` (an int or an int strategy) XY-overlapping flat slabs, each
+    13-60 u above the last, all inside one column and all covering a common
+    core; optionally a ramp strip joining two adjacent level heights and up to
+    3 flat slabs at arbitrary heights, both placed clear of the column so they
+    overlap nothing. The safe point is on the ``main_level`` slab (slab 0)."""
+    n = levels if isinstance(levels, int) else draw(levels)
+    cw = draw(st.integers(8, 24))
+    ch = draw(st.integers(8, 24))
+    heights = [draw(st.integers(0, 20))]
+    for _ in range(n - 1):
+        heights.append(heights[-1] + draw(st.integers(13, 60)))
+    rects = []
+    for h in heights:
+        rects.append((-draw(st.integers(0, 6)), -draw(st.integers(0, 6)),
+                      cw + draw(st.integers(0, 6)), ch + draw(st.integers(0, 6)), h))
+    main = draw(st.integers(0, n - 1))
+    order = [main] + [i for i in range(n) if i != main]
+    slabs = [rects[i] for i in order]
+    level_slabs = [order.index(i) for i in range(n)]
+
+    mb = _MeshBuilder()
+    for s in slabs:
+        _emit_slab(mb, draw, s)
+    others = []
+    if n >= 2 and draw(st.booleans()):
+        i = draw(st.integers(0, n - 2))
+        lo, hi = heights[i], heights[i + 1]
+        run = _math.ceil((hi - lo) / 0.7)              # slope under 40 deg
+        y0 = ch + 12
+        y1 = y0 + draw(st.integers(2, 6))
+        corners = [(0, y0, lo), (run, y0, hi), (run, y1, hi), (0, y1, lo)]
+        mb.quad(corners, weld=False, diag=draw(st.integers(0, 1)), rot=draw(st.integers(0, 2)))
+        others.append((float(lo), float(hi)))
+    x = 0
+    for _ in range(draw(st.integers(0, 3))):
+        w = draw(st.integers(2, 10))
+        z = draw(st.integers(0, heights[-1] + 20))
+        s = (x, ch + 30, x + w, ch + 30 + draw(st.integers(2, 10)), z)
+        _emit_slab(mb, draw, s)
+        slabs.append(s)
+        others.append((float(z), float(z)))
+        x += w + 10
+    s0 = slabs[0]
+    safe = ((s0[0] + s0[2]) / 2.0, (s0[1] + s0[3]) / 2.0, s0[4] + 0.25)
+    return SyntheticWorld(ter=mb.ter, safe_point=safe, slabs=slabs,
+                          levels=[float(h) for h in heights], level_slabs=level_slabs,
+                          main_level=main, others=others,
+                          column=(-6, -6, cw + 6, ch + 6))

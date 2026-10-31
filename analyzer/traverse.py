@@ -848,6 +848,12 @@ def _nearest_standable_face(surf: WalkSurface, point: np.ndarray,
     return int(cand[int(np.argmin(dz))])
 
 
+def seed_face_for(surf: WalkSurface, safe_point) -> Optional[int]:
+    """The standable face the walk starts from at ``safe_point`` — the
+    validator's own choice (``validate`` uses the same 400 u radius)."""
+    return _nearest_standable_face(surf, np.asarray(safe_point, dtype=np.float64), 400.0)
+
+
 def flood_reachable(surf: WalkSurface, seed_face: int) -> set:
     """BFS across the walkable adjacency graph from the seed face."""
     reached: set = set()

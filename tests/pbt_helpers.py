@@ -683,3 +683,140 @@ def snapshot_install(root: Path):
             rel = str(p.relative_to(root)).replace("\\", "/")
             snap[rel] = (len(data), _hashlib.sha256(data).hexdigest())
     return snap
+
+
+# ---------------------------------------------------------------------------
+# M2 outline oracles (definitional Floor_Boundary, reference depth bands)
+# ---------------------------------------------------------------------------
+#
+# Independent of ``generators/mapgeom.py``: these test the Floor_Boundary by
+# its definition (a Floor_Region edge point whose 0.05 u outward probe lies in
+# no Floor_Region face within the 3 u step-up), sample by sample, against every
+# region triangle. Design: ``.kiro/specs/zone-generator-m2-true-layout-artifacts/
+# design.md``, Testing Strategy "Helpers".
+
+ORACLE_PROBE = 0.05
+ORACLE_STEP_UP = 3.0
+
+
+def _region_tris(ter, region) -> np.ndarray:
+    t = _ter(ter)
+    V = np.array([[v.x, v.y, v.z] for v in t.vertices], dtype=float).reshape(-1, 3)
+    F = np.array([[p.v1, p.v2, p.v3] for p in t.polygons], dtype=np.int64).reshape(-1, 3)
+    return V[F[np.asarray(region, bool)]]
+
+
+def _region_edges(tris: np.ndarray):
+    """Every region face edge as (A, B, outward unit XY normal)."""
+    A = tris[:, [0, 1, 2]].reshape(-1, 3)
+    B = tris[:, [1, 2, 0]].reshape(-1, 3)
+    C = tris[:, [2, 0, 1]].reshape(-1, 3)
+    d = B[:, :2] - A[:, :2]
+    out = np.stack([d[:, 1], -d[:, 0]], axis=1)
+    ln = np.linalg.norm(out, axis=1)
+    ok = ln > 1e-12
+    A, B, C, out = A[ok], B[ok], C[ok], out[ok] / ln[ok, None]
+    flip = np.einsum("ij,ij->i", C[:, :2] - A[:, :2], out) > 0
+    out[flip] *= -1.0
+    return A, B, out
+
+
+def _probe_uncovered(tris: np.ndarray, pts: np.ndarray, outs: np.ndarray) -> np.ndarray:
+    """For each edge point, is its outward probe covered by no region face
+    whose plane there is within the step-up of the point?"""
+    if len(pts) == 0:
+        return np.zeros(0, bool)
+    probe = pts[:, :2] + ORACLE_PROBE * outs
+    a, b, c = tris[:, 0], tris[:, 1], tris[:, 2]
+    det = (b[:, 1] - c[:, 1]) * (a[:, 0] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (a[:, 1] - c[:, 1])
+    good = np.abs(det) > 1e-12
+    a, b, c, det = a[good], b[good], c[good], det[good]
+    res = np.ones(len(pts), bool)
+    for s in range(0, len(pts), 512):
+        p = probe[s:s + 512, None, :]
+        l1 = ((b[:, 1] - c[:, 1]) * (p[..., 0] - c[:, 0])
+              + (c[:, 0] - b[:, 0]) * (p[..., 1] - c[:, 1])) / det
+        l2 = ((c[:, 1] - a[:, 1]) * (p[..., 0] - c[:, 0])
+              + (a[:, 0] - c[:, 0]) * (p[..., 1] - c[:, 1])) / det
+        l3 = 1.0 - l1 - l2
+        inside = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+        z = l1 * a[:, 2] + l2 * b[:, 2] + l3 * c[:, 2]
+        near = np.abs(z - pts[s:s + 512, None, 2]) <= ORACLE_STEP_UP + 1e-6
+        res[s:s + 512] = ~(inside & near).any(axis=1)
+    return res
+
+
+def floor_boundary_samples(ter, region, step: float = 0.5):
+    """Sample every Floor_Region edge at the midpoints of ``step``-long pieces.
+
+    Returns ``(points, weights, boundary)``: the (N, 3) sample points, the edge
+    length each stands for, and whether it is on the Floor_Boundary by the
+    definition. The oracle shared by the fidelity, completeness and
+    reachable-only properties.
+    """
+    tris = _region_tris(ter, region)
+    A, B, out = _region_edges(tris)
+    L = np.linalg.norm(B - A, axis=1)
+    n = np.maximum(1, np.ceil(L / step)).astype(np.int64)
+    e = np.repeat(np.arange(len(A)), n)
+    k = np.arange(n.sum()) - np.repeat(np.cumsum(n) - n, n)
+    t = (k + 0.5) / n[e]
+    pts = A[e] + t[:, None] * (B[e] - A[e])
+    w = L[e] / n[e]
+    return pts, w, _probe_uncovered(tris, pts, out[e])
+
+
+def on_floor_boundary(ter, region, points, tol: float = 0.05) -> np.ndarray:
+    """Is each point within ``tol`` of the Floor_Boundary? Searches the region
+    edge points inside the ``tol`` ball (nearest point plus offsets along the
+    edge) for one whose outward probe is uncovered."""
+    tris = _region_tris(ter, region)
+    A, B, out = _region_edges(tris)
+    AB = B - A
+    L2 = np.einsum("ij,ij->i", AB, AB)
+    res = np.zeros(len(points), bool)
+    offs = np.linspace(-1.0, 1.0, 9)
+    for i, q in enumerate(np.asarray(points, float)):
+        t = np.clip(np.einsum("ij,ij->i", q - A, AB) / L2, 0.0, 1.0)
+        d = np.linalg.norm(A + t[:, None] * AB - q, axis=1)
+        idx = np.nonzero(d <= tol)[0]
+        if not len(idx):
+            continue
+        smax = np.sqrt(np.maximum(tol * tol - d[idx] ** 2, 0.0)) / np.sqrt(L2[idx])
+        tt = np.clip(t[idx, None] + offs[None, :] * smax[:, None], 0.0, 1.0)
+        ee = np.repeat(idx, len(offs))
+        cand = A[ee] + tt.reshape(-1)[:, None] * AB[ee]
+        ok = np.linalg.norm(cand - q, axis=1) <= tol + 1e-9
+        res[i] = bool(_probe_uncovered(tris, cand[ok], out[ee][ok]).any())
+    return res
+
+
+def reference_bands(levels, others=(), max_bands: int = 4):
+    """The Property 7 model of depth bands for a stacked world.
+
+    ``levels`` are the heights of flat, mutually XY-overlapping slabs (every
+    pair more than 12 u apart counts as stacked); ``others`` are the
+    ``(zmin, zmax)`` height ranges of floor that overlaps nothing. Cuts sit
+    halfway between consecutive levels more than 12 u apart; while there are
+    more than ``max_bands`` bands, the adjacent pair with the smallest gap
+    (lowest floor of the upper band minus highest floor of the lower, from
+    every height range clipped into the band) merges, ties to the lower pair.
+    Returns the level indices per band, bottom to top.
+    """
+    h = sorted(levels)
+    cuts = [(a + b) / 2.0 for a, b in zip(h, h[1:]) if b - a > 12.0]
+    bounds = [-math.inf] + cuts + [math.inf]
+    slabs = list(zip(bounds[:-1], bounds[1:]))
+    ranges = [(z, z) for z in h] + [tuple(r) for r in others]
+
+    def extent(lo, hi):
+        inside = [(max(a, lo), min(b, hi)) for a, b in ranges if a < hi and b >= lo]
+        return (min(a for a, _ in inside), max(b for _, b in inside))
+
+    ext = [extent(lo, hi) for lo, hi in slabs]
+    while len(slabs) > max_bands:
+        gaps = [ext[i + 1][0] - ext[i][1] for i in range(len(slabs) - 1)]
+        i = gaps.index(min(gaps))
+        slabs[i:i + 2] = [(slabs[i][0], slabs[i + 1][1])]
+        ext[i:i + 2] = [(min(ext[i][0], ext[i + 1][0]), max(ext[i][1], ext[i + 1][1]))]
+    return [[k for k, z in enumerate(levels) if lo <= z < hi] for lo, hi in slabs]
