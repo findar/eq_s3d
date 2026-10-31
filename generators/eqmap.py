@@ -9,7 +9,8 @@ The map convention is **negate + swap**: map ``(mx, my, mz) = (-y, -x, z)``,
 measured against the stock maps of the Reference_Zones (design research
 finding 2). It is its own inverse, so ``map_to_world`` is the same formula.
 
-``build_map_file`` (outline -> layers) is added on top of this by task 6.
+``build_map_file`` turns an outline into one layer per depth band, with the
+``Entrance`` / ``Boss`` labels in the band that holds their room's floor.
 
 The grammar (stock files, design research finding 1)::
 
@@ -27,13 +28,17 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
 from core.paths import OutputRoot
 from core.pfs import PfsArchive
 from core.ter import TerFile
+
+if TYPE_CHECKING:
+    from generators.mapgeom import OutlineSet
+    from generators.zone_spec import ZoneSpec
 
 # ---------------------------------------------------------------------------
 # Convention
@@ -216,6 +221,57 @@ def format_map_layer(layer: MapLayer) -> str:
             f"{p.r}, {p.g}, {p.b}, {p.size}, {p.text.replace(' ', '_')}"
         )
     return "".join(s + "\r\n" for s in out)
+
+
+# ---------------------------------------------------------------------------
+# Build
+# ---------------------------------------------------------------------------
+
+# Line colour by band offset from the Main_Band (DepthBand.offset), walls and
+# ledges alike (Decision 6): black for the Main_Band, stock-map shades above
+# and below.
+BAND_COLOURS: dict[int, tuple[int, int, int]] = {
+    0: (0, 0, 0),
+    +1: (150, 100, 0), +2: (127, 64, 0), +3: (100, 50, 0),
+    -1: (0, 0, 240), -2: (0, 0, 127), -3: (0, 127, 0),
+}
+ENTRANCE_COLOUR = (0, 160, 0)
+BOSS_COLOUR = (200, 0, 0)
+LABEL_SIZE = 2
+LABEL_LIFT = 2.0              # labels sit this far above the room's floor
+
+
+def _map_point(x: float, y: float, z: float) -> tuple[float, float, float]:
+    # ``+ 0.0`` turns -0.0 into 0.0 so equal inputs give equal records.
+    return tuple(v + 0.0 for v in world_to_map(x, y, z))
+
+
+def build_map_file(outline: "OutlineSet", spec: "ZoneSpec", name: str) -> MapFile:
+    """The EQ map of ``outline``: layer ``band.index`` per depth band (0 =
+    Main_Band), one ``L`` per consecutive polyline point pair in the band's
+    colour, plus an ``Entrance`` label for the entrance room and a ``Boss``
+    label per climax room, each in the band holding its room's floor."""
+    bands = sorted(outline.bands, key=lambda b: b.index)
+    layers = {b.index: MapLayer(b.index) for b in bands}
+    colour = {b.index: BAND_COLOURS[b.offset] for b in bands}
+    for pl in outline.polylines:
+        layer = layers[pl.band]
+        r, g, b = colour[pl.band]
+        for p, q in zip(pl.points, pl.points[1:]):
+            layer.lines.append(MapLine(*_map_point(*p), *_map_point(*q), r, g, b))
+
+    for room in spec.rooms:
+        if room.role == "entrance":
+            text, rgb = "Entrance", ENTRANCE_COLOUR
+        elif room.role == "climax":
+            text, rgb = "Boss", BOSS_COLOUR
+        else:
+            continue
+        z = room.floor_z
+        band = next((b.index for b in bands if b.contains(z)), 0)
+        x, y, mz = _map_point(room.center_x, room.center_y, z + LABEL_LIFT)
+        layers[band].labels.append(MapLabel(x, y, mz, *rgb, LABEL_SIZE, text))
+    return MapFile(name, [layers[b.index] for b in bands])
 
 
 # ---------------------------------------------------------------------------

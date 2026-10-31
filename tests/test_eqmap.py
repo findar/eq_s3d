@@ -4,32 +4,42 @@ tests/test_eqmap.py
 EQ map core (M2 task 1): the pinned map convention (Property 8), the
 Grounding_Check on synthetic meshes (Property 9) and on stock RoF2 zones, the
 format round-trip (Property 10), parser tolerance (Property 11) and the stock
-``maps/*.txt`` parse.
+``maps/*.txt`` parse. Map layers from the outline (M2 task 6): the files
+mirror the outline (Property 12) and lie on the walkable floor (Property 13).
 
 The stock-zone tests read the install named by ``EQ_PATH``
 (``core.env.env_value``) and skip when it is unset or the zone's files are
-missing. This task's strategies live here, not in ``tests/strategies.py``.
+missing. This module's strategies live here, not in ``tests/strategies.py``.
 """
 
 from __future__ import annotations
 
+import math
 import os
+import tempfile
 from pathlib import Path
 
+import numpy as np
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import HealthCheck, given, settings, strategies as st
 
+from analyzer.traverse import AgentModel, build_walk_surface, flood_reachable, seed_face_for
 from core.env import env_value
 from core.paths import OutputRoot
 from core.ter import Polygon, TerFile, Vertex
 from generators.eqmap import (
+    BAND_COLOURS,
+    BOSS_COLOUR,
     CANDIDATES,
+    ENTRANCE_COLOUR,
+    LABEL_SIZE,
     MAP_CONVENTION,
     REFERENCE_ZONES,
     MapFile,
     MapLabel,
     MapLayer,
     MapLine,
+    build_map_file,
     candidate_to_map,
     candidate_to_world,
     format_map_layer,
@@ -40,7 +50,11 @@ from generators.eqmap import (
     world_to_map,
     write_map_files,
 )
-from tests.pbt_helpers import scaled
+from generators.mapgeom import DepthBand, OutlineSet, Polyline, extract_outline, floor_faces
+from generators.zone_spec import RoomSpec, ZoneSpec
+from tests.pbt_helpers import build_settings, scaled
+from tests.strategies import box_zone_types, room_counts_wide, seeds, verticality_all
+from tests.test_properties_mapgeom import BoxBuild
 
 TOL = 0.00005 + 1e-9          # 4 dp rounding plus float re-read
 
@@ -404,3 +418,204 @@ def test_write_map_files(tmp_path):
     assert paths[1].read_bytes() == format_map_layer(l2).encode("ascii")
     assert sorted(p.name for p in (tmp_path / "v1" / "maps").iterdir()) == \
         ["gen_1_abc.txt", "gen_1_abc_2.txt"]
+
+
+# ---------------------------------------------------------------------------
+# Build (Properties 12, 13)
+# ---------------------------------------------------------------------------
+
+BAND_STEP = 100.0             # synthetic band height
+
+
+@st.composite
+def synthetic_outlines(draw):
+    """``(outline, spec)``: 1-4 depth bands stacked BAND_STEP apart with the
+    Main_Band anywhere among them, 0-6 polylines per band on a 0.5 u grid
+    inside the band's height range, and rooms (one entrance, 0-3 climax, some
+    standard) with floors anywhere in the bands' range."""
+    k = draw(st.integers(1, 4))
+    main = draw(st.integers(0, k - 1))
+    order = [main] + [i for i in range(k) if i != main]    # band index -> slab
+    index = {slab: order.index(slab) for slab in range(k)}
+    bands = []
+    for slab in range(k):
+        lo = -math.inf if slab == 0 else slab * BAND_STEP
+        hi = math.inf if slab == k - 1 else (slab + 1) * BAND_STEP
+        role = "main" if slab == main else ("above" if slab > main else "below")
+        bands.append(DepthBand(index[slab], lo, hi, slab * BAND_STEP + 50.0, role, slab - main))
+    grid = st.integers(-2000, 2000).map(lambda v: v / 2)
+    polylines = []
+    for slab in range(k):
+        zs = st.integers(int(slab * BAND_STEP) * 2 + 1,
+                         int((slab + 1) * BAND_STEP) * 2 - 1).map(lambda v: v / 2)
+        for _ in range(draw(st.integers(0, 6))):
+            pts = [(draw(grid), draw(grid), draw(zs))]
+            for _ in range(draw(st.integers(1, 6))):
+                q = (draw(grid), draw(grid), draw(zs))
+                if q != pts[-1]:
+                    pts.append(q)
+            if len(pts) >= 2:
+                polylines.append(Polyline(tuple(pts), draw(st.sampled_from(["wall", "ledge"])),
+                                          index[slab]))
+    roles = ["entrance"] + ["climax"] * draw(st.integers(0, 3)) + \
+        ["standard"] * draw(st.integers(0, 3))
+    rooms = [RoomSpec(f"room_{i}", draw(grid), draw(grid),
+                      floor_z=float(draw(st.integers(0, int(k * BAND_STEP) - 1))), role=r)
+             for i, r in enumerate(draw(st.permutations(roles)))]
+    outline = OutlineSet(tuple(polylines), tuple(sorted(bands, key=lambda b: b.index)),
+                         (0, 0, 0, 0, 0, 0), 0, True)
+    return outline, ZoneSpec(name="synthetic", rooms=rooms)
+
+
+@st.composite
+def box_builds(draw) -> BoxBuild:
+    return BoxBuild(draw(box_zone_types), draw(room_counts_wide), draw(seeds),
+                    draw(verticality_all))
+
+
+def _close(a, b) -> bool:
+    return all(abs(u - v) <= TOL for u, v in zip(a, b))
+
+
+def _check_mirror(outline: OutlineSet, spec, name: str, tmp: Path) -> None:
+    mf = build_map_file(outline, spec, name)
+    assert mf == build_map_file(outline, spec, name)
+    paths = write_map_files(mf, tmp / "maps", OutputRoot(tmp))
+    by_band = sorted(outline.bands, key=lambda b: b.index)
+    want = [f"{name}.txt"] + [f"{name}_{b.index}.txt" for b in by_band[1:]]
+    assert [p.name for p in paths] == want
+    assert sorted(p.name for p in (tmp / "maps").iterdir()) == sorted(want)
+    # Layer order: the other bands by ascending median floor Z.
+    assert [b.median_z for b in by_band[1:]] == sorted(b.median_z for b in by_band[1:])
+
+    colours = {}
+    labels = []
+    for band, path in zip(by_band, paths):
+        res = parse_map_layer(path.read_bytes().decode("ascii"), band.index)
+        assert res.skipped == [] and res.empty_labels == []
+        segs = [(p, q) for pl in outline.polylines if pl.band == band.index
+                for p, q in zip(pl.points, pl.points[1:])]
+        assert len(res.layer.lines) == len(segs)
+        for l, (p, q) in zip(res.layer.lines, segs):
+            a, b = (l.x1, l.y1, l.z1), (l.x2, l.y2, l.z2)
+            assert a != b, "degenerate L record"
+            assert _close(map_to_world(*a), p) and _close(map_to_world(*b), q)
+            assert (l.r, l.g, l.b) == BAND_COLOURS[band.offset]
+        colours[band.index] = BAND_COLOURS[band.offset]
+        labels += [(band, p) for p in res.layer.labels]
+    assert colours[0] == (0, 0, 0)
+    others = [c for i, c in colours.items() if i != 0]
+    assert (0, 0, 0) not in others and len(set(others)) == len(others)
+
+    entrance = [r for r in spec.rooms if r.role == "entrance"]
+    climax = [r for r in spec.rooms if r.role == "climax"]
+    assert len(entrance) == 1
+    assert sorted(p.text for _, p in labels) == sorted(["Entrance"] + ["Boss"] * len(climax))
+    for band, p in labels:
+        assert p.size == LABEL_SIZE == 2
+        assert (p.r, p.g, p.b) == (ENTRANCE_COLOUR if p.text == "Entrance" else BOSS_COLOUR)
+        world = map_to_world(p.x, p.y, p.z)
+        rooms = entrance if p.text == "Entrance" else climax
+        room = next(r for r in rooms
+                    if _close(world, (r.center_x, r.center_y, r.floor_z + 2)))
+        holder = next((b for b in by_band if b.contains(room.floor_z)), by_band[0])
+        assert band.index == holder.index
+
+
+@settings(max_examples=scaled(100), deadline=None,
+          suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large])
+@given(synthetic_outlines())
+def test_map_files_mirror_outline(case):
+    """Feature: zone-generator-m2-true-layout-artifacts, Property 12: The map
+    files mirror the outline (M2-P8).
+
+    For synthetic outlines with 1-4 bands: the written files are
+    ``<name>.txt`` for the Main_Band and ``<name>_1.txt`` .. ``_k.txt`` for the
+    other bands in ascending median floor Z, and no others; each file holds one
+    ``L`` per consecutive polyline point pair, none degenerate, mapping back to
+    the segment within 0.00005, in the band's colour (black for the Main_Band,
+    the others distinct and non-black); one ``Entrance`` label and one ``Boss``
+    per climax room, size 2, in the file of the band holding the room's floor.
+    The box-build half is ``test_map_files_mirror_outline_builds``.
+
+    Validates: Requirements 5.1, 5.3, 5.5, 5.7
+    """
+    outline, spec = case
+    with tempfile.TemporaryDirectory() as d:
+        _check_mirror(outline, spec, "gen_1_abc", Path(d))
+
+
+@pytest.mark.slow
+@build_settings(10)
+@given(world=box_builds())
+def test_map_files_mirror_outline_builds(world):
+    """Feature: zone-generator-m2-true-layout-artifacts, Property 12: The map
+    files mirror the outline (M2-P8), on 10 box builds.
+
+    Validates: Requirements 5.1, 5.3, 5.5, 5.7
+    """
+    outline = extract_outline(world.ter, world.safe_point)
+    with tempfile.TemporaryDirectory() as d:
+        _check_mirror(outline, world.spec, "gen_1_abc", Path(d))
+
+
+@pytest.mark.slow
+@build_settings(15)
+@given(world=box_builds())
+def test_map_records_on_floor(world):
+    """Feature: zone-generator-m2-true-layout-artifacts, Property 13: Map
+    records lie on the walkable floor (umbrella P25).
+
+    For box builds: every ``L`` endpoint mapped back to world lies inside the
+    Floor_Region's XY bounding box plus 0.5 u with Z in
+    ``[min floor Z, max floor Z + 6]``; every ``P`` label lies inside its
+    room's footprint with Z in ``[floor_z, floor_z + 6]``.
+
+    Validates: Requirements 5.4, 5.6
+    """
+    ter, spec = world.ter, world.spec
+    mf = build_map_file(extract_outline(ter, world.safe_point), spec, "gen_1_abc")
+    # The Floor_Region, independently of mapgeom: reachable Floor_Faces.
+    surf = build_walk_surface(ter, AgentModel())
+    reach = np.zeros(len(ter.polygons), bool)
+    reach[list(flood_reachable(surf, seed_face_for(surf, world.safe_point)))] = True
+    region = floor_faces(ter) & reach
+    V = np.array([(v.x, v.y, v.z) for v in ter.vertices])
+    F = np.array([(p.v1, p.v2, p.v3) for p in ter.polygons])
+    pts = V[F[region]].reshape(-1, 3)
+    lo, hi = pts.min(axis=0), pts.max(axis=0)
+    for layer in mf.layers:
+        for l in layer.lines:
+            for end in ((l.x1, l.y1, l.z1), (l.x2, l.y2, l.z2)):
+                x, y, z = map_to_world(*end)
+                assert lo[0] - 0.5 <= x <= hi[0] + 0.5 and lo[1] - 0.5 <= y <= hi[1] + 0.5, end
+                assert lo[2] - 1e-6 <= z <= hi[2] + 6, end
+        for p in layer.labels:
+            x, y, z = map_to_world(p.x, p.y, p.z)
+            role = "entrance" if p.text == "Entrance" else "climax"
+            assert any(r.role == role
+                       and abs(x - r.center_x) <= r.width / 2
+                       and abs(y - r.center_y) <= r.depth / 2
+                       and r.floor_z <= z <= r.floor_z + 6 for r in spec.rooms), p
+
+
+def test_build_labels_and_bytes():
+    """One ``Entrance`` and one ``Boss`` per climax room, all size 2, and no
+    other label; equal input gives equal bytes with no ``-0`` in them."""
+    rooms = [RoomSpec("a", 0.0, -0.0, floor_z=-0.0, role="entrance"),
+             RoomSpec("b", 300.0, 0.0, role="climax"),
+             RoomSpec("c", 600.0, 0.0, role="climax"),
+             RoomSpec("d", 900.0, 0.0, role="hub"),
+             RoomSpec("e", 1200.0, 0.0, role="deadend")]
+    spec = ZoneSpec(name="labels", rooms=rooms)
+    band = DepthBand(0, -math.inf, math.inf, 0.0, "main", 0)
+    outline = OutlineSet((Polyline(((0.0, 0.0, 0.0), (0.0, 10.0, -0.0)), "wall", 0),),
+                         (band,), (0, 0, 0, 0, 0, 0), 0, True)
+    mf = build_map_file(outline, spec, "labels")
+    (layer,) = mf.layers
+    assert sorted(p.text for p in layer.labels) == ["Boss", "Boss", "Entrance"]
+    assert {p.size for p in layer.labels} == {LABEL_SIZE}
+    text = format_map_layer(layer)
+    assert text == format_map_layer(build_map_file(outline, spec, "labels").layers[0])
+    assert "-0.0000" not in text
+    assert text.splitlines()[0] == "L 0.0000, 0.0000, 0.0000, -10.0000, 0.0000, 0.0000, 0, 0, 0"
