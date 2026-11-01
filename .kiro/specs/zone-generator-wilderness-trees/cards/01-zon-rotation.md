@@ -9,17 +9,17 @@ stock zones use for yaw is the one named `yaw`. Today it treats them as heading
 units (0–512) and `place(rz=…)` writes yaw into a tilt field.
 
 ## Done when
-- [ ] `ZonObject` has `yaw`, `pitch` and `roll` in radians, with `yaw` stored in
+- [x] `ZonObject` has `yaw`, `pitch` and `roll` in radians, with `yaw` stored in
       the first rotation field. `place()` takes `yaw`. Nothing else in the repo
       calls the old names (check with a search).
-- [ ] A test reads stock broodlands and asserts the yaw of its tree objects
+- [x] A test reads stock broodlands and asserts the yaw of its tree objects
       spans more than ±3 rad while the other two stay within ±0.3 (skipped
       without `EQ_PATH`).
       → verify: `$env:EQ_PATH='F:\everquest_rof2'; python -m pytest tests/test_zon.py -q`.
-- [ ] Region `rotation` is checked against stock regions the same way, and
+- [x] Region `rotation` is checked against stock regions the same way, and
       changed only if it's wrong too (say which in the commit body).
-- [ ] Write → read round-trips every field exactly.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] Write → read round-trips every field exactly.
+- [x] `python -m pytest tests/ -q` is green.
       → verify: `python -m pytest tests/ -q`.
 
 ## Pitfalls
@@ -29,3 +29,4 @@ units (0–512) and `place(rz=…)` writes yaw into a tilt field.
   note (the rotation-unit trap); don't edit steering yourself.
 
 ## Result
+✔ 45f871e · 584 passed · region rotation was wrong too (float radians, fixed); stock tilts reach 0.46 rad, not ±0.2
