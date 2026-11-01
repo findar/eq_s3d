@@ -88,7 +88,7 @@ The design's four open questions were answered on 2026-10-31
   - Type: agent · Size: S · Depends: 10
   - Owns: styles/vegetation.json, generators/vegetation/
 
-- [ ] 12. Acceptance section, thorough run, timing
+- [x] 12. Acceptance section, thorough run, timing
   - Card: [cards/12-release-prep.md](cards/12-release-prep.md)
   - Type: agent · Size: S · Depends: 7, 8, 9, 11
   - Owns: docs/ACCEPTANCE.md, tests/test_wilderness_trees.py

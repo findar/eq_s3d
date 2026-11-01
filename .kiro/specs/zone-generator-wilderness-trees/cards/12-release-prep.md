@@ -7,12 +7,12 @@ Index entry: `tasks.md` task 12. Requirement 11.2, exit criteria 1–2.
 and the thorough profile is green.
 
 ## Done when
-- [ ] The acceptance section covers every person-judged item: groves, grounding,
+- [x] The acceptance section covers every person-judged item: groves, grounding,
       exclusions, trunk solid / canopy walk-through (noting the in-client check
       is M6 and the preview shows card canopies in base colour), the selector
       and the toggle.
-- [ ] A `slow` timing test: a `dense` build adds at most 3 s over `none`.
-- [ ] The fast and thorough suites pass.
+- [x] A `slow` timing test: a `dense` build adds at most 3 s over `none`.
+- [x] The fast and thorough suites pass.
       → verify: `python -m pytest tests/ -q` and
         `python -m pytest tests/ -q --hypothesis-profile=thorough`.
 
@@ -22,3 +22,4 @@ and the thorough profile is green.
   task 15 did.
 
 ## Result
+✔ 152b48f · 655 passed (fast and thorough)
