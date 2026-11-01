@@ -55,14 +55,14 @@ The design's four open questions were answered on 2026-11-01
   - Owns: web/src/scene.ts, web/src/main.ts
   - Reqs: 6.4–6.6
 
-- [ ] 6. HUMAN: first look at placeholders in 3D
+- [x] 6. HUMAN: first look at placeholders in 3D
   - Card: [cards/06-human-first-look.md](cards/06-human-first-look.md)
   - Type: human · Depends: 5, 11
 
 - [ ] 7. Tune from the first look
   - Card: [cards/07-tuning.md](cards/07-tuning.md)
   - Type: agent · Size: S · Depends: 6
-  - Owns: generators/textures/placeholder.py, generators/textures/font.py, tests/test_placeholder_textures.py
+  - Owns: generators/textures/placeholder.py, generators/textures/font.py, tests/test_placeholder_textures.py, generators/geometry.py, tests/test_wall_uvs.py
 
 - [ ] 8. Acceptance section, thorough run, timing
   - Card: [cards/08-release-prep.md](cards/08-release-prep.md)
