@@ -9,12 +9,12 @@ TER quads, clustered into groves, with every trunk clear of other trunks and of
 ineligible ground by Tree_Clearance.
 
 ## Done when
-- [ ] Properties T2, T3 and T4 hold over seeds × Rim declarations × levels on
+- [x] Properties T2, T3 and T4 hold over seeds × Rim declarations × levels on
       synthesized landscapes (`synthesize_landscape` + `build_wilderness_ter`).
-- [ ] `none` returns no instances (Req 4.4).
-- [ ] The same inputs give the same instances; a different level never changes
+- [x] `none` returns no instances (Req 4.4).
+- [x] The same inputs give the same instances; a different level never changes
       the TER (placement uses its own salted stream).
-- [ ] The Karana measurement scripts' method is recorded in the commit body (how
+- [x] The Karana measurement scripts' method is recorded in the commit body (how
       0x15 placements and 0x36 object meshes were read), so the design's
       research numbers can be re-derived.
       → verify: `python -m pytest tests/test_vegetation_placement.py -q`.
@@ -28,3 +28,4 @@ ineligible ground by Tree_Clearance.
   numbers; don't widen the band silently.
 
 ## Result
+✔ f174dfa · 603 passed · Grove_Ratio 0.50-0.80 on 540 zones (density-scaled spread + ratio feedback) · not checked in 3D
