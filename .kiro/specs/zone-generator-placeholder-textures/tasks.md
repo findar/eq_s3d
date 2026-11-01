@@ -31,7 +31,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: generators/layout.py, generators/semantics.py, analyzer/rof2check.py, tests/test_material_names.py, tests/test_rof2check.py
   - Reqs: 1, 2, 7.1
 
-- [ ] 2. Bitmap font and placeholder painter
+- [x] 2. Bitmap font and placeholder painter
   - Card: [cards/02-placeholder-painter.md](cards/02-placeholder-painter.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/textures/font.py, generators/textures/placeholder.py, tests/test_placeholder_textures.py
