@@ -90,8 +90,13 @@ class MeshBuilder:
         corners = [p0, p1, p2, p3]
 
         nx, ny, nz = (abs(normal[0]), abs(normal[1]), abs(normal[2]))
-        if nz >= nx and nz >= ny:
-            # Floor/ceiling: planar XY.
+        if nz >= nx and nz >= ny and normal[2] > 0:
+            # Floor, seen from above: u along +X, v down the screen (-Y), so
+            # a texture reads unmirrored with +Y ahead.
+            def uv(cx, cy, cz):
+                return cx * uv_scale, -cy * uv_scale
+        elif nz >= nx and nz >= ny:
+            # Ceiling, seen from below: planar XY already reads unmirrored.
             def uv(cx, cy, cz):
                 return cx * uv_scale, cy * uv_scale
         else:

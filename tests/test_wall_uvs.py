@@ -97,10 +97,14 @@ def test_room_walls_face_into_their_room(built):
     assert checked > 0
 
 
-def test_floor_and_ceiling_uvs_are_unchanged(built):
+def test_floor_and_ceiling_uvs_read_unmirrored(built):
+    """Floors (seen from above) map v to -Y and ceilings (seen from below) to
+    +Y, so a label reads unmirrored on both (task 6's finding, fixed in 7)."""
     _, ter = built
     for p in ter.polygons:
         for i in (p.v1, p.v2, p.v3):
             v = ter.vertices[i]
-            if abs(v.nz) > 0.5:
+            if v.nz > 0.5:
+                assert (v.u, v.v) == pytest.approx((v.x * UV_SCALE, -v.y * UV_SCALE), abs=1e-4)
+            elif v.nz < -0.5:
                 assert (v.u, v.v) == pytest.approx((v.x * UV_SCALE, v.y * UV_SCALE), abs=1e-4)
