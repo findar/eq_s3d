@@ -467,6 +467,20 @@ def _playable_reachable_from_spawn(cells: Any, nx: int, ny: int, spawn: Tuple[in
     return seen
 
 
+def _stranded_playable(
+    cells: Any, nx: int, ny: int, spawn: Tuple[int, int]
+) -> List[Tuple[int, int]]:
+    """Playable cells NOT reachable from Spawn (Property 5); empty when the
+    whole playable area is one region with Spawn."""
+    reach = _playable_reachable_from_spawn(cells, nx, ny, spawn)
+    return [
+        (i, j)
+        for i in range(nx)
+        for j in range(ny)
+        if cells[i, j].intent == "playable" and (i, j) not in reach
+    ]
+
+
 def _ring1_cycle(nx: int, ny: int) -> List[Tuple[int, int]]:
     """The ring of cells one step inside the perimeter (index 1 .. n-2 on each
     side), as a cyclic clockwise walk. This is the corridor water channels hug
@@ -795,9 +809,20 @@ def build_matrix(
             and cells[i, j].node_type == "plains"
         ]
         if candidates:
-            li, lj = candidates[int(rng.integers(0, len(candidates)))]
-            cells[li, lj].node_type = "lava"
-            cells[li, lj].intent = "scenic"
+            # The drawn cell can close off a pocket: a lava cell beside the
+            # cliff band's end, next to a ring corner, seals that corner cell
+            # in against the Rim (Property 5). Walk on from the drawn index to
+            # the first candidate that strands nothing, so unaffected seeds
+            # keep the exact cell they always drew.
+            k0 = int(rng.integers(0, len(candidates)))
+            for step in range(len(candidates)):
+                li, lj = candidates[(k0 + step) % len(candidates)]
+                cells[li, lj].node_type = "lava"
+                cells[li, lj].intent = "scenic"
+                if not _stranded_playable(cells, nx, ny, spawn):
+                    break
+                cells[li, lj].node_type = "plains"
+                cells[li, lj].intent = "playable"
 
     # --- step 5: single-connected-water post-condition (Property 3) ------
     # River edges put water on the perimeter. Distinct river sides (adjacent
@@ -810,6 +835,15 @@ def build_matrix(
     # R2.7 for any river-edge declaration; richer interior tributaries are a
     # wave-2/fast-follow concern, not this construction's job.
     _unify_water(cells, nx, ny, water_level)
+
+    # Property 5 post-condition: every playable cell reachable from Spawn.
+    # Checked here, BEFORE user overrides, because an override may tag a
+    # barrier cell playable on purpose (Property 6).
+    stranded = _stranded_playable(cells, nx, ny, spawn)
+    if stranded:
+        raise ValueError(
+            f"playable cells unreachable from Spawn {spawn}: {stranded[:10]}"
+        )
 
     # --- step 4 already applied inline (intent set per region). Apply any
     #     user intent overrides LAST (R4.1, Property 6). -------------------
