@@ -617,6 +617,7 @@ _ALLOWED_CLI_OPTIONS = {
     # geometry slice
     "--zone-type", "--rooms", "--size", "--verticality", "--locks", "--seed",
     "--edges",  # wilderness Rim declaration (wilderness spec task 2)
+    "--trees",  # wilderness tree density (trees spec task 8)
     # housekeeping the task allows
     "--output", "--ter-version", "--no-validate",
     # deprecated aliases that share a dest (still a legacy input surface)

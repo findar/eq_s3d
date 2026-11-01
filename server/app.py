@@ -352,6 +352,27 @@ def _require_edges(c: dict[str, Any], zone_type: Optional[str]) -> Optional[dict
         raise HTTPException(400, f"edges: {exc}")
 
 
+def _require_trees(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]:
+    """Pop and validate ``controls.trees`` (the wilderness Density_Level).
+
+    Absent -> ``None`` (the prompt or the default decides). Present on a
+    non-wilderness zone type, or not one of the four levels -> a 400 that names
+    the field, before any build or write (mirrors :func:`_require_edges`).
+    """
+    if "trees" not in c:
+        return None
+    raw = c.pop("trees")
+    if raw is None:
+        return None
+    if zone_type != "wilderness":
+        raise HTTPException(400, "trees only applies to zone_type wilderness")
+    from generators.vegetation.kit import DENSITY_LEVELS
+    if raw not in DENSITY_LEVELS:
+        raise HTTPException(
+            400, f"trees must be one of {', '.join(DENSITY_LEVELS)}")
+    return raw
+
+
 class GenerateRequest(BaseModel):
     # An extra/unknown key (e.g. a legacy ``target_shortname``) is ignored like
     # any other non-field key rather than rejected (Req 8.1).
@@ -369,7 +390,8 @@ class GenerateRequest(BaseModel):
         default=None,
         description="Controls sub-object: zone_type, room_count, size, "
                     "verticality, locks, edges (wilderness Rim, e.g. "
-                    "{\"N\": \"zoneline\"}), …",
+                    "{\"N\": \"zoneline\"}), trees (wilderness density: "
+                    "none/sparse/normal/dense), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.
@@ -587,6 +609,7 @@ def generate(req: GenerateRequest):
         # The wilderness Rim rides in the controls but isn't a plan field, so
         # it is taken out (and validated) before from_controls sees the dict.
         edges = _require_edges(c, canonical_zone_type(raw_zone_type))
+        trees = _require_trees(c, canonical_zone_type(raw_zone_type))
 
         # Proven equal to the legacy LayoutGenerator path by the 17.4 golden test.
         plan = ZonePlan.from_controls(c, warnings)
@@ -596,7 +619,8 @@ def generate(req: GenerateRequest):
         rooms = plan.room_count
 
         def factory(s: int):
-            return plan_to_spec(plan, seed=s, edges=edges)
+            return plan_to_spec(plan, seed=s, edges=edges, trees=trees,
+                                trees_source="controls")
 
     # Build + traversability gate. On gated themes a failing dungeon seed is
     # never returned: the pipeline retries on fresh seeds (bounded by attempts +

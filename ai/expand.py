@@ -31,11 +31,15 @@ _VERTICALITY = {
 
 
 def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
-                 edges: Optional[Mapping[str, str]] = None) -> ZoneSpec:
+                 edges: Optional[Mapping[str, str]] = None,
+                 trees: Optional[str] = None,
+                 trees_source: str = "cli") -> ZoneSpec:
     """Build a ZoneSpec from a validated ZonePlan.
 
     ``edges`` declares the Rim of a wilderness zone (``{"N": "zoneline", ...}``;
-    undeclared sides are mountain). It is ignored for room-graph zone types.
+    undeclared sides are mountain). ``trees`` is the wilderness Density_Level
+    set by ``trees_source`` (``"controls"`` or ``"cli"``); it beats a level the
+    prompt's wording asks for. Both are ignored for room-graph zone types.
     """
     plan.validate()
     rng_seed = seed if seed is not None else random.randint(0, 2 ** 31 - 1)
@@ -50,6 +54,15 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
             spec.wilderness["biome_substitution"] = intent.substitution.to_dict()
+        if trees is not None:
+            from generators.vegetation.kit import DENSITY_LEVELS
+            if trees not in DENSITY_LEVELS:
+                raise ValueError(f"trees must be one of {', '.join(DENSITY_LEVELS)}")
+            spec.wilderness["trees"] = trees
+            spec.wilderness["trees_source"] = trees_source
+        elif intent.trees is not None:
+            spec.wilderness["trees"] = intent.trees
+            spec.wilderness["trees_source"] = "prompt"
         return spec
 
     gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed)

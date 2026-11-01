@@ -67,6 +67,26 @@ _BIOME_WORDS: Dict[str, List[str]] = {
 }
 
 
+# Tree density words (trees spec Req 3.2): prompt wording -> Density_Level.
+# Checked in this order, so a qualifier beats the noun it qualifies ("sparse
+# woods" is sparse, "treeless forest" is none). No hit -> no level from the
+# prompt, and the build default applies.
+_TREE_WORDS: Dict[str, List[str]] = {
+    "none": ["treeless", "barren", "open"],
+    "sparse": ["sparse", "scattered"],
+    "dense": ["forest", "wooded", "woods", "dense"],
+}
+
+
+def named_tree_density(prompt: str) -> Optional[str]:
+    """The Density_Level a prompt's wording asks for, or ``None``."""
+    text = (prompt or "").lower()
+    for level, words in _TREE_WORDS.items():
+        if any(re.search(rf"\b{re.escape(w)}\b", text) for w in words):
+            return level
+    return None
+
+
 @dataclass
 class BiomeSubstitution:
     """Record of a biome fallback (Req 1.4), for the ``.zone.json`` sidecar.
@@ -96,6 +116,8 @@ class WildernessIntent:
     biome: str
     requested_biome: str
     substitution: Optional[BiomeSubstitution] = None
+    # The Density_Level the prompt's wording asks for (Req 3.2), or None.
+    trees: Optional[str] = None
     # The validated plan this intent was resolved from, retained so downstream
     # stages and provenance can read the planner's decisions.
     plan: Optional[ZonePlan] = field(default=None, repr=False)
@@ -157,6 +179,7 @@ def resolve_biome(plan: ZonePlan) -> WildernessIntent:
     (Req 1.1: a plains/Karana prompt resolves to the ``plains`` biome.)
     """
     requested = _named_biome(plan.prompt)
+    trees = named_tree_density(plan.prompt)
 
     if requested is None:
         # No biome named: default to plains. This is the lead biome, not a
@@ -164,12 +187,14 @@ def resolve_biome(plan: ZonePlan) -> WildernessIntent:
         return WildernessIntent(biome=DEFAULT_BIOME,
                                 requested_biome=DEFAULT_BIOME,
                                 substitution=None,
+                                trees=trees,
                                 plan=plan)
 
     if requested in V1_BIOMES:
         return WildernessIntent(biome=requested,
                                 requested_biome=requested,
                                 substitution=None,
+                                trees=trees,
                                 plan=plan)
 
     # Out-of-set biome: fall back to plains and record the swap (Req 1.4).
@@ -178,6 +203,7 @@ def resolve_biome(plan: ZonePlan) -> WildernessIntent:
         requested_biome=requested,
         substitution=BiomeSubstitution(requested=requested,
                                        resolved=DEFAULT_BIOME),
+        trees=trees,
         plan=plan,
     )
 
