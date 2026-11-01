@@ -37,7 +37,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: generators/textures/font.py, generators/textures/placeholder.py, tests/test_placeholder_textures.py
   - Reqs: 3
 
-- [ ] 3. Texture mode and texture manifest
+- [x] 3. Texture mode and texture manifest
   - Card: [cards/03-mode-and-manifest.md](cards/03-mode-and-manifest.md)
   - Type: agent · Size: M · Depends: 1, 2
   - Owns: generators/textures/base.py, generators/textures/factory.py, generators/builder.py, tests/test_texture_manifest.py
