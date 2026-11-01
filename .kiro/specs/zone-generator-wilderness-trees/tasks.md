@@ -73,7 +73,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: generators/wilderness/biome_resolve.py, ai/expand.py, main.py, server/app.py, tests/test_wilderness_trees_controls.py
   - Reqs: 3.1–3.3
 
-- [ ] 9. Web: Trees selector and vegetation toggle
+- [x] 9. Web: Trees selector and vegetation toggle
   - Card: [cards/09-web.md](cards/09-web.md)
   - Type: agent · Size: M · Depends: 6, 8
   - Owns: web/index.html, web/src/main.ts, web/src/api.ts, web/src/scene.ts, web/src/style.css

@@ -8,12 +8,12 @@ The Controls panel offers a Trees selector beside the Edges selectors
 shows the `vegetation` node.
 
 ## Done when
-- [ ] The selector sends `controls.trees`; it's hidden for other zone types.
-- [ ] The toggle flips the `vegetation` node's visibility; with no such node it
+- [x] The selector sends `controls.trees`; it's hidden for other zone types.
+- [x] The toggle flips the `vegetation` node's visibility; with no such node it
       is disabled.
-- [ ] Camera framing and walking still work now that the GLB can hold two nodes
+- [x] Camera framing and walking still work now that the GLB can hold two nodes
       (design "Risks"); say what you checked.
-- [ ] The frontend builds.
+- [x] The frontend builds.
       → verify: `cd web; npx vite build`.
 
 ## Pitfalls
@@ -23,3 +23,4 @@ shows the `vegetation` node.
 - The commit-message hook blocks two frontend tool words; see lessons-learned.
 
 ## Result
+✔ 7f01374 · 654 passed
