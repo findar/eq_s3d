@@ -25,7 +25,7 @@ The design's four open questions were answered on 2026-11-01
 
 ## Tasks
 
-- [ ] 1. Material names by set and surface; real shaders
+- [x] 1. Material names by set and surface; real shaders
   - Card: [cards/01-material-names.md](cards/01-material-names.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/layout.py, generators/semantics.py, analyzer/rof2check.py, tests/test_material_names.py, tests/test_rof2check.py

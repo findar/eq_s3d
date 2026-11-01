@@ -261,3 +261,21 @@ def test_unknown_model_shader_fails(wooded):
 
     msg = _failed(_check_mutated(wooded, mutate), "material_indices")
     assert "veg_sapling.mod" in msg and "Bogus_Shader.fx" in msg
+
+
+def test_placeholder_shader_name_fails(tmp_path):
+    """``<fixed-function>`` (the style profiles' pre-shader marker) is not a
+    shader the client knows (placeholder textures spec Req 2.2)."""
+    with tempfile.TemporaryDirectory() as d:
+        plan = RulePlanner().plan("create a dungeon with 6 rooms")
+        spec = plan_to_spec(plan, 7)
+        spec.name = "shaders"
+        result = ZoneBuilder(spec).build(output_dir=d, write_glb=False)
+        arc = PfsArchive.from_file(result.eqg_path)
+        ter = TerFile.from_bytes(arc.get("ter_shaders.ter"))
+        ter.materials[0].shader = "<fixed-function>"
+        arc.add("ter_shaders.ter", ter.to_bytes())
+        bad = tmp_path / "shaders.eqg"
+        bad.write_bytes(arc.to_bytes())
+    msg = _failed(check_eqg(bad, spec), "material_indices")
+    assert "<fixed-function>" in msg

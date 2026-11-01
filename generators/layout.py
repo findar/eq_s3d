@@ -20,12 +20,14 @@ import json
 import random
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .zone_spec import (
     ZoneSpec, RoomSpec, CorridorSpec, LightSpec, RegionSpec, MaterialSpec,
     GateSpec,
 )
+from core.ter import SHADER_OPAQUE
+
 from . import semantics
 from .routing import plan_route, exit_axis_x, route_footprint
 from .zone_types import STYLE_PROFILE
@@ -212,7 +214,7 @@ class LayoutGenerator:
         # Scale rooms to the theme's measured footprint divided across the
         # requested room count, so total zone size matches real proportions.
         self._apply_room_scale(room_count)
-        self._add_default_materials(spec)
+        shared = self._add_default_materials(spec, dungeon_race)
 
         # --- TinyKeep-style layout -------------------------------------
         # 1. Scatter rooms in an ellipse, 2. separate them, 3. classify
@@ -291,6 +293,13 @@ class LayoutGenerator:
             self._relax_elevation(rooms, adj, entrance)
 
         self._build_corridors(spec, rooms, edges)
+
+        # Point every surface still on the bare default name at the shared
+        # Material_Name (themed rooms already carry their own; Req 1.3).
+        for part in (*spec.rooms, *spec.corridors):
+            part.floor_material = shared.get(part.floor_material, part.floor_material)
+            part.wall_material = shared.get(part.wall_material, part.wall_material)
+            part.ceiling_material = shared.get(part.ceiling_material, part.ceiling_material)
 
         # Safe point in the entrance room.
         if rooms:
@@ -1205,7 +1214,10 @@ class LayoutGenerator:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _add_default_materials(self, spec: ZoneSpec) -> None:
+    def _add_default_materials(self, spec: ZoneSpec, race: str = "") -> Dict[str, str]:
+        """Register the shared floor/wall/ceiling materials under their
+        Material_Names (``<race>_dungeon_wall``, ``city_floor``…) and return
+        the map from bare surface to that name."""
         theme_palettes = {
             "dungeon": {
                 "floor":   ((95, 88, 80),  "worn dungeon flagstone, dark grime in joints"),
@@ -1224,12 +1236,20 @@ class LayoutGenerator:
             },
         }
         palette = theme_palettes.get(self.zone_type, theme_palettes["dungeon"])
+        # The measured profiles list "<fixed-function>" (the pre-shader .s3d
+        # era), which isn't a shader the client knows (Req 2.1).
         shaders = self.profile.get("materials", {}).get("shaders", [])
-        default_shader = shaders[0] if shaders else "Opaque_MaxCB1.fx"
+        default_shader = (shaders[0] if shaders and shaders[0].endswith(".fx")
+                          else SHADER_OPAQUE)
 
-        for name, (color, desc) in palette.items():
+        tex_set = semantics.texture_set(self.zone_type, race)
+        shared: Dict[str, str] = {}
+        for surface, (color, desc) in palette.items():
+            name = semantics.material_name(tex_set, surface)
             spec.add_material(name, f"{name}.dds", shader=default_shader,
                               color=color, description=desc)
+            shared[surface] = name
+        return shared
 
     def _add_room_lights(self, spec: ZoneSpec, room: RoomSpec, idx: int) -> None:
         # Theme-appropriate base light colour

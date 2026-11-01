@@ -677,12 +677,18 @@ def _merge_openings(openings, lo: float, hi: float
 
 
 def _ensure_materials(spec: ZoneSpec) -> None:
-    """Guarantee floor/wall/ceiling materials exist with sensible defaults."""
+    """Give a hand-built spec sensible floor/wall/ceiling defaults: all three
+    when it defines no materials yet, otherwise each bare name a room or
+    corridor uses but the spec lacks. Generated specs name their own
+    materials, so nothing unused is added to them."""
     defaults = {
         "floor":   ((100, 95, 90),  "worn stone flagstone floor"),
         "wall":    ((110, 105, 100),"rough hewn stone block wall"),
         "ceiling": ((70, 68, 65),   "dark rough rock ceiling"),
     }
+    used = {m for part in (*spec.rooms, *spec.corridors)
+            for m in (part.floor_material, part.wall_material, part.ceiling_material)}
+    wanted = set(defaults) if not spec.materials else used
     for name, (color, desc) in defaults.items():
-        if name not in spec.materials:
+        if name in wanted and name not in spec.materials:
             spec.add_material(name, f"{name}.dds", color=color, description=desc)
