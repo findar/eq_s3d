@@ -183,3 +183,81 @@ def test_missing_archive_does_not_raise(tmp_path):
     assert _names(report) == list(EXPECTED_CHECKS)
     pfs = next(c for c in report.checks if c.name == "pfs_reads")
     assert pfs.passed is False
+
+
+# ---------------------------------------------------------------------------
+# Placed tree models (trees spec Req 8.3)
+# ---------------------------------------------------------------------------
+
+from core.pfs import PfsArchive
+from core.ter import TerFile
+from core.zon import ZonFile
+
+
+@pytest.fixture(scope="module")
+def wooded():
+    """A wilderness build with trees: archive bytes, spec and a scratch dir."""
+    from ai.schema import ZonePlan
+
+    with tempfile.TemporaryDirectory() as d:
+        spec = plan_to_spec(ZonePlan(name="woods", zone_type="wilderness"), seed=5,
+                            edges={"N": "zoneline"})
+        result = ZoneBuilder(spec).build(output_dir=d, write_glb=False)
+        yield Path(result.eqg_path).read_bytes(), spec, Path(d)
+
+
+def _check_mutated(wooded, mutate) -> FormatReport:
+    data, spec, d = wooded
+    arc = PfsArchive.from_bytes(data)
+    mutate(arc)
+    out = d / "bad" / "woods.eqg"
+    out.parent.mkdir(exist_ok=True)
+    out.write_bytes(arc.to_bytes())
+    return check_eqg(out, spec)
+
+
+def _failed(report: FormatReport, name: str) -> str:
+    check = next(c for c in report.checks if c.name == name)
+    assert not check.passed, f"{name} should fail: {report.messages}"
+    return check.messages[0]
+
+
+def test_wooded_build_passes(wooded):
+    data, spec, d = wooded
+    zon = ZonFile.from_bytes(PfsArchive.from_bytes(data).get("woods.zon"))
+    assert len(zon.models) > 1 and zon.objects, "fixture should place trees"
+    report = check_eqg(d / "woods.eqg", spec)
+    assert report.passed, report.messages
+    assert _names(report) == list(EXPECTED_CHECKS)
+
+
+def test_dropped_model_fails_naming_it(wooded):
+    report = _check_mutated(wooded, lambda arc: arc.remove("veg_broadleaf.mod"))
+    assert "veg_broadleaf.mod" in _failed(report, "zon_model_ref")
+
+
+def test_dropped_model_texture_fails_naming_it(wooded):
+    report = _check_mutated(wooded, lambda arc: arc.remove("veg_conifer_leaf.dds"))
+    msg = _failed(report, "diffuse_textures")
+    assert msg.startswith("diffuse_textures: model 'veg_conifer.mod' material ")
+    assert msg.endswith("'veg_conifer_leaf.dds' is not packed")
+
+
+def test_bad_object_model_index_fails(wooded):
+    def mutate(arc):
+        zon = ZonFile.from_bytes(arc.get("woods.zon"))
+        zon.objects[3].model_id = len(zon.models) + 7
+        arc.add("woods.zon", zon.to_bytes())
+
+    msg = _failed(_check_mutated(wooded, mutate), "zon_model_ref")
+    assert "model index" in msg and "out of range" in msg
+
+
+def test_unknown_model_shader_fails(wooded):
+    def mutate(arc):
+        model = TerFile.from_bytes(arc.get("veg_sapling.mod"))
+        model.materials[1].shader = "Bogus_Shader.fx"
+        arc.add("veg_sapling.mod", model.to_bytes())
+
+    msg = _failed(_check_mutated(wooded, mutate), "material_indices")
+    assert "veg_sapling.mod" in msg and "Bogus_Shader.fx" in msg
