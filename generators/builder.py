@@ -18,7 +18,7 @@ from typing import Optional, Tuple
 
 from core.eqg import EqgZone
 from core.paths import OutputRoot
-from core.zon import ZonFile, ZonLight, ZonRegion
+from core.zon import ZonFile, ZonLight, ZonObject, ZonRegion
 from core.ter import TerFile
 from .zone_spec import ZoneSpec
 from .textures import generate_texture
@@ -104,9 +104,17 @@ class ZoneBuilder:
         #    Route through the backend registry by zone type.
         ter, backend_name, warnings = self._build_geometry(name, ter_version)
 
+        # Trees (wilderness only, step 2): a layer on top of the built TER,
+        # which they never change. Room-graph zones get none (Req 10).
+        veg = None
+        if self.spec.wilderness is not None:
+            from generators.wilderness.build import vegetation_for
+            veg = vegetation_for(self.spec, ter)
+            warnings.extend(veg.warnings)
+
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
-        zon = self._build_zon(ter_filename)
+        zon = self._build_zon(ter_filename, veg)
 
         # 3. Assemble archive. Store the terrain under its ter_ filename.
         eqg = EqgZone(name)
@@ -127,6 +135,13 @@ class ZoneBuilder:
                 seed=_stable_seed(self._base_seed(name), mat_name),
             )
             eqg.add_texture(mat_spec.texture, dds)
+
+        # Tree models and their bark/leaf textures (Req 8.1).
+        if veg is not None:
+            for fname, model in veg.models.items():
+                eqg.add_model(fname, model.to_bytes())
+            for fname, dds in veg.textures.items():
+                eqg.add_texture(fname, dds)
 
         # 5. Pack .eqg (confinement-checked through the OutputRoot).
         eqg_path = out_dir / f"{name}.eqg"
@@ -170,6 +185,8 @@ class ZoneBuilder:
         # Wilderness advisory data (biome, edges, barriers, region intent, POI
         # anchors). Empty for room-graph zones, so their sidecars gain no keys.
         wild_meta = self._wilderness_sidecar()
+        if veg is not None:
+            wild_meta["vegetation"] = dict(veg.report)
 
         # 6. GLB preview — pass per-material base colours so the preview shows
         #    the real palette rather than arbitrary hues. The GLB path also
@@ -349,7 +366,7 @@ class ZoneBuilder:
         ter = box.build(self.spec, ter_name, ter_version)
         return ter, box.name, warnings
 
-    def _build_zon(self, ter_filename: str) -> ZonFile:
+    def _build_zon(self, ter_filename: str, veg=None) -> ZonFile:
         zon = ZonFile()
 
         # The terrain mesh is the ZON's first model (RoF2 convention):
@@ -358,6 +375,21 @@ class ZoneBuilder:
         # ``ter_filename`` is already ``ter_<name>.ter`` so upper-casing it
         # yields exactly ``TER_<NAME>.TER``.
         zon.models.append(ter_filename.upper())
+
+        # Trees (Req 8.2): each packed model once after the TER, one object per
+        # tree, yaw in radians.
+        if veg is not None:
+            model_id = {}
+            for fname in sorted(veg.models):
+                model_id[fname] = len(zon.models)
+                zon.models.append(fname)
+            for i, tree in enumerate(veg.placement.instances):
+                zon.objects.append(ZonObject(
+                    name=f"veg_{i:04d}",
+                    model_id=model_id[veg.model_index[tree.species]],
+                    x=tree.x, y=tree.y, z=tree.z,
+                    yaw=tree.yaw, scale=tree.scale,
+                ))
 
         for light in self.spec.lights:
             zon.lights.append(ZonLight(
