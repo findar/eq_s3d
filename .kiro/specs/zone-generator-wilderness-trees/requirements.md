@@ -1,8 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 2, draft.** Written 2026-10-31. The design's open
-> questions need the user's answers before the task index is final; see
-> `design.md` "Open questions" and `archive.md` "Decisions".
+> **STATUS: roadmap step 2, ready.** Written 2026-10-31. The user answered the
+> design's open questions the same day (`archive.md` "Decisions"). Task index:
+> `tasks.md` (card format, 14 tasks).
 
 ## Introduction
 

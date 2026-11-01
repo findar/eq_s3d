@@ -20,8 +20,8 @@ Index fields: `Type` is `agent` or `human`. `Size` is S (≤ 2 files) / M (≤ 5
 L (split it). `Depends` lists task numbers. `Owns` lists the files and folders
 the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 
-**Before task 1:** the design's four open questions need the user's answers
-(`archive.md` "Decisions"). The cards assume the recommended answers.
+The design's four open questions were answered on 2026-10-31
+(`archive.md` "Decisions").
 
 ## Tasks
 
