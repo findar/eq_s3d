@@ -94,11 +94,11 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: tests/test_properties_mapgeom.py, tests/test_eqmap.py, docs/ACCEPTANCE.md
   - Reqs: 1.7, exit criteria 1–3
 
-- [ ] 12. HUMAN: true-layout map acceptance pass
+- [x] 12. HUMAN: true-layout map acceptance pass
   - Card: [cards/12-human-acceptance.md](cards/12-human-acceptance.md)
   - Type: human · Depends: 11
 
-- [ ] 13. Close step 1b
+- [x] 13. Close step 1b
   - Card: [cards/13-close.md](cards/13-close.md)
   - Type: agent · Size: S · Depends: 12 · Where: MAIN checkout
   - Owns: ROADMAP.md, tasks/README.md, .kiro/specs/zone-generator/, .kiro/specs/zone-generator-m2-true-layout-artifacts/

@@ -1,6 +1,7 @@
 # TASK: eq-map-export
 
-Status: not-started        <!-- not-started | in-progress | blocked | done -->
+Status: absorbed        <!-- not-started | in-progress | blocked | done | absorbed -->
+Absorbed by: M2 (`.kiro/specs/zone-generator-m2-true-layout-artifacts/`), landed at `a97231a` as `generators/eqmap.py` and the pipeline post-pass.
 Epic: In-client EQ map generation — produce the plain-text map files the
       EverQuest client draws on its in-game Map window, so a player who loads a
       generated zone sees a real top-down map of it. New capability (ROADMAP

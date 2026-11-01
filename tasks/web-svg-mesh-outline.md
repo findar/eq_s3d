@@ -1,6 +1,7 @@
 # TASK: web-svg-mesh-outline
 
-Status: not-started        <!-- not-started | in-progress | blocked | done -->
+Status: absorbed        <!-- not-started | in-progress | blocked | done | absorbed -->
+Absorbed by: M2 (`.kiro/specs/zone-generator-m2-true-layout-artifacts/`), landed at `a97231a` as `generators/mapgeom.py` and the outline layer in `render_map_svg`.
 Epic: Web viewer UX / map accuracy — make the browser's top-down map trace the
       zone's real walls (from the 3D geometry) instead of only the abstract
       room/corridor plan, so the web map agrees with the first-person view and

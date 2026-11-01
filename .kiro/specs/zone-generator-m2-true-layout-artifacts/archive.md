@@ -5,7 +5,24 @@ this file to pick up a task; it holds the "why".
 
 ## What landed
 
-Nothing yet. Rows are added at the close step (task 13).
+Signed off 2026-10-31; master `a97231a`. Suite 580 (fast and thorough).
+
+| Task | What landed |
+|------|-------------|
+| 1 | `generators/eqmap.py`: Map_Convention negate + swap, grounded on stock maps (tutoriala 1.42 u, bazaar 0.54 u); `.txt` format and parser, all 143 stock maps parse with nothing skipped |
+| 2 | Walls beside and above every doorway (`geometry.py`) |
+| 3 | `generators/mapgeom.py`: outline extractor and depth bands, proved on synthetic worlds |
+| 4 | Outline Properties 1–3 on box builds; ledge share fell from 55–63 % to 7–13 % |
+| 5 | Outline layer in the map SVG (`render_map_svg(outline=)`) |
+| 6 | EQ map layers from the outline: one colour per band, Entrance/Boss labels |
+| 7 | Pipeline post-pass writes the SVG and `maps/<name>*.txt` for accepted builds only; sidecar `map_files` and `outline` block; fallback warnings |
+| 8 | Server `maps/` route, HEAD, `artifacts` URLs in the generate response |
+| 9 | Web Files panel: SVG, 2× PNG, `.txt`, `.eqg` downloads, HEAD-probed |
+| 10 | `scripts/eqmap_preview.py` overlay |
+| 11 | Wilderness cases in Properties 3 and 13; ACCEPTANCE "Step 1b — True-layout map"; thorough run green |
+| 12 | Human acceptance pass: signed off, no findings |
+| 14 | Corridors a full width clear of rooms, walled bends, grade-cap exact fallback (every box layout moved) |
+| 15 | Wilderness: every playable cell reachable from spawn |
 
 ## Decisions
 

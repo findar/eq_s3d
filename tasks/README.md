@@ -28,8 +28,8 @@ validate), `docs/RESEARCH.md` (decisions and investigations).
 | [cave-backend-refactor](cave-backend-refactor.md) | absorbed | M0 | Cave rebuild part 1: superseded, the cave pipeline was deleted outright |
 | [cave-cavify-dungeon](cave-cavify-dungeon.md) | absorbed | M5 | Cave rebuild part 2: becomes the natural geometry style |
 | [web-controls-generate](web-controls-generate.md) | not-started | M1 | Controls panel as a first-class driver with its own Generate button |
-| [eq-map-export](eq-map-export.md) | not-started | M2 | In-client EQ map files from the real mesh |
-| [web-svg-mesh-outline](web-svg-mesh-outline.md) | not-started | M2 | Mesh-traced outline layer on the web map (shares the extractor) |
+| [eq-map-export](eq-map-export.md) | absorbed | M2 (landed) | In-client EQ map files from the real mesh |
+| [web-svg-mesh-outline](web-svg-mesh-outline.md) | absorbed | M2 (landed) | Mesh-traced outline layer on the web map (shares the extractor) |
 | [content-layer-districts](content-layer-districts.md) | not-started | M3 | Content layer Step 2: districts |
 | [layout-topology-control](layout-topology-control.md) | not-started | M3 | Topology lever in `_connect_rooms` |
 | [multi-level-dungeon](multi-level-dungeon.md) | not-started | follow-on spec, after M3 | True stacked floors with vertical connectors |

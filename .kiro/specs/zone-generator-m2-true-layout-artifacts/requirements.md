@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 1b, in progress.** The task index is `tasks.md` (card format, 13 tasks). The user answered the design's open questions on 2026-10-30; see `archive.md` "Decisions". The M1 dependencies D1–D7 are all on master.
+> **STATUS: roadmap step 1b, DONE** (master `a97231a`, human pass signed off 2026-10-31). Summary in `archive.md` "What landed"; the umbrella refinements are umbrella design decision 21.
 
 ## Introduction
 

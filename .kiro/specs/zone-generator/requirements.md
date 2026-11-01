@@ -327,6 +327,8 @@ the requirements.
 10. THE Outline_Extractor SHALL emit segments covering at least 99% of the floor region's boundary length outside doorway spans to within 0.05 units.
 11. THE Outline_Extractor SHALL apply to meshes from every Geometry_Backend of a zone type in Enabled_Zone_Types.
 
+> **Refined by M2** (design decision 21): in 12.2 and 12.10, "boundary edge" means the geometric Floor_Boundary of the M2 spec (a point where the floor ends, judged by what lies just across the edge), not "an edge not shared by two faces". Welds, T-junctions and overlapping corridor ends are not boundary.
+
 ### Requirement 13: EverQuest in-client map file
 
 **User Story:** As a player, I want a map file the RoF2 client's map window can load, so that the generated zone has a usable in-game map.
