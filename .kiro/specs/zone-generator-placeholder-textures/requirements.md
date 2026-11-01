@@ -1,7 +1,7 @@
 # Requirements Document
 
-> **STATUS: roadmap step 3, draft.** Written 2026-11-01. The design's open
-> questions are waiting on the user (`design.md` "Open questions"). Task index:
+> **STATUS: roadmap step 3, ready.** Written 2026-11-01. The user answered the
+> design's open questions the same day (`archive.md` "Decisions"). Task index:
 > `tasks.md` (card format, 10 tasks).
 
 ## Introduction
