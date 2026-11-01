@@ -87,7 +87,9 @@ def test_water_shows_in_the_glb_preview(tmp_path):
     result = ZoneBuilder(spec).build(output_dir=tmp_path)
     assert result.glb_path is not None and result.glb_path.exists()
     scene = trimesh.load(result.glb_path, force="scene")
-    colors = np.concatenate([g.visual.vertex_colors[:, :3]
-                             for g in scene.geometry.values()])
-    water = spec.materials[WATER_SURFACE_MATERIAL].color
-    assert (colors == np.array(water)).all(axis=1).any()
+    # The water surface is its own textured primitive (placeholder textures
+    # spec Req 6), drawn in its base colour with the liquid pattern.
+    water = scene.geometry[WATER_SURFACE_MATERIAL]
+    image = np.asarray(water.visual.material.baseColorTexture.convert("RGB"))
+    base = np.array(spec.materials[WATER_SURFACE_MATERIAL].color)
+    assert (image.reshape(-1, 3) == base).all(axis=1).any()

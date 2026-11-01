@@ -43,7 +43,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: generators/textures/base.py, generators/textures/factory.py, generators/builder.py, tests/test_texture_manifest.py
   - Reqs: 4, 5
 
-- [ ] 4. Textured GLB terrain
+- [x] 4. Textured GLB terrain
   - Card: [cards/04-textured-glb.md](cards/04-textured-glb.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: core/eqg.py, generators/builder.py, tests/test_glb_textures.py

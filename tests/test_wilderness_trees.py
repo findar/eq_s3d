@@ -167,7 +167,12 @@ def test_glb_has_a_terrain_and_a_vegetation_node(tmp_path):
     spec = _spec(5, "dense", {"N": "zoneline"})
     r = ZoneBuilder(spec).build(output_dir=tmp_path)
     scene = _glb(r.glb_path)
-    assert sorted(scene.graph.nodes_geometry) == ["terrain", "vegetation"]
+    # The terrain node holds one textured primitive per material (placeholder
+    # textures spec Req 6); the trees are the one other mesh.
+    nodes = scene.graph.nodes_geometry
+    assert "vegetation" in nodes
+    assert all(n == "vegetation" or n.startswith("terrain_") for n in nodes)
+    assert "terrain" in scene.graph.nodes
 
     veg = vegetation_for(spec, build_wilderness_ter(spec, "ter_karana", 2))
     per_model = {fname: len(m.vertices) for fname, m in veg.models.items()}
@@ -195,8 +200,9 @@ def test_glb_without_trees_is_the_single_terrain_mesh(tmp_path, zone_type):
         spec = _spec(5, "none", {"N": "zoneline"})
     r = ZoneBuilder(spec).build(output_dir=tmp_path)
     scene = _glb(r.glb_path)
-    assert "vegetation" not in scene.graph.nodes_geometry
-    assert len(scene.geometry) == 1
+    nodes = scene.graph.nodes_geometry
+    assert "vegetation" not in nodes
+    assert nodes and all(n.startswith("terrain_") for n in nodes)
 
 
 # ---------------------------------------------------------------------------

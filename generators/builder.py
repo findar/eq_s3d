@@ -220,6 +220,7 @@ class ZoneBuilder:
         #    (Texture_Mode, placeholder textures spec Req 4); the mode that
         #    drew each one goes in the Texture_Manifest.
         modes: Dict[str, str] = {}
+        dds_by_name: Dict[str, bytes] = {}
         for mat_name, mat_spec in self.spec.materials.items():
             dds, modes[mat_name] = texture_with_mode(
                 mat_spec.description,
@@ -230,6 +231,7 @@ class ZoneBuilder:
                 surface_class=surface_of(mat_name)[2] or "",
             )
             eqg.add_texture(mat_spec.texture, dds)
+            dds_by_name[mat_name] = dds
 
         # Tree models and their bark/leaf textures (Req 8.1).
         if veg is not None:
@@ -298,9 +300,13 @@ class ZoneBuilder:
                                    zone_type=self.spec.zone_type,
                                    extra=side_meta,
                                    root=root,
-                                   extra_meshes=_vegetation_meshes(veg))
+                                   extra_meshes=_vegetation_meshes(veg),
+                                   textures={m.index: dds_by_name[m.name]
+                                             for m in ter.materials
+                                             if m.name in dds_by_name})
             if result is None:
                 glb_path = None  # trimesh not available
+            warnings.extend(eqg.glb_warnings)
 
         # 7. Sidecar on EVERY build (not only when a GLB is written). When the
         #    GLB path ran it already wrote an identical <name>.zone.json; this
