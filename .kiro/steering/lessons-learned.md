@@ -147,6 +147,25 @@ read before touching the relevant area so it isn't rediscovered.
   cleanup: delete a junction with `rmdir`/`(Get-Item).Delete()`, never
   `Remove-Item -Recurse` which can follow it into the target.
 - EQ install for analysis lives at `F:\everquest_rof2` (1057 eqg, 1010 s3d).
+- **Use `fullmatch`, not `match` with `^…$`, to validate input.** `$` also
+  matches just before a trailing `\n`, so `re.match(r"^[A-Za-z0-9_.-]+$",
+  "gen_t\n")` succeeds. The build-file route let such a segment reach the
+  filesystem (404 instead of 400); Hypothesis drew one only rarely, so step 1b's
+  Property 18 failed about once per thorough run. Fixed in `server/app.py`
+  `_safe_segment` and pinned as `@example`s.
+- **The parallel test runner occasionally stumbles; re-run before debugging.**
+  Seen four times in steps 2–3, always on Windows with `-n auto`: a run stopped
+  at collection with "Different tests were collected between gw0 and gw2", once
+  together with `OutsideOutputError` while `tests/test_properties_pipeline.py`
+  imported `server.app` (its import-time `OutputRoot(OUTPUT_DIR).mkdir()`); and
+  once a parallel run hung with its workers gone. Two of these were a fresh
+  worktree's first run. None reproduced: 8 rounds of fresh-state collection
+  (no `output/`, `__pycache__` or `.hypothesis`) and 64 concurrent `server.app`
+  imports all passed, and `Path.resolve` gives the same answer before and after
+  `output/web` exists. Workaround: if a run fails before any test runs, or
+  stops making progress, kill leftover `python … pytest` processes
+  (`Get-CimInstance Win32_Process` filtered on the command line) and run it
+  again; only a failure that repeats is worth chasing.
 
 ## Design calls already settled (don't relitigate)
 

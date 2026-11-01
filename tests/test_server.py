@@ -779,7 +779,7 @@ import re  # noqa: E402
 from pathlib import Path  # noqa: E402
 from urllib.parse import quote  # noqa: E402
 
-from hypothesis import strategies as st  # noqa: E402
+from hypothesis import example, strategies as st  # noqa: E402
 
 _P18_NAME = "gen_t"
 # The pre-built build dir's files (relative to OUTPUT_DIR). Besides a full
@@ -876,6 +876,11 @@ def test_build_file_paths_served_or_refused(tmp_path, monkeypatch):
 
     @settings(max_examples=scaled(200), deadline=None)
     @given(parts=build_paths())
+    # Discovered failure (placeholder textures task 12): a segment ending in a
+    # newline passed ``SEGMENT_RE.match`` (``$`` matches before a final
+    # newline), reached the filesystem and gave 404 instead of 400.
+    @example(parts=("gen_t\n", "v1", "gen_t.glb")).via("discovered failure")
+    @example(parts=("gen_t", "v1\n", "gen_t.glb")).via("discovered failure")
     def check(parts):
         url = _p18_url(parts)
         status, data = _p18_expected(out, parts)
