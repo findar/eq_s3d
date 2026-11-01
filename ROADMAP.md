@@ -52,7 +52,7 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
 
 **Step 1b — true-layout artifacts is DONE** (master `a97231a`, signed off 2026-10-31; see the Done table and `.kiro/specs/zone-generator-m2-true-layout-artifacts/archive.md`).
 
-**Pick up here: roadmap step 2, trees for wilderness.** No spec exists yet: write `.kiro/specs/zone-generator-<step-2>/` (requirements, design, then a card-format `tasks.md`) before any code. Known follow-ups from step 1 still open: shoreline below water level on some seeds (`synth.py`), and the 150 u matrix vs 160 u fine-cell frame drift. The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
+**Pick up here: roadmap step 2, trees for wilderness.** Spec drafted: `.kiro/specs/zone-generator-wilderness-trees/` (requirements, design with measured Karana tree data, card-format `tasks.md`, 14 tasks). The design's four open questions need the user's answers first; then tasks 1 and 2 are ready side by side. Known follow-ups from step 1 still open: shoreline below water level on some seeds (`synth.py`), and the 150 u matrix vs 160 u fine-cell frame drift. The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
 
 **Roadmap — the 11-step content sequence (authoritative, in order).** Re-sequenced around visible, demonstrable zone outcomes rather than internal architecture (user decision). Each step ends in something a person can look at and judge against the north-star "indistinguishable from a hand-crafted zone".
 
@@ -60,7 +60,7 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
    *(DONE — signed off 2026-10-29 and enabled for everyone; see the Done table)*
    - **1b. True-layout artifacts** — the M2 spec (`.kiro/specs/zone-generator-m2-true-layout-artifacts/`): a map outline traced from the built mesh, the in-client EQ map file, and the build's files downloadable from the browser. Inserted after step 1 (user decision). Numbered 1b so later step numbers stay stable.
      *(DONE — signed off 2026-10-31; see the Done table)*
-2. **Trees for wilderness.**
+2. **Trees for wilderness.** Spec: `.kiro/specs/zone-generator-wilderness-trees/`.
 3. **Textures (placeholder)** — enough to identify type (e.g. `gnoll-cave-wall`, `crypt-floor`).
 4. **Interesting textures** — the real procedural / AI texture pass.
 5. **Outdoor dungeon (Mistmoore, Blackburrow)** — generate terrain, THEN carve / add the dungeon into it.
