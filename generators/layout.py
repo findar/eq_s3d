@@ -1078,6 +1078,51 @@ class LayoutGenerator:
                 rooms[i].floor_z = newz
             if moved < 1e-4:
                 break
+        self._project_elevation(rooms, adj, entrance)
+
+    def _project_elevation(self, rooms: List[RoomSpec], adj, entrance: int,
+                           tol: float = 1e-3) -> None:
+        """
+        Exact fallback for the relax pass. Tight bands (a zero-run Z jog pins
+        its two rooms level) can leave the clamp stuck at the conflicting-
+        neighbours midpoint, a few hundredths over the cap around a cycle
+        (seed 22, 22 rooms, dramatic). When any corridor is still over its cap
+        by more than `tol`, replace each floor by the lowest neighbour-reachable
+        height, ``min_k(z_k + d(k, i))`` with ``d`` the shortest path over the
+        per-corridor caps. That is 1-Lipschitz in ``d``, so every corridor is
+        within its cap, and a room already consistent keeps its height. The
+        result is shifted so the entrance keeps its floor as the Z reference.
+        """
+        nodes = list(adj)
+        caps = {}
+        worst = 0.0
+        for i in nodes:
+            for m in adj[i]:
+                cap = self._elevation_run(rooms[i], rooms[m]) * self.max_grade
+                caps[(i, m)] = cap
+                worst = max(worst,
+                            abs(rooms[i].floor_z - rooms[m].floor_z) - cap)
+        if worst <= tol:
+            return
+        inf = float("inf")
+        d = {i: {j: (0.0 if i == j else inf) for j in nodes} for i in nodes}
+        for (i, m), cap in caps.items():
+            d[i][m] = min(d[i][m], cap)
+        for k in nodes:
+            dk = d[k]
+            for i in nodes:
+                dik = d[i][k]
+                if dik == inf:
+                    continue
+                di = d[i]
+                for j in nodes:
+                    if dik + dk[j] < di[j]:
+                        di[j] = dik + dk[j]
+        z = {i: rooms[i].floor_z for i in nodes}
+        low = {i: min(z[k] + d[k][i] for k in nodes) for i in nodes}
+        shift = z[entrance] - low[entrance] if entrance in low else 0.0
+        for i in nodes:
+            rooms[i].floor_z = low[i] + shift
 
     def _route_legs(self, a: RoomSpec, b: RoomSpec) -> List[float]:
         """

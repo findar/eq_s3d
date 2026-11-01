@@ -90,7 +90,7 @@ design's "interim if M1 is late" column no longer applies.
 
 - [ ] 11. Wilderness coverage, acceptance section, thorough run
   - Card: [cards/11-wilderness-and-release-prep.md](cards/11-wilderness-and-release-prep.md)
-  - Type: agent · Size: M · Depends: 7, 8, 9, 10, 14
+  - Type: agent · Size: M · Depends: 7, 8, 9, 10, 14, 15
   - Owns: tests/test_properties_mapgeom.py, tests/test_eqmap.py, docs/ACCEPTANCE.md
   - Reqs: 1.7, exit criteria 1–3
 
@@ -108,6 +108,12 @@ design's "interim if M1 is late" column no longer applies.
   - Type: agent · Size: M · Depends: 2, 3
   - Owns: generators/layout.py, generators/routing.py, generators/geometry.py, tests/test_corridor_clearance.py
   - Added 2026-10-31 from tasks 4 and 5's findings; numbered last so other numbers stay stable.
+
+- [x] 15. Wilderness: every playable cell reachable from spawn
+  - Card: [cards/15-wilderness-reachability.md](cards/15-wilderness-reachability.md)
+  - Type: agent · Size: S · Depends: —
+  - Owns: generators/wilderness/matrix.py, tests/test_wilderness_matrix.py
+  - Added 2026-10-31 from task 11's thorough run (a step 1 bug, fixed here for 1b's exit).
 
 ## Out of scope for step 1b
 The Export (`export/<short>/`), Target_Shortname picker, `<short>.sql` and the
