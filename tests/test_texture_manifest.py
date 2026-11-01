@@ -1,0 +1,110 @@
+"""Texture mode and texture manifest (placeholder textures spec task 3).
+
+Req 4: zone surfaces are labelled Placeholders by default and
+``EQ_S3D_TEXTURE_PROVIDER`` picks any mode; tree textures keep their own path.
+Req 5 / X6: the sidecar's ``textures`` list has one entry per material, sorted,
+with polygon counts that add up to the meshes they describe.
+"""
+
+import json
+from collections import Counter
+
+import pytest
+
+from ai.expand import plan_to_spec
+from ai.planner import make_plan
+from ai.schema import ZonePlan
+from core.pfs import PfsArchive
+from core.ter import TerFile
+from generators.builder import ZoneBuilder, surface_of
+from generators.textures.placeholder import placeholder_dds
+
+SPECS = {
+    "dungeon": lambda: plan_to_spec(make_plan("a gnoll temple dungeon with 8 rooms", name="tex"), seed=7),
+    "city": lambda: plan_to_spec(ZonePlan(name="tex", zone_type="city"), seed=7),
+    "wilderness": lambda: plan_to_spec(ZonePlan(name="tex", zone_type="wilderness"), seed=7,
+                                       edges={"N": "zoneline", "E": "river"}),
+}
+
+
+def _build(tmp_path, kind, sub="a"):
+    spec = SPECS[kind]()
+    result = ZoneBuilder(spec).build(output_dir=tmp_path / f"{kind}_{sub}", write_glb=False)
+    arc = PfsArchive.from_file(result.eqg_path)
+    side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+    return spec, arc, side
+
+
+@pytest.mark.parametrize("kind", sorted(SPECS))
+def test_default_mode_draws_surfaces_as_placeholders(tmp_path, no_api_keys, kind):
+    spec, arc, side = _build(tmp_path, kind)
+    surfaces = [e for e in side["textures"] if e["surface_class"]]
+    assert surfaces
+    for e in surfaces:
+        assert e["texture_mode"] == "placeholder"
+        colour = spec.materials[e["material"]].color
+        assert arc.get(e["texture"]) == placeholder_dds(e["material"], colour, e["surface_class"])
+
+
+@pytest.mark.parametrize("kind", sorted(SPECS))
+def test_x6_manifest_lists_every_material_once_with_its_polygons(tmp_path, no_api_keys, kind):
+    _, arc, side = _build(tmp_path, kind)
+    manifest = side["textures"]
+    names = [e["material"] for e in manifest]
+    assert names == sorted(names) and len(names) == len(set(names))
+
+    meshes = [TerFile.from_bytes(arc.get("ter_tex.ter"))]
+    meshes += [TerFile.from_bytes(arc.get(n)) for n in arc.list_files() if n.endswith(".mod")]
+    expected = Counter()
+    for mesh in meshes:
+        counts = Counter(p.material for p in mesh.polygons)
+        for mat in mesh.materials:
+            expected[mat.name] += counts.get(mat.index, 0)
+    assert {e["material"]: e["polygons"] for e in manifest} == dict(expected)
+    assert sum(e["polygons"] for e in manifest) == sum(len(m.polygons) for m in meshes)
+
+    packed = set(arc.list_files())
+    for e in manifest:
+        assert e["texture"] in packed
+        assert (e["texture_set"], e["surface"], e["surface_class"]) == surface_of(e["material"])
+        assert e["texture_mode"] in ("placeholder", "procedural", "ai", "vegetation")
+
+
+def test_procedural_override_restores_noise_textures(tmp_path, no_api_keys, monkeypatch):
+    monkeypatch.setenv("EQ_S3D_TEXTURE_PROVIDER", "procedural")
+    spec, arc, side = _build(tmp_path, "city")
+    for e in side["textures"]:
+        assert e["texture_mode"] == "procedural"
+        colour = spec.materials[e["material"]].color
+        assert arc.get(e["texture"]) != placeholder_dds(e["material"], colour, e["surface_class"])
+
+
+def test_ai_override_without_a_key_falls_back_to_procedural(tmp_path, no_api_keys, monkeypatch):
+    monkeypatch.setenv("EQ_S3D_TEXTURE_PROVIDER", "ai")
+    _, _, side = _build(tmp_path, "city")
+    assert {e["texture_mode"] for e in side["textures"]} == {"procedural"}
+
+
+def test_tree_textures_keep_their_own_path(tmp_path, no_api_keys, monkeypatch):
+    """Bark and leaf carry no Surface_Class, so the default mode leaves them on
+    the procedural path: identical to a build forced to ``procedural``."""
+    _, default_arc, side = _build(tmp_path, "wilderness", "default")
+    monkeypatch.setenv("EQ_S3D_TEXTURE_PROVIDER", "procedural")
+    _, procedural_arc, _ = _build(tmp_path, "wilderness", "procedural")
+    trees = [e for e in side["textures"] if e["texture_mode"] == "vegetation"]
+    assert trees and all(e["surface_class"] is None for e in trees)
+    for e in trees:
+        assert default_arc.get(e["texture"]) == procedural_arc.get(e["texture"])
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("gnoll_temple_wall", ("gnoll_temple", "wall", "wall")),
+    ("dungeon_ceiling", ("dungeon", "ceiling", "ceiling")),
+    ("city_floor", ("city", "floor", "floor")),
+    ("wild_plains", ("wild", "plains", "ground")),
+    ("liquid_water", ("liquid", "water", "liquid")),
+    ("veg_conifer_leaf", ("veg_conifer", "leaf", None)),
+    ("floor", ("", "floor", "floor")),
+])
+def test_surface_of(name, expected):
+    assert surface_of(name) == expected

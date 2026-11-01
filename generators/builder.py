@@ -14,14 +14,15 @@ from __future__ import annotations
 import re
 import zlib
 from pathlib import Path
-from typing import Optional, Tuple
+from collections import Counter
+from typing import Dict, List, Optional, Tuple
 
 from core.eqg import EqgZone
 from core.paths import OutputRoot
 from core.zon import ZonFile, ZonLight, ZonObject, ZonRegion
 from core.ter import TerFile
 from .zone_spec import ZoneSpec
-from .textures import generate_texture
+from .textures.factory import texture_with_mode
 from .backends import backend_for, BoxBackend
 
 # Region kind → ZON name prefix
@@ -50,6 +51,57 @@ def _stable_seed(*parts) -> int:
     """
     s = "|".join(str(p) for p in parts)
     return zlib.crc32(s.encode("utf-8")) & 0x7FFFFFFF
+
+
+_ROOM_SURFACES = ("floor", "wall", "ceiling")
+
+
+def surface_of(material: str) -> Tuple[str, str, Optional[str]]:
+    """``(Texture_Set, Surface, Surface_Class)`` of a material name
+    (placeholder textures spec glossary). Room-graph names end in a room
+    surface; ``wild_*`` is wilderness ground and ``liquid_*`` a liquid surface;
+    anything else (tree bark and leaf) has no Surface_Class."""
+    head, _, tail = material.rpartition("_")
+    if material in _ROOM_SURFACES:
+        return "", material, material
+    if tail in _ROOM_SURFACES and head:
+        return head, tail, tail
+    if head == "wild":
+        return head, tail, "ground"
+    if head == "liquid":
+        return head, tail, "liquid"
+    return head, tail, None
+
+
+def _diffuse_of(mat) -> Optional[str]:
+    from core.ter import PROP_DIFFUSE
+    return next((p.value_s for p in mat.properties if p.name == PROP_DIFFUSE), None)
+
+
+def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None) -> List[dict]:
+    """The sidecar's Texture_Manifest (Req 5): one entry per material of the
+    TER and of every packed tree model, sorted by name, with its polygon
+    count and the Texture_Mode that drew its texture (``vegetation`` for the
+    trees' own bark/leaf generator)."""
+    entries: Dict[str, dict] = {}
+
+    def add(mesh: TerFile, mode_for) -> None:
+        counts = Counter(p.material for p in mesh.polygons)
+        for mat in mesh.materials:
+            tex_set, surface, surface_class = surface_of(mat.name)
+            e = entries.setdefault(mat.name, {
+                "material": mat.name, "texture": _diffuse_of(mat),
+                "texture_set": tex_set, "surface": surface,
+                "surface_class": surface_class, "polygons": 0,
+                "texture_mode": mode_for(mat.name),
+            })
+            e["polygons"] += counts.get(mat.index, 0)
+
+    add(ter, lambda n: modes.get(n, "procedural"))
+    if veg is not None:
+        for fname in sorted(veg.models):
+            add(veg.models[fname], lambda n: "vegetation")
+    return [entries[k] for k in sorted(entries)]
 
 
 def _vegetation_meshes(veg) -> Optional[list]:
@@ -164,14 +216,18 @@ class ZoneBuilder:
         # writing a duplicate <zone>.ter — the model is already added above)
         eqg.set_terrain(ter, pack=False)
 
-        # 4. Textures → DDS (procedural by default; AI provider if a key is set)
+        # 4. Textures → DDS. Surfaces are labelled Placeholders by default
+        #    (Texture_Mode, placeholder textures spec Req 4); the mode that
+        #    drew each one goes in the Texture_Manifest.
+        modes: Dict[str, str] = {}
         for mat_name, mat_spec in self.spec.materials.items():
-            dds = generate_texture(
+            dds, modes[mat_name] = texture_with_mode(
                 mat_spec.description,
                 mat_spec.color,
                 size=256,
                 name=mat_name,
                 seed=_stable_seed(self._base_seed(name), mat_name),
+                surface_class=surface_of(mat_name)[2] or "",
             )
             eqg.add_texture(mat_spec.texture, dds)
 
@@ -226,6 +282,8 @@ class ZoneBuilder:
         wild_meta = self._wilderness_sidecar()
         if veg is not None:
             wild_meta["vegetation"] = dict(veg.report)
+        # The Texture_Manifest rides with every build (Req 5).
+        side_meta = {**wild_meta, "textures": texture_manifest(ter, modes, veg)}
 
         # 6. GLB preview — pass per-material base colours so the preview shows
         #    the real palette rather than arbitrary hues. The GLB path also
@@ -238,7 +296,7 @@ class ZoneBuilder:
                                    room_pacing=room_pacing, gates=gates,
                                    content=content_meta,
                                    zone_type=self.spec.zone_type,
-                                   extra=wild_meta or None,
+                                   extra=side_meta,
                                    root=root,
                                    extra_meshes=_vegetation_meshes(veg))
             if result is None:
@@ -255,7 +313,7 @@ class ZoneBuilder:
             rooms=room_pacing,
             gates=gates,
             content=content_meta,
-            extra={"zone_type": self.spec.zone_type, **wild_meta},
+            extra={"zone_type": self.spec.zone_type, **side_meta},
             root=root,
         )
 
