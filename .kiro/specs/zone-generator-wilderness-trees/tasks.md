@@ -43,7 +43,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: generators/vegetation/models.py, generators/vegetation/textures.py, tests/test_vegetation_models.py
   - Reqs: 2
 
-- [ ] 4. Tree placement: eligible ground, groves, clearance
+- [x] 4. Tree placement: eligible ground, groves, clearance
   - Card: [cards/04-placement.md](cards/04-placement.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/vegetation/placement.py, tests/test_vegetation_placement.py
