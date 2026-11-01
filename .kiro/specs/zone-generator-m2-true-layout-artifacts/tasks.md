@@ -109,7 +109,7 @@ design's "interim if M1 is late" column no longer applies.
   - Owns: generators/layout.py, generators/routing.py, generators/geometry.py, tests/test_corridor_clearance.py
   - Added 2026-10-31 from tasks 4 and 5's findings; numbered last so other numbers stay stable.
 
-- [ ] 15. Wilderness: every playable cell reachable from spawn
+- [x] 15. Wilderness: every playable cell reachable from spawn
   - Card: [cards/15-wilderness-reachability.md](cards/15-wilderness-reachability.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/wilderness/matrix.py, tests/test_wilderness_matrix.py

@@ -13,13 +13,13 @@ spawn at (8, 8). Find why `build_matrix` leaves a playable cell cut off, and
 fix it at the root so Property 5 holds for every input.
 
 ## Done when
-- [ ] The failing case is pinned as an `@example` on the property, and passes.
+- [x] The failing case is pinned as an `@example` on the property, and passes.
       → verify: `python -m pytest tests/test_wilderness_matrix.py -q`.
-- [ ] Property 5 passes three thorough runs.
+- [x] Property 5 passes three thorough runs.
       → verify: `python -m pytest tests/test_wilderness_matrix.py -q --hypothesis-profile=thorough` (three times).
-- [ ] The commit body names the root cause and says how many seeds' matrices
+- [x] The commit body names the root cause and says how many seeds' matrices
       the fix changes (it may move some wilderness layouts).
-- [ ] `python -m pytest tests/ -q` is green with no loosened test.
+- [x] `python -m pytest tests/ -q` is green with no loosened test.
 
 ## Pitfalls
 - Don't loosen Property 5 or filter the case out; an unreachable playable cell
@@ -30,3 +30,4 @@ fix it at the root so Property 5 holds for every input.
 - The agent can't check this in 3D; say so in Result.
 
 ## Result
+✔ ebbf9e6 · 580 passed (thorough 3/3) · not checked in 3D

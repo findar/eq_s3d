@@ -314,7 +314,7 @@ def test_edge_declaration_strategy_shapes():
 # slow build-tier properties). Each carries a docstring naming its Property N
 # and the requirement ids it validates.
 
-from hypothesis import given, settings  # noqa: E402
+from hypothesis import example, given, settings  # noqa: E402
 
 from ai.rule_planner import RulePlanner  # noqa: E402
 from generators.wilderness.biome_resolve import (  # noqa: E402
@@ -510,6 +510,12 @@ def _reachable_from_spawn(m: DesignMatrix) -> set:
 @requires_build_matrix
 @settings(max_examples=scaled(100), deadline=None)
 @given(inp=matrix_inputs())
+# Lava beside the cliff band's end sealed ring corner (1, 14) (task 15).
+@example(inp={
+    "biome": "plains",
+    "edges": [EdgeConnection(side=s, edge_type="mountain") for s in SIDES],
+    "seed": 2275961,
+})
 def test_property5_playable_regions_reachable_from_spawn(inp):
     """Feature: zone-generator-wilderness, Property 5: Playable regions are
     mutually reachable from Spawn on the matrix.
