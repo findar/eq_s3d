@@ -108,3 +108,52 @@ def test_tree_textures_keep_their_own_path(tmp_path, no_api_keys, monkeypatch):
 ])
 def test_surface_of(name, expected):
     assert surface_of(name) == expected
+
+
+# ---------------------------------------------------------------------------
+# Task 8: placeholders + preview textures add at most 2 s (Req 8, X8)
+# ---------------------------------------------------------------------------
+
+TEXTURE_BUDGET_S = 2.0
+
+
+def _dense_wilderness():
+    spec = plan_to_spec(ZonePlan(name="tex", zone_type="wilderness"), seed=1955208177,
+                        edges={"N": "zoneline", "E": "river"})
+    spec.wilderness["trees"] = "dense"
+    return spec
+
+
+def _timed_build(tmp_path, sub):
+    import time
+
+    import generators.textures.factory as factory
+
+    factory._cache.clear()
+    t0 = time.perf_counter()
+    ZoneBuilder(_dense_wilderness()).build(output_dir=tmp_path / sub)
+    return time.perf_counter() - t0
+
+
+@pytest.mark.slow
+def test_x8_placeholders_and_preview_textures_add_at_most_2s(tmp_path, no_api_keys, monkeypatch):
+    """Today's default (Placeholders, textures embedded in the GLB) against the
+    step 2 behaviour (procedural textures, base-colour GLB), on a dense
+    wilderness build with the landscape cache warm. Best of two each."""
+    from core.eqg import EqgZone
+
+    _timed_build(tmp_path, "warm")
+    now = min(_timed_build(tmp_path, f"now{i}") for i in range(2))
+
+    plain_glb = EqgZone.write_glb
+
+    def without_textures(self, *args, **kwargs):
+        kwargs.pop("textures", None)
+        return plain_glb(self, *args, **kwargs)
+
+    monkeypatch.setenv("EQ_S3D_TEXTURE_PROVIDER", "procedural")
+    monkeypatch.setattr(EqgZone, "write_glb", without_textures)
+    before = min(_timed_build(tmp_path, f"before{i}") for i in range(2))
+    assert now - before <= TEXTURE_BUDGET_S, (
+        f"default build {now:.2f}s vs step 2 behaviour {before:.2f}s: "
+        f"{now - before:.2f}s added (budget {TEXTURE_BUDGET_S:g}s)")

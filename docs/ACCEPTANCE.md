@@ -553,3 +553,88 @@ in-client check is M6.
       same trees twice.
 - [ ] **[SHOULD] Snappy** — A dense build is not noticeably slower than none
       (trees add well under a second today; the budget is 3 s).
+
+---
+
+## Step 3 — Placeholder textures
+
+> Roadmap step 3 (`zone-generator-placeholder-textures`). Every material is
+> named `<set>_<surface>` (`gnoll_temple_wall`, `gnoll_dungeon_floor`,
+> `city_ceiling`, `wild_plains`) and drawn as a 256×256 placeholder: its base
+> colour, a pattern for its kind of surface (floor tiles, wall bricks, ceiling
+> hatch, ground dots, water waves) and its name in capitals, twice. The
+> browser preview shows the textures, and the sidecar lists them all. Walls,
+> floors and ceilings now carry UVs the way stock zones do, so text reads the
+> right way up. Trees keep their own bark and leaf textures (base colours in
+> the preview). Restart the Server on the merged code first and check the side
+> panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. Cases b and c use the description box; the rest use the
+Controls panel. Each builds on the first attempt.
+
+| # | How | Seed | Materials |
+|---|-----|------|-----------|
+| a | dungeon, 12 rooms, flat | 7 | `dungeon_floor`, `_wall`, `_ceiling` |
+| b | description `a gnoll temple dungeon with 8 rooms` | 7 | `gnoll_dungeon_*` plus `gnoll_temple_floor`, `_wall` |
+| c | description `a kobold tomb full of lava with 6 rooms` | 11 | `kobold_dungeon_*` plus `kobold_lava_floor`, `_wall` |
+| d | city | 7 | `city_floor`, `_wall`, `_ceiling` |
+| e | wilderness, edges N zoneline, E river | 1955208177 | ten `wild_*` ground layers plus `liquid_water` |
+
+From the command line (cases a, d and e):
+
+```bash
+python main.py generate tex_a --zone-type dungeon --rooms 12 --verticality flat --seed 7
+python main.py generate tex_d --zone-type city --seed 7
+python main.py generate tex_e --zone-type wilderness --seed 1955208177 --edges N=zoneline,E=river
+```
+
+### X.1 — Names and patterns
+
+- [ ] **[MUST] Every surface is labelled** — Each floor, wall and ceiling (and
+      each wilderness ground layer and the water) shows its material name and
+      a pattern; no surface is a plain colour or noise.
+- [ ] **[MUST] Names match surfaces** — Floors say `…_FLOOR`, walls `…_WALL`,
+      ceilings `…_CEILING`; themed rooms in b and c say `GNOLL_TEMPLE_…` or
+      `KOBOLD_LAVA_…` while corridors say `…_DUNGEON_…`; wilderness layers say
+      `WILD_…` where that ground is (plains, rock on slopes, mud by water).
+- [ ] **[SHOULD] Patterns read apart** — Tiles on floors, bricks on walls, a
+      diagonal hatch on ceilings, dots on wilderness ground, waves on water.
+- [ ] **[SHOULD] Colours carry over** — Each texture keeps its material's base
+      colour, so the zone's palette is the same as before step 3.
+
+### X.2 — Orientation, seams, legibility
+
+- [ ] **[MUST] Upright on walls** — From inside a room or corridor, wall
+      labels read left to right and the right way up, on all four sides.
+- [ ] **[MUST] Unmirrored on floors and ceilings** — Floor labels read
+      unmirrored from above and ceiling labels from below (their direction
+      depends on which way you face).
+- [ ] **[MUST] No seams** — Textures tile with no visible line where one
+      repeat meets the next; labels are never cut by a tile edge.
+- [ ] **[SHOULD] Readable, not overwhelming** — Labels can be read from a few
+      steps away and don't drown the room. Big wilderness layers (rock, lava)
+      repeat less often, so their labels are larger; that's expected.
+
+### X.3 — Preview and files
+
+- [ ] **[MUST] Trees unchanged** — Case e's trees keep their brown trunks and
+      green canopies; the Trees toggle still hides them.
+- [ ] **[MUST] Overlays work** — Wireframe shows the textured meshes' edges;
+      the camera starts where it did before step 3.
+- [ ] **[MUST] Texture list** — `<name>.zone.json` has a `textures` list, one
+      entry per material (trees' `veg_*` too), each naming its `.dds`, set,
+      surface, kind of surface, polygon count and `texture_mode`
+      (`placeholder`, or `vegetation` for trees).
+- [ ] **[SHOULD] Old look on request** — With `EQ_S3D_TEXTURE_PROVIDER=procedural`
+      set before starting the Server, builds use the old noise textures and
+      the list says `procedural`.
+- [ ] **[SHOULD] Snappy** — Generating takes no longer than before step 3
+      (today placeholders are a little faster than noise; the budget is 2 s).
+
+### X.4 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Seeing the placeholders in the RoF2 client (and that the
+      `Opaque_MaxCB1.fx` shader now on every dungeon and city material renders)
+      needs a takeover install; it moves to M6's in-engine smoke load.

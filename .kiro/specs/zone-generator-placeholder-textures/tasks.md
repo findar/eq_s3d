@@ -64,7 +64,7 @@ The design's four open questions were answered on 2026-11-01
   - Type: agent · Size: S · Depends: 6
   - Owns: generators/textures/placeholder.py, generators/textures/font.py, tests/test_placeholder_textures.py, generators/geometry.py, tests/test_wall_uvs.py
 
-- [ ] 8. Acceptance section, thorough run, timing
+- [x] 8. Acceptance section, thorough run, timing
   - Card: [cards/08-release-prep.md](cards/08-release-prep.md)
   - Type: agent · Size: S · Depends: 7
   - Owns: docs/ACCEPTANCE.md, tests/test_texture_manifest.py
@@ -76,7 +76,7 @@ The design's four open questions were answered on 2026-11-01
 
 - [ ] 10. Close step 3
   - Card: [cards/10-close.md](cards/10-close.md)
-  - Type: agent · Size: S · Depends: 9 · Where: MAIN checkout
+  - Type: agent · Size: S · Depends: 9, 12 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-placeholder-textures/, .kiro/specs/zone-generator/
 
 - [x] 11. Wall UVs follow EQ's convention
@@ -86,3 +86,11 @@ The design's four open questions were answered on 2026-11-01
   - Reqs: 6.1, exit criterion 3
   - Added 2026-11-01 from task 4's UV probe; numbered last so earlier numbers
     stay stable.
+
+- [ ] 12. Flaky server property and the parallel test-runner hang
+  - Card: [cards/12-flaky-server-property.md](cards/12-flaky-server-property.md)
+  - Type: agent · Size: M · Depends: —
+  - Owns: tests/test_server.py, tests/conftest.py, server/app.py, pytest.ini, .kiro/steering/lessons-learned.md
+  - Reqs: exit criterion 2
+  - Added 2026-11-01 from task 8's thorough run (the user's choice); not a
+    texture bug, so it runs beside task 9.
