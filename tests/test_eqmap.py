@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import HealthCheck, example, given, settings, strategies as st
 
 from analyzer.traverse import AgentModel, build_walk_surface, flood_reachable, seed_face_for
 from core.env import env_value
@@ -54,7 +54,7 @@ from generators.mapgeom import DepthBand, OutlineSet, Polyline, extract_outline,
 from generators.zone_spec import RoomSpec, ZoneSpec
 from tests.pbt_helpers import build_settings, scaled
 from tests.strategies import box_zone_types, room_counts_wide, seeds, verticality_all
-from tests.test_properties_mapgeom import BoxBuild
+from tests.test_properties_mapgeom import BoxBuild, WildBuild, wilderness_builds
 
 TOL = 0.00005 + 1e-9          # 4 dp rounding plus float re-read
 
@@ -561,12 +561,13 @@ def test_map_files_mirror_outline_builds(world):
 
 @pytest.mark.slow
 @build_settings(15)
-@given(world=box_builds())
+@example(world=WildBuild("wilderness", 12, 7, "moderate", (("S", "river"),)))
+@given(world=st.one_of(box_builds(), wilderness_builds()))
 def test_map_records_on_floor(world):
     """Feature: zone-generator-m2-true-layout-artifacts, Property 13: Map
     records lie on the walkable floor (umbrella P25).
 
-    For box builds: every ``L`` endpoint mapped back to world lies inside the
+    For box and wilderness builds (a wilderness map has no labels): every ``L`` endpoint mapped back to world lies inside the
     Floor_Region's XY bounding box plus 0.5 u with Z in
     ``[min floor Z, max floor Z + 6]``; every ``P`` label lies inside its
     room's footprint with Z in ``[floor_z, floor_z + 6]``.

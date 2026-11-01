@@ -321,3 +321,139 @@ The preview shows each material's base colour, not the real DDS textures.
       gives a different landscape.
 - [ ] **[SHOULD] Snappy** — A wilderness generate returns in a few seconds (the
       pipeline budget is 60 s).
+
+---
+
+## Step 1b — True-layout map
+
+> Roadmap step 1b (`zone-generator-m2-true-layout-artifacts`). Each accepted
+> build now carries a map traced from its own mesh (`<name>.map.svg`, walls
+> solid, ledges dashed), EverQuest in-client map files (`maps/<name>.txt`, plus
+> `maps/<name>_1.txt` .. for stacked floors) and a Files panel of downloads.
+> Along the way doorways and corridor bends gained walls, and rooms moved a
+> full corridor width apart so corridors never run through them (task 14), so
+> **every box layout moved**. Don't compare against older screenshots: the
+> check is "the map matches the 3D" on whatever each seed builds now. Restart
+> the Server on the merged code first and check the side panel shows no
+> stale-code banner.
+
+### Cases
+
+Dungeon cases: zone type **dungeon**, **12 rooms**, seed pinned. Elevated means
+Elevation checked at **moderate**. The wilderness case uses the Edges box.
+
+| # | Zone type | Settings | Seed |
+|---|-----------|----------|------|
+| a | dungeon | 12 rooms, elevated (moderate) | 1955208177 |
+| b | dungeon | 12 rooms, elevated (moderate) | 1516796975 |
+| c | dungeon | 12 rooms, elevated (moderate) | 678358326 |
+| d | dungeon | 12 rooms, flat | 7 |
+| e | wilderness | edges N zoneline, E river (Step 1 case c) | 1955208177 |
+
+Case b builds with every floor at the same height on the current code (its
+rooms got no rise), so it is a second flat case in practice; c is the one with
+real height changes. Each case builds on the first attempt from the command
+line too, which is what the `.txt` overlay check below uses:
+
+```bash
+python main.py generate accept_a --zone-type dungeon --rooms 12 --verticality moderate --seed 1955208177
+python main.py generate accept_b --zone-type dungeon --rooms 12 --verticality moderate --seed 1516796975
+python main.py generate accept_c --zone-type dungeon --rooms 12 --verticality moderate --seed 678358326
+python main.py generate accept_d --zone-type dungeon --rooms 12 --verticality flat --seed 7
+python main.py generate accept_e --zone-type wilderness --seed 1955208177 --edges N=zoneline,E=river
+```
+
+Each prints its build folder (`output/<name>_<id>/v1/`), which holds
+`<name>.eqg`, `<name>.glb`, `<name>.map.svg`, `<name>.zone.json` and
+`maps/<name>.txt`.
+
+### 1b.A — Walls in 3D (tasks 2 and 14)
+
+Walk cases a–d in the 3D view.
+
+- [ ] **[MUST] Doorways walled** — Every doorway is a gap in a solid wall: wall
+      on both sides of the corridor mouth and a lintel above it. You can't see
+      past a doorway's sides into the void, and you can't walk round it.
+- [ ] **[MUST] Corridor bends walled** — At every bend of a corridor (L or Z
+      route) the outer corner is closed; no open seam where two legs meet.
+- [ ] **[MUST] Corridors clear of rooms** — No corridor runs through a third
+      room or along inside a room's wall; rooms sit visibly apart.
+- [ ] **[MUST] Still walks end to end** — Every room is reachable on foot;
+      ramps on case c land flush at both openings.
+
+### 1b.B — Map matches the 3D view
+
+Open the map dialog for each case and compare it with the 3D view from above.
+
+- [ ] **[MUST] Walls match** — Every solid line on the map sits where the 3D
+      shows a wall, and every wall in the 3D has a line. Rooms and corridors
+      are drawn by their real outline, not just the room boxes.
+- [ ] **[MUST] Doorways open** — Each doorway is a gap in the map's line, at the
+      place the corridor meets the room.
+- [ ] **[MUST] Ledges dashed** — Dashed lines appear exactly where the floor
+      ends with no wall. Box builds should have none now (doorways and bends
+      are walled); on case e the dashes are the zoneline gap and the river
+      edge.
+- [ ] **[MUST] Wilderness border** — On case e the map shows the walkable
+      border of the terrain plus slope breaks over 40°. No contour or path
+      lines: that's the accepted content, not a gap.
+- [ ] **[MUST] North-up** — The map's top is +Y (north) in the 3D view, and
+      left/right are not mirrored.
+
+### 1b.C — Annotations
+
+- [ ] **[MUST] Readable over the outline** — Room roles, room ids, depth
+      numbers, the boss star and gate links are all still readable on top of
+      the outline lines (the outline sits under them, never over).
+
+### 1b.D — Files panel and downloads
+
+Use case a (any case works). The browser's download folder should get each
+file under the build's name.
+
+- [ ] **[MUST] Every file listed** — The Files panel lists the map SVG, the map
+      PNG, each `maps/<name>*.txt` file, the `.eqg`, and the other build files,
+      each with a label naming its type.
+- [ ] **[MUST] Named `<name>.*`** — Downloads arrive as `<name>.map.svg`,
+      `<name>.map.png`, `<name>.txt` (and `<name>_1.txt` .. when there are
+      stacked floors) and `<name>.eqg`; nothing named after a URL path or
+      `download`.
+- [ ] **[MUST] PNG at 2×** — The PNG's pixel size is twice the SVG's viewBox
+      (open the SVG in a text editor for the viewBox; check the PNG's size in
+      the file's properties). The map dialog's "Download PNG" gives the same
+      file.
+- [ ] **[MUST] One missing file marks only itself** — The panel probes each file
+      when a build is shown; it doesn't re-probe on a page reload (the reload
+      clears the panel). To exercise it: in the browser's developer tools,
+      Network tab, block the request URL pattern `*/maps/*`, then generate.
+      Only the `.txt` entries show as unavailable; the rest stay usable. Unblock
+      afterwards. Then delete one file of that build on disk (e.g.
+      `maps/<name>.txt`) and click its link: the Server answers 404 and no
+      other link is affected.
+- [ ] **[SHOULD] Keyboard** — Tab reaches every download link; WASD doesn't
+      move the camera while the panel or the map dialog has focus.
+
+### 1b.E — `.txt` overlay
+
+For each command-line build above, draw its EQ map files back over its
+outline (the path is the build folder the generate printed):
+
+```bash
+python scripts/eqmap_preview.py output/<name>_<id>/v1
+```
+
+It writes `<name>.overlay.svg` in that folder and prints the line and label
+count (about 130–150 lines; 2 labels for a dungeon, 0 for wilderness).
+
+- [ ] **[MUST] Lands on the walls** — Open the overlay SVG: the `.txt` lines sit
+      exactly on the outline's walls, with no offset, scale or mirror.
+- [ ] **[MUST] North-up** — The overlay has the same orientation as the 3D view
+      from above.
+- [ ] **[MUST] Labels in place** — `Entrance` and `Boss` labels sit inside the
+      entrance and climax rooms.
+
+### 1b.F — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Loading `maps/<name>.txt` in the RoF2 client and seeing
+      lines on the walls in the right orientation needs a takeover install; it
+      moves to M6's in-engine smoke load. Not part of this pass.
