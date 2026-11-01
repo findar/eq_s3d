@@ -464,9 +464,10 @@ class TestSemantics:
 
     def test_themed_palette_adds_material_variants(self):
         spec = self._themed(theme="temple")
-        # Themed zones register per-theme floor/wall variants and rooms use them.
-        assert "wall_temple" in spec.materials
-        assert any(r.wall_material == "wall_temple" for r in spec.rooms)
+        # Themed zones register per-theme floor/wall variants and rooms use them
+        # (named <set>_<surface>; no race here, so the set is the theme).
+        assert "temple_wall" in spec.materials
+        assert any(r.wall_material == "temple_wall" for r in spec.rooms)
 
     def test_race_scale_enlarges_rooms(self):
         small = self._themed(race="froglok", seed=3)

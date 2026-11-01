@@ -102,12 +102,9 @@ MAX_COORD: float = 30000.0
 SAFE_POINT_XY: float = 50.0
 SAFE_POINT_DZ: float = 10.0
 
-#: Shaders ``material_indices`` accepts. ``"<fixed-function>"`` is the style
-#: profiles' placeholder that dungeon and city builds still write; it is
-#: tolerated until the room-graph builders map it to a real shader.
+#: Shaders ``material_indices`` accepts.
 KNOWN_SHADERS: Tuple[str, ...] = (
     SHADER_OPAQUE, SHADER_ALPHA, SHADER_CHROMA, SHADER_BOUNDARY,
-    "<fixed-function>",
 )
 
 

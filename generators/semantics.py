@@ -28,6 +28,8 @@ import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from core.ter import SHADER_OPAQUE
+
 from .zone_spec import ZoneSpec, RoomSpec, RegionSpec, LightSpec
 
 
@@ -405,10 +407,28 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
         room.floor_z += rt.sink * scale
 
 
-def _material_variant(base: str, theme: str, tint: str) -> str:
-    """Logical material name for a themed/tinted variant, e.g. 'wall_temple'."""
+def texture_set(zone_type: str, race: str = "", key: str = "") -> str:
+    """The Texture_Set a room-graph material belongs to (placeholder textures
+    spec Req 1.3-1.4): a dungeon's race (unless unset or ``default``) then the
+    theme or tint *key*, or ``dungeon`` for shared surfaces; a city is ``city``,
+    followed by the *key* for a themed room."""
+    if zone_type == "city":
+        words = ["city", key]
+    else:
+        race = "" if (race or "").lower() == "default" else race
+        words = [race, key or zone_type or "dungeon"]
+    return "_".join(w.lower() for w in words if w)
+
+
+def material_name(tex_set: str, surface: str) -> str:
+    """Material_Name ``<Texture_Set>_<Surface>``, e.g. ``gnoll_temple_wall``."""
+    return f"{tex_set}_{surface}"
+
+
+def _material_variant(spec: ZoneSpec, base: str, theme: str, tint: str) -> str:
+    """Material_Name for a themed/tinted room surface, e.g. 'gnoll_temple_wall'."""
     key = tint if tint else theme
-    return f"{base}_{key}" if key else base
+    return material_name(texture_set(spec.zone_type, spec.dungeon_race, key), base)
 
 
 # Per-theme / per-tint palette deltas layered on the base dungeon palette.
@@ -462,16 +482,13 @@ def _apply_materials(spec: ZoneSpec, room: RoomSpec, rt: RoomType, tint: str) ->
     if not palette:
         return  # no themed palette → keep base materials
 
-    shaders = spec.materials.get("wall")
-    shader = shaders.shader if shaders else "Opaque_MaxCB1.fx"
-
     for base in ("floor", "wall"):
         if base not in palette:
             continue
-        name = _material_variant(base, theme, tint)
+        name = _material_variant(spec, base, theme, tint)
         if name not in spec.materials:
             color, desc = palette[base]
-            spec.add_material(name, f"{name}.dds", shader=shader,
+            spec.add_material(name, f"{name}.dds", shader=SHADER_OPAQUE,
                               color=color, description=desc)
         if base == "floor":
             room.floor_material = name
