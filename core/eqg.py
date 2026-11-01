@@ -41,6 +41,27 @@ def _checked_parent(path: Path, root: Optional["OutputRoot"]) -> Path:
     return out_path
 
 
+def dds_to_rgb(data: bytes):
+    """Decode an uncompressed 32-bit A8R8G8B8 DDS (the format the texture
+    providers write) to an (H, W, 3) uint8 RGB array, top row first. Raises
+    ``ValueError`` for anything else (compressed or other layouts)."""
+    import struct
+
+    import numpy as np
+
+    if len(data) < 128 or data[:4] != b"DDS ":
+        raise ValueError("not a DDS file")
+    height, width = struct.unpack_from("<II", data, 12)
+    bits, rmask, gmask, bmask = struct.unpack_from("<IIII", data, 88)
+    if (bits, rmask, gmask, bmask) != (32, 0x00FF0000, 0x0000FF00, 0x000000FF):
+        raise ValueError(f"unsupported DDS pixel format ({bits} bpp)")
+    body = data[128:128 + width * height * 4]
+    if len(body) != width * height * 4:
+        raise ValueError("DDS pixel data is truncated")
+    bgra = np.frombuffer(body, dtype=np.uint8).reshape(height, width, 4)
+    return np.ascontiguousarray(bgra[..., 2::-1])
+
+
 # ---------------------------------------------------------------------------
 # EQG builder
 # ---------------------------------------------------------------------------
@@ -65,6 +86,7 @@ class EqgZone:
         self._placement: Optional[ZonFile] = None
         self._textures:  Dict[str, bytes]  = {}
         self._models:    Dict[str, bytes]  = {}   # name → raw TER/MOD bytes
+        self.glb_warnings: list = []             # set by write_glb
 
     # ------------------------------------------------------------------
     # Setters
@@ -141,9 +163,17 @@ class EqgZone:
                   zone_type: Optional[str] = None,
                   extra: Optional[dict] = None,
                   root: Optional["OutputRoot"] = None,
-                  extra_meshes: Optional[list] = None) -> Optional[Path]:
+                  extra_meshes: Optional[list] = None,
+                  textures: Optional[Dict[int, bytes]] = None) -> Optional[Path]:
         """
         Export the zone terrain as a GLB file for browser preview.
+
+        *textures* optionally maps a material index → its packed DDS bytes.
+        With it, the ``terrain`` node holds one primitive per material in use,
+        each carrying the TER's UVs and that DDS as its base-colour image
+        (placeholder textures spec Req 6); a material whose DDS can't be
+        decoded keeps its base colour and is listed in ``self.glb_warnings``.
+        Without it the GLB is written exactly as before.
 
         *extra_meshes* optionally adds named meshes beside the terrain, each a
         ``(name, vertices (V,3), faces (F,3), vertex_colors (V,4) uint8,
@@ -219,7 +249,20 @@ class EqgZone:
         # Confinement-check (and create the parent of) the GLB path before
         # trimesh writes it; trimesh writes only to this one checked path.
         out_path = _checked_parent(path, root)
-        if extra_meshes:
+        self.glb_warnings = []
+        if textures:
+            scene = self._textured_terrain_scene(ter, textures, vertex_colors)
+            for name, v, f, colors, normals in extra_meshes or []:
+                extra_mesh = trimesh.Trimesh(
+                    vertices=np.asarray(v, dtype=np.float32),
+                    faces=np.asarray(f, dtype=np.int32),
+                    vertex_normals=np.asarray(normals, dtype=np.float32),
+                    process=False,
+                )
+                extra_mesh.visual.vertex_colors = np.asarray(colors, dtype=np.uint8)
+                scene.add_geometry(extra_mesh, node_name=name, geom_name=name)
+            scene.export(str(out_path))
+        elif extra_meshes:
             scene = trimesh.Scene()
             scene.add_geometry(mesh, node_name="terrain", geom_name="terrain")
             for name, v, f, colors, normals in extra_meshes:
@@ -243,6 +286,53 @@ class EqgZone:
                                 zone_type, extra=extra, root=root)
 
         return out_path
+
+    def _textured_terrain_scene(self, ter: TerFile, textures: Dict[int, bytes],
+                                vertex_colors):
+        """A trimesh Scene whose ``terrain`` node holds one primitive per
+        material in use. Each primitive copies its triangles' vertices from
+        the TER (a vertex shared by two materials appears in both) with their
+        normals and UVs; a decodable DDS becomes its base-colour image, and a
+        material without one keeps its base colour as vertex colours."""
+        import numpy as np
+        import trimesh
+        from PIL import Image
+
+        verts = np.array([[v.x, v.y, v.z] for v in ter.vertices], dtype=np.float32)
+        normals = np.array([[v.nx, v.ny, v.nz] for v in ter.vertices], dtype=np.float32)
+        # trimesh stores V with an OpenGL (bottom-left) origin and writes
+        # 1 − v into the glTF, so hand it 1 − v: the GLB then carries the TER's
+        # own v. EQ (Direct3D) and glTF both put v = 0 at the image's top row.
+        uv = np.array([[v.u, 1.0 - v.v] for v in ter.vertices], dtype=np.float64)
+        faces = np.array([[p.v1, p.v2, p.v3] for p in ter.polygons], dtype=np.int64)
+        mats = np.array([p.material for p in ter.polygons], dtype=np.int64)
+
+        scene = trimesh.Scene()
+        scene.graph.update(frame_from=scene.graph.base_frame, frame_to="terrain")
+        for mi in sorted(set(mats.tolist())):
+            sub = faces[mats == mi]
+            used, inverse = np.unique(sub.ravel(), return_inverse=True)
+            mesh = trimesh.Trimesh(vertices=verts[used], faces=inverse.reshape(-1, 3),
+                                   vertex_normals=normals[used], process=False)
+            name = (ter.materials[mi].name if 0 <= mi < len(ter.materials)
+                    else f"material_{mi}")
+            image = None
+            if mi in textures:
+                try:
+                    image = Image.fromarray(dds_to_rgb(textures[mi]))
+                except Exception:  # noqa: BLE001 — fall back to base colour
+                    image = None
+            if image is not None:
+                material = trimesh.visual.material.PBRMaterial(
+                    name=name, baseColorTexture=image,
+                    metallicFactor=0.0, roughnessFactor=1.0)
+                mesh.visual = trimesh.visual.TextureVisuals(uv=uv[used], material=material)
+            else:
+                self.glb_warnings.append(f"texture_preview_fallback:{name}")
+                mesh.visual.vertex_colors = vertex_colors[used]
+            scene.add_geometry(mesh, node_name=f"terrain_{name}", geom_name=name,
+                               parent_node_name="terrain")
+        return scene
 
     # ------------------------------------------------------------------
     # Sidecar (.zone.json)
