@@ -1,9 +1,11 @@
 """Material names by set and surface (placeholder textures spec task 1).
 
 X3 (Req 1.5, 7.1): renaming materials changes no geometry and no material
-assignment. The goldens below hash each pinned build's TER vertices and each
-polygon's (v1, v2, v3, flags, material index), leaving out every name, shader
-and texture string; they were recorded on the code BEFORE the rename.
+assignment. The goldens below hash each pinned build's TER vertex positions,
+normals and colours and each polygon's (v1, v2, v3, flags, material index),
+leaving out every name, shader, texture string and UV. First recorded before
+the rename (task 1, with UVs); re-recorded without UVs before task 11 fixed
+the wall UVs, so they show only UVs moved.
 """
 
 import hashlib
@@ -35,12 +37,12 @@ CASES = {
 }
 
 GOLDEN = {
-    "city": "16b097ef17da109be29c67e9",
-    "dungeon_gnoll_temple": "ba813d865338cc48cb7fdca6",
-    "dungeon_kobold_tomb_lava": "ab3f7da6ae1bb48e9543d5f2",
-    "dungeon_plain": "b8e6613ee91be1d5e7ac7c6b",
-    "dungeon_temple_no_race": "01cc6c694af6fb7d0e83b854",
-    "wilderness": "05eeaa80c532106f34201a6f",
+    "city": "de6665a8ef469abe1e83879b",
+    "dungeon_gnoll_temple": "b44006e9ef84cdfa99b16c41",
+    "dungeon_kobold_tomb_lava": "f5b7d7984f59394ef4fbdfa0",
+    "dungeon_plain": "dc549f4069116e5c17e4d0a7",
+    "dungeon_temple_no_race": "d7f9dad47c93f0c52dc06347",
+    "wilderness": "8a84f45ee3baab987ea27961",
 }
 
 
@@ -52,10 +54,12 @@ def _build_ter(tmp_path, label):
 
 
 def geometry_hash(ter: TerFile) -> str:
-    """sha256 over vertices and polygon (v1, v2, v3, flags, material); no names."""
+    """sha256 over vertex positions, normals and colours, and each polygon's
+    (v1, v2, v3, flags, material); no names and no UVs (task 11 moves wall
+    UVs on purpose)."""
     h = hashlib.sha256()
     for v in ter.vertices:
-        h.update(struct.pack("<8fI", v.x, v.y, v.z, v.nx, v.ny, v.nz, v.u, v.v, v.color))
+        h.update(struct.pack("<6fI", v.x, v.y, v.z, v.nx, v.ny, v.nz, v.color))
     for p in ter.polygons:
         h.update(struct.pack("<IIIIi", p.v1, p.v2, p.v3, p.flags, p.material))
     return h.hexdigest()[:24]

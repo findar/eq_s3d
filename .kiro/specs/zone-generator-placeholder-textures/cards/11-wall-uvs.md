@@ -14,16 +14,16 @@ edges (Dranik catacombs and sewers, Anguish); ours run it up on every wall
 edge, and our `u` runs right-to-left on half the walls.
 
 ## Done when
-- [ ] First commit: X3's golden hash leaves out UVs (positions, normals,
+- [x] First commit: X3's golden hash leaves out UVs (positions, normals,
       colours and each polygon's v1/v2/v3/flags/material only), re-recorded
       on unchanged code, and still passes.
-- [ ] After the fix the same X3 goldens pass untouched: only UVs moved.
-- [ ] For dungeon (flat and elevated) and city builds, on every wall
+- [x] After the fix the same X3 goldens pass untouched: only UVs moved.
+- [x] For dungeon (flat and elevated) and city builds, on every wall
       triangle `v` falls as `z` rises, and `u` rises to the right as seen from
       the room's or corridor's inside; the texel scale (100 u per repeat) is
       unchanged.
       → verify: `python -m pytest tests/test_wall_uvs.py tests/test_material_names.py -q`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - Decide "inside" from the room's or corridor's footprint (which side its
@@ -35,3 +35,4 @@ edge, and our `u` runs right-to-left on half the walls.
   nothing else should move; if a test outside `Owns` breaks, stop and ask.
 
 ## Result
+✔ 277b5d3 · 737 passed

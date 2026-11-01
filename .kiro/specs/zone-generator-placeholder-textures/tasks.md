@@ -79,7 +79,7 @@ The design's four open questions were answered on 2026-11-01
   - Type: agent · Size: S · Depends: 9 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-placeholder-textures/, .kiro/specs/zone-generator/
 
-- [ ] 11. Wall UVs follow EQ's convention
+- [x] 11. Wall UVs follow EQ's convention
   - Card: [cards/11-wall-uvs.md](cards/11-wall-uvs.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: generators/geometry.py, tests/test_wall_uvs.py, tests/test_material_names.py

@@ -81,24 +81,29 @@ class MeshBuilder:
         visible side, i.e. the side the normal points toward).
 
         UVs are planar-projected based on world position * uv_scale so textures
-        tile consistently regardless of surface size.
+        tile consistently regardless of surface size. A wall follows EQ's
+        (Direct3D) convention as stock zones do: ``v`` grows down the wall, so
+        the texture's top row is at the top, and ``u`` grows to the right of a
+        viewer facing the visible side, so the texture isn't mirrored.
         """
         base = len(self.vertices)
         corners = [p0, p1, p2, p3]
 
-        # Planar UV projection: pick the two axes most perpendicular to normal
         nx, ny, nz = (abs(normal[0]), abs(normal[1]), abs(normal[2]))
         if nz >= nx and nz >= ny:
-            uv_axes = (0, 1)   # floor/ceiling → use XY
-        elif nx >= ny:
-            uv_axes = (1, 2)   # east/west wall → use YZ
+            # Floor/ceiling: planar XY.
+            def uv(cx, cy, cz):
+                return cx * uv_scale, cy * uv_scale
         else:
-            uv_axes = (0, 2)   # north/south wall → use XZ
+            # Wall: the viewer faces -normal; their right is (-normal) × up.
+            h = math.hypot(normal[0], normal[1])
+            rx, ry = -normal[1] / h, normal[0] / h
+
+            def uv(cx, cy, cz):
+                return (cx * rx + cy * ry) * uv_scale, -cz * uv_scale
 
         for cx, cy, cz in corners:
-            coords = (cx, cy, cz)
-            u = coords[uv_axes[0]] * uv_scale
-            v = coords[uv_axes[1]] * uv_scale
+            u, v = uv(cx, cy, cz)
             self.vertices.append(Vertex(
                 x=cx, y=cy, z=cz,
                 nx=normal[0], ny=normal[1], nz=normal[2],
