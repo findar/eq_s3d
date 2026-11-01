@@ -94,7 +94,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: docs/ACCEPTANCE.md, tests/test_wilderness_trees.py
   - Reqs: 11.2, exit criteria 1–2
 
-- [ ] 13. HUMAN: trees acceptance pass
+- [x] 13. HUMAN: trees acceptance pass
   - Card: [cards/13-human-acceptance.md](cards/13-human-acceptance.md)
   - Type: human · Depends: 12
 
