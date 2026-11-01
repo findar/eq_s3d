@@ -31,7 +31,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: core/zon.py, tests/test_zon.py
   - Reqs: 8.2
 
-- [ ] 2. Vegetation kit data and loader
+- [x] 2. Vegetation kit data and loader
   - Card: [cards/02-vegetation-kit.md](cards/02-vegetation-kit.md)
   - Type: agent · Size: S · Depends: —
   - Owns: styles/vegetation.json, generators/vegetation/__init__.py, generators/vegetation/kit.py, tests/test_vegetation_kit.py
