@@ -49,7 +49,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: generators/vegetation/placement.py, tests/test_vegetation_placement.py
   - Reqs: 4, 5
 
-- [ ] 5. Build integration: archive, ZON objects, sidecar, gate
+- [x] 5. Build integration: archive, ZON objects, sidecar, gate
   - Card: [cards/05-build-integration.md](cards/05-build-integration.md)
   - Type: agent · Size: M · Depends: 1, 3, 4
   - Owns: generators/wilderness/build.py, generators/builder.py, tests/test_wilderness_trees.py

@@ -89,6 +89,10 @@ def test_kit_textures_go_through_the_provider_seam(tmp_path):
     finally:
         factory.set_provider(None)
     requested = {s.name: s for s in rec.calls}
-    assert set(requested) == set(spec.materials)
+    # Terrain materials exactly, plus the trees' bark/leaf textures (trees
+    # spec task 5: tree textures go through the same provider seam).
+    terrain = {n for n in requested if not n.startswith("veg_")}
+    assert terrain == set(spec.materials)
+    assert all(n.endswith(("_bark", "_leaf")) for n in set(requested) - terrain)
     assert requested["wild_plains"].kind == "grass"
     assert requested["wild_rock"].kind == "rock"
