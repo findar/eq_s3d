@@ -67,7 +67,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: analyzer/rof2check.py, tests/test_rof2check.py
   - Reqs: 8.3
 
-- [ ] 8. Density control: prompt, CLI, server
+- [x] 8. Density control: prompt, CLI, server
   - Card: [cards/08-density-control.md](cards/08-density-control.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: generators/wilderness/biome_resolve.py, ai/expand.py, main.py, server/app.py, tests/test_wilderness_trees_controls.py

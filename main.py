@@ -156,9 +156,11 @@ def cmd_generate(args) -> None:
     zone_id = new_zone_id(prefix=args.name)
 
     edges = getattr(args, "edges", None)
+    trees = getattr(args, "trees", None)
 
     def factory(seed):
-        return plan_to_spec(plan, seed=seed, edges=edges)
+        return plan_to_spec(plan, seed=seed, edges=edges, trees=trees,
+                            trees_source="cli")
 
     # Build through the shared validated pipeline, so the CLI gets the same
     # "every room reachable on foot" guarantee as the server (dungeon/box
@@ -258,6 +260,9 @@ def main(argv: list[str] | None = None) -> None:
                    help="Wilderness Rim per side, e.g. N=zoneline,E=river "
                         "(types: mountain, river, zoneline; unnamed sides "
                         "are mountain)")
+    g.add_argument("--trees", default=None,
+                   choices=["none", "sparse", "normal", "dense"],
+                   help="Wilderness tree density (default normal)")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -270,6 +275,9 @@ def main(argv: list[str] | None = None) -> None:
     if (getattr(args, "edges", None) is not None
             and canonical_zone_type(args.zone_type) != "wilderness"):
         parser.error("--edges only applies to --zone-type wilderness")
+    if (getattr(args, "trees", None) is not None
+            and canonical_zone_type(args.zone_type) != "wilderness"):
+        parser.error("--trees only applies to --zone-type wilderness")
 
     # Refusal (Req 10.2): right after parsing — before any build or write —
     # refuse an output directory that resolves to, inside, or around the
