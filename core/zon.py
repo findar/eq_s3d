@@ -27,14 +27,16 @@ Binary layout (little-endian, packed):
     int32   id               index into models list
     uint32  loc              name offset in string table (instance name)
     float   x, y, z          position
-    float   rx, ry, rz       rotation in EQ heading units (0–512 = 360°)
+    float   yaw, pitch, roll rotation in RADIANS; the first field is yaw about Z
+                             (stock trees span ±π there; the other two are
+                             small tilts, ≤ 0.46 rad on broodlands)
     float   scale
     [version > 1: uint32 unk_count; unk_count × uint32 unknown data]
 
   regions[region_count]:
     uint32  loc              name offset (prefix encodes type — see below)
     float   center_x/y/z    center of the region AABB
-    float   rotation         EQ heading units
+    float   rotation         RADIANS (stock regions are mostly −π/2)
     uint32  flag_unk020
     uint32  flag_unk024
     float   extend_x/y/z    half-extents of the AABB
@@ -78,9 +80,6 @@ REGION_ZONELINE = "ATP"
 REGION_ICE      = "ASL"
 REGION_GENERIC  = "APV"
 
-_HEADING_TO_DEG = 360.0 / 512.0
-_DEG_TO_HEADING = 512.0 / 360.0
-
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -93,9 +92,9 @@ class ZonObject:
     x: float = 0.0
     y: float = 0.0
     z: float = 0.0
-    rx: float = 0.0         # rotation in degrees (converted on write)
-    ry: float = 0.0
-    rz: float = 0.0
+    yaw: float = 0.0        # radians about Z (the first rotation field)
+    pitch: float = 0.0      # radians; second field, a small tilt on stock trees
+    roll: float = 0.0       # radians; third field, a small tilt on stock trees
     scale: float = 1.0
 
 
@@ -111,7 +110,7 @@ class ZonRegion:
     center_x: float = 0.0
     center_y: float = 0.0
     center_z: float = 0.0
-    rotation: float = 0.0   # degrees (converted on write)
+    rotation: float = 0.0   # radians
     extend_x: float = 10.0  # half-width
     extend_y: float = 10.0  # half-depth
     extend_z: float = 5.0   # half-height
@@ -201,7 +200,7 @@ class ZonFile:
 
         # Objects
         for _ in range(object_count):
-            model_id, loc, x, y, z, rx, ry, rz, scale = struct.unpack_from(
+            model_id, loc, x, y, z, yaw, pitch, roll, scale = struct.unpack_from(
                 "<iIfffffff", data, pos
             )
             pos += 36
@@ -209,9 +208,7 @@ class ZonFile:
                 name=str_at(loc),
                 model_id=model_id,
                 x=x, y=y, z=z,
-                rx=rx * _HEADING_TO_DEG,
-                ry=ry * _HEADING_TO_DEG,
-                rz=rz * _HEADING_TO_DEG,
+                yaw=yaw, pitch=pitch, roll=roll,
                 scale=scale,
             )
             if version > 1:
@@ -223,14 +220,13 @@ class ZonFile:
         # Regions
         for _ in range(region_count):
             loc, cx, cy, cz, rot, fu020, fu024, ex, ey, ez = struct.unpack_from(
-                "<IfffIIIfff", data, pos
+                "<IffffIIfff", data, pos
             )
             pos += 40
-            # Note: rot stored as EQ heading (0-512), convert to degrees
             zon.regions.append(ZonRegion(
                 name=str_at(loc),
                 center_x=cx, center_y=cy, center_z=cz,
-                rotation=rot / 512.0 * 360.0,
+                rotation=rot,
                 extend_x=ex, extend_y=ey, extend_z=ez,
             ))
 
@@ -302,9 +298,7 @@ class ZonFile:
                 obj.model_id,
                 intern(obj.name),
                 obj.x, obj.y, obj.z,
-                obj.rx * _DEG_TO_HEADING,
-                obj.ry * _DEG_TO_HEADING,
-                obj.rz * _DEG_TO_HEADING,
+                obj.yaw, obj.pitch, obj.roll,
                 obj.scale,
             )
             # version 2: unk_count = 0
@@ -312,10 +306,10 @@ class ZonFile:
 
         # Regions
         for reg in self.regions:
-            out += struct.pack("<IfffIIIfff",
+            out += struct.pack("<IffffIIfff",
                 intern(reg.name),
                 reg.center_x, reg.center_y, reg.center_z,
-                int(reg.rotation * _DEG_TO_HEADING),
+                reg.rotation,
                 0, 0,   # flag_unk020, flag_unk024
                 reg.extend_x, reg.extend_y, reg.extend_z,
             )
@@ -345,11 +339,11 @@ class ZonFile:
               name: str,
               model_file: str,
               x: float, y: float, z: float,
-              rz: float = 0.0,
+              yaw: float = 0.0,
               scale: float = 1.0) -> ZonObject:
-        """Convenience: register model and add a placed instance."""
+        """Convenience: register model and add a placed instance (yaw in radians)."""
         mid = self.add_model(model_file)
-        obj = ZonObject(name=name, model_id=mid, x=x, y=y, z=z, rz=rz, scale=scale)
+        obj = ZonObject(name=name, model_id=mid, x=x, y=y, z=z, yaw=yaw, scale=scale)
         self.objects.append(obj)
         return obj
 

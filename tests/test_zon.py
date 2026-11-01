@@ -19,7 +19,7 @@ def _make_zon() -> ZonFile:
     zon.objects.append(ZonObject(
         name="rock_a", model_id=0,
         x=100.0, y=200.0, z=0.0,
-        rz=90.0, scale=1.5,
+        yaw=1.5, scale=1.5,
     ))
     zon.objects.append(ZonObject(
         name="torch_entrance", model_id=1,
@@ -67,8 +67,30 @@ class TestZonRoundTrip:
     def test_roundtrip_object_rotation(self):
         zon = _make_zon()
         zon2 = ZonFile.from_bytes(zon.to_bytes())
-        # Rotation converts to EQ heading units and back — allow small float error
-        assert abs(zon2.objects[0].rz - 90.0) < 1.0
+        # Radians are stored as-is (float32), no unit conversion.
+        assert zon2.objects[0].yaw == pytest.approx(1.5, abs=1e-6)
+
+    def test_roundtrip_every_field_exactly(self):
+        # Values exactly representable in float32, so the round trip is exact.
+        zon = ZonFile()
+        zon.models += ["ter_x.ter", "veg_a.mod"]
+        zon.objects.append(ZonObject(name="veg_0001", model_id=1, x=-12.5, y=40.25,
+                                     z=3.75, yaw=-2.5, pitch=0.125, roll=-0.0625,
+                                     scale=1.25))
+        zon.regions.append(ZonRegion(name="AWT_pool", center_x=1.5, center_y=-2.5,
+                                     center_z=0.5, rotation=-1.5, extend_x=8.0,
+                                     extend_y=4.0, extend_z=2.0))
+        zon.lights.append(ZonLight(name="l1", x=1.0, y=2.0, z=3.0, r=0.5, g=0.25,
+                                   b=0.75, radius=64.0))
+        zon2 = ZonFile.from_bytes(zon.to_bytes())
+        assert zon2 == zon
+
+    def test_place_takes_yaw_in_radians(self):
+        zon = ZonFile()
+        obj = zon.place("veg_0001", "veg_a.mod", 1.0, 2.0, 3.0, yaw=-3.0, scale=0.5)
+        back = ZonFile.from_bytes(zon.to_bytes()).objects[0]
+        assert obj.yaw == -3.0 and back.yaw == pytest.approx(-3.0, abs=1e-6)
+        assert back.pitch == 0.0 and back.roll == 0.0
 
     def test_roundtrip_region_name(self):
         zon = _make_zon()
@@ -109,3 +131,36 @@ class TestZonRoundTrip:
     def test_invalid_magic(self):
         with pytest.raises(ValueError):
             ZonFile.from_bytes(b"BADM\x00" * 20)
+
+
+def _stock_zon(name: str) -> ZonFile:
+    from pathlib import Path
+    from core.env import env_value
+    from core.pfs import PfsArchive
+    eq = env_value("EQ_PATH")
+    if not eq or not (Path(eq) / f"{name}.eqg").exists():
+        pytest.skip(f"needs EQ_PATH with {name}.eqg")
+    arc = PfsArchive.from_file(Path(eq) / f"{name}.eqg")
+    zon_name = next(f for f in arc.list_files() if f.lower().endswith(".zon"))
+    return ZonFile.from_bytes(arc.get(zon_name))
+
+
+class TestStockRotations:
+    """Stock EQG zones store rotations in radians, yaw in the first field
+    (trees-step design, research finding 5). A heading-unit or degree reading
+    would put these far outside ±π."""
+
+    def test_stock_tree_yaw_spans_a_full_turn(self):
+        zon = _stock_zon("broodlands")
+        trees = [o for o in zon.objects if "tree" in zon.models[o.model_id].lower()]
+        assert len(trees) > 100
+        yaws = [o.yaw for o in trees]
+        assert min(yaws) < -3.0 and max(yaws) > 3.0
+        assert all(abs(y) <= 3.1416 for y in yaws)
+        # The other two fields are small tilts (≤ 0.46 rad on broodlands).
+        assert all(abs(o.pitch) < 0.5 and abs(o.roll) < 0.5 for o in trees)
+
+    def test_stock_region_rotation_is_radians(self):
+        zon = _stock_zon("broodlands")
+        assert zon.regions
+        assert all(abs(r.rotation) <= 3.1416 for r in zon.regions)
