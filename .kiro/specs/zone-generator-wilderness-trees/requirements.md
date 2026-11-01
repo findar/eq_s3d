@@ -1,8 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 2, ready.** Written 2026-10-31. The user answered the
-> design's open questions the same day (`archive.md` "Decisions"). Task index:
-> `tasks.md` (card format, 14 tasks).
+> **STATUS: roadmap step 2, DONE.** Written 2026-10-31; signed off 2026-11-01
+> (master `8160b17`). The user answered the design's open questions on
+> 2026-10-31 (`archive.md` "Decisions"). What landed: `archive.md`.
 
 ## Introduction
 

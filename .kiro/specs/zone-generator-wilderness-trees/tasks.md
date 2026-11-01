@@ -98,7 +98,7 @@ The design's four open questions were answered on 2026-10-31
   - Card: [cards/13-human-acceptance.md](cards/13-human-acceptance.md)
   - Type: human · Depends: 12
 
-- [ ] 14. Close step 2
+- [x] 14. Close step 2
   - Card: [cards/14-close.md](cards/14-close.md)
   - Type: agent · Size: S · Depends: 13 · Where: MAIN checkout
   - Owns: ROADMAP.md, tasks/README.md, .kiro/specs/zone-generator/, .kiro/specs/zone-generator-wilderness-trees/

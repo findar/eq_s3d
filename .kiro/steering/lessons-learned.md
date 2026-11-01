@@ -17,6 +17,14 @@ read before touching the relevant area so it isn't rediscovered.
 - **EQG collision is per-triangle**, from the polygon's `0x01` flag (confirmed in
   `azone/map.cpp::CompileEQG`). No BSP tree needed. This is why dense organic
   meshes work as collision exactly like hand-made zones.
+- **ZON (EQGZ) rotations are radians, yaw first.** An object's three
+  rotation floats are (yaw, pitch, roll) in radians, and a region's rotation
+  is one float in radians (stock values mostly −π/2). Stock object tilts
+  reach ~0.46 rad. 53 of the 88 stock zones ship ZON as the `EQTZ` text
+  format instead, which `core/zon.py` doesn't read.
+- **Two `.eqg` writes are never byte-identical.** `core/pfs.py` puts the
+  write time in the archive footer, so reproducibility tests compare
+  `bytes[:-4]`; every archive entry is identical run to run.
 - **Era/format boundary is Gates of Discord (2003):** Classic→PoP = `.s3d`/WLD;
   GoD onward = `.eqg`. Classic–PoP (the default look) therefore needs the WLD
   reader, not just the EQG path.

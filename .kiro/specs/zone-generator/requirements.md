@@ -641,6 +641,8 @@ the requirements.
 6. THE Layout_Generator and the Conformance_Meter SHALL use the zone type's Classic–PoP Style_Profile, and no Zone_Plan field SHALL select another era's profile.
 7. THE Zone_Generator SHALL obtain every mesh from the Zone_Spec and SHALL accept no externally authored mesh or model file as generation input.
 
+> **Refined by step 2** (design decision 22): 32.4 holds for room-graph builds; a wilderness build may pack generated tree models (`veg_<species>.mod`), their textures, and one ZON object per tree. Every model is still generated from the Zone_Spec (32.7).
+
 ## Delivery Model (process constraints)
 
 These govern how the system is built, not how it behaves.
