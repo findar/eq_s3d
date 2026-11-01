@@ -37,7 +37,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: styles/vegetation.json, generators/vegetation/__init__.py, generators/vegetation/kit.py, tests/test_vegetation_kit.py
   - Reqs: 1
 
-- [ ] 3. Procedural tree models and leaf/bark textures
+- [x] 3. Procedural tree models and leaf/bark textures
   - Card: [cards/03-tree-models.md](cards/03-tree-models.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/vegetation/models.py, generators/vegetation/textures.py, tests/test_vegetation_models.py
