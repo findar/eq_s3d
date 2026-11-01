@@ -49,7 +49,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: core/eqg.py, generators/builder.py, tests/test_glb_textures.py
   - Reqs: 6.1–6.3
 
-- [ ] 5. Web renders the textured preview
+- [x] 5. Web renders the textured preview
   - Card: [cards/05-web-textures.md](cards/05-web-textures.md)
   - Type: agent · Size: S · Depends: 4
   - Owns: web/src/scene.ts, web/src/main.ts

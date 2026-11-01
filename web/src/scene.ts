@@ -13,6 +13,13 @@ const REGION_COLORS: Record<string, number> = {
   generic: 0x808080,
 };
 
+/** A mesh's material(s) as a list (three allows one or an array). */
+function materialsOf(mesh: THREE.Mesh): THREE.Material[] {
+  const m = mesh.material;
+  if (!m) return [];
+  return Array.isArray(m) ? m : [m];
+}
+
 export class ZoneScene {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
@@ -73,6 +80,23 @@ export class ZoneScene {
     const gltf = await this.loader.loadAsync(glbUrl);
     const model = gltf.scene;
     this.vegetation = model.getObjectByName("vegetation") ?? null;
+
+    // Textured terrain (one primitive per material, embedded diffuse): the
+    // loader already applies each texture with repeat wrapping. Sharpen it at
+    // grazing angles so a wall's placeholder label stays readable along a
+    // corridor. Untextured (base-colour) meshes are left as they load.
+    const anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    model.traverse((o: THREE.Object3D) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const mat of materialsOf(mesh)) {
+        const map = (mat as THREE.MeshStandardMaterial).map;
+        if (map) {
+          map.anisotropy = anisotropy;
+          map.needsUpdate = true;
+        }
+      }
+    });
 
     // Frame on the terrain node when the GLB has one, so trees never shift the
     // centring or the camera start; a single-mesh GLB frames on the whole model.
@@ -247,8 +271,9 @@ export class ZoneScene {
     this.zoneGroup.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (mesh.isMesh) {
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        if (mat) mat.wireframe = on;
+        for (const mat of materialsOf(mesh)) {
+          (mat as THREE.MeshStandardMaterial).wireframe = on;
+        }
       }
     });
   }
