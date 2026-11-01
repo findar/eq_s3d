@@ -3,7 +3,7 @@
 Index entry: `tasks.md` task 6. **Type: human. Agents never tick this.**
 
 ## Setup
-Merge tasks 1–5, restart the server, and generate a themed dungeon (prompt
+Merge tasks 1–5 and 11, restart the server, and generate a themed dungeon (prompt
 "a gnoll temple dungeon"), a city, and a wilderness zone with a river edge.
 
 ## Checklist

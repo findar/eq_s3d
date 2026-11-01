@@ -57,7 +57,7 @@ The design's four open questions were answered on 2026-11-01
 
 - [ ] 6. HUMAN: first look at placeholders in 3D
   - Card: [cards/06-human-first-look.md](cards/06-human-first-look.md)
-  - Type: human · Depends: 5
+  - Type: human · Depends: 5, 11
 
 - [ ] 7. Tune from the first look
   - Card: [cards/07-tuning.md](cards/07-tuning.md)
@@ -78,3 +78,11 @@ The design's four open questions were answered on 2026-11-01
   - Card: [cards/10-close.md](cards/10-close.md)
   - Type: agent · Size: S · Depends: 9 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-placeholder-textures/, .kiro/specs/zone-generator/
+
+- [ ] 11. Wall UVs follow EQ's convention
+  - Card: [cards/11-wall-uvs.md](cards/11-wall-uvs.md)
+  - Type: agent · Size: S · Depends: 1
+  - Owns: generators/geometry.py, tests/test_wall_uvs.py, tests/test_material_names.py
+  - Reqs: 6.1, exit criterion 3
+  - Added 2026-11-01 from task 4's UV probe; numbered last so earlier numbers
+    stay stable.
