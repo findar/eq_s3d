@@ -60,14 +60,16 @@
         <label>Locks
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
-        <!-- Wilderness only: what each side of the map is. Mountain and river
-             sides are sealed; a zoneline is a walkable exit off the map. -->
+        <!-- Wilderness only: what each side of the map is (mountain and river
+             sides are sealed; a zoneline is a walkable exit off the map), and
+             how wooded the plains are. -->
         <fieldset id="edges" hidden>
-          <legend>Map edges</legend>
+          <legend>Wilderness</legend>
           <label>N <select id="edge-n"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
           <label>E <select id="edge-e"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
           <label>S <select id="edge-s"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
           <label>W <select id="edge-w"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+          <label>Trees <select id="trees"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
         </fieldset>
       </div>
     </details>
@@ -126,6 +128,7 @@
     <label class="toggle"><input type="checkbox" id="t-regions" checked /> Regions</label>
     <label class="toggle"><input type="checkbox" id="t-gates" checked /> Gates (lock/key)</label>
     <label class="toggle"><input type="checkbox" id="t-labels" checked /> Room IDs</label>
+    <label class="toggle" title="Show or hide the zone's trees (wilderness builds with trees)"><input type="checkbox" id="t-trees" checked disabled /> Trees</label>
 
     <h3>Controls</h3>
     <p class="hint">Click viewport to capture mouse.<br>

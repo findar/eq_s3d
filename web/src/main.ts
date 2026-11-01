@@ -52,6 +52,10 @@ controls.onLockChange = (locked) => {
 ($("t-labels") as HTMLInputElement).addEventListener("change", (e) =>
   zoneScene.setLabelsVisible((e.target as HTMLInputElement).checked)
 );
+const treesToggle = $("t-trees") as HTMLInputElement;
+treesToggle.addEventListener("change", () =>
+  zoneScene.setVegetationVisible(treesToggle.checked)
+);
 
 // ---- Build identity ----
 // The backend runs without auto-reload, so code changed after it started is
@@ -319,19 +323,23 @@ async function doGenerate(mode: Mode) {
       : 0;
     const size = ($("size") as HTMLSelectElement).value;
     const verticality = ($("verticality") as HTMLSelectElement).value;
-    const edges = zoneType === "wilderness" ? readEdges() : undefined;
+    const wild = zoneType === "wilderness";
+    const edges = wild ? readEdges() : undefined;
+    const trees = wild ? ($("trees") as HTMLSelectElement).value : undefined;
     params = {
       mode,
       controls: {
         zone_type: zoneType, room_count: rooms, size, verticality, locks,
         ...(edges ? { edges } : {}),
+        ...(trees ? { trees } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
     };
     console.log(
       `[input] controls: zone_type=${zoneType} rooms=${rooms} size=${size} ` +
       `verticality=${verticality} locks=${locks}` +
-      (edges ? ` edges=${JSON.stringify(edges)}` : "") + seedNote,
+      (edges ? ` edges=${JSON.stringify(edges)}` : "") +
+      (trees ? ` trees=${trees}` : "") + seedNote,
     );
   }
 
@@ -355,6 +363,10 @@ async function doGenerate(mode: Mode) {
     statusEl.textContent = "loading…";
 
     const box = await zoneScene.loadZone(result.glb_url);
+    // The Trees toggle only means something when the GLB has a vegetation
+    // node; keep the user's last choice across builds.
+    treesToggle.disabled = !zoneScene.hasVegetation();
+    zoneScene.setVegetationVisible(treesToggle.checked);
     const sidecar = await fetchSidecar(result.zone_url);
     zoneScene.applyOverlays(sidecar);
     updatePanel(result, sidecar);
@@ -451,7 +463,7 @@ $("reset-view").addEventListener("click", () => {
 });
 
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
-                  "edge-n", "edge-e", "edge-s", "edge-w"]) {
+                  "edge-n", "edge-e", "edge-s", "edge-w", "trees"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });

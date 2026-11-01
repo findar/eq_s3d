@@ -11,6 +11,8 @@ export interface GenerateControls {
   locks?: number;
   // Wilderness only: side (N/E/S/W) -> mountain | river | zoneline.
   edges?: Record<string, string>;
+  // Wilderness only: tree density, none | sparse | normal | dense.
+  trees?: string;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:

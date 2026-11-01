@@ -24,6 +24,8 @@ export class ZoneScene {
   private gateGroup = new THREE.Group();
   private labelGroup = new THREE.Group();
   private wireframe: THREE.LineSegments | null = null;
+  // The GLB's `vegetation` node (wilderness trees), or null when it has none.
+  private vegetation: THREE.Object3D | null = null;
   private loader = new GLTFLoader();
 
   constructor(canvas: HTMLCanvasElement) {
@@ -70,8 +72,11 @@ export class ZoneScene {
 
     const gltf = await this.loader.loadAsync(glbUrl);
     const model = gltf.scene;
+    this.vegetation = model.getObjectByName("vegetation") ?? null;
 
-    const box = new THREE.Box3().setFromObject(model);
+    // Frame on the terrain node when the GLB has one, so trees never shift the
+    // centring or the camera start; a single-mesh GLB frames on the whole model.
+    const box = new THREE.Box3().setFromObject(model.getObjectByName("terrain") ?? model);
     const center = box.getCenter(new THREE.Vector3());
     // Centre the zone on the origin so overlays line up
     model.position.sub(center);
@@ -227,6 +232,15 @@ export class ZoneScene {
     const worldH = worldW * (canvas.height / canvas.width);
     sprite.scale.set(worldW, worldH, 1);
     return sprite;
+  }
+
+  /** Whether the loaded zone has a `vegetation` node to toggle. */
+  hasVegetation(): boolean {
+    return this.vegetation !== null;
+  }
+
+  setVegetationVisible(on: boolean): void {
+    if (this.vegetation) this.vegetation.visible = on;
   }
 
   setWireframe(on: boolean): void {
