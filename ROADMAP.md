@@ -54,7 +54,7 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
 
 **Step 2 — trees for wilderness is DONE** (master `8160b17`, signed off 2026-11-01; see the Done table and `.kiro/specs/zone-generator-wilderness-trees/archive.md`).
 
-**Pick up here: roadmap step 3, placeholder textures.** No spec yet: write one first (`.kiro/specs/<step-3-name>/`, card format). Known follow-ups still open: shoreline below water level on some seeds (`synth.py`), the 150 u matrix vs 160 u fine-cell frame drift, dungeon and city materials writing the placeholder shader `<fixed-function>` (the format gate tolerates it for now), the PFS footer timestamp that keeps two `.eqg` writes from being byte-identical, and `@types/three` plus a frontend type check (deferred by the user). The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
+**Pick up here: roadmap step 3, placeholder textures.** Spec drafted: `.kiro/specs/zone-generator-placeholder-textures/` (requirements, design with measured stock texture data, card-format `tasks.md`, 10 tasks). Its four open questions wait on the user; then tasks 1 and 2 are ready side by side. Run `python scripts/task_status.py`. Known follow-ups still open: shoreline below water level on some seeds (`synth.py`), the 150 u matrix vs 160 u fine-cell frame drift, dungeon and city materials writing the placeholder shader `<fixed-function>` (the format gate tolerates it for now), the PFS footer timestamp that keeps two `.eqg` writes from being byte-identical, and `@types/three` plus a frontend type check (deferred by the user). The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
 
 **Roadmap — the 11-step content sequence (authoritative, in order).** Re-sequenced around visible, demonstrable zone outcomes rather than internal architecture (user decision). Each step ends in something a person can look at and judge against the north-star "indistinguishable from a hand-crafted zone".
 
@@ -64,7 +64,7 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
      *(DONE — signed off 2026-10-31; see the Done table)*
 2. **Trees for wilderness.** Spec: `.kiro/specs/zone-generator-wilderness-trees/`.
    *(DONE — signed off 2026-11-01; see the Done table)*
-3. **Textures (placeholder)** — enough to identify type (e.g. `gnoll-cave-wall`, `crypt-floor`).
+3. **Textures (placeholder)** — enough to identify type (e.g. `gnoll-cave-wall`, `crypt-floor`). Spec: `.kiro/specs/zone-generator-placeholder-textures/`.
 4. **Interesting textures** — the real procedural / AI texture pass.
 5. **Outdoor dungeon (Mistmoore, Blackburrow)** — generate terrain, THEN carve / add the dungeon into it.
 6. **Graph-replacement dungeon generation** support.
