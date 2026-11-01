@@ -33,13 +33,21 @@ The eleven checks, in order, with the input each depends on::
     required_files    pfs_reads entries
     ter_roundtrip     the ter_<name>.ter entry
     zon_roundtrip     the <name>.zon entry
-    zon_model_ref     ZON parse
-    material_indices  TER parse
-    diffuse_textures  TER parse + entries
+    zon_model_ref     ZON parse (+ entries for placed models)
+    material_indices  TER parse (+ placed models)
+    diffuse_textures  TER parse + entries (+ placed models)
     collision_policy  TER parse
     safe_point        TER parse
     bounds_sane       TER parse
     name_consistent   entries + ZON + Sidecar
+
+Placed models (wilderness trees, trees spec Req 8.3) ride on three existing
+checks rather than new ones, so the check list stays fixed: ``zon_model_ref``
+also requires every ZON object's model index to resolve and every model after
+``models[0]`` to be a packed ``.mod`` that re-reads byte for byte;
+``material_indices`` also covers each model's polygons and requires every
+shader (TER and models) to be in :data:`KNOWN_SHADERS`; ``diffuse_textures``
+also covers each model's materials.
 
 ``passed = all(c.passed for c in checks)`` (Req 9.1). ``name_consistent`` is the
 build half of umbrella Req 9.7 only — M1 has no Known_Zone_List membership
@@ -56,7 +64,17 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from core.pfs import RawEntry, read_directory
-from core.ter import FLAG_PASSABLE, PROP_DIFFUSE, PROP_TYPE_STRING, TerFile
+from core.ter import (
+    FLAG_PASSABLE,
+    MAGIC_MODEL,
+    PROP_DIFFUSE,
+    PROP_TYPE_STRING,
+    SHADER_ALPHA,
+    SHADER_BOUNDARY,
+    SHADER_CHROMA,
+    SHADER_OPAQUE,
+    TerFile,
+)
 from core.zon import ZonFile
 from generators.zone_spec import ZoneSpec
 
@@ -83,6 +101,14 @@ MAX_COORD: float = 30000.0
 #: lie in ``[safe_z - SAFE_POINT_DZ, safe_z]`` (on or just above the floor).
 SAFE_POINT_XY: float = 50.0
 SAFE_POINT_DZ: float = 10.0
+
+#: Shaders ``material_indices`` accepts. ``"<fixed-function>"`` is the style
+#: profiles' placeholder that dungeon and city builds still write; it is
+#: tolerated until the room-graph builders map it to a real shader.
+KNOWN_SHADERS: Tuple[str, ...] = (
+    SHADER_OPAQUE, SHADER_ALPHA, SHADER_CHROMA, SHADER_BOUNDARY,
+    "<fixed-function>",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -321,30 +347,87 @@ def _check_roundtrip(name: str, raw: bytes, parse: Callable[[bytes], object],
     return _ok(name)
 
 
-def _check_zon_model_ref(zon: ZonFile, expected: str) -> FormatCheck:
+def _check_zon_model_ref(zon: ZonFile, expected: str,
+                         entries: List[RawEntry]) -> FormatCheck:
     name = "zon_model_ref"
     if not zon.models:
         return _fail(name, "ZON has no models")
     got = zon.models[0]
     if got != expected:
         return _fail(name, f"models[0] is {got!r}, expected {expected!r}")
-    return _ok(name)
-
-
-def _check_material_indices(ter: TerFile) -> FormatCheck:
-    name = "material_indices"
-    n = len(ter.materials)
-    for i, p in enumerate(ter.polygons):
-        if p.material < 0 or p.material >= n:
+    n = len(zon.models)
+    for obj in zon.objects:
+        if obj.model_id < 0 or obj.model_id >= n:
             return _fail(
                 name,
-                f"polygon {i} material index {p.material} out of range [0, {n})",
+                f"object {obj.name!r} model index {obj.model_id} out of range [0, {n})",
             )
+    for model in zon.models[1:]:
+        entry = _entry_by_name(entries, model)
+        if entry is None or entry.data is None:
+            return _fail(name, f"model {model!r} is not packed")
+        if entry.data[:4] != MAGIC_MODEL:
+            return _fail(name, f"model {model!r} is not an EQGM model")
+        out = TerFile.from_bytes(entry.data).to_bytes()
+        if out != entry.data:
+            return _fail(name, f"model {model!r} does not round-trip")
     return _ok(name)
 
 
-def _check_diffuse_textures(ter: TerFile, entries: List[RawEntry]) -> FormatCheck:
+def _placed_models(zon: Optional[ZonFile],
+                   entries: List[RawEntry]) -> List[Tuple[str, TerFile]]:
+    """The placed models that parse, as ``(label, TerFile)`` pairs. A model that
+    is missing or will not parse is ``zon_model_ref``'s failure to report, so it
+    is left out here rather than reported twice."""
+    out: List[Tuple[str, TerFile]] = []
+    if zon is None:
+        return out
+    for model in zon.models[1:]:
+        entry = _entry_by_name(entries, model)
+        if entry is None or entry.data is None:
+            continue
+        try:
+            out.append((f"model {model!r} ", TerFile.from_bytes(entry.data)))
+        except Exception:  # noqa: BLE001 — zon_model_ref reports it
+            continue
+    return out
+
+
+def _check_material_indices(ter: TerFile,
+                            models: List[Tuple[str, TerFile]] = ()) -> FormatCheck:
+    name = "material_indices"
+    for label, mesh in (("", ter), *models):
+        n = len(mesh.materials)
+        for i, p in enumerate(mesh.polygons):
+            if p.material < 0 or p.material >= n:
+                return _fail(
+                    name,
+                    f"{label}polygon {i} material index {p.material} out of "
+                    f"range [0, {n})",
+                )
+        for mat in mesh.materials:
+            if mat.shader not in KNOWN_SHADERS:
+                return _fail(
+                    name,
+                    f"{label}material {mat.index} {mat.name!r} has unknown "
+                    f"shader {mat.shader!r}",
+                )
+    return _ok(name)
+
+
+def _check_diffuse_textures(ter: TerFile, entries: List[RawEntry],
+                            models: List[Tuple[str, TerFile]] = ()) -> FormatCheck:
     name = "diffuse_textures"
+    for label, mesh in (("", ter), *models):
+        problem = _material_textures_problem(mesh, entries)
+        if problem:
+            return _fail(name, f"{label}{problem}")
+    return _ok(name)
+
+
+def _material_textures_problem(ter: TerFile, entries: List[RawEntry]) -> Optional[str]:
+    """The first material whose diffuse texture is missing or malformed, as a
+    message, or ``None`` when every material's texture is a packed DDS."""
     for mat in ter.materials:
         diffuse = None
         for prop in mat.properties:
@@ -352,21 +435,18 @@ def _check_diffuse_textures(ter: TerFile, entries: List[RawEntry]) -> FormatChec
                 diffuse = prop.value_s
                 break
         if not diffuse:
-            return _fail(
-                name,
-                f"material {mat.index} {mat.name!r} has no {PROP_DIFFUSE}",
+            return (
+                f"material {mat.index} {mat.name!r} has no {PROP_DIFFUSE}"
             )
         entry = _entry_by_name(entries, diffuse)
         if entry is None or entry.data is None:
-            return _fail(
-                name,
-                f"material {mat.index} {mat.name!r} → {diffuse!r} is not packed",
+            return (
+                f"material {mat.index} {mat.name!r} → {diffuse!r} is not packed"
             )
         dds = entry.data
         if len(dds) < 128 or dds[:4] != b"DDS ":
-            return _fail(
-                name,
-                f"material {mat.index} {mat.name!r} → {diffuse!r} is not a DDS file",
+            return (
+                f"material {mat.index} {mat.name!r} → {diffuse!r} is not a DDS file"
             )
         # Layout: [0..4) 'DDS ' magic, then the 124-byte DDS_HEADER:
         #   header+0  = dwSize (124)  → file offset 4
@@ -376,18 +456,16 @@ def _check_diffuse_textures(ter: TerFile, entries: List[RawEntry]) -> FormatChec
         (height,) = struct.unpack_from("<I", dds, 12)
         (width,) = struct.unpack_from("<I", dds, 16)
         if hsize != 124:
-            return _fail(
-                name,
+            return (
                 f"material {mat.index} {mat.name!r} → {diffuse!r} DDS header size "
-                f"{hsize} (expected 124)",
+                f"{hsize} (expected 124)"
             )
         if not (_is_power_of_two(width) and _is_power_of_two(height)):
-            return _fail(
-                name,
+            return (
                 f"material {mat.index} {mat.name!r} → {diffuse!r} is {width}×{height} "
-                f"(not a power of two)",
+                f"(not a power of two)"
             )
-    return _ok(name)
+    return None
 
 
 def _check_collision_policy(ter: TerFile) -> FormatCheck:
@@ -657,14 +735,19 @@ def check_eqg(eqg_path: Path, spec: ZoneSpec, *,
     else:
         checks.append(
             _wrap("zon_model_ref",
-                  lambda: _check_zon_model_ref(zon_obj, expected_ref))
+                  lambda: _check_zon_model_ref(zon_obj, expected_ref, entries))
         )
+
+    try:
+        models = _placed_models(zon_obj, entries)
+    except Exception:  # noqa: BLE001 — zon_model_ref owns model faults
+        models = []
 
     # --- The TER-derived checks (depend on TER parse) ---------------------
     ter_dep = f"TER {ter_name}" if ter_parse_error is None else f"TER {ter_name} ({ter_parse_error})"
     for cname, cfn in (
-        ("material_indices", lambda: _check_material_indices(ter_obj)),
-        ("diffuse_textures", lambda: _check_diffuse_textures(ter_obj, entries)),
+        ("material_indices", lambda: _check_material_indices(ter_obj, models)),
+        ("diffuse_textures", lambda: _check_diffuse_textures(ter_obj, entries, models)),
         ("collision_policy", lambda: _check_collision_policy(ter_obj)),
         ("safe_point", lambda: _check_safe_point(ter_obj, spec, agent)),
         ("bounds_sane", lambda: _check_bounds_sane(ter_obj)),

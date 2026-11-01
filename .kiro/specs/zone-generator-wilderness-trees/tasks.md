@@ -61,7 +61,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: core/eqg.py, generators/builder.py, tests/test_wilderness_trees.py
   - Reqs: 9.1
 
-- [ ] 7. Format gate checks objects, models and textures
+- [x] 7. Format gate checks objects, models and textures
   - Card: [cards/07-format-gate.md](cards/07-format-gate.md)
   - Type: agent · Size: S · Depends: 5
   - Owns: analyzer/rof2check.py, tests/test_rof2check.py
