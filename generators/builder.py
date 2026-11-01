@@ -52,6 +52,45 @@ def _stable_seed(*parts) -> int:
     return zlib.crc32(s.encode("utf-8")) & 0x7FFFFFFF
 
 
+def _vegetation_meshes(veg) -> Optional[list]:
+    """The GLB ``vegetation`` mesh (Req 9.1): every tree's model, scaled,
+    turned by its yaw and moved to its spot, merged into one mesh coloured by
+    its Species' bark (trunk) and leaf (canopy) base colours. ``None`` when
+    there are no trees, so the GLB stays the single terrain mesh."""
+    if veg is None or not veg.placement.instances:
+        return None
+    import numpy as np
+    from generators.vegetation.kit import load_vegetation_kit
+
+    kit = load_vegetation_kit(veg.report["kit"])
+    parts = {}
+    for species, fname in veg.model_index.items():
+        model = veg.models[fname]
+        v = np.array([[p.x, p.y, p.z] for p in model.vertices], dtype=np.float64)
+        n = np.array([[p.nx, p.ny, p.nz] for p in model.vertices], dtype=np.float64)
+        f = np.array([[q.v1, q.v2, q.v3] for q in model.polygons], dtype=np.int64)
+        sp = kit.species[species]
+        rgba = {0: (*sp.bark, 255), 1: (*sp.leaf, 255)}
+        col = np.full((len(v), 4), 255, dtype=np.uint8)
+        for q in model.polygons:
+            col[[q.v1, q.v2, q.v3]] = rgba.get(q.material, rgba[0])
+        parts[species] = (v, n, f, col)
+
+    verts, norms, faces, cols = [], [], [], []
+    base = 0
+    for tree in veg.placement.instances:
+        v, n, f, col = parts[tree.species]
+        c, s = np.cos(tree.yaw), np.sin(tree.yaw)
+        rot = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        verts.append(v @ rot.T * tree.scale + (tree.x, tree.y, tree.z))
+        norms.append(n @ rot.T)
+        faces.append(f + base)
+        cols.append(col)
+        base += len(v)
+    return [("vegetation", np.vstack(verts), np.vstack(faces), np.vstack(cols),
+             np.vstack(norms))]
+
+
 class ZoneBuilder:
     """
     Build a complete zone from a ZoneSpec.
@@ -200,7 +239,8 @@ class ZoneBuilder:
                                    content=content_meta,
                                    zone_type=self.spec.zone_type,
                                    extra=wild_meta or None,
-                                   root=root)
+                                   root=root,
+                                   extra_meshes=_vegetation_meshes(veg))
             if result is None:
                 glb_path = None  # trimesh not available
 

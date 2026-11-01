@@ -140,9 +140,16 @@ class EqgZone:
                   content: Optional[dict] = None,
                   zone_type: Optional[str] = None,
                   extra: Optional[dict] = None,
-                  root: Optional["OutputRoot"] = None) -> Optional[Path]:
+                  root: Optional["OutputRoot"] = None,
+                  extra_meshes: Optional[list] = None) -> Optional[Path]:
         """
         Export the zone terrain as a GLB file for browser preview.
+
+        *extra_meshes* optionally adds named meshes beside the terrain, each a
+        ``(name, vertices (V,3), faces (F,3), vertex_colors (V,4) uint8,
+        vertex_normals (V,3))`` tuple (e.g. the trees' ``vegetation`` mesh).
+        With any, the GLB is a scene with a ``terrain`` node plus one node per
+        extra; with none, the output is the single terrain mesh as before.
 
         *material_colors* optionally maps a material index → (r,g,b) 0-255 so
         the preview reflects the zone's real palette instead of arbitrary hues.
@@ -212,7 +219,21 @@ class EqgZone:
         # Confinement-check (and create the parent of) the GLB path before
         # trimesh writes it; trimesh writes only to this one checked path.
         out_path = _checked_parent(path, root)
-        mesh.export(str(out_path))
+        if extra_meshes:
+            scene = trimesh.Scene()
+            scene.add_geometry(mesh, node_name="terrain", geom_name="terrain")
+            for name, v, f, colors, normals in extra_meshes:
+                extra_mesh = trimesh.Trimesh(
+                    vertices=np.asarray(v, dtype=np.float32),
+                    faces=np.asarray(f, dtype=np.int32),
+                    vertex_normals=np.asarray(normals, dtype=np.float32),
+                    process=False,
+                )
+                extra_mesh.visual.vertex_colors = np.asarray(colors, dtype=np.uint8)
+                scene.add_geometry(extra_mesh, node_name=name, geom_name=name)
+            scene.export(str(out_path))
+        else:
+            mesh.export(str(out_path))
 
         # Emit a companion .zone.json sidecar carrying lights, regions, and
         # metadata so the browser viewer can render overlays. Named

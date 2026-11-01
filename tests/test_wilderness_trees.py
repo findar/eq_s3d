@@ -21,6 +21,7 @@ from core.ter import TerFile
 from core.zon import ZonFile
 from generators.builder import ZoneBuilder
 from generators.pipeline import generate_validated
+from generators.vegetation.kit import load_vegetation_kit
 from generators.vegetation.placement import TreeInstance
 from generators.wilderness import build as wbuild
 from generators.wilderness.build import (
@@ -151,3 +152,48 @@ def test_validated_build_carries_trees_through_the_gate(tmp_path):
     side = json.loads(vb.result.sidecar_path.read_text(encoding="utf-8"))
     assert side["vegetation"]["total"] > 100
     assert 0.45 <= side["vegetation"]["grove_ratio"] <= 0.85
+
+
+# ---------------------------------------------------------------------------
+# Task 6: the GLB `vegetation` node (Req 9.1)
+# ---------------------------------------------------------------------------
+
+def _glb(path):
+    import trimesh
+    return trimesh.load(path)
+
+
+def test_glb_has_a_terrain_and_a_vegetation_node(tmp_path):
+    spec = _spec(5, "dense", {"N": "zoneline"})
+    r = ZoneBuilder(spec).build(output_dir=tmp_path)
+    scene = _glb(r.glb_path)
+    assert sorted(scene.graph.nodes_geometry) == ["terrain", "vegetation"]
+
+    veg = vegetation_for(spec, build_wilderness_ter(spec, "ter_karana", 2))
+    per_model = {fname: len(m.vertices) for fname, m in veg.models.items()}
+    want = sum(per_model[veg.model_index[t.species]] for t in veg.placement.instances)
+    mesh = scene.geometry["vegetation"]
+    assert len(mesh.vertices) == want
+
+    # Every tree stands where the ZON places it: its trunk base (the lowest
+    # vertices) sits under the tree's XY, below its Z.
+    import numpy as np
+    for t in veg.placement.instances[:20]:
+        near = np.hypot(mesh.vertices[:, 0] - t.x, mesh.vertices[:, 1] - t.y) < t.radius + 0.01
+        assert near.any() and mesh.vertices[near, 2].min() < t.z
+    colors = {tuple(c[:3]) for c in mesh.visual.vertex_colors}
+    kit_colors = {c for sp in load_vegetation_kit("plains_grassland").species.values()
+                  for c in (sp.bark, sp.leaf)}
+    assert colors <= kit_colors and len(colors) >= 2
+
+
+@pytest.mark.parametrize("zone_type", ["dungeon", "none-wilderness"])
+def test_glb_without_trees_is_the_single_terrain_mesh(tmp_path, zone_type):
+    if zone_type == "dungeon":
+        spec = plan_to_spec(ZonePlan(name="hdungeon", zone_type="dungeon"), seed=1)
+    else:
+        spec = _spec(5, "none", {"N": "zoneline"})
+    r = ZoneBuilder(spec).build(output_dir=tmp_path)
+    scene = _glb(r.glb_path)
+    assert "vegetation" not in scene.graph.nodes_geometry
+    assert len(scene.geometry) == 1

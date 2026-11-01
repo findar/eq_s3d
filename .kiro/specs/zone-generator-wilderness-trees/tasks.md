@@ -55,7 +55,7 @@ The design's four open questions were answered on 2026-10-31
   - Owns: generators/wilderness/build.py, generators/builder.py, tests/test_wilderness_trees.py
   - Reqs: 6, 7, 8.1–8.2, 9.3, 10, 11
 
-- [ ] 6. GLB `vegetation` node
+- [x] 6. GLB `vegetation` node
   - Card: [cards/06-glb-node.md](cards/06-glb-node.md)
   - Type: agent · Size: S · Depends: 5
   - Owns: core/eqg.py, generators/builder.py, tests/test_wilderness_trees.py
