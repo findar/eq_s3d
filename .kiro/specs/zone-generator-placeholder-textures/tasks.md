@@ -59,7 +59,7 @@ The design's four open questions were answered on 2026-11-01
   - Card: [cards/06-human-first-look.md](cards/06-human-first-look.md)
   - Type: human · Depends: 5, 11
 
-- [ ] 7. Tune from the first look
+- [x] 7. Tune from the first look
   - Card: [cards/07-tuning.md](cards/07-tuning.md)
   - Type: agent · Size: S · Depends: 6
   - Owns: generators/textures/placeholder.py, generators/textures/font.py, tests/test_placeholder_textures.py, generators/geometry.py, tests/test_wall_uvs.py
