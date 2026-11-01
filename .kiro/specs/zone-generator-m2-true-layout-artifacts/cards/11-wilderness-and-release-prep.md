@@ -16,7 +16,7 @@ of the acceptance checklist, and run the thorough profile once.
       678358326 and one flat seed, plus one wilderness seed; annotations stay
       readable; downloads are named `<name>.*`; the task 10 overlay lands on the
       walls.
-- [ ] `python -m pytest tests/ -q` is green, and
+- [x] `python -m pytest tests/ -q` is green, and
       `python -m pytest tests/ -q --hypothesis-profile=thorough` is green once.
       Record its duration in Result.
 - [x] The frontend builds (`cd web; npx vite build`).
@@ -26,3 +26,4 @@ of the acceptance checklist, and run the thorough profile once.
   `archive.md`). Don't add contours.
 
 ## Result
+✔ e5f31e8 · 580 passed · thorough 580 passed in 19m23s · wilderness extraction 0.64–0.75 s · not checked in 3D (task 12 eyeballs it)

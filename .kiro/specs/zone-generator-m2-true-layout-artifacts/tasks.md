@@ -88,7 +88,7 @@ design's "interim if M1 is late" column no longer applies.
   - Type: agent · Size: S · Depends: 7
   - Owns: scripts/eqmap_preview.py
 
-- [ ] 11. Wilderness coverage, acceptance section, thorough run
+- [x] 11. Wilderness coverage, acceptance section, thorough run
   - Card: [cards/11-wilderness-and-release-prep.md](cards/11-wilderness-and-release-prep.md)
   - Type: agent · Size: M · Depends: 7, 8, 9, 10, 14, 15
   - Owns: tests/test_properties_mapgeom.py, tests/test_eqmap.py, docs/ACCEPTANCE.md
