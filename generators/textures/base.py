@@ -5,6 +5,7 @@ Texture provider interface and the request spec.
 
 A TextureProvider turns a TextureSpec (a description + palette + hints) into
 DDS bytes. Concrete providers:
+  - PlaceholderProvider — labelled pattern per surface (default for surfaces)
   - ProceduralProvider — layered noise, no network, deterministic, always works
   - AIProvider         — image-model API (optional, needs a key)
 """
@@ -25,6 +26,9 @@ class TextureSpec:
     size: int = 256
     seed: int = 0
     tileable: bool = True
+    # floor | wall | ceiling | ground | liquid for a zone surface material;
+    # "" for anything else (tree bark/leaf). Placeholders need it.
+    surface_class: str = ""
 
 
 class TextureProvider:
