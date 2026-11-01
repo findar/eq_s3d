@@ -25,7 +25,7 @@ The design's four open questions were answered on 2026-10-31
 
 ## Tasks
 
-- [ ] 1. ZON object rotation in radians, yaw in the first field
+- [x] 1. ZON object rotation in radians, yaw in the first field
   - Card: [cards/01-zon-rotation.md](cards/01-zon-rotation.md)
   - Type: agent · Size: S · Depends: —
   - Owns: core/zon.py, tests/test_zon.py
