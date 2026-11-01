@@ -8,13 +8,14 @@ to a packed `.mod` that re-reads, every material's textures are packed, and
 every shader is known.
 
 ## Done when
-- [ ] A wilderness build with trees passes; a build with a dropped `.mod`, a
+- [x] A wilderness build with trees passes; a build with a dropped `.mod`, a
       dropped texture, a bad model index or an unknown shader each fails naming
       the problem.
       → verify: `python -m pytest tests/test_rof2check.py -q`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - The existing `models[0]` check stays as it is.
 
 ## Result
+✔ f51a0b5 · 631 passed
