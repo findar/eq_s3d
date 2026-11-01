@@ -457,3 +457,99 @@ count (about 130–150 lines; 2 labels for a dungeon, 0 for wilderness).
 - [ ] **[DEFERRED]** Loading `maps/<name>.txt` in the RoF2 client and seeing
       lines on the walls in the right orientation needs a takeover install; it
       moves to M6's in-engine smoke load. Not part of this pass.
+
+---
+
+## Step 2 — Trees
+
+> Roadmap step 2 (`zone-generator-wilderness-trees`). Wilderness plains now
+> carry trees: three species (broadleaf, conifer, sapling) placed in groves
+> with open meadow between, packed into the `.eqg` as generated `.mod` models
+> and drawn in the preview as a separate `vegetation` node. The terrain is
+> untouched: the same seed and edges give the same ground at every density.
+> Restart the Server on the merged code first and check the side panel shows
+> no stale-code banner.
+
+### Cases
+
+Pick **wilderness**, set the edges and **Trees** in the Wilderness box, pin
+the seed. Each case builds on the first attempt.
+
+| # | Edges | Trees | Seed | Trees placed |
+|---|-------|-------|------|--------------|
+| a | N zoneline | dense | 7 | 198 |
+| b | N zoneline, E river | normal | 1955208177 | 96 |
+| c | S river | sparse | 7 | 45 |
+| d | all mountain (default) | none | 1337 | 0 |
+| e | prompt: `a dense wooded karana` | (from the prompt) | any | — |
+
+From the command line:
+
+```bash
+python main.py generate trees_a --zone-type wilderness --seed 7 --edges N=zoneline --trees dense
+python main.py generate trees_b --zone-type wilderness --seed 1955208177 --edges N=zoneline,E=river --trees normal
+python main.py generate trees_c --zone-type wilderness --seed 7 --edges S=river --trees sparse
+python main.py generate trees_d --zone-type wilderness --seed 1337 --trees none
+```
+
+The preview shows each tree in its species' base colours: a brown trunk and
+flat green leaf cards, not the real bark and leaf textures (those are in the
+`.eqg` for the client).
+
+### T.1 — Groves and grounding
+
+- [ ] **[MUST] Groves, not a scatter** — Trees gather in groves of a handful to
+      a dozen or so, with open meadow between and the odd lone tree. They are
+      not spread evenly like a grid or a sprinkle.
+- [ ] **[MUST] On the ground** — Every trunk meets the ground, slopes included;
+      no base floats above the grass and no tree is buried to the canopy.
+- [ ] **[SHOULD] Species read apart** — Broadleaf, conifer and sapling are
+      distinguishable, and the mix reads as a Karana, not a forest.
+- [ ] **[SHOULD] Size** — Trees look the right size next to the hills and the
+      zone, like the tall Karana trees (roughly 50–130 u before per-tree
+      scaling), not shrubs and not giants.
+- [ ] **[SHOULD] Density steps** — Cases c, b and a read as clearly sparser to
+      denser; case d has no trees at all.
+
+### T.2 — Where trees may not stand
+
+- [ ] **[MUST] Not in water** — No tree stands in a river or on its surface;
+      the shore band stays clear.
+- [ ] **[MUST] Not on cliffs or the Rim** — The mountain Rim and steep slopes
+      stay bare rock; trees only on the plains.
+- [ ] **[MUST] Spawn clearing** — There's an open clearing around Spawn.
+- [ ] **[MUST] Zone exits clear** — A zoneline gap (cases a and b) has no tree
+      in or just in front of it; you can fly straight out through it.
+- [ ] **[MUST] No walled-off meadow** — Trees never close off a meadow: every
+      open area you can see has a way in between the trunks.
+
+### T.3 — Trunk and canopy
+
+Tree trunks are solid and canopies are walk-through in the `.eqg` (polygon
+flags). The preview is free-fly with no collision, so it can't show this; the
+in-client check is M6.
+
+- [ ] **[SHOULD] Shape** — Each tree reads as a trunk with a canopy on top:
+      crossed leaf cards for broadleaf and sapling, stacked tiers for conifer.
+- [ ] **[DEFERRED]** Walking into a trunk stops you and walking through a
+      canopy doesn't, in the RoF2 client. Moves to M6's in-engine smoke load.
+
+### T.4 — Selector, toggle and sidecar
+
+- [ ] **[MUST] Trees selector** — The Trees selector shows only for
+      wilderness, and changing it changes how many trees the next build has.
+- [ ] **[MUST] Prompt words** — Case e builds a dense wood; `barren plains`
+      builds none; `sparse karana plains` builds sparse.
+- [ ] **[MUST] Toggle** — The Trees checkbox under Overlays hides and shows the
+      trees, is reachable with Tab and Space, and is greyed out on a build
+      without trees (case d, any dungeon or city).
+- [ ] **[MUST] Framing unchanged** — The camera starts in the same place as
+      the same seed with Trees set to none.
+- [ ] **[MUST] Sidecar** — `<name>.zone.json` carries a `vegetation` block:
+      `kit`, `level`, `level_source` (`controls`, `cli`, `prompt` or
+      `default`), `counts` per species, `total`, the `models` filenames and a
+      `grove_ratio` between 0.45 and 0.85.
+- [ ] **[MUST] Pinned seed repeats** — The same seed, edges and Trees give the
+      same trees twice.
+- [ ] **[SHOULD] Snappy** — A dense build is not noticeably slower than none
+      (trees add well under a second today; the budget is 3 s).

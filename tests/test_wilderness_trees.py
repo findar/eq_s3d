@@ -197,3 +197,40 @@ def test_glb_without_trees_is_the_single_terrain_mesh(tmp_path, zone_type):
     scene = _glb(r.glb_path)
     assert "vegetation" not in scene.graph.nodes_geometry
     assert len(scene.geometry) == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 12: vegetation adds at most 3 s to a dense build (Req 11.2)
+# ---------------------------------------------------------------------------
+
+VEGETATION_BUDGET_S = 3.0
+
+
+def _timed_build_and_gate(tmp_path, spec, sub):
+    """Seconds for one build (EQG + GLB) plus the bowl gate the pipeline runs."""
+    import time
+
+    from generators.pipeline import load_ter_from_eqg
+
+    wbuild._vegetation.cache_clear()
+    t0 = time.perf_counter()
+    result = ZoneBuilder(spec).build(output_dir=tmp_path / sub)
+    ter, _ = load_ter_from_eqg(result.eqg_path)
+    report = bowl_report(spec, ter)
+    elapsed = time.perf_counter() - t0
+    assert report.passed, report.notes
+    return elapsed
+
+
+@pytest.mark.slow
+def test_dense_trees_add_at_most_3s(tmp_path):
+    seed = 1955208177
+    # Warm the landscape cache both builds share, so the difference is only
+    # what vegetation costs: models, textures, placement, GLB node and the
+    # trunk walkability check. Best of two each, against scheduler noise.
+    _timed_build_and_gate(tmp_path, _spec(seed, "none"), "warm")
+    none = min(_timed_build_and_gate(tmp_path, _spec(seed, "none"), f"n{i}") for i in range(2))
+    dense = min(_timed_build_and_gate(tmp_path, _spec(seed, "dense"), f"d{i}") for i in range(2))
+    assert dense - none <= VEGETATION_BUDGET_S, (
+        f"dense build {dense:.2f}s vs none {none:.2f}s: vegetation adds "
+        f"{dense - none:.2f}s (budget {VEGETATION_BUDGET_S:g}s)")
