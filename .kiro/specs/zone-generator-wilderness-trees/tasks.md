@@ -79,11 +79,11 @@ The design's four open questions were answered on 2026-10-31
   - Owns: web/index.html, web/src/main.ts, web/src/api.ts, web/src/scene.ts, web/src/style.css
   - Reqs: 3.4, 9.2
 
-- [ ] 10. HUMAN: first look at trees in 3D
+- [x] 10. HUMAN: first look at trees in 3D
   - Card: [cards/10-human-first-look.md](cards/10-human-first-look.md)
   - Type: human · Depends: 6
 
-- [ ] 11. Tune from the first look
+- [x] 11. Tune from the first look
   - Card: [cards/11-tuning.md](cards/11-tuning.md)
   - Type: agent · Size: S · Depends: 10
   - Owns: styles/vegetation.json, generators/vegetation/
