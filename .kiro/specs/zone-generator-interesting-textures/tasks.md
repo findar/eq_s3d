@@ -78,7 +78,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: styles/texture_recipes.json, generators/textures/painters/, generators/layout.py, tests/test_material_names.py, tests/test_corridor_materials.py
   - layout.py and the goldens added 2026-11-01 for task 8's finding (corridors match the room they leave), at the user's choice.
 
-- [ ] 10. Acceptance section, thorough run, timing
+- [x] 10. Acceptance section, thorough run, timing
   - Card: [cards/10-release-prep.md](cards/10-release-prep.md)
   - Type: agent · Size: S · Depends: 9
   - Owns: docs/ACCEPTANCE.md, tests/test_texture_conformance.py
