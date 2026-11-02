@@ -29,11 +29,17 @@ from .zone_spec import (
 from core.ter import SHADER_OPAQUE
 
 from . import semantics
-from .routing import plan_route, exit_axis_x, route_footprint
+from .envelope import Envelope, EnvelopeFitError
+from .routing import corridor_route, plan_route, exit_axis_x, route_footprint
 from .zone_types import STYLE_PROFILE
 
 # Overlap below this (u) is two faces touching, not one inside the other.
 _TOUCH = 1e-6
+
+# Fitting a layout inside an Envelope: the fewest rooms a build keeps, and how
+# many fresh layouts are tried at each room count before dropping a room.
+MIN_ENVELOPE_ROOMS = 3
+ENVELOPE_ATTEMPTS = 6
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -163,6 +169,10 @@ class LayoutGenerator:
         #               agent's 40° walkable-slope cap.
         self.max_grade = 0.5
 
+        # Advisory warnings from the last generate() (e.g. ``rooms_reduced``
+        # when an Envelope could not hold every requested room).
+        self.warnings: List[str] = []
+
     def _apply_room_scale(self, room_count: int) -> None:
         """
         Set room_min/room_max (and corridor width) from the theme's measured
@@ -194,7 +204,8 @@ class LayoutGenerator:
                  dungeon_theme: str = "",
                  dungeon_race: str = "",
                  elemental_tint: Optional[str] = None,
-                 room_type_overrides: Optional[dict] = None) -> ZoneSpec:
+                 room_type_overrides: Optional[dict] = None,
+                 envelope: Optional[Envelope] = None) -> ZoneSpec:
         """
         Generate a zone. *locks* > 0 produces a keyed dungeon with that many
         lock-and-key gates (solvability guaranteed); 0 is a fully open dungeon.
@@ -206,21 +217,57 @@ class LayoutGenerator:
         None uses the default). *room_type_overrides* maps room id → semantic
         type for planner-driven assignment. Semantic labelling only runs for the
         box (dungeon/city) zone types — cave/wilderness backends are untouched.
+
+        *envelope* (outdoor dungeons) confines the layout: every room box and
+        every corridor's swept box lies inside it. A layout that doesn't fit is
+        redrawn; after ``ENVELOPE_ATTEMPTS`` misses a room is dropped, down to
+        ``MIN_ENVELOPE_ROOMS``, with a ``rooms_reduced`` warning in
+        ``self.warnings``. If even that many don't fit, ``EnvelopeFitError``.
+        Without an Envelope the layout is exactly as before.
         """
+        self.warnings = []
+        args = (name, add_lights, elevation, locks, dungeon_theme,
+                dungeon_race, elemental_tint, room_type_overrides)
+        if envelope is None:
+            return self._generate_once(room_count, *args)
+        floor = min(room_count, MIN_ENVELOPE_ROOMS)
+        self._apply_room_scale(room_count)
+        for count in range(room_count, floor - 1, -1):
+            for _ in range(ENVELOPE_ATTEMPTS):
+                spec = self._generate_once(count, *args, envelope=envelope)
+                if self.fits(spec, envelope):
+                    if count < room_count:
+                        self.warnings.append(
+                            f"rooms_reduced: {room_count} requested, "
+                            f"{count} fit the envelope")
+                    return spec
+        raise EnvelopeFitError(
+            f"{floor} rooms do not fit the envelope after "
+            f"{ENVELOPE_ATTEMPTS} attempts")
+
+    def _generate_once(self, room_count: int, name: str, add_lights: bool,
+                       elevation: bool, locks: int, dungeon_theme: str,
+                       dungeon_race: str, elemental_tint: Optional[str],
+                       room_type_overrides: Optional[dict],
+                       envelope: Optional[Envelope] = None) -> ZoneSpec:
+        """One layout pass (``generate`` without the Envelope retry loop)."""
         spec = ZoneSpec(name=name, zone_type=self.zone_type,
                         style_profile=STYLE_PROFILE.get(self.zone_type, self.zone_type),
                         seed=self.seed)
 
         # Scale rooms to the theme's measured footprint divided across the
         # requested room count, so total zone size matches real proportions.
-        self._apply_room_scale(room_count)
+        # (An Envelope build scales once, by the count asked for: dropping a
+        # room must not make the rest bigger.)
+        if envelope is None:
+            self._apply_room_scale(room_count)
         shared = self._add_default_materials(spec, dungeon_race)
 
         # --- TinyKeep-style layout -------------------------------------
         # 1. Scatter rooms in an ellipse, 2. separate them, 3. classify
         #    main/filler, 4. Delaunay graph, 5. MST + a few loop edges,
         #    6. assign elevation over the graph, 7. wall-to-wall corridors.
-        rooms = self._scatter_rooms(room_count)
+        rooms = self._scatter_rooms(room_count, envelope)
         self._separate_rooms(rooms)
         edges = self._connect_rooms(rooms)          # list of (i, j) index pairs
 
@@ -291,6 +338,9 @@ class LayoutGenerator:
                 adj[i].append(j)
                 adj[j].append(i)
             self._relax_elevation(rooms, adj, entrance)
+
+        if envelope is not None:
+            self._fit_floors(rooms, edges, entrance, envelope)
 
         self._build_corridors(spec, rooms, edges)
 
@@ -512,16 +562,22 @@ class LayoutGenerator:
     # TinyKeep layout steps
     # ------------------------------------------------------------------
 
-    def _scatter_rooms(self, room_count: int) -> List[RoomSpec]:
+    def _scatter_rooms(self, room_count: int,
+                       envelope: Optional[Envelope] = None) -> List[RoomSpec]:
         """
         Step 1: scatter rooms inside an ellipse. Sizes drawn from a normal
         distribution around the theme's room scale so a few rooms are large
-        (hubs) and most are smaller (connective), à la TinyKeep.
+        (hubs) and most are smaller (connective), à la TinyKeep. With an
+        Envelope the ellipse is centred on its footprint and no wider than it.
         """
         mean_side = (self.room_min + self.room_max) / 2
         std_side = (self.room_max - self.room_min) / 3
         # Ellipse radius grows with room count so rooms have space to separate.
         spread = mean_side * (0.8 + 0.5 * room_count)
+        ox = oy = 0.0
+        if envelope is not None:
+            spread = min(spread, 2.0 * max(0.0, envelope.inradius - mean_side / 2))
+            ox, oy = envelope.centre
 
         rooms: List[RoomSpec] = []
         for i in range(room_count):
@@ -532,7 +588,7 @@ class LayoutGenerator:
             d = max(self.room_min * 0.6, self.rng.gauss(mean_side, std_side))
             rooms.append(RoomSpec(
                 id=f"room_{i}",
-                center_x=px, center_y=py, floor_z=0.0,
+                center_x=px + ox, center_y=py + oy, floor_z=0.0,
                 width=w, depth=d, height=self.ceiling,
             ))
         return rooms
@@ -1133,6 +1189,55 @@ class LayoutGenerator:
         shift = z[entrance] - low[entrance] if entrance in low else 0.0
         for i in nodes:
             rooms[i].floor_z = low[i] + shift
+
+    def _fit_floors(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                    entrance: int, envelope: Envelope, passes: int = 4) -> None:
+        """
+        Move floors into the Envelope's height band. Each room may sit between
+        the floor limit and the lowest ceiling over its footprint less its own
+        height. The whole layout first shifts so the entrance sits at the top
+        of its band (nearest the surface, where the Entrance will reach it);
+        then rooms are clamped into their bands and the grade relax re-run,
+        a few times. Whatever still misses is left for ``fits`` to reject.
+        """
+        from collections import defaultdict
+        bands = []
+        for r in rooms:
+            top = envelope.ceiling_over(r.center_x - r.width / 2, r.center_y - r.depth / 2,
+                                        r.center_x + r.width / 2, r.center_y + r.depth / 2)
+            bands.append((envelope.floor_limit, top - r.height))
+        shift = bands[entrance][1] - rooms[entrance].floor_z
+        for r in rooms:
+            r.floor_z += shift
+        adj = defaultdict(list)
+        for i, j in edges:
+            adj[i].append(j)
+            adj[j].append(i)
+        for _ in range(passes):
+            for r, (lo, hi) in zip(rooms, bands):
+                r.floor_z = min(max(r.floor_z, lo), hi)
+            self._relax_elevation(rooms, adj, entrance)
+
+    @staticmethod
+    def fits(spec: ZoneSpec, envelope: Envelope) -> bool:
+        """Does every room box and corridor swept box lie inside *envelope*?
+
+        A corridor is tested leg by leg (``route_footprint``), each leg's box
+        spanning from the lower floor to the higher floor plus its height."""
+        for r in spec.rooms:
+            if not envelope.contains_box(
+                    r.center_x - r.width / 2, r.center_y - r.depth / 2, r.floor_z,
+                    r.center_x + r.width / 2, r.center_y + r.depth / 2,
+                    r.floor_z + r.height):
+                return False
+        rooms = {r.id: r for r in spec.rooms}
+        for c in spec.corridors:
+            z0 = min(c.from_z, c.to_z)
+            z1 = max(c.from_z, c.to_z) + c.height
+            for x0, y0, x1, y1 in route_footprint(corridor_route(c, rooms), c.width / 2):
+                if not envelope.contains_box(x0, y0, z0, x1, y1, z1):
+                    return False
+        return True
 
     def _route_legs(self, a: RoomSpec, b: RoomSpec) -> List[float]:
         """
