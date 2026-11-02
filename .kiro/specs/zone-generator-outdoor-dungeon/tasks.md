@@ -49,7 +49,7 @@ The design's five open questions were answered on 2026-11-01
   - Owns: generators/outdoor_dungeon.py, tests/test_outdoor_envelope.py, generators/layout.py (`_fit_floors`)
   - Reqs: 2.1, 3.1
 
-- [ ] 5. Entrance: Apron, Tunnel and Mouth
+- [x] 5. Entrance: Apron, Tunnel and Mouth
   - Card: [cards/05-entrance-spike.md](cards/05-entrance-spike.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/outdoor_dungeon.py, generators/geometry.py, tests/test_entrance.py

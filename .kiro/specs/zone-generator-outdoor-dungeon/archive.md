@@ -33,3 +33,10 @@ questions on 2026-11-01, each with the recommended option:
   tall and sized to the Envelope (`layout_in_envelope`); `_fit_floors`
   shifts the layout by its tightest room's headroom, not to the entrance's
   band top, so the entrance room is not always the highest.
+- **Entrance on the terrain grid (task 5, 2026-11-02):** the Tunnel is one
+  terrain cell wide (between two vertex columns) and ends at a vertex row;
+  the Mouth replaces the one cell in front of the portal with a floor, two
+  jambs and a headwall on the terrain's own vertices, so it stitches
+  exactly. The Apron is a trench dug down to a 0.5-grade cone, kept off the
+  Rim, zonelines and water. `plan_entrance` picks the least digging;
+  `build_outdoor_ter` returns the one merged TER task 6 builds on.
