@@ -9,19 +9,20 @@ default; placeholders and AI stay selectable; the sidecar texture list gains
 each texture's family and Look_Stats; the salted-`hash()` seed is gone.
 
 ## Done when
-- [ ] Y5: for every family × the dungeon and city profiles × sample
+- [x] Y5: for every family × the dungeon and city profiles × sample
       colours, Look_Stats lie in the p10–p90 band except the recipe's listed
       exceptions.
-- [ ] With no override, builds draw recipe textures; `placeholder` and `ai`
+- [x] With no override, builds draw recipe textures; `placeholder` and `ai`
       work by override; the texture list records family and Look_Stats.
-- [ ] Procedural textures are byte-identical across processes (fresh-process
+- [x] Procedural textures are byte-identical across processes (fresh-process
       test, different `PYTHONHASHSEED`).
-- [ ] Wilderness ground, water and tree textures are byte-identical to step 3.
+- [x] Wilderness ground, water and tree textures are byte-identical to step 3.
       → verify: `python -m pytest tests/test_texture_conformance.py -q`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - Step 3's tests assert placeholders are the default; update them only with
   the user's OK (they're outside `Owns`).
 
 ## Result
+✔ 551cc2b · 823 passed

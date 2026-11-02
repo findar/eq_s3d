@@ -13,6 +13,8 @@ texture with zero external calls. The AIProvider is a drop-in upgrade.
 
 from __future__ import annotations
 
+import zlib
+
 import numpy as np
 
 from .base import TextureProvider, TextureSpec
@@ -47,7 +49,34 @@ class ProceduralProvider(TextureProvider):
 # ---------------------------------------------------------------------------
 
 def _seed_from(spec: TextureSpec) -> int:
-    return abs(hash((spec.name, spec.description, spec.kind))) % (2 ** 31)
+    """A seed stable across processes (crc32, not the salted ``hash()``;
+    interesting textures spec Req 4.4)."""
+    key = f"{spec.name}|{spec.description}|{spec.kind}".encode("utf-8")
+    return zlib.crc32(key) & 0x7FFFFFFF
+
+
+class RecipeProvider(TextureProvider):
+    """Texture_Mode ``procedural`` for dungeon and city surfaces (interesting
+    textures spec Req 3-5): the material's recipe picks a painter family,
+    the painter draws it, and the result is graded toward the theme's
+    classic look. A name with no recipe (wilderness ground, water, trees, a
+    hand-built ``floor``) falls back to the layered-noise provider."""
+
+    name = "procedural"
+
+    def generate(self, spec: TextureSpec) -> bytes:
+        from .conformance import grade, theme_for
+        from .painters import paint, seed_for
+        from . import painters  # noqa: F401  (stone families)
+        from .painters import natural  # noqa: F401  (planks, plaster, ice, sky)
+        from .recipes import resolve
+
+        recipe = resolve(spec.name)
+        if recipe is None:
+            return ProceduralProvider().generate(spec)
+        rgb = paint(recipe.family, recipe.params, spec.base_color, seed_for(spec.name))
+        tex_set = spec.name.rpartition("_")[0]
+        return rgba_to_dds(grade(rgb, theme_for(tex_set), recipe.family))
 
 
 def _tileable_value_noise(size: int, period: int, rng: np.random.Generator) -> np.ndarray:

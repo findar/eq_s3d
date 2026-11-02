@@ -78,11 +78,14 @@ def _diffuse_of(mat) -> Optional[str]:
     return next((p.value_s for p in mat.properties if p.name == PROP_DIFFUSE), None)
 
 
-def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None) -> List[dict]:
+def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None,
+                     dds_by_name: Optional[Dict[str, bytes]] = None) -> List[dict]:
     """The sidecar's Texture_Manifest (Req 5): one entry per material of the
     TER and of every packed tree model, sorted by name, with its polygon
     count and the Texture_Mode that drew its texture (``vegetation`` for the
-    trees' own bark/leaf generator)."""
+    trees' own bark/leaf generator). A texture drawn from a recipe also
+    records its ``texture_family`` and ``look_stats`` (interesting textures
+    spec Req 5.2)."""
     entries: Dict[str, dict] = {}
 
     def add(mesh: TerFile, mode_for) -> None:
@@ -101,6 +104,17 @@ def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None) -> List[dict
     if veg is not None:
         for fname in sorted(veg.models):
             add(veg.models[fname], lambda n: "vegetation")
+
+    if dds_by_name:
+        from core.eqg import dds_to_rgb
+        from .textures.conformance import look_stats
+        from .textures.recipes import resolve
+        for name, e in entries.items():
+            recipe = resolve(name)
+            if e["texture_mode"] == "procedural" and recipe and name in dds_by_name:
+                e["texture_family"] = recipe.family
+                stats = look_stats(dds_to_rgb(dds_by_name[name]))
+                e["look_stats"] = {k: round(v, 4) for k, v in stats.items()}
     return [entries[k] for k in sorted(entries)]
 
 
@@ -285,7 +299,7 @@ class ZoneBuilder:
         if veg is not None:
             wild_meta["vegetation"] = dict(veg.report)
         # The Texture_Manifest rides with every build (Req 5).
-        side_meta = {**wild_meta, "textures": texture_manifest(ter, modes, veg)}
+        side_meta = {**wild_meta, "textures": texture_manifest(ter, modes, veg, dds_by_name)}
 
         # 6. GLB preview — pass per-material base colours so the preview shows
         #    the real palette rather than arbitrary hues. The GLB path also
