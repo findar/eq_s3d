@@ -40,9 +40,17 @@ FRAG_MESH          = 0x36
 
 @dataclass
 class WldMesh:
-    """Geometry extracted from one 0x36 Mesh fragment (world-space)."""
+    """Geometry extracted from one 0x36 Mesh fragment (world-space).
+
+    ``uvs`` holds one (u, v) per vertex when the fragment's texcoord count
+    matches its vertex count (else it is empty); ``polygon_textures`` holds
+    each polygon's index into the mesh's texture list, expanded from the
+    fragment's polygon-texture groups (empty if they don't cover every
+    polygon)."""
     vertices: List[Tuple[float, float, float]] = field(default_factory=list)
     polygons: List[Tuple[int, int, int, int]] = field(default_factory=list)  # v1,v2,v3,flag
+    uvs: List[Tuple[float, float]] = field(default_factory=list)
+    polygon_textures: List[int] = field(default_factory=list)
 
     @property
     def polygon_count(self) -> int:
@@ -169,7 +177,9 @@ def _parse_mesh(data: bytes, start: int, end: int, is_old: bool) -> Optional[Wld
       normals[normalCount]: 3 x SIGNED BYTE
       colors[colorCount]: DWORD
       polygons[polygonCount]: WORD flag + 3 x WORD vertex index
-      ...(texture/piece groupings follow; not needed)
+      vertexPieces[vertexPieceCount]: WORD count + WORD bone index
+      polygonTextures[polygonTexCount]: WORD polygon count + WORD texture index
+    Texcoords are fixed point / 256 in both formats (old: SWORD, new: SDWORD).
     """
     try:
         pos = start
@@ -194,9 +204,15 @@ def _parse_mesh(data: bytes, start: int, end: int, is_old: bool) -> Optional[Wld
             pos += 6
             verts.append((x * inv_scale + cx, y * inv_scale + cy, z * inv_scale + cz))
 
-        # Texcoords (skip — not needed for fidelity)
-        tc_stride = 8 if not is_old else 4
+        # Texcoords: fixed point / 256 (old SWORD pairs, new SDWORD pairs)
+        tc_fmt, tc_stride = ("<hh", 4) if is_old else ("<ii", 8)
+        uvs: List[Tuple[float, float]] = [
+            (u / 256.0, v / 256.0)
+            for u, v in struct.iter_unpack(tc_fmt, data[pos:pos + tcount * tc_stride])
+        ]
         pos += tcount * tc_stride
+        if len(uvs) != vcount:
+            uvs = []
 
         # Normals (skip)
         pos += ncount * 3
@@ -211,7 +227,16 @@ def _parse_mesh(data: bytes, start: int, end: int, is_old: bool) -> Optional[Wld
             pos += 8
             polys.append((v1, v2, v3, flag))
 
-        mesh = WldMesh(vertices=verts, polygons=polys)
+        # Vertex pieces (skip), then the polygon-texture groups
+        pos += vpcount * 4
+        poly_tex: List[int] = []
+        for count, tex in struct.iter_unpack("<HH", data[pos:pos + ptcount * 4]):
+            poly_tex.extend([tex] * count)
+        if len(poly_tex) != len(polys):
+            poly_tex = []
+
+        mesh = WldMesh(vertices=verts, polygons=polys, uvs=uvs,
+                       polygon_textures=poly_tex)
         return mesh
     except Exception:
         return None
