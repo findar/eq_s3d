@@ -41,13 +41,48 @@ Measured at `a311b50` with a scratch probe over `F:\everquest_rof2`.
 2. **Height.** Upward-facing surfaces (p10 to p90) spread over roughly
    100–290 u: blackburrow −159 to 13, runnyeye −135 to 20, kaesora −272 to 16,
    mistmoore −238 to −140.
-3. **Covered floor is NOT measured yet.** A simple test ("is there a surface
-   8–250 u above this upward face?") is contaminated by faces nobody walks on:
-   sky planes (eastkarana at z 939, qeytoqrg at 516), roof tops and the outer
-   backs of dungeon shells. It gave befallen, an indoor dungeon, 9.6 %
-   covered. Task 1 replaces it with a walk from the safe point, which keeps
-   only real floor.
-4. **The runway exists on paper.** The retired `zone-generator-followup`
+3. **Covered floor, measured by walking it (task 1).** A plain overhead test
+   is contaminated by faces nobody walks on (sky planes, roof tops, shell
+   backs; it gave befallen 9.6 %). `scripts/outdoor_dungeon_survey.py` walks
+   the WLD with the traversal agent (slope ≤ 40°, step ≤ 3 u) over the zone's
+   largest walkable network (the stock safe points aren't in the client
+   files) and measures only that floor:
+
+   | zone | walked span (u) | covered | depth p50/p90 (u) | rock p10/p50/p90 (u) | interiors |
+   |------|-----------------|---------|-------------------|----------------------|-----------|
+   | mistmoore | 700×752 | 51 % | −5 / 5 | 22 / 59 / 87 | 3 |
+   | blackburrow | 592×870 | 76 % | 32 / 128 | 16 / 49 / 124 | 11 |
+   | runnyeye | 653×507 | 84 % | 9 / 62 | 18 / 55 / 131 | 14 |
+   | unrest | 903×632 | 37 % | 22 / 50 | 13 / 26 / 56 | 9 |
+   | highkeep | 337×748 | 85 % | 26 / 84 | 12 / 50 / 100 | 8 |
+   | kaesora | 656×765 | 89 % | 32 / 62 | 16 / 103 / 170 | 4 |
+   | befallen (control) | 1008×473 | 59 % | 14 / 42 | 12 / 15 / 37 | 3 |
+
+   *Covered* is floor area with a surface 8–250 u above it. *Depth* is how far
+   covered floor sits below the nearest open floor (negative: above it, as in
+   Mistmoore's castle). *Rock* is ceiling to the next surface above, where
+   there is one. *Interiors* are covered regions of at least 2000 u².
+
+   Caveats:
+   - Befallen, the indoor control, comes out only 59 % covered. A brute-force
+     check of 40 of its uncovered floor points found no surface at all above
+     36 of them: the WLD leaves parts of the dungeon without roof geometry.
+     That makes *covered* a lower bound.
+   - The script's entrance count (6–26 per zone, 16 for befallen) counts
+     every place open and covered floor meet, roofless patches included. It
+     is not a reliable count of cave mouths, so it is left out of the table.
+
+4. **Defaults taken from the survey** (Req 3–4):
+   - **Size:** walked spans run 337–1008 u on a side; the compact ~1200 u zone
+     (Open question 2) holds the largest of them plus an approach.
+   - **Rock_Cover:** the thinnest rock (p10) is 12–22 u, the typical (p50)
+     15–103 u. Default 24 u as the floor; the Envelope keeps at least that.
+   - **Depth:** covered floor sits a median 9–32 u, at most about 130 u
+     (blackburrow p90), below the open ground near it. Default floor limit:
+     the Entrance's floor less 150 u, which also keeps the Tunnel short.
+   - **Covered share:** the hillside caves (blackburrow, runnyeye) are 76–84 %
+     covered; a dungeon sized to hold most of the zone's floor reads right.
+5. **The runway exists on paper.** The retired `zone-generator-followup`
    design specifies typed edges (`floor | staircase | bridge | shaft`), a 3D
    `Envelope` with `envelope=None` reproducing today, and a gate that learns
    connectors with rise/run and headroom rules. Step 5 needs the Envelope and
@@ -125,10 +160,10 @@ rim, water and lava rules are unchanged.
    tunnels and rooms under a hill, one or more cave mouths in its flank.
    Alternative: a surface structure over catacombs (Mistmoore, Unrest), which
    needs buildings on terrain first.
-2. **Zone size.** Default: compact, about 1200 u square (the classic outdoor
-   dungeons are 360–980 u on a side, and a hill plus approach needs room).
-   Alternatives: the measured classic range (~800 u), or wilderness size
-   (2400 u).
+2. **Zone size.** Default: compact, about 1200 u square (walked spans of the
+   classic outdoor dungeons are 337–1008 u on a side, finding 3, and a hill
+   plus approach needs room). Alternatives: the measured classic range
+   (~800 u), or wilderness size (2400 u).
 3. **Entrances.** Default: one. Alternative: one to three, each a separate
    Apron, Mouth and Tunnel.
 4. **How it's chosen.** Default: a new `outdoor_dungeon` zone type.
