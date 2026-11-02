@@ -25,7 +25,7 @@ The design's four open questions were answered on 2026-11-01
 
 ## Tasks
 
-- [ ] 1. WLD reader keeps UVs and polygon textures
+- [x] 1. WLD reader keeps UVs and polygon textures
   - Card: [cards/01-wld-uvs.md](cards/01-wld-uvs.md)
   - Type: agent · Size: S · Depends: —
   - Owns: core/wld.py, tests/test_wld.py
