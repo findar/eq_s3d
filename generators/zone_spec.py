@@ -191,6 +191,11 @@ class MaterialSpec:
     description: str = ""        # AI prompt hint for texture generation
     # Placeholder solid colour (RGBA 0-255) used until a real texture exists
     color: Tuple[int, int, int] = (128, 128, 128)
+    # World units per texture repeat on surfaces using this material
+    # (interesting textures spec Req 6). None keeps the box backend's
+    # historical 100 u; the builder sets it from the theme's measured
+    # Texture_Profile, so the choice is recorded with the zone.
+    texel_density: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
