@@ -205,3 +205,63 @@ def test_new_zone_id_custom_prefix_lowercased():
 def test_new_zone_id_unique_across_calls():
     ids = {new_zone_id() for _ in range(50)}
     assert len(ids) == 50
+
+
+# ---------------------------------------------------------------------------
+# Windows long-path prefix race (interesting textures task 13)
+# ---------------------------------------------------------------------------
+
+def _prefixing_resolve(monkeypatch, form):
+    r"""Make every second ``Path.resolve`` return *form* (the ``\\?\`` or
+    ``\\?\UNC\`` prefixed result ``ntpath.realpath`` leaves behind when
+    another process is creating the path between its two lookups)."""
+    from pathlib import Path
+
+    real = Path.resolve
+    calls = {"n": 0}
+
+    def resolve(self, strict=False):
+        out = real(self, strict=strict)
+        calls["n"] += 1
+        return Path(form(str(out))) if calls["n"] % 2 == 0 else out
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    return calls
+
+
+LONG = "\\\\?\\"            # \\?\
+LONG_UNC = "\\\\?\\UNC\\"    # \\?\UNC\
+
+
+def test_output_root_survives_a_prefixed_resolve(tmp_path, monkeypatch):
+    """The fresh-worktree collection failure: ``OutputRoot(OUTPUT_DIR).mkdir()``
+    raised ``path X resolves outside output root X`` because one of its
+    resolves kept the long-path prefix."""
+    root_dir = tmp_path / "output" / "web"
+    calls = _prefixing_resolve(monkeypatch, lambda s: LONG + s)
+    root = OutputRoot(root_dir)
+    made = root.mkdir()
+    assert made.is_dir()
+    assert root.contains(root_dir / "gen_x" / "v1")
+    assert not root.contains(tmp_path / "elsewhere")
+    assert calls["n"] >= 2    # the prefixed form really was returned
+
+
+def test_resolve_strips_long_path_prefixes(monkeypatch):
+    from pathlib import Path
+
+    from core import paths
+
+    _prefixing_resolve(monkeypatch, lambda s: LONG + s)
+    a, b = paths._resolve(Path("x")), paths._resolve(Path("x"))
+    assert a == b and not str(b).startswith(LONG)
+
+
+def test_resolve_turns_a_unc_prefix_back_into_a_unc_path(monkeypatch):
+    from pathlib import Path
+
+    from core import paths
+
+    monkeypatch.setattr(Path, "resolve",
+                        lambda self, strict=False: Path(LONG_UNC + "server\\share\\out"))
+    assert str(paths._resolve(Path("anything"))) == str(Path("\\\\server\\share\\out"))

@@ -40,14 +40,31 @@ class OutsideOutputError(RuntimeError):
     """
 
 
+_LONG_PREFIX = "\\\\?\\"            # \\?\
+_LONG_UNC_PREFIX = "\\\\?\\UNC\\"    # \\?\UNC\
+
+
 def _resolve(p: Path) -> Path:
     """Resolve ``p`` without requiring it to exist (``strict=False``).
 
     ``Path.resolve`` collapses ``..`` segments and makes the path absolute; with
     ``strict=False`` it does so even for a path that does not exist yet (the
     common case — we check *before* creating the file).
+
+    On Windows the result can keep the ``\\\\?\\`` long-path prefix: Python's
+    ``ntpath.realpath`` strips it only if a second lookup agrees with the
+    first, and while another process is creating the path (parallel test
+    workers importing ``server.app`` in a fresh checkout) the two lookups can
+    fail with different errors. A prefixed path compares unequal to the same
+    path without it, so the prefix is always removed here and every
+    comparison sees one form.
     """
-    return Path(p).resolve(strict=False)
+    resolved = str(Path(p).resolve(strict=False))
+    if resolved.startswith(_LONG_UNC_PREFIX):
+        return Path("\\\\" + resolved[len(_LONG_UNC_PREFIX):])
+    if resolved.startswith(_LONG_PREFIX):
+        return Path(resolved[len(_LONG_PREFIX):])
+    return Path(resolved)
 
 
 class OutputRoot:
