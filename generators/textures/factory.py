@@ -3,12 +3,15 @@ generators/textures/factory.py
 -------------------------------
 Provider selection, caching, and the back-compatible generate_texture().
 
-Texture_Mode (placeholder textures spec Req 4): a zone surface material (one
-with a ``surface_class``) is drawn as a labelled Placeholder by default.
+Texture_Mode (placeholder textures spec Req 4; interesting textures spec
+Req 7): a dungeon or city surface (a material with a recipe) is drawn by its
+recipe painter by default (``procedural``); a wilderness surface (``wild_*``,
+``liquid_*``) is a labelled Placeholder, as in step 3.
 ``EQ_S3D_TEXTURE_PROVIDER`` = ``placeholder`` | ``procedural`` | ``ai`` overrides
-that. Anything without a surface class (tree bark and leaf) keeps the old
-order: AI if a key is present and it succeeds, else procedural. The procedural
-provider always works (no network), so generation never fails for lack of a
+that (``procedural`` gives wilderness surfaces the old layered noise).
+Anything without a surface class (tree bark and leaf) keeps the old order: AI
+if a key is present and it succeeds, else procedural noise. The procedural
+providers always work (no network), so generation never fails for lack of a
 key.
 
 Caching: identical TextureSpecs produce identical DDS, so results are memoised
@@ -21,8 +24,9 @@ from typing import Dict, Optional, Tuple
 
 from core.env import env_value
 from .base import TextureProvider, TextureSpec
-from .procedural import ProceduralProvider
+from .procedural import ProceduralProvider, RecipeProvider
 from .placeholder import PlaceholderProvider
+from .recipes import resolve as _resolve_recipe
 from .ai import AIProvider
 
 TEXTURE_MODES = ("placeholder", "procedural", "ai")
@@ -31,22 +35,27 @@ _cache: Dict[Tuple, bytes] = {}
 _forced: Optional[TextureProvider] = None
 
 
-def get_provider(prefer_ai: bool = True, surface_class: str = "") -> TextureProvider:
+def _has_recipe(name: str, surface_class: str) -> bool:
+    return surface_class in ("floor", "wall", "ceiling") and _resolve_recipe(name) is not None
+
+
+def get_provider(prefer_ai: bool = True, surface_class: str = "",
+                 name: str = "") -> TextureProvider:
     """
-    Return the provider for a request. A request with a *surface_class* gets
-    the Placeholder unless ``EQ_S3D_TEXTURE_PROVIDER`` says ``procedural`` or
-    ``ai``. Otherwise: AI if a key is present and prefer_ai is set, else
-    procedural. A provider forced with ``set_provider`` wins over both.
+    Return the provider for a request (see the module docstring for the
+    rules). A provider forced with ``set_provider`` wins over everything.
     """
     if _forced is not None:
         return _forced
 
     override = (env_value("EQ_S3D_TEXTURE_PROVIDER") or "").lower()
     if override == "procedural":
-        return ProceduralProvider()
+        return RecipeProvider() if _has_recipe(name, surface_class) else ProceduralProvider()
     if override == "ai":
         return AIProvider()
     if surface_class:
+        if override != "placeholder" and _has_recipe(name, surface_class):
+            return RecipeProvider()
         return PlaceholderProvider()
 
     if prefer_ai:
@@ -75,7 +84,7 @@ def generate(spec: TextureSpec) -> bytes:
 def generate_with_mode(spec: TextureSpec) -> Tuple[bytes, str]:
     """``(DDS bytes, Texture_Mode that drew them)``: the provider's name, or
     ``procedural`` when a failing provider fell back."""
-    provider = get_provider(surface_class=spec.surface_class)
+    provider = get_provider(surface_class=spec.surface_class, name=spec.name)
     key = _cache_key(spec, provider.name)
     if key in _cache:
         return _cache[key], provider.name
@@ -83,10 +92,12 @@ def generate_with_mode(spec: TextureSpec) -> Tuple[bytes, str]:
     try:
         data = provider.generate(spec)
     except Exception as e:
-        # AI (or any) provider failed → fall back to procedural
+        # AI (or any) provider failed → fall back to procedural: the recipe
+        # painter for a dungeon or city surface, layered noise otherwise.
         if provider.name != "procedural":
             print(f"[textures] {provider.name} failed ({e}); falling back to procedural")
-            fallback = ProceduralProvider()
+            fallback = (RecipeProvider() if _has_recipe(spec.name, spec.surface_class)
+                        else ProceduralProvider())
             data = fallback.generate(spec)
             key = _cache_key(spec, fallback.name)
             provider = fallback

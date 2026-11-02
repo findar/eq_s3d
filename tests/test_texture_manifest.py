@@ -35,8 +35,11 @@ def _build(tmp_path, kind, sub="a"):
     return spec, arc, side
 
 
-@pytest.mark.parametrize("kind", sorted(SPECS))
+@pytest.mark.parametrize("kind", ["wilderness"])
 def test_default_mode_draws_surfaces_as_placeholders(tmp_path, no_api_keys, kind):
+    """Wilderness surfaces are still Placeholders by default. Dungeon and city
+    surfaces are drawn from their recipes since interesting textures task 6
+    (tests/test_texture_conformance.py covers that default)."""
     spec, arc, side = _build(tmp_path, kind)
     surfaces = [e for e in side["textures"] if e["surface_class"]]
     assert surfaces
