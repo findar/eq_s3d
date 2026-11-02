@@ -31,7 +31,7 @@ The design's five open questions were answered on 2026-11-01
   - Owns: scripts/outdoor_dungeon_survey.py, .kiro/specs/zone-generator-outdoor-dungeon/design.md
   - Reqs: 1
 
-- [ ] 2. Envelope and layout inside it
+- [x] 2. Envelope and layout inside it
   - Card: [cards/02-envelope.md](cards/02-envelope.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/envelope.py, generators/layout.py, tests/test_envelope.py
