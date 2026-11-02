@@ -378,6 +378,8 @@ the requirements.
 8. THE Web_App SHALL display every conformance metric's value, band and in-band flag and the within-band fraction.
 9. IF the Style_Profile lacks a profile or statistic for a metric, THEN THE Conformance_Meter SHALL report that metric unbanded and exclude it from the within-band fraction, and THE Pipeline SHALL still return the build.
 
+> **Extended by step 4** (design decision 24): the Style_Profile carries a measured Texture_Profile (texel density per surface, Look_Stats bands), and generated dungeon and city textures are graded toward and checked against it.
+
 ### Requirement 16: Procedural normal maps
 
 **User Story:** As a zone author, I want every material to ship a matching normal map, so that surfaces show relief in the client like real EQG zones.
@@ -395,6 +397,8 @@ the requirements.
 9. WHERE the procedural provider is used, THE Texture_Generator SHALL produce byte-identical diffuse and Normal_Map bytes for identical (name, description, colour, kind, size, seed).
 10. WHERE normal maps are disabled (CLI `--no-normal-maps`, or the Web_App/Zone_Plan toggle), THE Zone_Builder SHALL pack no Normal_Map DDS and write no `e_TextureNormal0` property.
 11. IF the AI texture provider returns an error or an undecodable image for a material, THEN THE Texture_Generator SHALL produce that material's diffuse and Normal_Map with the procedural provider from the same inputs.
+
+> **Deferred at step 4** (design decision 24): Classic–PoP zones have no normal maps, so the default look keeps none; this requirement stays planned as a later option.
 
 ### Requirement 17: Textured preview
 
