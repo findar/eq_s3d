@@ -49,7 +49,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: generators/textures/painters/__init__.py, generators/textures/painters/stone.py, tests/test_painters.py
   - Reqs: 4
 
-- [ ] 5. Painters: timber, plaster, ice and sky
+- [x] 5. Painters: timber, plaster, ice and sky
   - Card: [cards/05-natural-painters.md](cards/05-natural-painters.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/textures/painters/natural.py, tests/test_painters_natural.py

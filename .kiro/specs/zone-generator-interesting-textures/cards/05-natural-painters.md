@@ -8,13 +8,13 @@ The remaining dungeon and city families on task 4's building blocks:
 come with the wilderness step.)
 
 ## Done when
-- [ ] Each family paints a seamless, pure, distinct 256×256 image with its
+- [x] Each family paints a seamless, pure, distinct 256×256 image with its
       structure (plank grain and seams, plaster cracks and stains, ice
       fractures, cloud).
-- [ ] Rendered samples looked at by the worker; the commit body says what was
+- [x] Rendered samples looked at by the worker; the commit body says what was
       seen.
       → verify: `python -m pytest tests/test_painters_natural.py -q`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - `ice` (ice_keep and the ice tint) and `sky` (city ceilings) sit outside the
@@ -22,3 +22,4 @@ come with the wilderness step.)
   exceptions.
 
 ## Result
+✔ 1aa8889 · 801 passed
