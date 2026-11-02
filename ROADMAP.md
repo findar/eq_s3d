@@ -56,7 +56,7 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
 
 **Step 3 — placeholder textures is DONE** (master `2ce32f9`, signed off 2026-11-01; see the Done table and `.kiro/specs/zone-generator-placeholder-textures/archive.md`).
 
-**Pick up here: roadmap step 4, interesting textures.** No spec yet: write one first (card format). Inputs from step 3: every material already has a `<set>_<surface>` name and a sidecar `textures` list to replace one by one; the provider seam (`EQ_S3D_TEXTURE_PROVIDER`) takes a new mode; the preview shows real textures; and classic texel density is still unmeasured (`core/wld.py` keeps no UVs; Dranik EQG repeats every ~15 u, ours every 100 u), so measure it before choosing one. Known follow-ups still open: shoreline below water level on some seeds (`synth.py`), the 150 u matrix vs 160 u fine-cell frame drift, the PFS footer timestamp that keeps two `.eqg` writes from being byte-identical, `@types/three` plus a frontend type check (deferred by the user), and the backend serving `.js` as `text/plain` on this Windows machine when the app is opened through port 8000 (the frontend's own server path is unaffected). The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
+**Pick up here: roadmap step 4, interesting textures.** Spec drafted: `.kiro/specs/zone-generator-interesting-textures/` (requirements, design with measured classic texture data, card-format `tasks.md`, 12 tasks). Its four open questions wait on the user; then tasks 1, 3 and 4 are ready side by side. Measured: classic dungeons repeat a texture every ~14 u on walls (ours 100 u), and classic textures are darker, ~2.5× more saturated and ~4× more detailed than ours. Known follow-ups still open: shoreline below water level on some seeds (`synth.py`), the 150 u matrix vs 160 u fine-cell frame drift, the PFS footer timestamp that keeps two `.eqg` writes from being byte-identical, `@types/three` plus a frontend type check (deferred by the user), and the backend serving `.js` as `text/plain` on this Windows machine when the app is opened through port 8000 (the frontend's own server path is unaffected). The architecture runway that was `zone-generator-followup` is NOT a standalone milestone any more — its pieces are pulled in just-in-time by the steps that need them (see the mapping below).
 
 **Roadmap — the 11-step content sequence (authoritative, in order).** Re-sequenced around visible, demonstrable zone outcomes rather than internal architecture (user decision). Each step ends in something a person can look at and judge against the north-star "indistinguishable from a hand-crafted zone".
 
@@ -68,7 +68,7 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
    *(DONE — signed off 2026-11-01; see the Done table)*
 3. **Textures (placeholder)** — enough to identify type (e.g. `gnoll-cave-wall`, `crypt-floor`). Spec: `.kiro/specs/zone-generator-placeholder-textures/`.
    *(DONE — signed off 2026-11-01; see the Done table)*
-4. **Interesting textures** — the real procedural / AI texture pass.
+4. **Interesting textures** — the real procedural / AI texture pass. Spec: `.kiro/specs/zone-generator-interesting-textures/`.
 5. **Outdoor dungeon (Mistmoore, Blackburrow)** — generate terrain, THEN carve / add the dungeon into it.
 6. **Graph-replacement dungeon generation** support.
 7. **Interesting dungeon verticality** — multi-level sections.
