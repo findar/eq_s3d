@@ -60,13 +60,15 @@ from typing import Callable, Collection, List, Optional, Sequence
 
 from analyzer.rof2check import FormatReport, check_eqg
 from analyzer.traverse import (
-    AgentModel, TraversalReport, load_ter_from_eqg, validate,
+    AgentModel, RoomResult, TraversalReport, load_ter_from_eqg, validate,
 )
 from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
 from generators.eqmap import build_map_file, write_map_files
 from generators.mapgeom import extract_outline, outline_summary
 from generators.mapview import render_map_svg
+from generators.outdoor_dungeon import (PLAN_ERRORS, is_outdoor_dungeon,
+                                        outdoor_dungeon_report)
 from generators.zone_spec import ZoneSpec
 from generators.zone_types import enabled_zone_types
 
@@ -192,12 +194,24 @@ def _traversal_report(eqg_path: Path, spec: ZoneSpec,
     (``analyzer.traverse.validate``). Open wilderness (the spec carries a
     ``wilderness`` payload): the bowl invariant on the shipped mesh — interior
     reachable from Spawn, Rim sealed except at zonelines — as one "bowl" room.
+    Outdoor dungeon (a wilderness payload with a dungeon): that bowl room plus
+    the dungeon's rooms reached from the outdoor Spawn and its corridors.
     """
+    if is_outdoor_dungeon(spec):
+        return outdoor_dungeon_report(eqg_path, spec, agent)
     if spec.wilderness is not None:
         from generators.wilderness.build import bowl_report
         ter, _ = load_ter_from_eqg(eqg_path)
         return bowl_report(spec, ter, agent)
     return validate(eqg_path, spec=spec, agent=agent, check_corridors=True)
+
+
+def _plan_failure_report(zone_id: str, error: Exception) -> TraversalReport:
+    """A rejected attempt whose spec couldn't be planned, as a report: one
+    unreachable "plan" room carrying the reason."""
+    return TraversalReport(
+        zone_name=zone_id, agent=AgentModel(), total_rooms=1, reachable_rooms=0,
+        rooms=[RoomResult("plan", "plan", False, 0, 0, _cause(error))])
 
 
 def _failure_reasons(report: TraversalReport) -> List[str]:
@@ -520,6 +534,16 @@ def generate_validated(
             failures.append(log_validation_failure(
                 failure_log, zone_id=zone_id, zone_type=zone_type,
                 seed=use_seed, attempt=attempt, report=report, checks=checks,
+            ))
+            _remove_scratch(root, output_dir, zone_id, scratch)
+        except PLAN_ERRORS as e:
+            # The seed can't be laid out (an outdoor dungeon's hill holds too
+            # few rooms, or no wall gives an Entrance): a rejected attempt,
+            # retried on a fresh seed like a gate failure.
+            failures.append(log_validation_failure(
+                failure_log, zone_id=zone_id, zone_type=zone_type,
+                seed=use_seed, attempt=attempt,
+                report=_plan_failure_report(zone_id, e), checks=["plan"],
             ))
             _remove_scratch(root, output_dir, zone_id, scratch)
         except Exception:
