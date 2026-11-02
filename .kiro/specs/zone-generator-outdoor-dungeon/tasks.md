@@ -37,10 +37,10 @@ The design's five open questions were answered on 2026-11-01
   - Owns: generators/envelope.py, generators/layout.py, tests/test_envelope.py
   - Reqs: 2
 
-- [ ] 3. Host terrain with a Host_Hill
+- [x] 3. Host terrain with a Host_Hill
   - Card: [cards/03-host-terrain.md](cards/03-host-terrain.md)
   - Type: agent · Size: M · Depends: 1
-  - Owns: generators/wilderness/matrix.py, generators/wilderness/build.py, tests/test_host_terrain.py
+  - Owns: generators/wilderness/matrix.py, generators/wilderness/build.py, generators/wilderness/synth.py, tests/test_host_terrain.py
   - Reqs: 3
 
 - [ ] 4. Envelope from the built terrain

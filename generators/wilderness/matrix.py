@@ -20,7 +20,8 @@ See the design's "Component: the Design_Matrix IR" section for the exact shapes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple
 
 try:  # numpy is a hard dependency of the terrain path; the matrix is plain data.
@@ -69,6 +70,12 @@ class MatrixCell:
     their terrain is set by ``frozen_z``, a single Z CONSTRAINT — not a
     synthesized surface height. ``edge_segment`` identifies which declared
     Edge_Connection a perimeter cell belongs to (``None`` for interior cells).
+
+    ``relief`` is a SOFT base-height offset for a non-frozen cell (a
+    :class:`Landform`): positive raises the ground, negative sinks it. Like the
+    cliff step it is a target the Noise_Pass, erosion and the walkability relax
+    shape freely — not a surface height. It is serialized only when non-zero,
+    so matrices without a Landform are unchanged.
     """
 
     node_type: NodeType
@@ -76,15 +83,19 @@ class MatrixCell:
     frozen: bool = False
     frozen_z: Optional[float] = None
     edge_segment: Optional[int] = None
+    relief: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "node_type": self.node_type,
             "intent": self.intent,
             "frozen": self.frozen,
             "frozen_z": self.frozen_z,
             "edge_segment": self.edge_segment,
         }
+        if self.relief:
+            d["relief"] = self.relief
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "MatrixCell":
@@ -94,6 +105,7 @@ class MatrixCell:
             frozen=bool(data.get("frozen", False)),
             frozen_z=data.get("frozen_z"),
             edge_segment=data.get("edge_segment"),
+            relief=float(data.get("relief", 0.0)),
         )
 
 
@@ -160,6 +172,81 @@ class POIAnchor:
 
 
 # ---------------------------------------------------------------------------
+# Landform (outdoor dungeon, step 5 task 3)
+# ---------------------------------------------------------------------------
+#: Landform kinds and the sign their relief must carry. A hill is ground a
+#: dungeon is dug into (Runnyeye); a pit is a sunken bowl the way in drops
+#: through (Blackburrow). Later archetypes add kinds here; synth only ever sees
+#: plains cells with a relief offset, so a new kind needs no synth change.
+LANDFORM_KINDS: Dict[str, int] = {"hill": 1, "pit": -1}
+
+
+@dataclass(frozen=True)
+class Landform:
+    """One raised or sunken region of plains, asked of the matrix by an
+    outdoor dungeon.
+
+    ``radius`` is the footprint held at full ``relief`` (the area the dungeon
+    needs); ``flank`` is the margin outside it over which the relief tapers to
+    nothing. ``approach`` is the side Spawn sits on, facing the Landform; it
+    is kept open (no cliff or lava). As a request, ``approach`` may be ``None``
+    (the seed picks) and ``centre`` is ignored; the matrix stores the placed
+    Landform with both resolved.
+    """
+
+    kind: str
+    radius: float
+    relief: float
+    flank: float
+    approach: Optional[str] = None
+    centre: Tuple[float, float] = (0.0, 0.0)
+
+    def __post_init__(self):
+        sign = LANDFORM_KINDS.get(self.kind)
+        if sign is None:
+            raise ValueError(f"unknown landform kind {self.kind!r}")
+        if self.relief * sign <= 0:
+            raise ValueError(f"a {self.kind} needs relief of sign {sign:+d}")
+        if self.radius <= 0 or self.flank < 0:
+            raise ValueError("landform radius must be > 0 and flank >= 0")
+        if self.approach is not None and self.approach not in DEFAULT_SIDES:
+            raise ValueError(f"approach must be one of {DEFAULT_SIDES}")
+
+    def relief_at(self, x: float, y: float) -> float:
+        """Target relief at world XY: full inside ``radius``, a smoothstep down
+        to zero across ``flank``, zero beyond."""
+        d = math.hypot(x - self.centre[0], y - self.centre[1])
+        if d <= self.radius:
+            return self.relief
+        if self.flank <= 0 or d >= self.radius + self.flank:
+            return 0.0
+        t = 1.0 - (d - self.radius) / self.flank
+        return self.relief * t * t * (3.0 - 2.0 * t)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"kind": self.kind, "radius": self.radius, "relief": self.relief,
+                "flank": self.flank, "approach": self.approach,
+                "centre": list(self.centre)}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Landform":
+        return cls(kind=data["kind"], radius=float(data["radius"]),
+                   relief=float(data["relief"]), flank=float(data["flank"]),
+                   approach=data.get("approach"),
+                   centre=tuple(float(v) for v in data.get("centre", (0.0, 0.0))))
+
+
+#: The outdoor dungeon's default Host_Hill (design finding 4): a footprint of
+#: 250 u radius at 120 u of relief, tapering over a 300 u flank — in a 1200 u
+#: zone that leaves an open approach on one side and runs into the rim on the
+#: other. A 200 u flank came within 0.3 u of the walkable step on the built
+#: field (41 seeds x 4 edge sets); 300 u leaves ~2 u of margin.
+DEFAULT_HOST_HILL = Landform(kind="hill", radius=250.0, relief=120.0, flank=300.0)
+#: The outdoor dungeon's zone size (Open question 2 answer).
+OUTDOOR_DUNGEON_ZONE_SIZE: float = 1200.0
+
+
+# ---------------------------------------------------------------------------
 # The Design_Matrix
 # ---------------------------------------------------------------------------
 @dataclass
@@ -185,6 +272,8 @@ class DesignMatrix:
     edges: List[EdgeConnection] = field(default_factory=list)
     spawn: Tuple[int, int] = (0, 0)
     intent_overrides: Dict[Tuple[int, int], IntentTag] = field(default_factory=dict)
+    #: The placed Landform, if one was asked for (cells carry its relief).
+    landform: Optional[Landform] = None
 
     # -- grid shape helpers -------------------------------------------------
     @property
@@ -205,6 +294,11 @@ class DesignMatrix:
         """The :class:`MatrixCell` at matrix coordinate ``(i, j)``."""
         return self.cells[i, j]
 
+    def landform_cells(self) -> List[Tuple[int, int]]:
+        """The cells a Landform raised or sank (non-zero relief)."""
+        return [(i, j) for i in range(self.nx) for j in range(self.ny)
+                if self.cells[i, j].relief]
+
     def cell_world_center(self, i: int, j: int) -> Tuple[float, float]:
         """World XY of the centre of cell ``(i, j)`` (Z is up; no height here)."""
         ox, oy = self.origin
@@ -224,7 +318,7 @@ class DesignMatrix:
         """
         nx, ny = self.shape
         grid = [[self.cells[i, j].to_dict() for j in range(ny)] for i in range(nx)]
-        return {
+        out = {
             "shape": [nx, ny],
             "cell_size": self.cell_size,
             "origin": list(self.origin),
@@ -239,6 +333,9 @@ class DesignMatrix:
             ],
             "cells": grid,
         }
+        if self.landform is not None:
+            out["landform"] = self.landform.to_dict()
+        return out
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DesignMatrix":
@@ -263,6 +360,8 @@ class DesignMatrix:
             edges=[EdgeConnection.from_dict(e) for e in data.get("edges", [])],
             spawn=(int(data["spawn"][0]), int(data["spawn"][1])),
             intent_overrides=overrides,
+            landform=(Landform.from_dict(data["landform"])
+                      if data.get("landform") else None),
         )
 
 
@@ -646,6 +745,7 @@ def build_matrix(
     cell_size: float = DEFAULT_CELL_SIZE,
     water_level: float = DEFAULT_WATER_LEVEL,
     intent_overrides: Optional[Dict[Tuple[int, int], IntentTag]] = None,
+    landform: Optional[Landform] = None,
 ) -> DesignMatrix:
     """Construct a plains-Karana :class:`DesignMatrix`, terrain-first.
 
@@ -664,6 +764,12 @@ def build_matrix(
     ``seed`` makes construction deterministic (same seed -> same matrix, Req
     16). ``intent_overrides`` maps a cell coordinate to a user-overridden
     Intent_Tag (R4.1, Property 6); it is applied LAST, after default tagging.
+
+    ``landform`` (outdoor dungeons) asks for one raised or sunken region of
+    plains: Spawn moves to the ``approach`` side, the Landform is centred one
+    cell beyond the zone's middle away from it (when a mountain backs it), interior plains cells take its
+    relief, and the cliff band and lava patch keep off the Landform and the
+    approach. Without one, construction is exactly as before.
 
     The construction follows the design's terrain-first order exactly:
 
@@ -753,6 +859,16 @@ def build_matrix(
                 cell.frozen = True
                 cell.frozen_z = ZONELINE_GAP_Z
 
+    # Cells the cliff band and lava patch must keep off (a Landform and its
+    # approach). Empty without a Landform, so those draws are unchanged. Placed
+    # after the Rim is tagged: the Landform backs onto a mountain side and
+    # keeps clear of zonelines and water.
+    reserved: set = set()
+    if landform is not None:
+        landform, spawn, reserved = _place_landform(
+            landform, rng, cells, interior, nx, ny, cell_size, origin,
+            resolved_edges)
+
     # --- step 2: derive terrain regions WITHIN the plains interior -------
     # The interior stays plains-LED: each derived region is bounded to a small
     # fraction of the interior so no one region swallows it (Property 2). All
@@ -793,7 +909,7 @@ def build_matrix(
             start = 1 + int(rng.integers(0, max(1, (ny - 2) - cliff_len)))
             cliff_cells = [(col, start + k) for k in range(cliff_len)]
         for (i, j) in _interior_only(cliff_cells):
-            if (i, j) in spawn_clear:
+            if (i, j) in spawn_clear or (i, j) in reserved:
                 continue
             cells[i, j].node_type = "cliff"
             cells[i, j].intent = "scenic"
@@ -806,6 +922,7 @@ def build_matrix(
             (i, j)
             for (i, j) in interior
             if (i, j) not in spawn_clear
+            and (i, j) not in reserved
             and cells[i, j].node_type == "plains"
         ]
         if candidates:
@@ -863,6 +980,7 @@ def build_matrix(
         edges=resolved_edges,
         spawn=spawn,
         intent_overrides=overrides,
+        landform=landform,
     )
 
     # --- construction post-conditions ------------------------------------
@@ -870,6 +988,74 @@ def build_matrix(
     # property tests, authored concurrently, prove them over the input space).
     _assert_construction_invariants(matrix)
     return matrix
+
+
+#: Unit step (di, dj) from the zone's middle toward each side.
+_SIDE_STEP: Dict[str, Tuple[int, int]] = {"N": (0, 1), "S": (0, -1), "E": (1, 0), "W": (-1, 0)}
+
+
+_OPPOSITE: Dict[str, str] = {"N": "S", "S": "N", "E": "W", "W": "E"}
+#: Frozen flat cell types a Landform's relief must taper away from.
+_LANDFORM_CLEAR_TYPES = frozenset({"zoneline_gap", "water", "river"})
+
+
+def _place_landform(landform: Landform, rng, cells, interior, nx: int, ny: int,
+                    cell_size: float, origin: Tuple[float, float],
+                    edges: List[EdgeConnection]):
+    """Place ``landform`` on the matrix: pick the approach side (if unset),
+    centre the Landform one cell beyond the middle away from it, put Spawn on
+    the approach side's inner ring, and give interior plains cells their
+    relief. Returns the placed Landform, Spawn, and the reserved cells (the
+    Landform's cells plus the straight run from Spawn to it).
+
+    Unless the approach is pinned, it is drawn from the sides whose OPPOSITE
+    side is a mountain, so the Landform backs onto the Rim ridge (any side if
+    none is; an unbacked Landform stays centred). Relief tapers to nothing within a flank of a zoneline, water or
+    river cell: those are frozen flat, and a Landform running into one would
+    leave a step no one can walk."""
+    kinds = {ec.side: ec.edge_type for ec in edges}
+    backed = [sd for sd in DEFAULT_SIDES
+              if kinds.get(_OPPOSITE[sd], "mountain") == "mountain"]
+    side = landform.approach
+    if side is None:
+        pool = backed or list(DEFAULT_SIDES)
+        side = pool[int(rng.integers(0, len(pool)))]
+    di, dj = _SIDE_STEP[side]
+    # Backed by a mountain: shift a cell toward it, widening the approach.
+    # Otherwise stay centred, as far from every exit as the zone allows.
+    shift = cell_size if side in backed else 0.0
+    centre = (-di * shift, -dj * shift)
+    placed = replace(landform, approach=side, centre=centre)
+
+    mid_i, mid_j = nx // 2, ny // 2
+    if di:
+        spawn = (1 if di < 0 else nx - 2, mid_j)
+    else:
+        spawn = (mid_i, 1 if dj < 0 else ny - 2)
+
+    clear = [(i, j) for i in range(nx) for j in range(ny)
+             if cells[i, j].node_type in _LANDFORM_CLEAR_TYPES]
+    reserved = set()
+    for (i, j) in interior:
+        x = origin[0] + (i + 0.5) * cell_size
+        y = origin[1] + (j + 0.5) * cell_size
+        r = placed.relief_at(x, y)
+        if r and clear:
+            near = min(math.hypot(i - ci, j - cj) for ci, cj in clear) * cell_size
+            r *= min(1.0, max(0.0, (near - cell_size) / max(placed.flank, cell_size)))
+        if r and cells[i, j].node_type == "plains" and (i, j) != spawn:
+            cells[i, j].relief = r
+            reserved.add((i, j))
+    # The approach: Spawn's column (or row) from Spawn to the Landform, and
+    # one cell either side of it.
+    ci, cj = spawn
+    for k in range(max(nx, ny)):
+        i, j = ci - di * k, cj - dj * k
+        if not (0 < i < nx - 1 and 0 < j < ny - 1):
+            break
+        for w in (-1, 0, 1):
+            reserved.add((i + w * abs(dj), j + w * abs(di)))
+    return placed, spawn, reserved
 
 
 def _assert_construction_invariants(matrix: DesignMatrix) -> None:

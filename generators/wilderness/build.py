@@ -40,9 +40,11 @@ from generators.wilderness.bowl import (
 )
 from generators.wilderness.matrix import (
     DEFAULT_SIDES,
+    DEFAULT_ZONE_SIZE,
     EDGE_TYPES,
     DesignMatrix,
     EdgeConnection,
+    Landform,
     build_matrix,
 )
 from generators.wilderness.rewrite import rewrite_matrix
@@ -113,19 +115,34 @@ class Landscape:
 
 
 @lru_cache(maxsize=8)
-def _landscape(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str) -> Landscape:
+def _landscape(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str,
+               landform: Optional[Landform] = None,
+               zone_size: float = DEFAULT_ZONE_SIZE) -> Landscape:
     ecs = [EdgeConnection(side=s, edge_type=t) for s, t in edges]
-    matrix = rewrite_matrix(build_matrix(biome, ecs, seed)).matrix
+    matrix = rewrite_matrix(build_matrix(biome, ecs, seed, zone_size=zone_size,
+                                         landform=landform)).matrix
     synth = synthesize_heightfield(matrix, seed=seed)
     return Landscape(matrix=matrix, synth=synth, bowl=assemble_bowl(synth, matrix))
 
 
 def synthesize_landscape(seed: int, edges: Optional[Mapping[str, str]] = None,
-                         biome: str = DEFAULT_BIOME) -> Landscape:
-    """Deterministic landscape for ``(seed, edges, biome)``."""
+                         biome: str = DEFAULT_BIOME,
+                         landform: Optional[Landform] = None,
+                         zone_size: Optional[float] = None) -> Landscape:
+    """Deterministic landscape for ``(seed, edges, biome)``, optionally with a
+    Landform (outdoor dungeons) and a zone size other than the wilderness
+    default. Size scales the matrix grid; the TER resolution is unchanged."""
     norm = normalise_edges(edges)
     return _landscape(int(seed) & 0x7FFFFFFF,
-                      tuple((s, norm[s]) for s in DEFAULT_SIDES), biome)
+                      tuple((s, norm[s]) for s in DEFAULT_SIDES), biome,
+                      landform, float(zone_size or DEFAULT_ZONE_SIZE))
+
+
+def _landform_args(payload: Mapping) -> Tuple[Optional[Landform], float]:
+    """The Landform and zone size a spec's wilderness payload records."""
+    lf = payload.get("landform")
+    return (Landform.from_dict(lf) if lf else None,
+            float(payload.get("zone_size") or DEFAULT_ZONE_SIZE))
 
 
 def landscape_for(spec: ZoneSpec) -> Landscape:
@@ -134,8 +151,10 @@ def landscape_for(spec: ZoneSpec) -> Landscape:
         raise ValueError(f"spec {spec.name!r} carries no wilderness payload")
     if spec.seed is None:
         raise ValueError(f"wilderness spec {spec.name!r} has no seed")
+    landform, zone_size = _landform_args(spec.wilderness)
     return synthesize_landscape(spec.seed, spec.wilderness.get("edges"),
-                                spec.wilderness.get("biome", DEFAULT_BIOME))
+                                spec.wilderness.get("biome", DEFAULT_BIOME),
+                                landform, zone_size)
 
 
 def _quad_materials(land: Landscape, kit: BiomeKit) -> np.ndarray:
@@ -156,14 +175,25 @@ def _wet_quads(land: Landscape, kit: BiomeKit) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = None,
-                    biome: str = DEFAULT_BIOME) -> ZoneSpec:
+                    biome: str = DEFAULT_BIOME,
+                    landform: Optional[Landform] = None,
+                    zone_size: Optional[float] = None) -> ZoneSpec:
     """A ``ZoneSpec`` for an open wilderness: no rooms, the bowl's regions,
-    one material per region kind present, Spawn as the safe point."""
+    one material per region kind present, Spawn as the safe point.
+
+    ``landform`` and ``zone_size`` (outdoor dungeons) are recorded in the
+    wilderness payload only when given, so plain wilderness specs are
+    unchanged; the payload records the PLACED Landform."""
     norm = normalise_edges(edges)
-    land = synthesize_landscape(seed, norm, biome)
+    land = synthesize_landscape(seed, norm, biome, landform, zone_size)
     kit = load_biome_kit(biome)
+    payload = {"biome": biome, "edges": norm}
+    if zone_size:
+        payload["zone_size"] = float(zone_size)
+    if landform is not None:
+        payload["landform"] = land.matrix.landform.to_dict()
     spec = ZoneSpec(name=name, zone_type="wilderness", style_profile="outdoor",
-                    seed=seed, wilderness={"biome": biome, "edges": norm})
+                    seed=seed, wilderness=payload)
     spec.ambient_light = kit.ambient_light
     kit_mats = kit.materials()
     for mat_name in sorted(set(_quad_materials(land, kit).ravel())):
@@ -336,26 +366,28 @@ def vegetation_for(spec: ZoneSpec, ter: TerFile) -> Vegetation:
     builder and the bowl gate share one result."""
     payload = spec.wilderness or {}
     edges = normalise_edges(payload.get("edges"))
+    landform, zone_size = _landform_args(payload)
     return _vegetation(int(spec.seed) & 0x7FFFFFFF,
                        tuple((s, edges[s]) for s in DEFAULT_SIDES),
                        payload.get("biome", DEFAULT_BIOME),
                        payload.get("trees", DEFAULT_TREES),
                        payload.get("trees_source", "default"),
                        (float(spec.safe_point[0]), float(spec.safe_point[1])),
-                       _ter_fingerprint(ter), _TerRef(ter))
+                       _ter_fingerprint(ter), _TerRef(ter), landform, zone_size)
 
 
 @lru_cache(maxsize=8)
 def _vegetation(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, level: str,
                 source: str, spawn_xy: Tuple[float, float], _fp: int,
-                ter_ref: _TerRef) -> Vegetation:
+                ter_ref: _TerRef, landform: Optional[Landform] = None,
+                zone_size: float = DEFAULT_ZONE_SIZE) -> Vegetation:
     from generators.vegetation.kit import load_vegetation_kit
     from generators.vegetation.models import model_name, tree_model
     from generators.vegetation.placement import grove_ratio, place_trees
     from generators.vegetation.textures import (
         bark_texture, bark_texture_name, leaf_texture, leaf_texture_name)
 
-    land = _landscape(seed, edges, biome)
+    land = _landscape(seed, edges, biome, landform, zone_size)
     kit_id = load_biome_kit(biome).vegetation_kit
     kit = load_vegetation_kit(kit_id)
     warnings: List[str] = []
