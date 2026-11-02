@@ -300,6 +300,7 @@ class LayoutGenerator:
             part.floor_material = shared.get(part.floor_material, part.floor_material)
             part.wall_material = shared.get(part.wall_material, part.wall_material)
             part.ceiling_material = shared.get(part.ceiling_material, part.ceiling_material)
+        self._match_corridors_to_rooms(spec, shared)
 
         # Safe point in the entrance room.
         if rooms:
@@ -1213,6 +1214,40 @@ class LayoutGenerator:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _match_corridors_to_rooms(spec: ZoneSpec, shared: Dict[str, str]) -> None:
+        """Hallways match the rooms they join (interesting textures task 9):
+        each corridor takes its floor and wall material from the room it
+        leaves, or the room it enters when that one is themed and the first
+        isn't. Rooms the layout inserted at crossings (no theme of their own)
+        then take their corridors' material. Shared materials nothing uses
+        any more are dropped, so no unused texture is packed."""
+        rooms = {r.id: r for r in spec.rooms}
+
+        def themed(part) -> bool:
+            return part.floor_material != shared.get("floor")
+
+        for cor in spec.corridors:
+            ends = [rooms.get(cor.from_room), rooms.get(cor.to_room)]
+            src = next((r for r in ends if r is not None and themed(r)), None)
+            if src is not None:
+                cor.floor_material = src.floor_material
+                cor.wall_material = src.wall_material
+        for room in spec.rooms:
+            if themed(room):
+                continue
+            src = next((c for c in spec.corridors if themed(c)
+                        and room.id in (c.from_room, c.to_room)), None)
+            if src is not None:
+                room.floor_material = src.floor_material
+                room.wall_material = src.wall_material
+
+        used = {m for part in (*spec.rooms, *spec.corridors)
+                for m in (part.floor_material, part.wall_material, part.ceiling_material)}
+        for name in list(shared.values()):
+            if name not in used:
+                spec.materials.pop(name, None)
 
     def _add_default_materials(self, spec: ZoneSpec, race: str = "") -> Dict[str, str]:
         """Register the shared floor/wall/ceiling materials under their
