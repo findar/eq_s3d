@@ -37,7 +37,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: analyzer/style_builder.py, styles/dungeon.json, styles/city.json, styles/outdoor.json, styles/cave.json, tests/test_texture_profile.py
   - Reqs: 2
 
-- [ ] 3. Texture recipe data and resolver
+- [x] 3. Texture recipe data and resolver
   - Card: [cards/03-recipes.md](cards/03-recipes.md)
   - Type: agent · Size: S · Depends: —
   - Owns: styles/texture_recipes.json, generators/textures/recipes.py, tests/test_texture_recipes.py
