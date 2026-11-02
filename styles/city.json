@@ -69,14 +69,6 @@
   "source_formats": [
     "s3d"
   ],
-  "uv": {
-    "scale": {
-      "min": 1.0,
-      "max": 1.0,
-      "mean": 1.0,
-      "std": 0.0
-    }
-  },
   "lighting": {
     "count": {
       "min": 0,
@@ -104,5 +96,55 @@
   },
   "regions": {
     "type_counts": {}
+  },
+  "textures": {
+    "texel_density": {
+      "wall": {
+        "p25": 13.8,
+        "p50": 14.0,
+        "p75": 28.0
+      },
+      "floor": {
+        "p25": 13.8,
+        "p50": 14.1,
+        "p75": 28.0
+      },
+      "ceiling": {
+        "p25": 14.0,
+        "p50": 14.2,
+        "p75": 28.0
+      }
+    },
+    "look": {
+      "lum_mean": {
+        "p10": 0.141,
+        "p50": 0.278,
+        "p90": 0.538
+      },
+      "lum_std": {
+        "p10": 0.049,
+        "p50": 0.103,
+        "p90": 0.198
+      },
+      "saturation": {
+        "p10": 0.18,
+        "p50": 0.374,
+        "p90": 0.705
+      },
+      "edge_energy": {
+        "p10": 0.014,
+        "p50": 0.033,
+        "p90": 0.06
+      }
+    },
+    "zones": [
+      "qeynos2",
+      "freportw",
+      "felwithea",
+      "rivervale",
+      "cabwest",
+      "neriaka"
+    ],
+    "textures_measured": 632
   }
 }
