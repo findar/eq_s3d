@@ -1,8 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 4, draft.** Written 2026-11-01. The design's open
-> questions are waiting on the user (`design.md` "Open questions"). Task index:
-> `tasks.md` (card format).
+> **STATUS: roadmap step 4, ready.** Written 2026-11-01. The user answered the
+> design's open questions the same day (`archive.md` "Decisions"). Task index:
+> `tasks.md` (card format, 12 tasks).
 
 ## Introduction
 
@@ -24,20 +24,22 @@ zones (design "Research findings"):
   with joints and edges; ours have no shapes at all.
 
 Step 4 measures the classic look into the style profiles, then generates
-textures that match it: a recipe per material family (dressed stone, brick,
-flagstone, cave rock, planks, plaster, dirt, grass, mud, lava, water…) with
-structure, the measured palette and detail, at the measured texel density.
+dungeon and city textures that match it: a recipe per material family
+(dressed stone, brick, flagstone, cobble, cave rock, planks, plaster, ice,
+sky) with structure, the measured palette and detail, at the measured texel
+density. Wilderness ground and trees follow in a later step.
 
 This spec sits under the umbrella `zone-generator`
 (`.kiro/specs/zone-generator/`). "Req X.Y" below means a requirement of THIS
 spec unless it says "umbrella".
 
 **From the umbrella.** Umbrella Req 15 (era fidelity and measured conformance)
-gains texture metrics. Umbrella Req 16 (procedural normal maps) is Open
-question 2. Umbrella Req 26 (determinism) gains the procedural seed fix the
-ROADMAP lists as a known issue.
+gains texture metrics. Umbrella Req 16 (procedural normal maps) stays planned
+for later: Classic–PoP zones have none (the user's choice). Umbrella Req 26
+(determinism) gains the procedural seed fix the ROADMAP lists as a known issue.
 
-**Out of step 4:** hand-painted or stock textures (umbrella Req 32.7 keeps
+**Out of step 4:** wilderness ground and tree textures (a later step, so a
+Karana stays consistent), normal maps, hand-painted or stock textures (umbrella Req 32.7 keeps
 every asset generated), new materials or a new split of surfaces (step 8,
 interesting room walls), decals and props (steps 10–11), animated water or
 lava, an AI-texture overhaul (the AI provider stays an optional drop-in), and
@@ -52,8 +54,8 @@ the in-client check (M6).
 - **Texel_Density**: world units per texture repeat on a surface. Classic
   dungeon walls: ~14 u.
 - **Texture_Family**: a recipe class a material is drawn with: `dressed_stone`,
-  `brick`, `flagstone`, `cobble`, `cave_rock`, `planks`, `plaster`, `dirt`,
-  `grass`, `mud`, `sand`, `lava`, `water`, `ice`, `sky`.
+  `brick`, `flagstone`, `cobble`, `cave_rock`, `planks`, `plaster`, `ice`,
+  `sky`. (Ground families come with the wilderness step.)
 - **Texture_Recipe**: the data that maps a Material_Name (its Texture_Set and
   Surface, plus the theme) to a Texture_Family and its parameters (block size,
   joint width, palette jitter, roughness). Data, not code.
@@ -95,11 +97,11 @@ measured per theme, so that generated textures are judged against real zones.
 **User Story:** As a user, I want each surface drawn as what it is, so that a
 temple wall looks like carved sandstone and a cave ceiling like rough rock.
 
-1. Every Material_Name a build can produce SHALL resolve, through the
-   Texture_Recipe data, to one Texture_Family and its parameters; a name with
-   no entry SHALL fall back by Surface (wall → `dressed_stone`, floor →
-   `flagstone`, ceiling → `cave_rock`, ground → `dirt`) and be recorded in the
-   sidecar.
+1. Every Material_Name a dungeon or city build can produce SHALL resolve,
+   through the Texture_Recipe data, to one Texture_Family and its parameters;
+   a name with no entry SHALL fall back by Surface (wall → `dressed_stone`,
+   floor → `flagstone`, ceiling → `cave_rock`) and be recorded in the sidecar.
+   Wilderness (`wild_*`, `liquid_*`) and tree materials keep step 3's path.
 2. Themes SHALL differ: the same Surface under two archetypes or tints SHALL
    resolve to different families or parameters wherever the theme's palette
    differs today.
@@ -137,23 +139,24 @@ like classic ones, so that "looks like EQ" is checked, not hoped for.
 **User Story:** As a user, I want textures at the classic scale, so that a
 wall reads as stone blocks a player's height, not a smear across the room.
 
-1. Box-backend UVs SHALL use the theme's measured Texel_Density per Surface
-   (Open question 1 decides the target), keeping step 3's orientation rules.
-2. Wilderness ground UVs SHALL use the outdoor profile's Texel_Density.
+1. In `procedural` and `ai` modes, box-backend UVs SHALL repeat at the
+   theme's measured Texel_Density p50 per Surface, keeping step 3's
+   orientation rules. In `placeholder` mode they SHALL keep step 3's 100 u so
+   labels stay readable.
+2. Wilderness ground UVs SHALL stay as they are.
 3. Only UVs SHALL change: X3's UV-free geometry goldens SHALL still pass.
 
 ### Requirement 7: Texture mode
 
-1. The default Texture_Mode SHALL be `procedural` (the recipes); `placeholder`
-   and `ai` SHALL stay selectable with `EQ_S3D_TEXTURE_PROVIDER`.
-2. Tree bark and leaf textures SHALL use the recipe path too (`planks`-like
-   bark grain, leaf cards keep their alpha), or stay as they are if Open
-   question 4 says so.
+1. The default Texture_Mode for dungeon and city materials SHALL be
+   `procedural` (the recipes); `placeholder` and `ai` SHALL stay selectable
+   with `EQ_S3D_TEXTURE_PROVIDER`.
+2. Wilderness ground, water and tree textures SHALL be drawn as in step 3.
 
 ### Requirement 8: Quick
 
 1. Drawing every texture of a build SHALL add at most 2 s over step 3's
-   placeholders on the reference machine.
+   placeholders on a 30-room themed dungeon on the reference machine.
 
 ### Requirement 9: Room-graph and wilderness behaviour otherwise unchanged
 
@@ -167,7 +170,7 @@ wall reads as stone blocks a player's height, not a smear across the room.
 1. Every requirement above has a passing test or, where a person must judge
    it, a step in `docs/ACCEPTANCE.md` "Step 4 — Interesting textures".
 2. The fast and thorough suites are green; the frontend builds.
-3. The user signs off a human pass: dungeons, cities and the Karanas read as
+3. The user signs off a human pass: dungeons and cities read as
    Classic–PoP EverQuest at a glance, surfaces read as their material, and
    textures tile without obvious seams or repetition artefacts. The in-client
    check is M6.

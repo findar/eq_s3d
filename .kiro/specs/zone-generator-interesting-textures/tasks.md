@@ -20,7 +20,8 @@ Index fields: `Type` is `agent` or `human`. `Size` is S (≤ 2 files) / M (≤ 5
 L (split it). `Depends` lists task numbers. `Owns` lists the files and folders
 the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 
-The design's four open questions are waiting on the user.
+The design's four open questions were answered on 2026-11-01
+(`archive.md` "Decisions").
 
 ## Tasks
 
@@ -48,7 +49,7 @@ The design's four open questions are waiting on the user.
   - Owns: generators/textures/painters/__init__.py, generators/textures/painters/stone.py, tests/test_painters.py
   - Reqs: 4
 
-- [ ] 5. Painters: natural and other families
+- [ ] 5. Painters: timber, plaster, ice and sky
   - Card: [cards/05-natural-painters.md](cards/05-natural-painters.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/textures/painters/natural.py, tests/test_painters_natural.py
@@ -62,8 +63,8 @@ The design's four open questions are waiting on the user.
 
 - [ ] 7. Texel density from the profile
   - Card: [cards/07-texel-density.md](cards/07-texel-density.md)
-  - Type: agent · Size: M · Depends: 2
-  - Owns: generators/geometry.py, the wilderness ground-UV code (task names the file), tests/test_wall_uvs.py, tests/test_texel_density.py
+  - Type: agent · Size: M · Depends: 2, 6
+  - Owns: generators/geometry.py, generators/builder.py, tests/test_wall_uvs.py, tests/test_texel_density.py
   - Reqs: 6
 
 - [ ] 8. HUMAN: first look at the new textures in 3D

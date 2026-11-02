@@ -14,7 +14,8 @@ Measure, then match:
 3. **Painters** (`generators/textures/painters/`) draw each family as a
    structured, tileable, pure 256×256 diffuse, then a **conformance** pass
    checks its Look_Stats against the profile.
-4. **Texel density** from the profile drives box-backend and wilderness UVs.
+4. **Texel density** from the profile drives box-backend UVs (placeholder
+   mode keeps 100 u).
 5. The recipes become the default Texture_Mode; placeholders and AI stay
    selectable; the sidecar texture list gains the family and Look_Stats.
 
@@ -113,6 +114,8 @@ source)`.
 
 ## Painters (`generators/textures/painters/`)
 
+Families in step 4 (dungeon and city): `dressed_stone`, `brick`,
+`flagstone`, `cobble`, `cave_rock`, `planks`, `plaster`, `ice`, `sky`.
 Each family is `paint(params, base_color, seed) -> (256, 256, 3) uint8`,
 seeded from `zlib.crc32` of the material name (never `hash()`). Shared
 building blocks: tileable value noise (existing), tileable Worley/Voronoi
@@ -132,9 +135,11 @@ sky). The builder records Look_Stats in the sidecar texture list.
 ## Texel density
 
 `MeshBuilder.add_quad(uv_scale=…)` already takes a scale; the box backend
-passes `1 / density[surface]` from the theme's Texture_Profile instead of the
-fixed 0.01. Wilderness passes the outdoor profile's ground density. X3's
-UV-free goldens must still pass.
+passes `1 / density[surface]` from the theme's Texture_Profile p50 instead of
+the fixed 0.01, except in placeholder mode, which keeps 0.01 (100 u) so labels
+stay readable. The builder knows the Texture_Mode before it builds geometry
+(it reads `EQ_S3D_TEXTURE_PROVIDER`), so it can pass the scale down.
+Wilderness UVs are untouched. X3's UV-free goldens must still pass.
 
 ## Correctness properties
 
@@ -146,19 +151,22 @@ UV-free goldens must still pass.
 | Y4 | Painters: tileable, pure across processes, distinct per family | 4 |
 | Y5 | Look_Stats within the profile band except listed exceptions | 5 |
 | Y6 | UVs follow the profile density; UV-free goldens unchanged | 6 |
-| Y7 | Timing ≤ 2 s over placeholders on a dense wilderness build | 8 |
+| Y7 | Timing ≤ 2 s over placeholders on a 30-room themed dungeon | 8 |
 
 ## Risks
 
 - **Classic density with our big rooms.** At 14 u a 300 u wall repeats a
   texture ~21 times; repetition artefacts will show. Structure with per-cell
   variation hides most of it; a human must judge (exit criterion 3).
-- **Placeholders at classic density** have tiny labels (a 14 u repeat makes a
-  glyph about 0.8 u tall). Open question 1.
+- **Placeholders at classic density** would have tiny labels (a 14 u repeat
+  makes a glyph about 0.8 u tall), so placeholder mode keeps 100 u.
+- **A Karana mixes old and new.** Until the wilderness step, wilderness
+  ground and trees keep step 3's textures, and only dungeons and cities get
+  the new look.
 - **"Within the classic band" isn't "looks like EQ".** The statistics are a
   floor; the look needs the human pass.
 
-## Open questions
+## Open questions (answered 2026-11-01; see `archive.md`)
 
 1. **Texel density target.** Default: the theme's measured p50 per surface
    (dungeon walls ~14 u, floors ~30 u, ceilings ~18 u; outdoor ground ~60 u),

@@ -11,7 +11,7 @@ proves Req 8, and the thorough profile is green.
       reading, classic look, scale, repetition and seams, themes differing,
       the mode overrides, and that the in-client check is M6.
 - [ ] A `slow` timing test (Y7): recipe textures add at most 2 s over
-      placeholders on a dense wilderness build.
+      placeholders on a 30-room themed dungeon.
 - [ ] The fast and thorough suites pass.
       → verify: `python -m pytest tests/ -q` and
         `python -m pytest tests/ -q --hypothesis-profile=thorough`.
