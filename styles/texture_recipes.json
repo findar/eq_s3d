@@ -1,0 +1,51 @@
+{
+  "_comment": "Texture recipes (interesting textures spec task 3, Requirement 3). Each dungeon or city Material_Name (<set>_<surface>) resolves to a Texture_Family and its parameters: an entry with 'set' matches that set exactly; one with 'theme' matches a set equal to it or ending in '_<theme>' (so 'temple' covers 'temple', 'gnoll_temple' and 'city_temple'); otherwise the surface's fallback applies. Family parameters are defaults that an entry's 'params' override. Wilderness and tree materials are not resolved here (they keep step 3's path).",
+  "families": {
+    "dressed_stone": {"block": [64, 32], "joint": 3, "bevel": 2, "jitter": 0.12, "grain": 0.35},
+    "brick":         {"block": [32, 16], "joint": 2, "bevel": 1, "jitter": 0.15, "grain": 0.25},
+    "flagstone":     {"cells": 9, "joint": 3, "jitter": 0.15, "grain": 0.3},
+    "cobble":        {"cells": 40, "joint": 3, "jitter": 0.2, "bulge": 0.6},
+    "cave_rock":     {"scale": 4, "strata": 0.3, "grain": 0.5, "crack": 0.4},
+    "planks":        {"width": 32, "seam": 2, "grain": 0.6, "knots": 3},
+    "plaster":       {"stains": 0.3, "cracks": 0.2, "grain": 0.2},
+    "ice":           {"fractures": 0.5, "sheen": 0.3},
+    "sky":           {"cloud": 0.6}
+  },
+  "materials": [
+    {"theme": "dungeon",     "surface": "wall",    "family": "dressed_stone", "params": {"block": [56, 28], "jitter": 0.18, "grain": 0.45}},
+    {"theme": "dungeon",     "surface": "floor",   "family": "flagstone"},
+    {"theme": "dungeon",     "surface": "ceiling", "family": "cave_rock"},
+
+    {"theme": "fortress",    "surface": "wall",    "family": "dressed_stone", "params": {"block": [64, 32]}},
+    {"theme": "fortress",    "surface": "floor",   "family": "flagstone",     "params": {"cells": 7}},
+
+    {"theme": "temple",      "surface": "wall",    "family": "dressed_stone", "params": {"block": [48, 24], "bevel": 1, "grain": 0.25}},
+    {"theme": "temple",      "surface": "floor",   "family": "flagstone",     "params": {"cells": 5, "joint": 2}},
+
+    {"theme": "tomb",        "surface": "wall",    "family": "dressed_stone", "params": {"block": [48, 48], "jitter": 0.08}},
+    {"theme": "tomb",        "surface": "floor",   "family": "flagstone",     "params": {"cells": 12, "grain": 0.4}},
+
+    {"theme": "wizard_lair", "surface": "wall",    "family": "brick"},
+    {"theme": "wizard_lair", "surface": "floor",   "family": "flagstone",     "params": {"cells": 16, "joint": 2}},
+
+    {"theme": "sunken_ruin", "surface": "wall",    "family": "dressed_stone", "params": {"jitter": 0.25, "grain": 0.6}},
+    {"theme": "sunken_ruin", "surface": "floor",   "family": "cobble"},
+    {"theme": "water",       "surface": "wall",    "family": "dressed_stone", "params": {"jitter": 0.25, "grain": 0.6}},
+    {"theme": "water",       "surface": "floor",   "family": "cobble"},
+
+    {"theme": "ice_keep",    "surface": "wall",    "family": "ice"},
+    {"theme": "ice_keep",    "surface": "floor",   "family": "flagstone",     "params": {"cells": 8, "grain": 0.15}},
+    {"theme": "ice",         "surface": "wall",    "family": "ice"},
+    {"theme": "ice",         "surface": "floor",   "family": "flagstone",     "params": {"cells": 8, "grain": 0.15}},
+
+    {"theme": "lava_forge",  "surface": "wall",    "family": "cave_rock",     "params": {"strata": 0.1, "crack": 0.6}},
+    {"theme": "lava_forge",  "surface": "floor",   "family": "flagstone",     "params": {"cells": 10, "grain": 0.55}},
+    {"theme": "lava",        "surface": "wall",    "family": "cave_rock",     "params": {"strata": 0.1, "crack": 0.6}},
+    {"theme": "lava",        "surface": "floor",   "family": "flagstone",     "params": {"cells": 10, "grain": 0.55}},
+
+    {"set": "city",          "surface": "wall",    "family": "plaster"},
+    {"set": "city",          "surface": "floor",   "family": "cobble",        "params": {"cells": 56}},
+    {"set": "city",          "surface": "ceiling", "family": "sky"}
+  ],
+  "fallback": {"wall": "dressed_stone", "floor": "flagstone", "ceiling": "cave_rock"}
+}
