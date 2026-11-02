@@ -70,7 +70,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: docs/ACCEPTANCE.md, tests/test_texture_manifest.py
   - Reqs: 8, exit criteria 1–2
 
-- [ ] 9. HUMAN: placeholder textures acceptance pass
+- [x] 9. HUMAN: placeholder textures acceptance pass
   - Card: [cards/09-human-acceptance.md](cards/09-human-acceptance.md)
   - Type: human · Depends: 8
 

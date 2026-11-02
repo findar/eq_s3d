@@ -6,7 +6,7 @@ Index entry: `tasks.md` task 9. **Type: human. Agents never tick this.**
 Merge everything through task 8, restart the server, open the web app.
 
 ## Checklist
-- [ ] Walk "Step 3 — Placeholder textures" in `docs/ACCEPTANCE.md`.
+- [x] Walk "Step 3 — Placeholder textures" in `docs/ACCEPTANCE.md`.
 
 ## Result
-"Signed off", or findings as bullets, which become new tasks before 10.
+Signed off by the user (2026-11-01): "looks good". No findings.
