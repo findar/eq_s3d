@@ -55,7 +55,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: generators/textures/painters/natural.py, tests/test_painters_natural.py
   - Reqs: 4
 
-- [ ] 6. Conformance and the recipe texture mode
+- [x] 6. Conformance and the recipe texture mode
   - Card: [cards/06-conformance-and-mode.md](cards/06-conformance-and-mode.md)
   - Type: agent · Size: M · Depends: 2, 3, 4, 5
   - Owns: generators/textures/conformance.py, generators/textures/procedural.py, generators/textures/factory.py, generators/builder.py, tests/test_texture_conformance.py
