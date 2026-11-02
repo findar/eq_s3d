@@ -26,3 +26,10 @@ questions on 2026-11-01, each with the recommended option:
   Blackburrow's, later others) add a kind, not a node type or a synth path.
   A Landform backs onto a mountain side and tapers away from zonelines and
   water (frozen flat cells it would otherwise meet in a cliff).
+- **Envelope from the TER (task 4, 2026-11-02):** `outdoor_dungeon.host_envelope`
+  interpolates the built TER, footprint a disc to the hill's half-relief
+  (radius + flank / 2), floor limit 150 u under the approach foot's height
+  until task 5 passes the real Entrance floor. Rooms under a hill are 80 u
+  tall and sized to the Envelope (`layout_in_envelope`); `_fit_floors`
+  shifts the layout by its tightest room's headroom, not to the entrance's
+  band top, so the entrance room is not always the highest.
