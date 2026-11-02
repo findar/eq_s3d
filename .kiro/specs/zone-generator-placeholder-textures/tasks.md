@@ -74,7 +74,7 @@ The design's four open questions were answered on 2026-11-01
   - Card: [cards/09-human-acceptance.md](cards/09-human-acceptance.md)
   - Type: human · Depends: 8
 
-- [ ] 10. Close step 3
+- [x] 10. Close step 3
   - Card: [cards/10-close.md](cards/10-close.md)
   - Type: agent · Size: S · Depends: 9, 12 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-placeholder-textures/, .kiro/specs/zone-generator/

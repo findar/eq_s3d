@@ -409,6 +409,8 @@ the requirements.
 5. WHEN a Preview material has no diffuse texture, THE Web_App SHALL render that material with its base colour and render every other material unaffected.
 6. THE Zone_Builder SHALL write, for every Geometry_Backend and for Natural_Style output, a Preview whose vertex positions and triangles equal the `.eqg` collision mesh.
 
+> **Delivered in part by step 3** (design decision 23): criteria 17.1, 17.2 (diffuse), 17.4, 17.5 and 17.6 for the terrain; the normal-map half (17.2 normal, 17.3) waits for step 4 with Req 16.
+
 ### Requirement 18: Sessions and feedback interpretation
 
 **User Story:** As a zone author, I want to type follow-up instructions like "make the boss room bigger", so that I refine the current zone instead of starting over.
