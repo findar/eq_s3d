@@ -153,19 +153,26 @@ read before touching the relevant area so it isn't rediscovered.
   filesystem (404 instead of 400); Hypothesis drew one only rarely, so step 1b's
   Property 18 failed about once per thorough run. Fixed in `server/app.py`
   `_safe_segment` and pinned as `@example`s.
-- **The parallel test runner occasionally stumbles; re-run before debugging.**
-  Seen four times in steps 2–3, always on Windows with `-n auto`: a run stopped
-  at collection with "Different tests were collected between gw0 and gw2", once
-  together with `OutsideOutputError` while `tests/test_properties_pipeline.py`
-  imported `server.app` (its import-time `OutputRoot(OUTPUT_DIR).mkdir()`); and
-  once a parallel run hung with its workers gone. Two of these were a fresh
-  worktree's first run. None reproduced: 8 rounds of fresh-state collection
-  (no `output/`, `__pycache__` or `.hypothesis`) and 64 concurrent `server.app`
-  imports all passed, and `Path.resolve` gives the same answer before and after
-  `output/web` exists. Workaround: if a run fails before any test runs, or
-  stops making progress, kill leftover `python … pytest` processes
-  (`Get-CimInstance Win32_Process` filtered on the command line) and run it
-  again; only a failure that repeats is worth chasing.
+- **`Path.resolve` on Windows can keep the `\\?\` prefix under a race.**
+  Python 3.13's `ntpath.realpath` resolves through the OS and strips the
+  long-path prefix only if a second lookup returns the same path or fails
+  with the same Windows error. If another process is creating the path in
+  between (one error "path not found", the next "file not found"), the
+  prefix stays, and `\\?\F:\…\output\web` compares UNEQUAL to
+  `F:\…\output\web`. This was the parallel test runner's mystery failure on a
+  fresh worktree's first run: four workers import `server.app` at once, one
+  hits the race in its import-time `OutputRoot(OUTPUT_DIR).mkdir()` and
+  raises `OutsideOutputError: path X resolves outside output root X` (two
+  identical-looking paths), so that worker collects fewer tests and xdist
+  reports "Different tests were collected between gw0 and gw2". It only
+  happens before `output/web` exists, which is why re-runs never failed.
+  Fixed in `core/paths._resolve`, which now strips a leftover `\\?\` (and
+  turns `\\?\UNC\` back into `\\`); `tests/test_paths.py` simulates it. Any
+  other code comparing resolved paths on Windows should go through
+  `_resolve` or strip the prefix the same way. A parallel run that hangs with
+  its workers gone (seen once) is still unexplained: kill leftover `python …
+  pytest` processes (`Get-CimInstance Win32_Process` filtered on the command
+  line) and run it again.
 
 ## Design calls already settled (don't relitigate)
 
