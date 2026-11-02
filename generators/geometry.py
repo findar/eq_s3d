@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from core.ter import TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
@@ -34,6 +34,11 @@ MAX_SEG_RISE = 2.5
 # Mesh builder
 # ---------------------------------------------------------------------------
 
+# UV units per world unit when a material has no texel_density: one texture
+# repeat per 100 u (the box backend's scale before interesting textures).
+DEFAULT_UV_SCALE = 0.01
+
+
 class MeshBuilder:
     """
     Accumulates geometry and resolves materials, then emits a TerFile.
@@ -47,13 +52,16 @@ class MeshBuilder:
         self.polygons: List[Polygon] = []
         self._material_index: Dict[str, int] = {}
         self.materials: List[Material] = []
+        self._uv_scale: Dict[int, float] = {}   # material index -> UV per world unit
 
     # ------------------------------------------------------------------
     # Material resolution
     # ------------------------------------------------------------------
 
     def material_id(self, mat_spec: MaterialSpec) -> int:
-        """Return the index for a material, registering it if new."""
+        """Return the index for a material, registering it if new. A material
+        with a ``texel_density`` (world units per repeat) maps its UVs at that
+        scale; without one, at ``DEFAULT_UV_SCALE`` (100 u per repeat)."""
         if mat_spec.name in self._material_index:
             return self._material_index[mat_spec.name]
         idx = len(self.materials)
@@ -61,6 +69,8 @@ class MeshBuilder:
         mat.add_diffuse(mat_spec.texture)
         self.materials.append(mat)
         self._material_index[mat_spec.name] = idx
+        density = getattr(mat_spec, "texel_density", None)
+        self._uv_scale[idx] = 1.0 / density if density else DEFAULT_UV_SCALE
         return idx
 
     # ------------------------------------------------------------------
@@ -74,20 +84,23 @@ class MeshBuilder:
                  p3: Tuple[float, float, float],
                  normal: Tuple[float, float, float],
                  material: int,
-                 uv_scale: float = 0.01,
+                 uv_scale: Optional[float] = None,
                  flags: int = 0) -> None:
         """
         Add a quad defined by four corners in CCW order (viewed from the
         visible side, i.e. the side the normal points toward).
 
         UVs are planar-projected based on world position * uv_scale so textures
-        tile consistently regardless of surface size. A wall follows EQ's
+        tile consistently regardless of surface size. ``uv_scale`` defaults to
+        the material's own (its ``texel_density``, see ``material_id``). A wall follows EQ's
         (Direct3D) convention as stock zones do: ``v`` grows down the wall, so
         the texture's top row is at the top, and ``u`` grows to the right of a
         viewer facing the visible side, so the texture isn't mirrored.
         """
         base = len(self.vertices)
         corners = [p0, p1, p2, p3]
+        if uv_scale is None:
+            uv_scale = self._uv_scale.get(material, DEFAULT_UV_SCALE)
 
         nx, ny, nz = (abs(normal[0]), abs(normal[1]), abs(normal[2]))
         if nz >= nx and nz >= ny and normal[2] > 0:

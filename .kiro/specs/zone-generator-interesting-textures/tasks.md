@@ -61,10 +61,11 @@ The design's four open questions were answered on 2026-11-01
   - Owns: generators/textures/conformance.py, generators/textures/procedural.py, generators/textures/factory.py, generators/builder.py, tests/test_texture_conformance.py
   - Reqs: 4.4, 5, 7
 
-- [ ] 7. Texel density from the profile
+- [x] 7. Texel density from the profile
   - Card: [cards/07-texel-density.md](cards/07-texel-density.md)
   - Type: agent · Size: M · Depends: 2, 6
-  - Owns: generators/geometry.py, generators/builder.py, tests/test_wall_uvs.py, tests/test_texel_density.py
+  - Owns: generators/geometry.py, generators/builder.py, generators/zone_spec.py, tests/test_wall_uvs.py, tests/test_texel_density.py
+  - zone_spec.py added 2026-11-01: texel density is recorded on each MaterialSpec (the IR), the user's delegated choice for long-term maintenance over a backend-interface change.
   - Reqs: 6
 
 - [ ] 8. HUMAN: first look at the new textures in 3D

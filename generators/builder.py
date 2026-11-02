@@ -73,6 +73,34 @@ def surface_of(material: str) -> Tuple[str, str, Optional[str]]:
     return head, tail, None
 
 
+def texel_density(theme: str, surface: str) -> float:
+    """The theme profile's median world units per texture repeat on a
+    surface (interesting textures spec Req 6)."""
+    import json
+    path = Path(__file__).resolve().parent.parent / "styles" / f"{theme}.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    return float(doc["textures"]["texel_density"][surface]["p50"])
+
+
+def assign_texel_densities(spec: ZoneSpec) -> None:
+    """Set ``texel_density`` on each room-graph surface material that a
+    recipe (or the AI provider) will draw: the theme profile's median for its
+    surface. Placeholder-mode materials keep 100 u so their labels stay
+    readable; wilderness materials and any density already set are left as
+    they are (interesting textures spec Req 6)."""
+    from .textures.conformance import theme_for
+    from .textures.factory import get_provider
+
+    for name, mat in spec.materials.items():
+        tex_set, surface, surface_class = surface_of(name)
+        if mat.texel_density is not None or surface_class not in _ROOM_SURFACES:
+            continue
+        provider = get_provider(surface_class=surface_class, name=name)
+        if provider.name == "placeholder":
+            continue
+        mat.texel_density = texel_density(theme_for(tex_set), surface)
+
+
 def _diffuse_of(mat) -> Optional[str]:
     from core.ter import PROP_DIFFUSE
     return next((p.value_s for p in mat.properties if p.name == PROP_DIFFUSE), None)
@@ -206,7 +234,10 @@ class ZoneBuilder:
         ter_filename = f"ter_{name}.ter"
 
         # 1. Geometry → TER (named ter_<zone> per RoF2 convention).
-        #    Route through the backend registry by zone type.
+        #    Route through the backend registry by zone type. First record
+        #    each surface material's texel density in the spec (it decides
+        #    the UVs), from the texture mode that will draw it.
+        assign_texel_densities(self.spec)
         ter, backend_name, warnings = self._build_geometry(name, ter_version)
 
         # Trees (wilderness only, step 2): a layer on top of the built TER,

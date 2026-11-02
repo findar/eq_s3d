@@ -17,7 +17,14 @@ from core.pfs import PfsArchive
 from core.ter import TerFile
 from generators.builder import ZoneBuilder
 
-UV_SCALE = 0.01   # one texture repeat per 100 u (unchanged)
+DEFAULT_UV_SCALE = 0.01   # 100 u per repeat, for a material with no texel_density
+
+
+def uv_scale(spec, ter, material_index):
+    """UV units per world unit for a TER material: 1 / its texel_density
+    (interesting textures task 7), else the default."""
+    density = spec.materials[ter.materials[material_index].name].texel_density
+    return 1.0 / density if density else DEFAULT_UV_SCALE
 
 SPECS = {
     "dungeon_flat": lambda: plan_to_spec(ZonePlan(name="wuv", zone_type="dungeon",
@@ -30,9 +37,9 @@ SPECS = {
 }
 
 
-def _walls(ter):
+def _walls(ter, spec=None):
     """Each wall triangle as (corner positions (3,3), corner uvs (3,2), its
-    visible-side normal)."""
+    visible-side normal, its UV scale)."""
     out = []
     for p in ter.polygons:
         vs = [ter.vertices[i] for i in (p.v1, p.v2, p.v3)]
@@ -41,7 +48,7 @@ def _walls(ter):
             continue
         P = np.array([[v.x, v.y, v.z] for v in vs])
         UV = np.array([[v.u, v.v] for v in vs])
-        out.append((P, UV, n))
+        out.append((P, UV, n, uv_scale(spec, ter, p.material) if spec else None))
     return out
 
 
@@ -63,10 +70,10 @@ def built(request, tmp_path_factory):
 
 
 def test_wall_v_runs_down_and_u_runs_right(built):
-    _, ter = built
-    walls = _walls(ter)
+    spec, ter = built
+    walls = _walls(ter, spec)
     assert walls
-    for P, UV, n in walls:
+    for P, UV, n, scale in walls:
         area = np.linalg.norm(np.cross(P[1] - P[0], P[2] - P[0]))
         if area < 1e-6:
             continue
@@ -74,15 +81,15 @@ def test_wall_v_runs_down_and_u_runs_right(built):
         right = np.cross(-n, up)
         right /= np.linalg.norm(right)
         gu, gv = _gradient(P, UV[:, 0]), _gradient(P, UV[:, 1])
-        # v falls as z rises, u rises to the right, both at 100 u per repeat.
-        assert gv @ up == pytest.approx(-UV_SCALE, abs=1e-6)
-        assert gu @ right == pytest.approx(UV_SCALE, abs=1e-6)
+        # v falls as z rises, u rises to the right, both at the material's scale.
+        assert gv @ up == pytest.approx(-scale, abs=1e-6)
+        assert gu @ right == pytest.approx(scale, abs=1e-6)
 
 
 def test_room_walls_face_into_their_room(built):
     spec, ter = built
     checked = 0
-    for P, _, n in _walls(ter):
+    for P, _, n, _ in _walls(ter):
         c = P.mean(axis=0)
         for room in spec.rooms:
             (x0, y0, _), (x1, y1, _) = room.bounds
@@ -100,11 +107,12 @@ def test_room_walls_face_into_their_room(built):
 def test_floor_and_ceiling_uvs_read_unmirrored(built):
     """Floors (seen from above) map v to -Y and ceilings (seen from below) to
     +Y, so a label reads unmirrored on both (task 6's finding, fixed in 7)."""
-    _, ter = built
+    spec, ter = built
     for p in ter.polygons:
+        scale = uv_scale(spec, ter, p.material)
         for i in (p.v1, p.v2, p.v3):
             v = ter.vertices[i]
             if v.nz > 0.5:
-                assert (v.u, v.v) == pytest.approx((v.x * UV_SCALE, -v.y * UV_SCALE), abs=1e-4)
+                assert (v.u, v.v) == pytest.approx((v.x * scale, -v.y * scale), abs=1e-4)
             elif v.nz < -0.5:
-                assert (v.u, v.v) == pytest.approx((v.x * UV_SCALE, v.y * UV_SCALE), abs=1e-4)
+                assert (v.u, v.v) == pytest.approx((v.x * scale, v.y * scale), abs=1e-4)
