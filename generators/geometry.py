@@ -136,8 +136,14 @@ class MeshBuilder:
     # Primitive: a hollow box room
     # ------------------------------------------------------------------
 
-    def add_room(self, room: RoomSpec, spec: ZoneSpec) -> None:
-        """Build a hollow box with inward-facing walls, floor, and ceiling."""
+    def add_room(self, room: RoomSpec, spec: ZoneSpec,
+                 extra_doors: Optional[Dict[str, List[Tuple[float, float, float]]]] = None
+                 ) -> None:
+        """Build a hollow box with inward-facing walls, floor, and ceiling.
+
+        ``extra_doors`` adds openings no corridor in the spec makes, as
+        ``{side: [(c0, c1, top), ...]}`` like ``_door_openings`` (an outdoor
+        dungeon's Tunnel); the side must be in ``room.open_walls``."""
         (x0, y0, z0), (x1, y1, z1) = room.bounds
 
         floor_mat   = self.material_id(spec.materials[room.floor_material])
@@ -160,6 +166,8 @@ class MeshBuilder:
         # lintel above it, so the floor never ends at a drop beside a door. An
         # open side no corridor reaches (hand-authored specs) stays fully open.
         doors = _door_openings(room, spec)
+        for side, cuts in (extra_doors or {}).items():
+            doors.setdefault(side, []).extend(cuts)
         extents = {
             "S": (x0, x1), "N": (x0, x1),   # along X
             "W": (y0, y1), "E": (y0, y1),   # along Y
