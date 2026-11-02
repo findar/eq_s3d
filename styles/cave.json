@@ -71,14 +71,6 @@
   "source_formats": [
     "s3d"
   ],
-  "uv": {
-    "scale": {
-      "min": 1.0,
-      "max": 1.0,
-      "mean": 1.0,
-      "std": 0.0
-    }
-  },
   "lighting": {
     "count": {
       "min": 0,
@@ -106,5 +98,57 @@
   },
   "regions": {
     "type_counts": {}
+  },
+  "textures": {
+    "texel_density": {
+      "wall": {
+        "p25": 14.0,
+        "p50": 20.3,
+        "p75": 29.9
+      },
+      "floor": {
+        "p25": 14.2,
+        "p50": 28.0,
+        "p75": 45.1
+      },
+      "ceiling": {
+        "p25": 14.0,
+        "p50": 24.4,
+        "p75": 39.4
+      }
+    },
+    "look": {
+      "lum_mean": {
+        "p10": 0.084,
+        "p50": 0.201,
+        "p90": 0.358
+      },
+      "lum_std": {
+        "p10": 0.037,
+        "p50": 0.067,
+        "p90": 0.141
+      },
+      "saturation": {
+        "p10": 0.176,
+        "p50": 0.531,
+        "p90": 0.883
+      },
+      "edge_energy": {
+        "p10": 0.01,
+        "p50": 0.027,
+        "p90": 0.051
+      }
+    },
+    "zones": [
+      "crushbone",
+      "blackburrow",
+      "runnyeye",
+      "cazicthule",
+      "kedge",
+      "guktop",
+      "gukbottom",
+      "warrens"
+    ],
+    "textures_measured": 784
   }
 }

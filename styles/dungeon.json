@@ -73,14 +73,6 @@
   "source_formats": [
     "s3d"
   ],
-  "uv": {
-    "scale": {
-      "min": 1.0,
-      "max": 1.0,
-      "mean": 1.0,
-      "std": 0.0
-    }
-  },
   "lighting": {
     "count": {
       "min": 0,
@@ -108,5 +100,59 @@
   },
   "regions": {
     "type_counts": {}
+  },
+  "textures": {
+    "texel_density": {
+      "wall": {
+        "p25": 14.0,
+        "p50": 24.1,
+        "p75": 31.8
+      },
+      "floor": {
+        "p25": 14.2,
+        "p50": 28.1,
+        "p75": 41.8
+      },
+      "ceiling": {
+        "p25": 14.1,
+        "p50": 28.0,
+        "p75": 36.0
+      }
+    },
+    "look": {
+      "lum_mean": {
+        "p10": 0.091,
+        "p50": 0.2,
+        "p90": 0.38
+      },
+      "lum_std": {
+        "p10": 0.04,
+        "p50": 0.069,
+        "p90": 0.137
+      },
+      "saturation": {
+        "p10": 0.199,
+        "p50": 0.475,
+        "p90": 0.893
+      },
+      "edge_energy": {
+        "p10": 0.01,
+        "p50": 0.029,
+        "p90": 0.044
+      }
+    },
+    "zones": [
+      "befallen",
+      "soldunga",
+      "soldungb",
+      "najena",
+      "sebilis",
+      "chardok",
+      "velketor",
+      "paw",
+      "guktop",
+      "gukbottom"
+    ],
+    "textures_measured": 903
   }
 }

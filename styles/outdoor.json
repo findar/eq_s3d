@@ -71,14 +71,6 @@
   "source_formats": [
     "s3d"
   ],
-  "uv": {
-    "scale": {
-      "min": 1.0,
-      "max": 1.0,
-      "mean": 1.0,
-      "std": 0.0
-    }
-  },
   "lighting": {
     "count": {
       "min": 0,
@@ -106,5 +98,58 @@
   },
   "regions": {
     "type_counts": {}
+  },
+  "textures": {
+    "texel_density": {
+      "wall": {
+        "p25": 15.2,
+        "p50": 31.2,
+        "p75": 76.2
+      },
+      "floor": {
+        "p25": 21.9,
+        "p50": 53.7,
+        "p75": 133.6
+      },
+      "ceiling": {
+        "p25": 76.2,
+        "p50": 102.1,
+        "p75": 111.5
+      }
+    },
+    "look": {
+      "lum_mean": {
+        "p10": 0.156,
+        "p50": 0.27,
+        "p90": 0.524
+      },
+      "lum_std": {
+        "p10": 0.057,
+        "p50": 0.101,
+        "p90": 0.151
+      },
+      "saturation": {
+        "p10": 0.113,
+        "p50": 0.353,
+        "p90": 0.636
+      },
+      "edge_energy": {
+        "p10": 0.016,
+        "p50": 0.042,
+        "p90": 0.07
+      }
+    },
+    "zones": [
+      "gfaydark",
+      "eastkarana",
+      "northkarana",
+      "oasis",
+      "feerrott",
+      "nektulos",
+      "fieldofbone",
+      "burningwood",
+      "eastwastes"
+    ],
+    "textures_measured": 475
   }
 }
