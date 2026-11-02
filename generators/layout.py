@@ -1195,10 +1195,15 @@ class LayoutGenerator:
         """
         Move floors into the Envelope's height band. Each room may sit between
         the floor limit and the lowest ceiling over its footprint less its own
-        height. The whole layout first shifts so the entrance sits at the top
-        of its band (nearest the surface, where the Entrance will reach it);
-        then rooms are clamped into their bands and the grade relax re-run,
-        a few times. Whatever still misses is left for ``fits`` to reject.
+        height. The whole layout first shifts by the smallest headroom, so it
+        sits as high as it can (nearest the surface, where the Entrance will
+        reach it) with every room at or under its band's top and the relative
+        heights kept; then rooms are clamped into their bands and the grade
+        relax re-run, a few times. Whatever still misses is left for ``fits``
+        to reject. (Shifting the entrance to ITS top instead left rooms under
+        a lower surface — a hill's flank — above theirs, and the relax pulled
+        them back up through the rock: a third of host-hill builds dropped
+        rooms.)
         """
         from collections import defaultdict
         bands = []
@@ -1206,7 +1211,7 @@ class LayoutGenerator:
             top = envelope.ceiling_over(r.center_x - r.width / 2, r.center_y - r.depth / 2,
                                         r.center_x + r.width / 2, r.center_y + r.depth / 2)
             bands.append((envelope.floor_limit, top - r.height))
-        shift = bands[entrance][1] - rooms[entrance].floor_z
+        shift = min(hi - r.floor_z for r, (_lo, hi) in zip(rooms, bands))
         for r in rooms:
             r.floor_z += shift
         adj = defaultdict(list)

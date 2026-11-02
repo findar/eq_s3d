@@ -43,10 +43,10 @@ The design's five open questions were answered on 2026-11-01
   - Owns: generators/wilderness/matrix.py, generators/wilderness/build.py, generators/wilderness/synth.py, tests/test_host_terrain.py
   - Reqs: 3
 
-- [ ] 4. Envelope from the built terrain
+- [x] 4. Envelope from the built terrain
   - Card: [cards/04-envelope-from-terrain.md](cards/04-envelope-from-terrain.md)
   - Type: agent · Size: S · Depends: 2, 3
-  - Owns: generators/outdoor_dungeon.py, tests/test_outdoor_envelope.py
+  - Owns: generators/outdoor_dungeon.py, tests/test_outdoor_envelope.py, generators/layout.py (`_fit_floors`)
   - Reqs: 2.1, 3.1
 
 - [ ] 5. Entrance: Apron, Tunnel and Mouth
