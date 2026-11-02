@@ -5,7 +5,10 @@ assignment. The goldens below hash each pinned build's TER vertex positions,
 normals and colours and each polygon's (v1, v2, v3, flags, material index),
 leaving out every name, shader, texture string and UV. First recorded before
 the rename (task 1, with UVs); re-recorded without UVs before task 11 fixed
-the wall UVs, so they show only UVs moved.
+the wall UVs, so they show only UVs moved. The three themed dungeon goldens
+were re-recorded once more for interesting textures task 9, which on purpose
+gives corridors their rooms' theme material (their hashes without material
+indices were unchanged).
 """
 
 import hashlib
@@ -38,10 +41,10 @@ CASES = {
 
 GOLDEN = {
     "city": "de6665a8ef469abe1e83879b",
-    "dungeon_gnoll_temple": "b44006e9ef84cdfa99b16c41",
-    "dungeon_kobold_tomb_lava": "f5b7d7984f59394ef4fbdfa0",
+    "dungeon_gnoll_temple": "1a55c6628da81686c76516d9",
+    "dungeon_kobold_tomb_lava": "f74f01d52fa38a8b2f149957",
     "dungeon_plain": "dc549f4069116e5c17e4d0a7",
-    "dungeon_temple_no_race": "d7f9dad47c93f0c52dc06347",
+    "dungeon_temple_no_race": "5edd69e04b980f3337736693",
     "wilderness": "8a84f45ee3baab987ea27961",
 }
 
@@ -94,14 +97,13 @@ def test_x1_names_are_well_formed_and_name_their_texture(built, label):
 
 EXPECTED_NAMES = {
     "dungeon_plain": {"dungeon_floor", "dungeon_wall", "dungeon_ceiling"},
-    "dungeon_gnoll_temple": {"gnoll_dungeon_floor", "gnoll_dungeon_wall",
-                             "gnoll_dungeon_ceiling", "gnoll_temple_floor",
+    # Themed dungeons: corridors take their rooms' theme floor and wall
+    # (interesting textures task 9), so only the shared ceiling remains.
+    "dungeon_gnoll_temple": {"gnoll_dungeon_ceiling", "gnoll_temple_floor",
                              "gnoll_temple_wall"},
-    "dungeon_kobold_tomb_lava": {"kobold_dungeon_floor", "kobold_dungeon_wall",
-                                 "kobold_dungeon_ceiling", "kobold_lava_floor",
+    "dungeon_kobold_tomb_lava": {"kobold_dungeon_ceiling", "kobold_lava_floor",
                                  "kobold_lava_wall"},
-    "dungeon_temple_no_race": {"dungeon_floor", "dungeon_wall", "dungeon_ceiling",
-                               "temple_floor", "temple_wall"},
+    "dungeon_temple_no_race": {"dungeon_ceiling", "temple_floor", "temple_wall"},
     "city": {"city_floor", "city_wall", "city_ceiling"},
 }
 
