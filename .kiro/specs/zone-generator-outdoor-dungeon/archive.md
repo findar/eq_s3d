@@ -40,3 +40,10 @@ questions on 2026-11-01, each with the recommended option:
   exactly. The Apron is a trench dug down to a 0.5-grade cone, kept off the
   Rim, zonelines and water. `plan_entrance` picks the least digging;
   `build_outdoor_ter` returns the one merged TER task 6 builds on.
+- **An outdoor dungeon is a wilderness spec with a dungeon (task 6,
+  2026-11-02):** `outdoor_dungeon_spec` returns the host wilderness spec
+  carrying the rooms, corridors and materials, with a `dungeon` section in
+  the wilderness payload (Entrance, cover, floor limit, warnings).
+  `TerrainBackend` builds it when that section is present; the pipeline
+  gates it with `outdoor_dungeon_report` and retries `PLAN_ERRORS` on a
+  fresh seed. Task 7 maps the new zone type onto this, not a new path.

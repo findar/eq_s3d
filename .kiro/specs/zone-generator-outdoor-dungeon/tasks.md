@@ -55,10 +55,10 @@ The design's five open questions were answered on 2026-11-01
   - Owns: generators/outdoor_dungeon.py, generators/geometry.py, tests/test_entrance.py
   - Reqs: 4
 
-- [ ] 6. Outdoor-dungeon backend and gate
+- [x] 6. Outdoor-dungeon backend and gate
   - Card: [cards/06-backend-and-gate.md](cards/06-backend-and-gate.md)
   - Type: agent · Size: M · Depends: 5
-  - Owns: generators/backends.py, generators/pipeline.py, generators/builder.py, tests/test_outdoor_dungeon_build.py
+  - Owns: generators/backends.py, generators/pipeline.py, generators/builder.py, generators/outdoor_dungeon.py, tests/test_outdoor_dungeon_build.py
   - Reqs: 5, 7.1, 8.2
 
 - [ ] 7. Zone type, prompt words, controls, sidecar
