@@ -31,7 +31,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: core/wld.py, tests/test_wld.py
   - Reqs: 1
 
-- [ ] 2. Texture_Profile in the style profiles
+- [x] 2. Texture_Profile in the style profiles
   - Card: [cards/02-texture-profile.md](cards/02-texture-profile.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: analyzer/style_builder.py, styles/dungeon.json, styles/city.json, styles/outdoor.json, styles/cave.json, tests/test_texture_profile.py
