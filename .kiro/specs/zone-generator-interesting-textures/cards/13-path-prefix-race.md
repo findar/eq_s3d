@@ -19,15 +19,15 @@ and `OutputRoot.path()` raises `OutsideOutputError` naming two identical-
 looking paths.
 
 ## Done when
-- [ ] `core/paths._resolve` strips a leftover `\\?\` prefix (and turns
+- [x] `core/paths._resolve` strips a leftover `\\?\` prefix (and turns
       `\\?\UNC\` back into `\\`), so every `OutputRoot` comparison is on one
       form.
-- [ ] A test reproduces the race deterministically (a resolve that returns
+- [x] A test reproduces the race deterministically (a resolve that returns
       the prefixed form) and shows containment still holds.
       → verify: `python -m pytest tests/test_paths.py -q`.
-- [ ] lessons-learned's "parallel test runner occasionally stumbles" entry
+- [x] lessons-learned's "parallel test runner occasionally stumbles" entry
       records the cause and the fix in place of "not reproduced".
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - Don't loosen the containment rule; normalise the path form only.
@@ -35,3 +35,4 @@ looking paths.
   follow from this error in one worker.
 
 ## Result
+✔ 49acdb2 · 842 passed

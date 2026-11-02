@@ -93,7 +93,7 @@ The design's four open questions were answered on 2026-11-01
   - Type: agent · Size: S · Depends: 11, 13 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-interesting-textures/, .kiro/specs/zone-generator/
 
-- [ ] 13. Windows path-resolution race in OutputRoot
+- [x] 13. Windows path-resolution race in OutputRoot
   - Card: [cards/13-path-prefix-race.md](cards/13-path-prefix-race.md)
   - Type: agent · Size: S · Depends: —
   - Owns: core/paths.py, tests/test_paths.py, .kiro/steering/lessons-learned.md
