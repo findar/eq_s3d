@@ -215,3 +215,36 @@ def test_procedural_textures_are_the_same_in_a_fresh_process():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                          check=True, env={**os.environ, "PYTHONHASHSEED": "99"})
     assert out.stdout.split() == digests()
+
+
+# ---------------------------------------------------------------------------
+# Task 10: recipe textures add at most 2 s (Req 8, Y7)
+# ---------------------------------------------------------------------------
+
+TEXTURE_BUDGET_S = 2.0
+
+
+def _timed_build(tmp_path, sub):
+    import time
+
+    import generators.textures.factory as factory
+
+    factory._cache.clear()
+    spec = plan_to_spec(make_plan("a gnoll temple dungeon with 30 rooms", name="tbig"), seed=7)
+    t0 = time.perf_counter()
+    ZoneBuilder(spec).build(output_dir=tmp_path / sub)
+    return time.perf_counter() - t0
+
+
+@pytest.mark.slow
+def test_y7_recipe_textures_add_at_most_2s(tmp_path, no_api_keys, monkeypatch):
+    """A 30-room themed dungeon (EQG + GLB) in the default recipe mode against
+    step 3's placeholders, texture cache cleared, best of two each."""
+    monkeypatch.setenv("EQ_S3D_TEXTURE_PROVIDER", "placeholder")
+    _timed_build(tmp_path, "warm")
+    placeholder = min(_timed_build(tmp_path, f"p{i}") for i in range(2))
+    monkeypatch.delenv("EQ_S3D_TEXTURE_PROVIDER")
+    recipe = min(_timed_build(tmp_path, f"r{i}") for i in range(2))
+    assert recipe - placeholder <= TEXTURE_BUDGET_S, (
+        f"recipe build {recipe:.2f}s vs placeholder {placeholder:.2f}s: "
+        f"{recipe - placeholder:.2f}s added (budget {TEXTURE_BUDGET_S:g}s)")

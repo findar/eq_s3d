@@ -638,3 +638,81 @@ python main.py generate tex_e --zone-type wilderness --seed 1955208177 --edges N
 - [ ] **[DEFERRED]** Seeing the placeholders in the RoF2 client (and that the
       `Opaque_MaxCB1.fx` shader now on every dungeon and city material renders)
       needs a takeover install; it moves to M6's in-engine smoke load.
+
+---
+
+## Step 4 — Interesting textures
+
+> Roadmap step 4 (`zone-generator-interesting-textures`). Dungeon and city
+> surfaces are drawn from recipes: a structured painter per material family
+> (dressed stone, brick, flagstone, cobble, cave rock, planks, plaster, ice,
+> sky), graded toward the classic look measured from the stock zones (darker,
+> more saturated, crisper than before), at the classic texel density (dungeon
+> walls repeat every ~24 u, floors and ceilings ~28 u; city surfaces ~14 u;
+> it was 100 u). Hallways in a themed dungeon match their rooms. Wilderness
+> ground, water and trees are unchanged (a later step). Restart the Server on
+> the merged code first and check the side panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. Cases a–d use the description box; e and f the Controls panel.
+Each builds on the first attempt.
+
+| # | How | Seed | Walls / floors / ceilings |
+|---|-----|------|---------------------------|
+| a | `a gnoll temple dungeon with 8 rooms` | 7 | dressed stone / flagstone / cave rock |
+| b | `a kobold tomb full of lava with 6 rooms` | 11 | cave rock (basalt) / flagstone / cave rock |
+| c | `a giant ice keep with 8 rooms` | 7 | ice / flagstone / cave rock |
+| d | `a wizard lair with 8 rooms` | 7 | brick / flagstone / cave rock |
+| e | dungeon, 12 rooms, flat | 7 | dressed stone / flagstone / cave rock |
+| f | city | 7 | plaster / cobble / sky |
+
+From the command line (cases e and f):
+
+```bash
+python main.py generate looks_e --zone-type dungeon --rooms 12 --verticality flat --seed 7
+python main.py generate looks_f --zone-type city --seed 7
+```
+
+### L.1 — Materials and themes
+
+- [ ] **[MUST] Surfaces read as their material** — Walls show blocks, bricks,
+      basalt or ice with joints; floors show slabs or cobbles; dungeon
+      ceilings read as rough rock; city ceilings as sky.
+- [ ] **[MUST] Themes differ** — Cases a–e look different from each other at
+      a glance (sandstone temple, sooty basalt forge, pale ice, purple brick,
+      plain stone), not one texture recoloured.
+- [ ] **[MUST] Hallways match their rooms** — In a, b, c and d a hallway's
+      floor and walls are the same as the rooms it joins; only ceilings are
+      shared.
+- [ ] **[SHOULD] Classic look** — Dark, earthy and crisp like a Classic–PoP
+      dungeon, not pale, grey or blurry.
+
+### L.2 — Scale, seams and repetition
+
+- [ ] **[MUST] Scale** — A wall block is about a player's height or smaller;
+      cobbles and slabs read at a walking scale.
+- [ ] **[MUST] No seams** — Textures tile with no visible line where one
+      repeat meets the next.
+- [ ] **[SHOULD] Repetition** — At ~24 u a long wall repeats its texture many
+      times; it should read as masonry, not wallpaper. Note any wall where the
+      repeat is distracting.
+
+### L.3 — Modes, preview and files
+
+- [ ] **[MUST] Wilderness unchanged** — A wilderness zone still shows step 3's
+      labelled placeholders on the ground and the same trees.
+- [ ] **[MUST] Texture list** — In `<name>.zone.json` each dungeon or city
+      entry in `textures` has `texture_mode: procedural`, its
+      `texture_family` and `look_stats`; each material in the saved spec
+      (`<name>.json`) has its `texel_density`.
+- [ ] **[SHOULD] Placeholders on request** — With
+      `EQ_S3D_TEXTURE_PROVIDER=placeholder` set before starting the Server,
+      dungeons and cities show labelled placeholders again at 100 u.
+- [ ] **[SHOULD] Snappy** — Generating takes no noticeably longer than step 3
+      (a 30-room dungeon adds ~0.35 s; the budget is 2 s).
+
+### L.4 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Seeing the textures, scale and seams in the RoF2 client
+      needs a takeover install; it moves to M6's in-engine smoke load.
