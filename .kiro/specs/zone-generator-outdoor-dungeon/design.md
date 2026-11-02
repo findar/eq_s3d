@@ -119,7 +119,7 @@ rim, water and lava rules are unchanged.
 - **Gate cost.** The merged TER is larger than either part; the walk must stay
   inside the 60 s budget (wilderness gates take ~1 s today).
 
-## Open questions
+## Open questions (answered 2026-11-01; see `archive.md`)
 
 1. **First archetype.** Default: a hillside cave (Blackburrow, Runnyeye):
    tunnels and rooms under a hill, one or more cave mouths in its flank.
