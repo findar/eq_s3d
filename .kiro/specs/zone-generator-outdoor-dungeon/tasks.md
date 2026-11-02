@@ -25,7 +25,7 @@ The design's five open questions were answered on 2026-11-01
 
 ## Tasks
 
-- [ ] 1. Measure the classic outdoor-dungeon anatomy
+- [x] 1. Measure the classic outdoor-dungeon anatomy
   - Card: [cards/01-anatomy-survey.md](cards/01-anatomy-survey.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/outdoor_dungeon_survey.py, .kiro/specs/zone-generator-outdoor-dungeon/design.md
