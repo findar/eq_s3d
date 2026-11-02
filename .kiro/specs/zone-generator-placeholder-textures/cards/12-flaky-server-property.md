@@ -20,16 +20,16 @@ workers left. Earlier runs in steps 2 and 3 twice stopped at collection with
 (which imports `server.app` at module level).
 
 ## Done when
-- [ ] The cause of the Property 18 failure is named in the commit body, with
+- [x] The cause of the Property 18 failure is named in the commit body, with
       the failing example if one is found, and fixed at the root; or, if it
       can't be reproduced after a documented search, the test records how it
       shares state with other tests in a worker and stops doing so.
-- [ ] The collection mismatch and the start-up hang are explained, and fixed
+- [x] The collection mismatch and the start-up hang are explained, and fixed
       or recorded in lessons-learned with a workaround.
-- [ ] Three thorough runs in a row are green.
+- [x] Three thorough runs in a row are green.
       → verify: `python -m pytest tests/ -q --hypothesis-profile=thorough`
         (three times).
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - Keep Property 18's rules as they are; it's the server's path contract.
@@ -38,3 +38,4 @@ workers left. Earlier runs in steps 2 and 3 twice stopped at collection with
 - If the fix needs files outside `Owns`, stop and ask.
 
 ## Result
+✔ f339112 · 738 passed (fast; thorough 3× green)
