@@ -84,7 +84,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: docs/ACCEPTANCE.md, tests/test_texture_conformance.py
   - Reqs: 8, exit criteria 1–2
 
-- [ ] 11. HUMAN: interesting textures acceptance pass
+- [x] 11. HUMAN: interesting textures acceptance pass
   - Card: [cards/11-human-acceptance.md](cards/11-human-acceptance.md)
   - Type: human · Depends: 10
 
