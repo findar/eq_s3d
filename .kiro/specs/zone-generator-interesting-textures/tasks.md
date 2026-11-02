@@ -68,14 +68,15 @@ The design's four open questions were answered on 2026-11-01
   - zone_spec.py added 2026-11-01: texel density is recorded on each MaterialSpec (the IR), the user's delegated choice for long-term maintenance over a backend-interface change.
   - Reqs: 6
 
-- [ ] 8. HUMAN: first look at the new textures in 3D
+- [x] 8. HUMAN: first look at the new textures in 3D
   - Card: [cards/08-human-first-look.md](cards/08-human-first-look.md)
   - Type: human · Depends: 6, 7
 
 - [ ] 9. Tune from the first look
   - Card: [cards/09-tuning.md](cards/09-tuning.md)
   - Type: agent · Size: S · Depends: 8
-  - Owns: styles/texture_recipes.json, generators/textures/painters/
+  - Owns: styles/texture_recipes.json, generators/textures/painters/, generators/layout.py, tests/test_material_names.py, tests/test_corridor_materials.py
+  - layout.py and the goldens added 2026-11-01 for task 8's finding (corridors match the room they leave), at the user's choice.
 
 - [ ] 10. Acceptance section, thorough run, timing
   - Card: [cards/10-release-prep.md](cards/10-release-prep.md)
