@@ -221,7 +221,9 @@ def _coarse_height_targets(matrix: DesignMatrix) -> "np.ndarray":
     after, over a smoothly-interpolated ~0 base.
 
     ``cliff`` cells get a modest scenic step so the cliff reads as a height
-    discontinuity even though it is not frozen.
+    discontinuity even though it is not frozen. A non-frozen cell's ``relief``
+    (a Landform: + hill, - pit) is added on top; plains with relief stay in the
+    smooth group, so a Landform's flanks blend into the ground around it.
     """
     coarse = np.zeros((matrix.nx, matrix.ny), dtype=np.float32)
     for ci in range(matrix.nx):
@@ -231,9 +233,9 @@ def _coarse_height_targets(matrix: DesignMatrix) -> "np.ndarray":
                 coarse[ci, cj] = float(cell.frozen_z)
             elif cell.node_type == "cliff":
                 # A scenic cliff step above the interior plains base.
-                coarse[ci, cj] = 120.0
+                coarse[ci, cj] = 120.0 + cell.relief
             else:
-                coarse[ci, cj] = 0.0
+                coarse[ci, cj] = cell.relief
     return coarse
 
 
