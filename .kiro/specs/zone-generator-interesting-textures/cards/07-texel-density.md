@@ -8,13 +8,13 @@ in `procedural` and `ai` modes, and at step 3's 100 u in `placeholder` mode,
 keeping step 3's orientation rules. Wilderness UVs are untouched.
 
 ## Done when
-- [ ] Y6: on dungeon and city builds each surface's world units per repeat
+- [x] Y6: on dungeon and city builds each surface's world units per repeat
       equals the target density for the mode (wilderness unchanged); walls
       still run `v` down and `u` right from inside, floors `v = −y`, ceilings
       `v = +y`.
-- [ ] X3's UV-free geometry goldens pass untouched.
+- [x] X3's UV-free geometry goldens pass untouched.
       → verify: `python -m pytest tests/test_texel_density.py tests/test_wall_uvs.py tests/test_material_names.py -q`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - `add_quad` takes `uv_scale`; thread the density through, don't hard-code it.
@@ -22,3 +22,4 @@ keeping step 3's orientation rules. Wilderness UVs are untouched.
   than having geometry read the environment.
 
 ## Result
+✔ 409785a · 831 passed
