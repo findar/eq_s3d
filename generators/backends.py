@@ -91,9 +91,14 @@ class TerrainBackend:
             return None
 
         # An open-world wilderness spec (it carries a ``wilderness`` payload)
-        # builds from the wilderness pipeline; every other spec takes the
-        # room-footprint terrain path below, unchanged.
+        # builds from the wilderness pipeline; one that also carries a
+        # dungeon (an outdoor dungeon) gets it merged into that terrain.
+        # Every other spec takes the room-footprint terrain path below,
+        # unchanged.
         if spec.wilderness is not None:
+            from .outdoor_dungeon import build_outdoor_dungeon_ter, is_outdoor_dungeon
+            if is_outdoor_dungeon(spec):
+                return build_outdoor_dungeon_ter(spec, ter_name, ter_version)
             from .wilderness.build import build_wilderness_ter
             return build_wilderness_ter(spec, ter_name, ter_version)
 

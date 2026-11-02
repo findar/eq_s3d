@@ -21,6 +21,15 @@ terrain cell wide and the vertex row its portal opens at;
 ``build_outdoor_ter`` digs the Apron, cuts the Mouth and returns one TER
 holding the terrain and the dungeon.
 
+A build (task 6) is one ``ZoneSpec``: ``outdoor_dungeon_spec`` returns the
+host wilderness spec (terrain payload, regions, materials, the outdoor
+Spawn as safe point) carrying the dungeon's rooms, corridors, lights and
+materials, plus a ``dungeon`` section in the wilderness payload recording
+the Entrance. The terrain backend builds it with
+``build_outdoor_dungeon_ter``; the pipeline gates it with
+``outdoor_dungeon_report`` (the bowl check on the open ground, then every
+room reached from the outdoor Spawn and every corridor continuous).
+
 The Mouth is built on the terrain grid so it stitches exactly. The Tunnel
 runs between two adjacent vertex columns and ends at vertex row ``m``. The
 one terrain cell between rows ``m`` and ``m + 1`` over the strip (the slope
@@ -43,13 +52,16 @@ from typing import Callable, Dict, List, Optional, Tuple
 import numpy as np
 
 from core.ter import MAGIC_TERRAIN, Material, Polygon, TerFile, Vertex
-from generators.envelope import Envelope
+from generators.envelope import Envelope, EnvelopeFitError
 from generators.geometry import MeshBuilder, _ensure_materials
 from generators.layout import LayoutGenerator
 from generators.routing import corridor_route, route_footprint
-from generators.wilderness.build import landscape_for
-from generators.wilderness.matrix import Landform
-from generators.zone_spec import ZoneSpec
+from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,
+                                         landscape_for, wilderness_spec)
+from generators.wilderness.matrix import (DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE,
+                                          Landform)
+from generators.wilderness.biome import load_biome_kit
+from generators.zone_spec import MaterialSpec, ZoneSpec
 
 #: Minimum terrain left above any ceiling (design finding 4: stock p10 rock
 #: is 12-22 u).
@@ -213,8 +225,18 @@ class Entrance:
     height: float
 
     def to_dict(self) -> Dict:
-        return {"room": self.room_id, "side": self.side, "floor": self.floor,
-                "room_floor": self.room_floor, "height": self.height}
+        return {"room": self.room_id, "side": self.side, "axis": self.axis,
+                "outward": self.outward, "cross": self.cross, "portal": self.portal,
+                "wall": self.wall, "room_floor": self.room_floor,
+                "floor": self.floor, "height": self.height}
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> "Entrance":
+        return cls(room_id=d["room"], side=d["side"], axis=int(d["axis"]),
+                   outward=int(d["outward"]), cross=int(d["cross"]),
+                   portal=int(d["portal"]), wall=float(d["wall"]),
+                   room_floor=float(d["room_floor"]), floor=float(d["floor"]),
+                   height=float(d["height"]))
 
 
 class _Grid:
@@ -545,3 +567,89 @@ def _dungeon_mesh(dungeon: ZoneSpec, e: Entrance, grid: _Grid) -> MeshBuilder:
     mb._add_straight_leg(fx, fy, e.room_floor, tx, ty, e.floor, e.axis == 0,
                          (c1 - c0) / 2.0, e.height, 0, floor_mat, wall_mat, ceil_mat)
     return mb
+
+
+# ---------------------------------------------------------------------------
+# The build: spec, backend and gate (task 6)
+# ---------------------------------------------------------------------------
+
+#: The wilderness-payload key that makes a spec an outdoor dungeon.
+DUNGEON_KEY = "dungeon"
+#: Planning failures a fresh seed can cure: the pipeline retries on them.
+PLAN_ERRORS = (EnvelopeFitError, EntranceError)
+
+
+def is_outdoor_dungeon(spec: ZoneSpec) -> bool:
+    """Does ``spec`` describe an outdoor dungeon (a host terrain with a
+    dungeon under it)?"""
+    return bool(spec.wilderness) and DUNGEON_KEY in spec.wilderness
+
+
+def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_BIOME,
+                         room_count: int = DEFAULT_ROOMS, **layout_kwargs) -> ZoneSpec:
+    """One spec for an outdoor dungeon: the host wilderness spec (Host_Hill
+    terrain at the outdoor-dungeon size) with the dungeon laid out inside its
+    Envelope and an Entrance planned to it.
+
+    Raises one of ``PLAN_ERRORS`` when the seed's hill can't hold the minimum
+    rooms or no wall gives an Entrance (the pipeline retries on a fresh
+    seed)."""
+    spec = wilderness_spec(name, seed, edges, biome, landform=DEFAULT_HOST_HILL,
+                           zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
+    ter = build_wilderness_ter(spec, f"ter_{name}", 1)
+    envelope = host_envelope(spec, ter)
+    layout, warnings = layout_in_envelope(name, seed, envelope, room_count, **layout_kwargs)
+    entrance = plan_entrance(spec, ter, layout)
+    spec.rooms = layout.rooms
+    spec.corridors = layout.corridors
+    spec.lights = layout.lights
+    spec.gates = layout.gates
+    for mat_name, mat in layout.materials.items():
+        spec.materials.setdefault(mat_name, mat)
+    # The Mouth's materials, from the biome kit, whether or not the host
+    # terrain uses them (so their textures are packed).
+    kit_mats = load_biome_kit(biome).materials()
+    for mat_name in (MOUTH_FLOOR_MATERIAL, MOUTH_WALL_MATERIAL):
+        if mat_name not in spec.materials:
+            m = kit_mats[mat_name]
+            spec.materials[mat_name] = MaterialSpec(
+                name=mat_name, texture=f"{mat_name}.dds", color=m.color,
+                description=m.description)
+    spec.dungeon_theme = layout.dungeon_theme
+    spec.dungeon_race = layout.dungeon_race
+    spec.elemental_tint = layout.elemental_tint
+    spec.wilderness[DUNGEON_KEY] = {
+        "entrance": entrance.to_dict(),
+        "rock_cover": envelope.rock_cover,
+        "floor_limit": envelope.floor_limit,
+        "rooms_requested": room_count,
+        "warnings": list(warnings),
+    }
+    return spec
+
+
+def build_outdoor_dungeon_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> TerFile:
+    """The one TER an outdoor-dungeon spec ships: its host terrain with the
+    Apron and Mouth, and its rooms, corridors and Tunnel."""
+    host = build_wilderness_ter(spec, ter_name, ter_version)
+    entrance = Entrance.from_dict(spec.wilderness[DUNGEON_KEY]["entrance"])
+    return build_outdoor_ter(spec, host, spec, entrance, ter_name, ter_version)
+
+
+def outdoor_dungeon_report(eqg_path, spec: ZoneSpec, agent=None):
+    """The gate on a built outdoor dungeon, as one ``TraversalReport``: the
+    wilderness bowl check on the open ground (its "bowl" room), then every
+    dungeon room reached from the outdoor Spawn (the spec's safe point) and
+    every corridor continuous, on the same merged TER."""
+    from analyzer.traverse import AgentModel, load_ter_from_eqg, validate
+    from generators.wilderness.build import bowl_report
+
+    agent = agent or AgentModel()
+    ter, _ = load_ter_from_eqg(eqg_path)
+    bowl = bowl_report(spec, ter, agent)
+    report = validate(eqg_path, spec=spec, agent=agent, check_corridors=True)
+    report.rooms = list(bowl.rooms) + list(report.rooms)
+    report.total_rooms += bowl.total_rooms
+    report.reachable_rooms += bowl.reachable_rooms
+    report.notes = list(bowl.notes) + list(report.notes)
+    return report
