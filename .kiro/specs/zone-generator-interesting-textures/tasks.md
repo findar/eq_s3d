@@ -43,7 +43,7 @@ The design's four open questions were answered on 2026-11-01
   - Owns: styles/texture_recipes.json, generators/textures/recipes.py, tests/test_texture_recipes.py
   - Reqs: 3
 
-- [ ] 4. Painters: stone families
+- [x] 4. Painters: stone families
   - Card: [cards/04-stone-painters.md](cards/04-stone-painters.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/textures/painters/__init__.py, generators/textures/painters/stone.py, tests/test_painters.py
