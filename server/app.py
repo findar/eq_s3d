@@ -118,8 +118,10 @@ def _file_extension(filename: str) -> str:
 
 
 def _safe_segment(seg: str) -> bool:
-    """One URL segment is a single safe path component (Req 9.3)."""
-    return bool(SEGMENT_RE.match(seg)) and ".." not in seg and seg != "."
+    """One URL segment is a single safe path component (Req 9.3). ``fullmatch``,
+    not ``match``: ``$`` also matches before a trailing newline, so ``match``
+    let ``gen_t\\n`` through to the filesystem."""
+    return bool(SEGMENT_RE.fullmatch(seg)) and ".." not in seg and seg != "."
 
 # ---------------------------------------------------------------------------
 # Build identity (which code is this process actually running?)

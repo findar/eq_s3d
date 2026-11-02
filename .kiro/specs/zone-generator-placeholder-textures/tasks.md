@@ -87,7 +87,7 @@ The design's four open questions were answered on 2026-11-01
   - Added 2026-11-01 from task 4's UV probe; numbered last so earlier numbers
     stay stable.
 
-- [ ] 12. Flaky server property and the parallel test-runner hang
+- [x] 12. Flaky server property and the parallel test-runner hang
   - Card: [cards/12-flaky-server-property.md](cards/12-flaky-server-property.md)
   - Type: agent · Size: M · Depends: —
   - Owns: tests/test_server.py, tests/conftest.py, server/app.py, pytest.ini, .kiro/steering/lessons-learned.md
