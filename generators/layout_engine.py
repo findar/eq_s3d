@@ -274,7 +274,13 @@ class GraphEngine:
         gap = ctx.corridor_width + 1.0
         centres = place(graph, order, half, ctx.corridor_width, gap)
         if envelope is not None:
-            centres = embed.fit_to_envelope(centres, half, envelope)
+            # Face the rules' entrance room toward the Envelope's way in (a
+            # quarter turn / mirror of the whole layout), so the pacing's
+            # entrance, the room nearest the way in, is that room.
+            entrance = next((n.id for n in graph.rooms() if n.kind == "entrance"), None)
+            centres, half, swapped = embed.face_entry(centres, half, envelope, entrance)
+            if swapped:
+                sizes = {r: (d, w, h) for r, (w, d, h) in sizes.items()}
 
         rooms: List[RoomSpec] = []
         for k, r in enumerate(order):

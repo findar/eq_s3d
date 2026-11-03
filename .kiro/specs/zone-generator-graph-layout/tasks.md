@@ -82,7 +82,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 - [ ] 10. CLI, server and outdoor dungeon
   - Card: [cards/10-cli-server.md](cards/10-cli-server.md)
   - Type: agent · Size: S · Depends: 9, 19
-  - Owns: main.py, server/app.py, generators/outdoor_dungeon.py, ai/expand.py, tests/test_graph_layout_controls.py, tests/test_hygiene.py
+  - Owns: main.py, server/app.py, generators/outdoor_dungeon.py, ai/expand.py, tests/test_graph_layout_controls.py, tests/test_hygiene.py, generators/layout_engine.py, generators/topology/embed.py
   - Reqs: 7.1, 6.6
 
 - [ ] 11. Web: Layout toggle and rule set

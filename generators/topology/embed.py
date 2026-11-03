@@ -583,10 +583,55 @@ def fit_to_envelope(centres: Dict[str, Point], half: Dict[str, Point],
     return {r: (ox + (p[0] - cx) * s, oy + (p[1] - cy) * s) for r, p in centres.items()}
 
 
+#: The eight plan symmetries that keep a box layout's walls axis-aligned:
+#: (quarter turns counter-clockwise, mirrored in x first). Identity first,
+#: unmirrored before mirrored, so a tie keeps the least change.
+FACINGS: Tuple[Tuple[int, bool], ...] = tuple(
+    (k, m) for m in (False, True) for k in range(4))
+
+
+def _facing(p: Point, k: int, mirror: bool) -> Point:
+    x, y = (-p[0], p[1]) if mirror else p
+    for _ in range(k):
+        x, y = -y, x
+    return x, y
+
+
+def face_entry(centres: Dict[str, Point], half: Dict[str, Point], envelope,
+               entrance: Optional[str]) -> Tuple[Dict[str, Point], Dict[str, Point], bool]:
+    """Fit the layout to ``envelope`` with its *entrance* room facing the
+    Envelope's way in (``envelope.entry``), so the room the pacing makes the
+    entrance (the one nearest the way in) is the rules' entrance room.
+
+    Tries the eight :data:`FACINGS` (quarter turns and a mirror: rooms stay
+    axis-aligned boxes and every edge keeps its wall side, turned with the
+    layout, so the layout is congruent and stays clash-free) and keeps the
+    first that, after :func:`fit_to_envelope`, puts the entrance room nearest
+    the way in, closest to it. Returns the fitted centres, the half-extents
+    (width and depth swapped on an odd number of quarter turns) and whether
+    they were swapped. Without an entry or an entrance room it is
+    :func:`fit_to_envelope` unchanged."""
+    if getattr(envelope, "entry", None) is None or entrance not in centres:
+        return fit_to_envelope(centres, half, envelope), half, False
+    ex, ey = envelope.entry
+    best = None
+    for k, mirror in FACINGS:
+        swap = k % 2 == 1
+        c = {r: _facing(p, k, mirror) for r, p in centres.items()}
+        h = {r: (v[1], v[0]) for r, v in half.items()} if swap else half
+        fitted = fit_to_envelope(c, h, envelope)
+        dist = {r: math.hypot(p[0] - ex, p[1] - ey) for r, p in fitted.items()}
+        nearest = min(dist.values())
+        key = (dist[entrance] > nearest + 1e-9, dist[entrance])
+        if best is None or key < best[0]:
+            best = (key, fitted, h, swap)
+    return best[1], best[2], best[3]
+
+
 __all__ = [
     "SIZE_SCALE", "SPREAD", "base_side", "area_matched_base", "room_size", "may_overlap_in_plan",
     "bfs_order", "SIDES", "SIDE_ORDERS", "START_ROOTS", "layout_clashes", "start_positions",
     "start_once", "repair", "spring_relax", "spring",
-    "PLACEMENT_FUNCS", "fit_to_envelope",
+    "PLACEMENT_FUNCS", "fit_to_envelope", "FACINGS", "face_entry",
     "RUN_FACTOR", "REPEL_RUNS", "ITERATIONS", "K_SPRING", "K_REPEL",
 ]

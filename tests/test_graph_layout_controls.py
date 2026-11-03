@@ -151,12 +151,11 @@ STEP5_CASES = {
     "g": (None, (6, 0), None, 42),
 }
 
-# The graph engine places its rooms without regard to the Envelope's way in,
-# so the room nearest the hill foot (the pacing entrance, which takes the
-# Tunnel) can be a small side room no Tunnel fits. Fixing it means facing the
-# engine's entrance room toward ``envelope.entry`` (generators/layout_engine.py
-# or generators/topology/embed.py), outside task 10's files.
-_UNPLANNED = {"d", "g"}
+# The graph engine faces its entrance room toward the hill foot
+# (embed.face_entry), but on seed 42 that puts it west of the foot, where every
+# Apron digs within a cell of a lava pool on the open ground; classic's
+# entrance lands east of it. Needs plan_dungeon to try the other facings.
+_UNPLANNED = {"g"}
 
 
 def _plan(case, layout):
@@ -174,7 +173,7 @@ def _plan(case, layout):
 @pytest.mark.parametrize("case", [
     pytest.param(c, marks=pytest.mark.xfail(
         raises=od.PLAN_ERRORS, strict=True,
-        reason="graph entrance room not faced to the Envelope's entry"))
+        reason="seed 42: every Apron for the faced entrance digs by lava"))
     if c in _UNPLANNED else c
     for c in STEP5_CASES])
 def test_graph_outdoor_dungeon_plans_on_the_step5_seeds(case):
