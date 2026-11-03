@@ -37,7 +37,7 @@ from core.env import env_value
 from core.paths import OutputRoot, assert_output_allowed, new_zone_id
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
-    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type,
+    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, LANDSCAPE_ZONE_TYPES, canonical_zone_type,
     ENABLED_ZONE_TYPES, is_enabled, zone_type_listing,
 )
 from analyzer.style_builder import REFERENCE_ZONES
@@ -332,17 +332,19 @@ def _require_int(d: dict, key: str) -> None:
 def _require_edges(c: dict[str, Any], zone_type: Optional[str]) -> Optional[dict]:
     """Pop and validate ``controls.edges`` (the wilderness Rim declaration).
 
-    Absent -> ``None`` (every side mountain). Present on a non-wilderness zone
-    type, not an object, or naming an unknown side/type -> a 400 that names the
-    field, before any build or write (the M1 controls convention).
+    Absent -> ``None`` (every side mountain). Present on a zone type with no
+    landscape (not wilderness or outdoor_dungeon), not an object, or naming an
+    unknown side/type -> a 400 that names the field, before any build or write
+    (the M1 controls convention).
     """
     if "edges" not in c:
         return None
     raw = c.pop("edges")
     if raw is None:
         return None
-    if zone_type != "wilderness":
-        raise HTTPException(400, "edges only applies to zone_type wilderness")
+    if zone_type not in LANDSCAPE_ZONE_TYPES:
+        raise HTTPException(
+            400, "edges only applies to zone_type wilderness or outdoor_dungeon")
     if not isinstance(raw, dict):
         raise HTTPException(
             400, "edges must be an object mapping a side (N/E/S/W) to "
@@ -357,8 +359,8 @@ def _require_edges(c: dict[str, Any], zone_type: Optional[str]) -> Optional[dict
 def _require_trees(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]:
     """Pop and validate ``controls.trees`` (the wilderness Density_Level).
 
-    Absent -> ``None`` (the prompt or the default decides). Present on a
-    non-wilderness zone type, or not one of the four levels -> a 400 that names
+    Absent -> ``None`` (the prompt or the default decides). Present on a zone
+    type with no landscape, or not one of the four levels -> a 400 that names
     the field, before any build or write (mirrors :func:`_require_edges`).
     """
     if "trees" not in c:
@@ -366,8 +368,9 @@ def _require_trees(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]
     raw = c.pop("trees")
     if raw is None:
         return None
-    if zone_type != "wilderness":
-        raise HTTPException(400, "trees only applies to zone_type wilderness")
+    if zone_type not in LANDSCAPE_ZONE_TYPES:
+        raise HTTPException(
+            400, "trees only applies to zone_type wilderness or outdoor_dungeon")
     from generators.vegetation.kit import DENSITY_LEVELS
     if raw not in DENSITY_LEVELS:
         raise HTTPException(

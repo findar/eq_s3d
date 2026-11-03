@@ -36,21 +36,33 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                  trees_source: str = "cli") -> ZoneSpec:
     """Build a ZoneSpec from a validated ZonePlan.
 
-    ``edges`` declares the Rim of a wilderness zone (``{"N": "zoneline", ...}``;
-    undeclared sides are mountain). ``trees`` is the wilderness Density_Level
-    set by ``trees_source`` (``"controls"`` or ``"cli"``); it beats a level the
-    prompt's wording asks for. Both are ignored for room-graph zone types.
+    ``edges`` declares the Rim of a wilderness or outdoor-dungeon zone
+    (``{"N": "zoneline", ...}``; undeclared sides are mountain). ``trees`` is
+    their Density_Level set by ``trees_source`` (``"controls"`` or ``"cli"``);
+    it beats a level the prompt's wording asks for. Both are ignored for
+    room-graph zone types.
     """
     plan.validate()
     rng_seed = seed if seed is not None else random.randint(0, 2 ** 31 - 1)
 
     # Open-world wilderness: no room layout; the wilderness pipeline describes
-    # the whole landscape (generators/wilderness/build.py).
-    if plan.zone_type == "wilderness":
+    # the whole landscape (generators/wilderness/build.py). An outdoor dungeon
+    # is that landscape with a dungeon laid out under its hill
+    # (generators/outdoor_dungeon.py); room count, theme, race, tint and locks
+    # apply to the dungeon as for a dungeon zone.
+    if plan.zone_type in ("wilderness", "outdoor_dungeon"):
         from generators.wilderness.biome_resolve import resolve_biome
-        from generators.wilderness.build import wilderness_spec
         intent = resolve_biome(plan)
-        spec = wilderness_spec(plan.name, rng_seed, edges, biome=intent.biome)
+        if plan.zone_type == "wilderness":
+            from generators.wilderness.build import wilderness_spec
+            spec = wilderness_spec(plan.name, rng_seed, edges, biome=intent.biome)
+        else:
+            from generators.outdoor_dungeon import outdoor_dungeon_spec
+            spec = outdoor_dungeon_spec(
+                plan.name, rng_seed, edges, biome=intent.biome,
+                room_count=plan.room_count, locks=plan.locks,
+                dungeon_theme=plan.dungeon_theme, dungeon_race=plan.dungeon_race,
+                elemental_tint=(plan.elemental_tint or None))
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
             spec.wilderness["biome_substitution"] = intent.substitution.to_dict()

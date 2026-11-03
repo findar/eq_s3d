@@ -29,7 +29,7 @@ from core.paths import (
 from generators.builder import BUILD_NAME_RE
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
-    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE,
+    DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, LANDSCAPE_ZONE_TYPES,
     canonical_zone_type, enabled_zone_types, is_enabled,
 )
 
@@ -236,7 +236,7 @@ def main(argv: list[str] | None = None) -> None:
     # surface exposes; _zone_type_arg runs first and is the real gate.
     g.add_argument("--zone-type", dest="zone_type", default=DEFAULT_ZONE_TYPE,
                    type=_zone_type_arg, choices=list(DEFINED_ZONE_TYPES),
-                   metavar="{dungeon,city,wilderness}",
+                   metavar="{dungeon,city,wilderness,outdoor_dungeon}",
                    help="Zone type to generate (disabled types exit 2)")
     g.add_argument("--theme", dest="zone_type", type=_zone_type_arg,
                    metavar="{dungeon,city}",
@@ -257,12 +257,14 @@ def main(argv: list[str] | None = None) -> None:
     g.add_argument("--seed", type=_seed_arg, default=None,
                    help="Random seed (0-2147483647)")
     g.add_argument("--edges", type=_edges_arg, default=None,
-                   help="Wilderness Rim per side, e.g. N=zoneline,E=river "
+                   help="Wilderness / outdoor-dungeon Rim per side, e.g. "
+                        "N=zoneline,E=river "
                         "(types: mountain, river, zoneline; unnamed sides "
                         "are mountain)")
     g.add_argument("--trees", default=None,
                    choices=["none", "sparse", "normal", "dense"],
-                   help="Wilderness tree density (default normal)")
+                   help="Wilderness / outdoor-dungeon tree density "
+                        "(default normal)")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -273,11 +275,13 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parser.parse_args(argv)
     if (getattr(args, "edges", None) is not None
-            and canonical_zone_type(args.zone_type) != "wilderness"):
-        parser.error("--edges only applies to --zone-type wilderness")
+            and canonical_zone_type(args.zone_type) not in LANDSCAPE_ZONE_TYPES):
+        parser.error("--edges only applies to --zone-type wilderness or "
+                     "outdoor_dungeon")
     if (getattr(args, "trees", None) is not None
-            and canonical_zone_type(args.zone_type) != "wilderness"):
-        parser.error("--trees only applies to --zone-type wilderness")
+            and canonical_zone_type(args.zone_type) not in LANDSCAPE_ZONE_TYPES):
+        parser.error("--trees only applies to --zone-type wilderness or "
+                     "outdoor_dungeon")
 
     # Refusal (Req 10.2): right after parsing — before any build or write —
     # refuse an output directory that resolves to, inside, or around the

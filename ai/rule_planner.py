@@ -43,6 +43,15 @@ _ZONE_TYPE_WORDS = {
                 "cave", "cavern", "grotto", "tunnel", "underground", "mine"],
 }
 
+# Phrases naming an outdoor dungeon (a dungeon under a hill, entered from open
+# ground). Checked before the word scores: they contain words ("cave",
+# "hills", "outdoor") the other buckets would otherwise claim.
+_OUTDOOR_DUNGEON_PHRASES = [
+    "outdoor dungeon", "outdoor-dungeon", "cave in a hill", "cave in the hill",
+    "cave in the hills", "hillside cave", "cave in a hillside", "barrow",
+    "warren in the hills", "warren in a hill", "burrow in the hills",
+]
+
 # Keyword → region kind
 _REGION_WORDS = {
     "water": ["water", "flooded", "lake", "pool", "pond", "river", "underwater",
@@ -129,7 +138,8 @@ class RulePlanner:
         locks = self._lock_count(text, room_count)
 
         # Content / semantic layer (only meaningful for the dungeon zone type).
-        dungeon_theme = self._match_archetype(text) if zone_type == "dungeon" else ""
+        dungeon_theme = (self._match_archetype(text)
+                         if zone_type in ("dungeon", "outdoor_dungeon") else "")
         dungeon_race = self._match_one(text, _RACE_WORDS, default="")
         elemental_tint = self._match_tint(regions)
 
@@ -152,9 +162,12 @@ class RulePlanner:
     # ------------------------------------------------------------------
 
     def _match_zone_type(self, text: str) -> str:
-        # Score each zone type by keyword hits; default dungeon. Same scoring
-        # and tie rule as before the rename (first key with the strictly
-        # highest score wins; dict insertion order breaks ties).
+        # An outdoor-dungeon phrase wins outright. Otherwise score each zone
+        # type by keyword hits; default dungeon. Same scoring and tie rule as
+        # before the rename (first key with the strictly highest score wins;
+        # dict insertion order breaks ties).
+        if any(p in text for p in _OUTDOOR_DUNGEON_PHRASES):
+            return "outdoor_dungeon"
         best, best_score = "dungeon", 0
         for zone_type, words in _ZONE_TYPE_WORDS.items():
             score = sum(text.count(w) for w in words)

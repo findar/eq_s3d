@@ -573,14 +573,16 @@ def test_advisory_clearing(s, zone_type, n, locks, semantic):
 from pathlib import Path
 
 from analyzer.rof2check import check_eqg
-from generators.zone_types import ENABLED_ZONE_TYPES
+from generators.zone_types import ENABLED_ZONE_TYPES, LANDSCAPE_ZONE_TYPES
 from tests.strategies import build_names
 
 #: The enabled box zone types, as a sorted sampling domain: ``{dungeon, city}``.
-#: Wilderness is enabled but builds from its own pipeline (no rooms, the bowl
-#: gate), so it is excluded here; its properties live in tests/test_wilderness_*.
-#: Read from the production set so if the gate ever changes, this follows.
-_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES - {"wilderness"}))
+#: The landscape types (wilderness, outdoor_dungeon) are enabled but build from
+#: their own pipeline (a host landscape, the bowl gate), so they are excluded
+#: here; their properties live in tests/test_wilderness_* and
+#: tests/test_outdoor_dungeon_*. Read from the production set so if the gate
+#: ever changes, this follows.
+_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES - LANDSCAPE_ZONE_TYPES))
 
 
 def _format_case(zone_type, n, name, verticality="flat", size="medium"):

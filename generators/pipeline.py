@@ -81,7 +81,8 @@ logger = logging.getLogger("eq_s3d.pipeline")
 # Per-zone-type wall-clock budget. A dungeon/city build is sub-second, so a
 # small budget finds a good sibling seed fast; wilderness is heavier (deferred
 # anyway). ``timeout_s=None`` resolves to DEFAULT_TIMEOUT_S[zone_type].
-DEFAULT_TIMEOUT_S = {"dungeon": 20.0, "city": 20.0, "wilderness": 60.0}
+DEFAULT_TIMEOUT_S = {"dungeon": 20.0, "city": 20.0, "wilderness": 60.0,
+                     "outdoor_dungeon": 60.0}
 
 # Fallback budget for a zone type with no DEFAULT_TIMEOUT_S entry.
 _FALLBACK_TIMEOUT_S = 20.0

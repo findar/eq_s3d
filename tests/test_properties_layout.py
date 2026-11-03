@@ -962,7 +962,8 @@ def test_legacy_vocabulary_round_trip(seed, zone_type, n, elevation, semantic):
     # The legacy spelling of each canonical zone type on the LOAD side. Only the
     # open-air type was renamed (outdoor -> wilderness); the others are their own
     # legacy value. This is the value a legacy `theme`-keyed dict would carry.
-    legacy_value = {"dungeon": "dungeon", "city": "city", "wilderness": "outdoor"}
+    legacy_value = {"dungeon": "dungeon", "city": "city", "wilderness": "outdoor",
+                    "outdoor_dungeon": "outdoor_dungeon"}
     legacy = legacy_value[zone_type]
 
     # Build a plan for this zone type (loaded through the new `zone_type` key)

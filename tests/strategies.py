@@ -34,7 +34,7 @@ from ai.schema import (
 # The three zone types the generator ships (the Defined set). Post wave-2
 # rename the open-air type is "wilderness" (was "outdoor"). Kept equal to
 # generators.zone_types.DEFINED_ZONE_TYPES.
-DEFINED_ZONE_TYPES = {"dungeon", "city", "wilderness"}
+DEFINED_ZONE_TYPES = {"dungeon", "city", "wilderness", "outdoor_dungeon"}
 
 # Words that used to pick the `cave` theme and must now resolve to `dungeon`
 # (Property 19 / Req 6.5).
@@ -98,13 +98,13 @@ build_names = st.one_of(
 #: for ``generators.zone_types.ENABLED_ZONE_TYPES``. Emitted as a ``frozenset``
 #: to match the production type (``is_enabled``/``zone_type_listing`` read it as
 #: a membership set at call time).
-_OPTIONAL_ZONE_TYPES = sorted(DEFINED_ZONE_TYPES - {"dungeon"})  # city, wilderness
+_OPTIONAL_ZONE_TYPES = sorted(DEFINED_ZONE_TYPES - {"dungeon"})  # city, wilderness, outdoor_dungeon
 enabled_subsets = st.sets(
     st.sampled_from(_OPTIONAL_ZONE_TYPES),
     max_size=len(_OPTIONAL_ZONE_TYPES),
 ).map(lambda extra: frozenset({"dungeon", *extra}))
 
-#: Zone-type NAMES a stubbed planner / controls request may pick: the three
+#: Zone-type NAMES a stubbed planner / controls request may pick: the
 #: defined names plus the removed ``cave`` word (which ``canonical_zone_type``
 #: maps to ``None`` — an undefined type that is never enabled) and the legacy
 #: ``outdoor`` value (canonicalises to ``wilderness``). This spans in-domain,

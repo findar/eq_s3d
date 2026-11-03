@@ -14,7 +14,7 @@ A *geometry backend* turns a :class:`~generators.zone_spec.ZoneSpec` into a
 
 The ``BACKENDS`` dict is keyed by the canonical zone-type vocabulary
 (:data:`generators.zone_types.DEFINED_ZONE_TYPES`) — dungeon→Box, city→Box,
-wilderness→Terrain. There is NO cave backend (cave was removed in M0; it
+wilderness→Terrain, outdoor_dungeon→Terrain. There is NO cave backend (cave was removed in M0; it
 returns as a dungeon archetype / natural style later). ``backend_for`` resolves
 a zone type to its backend, falling back to the dungeon (Box) backend for any
 undefined/unknown value — consistent with the ``canonical_zone_type`` →
@@ -153,6 +153,9 @@ BACKENDS: dict[str, GeometryBackend] = {
     "dungeon": BoxBackend(),
     "city": BoxBackend(),
     "wilderness": TerrainBackend(),
+    # A host landscape with the dungeon merged in (the spec's wilderness
+    # payload carries a ``dungeon`` section; see generators/outdoor_dungeon).
+    "outdoor_dungeon": TerrainBackend(),
 }
 
 # Sanity: the registry must cover exactly the defined zone types.

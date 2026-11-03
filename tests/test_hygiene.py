@@ -119,7 +119,7 @@ _DELETED_FIELD_STEMS = ("ca" + "ve", "fea" + "tures", "me" + "sh", "s" + "df")
 
 # The defined zone-type vocabulary after the wave-2 rename (outdoor ->
 # wilderness). Kept equal to generators.zone_types.DEFINED_ZONE_TYPES.
-DEFINED_ZONE_TYPES = {"dungeon", "city", "wilderness"}
+DEFINED_ZONE_TYPES = {"dungeon", "city", "wilderness", "outdoor_dungeon"}
 
 
 def _tracked_py_files():
@@ -278,8 +278,11 @@ def test_layout_tables_have_no_cave_key():
     """LayoutGenerator's per-theme material and light tables drop `"cave"`.
 
     The tables are `theme_palettes` (materials) and `colors` (light colours);
-    both are theme-keyed dicts whose keys must be exactly the Defined_Themes.
+    both are theme-keyed dicts whose keys must be exactly the Defined_Themes a
+    LayoutGenerator is built for. An outdoor dungeon lays its rooms out as a
+    `dungeon` (generators/outdoor_dungeon.py), so it has no row of its own.
     """
+    layout_types = DEFINED_ZONE_TYPES - {"outdoor_dungeon"}
     cave_key = "ca" + "ve"
     for var in ("theme_palettes", "colors"):
         keysets = _layout_dict_keys(var)
@@ -288,9 +291,9 @@ def test_layout_tables_have_no_cave_key():
             assert cave_key not in keys, (
                 f"layout.py {var!r} still has a {cave_key!r} key: {sorted(keys)}"
             )
-            assert keys == DEFINED_ZONE_TYPES, (
+            assert keys == layout_types, (
                 f"layout.py {var!r} keys {sorted(keys)} != Defined_Themes "
-                f"{sorted(DEFINED_ZONE_TYPES)}"
+                f"{sorted(layout_types)}"
             )
 
 
