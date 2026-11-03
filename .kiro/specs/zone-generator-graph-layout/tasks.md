@@ -81,7 +81,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 
 - [ ] 10. CLI, server and outdoor dungeon
   - Card: [cards/10-cli-server.md](cards/10-cli-server.md)
-  - Type: agent · Size: S · Depends: 9
+  - Type: agent · Size: S · Depends: 9, 19
   - Owns: main.py, server/app.py, generators/outdoor_dungeon.py, tests/test_graph_layout_controls.py
   - Reqs: 7.1, 6.6
 
@@ -126,3 +126,9 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Type: agent · Size: M · Depends: 8
   - Owns: generators/topology/embed.py, generators/layout.py, generators/topology/rewrite.py, rules/topology/classic_eq.toml, rules/topology/warren.toml, rules/topology/layers/temple.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py
   - Reqs: 5.1, 6.4
+
+- [ ] 19. Rooms carry their kind; the rules' deep end is the climax
+  - Card: [cards/19-kind-and-climax.md](cards/19-kind-and-climax.md)
+  - Type: agent · Size: M · Depends: 9, 18
+  - Owns: generators/layout_engine.py, generators/layout.py, ai/expand.py, tests/test_graph_layout_plan.py, tests/test_topology_embed.py
+  - Reqs: 6.3, 7.4

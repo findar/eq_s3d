@@ -12,5 +12,6 @@ Index entry: `tasks.md` task 10. Requirements 7.1, 6.6.
 
 ## Pitfalls
 - `plan_dungeon`'s shrink retry (step 5 task 11) must keep working; the engine is passed through, not re-chosen per scale.
+- An unknown `layout` or `rule_set` raises `ValueError` from `ai/schema.py` (task 9), which the server returns as a 500 today: make it a 400 naming the allowed values.
 
 ## Result
