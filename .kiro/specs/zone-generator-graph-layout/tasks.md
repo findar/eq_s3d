@@ -127,8 +127,8 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: generators/topology/embed.py, generators/layout.py, generators/topology/rewrite.py, rules/topology/classic_eq.toml, rules/topology/warren.toml, rules/topology/layers/temple.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py, tests/test_topology_rewrite.py, docs/TOPOLOGY_RULES.md
   - Reqs: 5.1, 6.4
 
-- [ ] 19. Rooms carry their kind; the rules' deep end is the climax
+- [x] 19. Rooms carry their kind; the rules' deep end is the climax
   - Card: [cards/19-kind-and-climax.md](cards/19-kind-and-climax.md)
   - Type: agent · Size: M · Depends: 9, 18
-  - Owns: generators/layout_engine.py, generators/layout.py, ai/expand.py, tests/test_graph_layout_plan.py, tests/test_topology_embed.py
+  - Owns: generators/layout_engine.py, generators/layout.py, ai/expand.py, tests/test_graph_layout_plan.py, tests/test_topology_embed.py, generators/semantics.py
   - Reqs: 6.3, 7.4
