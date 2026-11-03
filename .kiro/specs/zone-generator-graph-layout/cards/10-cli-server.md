@@ -7,7 +7,7 @@ Index entry: `tasks.md` task 10. Requirements 7.1, 6.6.
 
 ## Done when
 - [x] CLI and server build a graph dungeon (each set) and a graph outdoor dungeon; a bad value is a 400 / CLI error naming the allowed values.
-- [ ] A graph outdoor dungeon plans on the step 5 acceptance seeds (or drops rooms with `rooms_reduced`).
+- [x] A graph outdoor dungeon plans on the step 5 acceptance seeds (or drops rooms with `rooms_reduced`).
       → verify: `python -m pytest tests/test_graph_layout_controls.py tests/test_outdoor_envelope.py -q`
 
 ## Pitfalls
@@ -15,3 +15,4 @@ Index entry: `tasks.md` task 10. Requirements 7.1, 6.6.
 - An unknown `layout` or `rule_set` raises `ValueError` from `ai/schema.py` (task 9), which the server returns as a 500 today: make it a 400 naming the allowed values.
 
 ## Result
+✔ 3e83f29 · 1202 passed
