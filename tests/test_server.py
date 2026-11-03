@@ -290,7 +290,8 @@ def test_zone_types_and_themes_listings_are_identical(client):
     # The listing is one {name, enabled, reason} object per Defined zone type,
     # in canonical order; wave 4 (task 15.5) replaced the bare name list.
     listing = zt.json()["zone_types"]
-    assert [z["name"] for z in listing] == ["dungeon", "city", "wilderness"]
+    assert [z["name"] for z in listing] == ["dungeon", "city", "wilderness",
+                                            "outdoor_dungeon"]
     by_name = {z["name"]: z for z in listing}
     assert by_name["dungeon"]["enabled"] is True
     assert by_name["city"]["enabled"] is True

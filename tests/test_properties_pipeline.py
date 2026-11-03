@@ -389,14 +389,16 @@ def test_no_api_prompt_and_cli(no_api_keys, no_network, tmp_path, monkeypatch):
 import json  # noqa: E402  (grouped with the M1 P2 tests that read the Sidecar)
 import os  # noqa: E402
 
-from generators.zone_types import ENABLED_ZONE_TYPES  # noqa: E402
+from generators.zone_types import ENABLED_ZONE_TYPES, LANDSCAPE_ZONE_TYPES  # noqa: E402
 import analyzer.traverse as _traverse  # noqa: E402
 
 # The gated ROOM-GRAPH zone types these properties range over (city, dungeon),
-# sorted for a stable sample order. Wilderness is enabled but builds from its
-# own pipeline (no rooms, the bowl gate), so a LayoutGenerator spec for it is
-# not a real wilderness build; its properties live in tests/test_wilderness_*.
-_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES - {"wilderness"}))
+# sorted for a stable sample order. The landscape types (wilderness,
+# outdoor_dungeon) are enabled but build from their own pipeline (a host
+# landscape, the bowl gate), so a LayoutGenerator spec for one is not a real
+# build of it; their properties live in tests/test_wilderness_* and
+# tests/test_outdoor_dungeon_*.
+_enabled_zone_types = st.sampled_from(sorted(ENABLED_ZONE_TYPES - LANDSCAPE_ZONE_TYPES))
 
 
 @pytest.mark.slow

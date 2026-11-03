@@ -20,10 +20,15 @@ from __future__ import annotations
 
 from typing import Mapping
 
-# The three defined zone types, in canonical listing order. Everything that
+# The defined zone types, in canonical listing order. Everything that
 # enumerates zone types (schema, web options, CLI choices, server listing)
 # derives its order from this tuple.
-DEFINED_ZONE_TYPES: tuple[str, ...] = ("dungeon", "city", "wilderness")
+DEFINED_ZONE_TYPES: tuple[str, ...] = ("dungeon", "city", "wilderness", "outdoor_dungeon")
+
+# Zone types built on a wilderness landscape: the Rim (``edges``) and tree
+# density (``trees``) controls apply to these and no others. An outdoor
+# dungeon is a host landscape with a dungeon under its hill.
+LANDSCAPE_ZONE_TYPES: frozenset[str] = frozenset({"wilderness", "outdoor_dungeon"})
 
 # The zone type used when none is supplied (Req 11.2).
 DEFAULT_ZONE_TYPE = "dungeon"
@@ -35,7 +40,8 @@ LEGACY_ZONE_TYPE_VALUES = {"outdoor": "wilderness"}
 # zone_type -> measured style-profile name (styles/<profile>.json). The profile
 # file stays styles/outdoor.json: style_profile names a measured profile, not a
 # zone type (design "Zone-type vocabulary").
-STYLE_PROFILE = {"dungeon": "dungeon", "city": "city", "wilderness": "outdoor"}
+STYLE_PROFILE = {"dungeon": "dungeon", "city": "city", "wilderness": "outdoor",
+                 "outdoor_dungeon": "outdoor"}
 
 
 def canonical_zone_type(value: object) -> str | None:
@@ -71,12 +77,14 @@ def read_zone_type(d: Mapping[str, object]) -> object:
 # A zone type is *offered* only if it is in ENABLED_ZONE_TYPES. Everything that
 # gates a zone type (CLI, server, pipeline) reads this one set; there is no
 # second "gated" set (Req 3.1). Wilderness joined the set when the open-world
-# wilderness milestone closed (zone-generator-wilderness task 11).
+# wilderness milestone closed (zone-generator-wilderness task 11); the
+# outdoor dungeon with its gate (zone-generator-outdoor-dungeon task 7).
 
 # The zone types offered. Kept a frozenset so it can't be mutated in place; a
 # test that needs a different gate monkeypatches this whole name, which is why
 # is_enabled() re-reads it at call time rather than capturing it.
-ENABLED_ZONE_TYPES: frozenset[str] = frozenset({"dungeon", "city", "wilderness"})
+ENABLED_ZONE_TYPES: frozenset[str] = frozenset(
+    {"dungeon", "city", "wilderness", "outdoor_dungeon"})
 
 # Human-readable reason per DISABLED zone type, explaining why it is unavailable.
 # Only disabled zone types need an entry; enabled ones never show a reason.

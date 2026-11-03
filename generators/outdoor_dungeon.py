@@ -596,6 +596,7 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     seed)."""
     spec = wilderness_spec(name, seed, edges, biome, landform=DEFAULT_HOST_HILL,
                            zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
+    spec.zone_type = "outdoor_dungeon"
     ter = build_wilderness_ter(spec, f"ter_{name}", 1)
     envelope = host_envelope(spec, ter)
     layout, warnings = layout_in_envelope(name, seed, envelope, room_count, **layout_kwargs)
@@ -653,3 +654,41 @@ def outdoor_dungeon_report(eqg_path, spec: ZoneSpec, agent=None):
     report.reachable_rooms += bowl.reachable_rooms
     report.notes = list(bowl.notes) + list(report.notes)
     return report
+
+
+def sidecar_block(spec: ZoneSpec) -> Dict:
+    """The ``outdoor_dungeon`` block of the ``.zone.json`` sidecar (Req 6.3):
+    the Envelope's bounds and Rock_Cover, each Entrance (Apron centre, Mouth,
+    Tunnel id) and the Outdoor_Spawn. Advisory only."""
+    data = spec.wilderness[DUNGEON_KEY]
+    land = landscape_for(spec)
+    e = Entrance.from_dict(data["entrance"])
+    ox, oy = land.synth.origin
+    res = float(land.synth.resolution)
+
+    def coord(axis, k):
+        return (ox, oy)[axis] + (k + 0.5) * res
+
+    def point(run, cross, z):
+        return [run, cross, z] if e.axis == 0 else [cross, run, z]
+
+    foot = host_footprint(land.matrix.landform)
+    xs, ys = [p[0] for p in foot], [p[1] for p in foot]
+    c0, c1 = coord(1 - e.axis, e.cross), coord(1 - e.axis, e.cross + 1)
+    mid = (c0 + c1) / 2.0
+    return {
+        "envelope": {"min_xy": [min(xs), min(ys)], "max_xy": [max(xs), max(ys)],
+                     "floor_limit": data["floor_limit"]},
+        "rock_cover": data["rock_cover"],
+        "entrances": [{
+            "tunnel_id": "tunnel_0",
+            "room": e.room_id,
+            "side": e.side,
+            "apron_centre": point(coord(e.axis, e.portal + e.outward), mid, e.floor),
+            "mouth": {"centre": point(coord(e.axis, e.portal), mid, e.floor + e.height / 2),
+                      "width": c1 - c0, "height": e.height, "floor": e.floor},
+        }],
+        "outdoor_spawn": list(spec.safe_point),
+        "rooms_requested": data["rooms_requested"],
+        "rooms": len(spec.rooms),
+    }

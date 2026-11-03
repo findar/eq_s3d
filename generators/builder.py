@@ -240,6 +240,11 @@ class ZoneBuilder:
         assign_texel_densities(self.spec)
         ter, backend_name, warnings = self._build_geometry(name, ter_version)
 
+        # An outdoor dungeon's layout warnings (rooms_reduced) ride with the
+        # build's warnings.
+        if self.spec.wilderness is not None and "dungeon" in self.spec.wilderness:
+            warnings.extend(self.spec.wilderness["dungeon"]["warnings"])
+
         # Trees (wilderness only, step 2): a layer on top of the built TER,
         # which they never change. Room-graph zones get none (Req 10).
         veg = None
@@ -438,6 +443,9 @@ class ZoneBuilder:
         spawn = POIAnchor(name="Spawn", x=sx, y=sy, is_spawn=True,
                           intent=land.matrix.cell(*land.matrix.spawn).intent)
         out["poi_anchors"] = [{**spawn.to_dict(), "z": sz}]
+        if "dungeon" in payload:
+            from generators.outdoor_dungeon import sidecar_block
+            out["outdoor_dungeon"] = sidecar_block(self.spec)
         return out
 
     @staticmethod
