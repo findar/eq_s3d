@@ -61,7 +61,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: rules/topology/warren.toml, tests/test_ruleset_warren.py, rules/topology/themes.toml
   - Reqs: 5.1, 5.2
 
-- [ ] 7. Check, dry-run and draw; the authoring guide
+- [x] 7. Check, dry-run and draw; the authoring guide
   - Card: [cards/07-tooling-and-guide.md](cards/07-tooling-and-guide.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: scripts/topology_rules.py, generators/topology/draw.py, docs/TOPOLOGY_RULES.md, rules/topology/README.md
