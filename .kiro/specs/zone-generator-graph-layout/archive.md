@@ -58,3 +58,5 @@ questions on 2026-11-03:
 - **Room shapes** (Voronoi blobs and others) through the `shape` attribute:
   step 8.
 - **Users editing recipes** from the web app or a prompt.
+- **The walk surface takes ceilings as floor** (found by task 1): `analyzer.traverse.build_walk_surface` tests |nz|, so a downward-facing ceiling passes as standable; in befallen it made a second "floor" 14 u above the real one. The survey keeps only floor-wound WLD faces. Check whether `scripts/outdoor_dungeon_survey.py` and the gate on our own TERs are affected.
+- **Warren bands rest on one zone** (blackburrow; runnyeye's split failed): a better chamber split (lumpy caves, wide doorways, passage-only loops) would firm up both base sets' bands.
