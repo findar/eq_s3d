@@ -63,3 +63,21 @@ questions on 2026-11-01, each with the recommended option:
   the layout's entrance, so pacing, elevation and keys run from the way in;
   `plan_entrance(room_id=)` digs only to that room. Never re-tag roles after
   the layout: room sizes, floors, themes and keys already follow them.
+
+## Follow-ups
+
+Carried into `ROADMAP.md` by the close step (task 14).
+
+- **Verticality (user, 2026-11-02, at the first look):** outdoor dungeons
+  should go up and down, not only across. Today they are one level: the
+  Envelope's height is the floor limit (150 u under the approach foot) to
+  Rock_Cover (24 u) under a hill of about 110 u relief, with 80 u rooms;
+  connectors are ramps only (grade 0.5, so height costs run); and the
+  verticality control is ignored for this zone type. Cheapest first:
+  (1) honour `verticality` here (deeper floor limit and larger rises on
+  "dramatic"); (2) more relief: a taller hill or the `pit` Landform kind,
+  entered by descending; (3) stacked levels joined by stairwells or shafts,
+  which is ROADMAP step 7 ("Interesting dungeon verticality") and its
+  "Multi-level / stacked-floor dungeons" item. The outdoor dungeon should be
+  a first user of step 7. Its maps already give each level its own depth
+  band (task 8).
