@@ -1,0 +1,49 @@
+# rules/topology/layers/temple.toml -- the temple theme layer (roadmap step 6).
+#
+# A layer adds rules and recipe weight to a base set for one dungeon theme.
+# It never edits the base file: the loader merges the two at build time and
+# checks the merged set as well as each file. themes.toml says which themes
+# take which layers (here: temple = classic_eq + temple).
+#
+# What it adds: a nave -- a large hall on the way through with a small chapel
+# off each side -- in its own stage after the base set's main path, and a
+# little weight among the side rooms. The chapels are dead ends, so a temple
+# reads a little more branchy than a plain classic_eq dungeon.
+
+[layer]
+name        = "temple"
+description = "A nave with side chapels on the way to the deep end"
+fits        = ["classic_eq"]           # base sets this layer can be merged onto
+# kinds     = ["chapel"]               # a layer may declare new room kinds here
+#                                      # (themes then map them to room types)
+
+# The nave sits in line on the way (the placeholder's way in goes to the
+# nave, its way on to the placeholder after it), so it is passed through, not
+# a side room. Its two chapels are small dead ends. Rule names must not clash
+# with the base set's.
+[rules.nave]
+description = "A large hall on the way through with two small chapels off its sides"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "n",  kind = "hall", size = "large"},
+             {id = "c1", kind = "lair", size = "small"},
+             {id = "c2", kind = "lair", size = "small"},
+             {id = "x",  kind = "Area"} ]
+edges    = [ {a = "n", b = "c1"}, {a = "n", b = "c2"}, {a = "n", b = "x"} ]
+reattach = { x = ["n", "x"] }
+
+# Insert a stage of its own, after a named base stage: right after the
+# spine is laid, so every temple of 10 rooms or more gets its nave in line on
+# the way (5 % of 10 rooms rounds to a budget of 1; one nave spends it). Its
+# share comes out of the room budget like any other, and the shares of all
+# numbered stages must still sum to at most 1 (classic_eq's take 0.65).
+[[insert]]
+after = "Main path"
+stage = "Nave"
+apply = { nave = 1 }
+share = 0.05
+
+# Add weight to a stage of the base recipe, by the stage's name: bigger
+# temples sometimes get a second nave among the side rooms. It competes with
+# the base set's side-room rules (weights 0.3 to 3 there).
+[stages."Side rooms"]
+apply = { nave = 1 }

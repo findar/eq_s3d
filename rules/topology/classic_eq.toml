@@ -1,0 +1,245 @@
+# rules/topology/classic_eq.toml -- the classic EQ dungeon (roadmap step 6).
+#
+# A base rule set for the graph layout engine. It grows an abstract room graph
+# (no coordinates) by graph rewriting: start from a small graph with
+# placeholders (kind "Area"), then apply the rules below, stage by stage
+# (the [[recipe]] at the end), until no placeholder is left and the graph has
+# exactly the requested number of rooms. Placement then lays the rooms out.
+#
+# What it aims for: the shape of the Classic-PoP dungeons measured by the
+# stock topology survey (design.md, finding 5: befallen, najena, permafrost,
+# sebilis, chardok). Their p10-p90 bands, and what this recipe grows over
+# 40 seeds x 5-30 rooms (tests/test_ruleset_classic_eq.py checks it):
+#
+#   measure               band (stock)   grown: mean  p50   p10-p90    mean, n >= 20
+#   dead-end share        0.12 - 0.35           0.32  0.29  0.19-0.50  0.27
+#   cycle rank per room   0.07 - 0.25           0.15  0.15  0.00-0.25  0.18
+#   deep-end distance     0.26 - 0.39           0.36  0.35  0.25-0.50  0.30
+#   size mix  tiny / small / medium / large / huge:
+#     band    0 / 0.17-0.38 / 0.23-0.52 / 0.20-0.24 / 0.09-0.18
+#     grown   0 / 0.30      / 0.32      / 0.22      / 0.16       (means)
+#
+# Small graphs sit above the bands on dead ends and deep end: with 5 rooms the
+# entrance and the deep end are already 2 of the 5 and at least 2 hops apart.
+# From about 20 rooms (the stock zones have 24-77 chambers) the grown graphs
+# land mid-band. Tune with the weights and shares, not by adding rules.
+#
+# Writing your own set: copy this file, keep the [set] name equal to the file
+# name, and check it (every field is checked on load, every failure listed).
+# The vocabulary is in design.md "The vocabulary (checked on load)".
+
+[set]
+name        = "classic_eq"
+description = "A classic EQ dungeon: a way through, side rooms, a few loops, a deep end."
+placement   = "spring"                 # how the finished graph is laid out (placement registry)
+
+# The start graph: the way in, one placeholder, the way's far end. Room nodes
+# take a size class (tiny, small, medium, large, huge); an Area takes none.
+# Exactly one node is the entrance. With fewer rooms requested than start
+# nodes, the driver shrinks it (n = 2 is entrance - deep).
+start_nodes = [ {id = "e", kind = "entrance", size = "medium"},
+                {id = "a", kind = "Area"},
+                {id = "d", kind = "deep",     size = "huge"} ]
+start_edges = [ {a = "e", b = "a"},
+                {a = "a", b = "d"} ]
+
+# ---------------------------------------------------------------------------
+# Rules. Each one: `match` (1-3 nodes, by kind; `match_edges` are edges that
+# must join them, and no other edge may), `replace` (the nodes that take their
+# place: a replacement node reusing a match id keeps that graph node, and its
+# size too if the kind is unchanged), `edges` among the replacement, and
+# `reattach`: for each match node, the replacement nodes that take its edges
+# to the rest of the graph, in order (one target takes them all; several split
+# them, earlier targets taking the larger part). That is what keeps the graph
+# connected. The driver rejects any result with a room of more than 4
+# connections or a loop longer than 5 rooms.
+# ---------------------------------------------------------------------------
+
+# The way through: a placeholder becomes two in a row. Its two outside edges
+# (the way in and the way on) split one each, so the second sits further along.
+[rules.lengthen]
+description = "The way through gets one placeholder longer"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "y", kind = "Area"} ]
+edges    = [ {a = "x", b = "y"} ]
+reattach = { x = ["x", "y"] }
+
+# A narrow room in line on the way, and the floor drops after it:
+# rel = "below" reads "x is below p" (elevation acts on it; rooms never stack).
+[rules.passage]
+description = "A narrow passage room on the way through, going down"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "p", kind = "passage", size = "small"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "p", b = "x", rel = "below"} ]
+reattach = { x = ["p", "x"] }
+
+# A huge chamber in line on the way. The main source of huge rooms after the
+# deep end itself (the stock zones have 9-18 % huge chambers).
+[rules.cavern]
+description = "A big cave on the way through"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "c", kind = "chamber", size = "huge"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "c", b = "x"} ]
+reattach = { x = ["c", "x"] }
+
+# A dead end: the placeholder keeps all its edges and gains a small room.
+[rules.branch]
+description = "A dead-end side room off the way through"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "l", kind = "lair", size = "small"} ]
+edges    = [ {a = "x", b = "l"} ]
+reattach = { x = ["x"] }
+
+# A two-room dead end: a large hall and a small room behind it, on one level.
+[rules.side_wing]
+description = "A wing off the way: a large hall with a small room behind it"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "h", kind = "hall", size = "large"},
+             {id = "l", kind = "lair", size = "small"} ]
+edges    = [ {a = "x", b = "h"}, {a = "h", b = "l", rel = "level"} ]
+reattach = { x = ["x"] }
+
+# A fork: a large hub takes the placeholder's place on the way (all its
+# edges), with two new placeholders off it that later stages grow into
+# side ways. Forking keeps the deep end near the survey's third of the rooms;
+# without it the way through runs too long.
+[rules.crossroads]
+description = "A large hub on the way with two ways leading off it"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "h", kind = "hub", size = "large"},
+             {id = "x", kind = "Area"}, {id = "y", kind = "Area"} ]
+edges    = [ {a = "h", b = "x"}, {a = "h", b = "y"} ]
+reattach = { x = ["h"] }
+
+# The short loop: two rooms that leave the placeholder and come back to it.
+# Adds a cycle and no dead end, and doesn't lengthen the way.
+[rules.loop]
+description = "A ring of three: two rooms that join back"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "a", kind = "chamber", size = "small"},
+             {id = "b", kind = "chamber", size = "medium"} ]
+edges    = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "x"} ]
+reattach = { x = ["x"] }
+
+# Two routes on the way through: a large chamber one way, a passage the
+# other, meeting at a second placeholder further on (a loop of four).
+[rules.ring]
+description = "A ring of four on the way through: two routes that meet again"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "a", kind = "chamber", size = "large"},
+             {id = "b", kind = "passage", size = "small"},
+             {id = "y", kind = "Area"} ]
+edges    = [ {a = "x", b = "a"}, {a = "a", b = "y"}, {a = "x", b = "b"}, {a = "b", b = "y"} ]
+reattach = { x = ["x", "y"] }
+
+# A new edge between two finished chambers 2-3 hops apart (a loop of 3-4).
+# Matches rooms, not placeholders, and adds no room: it spends none of a
+# stage's budget, so keep its weight low next to rules that grow.
+# (p and q keep their sizes: the kind is unchanged.)
+[rules.shortcut]
+description = "Join two chambers 2-3 hops apart"
+match      = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
+match_hops = { p_q = [2, 3] }
+replace    = [ {id = "p", kind = "chamber", size = "medium"},
+               {id = "q", kind = "chamber", size = "medium"} ]
+edges      = [ {a = "p", b = "q"} ]
+reattach   = { p = ["p"], q = ["q"] }
+
+# The next three grow from finished rooms, so the last stage can still reach
+# the room count when every placeholder left is boxed in (4 connections, or
+# on a loop that can't get longer). Low weights: they are the fallback.
+
+# A passage room on the edge between two joined chambers.
+[rules.split]
+description = "A short passage room between two joined chambers"
+match       = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
+match_edges = [ {a = "p", b = "q"} ]
+replace     = [ {id = "p", kind = "chamber", size = "medium"},
+                {id = "m", kind = "passage", size = "small"},
+                {id = "q", kind = "chamber", size = "medium"} ]
+edges       = [ {a = "p", b = "m"}, {a = "m", b = "q"} ]
+reattach    = { p = ["p"], q = ["q"] }
+
+# A dead end off a finished chamber.
+[rules.annex]
+description = "A small room off a finished chamber"
+match    = [ {id = "c", kind = "chamber"} ]
+replace  = [ {id = "c", kind = "chamber", size = "medium"},
+             {id = "l", kind = "lair", size = "small"} ]
+edges    = [ {a = "c", b = "l"} ]
+reattach = { c = ["c"] }
+
+# A dead end gets one room longer (the dead-end count stays the same).
+[rules.deepen]
+description = "A dead end goes one room further"
+match    = [ {id = "l", kind = "lair"} ]
+replace  = [ {id = "l", kind = "lair", size = "small"},
+             {id = "m", kind = "lair", size = "medium"} ]
+edges    = [ {a = "l", b = "m"} ]
+reattach = { l = ["l"] }
+
+# Offered only when the build's race is big (ogres, giants: race scale 1.5
+# or more). `when` keys: theme, race, race_scale, zone_type, room_count; a
+# value, a list (any of), or a comparison string.
+[rules.great_hall]
+description = "Big races get a great hall on the way"
+when     = { race_scale = ">=1.5" }
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "g", kind = "hall", size = "huge"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "g", b = "x"} ]
+reattach = { x = ["g", "x"] }
+
+# Finishing: a placeholder becomes a room and keeps every edge. Two sizes, so
+# the last stage's weights set the medium / large mix.
+[rules.finish]
+description = "A placeholder becomes a medium chamber"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "chamber", size = "medium"} ]
+reattach = { x = ["x"] }
+
+# The same, large: weighted against `finish` in the last stage.
+[rules.finish_large]
+description = "A placeholder becomes a large chamber"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "chamber", size = "large"} ]
+reattach = { x = ["x"] }
+
+# ---------------------------------------------------------------------------
+# The recipe: stages in order. `apply` weights the stage's rules (a rule is
+# picked by weight among those with a legal match, then a match at random).
+# `share` is the stage's part of the room budget, counted in rooms plus
+# placeholders (lengthen spends 1, finish 0, shortcut 0). A stage that runs
+# out of matches passes what it didn't spend to the next. The last stage is
+# "rest": it runs until the graph has exactly n rooms and no placeholder, so
+# it needs growth rules as well as a finishing one -- a rest stage of
+# `finish` alone can't reach n when earlier stages end short.
+# ---------------------------------------------------------------------------
+
+# A short spine first. Kept small: most of the depth comes from the rules
+# after it, and a long spine overshoots the deep-end band.
+[[recipe]]
+stage = "Main path"
+apply = { lengthen = 2, passage = 1, cavern = 1.5 }
+share = 0.1
+
+# Most rooms: forks, short loops and dead ends off the way.
+[[recipe]]
+stage = "Side rooms"
+apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3, cavern = 0.3 }
+share = 0.45
+
+# A few more loops, some of them as second routes along the way.
+[[recipe]]
+stage = "Loops"
+apply = { loop = 3, ring = 1 }
+share = 0.1
+
+# Finish every placeholder; keep growing (and close the odd shortcut) until
+# the count is reached.
+[[recipe]]
+stage = "Finish"
+apply = { finish = 1.8, finish_large = 1.2, branch = 0.5, loop = 0.5, shortcut = 0.3, split = 0.3, annex = 0.3, deepen = 0.3 }
+share = "rest"
