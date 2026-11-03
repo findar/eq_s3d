@@ -85,7 +85,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: main.py, server/app.py, generators/outdoor_dungeon.py, ai/expand.py, tests/test_graph_layout_controls.py, tests/test_hygiene.py, generators/layout_engine.py, generators/topology/embed.py
   - Reqs: 7.1, 6.6
 
-- [ ] 11. Web: Layout toggle and rule set
+- [x] 11. Web: Layout toggle and rule set
   - Card: [cards/11-web.md](cards/11-web.md)
   - Type: agent · Size: S · Depends: 10
   - Owns: web/index.html, web/src/main.ts, web/src/api.ts

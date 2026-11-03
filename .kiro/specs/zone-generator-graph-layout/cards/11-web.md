@@ -13,4 +13,4 @@ A Layout toggle (Classic / Graph) in the Controls panel for the zone types that 
 - The backend serves `.js` as `text/plain` on this machine through port 8000 (ROADMAP follow-ups): check through a preview build, as step 5 task 9 did.
 
 ## Result
-build ✔ 2511968; browser check pending
+✔ 2511968 · build and browser check (dungeon graph warren, classic, wilderness, outdoor dungeon graph)
