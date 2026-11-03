@@ -67,7 +67,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: scripts/topology_rules.py, generators/topology/draw.py, docs/TOPOLOGY_RULES.md, rules/topology/README.md
   - Reqs: 3.4–3.6
 
-- [ ] 8. Placement, size classes and the graph engine
+- [x] 8. Placement, size classes and the graph engine
   - Card: [cards/08-placement.md](cards/08-placement.md)
   - Type: agent · Size: M · Depends: 2, 5
   - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/topology/rewrite.py (BuildContext only), tests/test_topology_embed.py

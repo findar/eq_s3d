@@ -12,6 +12,9 @@ An engine gets a ``LayoutContext`` (the generator's rng, the room band, a
 entry point and a record for the sidecar. Engines never see the
 ``LayoutGenerator``, so they can be tested alone.
 
+``GraphEngine`` grows the graph by a rule set (``generators/topology``) and
+places it with the set's placement (``generators/topology/embed.py``).
+
 ``ClassicEngine`` is the TinyKeep scheme that used to live in ``layout.py``
 (scatter in an ellipse, separate, Delaunay, MST + ~12 % loop edges). It draws
 from ``ctx.rng`` in exactly the order it did there; ``tests/test_layout_engine.py``
@@ -23,11 +26,27 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from typing import (Callable, Dict, List, NamedTuple, Optional, Protocol,
-                    Tuple, Type)
+from pathlib import Path
+from typing import (TYPE_CHECKING, Callable, Dict, List, NamedTuple, Optional,
+                    Protocol, Tuple, Type, Union)
 
 from .envelope import Envelope
 from .zone_spec import RoomSpec
+
+if TYPE_CHECKING:
+    from .topology.rewrite import BuildContext
+    from .topology.ruleset import RuleSet
+
+
+def __getattr__(name: str):
+    """``BuildContext`` is the topology package's (one class for the seam and
+    the rule sets' ``when`` conditions; it has ``.get`` for them). Imported on
+    first use: ``generators.topology`` reads ``ai.schema``, and ``ai`` imports
+    ``generators.layout``, which imports this module."""
+    if name == "BuildContext":
+        from .topology.rewrite import BuildContext
+        return BuildContext
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 Point = Tuple[float, float]
 
@@ -46,16 +65,6 @@ class Edge(NamedTuple):
     i: int
     j: int
     rel: str = "any"
-
-
-@dataclass
-class BuildContext:
-    """What is being built, for engines whose choices depend on it."""
-    zone_type: str
-    theme: str = ""
-    race: str = ""
-    race_scale: float = 1.0
-    room_count: int = 0
 
 
 @dataclass
@@ -207,5 +216,105 @@ class ClassicEngine:
             return []
 
 
+# Rule sets ship here (rules/topology/: base sets, layers/, themes.toml).
+RULES_DIR = Path(__file__).resolve().parent.parent / "rules" / "topology"
+
+
+class GraphEngine:
+    """Graph rewriting (design "Placement"): a rule set grows a Topology_Graph
+    of exactly n rooms, its placement lays the rooms out, and each grammar
+    edge becomes an edge with its vertical relation.
+
+    ``rule_set`` is a loaded ``RuleSet`` (used as is) or a base set's name
+    (the theme's layers still apply when they fit it); ``theme`` overrides
+    the build's dungeon theme. With neither, the set comes from
+    ``ctx.build.theme`` through ``rules/topology/themes.toml``.
+    """
+
+    name = "graph"
+    sizes_rooms = True
+
+    def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
+                 theme: Optional[str] = None,
+                 rules_dir: Union[str, Path, None] = None):
+        self.rule_set = rule_set
+        self.theme = theme
+        self.rules_dir = Path(rules_dir) if rules_dir is not None else RULES_DIR
+        self._loaded: Dict[Tuple[Optional[str], Optional[str]], "RuleSet"] = {}
+
+    def rules_for(self, theme: Optional[str]) -> "RuleSet":
+        from .topology.ruleset import RuleSet, load_for_theme
+        if isinstance(self.rule_set, RuleSet):
+            return self.rule_set
+        theme = self.theme if self.theme is not None else theme
+        key = (theme or None, self.rule_set or None)
+        if key not in self._loaded:
+            self._loaded[key] = load_for_theme(self.rules_dir, theme, self.rule_set or None)
+        return self._loaded[key]
+
+    def generate(self, ctx: LayoutContext, room_count: int,
+                 envelope: Optional[Envelope]) -> EngineResult:
+        from .topology import embed
+        from .topology.rewrite import grow
+
+        rs = self.rules_for(ctx.build.theme)
+        if room_count < 1:
+            return EngineResult(rooms=[], edges=[], record=self._record(rs, None, [], {}, []))
+        grown = grow(rs, room_count, rng=ctx.rng, context=ctx.build)
+        graph = grown.graph
+        order = embed.bfs_order(graph)
+        base = embed.area_matched_base(embed.base_side(ctx.room_min, ctx.room_max),
+                                       [graph.node(r).size for r in order])
+        sizes = {r: embed.room_size(graph.node(r).size, base, ctx.ceiling, ctx.rng)
+                 for r in order}
+        half = {r: (w / 2, d / 2) for r, (w, d, _h) in sizes.items()}
+        place = embed.PLACEMENT_FUNCS[rs.placement]
+        gap = ctx.corridor_width + 1.0
+        centres = place(graph, order, half, ctx.corridor_width, gap)
+        if envelope is not None:
+            centres = embed.fit_to_envelope(centres, half, envelope)
+
+        rooms: List[RoomSpec] = []
+        for k, r in enumerate(order):
+            w, d, h = sizes[r]
+            x, y = centres[r]
+            rooms.append(RoomSpec(id=f"room_{k}", center_x=x, center_y=y, floor_z=0.0,
+                                  width=w, depth=d, height=h,
+                                  district=graph.node(r).district))
+        # (Separation pushes pairs symmetrically, so an Envelope layout stays
+        # centred on the footprint.)
+        ctx.separate(rooms)
+
+        idx = {r: k for k, r in enumerate(order)}
+        edges: List[Edge] = []
+        for e in graph.edges():
+            i, j = idx[e.a], idx[e.b]
+            # graph.edge(a, b).rel says where b sits relative to a, as Edge does.
+            edges.append(Edge(i, j, graph.edge(e.a, e.b).rel))
+        entrance = next((idx[n.id] for n in graph.rooms() if n.kind == "entrance"), 0)
+        entry = (rooms[entrance].center_x, rooms[entrance].center_y)
+        return EngineResult(rooms=rooms, edges=edges, entry=entry,
+                            record=self._record(rs, grown, order, idx, edges, graph, rooms))
+
+    @staticmethod
+    def _record(rs, grown, order, idx, edges, graph=None, rooms=None) -> dict:
+        rec = {
+            "engine": "graph",
+            "rule_set": rs.name,
+            "layers": list(rs.layers),
+            "placement": rs.placement,
+            "applied": [[a.stage, a.rule] for a in grown.applied] if grown else [],
+            "rooms": {},
+            "edges": [],
+        }
+        if graph is not None:
+            for r in order:
+                n = graph.node(r)
+                rec["rooms"][rooms[idx[r]].id] = {
+                    "kind": n.kind, "size": n.size, "district": n.district, "node": r}
+            rec["edges"] = [[rooms[e.i].id, rooms[e.j].id, e.rel] for e in edges]
+        return rec
+
+
 # The one place engine names map to engines.
-ENGINES: Dict[str, Type[LayoutEngine]] = {"classic": ClassicEngine}
+ENGINES: Dict[str, Type[LayoutEngine]] = {"classic": ClassicEngine, "graph": GraphEngine}
