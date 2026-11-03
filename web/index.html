@@ -36,8 +36,8 @@
           <select id="zone-type">
             <option value="dungeon">Dungeon</option>
             <option value="city">City</option>
-            <option value="wilderness" disabled>Wilderness (not offered yet)</option>
-            <option value="outdoor_dungeon" disabled>Outdoor dungeon (not offered yet)</option>
+            <option value="wilderness">Wilderness</option>
+            <option value="outdoor_dungeon">Outdoor dungeon</option>
           </select>
         </label>
         <label>Rooms
@@ -61,11 +61,11 @@
         <label>Locks
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
-        <!-- Wilderness only: what each side of the map is (mountain and river
-             sides are sealed; a zoneline is a walkable exit off the map), and
-             how wooded the plains are. -->
+        <!-- Landscape zone types (wilderness, outdoor dungeon) only: what each
+             side of the map is (mountain and river sides are sealed; a zoneline
+             is a walkable exit off the map), and how wooded the plains are. -->
         <fieldset id="edges" hidden>
-          <legend>Wilderness</legend>
+          <legend>Landscape</legend>
           <label>N <select id="edge-n"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
           <label>E <select id="edge-e"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
           <label>S <select id="edge-s"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
