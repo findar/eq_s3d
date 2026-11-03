@@ -226,8 +226,8 @@ share = 0.1
 
 [[recipe]]
 stage = "Finish"
-apply = { finish = 1 }
-share = "rest"
+apply = { lengthen = 1, branch = 1, finish = 2 }   # must still be able to grow:
+share = "rest"                                     # earlier stages may end short
 ```
 
 ### The vocabulary (checked on load)

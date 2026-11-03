@@ -17,5 +17,6 @@ Index entry: `tasks.md` task 8. Requirements 6. Design "Size classes", "Placemen
 - lessons-learned: same-axis room pairs route as Z-corridors. Place neighbours on a free side; don't fight the router.
 - Don't re-tag roles after layout: the entry point goes through `_apply_pacing`'s `entry` argument.
 - The task 2 goldens must still pass: classic is untouched.
+- Two `BuildContext`s exist with the same fields: `generators/layout_engine.py` (task 2) and `generators/topology/rewrite.py` (task 4, with `.get` for `when`). Keep one: `layout_engine` imports topology's. Both files are in this task's Owns (add `generators/topology/rewrite.py` for that one import if needed, and say so).
 
 ## Result

@@ -14,5 +14,6 @@ Index entry: `tasks.md` task 5. Requirements 5.1, 5.3. Design "Rule-set files".
 
 ## Pitfalls
 - Small n (1–4) can't show a shape: the start graph covers them (design).
+- The `"rest"` stage must hold growth rules as well as `finish`: an earlier stage that ends short passes its budget on, and a rest stage of `finish` alone can't reach n (`grow` raises `TopologyError`, cap None). Task 4's commit `ee79cc0` explains budgets and picking.
 
 ## Result

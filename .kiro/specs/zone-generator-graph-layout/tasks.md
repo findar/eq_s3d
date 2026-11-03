@@ -70,7 +70,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 - [ ] 8. Placement, size classes and the graph engine
   - Card: [cards/08-placement.md](cards/08-placement.md)
   - Type: agent · Size: M · Depends: 2, 5
-  - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, tests/test_topology_embed.py
+  - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/topology/rewrite.py (BuildContext only), tests/test_topology_embed.py
   - Reqs: 6
 
 - [ ] 9. Plan fields, theme kind map, sidecar
