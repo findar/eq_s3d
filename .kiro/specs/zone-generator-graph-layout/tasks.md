@@ -31,7 +31,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: scripts/dungeon_topology_survey.py, .kiro/specs/zone-generator-graph-layout/design.md
   - Reqs: 1
 
-- [ ] 2. LayoutEngine seam, byte-identical
+- [x] 2. LayoutEngine seam, byte-identical
   - Card: [cards/02-engine-seam.md](cards/02-engine-seam.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/layout_engine.py, generators/layout.py, tests/test_layout_engine.py
