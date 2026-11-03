@@ -63,6 +63,11 @@ questions on 2026-11-01, each with the recommended option:
   the layout's entrance, so pacing, elevation and keys run from the way in;
   `plan_entrance(room_id=)` digs only to that room. Never re-tag roles after
   the layout: room sizes, floors, themes and keys already follow them.
+- **Plan at the largest room size that works (task 11, 2026-11-02):**
+  `plan_dungeon` lays out and plans the Entrance at room scale 1, then
+  0.85, 0.72, 0.61, and keeps the first plan with every room; theme and
+  climax scaling outgrow the Envelope's sizing otherwise. Big races (ogre,
+  giant) still never fit the default hill: their rooms are too tall.
 
 ## Follow-ups
 
@@ -81,3 +86,8 @@ Carried into `ROADMAP.md` by the close step (task 14).
   "Multi-level / stacked-floor dungeons" item. The outdoor dungeon should be
   a first user of step 7. Its maps already give each level its own depth
   band (task 8).
+- **Big-race outdoor dungeons (task 11, 2026-11-02):** an ogre or giant
+  outdoor dungeon never plans (0/30 seeds, before and after task 11): the
+  race scale makes rooms 112-176 u tall under a hill of about 110 u relief.
+  Needs a host sized to the race (taller hill, or a pit), or race-capped
+  room heights here. A design call for the user.
