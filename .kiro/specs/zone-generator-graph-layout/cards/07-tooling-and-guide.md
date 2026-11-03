@@ -16,5 +16,6 @@ Index entry: `tasks.md` task 7. Requirements 3.4–3.6. Design "The dry run, the
 
 ## Pitfalls
 - Keep the script thin: loading and checking are `ruleset.py`'s, growing is `rewrite.py`'s.
+- The guide must cover the traps task 5 hit (its commit `cf08918` and `archive.md` "Follow-ups"): the rest stage needs growth rules that work from finished rooms (an Area can be boxed in), edge-only rules spend no budget, and sizes on kept nodes are ignored.
 
 ## Result
