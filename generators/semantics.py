@@ -226,6 +226,107 @@ DEFAULT_ARCHETYPE = "fortress"
 
 
 # ---------------------------------------------------------------------------
+# Room kinds -> room types (graph layout engine; graph-layout Req 7.4)
+#
+# Rules set kinds, themes set types. A room grown by a rule set carries a kind
+# (generators/topology/graph.py ROOM_KINDS); each theme maps it here to one or
+# more of its room types. A kind with several types is sampled by graph depth
+# like the archetype arc (shallow rooms take the first). ``entrance``, ``hub``
+# and ``deep`` come from the archetype itself (entrance / hub / climax type: a
+# fortress's deep end is its throne room); the rest are per theme. A kind a
+# theme doesn't map (a set's own extra kind) falls back to the arc assignment,
+# and the sidecar notes it (``unmapped_kinds``). Classic rooms carry no kind,
+# so none of this touches them.
+# ---------------------------------------------------------------------------
+
+_THEME_KIND_TYPES: Dict[str, Dict[str, Tuple[str, ...]]] = {
+    "fortress": {
+        "passage": ("guard_post",),
+        "chamber": ("barracks", "armory", "storeroom"),
+        "lair":    ("prison_cell", "storeroom"),
+        "hall":    ("barracks", "battle_arena"),
+    },
+    "war_city": {
+        "passage": ("guard_post",),
+        "chamber": ("barracks", "armory", "shrine"),
+        "lair":    ("storeroom", "prison_cell"),
+        "hall":    ("battle_arena",),
+    },
+    "warren": {
+        "passage": ("warren",),
+        "chamber": ("warren", "storeroom", "collapsed_gallery"),
+        "lair":    ("warren", "storeroom"),
+        "hall":    ("collapsed_gallery",),
+    },
+    "temple": {
+        "passage": ("passage",),
+        "chamber": ("shrine", "sacrifice_chamber", "ossuary"),
+        "lair":    ("shrine",),                                 # the nave's side chapels
+        "hall":    ("sacrifice_chamber", "ritual_chamber"),     # the nave
+    },
+    "tomb": {
+        "passage": ("passage",),
+        "chamber": ("ossuary", "ritual_chamber", "collapsed_gallery"),
+        "lair":    ("ossuary",),
+        "hall":    ("ritual_chamber",),
+    },
+    "wizard_lair": {
+        "passage": ("passage",),
+        "chamber": ("laboratory", "storeroom", "summoning_hall"),
+        "lair":    ("prison_cell", "storeroom"),
+        "hall":    ("summoning_hall",),
+    },
+    "corrupted_sanctum": {
+        "passage": ("passage",),
+        "chamber": ("shrine", "ossuary", "sacrifice_chamber"),
+        "lair":    ("ossuary", "shrine"),
+        "hall":    ("summoning_hall",),
+    },
+    "mine_delve": {
+        "passage": ("passage",),
+        "chamber": ("storeroom", "collapsed_gallery", "forge"),
+        "lair":    ("sump", "storeroom"),
+        "hall":    ("collapsed_gallery", "forge"),
+    },
+    "sunken_ruin": {
+        "passage": ("passage",),
+        "chamber": ("flooded_gallery", "ossuary", "ritual_chamber"),
+        "lair":    ("sump",),
+        "hall":    ("flooded_gallery",),
+    },
+    "lava_forge": {
+        "passage": ("passage",),
+        "chamber": ("forge", "storeroom", "armory"),
+        "lair":    ("storeroom", "collapsed_gallery"),
+        "hall":    ("forge",),
+    },
+    "ice_keep": {
+        "passage": ("guard_post",),
+        "chamber": ("barracks", "warren", "ossuary"),
+        "lair":    ("warren", "collapsed_gallery"),
+        "hall":    ("barracks",),
+    },
+}
+
+
+def kind_types(archetype: str) -> Dict[str, Tuple[str, ...]]:
+    """The theme's kind -> room types map (an unknown theme is the default's)."""
+    arch = ARCHETYPES.get((archetype or "").lower(), ARCHETYPES[DEFAULT_ARCHETYPE])
+    return {
+        "entrance": (arch.entrance_type,),
+        "hub": (arch.hub_type,),
+        "deep": (arch.climax_type,),
+        **_THEME_KIND_TYPES.get(arch.name, {}),
+    }
+
+
+def unmapped_kinds(archetype: str, kinds) -> List[str]:
+    """The room kinds in *kinds* the theme has no type for (sorted, unique)."""
+    mapped = kind_types(archetype)
+    return sorted({k for k in kinds if k and k not in mapped})
+
+
+# ---------------------------------------------------------------------------
 # Race scale axis
 #
 # KNOWN GAP (docs/RESEARCH.md): these multipliers are RELATIVE placeholders.
@@ -302,17 +403,25 @@ def label_rooms(spec: ZoneSpec,
     overrides = overrides or {}
     max_depth = max((r.graph_depth for r in rooms), default=0)
 
+    kmap = kind_types(arch.name)
+
     for r in rooms:
-        # Choose the semantic type (planner override wins, else from the arc).
+        # Choose the semantic type: planner override wins, then the theme's
+        # map of the room's kind (graph layouts), else the arc by role/depth.
         if r.id in overrides and overrides[r.id] in ROOM_TYPES:
             type_name = overrides[r.id]
+        elif r.kind and r.kind in kmap:
+            type_name = _pick_by_depth(kmap[r.kind], r, max_depth, rng)
         else:
             type_name = _type_for_room(arch, r, max_depth, rng)
         rt = ROOM_TYPES.get(type_name, ROOM_TYPES["passage"])
 
         r.semantic_type = type_name
         r.room_theme = arch.name
-        r.boss = r.role == "climax"
+        # The boss room: the pacing climax, or on a grown layout the rules'
+        # deep end (it takes the climax type; the deepest-by-hops room the
+        # climax role picks is often a side room there).
+        r.boss = (r.kind == "deep") if r.kind else (r.role == "climax")
 
         # Suggestion fields (data only — never placed geometry).
         r.prop_hints = list(rt.props)
@@ -372,6 +481,15 @@ def _type_for_room(arch: Archetype, room: RoomSpec, max_depth: int,
     arc = arch.arc
     if not arc:
         return "passage"
+    return _pick_by_depth(arc, room, max_depth, rng)
+
+
+def _pick_by_depth(arc: Tuple[str, ...], room: RoomSpec, max_depth: int,
+                   rng: random.Random) -> str:
+    """One type of *arc* by the room's normalised graph depth, with a small
+    jitter. A one-type arc draws nothing from *rng*."""
+    if len(arc) == 1:
+        return arc[0]
     frac = (room.graph_depth / max_depth) if max_depth > 0 else 0.0
     idx = int(round(frac * (len(arc) - 1)))
     jitter = rng.choice([-1, 0, 0, 1])
@@ -384,6 +502,13 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
     Compose the semantic-type shape bias with the pacing role scale already on
     the room, then apply the race scale globally. Keeps floors flat/walkable —
     only footprint, aspect, ceiling, and floor height change.
+
+    A room grown by a rule set (it carries a ``kind``) has its footprint area
+    from its Size_Class (graph-layout Req 6.1: rules own size), so the type
+    keeps only its PROPORTION: the aspect stretch is applied, then the
+    footprint is renormalised to the area the room came with (the type's
+    footprint multiplier drops out). Ceiling mood, floor sink and the race
+    scale still apply.
     """
     scale = race_scale(race)
 
@@ -395,6 +520,10 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
             fw *= rt.aspect
         else:
             fd *= rt.aspect
+    if room.kind:
+        k = (fw * fd) ** -0.5
+        fw *= k
+        fd *= k
 
     room.width = max(80.0, room.width * fw * scale)
     room.depth = max(80.0, room.depth * fd * scale)

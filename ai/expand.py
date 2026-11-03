@@ -14,10 +14,12 @@ from __future__ import annotations
 import random
 from typing import Mapping, Optional
 
+from generators import semantics
 from generators.layout import LayoutGenerator
+from generators.layout_engine import GraphEngine
 from generators.zone_spec import ZoneSpec, RegionSpec
 from generators.zone_types import STYLE_PROFILE
-from .schema import ZonePlan
+from .schema import ZonePlan, LAYOUT_ZONE_TYPES
 
 # size → footprint scale applied to the layout generator's room spacing
 _SIZE_SCALE = {"small": 0.7, "medium": 1.0, "large": 1.5, "huge": 2.2}
@@ -77,7 +79,9 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
             spec.wilderness["trees_source"] = "prompt"
         return spec
 
-    gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed)
+    engine = layout_engine(plan.layout, plan.rule_set) \
+        if plan.zone_type in LAYOUT_ZONE_TYPES else None
+    gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed, engine=engine)
 
     # Apply size as a multiplier on top of the theme-accurate base footprint.
     # (generate() recomputes room scale from the measured profile; this persists.)
@@ -98,6 +102,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         dungeon_race=plan.dungeon_race,
         elemental_tint=(plan.elemental_tint or None),
     )
+    spec.layout = layout_block(gen.layout_record, spec)
 
     # Add requested regions, placed in/near rooms. When the semantic layer is
     # active it already emits themed elemental region volumes (water/lava), so
@@ -115,6 +120,48 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     # (wilderness -> "outdoor"; dungeon/city map to themselves).
     spec.style_profile = STYLE_PROFILE[plan.zone_type]
     return spec
+
+
+class KindedGraphEngine(GraphEngine):
+    """The graph engine with each room's rule-set kind put on its RoomSpec
+    (``RoomSpec.kind``), so the theme's kind -> type map in
+    ``generators.semantics`` can label it. The engine's record already holds
+    the kinds; this only copies them onto the rooms it returns."""
+
+    def generate(self, ctx, room_count, envelope):
+        result = super().generate(ctx, room_count, envelope)
+        kinds = (result.record or {}).get("rooms", {})
+        for room in result.rooms:
+            room.kind = kinds.get(room.id, {}).get("kind", "")
+        return result
+
+
+def layout_engine(layout: str, rule_set: str = ""):
+    """The Layout_Engine for a plan's ``layout`` / ``rule_set``: ``None``
+    (classic) or a graph engine whose set comes from the dungeon theme
+    (``rules/topology/themes.toml``) unless *rule_set* names a base set."""
+    if layout == "graph":
+        return KindedGraphEngine(rule_set or None)
+    return None
+
+
+def layout_block(record: Optional[dict], spec: ZoneSpec) -> Optional[dict]:
+    """``ZoneSpec.layout`` from ``LayoutGenerator.layout_record``: ``None``
+    for classic, else the record plus a ``notes`` list naming any room kind
+    the spec's theme doesn't map to a room type (those rooms took the arc's
+    type instead)."""
+    if record is None:
+        return None
+    block = dict(record)
+    notes = list(block.get("notes", []))
+    if spec.dungeon_theme:
+        kinds = [r.get("kind", "") for r in block.get("rooms", {}).values()]
+        for kind in semantics.unmapped_kinds(spec.dungeon_theme, kinds):
+            notes.append(f"kind_unmapped: {spec.dungeon_theme} has no room type "
+                         f"for kind {kind!r}; its rooms took the arc's type")
+    if notes:
+        block["notes"] = notes
+    return block
 
 
 _ELEMENTAL_KINDS = {"water", "lava", "ice"}

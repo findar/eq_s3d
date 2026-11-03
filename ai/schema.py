@@ -15,6 +15,7 @@ has to fill a handful of fields) and easy to validate.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 from typing import List, Optional, Dict, Any, Mapping
 
 from generators.zone_types import (
@@ -40,6 +41,25 @@ VALID_DUNGEON_RACES = [
     "ogre", "giant",
 ]
 VALID_ELEMENTAL_TINTS = ["lava", "ice", "water"]
+
+# Layout engine (graph-layout Req 7): ``classic`` is the TinyKeep layout,
+# ``graph`` grows the room graph by a rule set. Only these zone types take it;
+# every other type ignores the two fields.
+VALID_LAYOUTS = ["classic", "graph"]
+DEFAULT_LAYOUT = "classic"
+LAYOUT_ZONE_TYPES = ("dungeon", "outdoor_dungeon")
+
+# The base rule sets ship as rules/topology/<name>.toml (themes.toml is the
+# theme map, layers/ hold theme layers). Discovered from the folder, so a new
+# base set needs no code change. Read with a plain glob: generators.topology
+# imports this module, so importing it here would be a cycle.
+RULES_TOPOLOGY_DIR = Path(__file__).resolve().parent.parent / "rules" / "topology"
+
+
+def available_rule_sets(rules_dir: Optional[Path] = None) -> List[str]:
+    """The base rule-set names under ``rules/topology/`` (sorted)."""
+    d = Path(rules_dir) if rules_dir is not None else RULES_TOPOLOGY_DIR
+    return sorted(p.stem for p in d.glob("*.toml") if p.stem != "themes")
 
 # Control-key aliases for the geometry-slice controls path (Req 1.2, 2.3, 2.4).
 # Each key is a flat control name that maps to its ZonePlan field. A plan key
@@ -76,6 +96,12 @@ class ZonePlan:
     dungeon_race: str = ""           # inhabiting race, from VALID_DUNGEON_RACES
     elemental_tint: str = ""         # from VALID_ELEMENTAL_TINTS ("" = default)
 
+    # Layout engine (dungeon / outdoor_dungeon only; other types ignore it).
+    # ``rule_set`` "" takes the set from the dungeon theme (themes.toml); a
+    # base set name picks that set (the theme's layers still apply if they fit).
+    layout: str = DEFAULT_LAYOUT     # from VALID_LAYOUTS
+    rule_set: str = ""               # "" or one of available_rule_sets()
+
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
 
@@ -109,6 +135,19 @@ class ZonePlan:
             self.dungeon_race = ""
         if self.elemental_tint and self.elemental_tint not in VALID_ELEMENTAL_TINTS:
             self.elemental_tint = ""
+        # The layout fields are an error when unknown, not a silent fallback
+        # (graph-layout design "Selection and the sidecar"): a wrong engine or
+        # rule set would otherwise build a different zone than asked for.
+        self.layout = str(self.layout or DEFAULT_LAYOUT).strip().lower()
+        if self.layout not in VALID_LAYOUTS:
+            raise ValueError(f"layout {self.layout!r} is not one of: "
+                             f"{', '.join(VALID_LAYOUTS)}")
+        self.rule_set = str(self.rule_set or "").strip()
+        if self.rule_set:
+            sets = available_rule_sets()
+            if self.rule_set not in sets:
+                raise ValueError(f"rule_set {self.rule_set!r} is not one of: "
+                                 f"{', '.join(sets)} (or \"\" for the theme's set)")
         return self
 
     def to_dict(self) -> Dict[str, Any]:

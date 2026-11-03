@@ -101,6 +101,41 @@ def assign_texel_densities(spec: ZoneSpec) -> None:
         mat.texel_density = texel_density(theme_for(tex_set), surface)
 
 
+def shape_measures(spec: ZoneSpec) -> dict:
+    """The built room graph's shape measures (graph-layout Req 7.5; the
+    survey's, from ``generators.topology.graph.TopologyGraph``): rooms are
+    the spec's rooms, edges its corridors' ``from_room``-``to_room`` pairs,
+    the entrance the room whose pacing role is ``entrance`` (else the first).
+    Classic and grown builds are measured the same way, so the two compare."""
+    from .topology.graph import Node, TopologyGraph
+
+    ids = [r.id for r in spec.rooms]
+    entrance = next((r.id for r in spec.rooms if r.role == "entrance"), ids[0])
+    graph = TopologyGraph(Node(i, "entrance" if i == entrance else "chamber", "medium")
+                          for i in ids)
+    for c in spec.corridors:
+        a, b = c.from_room, c.to_room
+        if a in graph and b in graph and a != b and not graph.has_edge(a, b):
+            graph.add_edge(a, b)
+    return {
+        "dead_end_share": round(graph.dead_end_share(), 4),
+        "cycle_rank": graph.cycle_rank(),
+        "deep_end": round(graph.deep_end_distance(), 4),
+    }
+
+
+def layout_sidecar(spec: ZoneSpec) -> Optional[dict]:
+    """The sidecar's ``layout`` block: the engine's record from
+    ``spec.layout`` (``{"engine": "classic"}`` for a classic layout) plus
+    the built graph's ``shape``. ``None`` for a zone with no rooms
+    (wilderness)."""
+    if not spec.rooms:
+        return None
+    block = dict(spec.layout) if spec.layout is not None else {"engine": "classic"}
+    block["shape"] = shape_measures(spec)
+    return block
+
+
 def _diffuse_of(mat) -> Optional[str]:
     from core.ter import PROP_DIFFUSE
     return next((p.value_s for p in mat.properties if p.name == PROP_DIFFUSE), None)
@@ -336,6 +371,11 @@ class ZoneBuilder:
             wild_meta["vegetation"] = dict(veg.report)
         # The Texture_Manifest rides with every build (Req 5).
         side_meta = {**wild_meta, "textures": texture_manifest(ter, modes, veg, dds_by_name)}
+        # The layout block (graph-layout Req 7.5): engine, rule set, rooms'
+        # kinds and sizes, and the built graph's shape, classic or grown.
+        layout_meta = layout_sidecar(self.spec)
+        if layout_meta is not None:
+            side_meta["layout"] = layout_meta
 
         # 6. GLB preview — pass per-material base colours so the preview shows
         #    the real palette rather than arbitrary hues. The GLB path also

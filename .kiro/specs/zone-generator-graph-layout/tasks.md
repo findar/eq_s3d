@@ -73,7 +73,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/topology/rewrite.py (BuildContext only), tests/test_topology_embed.py
   - Reqs: 6
 
-- [ ] 9. Plan fields, theme kind map, sidecar
+- [x] 9. Plan fields, theme kind map, sidecar
   - Card: [cards/09-plan-and-sidecar.md](cards/09-plan-and-sidecar.md)
   - Type: agent · Size: M · Depends: 8
   - Owns: ai/schema.py, ai/expand.py, generators/semantics.py, generators/zone_spec.py, generators/builder.py, tests/test_graph_layout_plan.py
