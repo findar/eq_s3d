@@ -278,13 +278,15 @@ function readSeed(): number | undefined {
 // hidden (the server ignores it there). "edges" is the landscape fieldset (map
 // edges and trees); the rest are the room-graph controls. Mirrors the server's
 // expand path: rooms and locks reach an outdoor dungeon's layout, size and
-// verticality only a dungeon's or city's.
+// verticality only a dungeon's or city's; layout (and, under it, the rule
+// set) a dungeon's or outdoor dungeon's (server LAYOUT_ZONE_TYPES).
 const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   rooms: ["dungeon", "city", "outdoor_dungeon"],
   locks: ["dungeon", "city", "outdoor_dungeon"],
   size: ["dungeon", "city"],
   verticality: ["dungeon", "city"],
   edges: ["wilderness", "outdoor_dungeon"],
+  layout: ["dungeon", "outdoor_dungeon"],
 };
 
 function usesControl(zoneType: string, control: string): boolean {
@@ -313,6 +315,15 @@ function syncControlVisibility(): void {
     box.hidden = !on;
     box.style.display = on ? "" : "none";
   }
+  // The rule set only means something under the graph engine.
+  const ruleBox = $("rule-set").closest("label") as HTMLElement;
+  const ruleOn = usesControl(zoneType, "layout") && readLayout() === "graph";
+  ruleBox.hidden = !ruleOn;
+  ruleBox.style.display = ruleOn ? "" : "none";
+}
+
+function readLayout(): string {
+  return ($("layout") as HTMLSelectElement).value;
 }
 
 async function doGenerate(mode: Mode) {
@@ -351,12 +362,19 @@ async function doGenerate(mode: Mode) {
     const landscape = usesControl(zoneType, "edges");
     const edges = landscape ? readEdges() : undefined;
     const trees = landscape ? ($("trees") as HTMLSelectElement).value : undefined;
+    // Hidden controls are left out (the server's defaults: classic, the
+    // theme's set); the rule set rides only with the graph engine.
+    const layout = usesControl(zoneType, "layout") ? readLayout() : undefined;
+    const ruleSet = layout === "graph"
+      ? ($("rule-set") as HTMLSelectElement).value : undefined;
     params = {
       mode,
       controls: {
         zone_type: zoneType, room_count: rooms, size, verticality, locks,
         ...(edges ? { edges } : {}),
         ...(trees ? { trees } : {}),
+        ...(layout ? { layout } : {}),
+        ...(ruleSet !== undefined ? { rule_set: ruleSet } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
     };
@@ -364,7 +382,9 @@ async function doGenerate(mode: Mode) {
       `[input] controls: zone_type=${zoneType} rooms=${rooms} size=${size} ` +
       `verticality=${verticality} locks=${locks}` +
       (edges ? ` edges=${JSON.stringify(edges)}` : "") +
-      (trees ? ` trees=${trees}` : "") + seedNote,
+      (trees ? ` trees=${trees}` : "") +
+      (layout ? ` layout=${layout}` : "") +
+      (ruleSet !== undefined ? ` rule_set=${ruleSet || "(theme)"}` : "") + seedNote,
     );
   }
 
@@ -471,6 +491,7 @@ async function refreshZoneTypes(): Promise<void> {
 }
 
 ($("zone-type") as HTMLSelectElement).addEventListener("change", syncControlVisibility);
+($("layout") as HTMLSelectElement).addEventListener("change", syncControlVisibility);
 
 // The two Generate actions choose the mode explicitly.
 genDescBtn.addEventListener("click", () => doGenerate("prompt"));
@@ -489,7 +510,8 @@ $("reset-view").addEventListener("click", () => {
 });
 
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
-                  "edge-n", "edge-e", "edge-s", "edge-w", "trees"]) {
+                  "edge-n", "edge-e", "edge-s", "edge-w", "trees",
+                  "layout", "rule-set"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });

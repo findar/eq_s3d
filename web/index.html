@@ -61,6 +61,23 @@
         <label>Locks
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
+        <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
+             only) the topology rule set. "From theme" lets the dungeon theme
+             pick its base set; the others are the shipped base sets under
+             rules/topology/ (the server 400s on any other name). -->
+        <label>Layout
+          <select id="layout">
+            <option value="classic" selected>Classic</option>
+            <option value="graph">Graph</option>
+          </select>
+        </label>
+        <label>Rule set
+          <select id="rule-set">
+            <option value="" selected>From theme</option>
+            <option value="classic_eq">classic_eq</option>
+            <option value="warren">warren</option>
+          </select>
+        </label>
         <!-- Landscape zone types (wilderness, outdoor dungeon) only: what each
              side of the map is (mountain and river sides are sealed; a zoneline
              is a walkable exit off the map), and how wooded the plains are. -->

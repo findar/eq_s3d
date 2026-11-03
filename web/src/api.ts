@@ -13,6 +13,10 @@ export interface GenerateControls {
   edges?: Record<string, string>;
   // Wilderness only: tree density, none | sparse | normal | dense.
   trees?: string;
+  // Dungeon / outdoor dungeon only: the layout engine, classic | graph.
+  layout?: string;
+  // Graph layout only: a base rule set, or "" for the theme's set.
+  rule_set?: string;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:
