@@ -74,3 +74,17 @@ def test_default_room_count_fits_every_sampled_seed():
             assert warnings == [], (seed, edges, warnings)
             assert len(layout.rooms) >= od.DEFAULT_ROOMS
             assert LayoutGenerator.fits(layout, env)
+
+
+@pytest.mark.parametrize("seed", [0, 3, 6, 7, 13])
+def test_themed_dungeon_shrinks_rooms_to_plan(seed):
+    """A fortress's room types and climax outgrow the Envelope's sizing; these
+    seeds failed to plan (rooms missed the hill, or the sunk entrance room got
+    no Tunnel) until rooms were shrunk to a size that plans. Every room asked
+    for is kept, the Tunnel opens into the entrance room."""
+    spec = od.outdoor_dungeon_spec("fort", seed, room_count=4, dungeon_theme="fortress")
+    assert len(spec.rooms) == 4
+    data = spec.wilderness[od.DUNGEON_KEY]
+    assert data["warnings"] == []
+    room = od.Entrance.from_dict(data["entrance"]).room_id
+    assert next(r for r in spec.rooms if r.id == room).role == "entrance"

@@ -75,6 +75,14 @@ DEFAULT_ROOMS: int = 5
 #: sqrt(room count): the rooms' combined floor is about this share squared
 #: of the inradius square, leaving room for separation and corridors.
 ROOM_FILL: float = 0.6
+#: When a dungeon can't be planned with every room asked for (they don't all
+#: fit, or the entrance room sits too deep for a Tunnel), it is planned again
+#: with rooms this much smaller, up to FIT_SHRINKS times. A theme's room
+#: types and the climax's role scale rooms up after they are sized (a
+#: fortress climax is about 2.5x the base side and up to 2.25x as tall), and
+#: one tall room under the flank sinks the whole layout (``_fit_floors``).
+FIT_SHRINK: float = 0.85
+FIT_SHRINKS: int = 3
 #: Room height (the layout's ceiling) under a hill. The dungeon profile's
 #: 121 u leaves too thin a band under the flank; 80 u is still ~13 player
 #: heights, and 5 rooms then fit every seed sampled (0.8 fill or 121 u
@@ -174,20 +182,51 @@ def host_envelope(spec: ZoneSpec, ter: TerFile, *,
 
 
 def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
-                       room_count: int = DEFAULT_ROOMS,
+                       room_count: int = DEFAULT_ROOMS, scale: float = 1.0,
                        **kwargs) -> Tuple[ZoneSpec, List[str]]:
     """A box-dungeon layout inside ``envelope``, rooms sized to it.
 
-    The mean room side is ``ROOM_FILL * inradius / sqrt(room_count)``, set
-    through the generator's size multiplier. Returns the layout and the
+    The mean room side is ``scale * ROOM_FILL * inradius / sqrt(room_count)``,
+    set through the generator's size multiplier. Returns the layout and the
     generator's warnings (``rooms_reduced`` when rooms were dropped)."""
     gen = LayoutGenerator("dungeon", seed=seed)
     gen.ceiling = ROOM_HEIGHT
     gen._apply_room_scale(room_count)
     base = (gen.room_min + gen.room_max) / 2.0
-    gen.size_multiplier = ROOM_FILL * envelope.inradius / math.sqrt(room_count) / base
+    gen.size_multiplier = scale * ROOM_FILL * envelope.inradius / math.sqrt(room_count) / base
     spec = gen.generate(name, room_count=room_count, envelope=envelope, **kwargs)
     return spec, list(gen.warnings)
+
+
+def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
+                 seed: Optional[int], room_count: int = DEFAULT_ROOMS,
+                 **kwargs) -> Tuple[ZoneSpec, List[str], "Entrance"]:
+    """The dungeon under ``host``: its layout (with warnings) and the
+    Entrance into its entrance room.
+
+    Rooms start at the size the Envelope suggests and shrink by
+    ``FIT_SHRINK`` (up to ``FIT_SHRINKS`` times) until every room asked for
+    fits and the entrance room takes a Tunnel. If no size keeps them all, the
+    largest plan that drops rooms wins; if none plans at all, the last
+    ``PLAN_ERRORS`` error is raised."""
+    reduced, error = None, None
+    for shrink in range(FIT_SHRINKS + 1):
+        try:
+            layout, warnings = layout_in_envelope(name, seed, envelope, room_count,
+                                                  scale=FIT_SHRINK ** shrink, **kwargs)
+            # The Tunnel opens into the layout's entrance room, so the pacing
+            # (depth, climax, keys) runs from the way in.
+            first = next(r.id for r in layout.rooms if r.role == "entrance")
+            entrance = plan_entrance(host, ter, layout, room_id=first)
+        except PLAN_ERRORS as e:
+            error = e
+            continue
+        if len(layout.rooms) == room_count:
+            return layout, warnings, entrance
+        reduced = reduced or (layout, warnings, entrance)
+    if reduced is None:
+        raise error
+    return reduced
 
 
 # ---------------------------------------------------------------------------
@@ -603,11 +642,8 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     spec.zone_type = "outdoor_dungeon"
     ter = build_wilderness_ter(spec, f"ter_{name}", 1)
     envelope = host_envelope(spec, ter)
-    layout, warnings = layout_in_envelope(name, seed, envelope, room_count, **layout_kwargs)
-    # The Tunnel opens into the layout's entrance room, so the pacing (depth,
-    # climax, keys) runs from the way in.
-    first = next(r.id for r in layout.rooms if r.role == "entrance")
-    entrance = plan_entrance(spec, ter, layout, room_id=first)
+    layout, warnings, entrance = plan_dungeon(spec, ter, envelope, name, seed, room_count,
+                                              **layout_kwargs)
     spec.rooms = layout.rooms
     spec.corridors = layout.corridors
     spec.lights = layout.lights

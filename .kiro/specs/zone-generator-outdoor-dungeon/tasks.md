@@ -83,10 +83,10 @@ The design's five open questions were answered on 2026-11-01
   - Card: [cards/10-human-first-look.md](cards/10-human-first-look.md)
   - Type: human · Depends: 6, 7, 9
 
-- [ ] 11. Tune from the first look
+- [x] 11. Tune from the first look
   - Card: [cards/11-tuning.md](cards/11-tuning.md)
   - Type: agent · Size: S · Depends: 10
-  - Owns: generators/outdoor_dungeon.py, generators/wilderness/matrix.py
+  - Owns: generators/outdoor_dungeon.py, generators/wilderness/matrix.py, tests/test_outdoor_envelope.py (regression test)
 
 - [ ] 12. Acceptance section, thorough run, timing
   - Card: [cards/12-release-prep.md](cards/12-release-prep.md)
