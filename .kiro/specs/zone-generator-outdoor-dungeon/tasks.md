@@ -88,7 +88,7 @@ The design's five open questions were answered on 2026-11-01
   - Type: agent · Size: S · Depends: 10
   - Owns: generators/outdoor_dungeon.py, generators/wilderness/matrix.py, tests/test_outdoor_envelope.py (regression test)
 
-- [ ] 12. Acceptance section, thorough run, timing
+- [x] 12. Acceptance section, thorough run, timing
   - Card: [cards/12-release-prep.md](cards/12-release-prep.md)
   - Type: agent · Size: S · Depends: 8, 11
   - Owns: docs/ACCEPTANCE.md, tests/test_outdoor_dungeon_build.py
