@@ -151,11 +151,6 @@ STEP5_CASES = {
     "g": (None, (6, 0), None, 42),
 }
 
-# The graph engine faces its entrance room toward the hill foot
-# (embed.face_entry), but on seed 42 that puts it west of the foot, where every
-# Apron digs within a cell of a lava pool on the open ground; classic's
-# entrance lands east of it. Needs plan_dungeon to try the other facings.
-_UNPLANNED = {"g"}
 
 
 def _plan(case, layout):
@@ -170,15 +165,14 @@ def _plan(case, layout):
     return plan.validate()
 
 
-@pytest.mark.parametrize("case", [
-    pytest.param(c, marks=pytest.mark.xfail(
-        raises=od.PLAN_ERRORS, strict=True,
-        reason="seed 42: every Apron for the faced entrance digs by lava"))
-    if c in _UNPLANNED else c
-    for c in STEP5_CASES])
-def test_graph_outdoor_dungeon_plans_on_the_step5_seeds(case):
+@pytest.mark.parametrize("rule_set", ["", *SETS])
+@pytest.mark.parametrize("case", sorted(STEP5_CASES))
+def test_graph_outdoor_dungeon_plans_on_the_step5_seeds(case, rule_set):
+    """Each case, on the theme's set and on each base set named."""
     _prompt, _counts, edges, seed = STEP5_CASES[case]
     plan = _plan(case, "graph")
+    plan.rule_set = rule_set
+    plan.validate()
     spec = plan_to_spec(plan, seed=seed, edges=edges)
     data = spec.wilderness[od.DUNGEON_KEY]
     assert spec.layout["engine"] == "graph"
@@ -191,19 +185,58 @@ def test_graph_outdoor_dungeon_plans_on_the_step5_seeds(case):
 
 
 def test_shrink_retry_reuses_one_engine(monkeypatch):
-    """``plan_dungeon`` lays out every shrink step with the engine it was
-    given, not a fresh one per scale."""
+    """``plan_dungeon`` tries every facing at a size before shrinking, with
+    the one engine it was given (not a fresh one per attempt) and the
+    entrance room's Tunnel minimum at every size."""
     seen = []
 
-    def spy(*args, engine=None, **kwargs):
-        seen.append(engine)
-        raise od.EntranceError("force every shrink step")
+    def spy(*args, engine=None, scale=1.0, facing=0, entrance_side=0.0, **kwargs):
+        seen.append((engine, scale, facing, entrance_side))
+        raise od.EntranceError("force every attempt")
     monkeypatch.setattr(od, "layout_in_envelope", spy)
-    plan = _plan("e", "graph")
     with pytest.raises(od.EntranceError):
-        plan_to_spec(plan, seed=5)
-    assert len(seen) == od.FIT_SHRINKS + 1
-    assert seen[0] is not None and all(e is seen[0] for e in seen)
+        plan_to_spec(_plan("e", "graph"), seed=5)
+    engine = seen[0][0]
+    assert engine is not None and all(e is engine for e, *_ in seen)
+    assert [(f, s) for _e, s, f, _side in seen] == [
+        (f, od.FIT_SHRINK ** k) for k in range(od.FIT_SHRINKS + 1)
+        for f in range(engine.facings)]
+    (side,) = {side for *_, side in seen}
+    assert side > 2 * od.DOOR_MARGIN
+
+
+def test_classic_tries_one_facing(monkeypatch):
+    seen = []
+
+    def spy(*args, facing=0, entrance_side=0.0, **kwargs):
+        seen.append((facing, entrance_side))
+        raise od.EntranceError("force every attempt")
+    monkeypatch.setattr(od, "layout_in_envelope", spy)
+    with pytest.raises(od.EntranceError):
+        plan_to_spec(_plan("e", "classic"), seed=5)
+    assert seen == [(0, 0.0)] * (od.FIT_SHRINKS + 1)
+
+
+def test_graph_entrance_room_holds_a_tunnel_through_the_shrink():
+    """With the outdoor dungeon's minimum the rules' entrance room keeps a
+    Tunnel-wide side at the smallest scale too; the other rooms shrink."""
+    from ai.expand import layout_engine
+    from generators.wilderness.build import wilderness_spec, build_wilderness_ter
+    host = wilderness_spec("w", 11, None, od.DEFAULT_BIOME,
+                           landform=od.DEFAULT_HOST_HILL,
+                           zone_size=od.OUTDOOR_DUNGEON_ZONE_SIZE)
+    env = od.host_envelope(host, build_wilderness_ter(host, "ter_w", 1))
+    need = od.tunnel_wall(od.landscape_for(host).synth.resolution)
+    engine = layout_engine("graph", "warren")
+    big, _ = od.layout_in_envelope("w", 11, env, 5, engine=engine, entrance_side=need)
+    small, _ = od.layout_in_envelope("w", 11, env, 5, engine=engine, entrance_side=need,
+                                     scale=od.FIT_SHRINK ** od.FIT_SHRINKS)
+    for lay in (big, small):
+        room = next(r for r in lay.rooms if r.kind == "entrance")
+        assert min(room.width, room.depth) >= need - 1e-6
+    area = lambda lay: sum(r.width * r.depth for r in lay.rooms if r.kind != "entrance")
+    assert area(small) < area(big)
+    assert engine.entrance_side == 0.0 and engine.facing == 0    # restored
 
 
 def test_classic_outdoor_dungeon_is_unchanged():

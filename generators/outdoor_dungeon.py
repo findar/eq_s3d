@@ -181,15 +181,31 @@ def host_envelope(spec: ZoneSpec, ter: TerFile, *,
                     surface, rock_cover, entry=foot)
 
 
+def tunnel_wall(resolution: float) -> float:
+    """The shortest room wall that can hold a Tunnel on a terrain grid of
+    ``resolution``: one cell between two adjacent vertex columns, with
+    ``DOOR_MARGIN`` of wall either side. (Whether a wall this short holds
+    one depends on where the grid falls; ``plan_dungeon`` tries the graph
+    engine's other facings, which move the room against the grid. Asking for
+    two cells, so any alignment fits, made entrance rooms big enough to push
+    other layouts out of planning.)"""
+    return float(resolution) + 2.0 * DOOR_MARGIN
+
+
 def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
                        room_count: int = DEFAULT_ROOMS, scale: float = 1.0,
-                       engine=None, **kwargs) -> Tuple[ZoneSpec, List[str]]:
+                       engine=None, facing: int = 0, entrance_side: float = 0.0,
+                       **kwargs) -> Tuple[ZoneSpec, List[str]]:
     """A box-dungeon layout inside ``envelope``, rooms sized to it.
 
     The mean room side is ``scale * ROOM_FILL * inradius / sqrt(room_count)``,
     set through the generator's size multiplier. ``engine`` is the
     Layout_Engine (``None`` is classic; see ``ai.expand.layout_engine``); the
     layout's ``layout`` field carries its record (``None`` for classic).
+    An engine that takes them (the graph engine) lays out with ``facing``
+    (which of its ranked turns faces the entrance room toward the way in)
+    and ``entrance_side`` (the entrance room's least side, not scaled);
+    the engine's own values are restored afterwards.
     Returns the layout and the generator's warnings (``rooms_reduced`` when
     rooms were dropped)."""
     gen = LayoutGenerator("dungeon", seed=seed, engine=engine)
@@ -197,7 +213,15 @@ def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
     gen._apply_room_scale(room_count)
     base = (gen.room_min + gen.room_max) / 2.0
     gen.size_multiplier = scale * ROOM_FILL * envelope.inradius / math.sqrt(room_count) / base
-    spec = gen.generate(name, room_count=room_count, envelope=envelope, **kwargs)
+    options = hasattr(engine, "facing") and hasattr(engine, "entrance_side")
+    if options:
+        saved = (engine.facing, engine.entrance_side)
+        engine.facing, engine.entrance_side = facing, entrance_side
+    try:
+        spec = gen.generate(name, room_count=room_count, envelope=envelope, **kwargs)
+    finally:
+        if options:
+            engine.facing, engine.entrance_side = saved
     spec.layout = gen.layout_record
     return spec, list(gen.warnings)
 
@@ -212,25 +236,31 @@ def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
 
     Rooms start at the size the Envelope suggests and shrink by
     ``FIT_SHRINK`` (up to ``FIT_SHRINKS`` times) until every room asked for
-    fits and the entrance room takes a Tunnel. If no size keeps them all, the
-    largest plan that drops rooms wins; if none plans at all, the last
-    ``PLAN_ERRORS`` error is raised."""
+    fits and the entrance room takes a Tunnel. An engine with ``facings``
+    (the graph engine) tries each of its turns of the layout at a size before
+    shrinking it, best-facing first, and keeps its entrance room at least
+    :func:`tunnel_wall` on a side through every shrink. If no size keeps them
+    all, the largest plan that drops rooms wins; if none plans at all, the
+    last ``PLAN_ERRORS`` error is raised."""
     reduced, error = None, None
+    facings = int(getattr(engine, "facings", 1)) if engine is not None else 1
+    side = tunnel_wall(landscape_for(host).synth.resolution) if facings > 1 else 0.0
     for shrink in range(FIT_SHRINKS + 1):
-        try:
-            layout, warnings = layout_in_envelope(name, seed, envelope, room_count,
-                                                  scale=FIT_SHRINK ** shrink,
-                                                  engine=engine, **kwargs)
-            # The Tunnel opens into the layout's entrance room, so the pacing
-            # (depth, climax, keys) runs from the way in.
-            first = next(r.id for r in layout.rooms if r.role == "entrance")
-            entrance = plan_entrance(host, ter, layout, room_id=first)
-        except PLAN_ERRORS as e:
-            error = e
-            continue
-        if len(layout.rooms) == room_count:
-            return layout, warnings, entrance
-        reduced = reduced or (layout, warnings, entrance)
+        for facing in range(facings):
+            try:
+                layout, warnings = layout_in_envelope(
+                    name, seed, envelope, room_count, scale=FIT_SHRINK ** shrink,
+                    engine=engine, facing=facing, entrance_side=side, **kwargs)
+                # The Tunnel opens into the layout's entrance room, so the
+                # pacing (depth, climax, keys) runs from the way in.
+                first = next(r.id for r in layout.rooms if r.role == "entrance")
+                entrance = plan_entrance(host, ter, layout, room_id=first)
+            except PLAN_ERRORS as e:
+                error = e
+                continue
+            if len(layout.rooms) == room_count:
+                return layout, warnings, entrance
+            reduced = reduced or (layout, warnings, entrance)
     if reduced is None:
         raise error
     return reduced

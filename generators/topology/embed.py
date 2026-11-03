@@ -598,7 +598,8 @@ def _facing(p: Point, k: int, mirror: bool) -> Point:
 
 
 def face_entry(centres: Dict[str, Point], half: Dict[str, Point], envelope,
-               entrance: Optional[str]) -> Tuple[Dict[str, Point], Dict[str, Point], bool]:
+               entrance: Optional[str], rank: int = 0
+               ) -> Tuple[Dict[str, Point], Dict[str, Point], bool]:
     """Fit the layout to ``envelope`` with its *entrance* room facing the
     Envelope's way in (``envelope.entry``), so the room the pacing makes the
     entrance (the one nearest the way in) is the rules' entrance room.
@@ -607,25 +608,28 @@ def face_entry(centres: Dict[str, Point], half: Dict[str, Point], envelope,
     axis-aligned boxes and every edge keeps its wall side, turned with the
     layout, so the layout is congruent and stays clash-free) and keeps the
     first that, after :func:`fit_to_envelope`, puts the entrance room nearest
-    the way in, closest to it. Returns the fitted centres, the half-extents
+    the way in, closest to it; *rank* ``k`` keeps the ``k``-th best instead
+    (modulo eight: a caller whose first choice doesn't work out, such as an
+    Entrance that doesn't plan, tries the next). Returns the fitted centres, the half-extents
     (width and depth swapped on an odd number of quarter turns) and whether
     they were swapped. Without an entry or an entrance room it is
     :func:`fit_to_envelope` unchanged."""
     if getattr(envelope, "entry", None) is None or entrance not in centres:
         return fit_to_envelope(centres, half, envelope), half, False
     ex, ey = envelope.entry
-    best = None
-    for k, mirror in FACINGS:
+    ranked = []
+    for n, (k, mirror) in enumerate(FACINGS):
         swap = k % 2 == 1
         c = {r: _facing(p, k, mirror) for r, p in centres.items()}
         h = {r: (v[1], v[0]) for r, v in half.items()} if swap else half
         fitted = fit_to_envelope(c, h, envelope)
         dist = {r: math.hypot(p[0] - ex, p[1] - ey) for r, p in fitted.items()}
         nearest = min(dist.values())
-        key = (dist[entrance] > nearest + 1e-9, dist[entrance])
-        if best is None or key < best[0]:
-            best = (key, fitted, h, swap)
-    return best[1], best[2], best[3]
+        key = (dist[entrance] > nearest + 1e-9, round(dist[entrance], 6), n)
+        ranked.append((key, fitted, h, swap))
+    ranked.sort(key=lambda t: t[0])
+    _key, fitted, h, swap = ranked[rank % len(ranked)]
+    return fitted, h, swap
 
 
 __all__ = [
