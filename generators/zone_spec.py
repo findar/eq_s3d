@@ -72,6 +72,12 @@ class RoomSpec:
     encounter_intent: str = ""
     boss: bool = False
 
+    # The rule set's room kind (graph layout engine: entrance, chamber, hall,
+    # deep, ...); "" for classic layouts. Rules set kinds, the theme maps them
+    # to semantic types (generators/semantics.py). Left out of the JSON when
+    # "" so classic Zone_Spec JSON is unchanged.
+    kind: str = ""
+
     @property
     def bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
         hw, hd = self.width / 2, self.depth / 2
@@ -198,6 +204,14 @@ class MaterialSpec:
     texel_density: Optional[float] = None
 
 
+def _room_dict(room: RoomSpec) -> Dict[str, Any]:
+    """A room's JSON; ``kind`` only when set (classic rooms carry none)."""
+    d = asdict(room)
+    if not d.get("kind"):
+        d.pop("kind", None)
+    return d
+
+
 # ---------------------------------------------------------------------------
 # Top-level spec
 # ---------------------------------------------------------------------------
@@ -254,6 +268,13 @@ class ZoneSpec:
     # zones with no water level; omitted from ``to_dict()`` when unset.
     water_level: Optional[float] = None
 
+    # The layout engine's record (graph-layout Req 7.5): engine, rule set and
+    # layers, the rules applied, each room's kind / size class / district,
+    # edge_fidelity, relations_broken. ``None`` for classic layouts and left
+    # out of ``to_dict()`` then (G1: classic Zone_Spec JSON unchanged). The
+    # builder adds the shape measures when it writes the sidecar.
+    layout: Optional[Dict[str, Any]] = None
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
@@ -270,13 +291,14 @@ class ZoneSpec:
             "ambient_light": list(self.ambient_light),
             "safe_point": list(self.safe_point),
             "materials": {k: asdict(v) for k, v in self.materials.items()},
-            "rooms": [asdict(r) for r in self.rooms],
+            "rooms": [_room_dict(r) for r in self.rooms],
             "corridors": [asdict(c) for c in self.corridors],
             "lights": [asdict(l) for l in self.lights],
             "regions": [asdict(r) for r in self.regions],
             "gates": [asdict(g) for g in self.gates],
             **({"wilderness": self.wilderness} if self.wilderness is not None else {}),
             **({"water_level": self.water_level} if self.water_level is not None else {}),
+            **({"layout": self.layout} if self.layout is not None else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -304,6 +326,7 @@ class ZoneSpec:
             safe_point=tuple(d.get("safe_point", (0.0, 0.0, 0.0))),
             wilderness=d.get("wilderness"),
             water_level=d.get("water_level"),
+            layout=d.get("layout"),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)
