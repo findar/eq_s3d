@@ -73,7 +73,7 @@ The design's five open questions were answered on 2026-11-01
   - Owns: generators/mapgeom.py, generators/eqmap.py, tests/test_outdoor_dungeon_maps.py, generators/envelope.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_entrance.py, tests/test_outdoor_dungeon_controls.py (entrance-room fix)
   - Reqs: 7.2, 7.3
 
-- [ ] 9. Web: zone type and controls
+- [x] 9. Web: zone type and controls
   - Card: [cards/09-web.md](cards/09-web.md)
   - Type: agent · Size: S · Depends: 7
   - Owns: web/index.html, web/src/main.ts

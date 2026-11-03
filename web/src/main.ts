@@ -274,7 +274,24 @@ function readSeed(): number | undefined {
   return Number.isFinite(n) ? Math.abs(Math.trunc(n)) : undefined;
 }
 
-// Wilderness map edges: one selector per side, shown only for wilderness.
+// The zone types each Controls-panel control applies to; for the others it is
+// hidden (the server ignores it there). "edges" is the landscape fieldset (map
+// edges and trees); the rest are the room-graph controls. Mirrors the server's
+// expand path: rooms and locks reach an outdoor dungeon's layout, size and
+// verticality only a dungeon's or city's.
+const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
+  rooms: ["dungeon", "city", "outdoor_dungeon"],
+  locks: ["dungeon", "city", "outdoor_dungeon"],
+  size: ["dungeon", "city"],
+  verticality: ["dungeon", "city"],
+  edges: ["wilderness", "outdoor_dungeon"],
+};
+
+function usesControl(zoneType: string, control: string): boolean {
+  return CONTROL_ZONE_TYPES[control].includes(zoneType);
+}
+
+// Map edges: one selector per side.
 const EDGE_SIDES = ["N", "E", "S", "W"];
 
 function readEdges(): Record<string, string> {
@@ -285,9 +302,17 @@ function readEdges(): Record<string, string> {
   return edges;
 }
 
-function syncEdgesVisibility(): void {
-  const wild = ($("zone-type") as HTMLSelectElement).value === "wilderness";
-  $("edges").hidden = !wild;
+function syncControlVisibility(): void {
+  const zoneType = ($("zone-type") as HTMLSelectElement).value;
+  for (const control of Object.keys(CONTROL_ZONE_TYPES)) {
+    const el = $(control);
+    // The fieldset itself, or the <label> wrapping an input. The inline
+    // display beats the panel's `label { display: flex }`.
+    const box = (control === "edges" ? el : el.closest("label") ?? el) as HTMLElement;
+    const on = usesControl(zoneType, control);
+    box.hidden = !on;
+    box.style.display = on ? "" : "none";
+  }
 }
 
 async function doGenerate(mode: Mode) {
@@ -323,9 +348,9 @@ async function doGenerate(mode: Mode) {
       : 0;
     const size = ($("size") as HTMLSelectElement).value;
     const verticality = ($("verticality") as HTMLSelectElement).value;
-    const wild = zoneType === "wilderness";
-    const edges = wild ? readEdges() : undefined;
-    const trees = wild ? ($("trees") as HTMLSelectElement).value : undefined;
+    const landscape = usesControl(zoneType, "edges");
+    const edges = landscape ? readEdges() : undefined;
+    const trees = landscape ? ($("trees") as HTMLSelectElement).value : undefined;
     params = {
       mode,
       controls: {
@@ -405,8 +430,9 @@ async function doGenerate(mode: Mode) {
 // unselectable — not hidden), and the first ENABLED type is preselected (or the
 // current selection if it survives and is still enabled). The static <option>s
 // in index.html are the offline fallback if the fetch fails.
-function titleCase(z: string): string {
-  return z.charAt(0).toUpperCase() + z.slice(1);
+function zoneTypeLabel(z: string): string {
+  const words = z.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 async function refreshZoneTypes(): Promise<void> {
@@ -422,11 +448,11 @@ async function refreshZoneTypes(): Promise<void> {
       const opt = document.createElement("option");
       opt.value = zt.name;
       if (zt.enabled) {
-        opt.textContent = titleCase(zt.name);
+        opt.textContent = zoneTypeLabel(zt.name);
       } else {
         opt.disabled = true;
         const reason = zt.reason ?? "not available yet";
-        opt.textContent = `${titleCase(zt.name)} — ${reason}`;
+        opt.textContent = `${zoneTypeLabel(zt.name)} — ${reason}`;
         opt.title = reason;
       }
       sel.appendChild(opt);
@@ -441,10 +467,10 @@ async function refreshZoneTypes(): Promise<void> {
   } catch (err) {
     console.warn("[zone_types]", err);   // keep the static options
   }
-  syncEdgesVisibility();
+  syncControlVisibility();
 }
 
-($("zone-type") as HTMLSelectElement).addEventListener("change", syncEdgesVisibility);
+($("zone-type") as HTMLSelectElement).addEventListener("change", syncControlVisibility);
 
 // The two Generate actions choose the mode explicitly.
 genDescBtn.addEventListener("click", () => doGenerate("prompt"));
