@@ -716,3 +716,105 @@ python main.py generate looks_f --zone-type city --seed 7
 
 - [ ] **[DEFERRED]** Seeing the textures, scale and seams in the RoF2 client
       needs a takeover install; it moves to M6's in-engine smoke load.
+
+---
+
+## Step 5 — Outdoor dungeon
+
+> Roadmap step 5 (`zone-generator-outdoor-dungeon`). A hillside cave in the
+> Blackburrow / Runnyeye mould: a compact (~1200 u) wilderness landscape with a
+> hill backed onto a mountain side, a dungeon of rooms and ramps under the
+> hill, and one cave mouth in its flank you walk into from the open ground.
+> Restart the Server on the merged code first and check the side panel shows
+> no stale-code banner.
+
+### Cases
+
+Pin the seed. Cases a–d use the description box; e–g the Controls panel with
+**Outdoor dungeon** picked. Each builds on the first attempt.
+
+| # | How | Seed | What it shows |
+|---|-----|------|---------------|
+| a | `a cave in a hill where kobolds live` | 7 | kobold race, 5 rooms |
+| b | `an old barrow on the moors` | 11 | plain, 5 rooms |
+| c | `a hillside cave temple with 6 rooms` | 3 | temple theme |
+| d | `a gnoll warren in the hills` | 2 | warren theme, gnoll race, 9 rooms |
+| e | Controls: 5 rooms | 5 | defaults |
+| f | Controls: 4 rooms, 1 lock, N zoneline, E river, trees dense | 2 | a lock, zoneline and river edges |
+| g | Controls: 6 rooms, trees none | 42 | bare hill |
+
+From the command line (cases e and f):
+
+```bash
+python main.py generate odungeon_e --zone-type outdoor_dungeon --rooms 5 --seed 5
+python main.py generate odungeon_f --zone-type outdoor_dungeon --rooms 4 --locks 1 --edges N=zoneline,E=river --trees dense --seed 2
+```
+
+### O.1 — Landscape
+
+- [ ] **[MUST] A hill on open ground** — The zone reads as wilderness with one
+      hill standing out of it, backed onto the mountain Rim, not a crater and
+      not a dungeon in a grass skin.
+- [ ] **[MUST] Wilderness as before** — Rim, zonelines, river edges, ground
+      layers and trees behave as in Step 1 and Step 2 (W.1–W.3, T.1–T.2).
+- [ ] **[SHOULD] Size** — Compact: about 1200 u, the hill a good share of it.
+
+### O.2 — Entrance
+
+- [ ] **[MUST] One way in** — There is one cave mouth, in the hill's flank on
+      the side away from the Rim, reached across open ground.
+- [ ] **[MUST] No gaps** — Walk the trench, the mouth and the tunnel looking
+      up, down and sideways: no sky or void shows through any seam where the
+      ground meets the mouth's jambs, headwall or tunnel.
+- [ ] **[MUST] Carved look** — The mouth reads as cut into the hill (a trench
+      dug down to a rock face with an opening), not a doorway stuck on a slope.
+- [ ] **[MUST] Walkable** — The trench and tunnel ramp are walkable both ways
+      without jumping; nothing snags at the mouth.
+- [ ] **[SHOULD] Enclosed** — From inside the dungeon the hill above is not
+      visible through ceilings or walls; the rock over every room looks solid.
+
+### O.3 — The dungeon and the walk
+
+- [ ] **[MUST] Every room from the spawn** — From the outdoor spawn, walk in
+      through the mouth and reach every room on foot (case f: the lock is
+      advisory, walk through it).
+- [ ] **[MUST] Entrance first** — The tunnel opens into the room the Pacing
+      panel tags `entrance`; the `climax` room is the deepest, not the first.
+- [ ] **[MUST] Under the hill** — No room or corridor pokes out of the hill's
+      surface or past its foot.
+- [ ] **[SHOULD] Classic outdoor dungeon** — It reads like Blackburrow or
+      Runnyeye: a small warren under a hill, not a city block buried in dirt.
+- [ ] **[SHOULD] Themes and races show** — Cases a–d look different from each
+      other and from e (room shapes, materials, lighting).
+
+### O.4 — Maps
+
+- [ ] **[MUST] Two bands** — The Files panel lists `EQ map layer 0` and
+      `EQ map layer 1`; the map (SVG) draws the dungeon, the lowland and the
+      tunnel in one colour and the hill over the dungeon in another.
+- [ ] **[MUST] Map matches the 3D view** — Room boxes, the tunnel and the
+      trench sit where they are in the 3D view; the `Entrance` label is on the
+      room the tunnel opens into.
+
+### O.5 — Controls, sidecar and speed
+
+- [ ] **[MUST] Controls** — Picking **Outdoor dungeon** shows Rooms, Locks and
+      the Landscape box (edges, trees) and hides Size and Verticality; each
+      setting reaches the build (check the sidecar).
+- [ ] **[MUST] Sidecar** — `<name>.zone.json` has an `outdoor_dungeon` block:
+      `envelope` (bounds and floor limit), `rock_cover`, one `entrances` entry
+      (tunnel id, room, apron centre, mouth) and `outdoor_spawn`; plus the
+      wilderness keys (`edge_connections`, `vegetation`).
+- [ ] **[MUST] Pinned seed repeats; blank seed is fresh** — As in W.4.
+- [ ] **[SHOULD] Snappy** — A generate returns in well under a minute (a few
+      seconds typical; the pipeline budget is 60 s).
+
+Known limits (follow-ups in the spec's `archive.md`, not failures here):
+one level only (verticality is ROADMAP step 7), and an ogre or giant outdoor
+dungeon never builds (its rooms are taller than the hill).
+
+### O.6 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Zoning in through the zoneline, walking the mouth and
+      the tunnel, and the map in the RoF2 client need a takeover install; it
+      moves to M6's in-engine smoke load.
