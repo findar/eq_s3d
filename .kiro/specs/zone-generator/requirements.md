@@ -61,6 +61,7 @@ the requirements.
 - **Advisory_Data**: Pacing_Roles, graph depth, Room_Type labels, District metadata, Threshold flags, Gates, suggestion fields (`prop_hints`, `encounter_intent`, `boss`) and all reports (quality, conformance, format). `room_purpose` is a realised content-layer field, not Advisory_Data.
 - **Zone_Type**: the zone-level selector of a Zone_Plan and Zone_Spec (field `zone_type`; legacy key `theme`); one of Defined_Zone_Types. It selects the Geometry_Backend, the scale and Style_Profile and, from M6, the EQ `ztype`.
 - **Defined_Zone_Types**: the Zone_Type vocabulary of the Zone_Generator: `dungeon`, `city` and `wilderness` (legacy value `outdoor` reads as `wilderness`). Any other Zone_Type name (including the retired `cave`) is undefined.
+  > **Extended by step 5** (design decision 25): `outdoor_dungeon` is also defined and enabled.
 - **Enclosure**: whether a zone is `indoor` or `outdoor` (sky, levitation and outdoor casting); derived from the Zone_Type (dungeon and city → `indoor`, wilderness → `outdoor`) until set independently. "Outdoor" refers only to Enclosure, never to a Zone_Type.
 - **Purpose**: the content-layer function of a Zone_Plan or District (field `purpose`; legacy `dungeon_theme`, formerly "Archetype"), for example `fortress`, `temple`, `tomb`, `mine`, `warren`, `wizard_tower`, `sewer`, `vault`, `cave`; supplies Room_Types, palette, light mood and regions; `fortress` is the default.
 - **Builder**: who built the place (field `builder`; legacy `dungeon_race` scale half); sets architectural scale.

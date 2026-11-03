@@ -98,7 +98,7 @@ The design's five open questions were answered on 2026-11-01
   - Card: [cards/13-human-acceptance.md](cards/13-human-acceptance.md)
   - Type: human · Depends: 12
 
-- [ ] 14. Close step 5
+- [x] 14. Close step 5
   - Card: [cards/14-close.md](cards/14-close.md)
   - Type: agent · Size: S · Depends: 13 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-outdoor-dungeon/, .kiro/specs/zone-generator/

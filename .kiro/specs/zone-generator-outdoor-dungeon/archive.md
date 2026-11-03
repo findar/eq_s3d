@@ -5,7 +5,27 @@ this file to pick up a task; it holds the "why".
 
 ## What landed
 
-Nothing yet. Rows are added at the close step (task 14).
+Signed off 2026-11-03; master `1ad814f`. Suite 1019 (fast; thorough green).
+
+| Task | What landed |
+|------|-------------|
+| 1 | Walk-based anatomy survey of classic outdoor dungeons (`scripts/outdoor_dungeon_survey.py`): rock cover p10 12-22 u, covered floor at most ~130 u under the open ground |
+| 2 | `generators/envelope.py`: the 3D Envelope (footprint, floor limit, surface, Rock_Cover) and room layout inside it, dropping rooms with a `rooms_reduced` warning |
+| 3 | `Landform` on the Design_Matrix (`hill` or `pit`, backed onto a mountain side); the default Host_Hill at the 1200 u outdoor-dungeon size |
+| 4 | Envelope from the built TER (`host_envelope`); 80 u rooms sized to it; `_fit_floors` shifts by the tightest room |
+| 5 | The Entrance on the terrain grid: Apron trench, one-cell Tunnel, Mouth stitched to the terrain's own vertices; one merged TER |
+| 6 | `outdoor_dungeon_spec` (a wilderness spec carrying the dungeon), `TerrainBackend` builds it, `outdoor_dungeon_report` gates it (bowl + every room from the outdoor spawn), plan errors retried |
+| 7 | `outdoor_dungeon` zone type: prompt phrases, CLI, server, `LANDSCAPE_ZONE_TYPES` for edges and trees, sidecar `outdoor_dungeon` block |
+| 8 | Maps need no new code (dungeon and hill on separate depth bands, pinned by tests); fix: the Tunnel opens into the layout's entrance room (Envelope `entry`) |
+| 9 | Web: the zone type offered with the controls each type uses (one table in `main.ts`) |
+| 10 | First look signed off; one finding (verticality) recorded as a step 7 follow-up |
+| 11 | `plan_dungeon` shrinks rooms until a themed dungeon plans (fortress failures 15/30 -> 2/30) |
+| 12 | ACCEPTANCE "Step 5 — Outdoor dungeon"; 60 s budget test (6.8 s); thorough run green |
+| 13 | Human acceptance pass: signed off, no findings |
+
+Not done here, carried forward: more than one level (ROADMAP step 7, see
+Follow-ups), staircase and bridge connectors (ramps only, step 7), and ogre
+or giant outdoor dungeons (rooms taller than the hill).
 
 ## Decisions
 
