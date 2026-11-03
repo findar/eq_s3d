@@ -114,6 +114,7 @@ def test_kinds_become_the_themes_types(theme):
         deep = [r for r in spec.rooms if r.kind == "deep"]
         assert len(deep) == 1 and deep[0].semantic_type == arch.climax_type
         assert [r.id for r in spec.rooms if r.boss] == [deep[0].id]
+        assert [r.id for r in spec.rooms if r.role == "climax"] == [deep[0].id]
     assert semantics.kind_types("fortress")["deep"] == ("throne",)
 
 

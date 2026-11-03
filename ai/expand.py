@@ -122,26 +122,12 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     return spec
 
 
-class KindedGraphEngine(GraphEngine):
-    """The graph engine with each room's rule-set kind put on its RoomSpec
-    (``RoomSpec.kind``), so the theme's kind -> type map in
-    ``generators.semantics`` can label it. The engine's record already holds
-    the kinds; this only copies them onto the rooms it returns."""
-
-    def generate(self, ctx, room_count, envelope):
-        result = super().generate(ctx, room_count, envelope)
-        kinds = (result.record or {}).get("rooms", {})
-        for room in result.rooms:
-            room.kind = kinds.get(room.id, {}).get("kind", "")
-        return result
-
-
 def layout_engine(layout: str, rule_set: str = ""):
     """The Layout_Engine for a plan's ``layout`` / ``rule_set``: ``None``
     (classic) or a graph engine whose set comes from the dungeon theme
     (``rules/topology/themes.toml``) unless *rule_set* names a base set."""
     if layout == "graph":
-        return KindedGraphEngine(rule_set or None)
+        return GraphEngine(rule_set or None)
     return None
 
 

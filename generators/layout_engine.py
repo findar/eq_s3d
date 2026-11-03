@@ -9,7 +9,7 @@ conflicts, Envelope fit, corridors, gating; all in ``generators/layout.py``).
 An engine gets a ``LayoutContext`` (the generator's rng, the room band, a
 ``separate`` callback and the build's description) and returns an
 ``EngineResult``: rooms in the plane, the graph's edges, and optionally an
-entry point and a record for the sidecar. Engines never see the
+entry point, a climax room and a record for the sidecar. Engines never see the
 ``LayoutGenerator``, so they can be tested alone.
 
 ``GraphEngine`` grows the graph by a rule set (``generators/topology``) and
@@ -84,6 +84,8 @@ class EngineResult:
     rooms: List[RoomSpec]
     edges: List[Edge]
     entry: Optional[Point] = None        # the graph's entrance room centre
+    climax: Optional[int] = None         # the room the engine names the climax
+                                         # (an index into rooms); None: deepest by hops
     record: Optional[dict] = None        # what the sidecar's layout block reports
 
 
@@ -280,7 +282,8 @@ class GraphEngine:
             x, y = centres[r]
             rooms.append(RoomSpec(id=f"room_{k}", center_x=x, center_y=y, floor_z=0.0,
                                   width=w, depth=d, height=h,
-                                  district=graph.node(r).district))
+                                  district=graph.node(r).district,
+                                  kind=graph.node(r).kind))
         # (Separation pushes pairs symmetrically, so an Envelope layout stays
         # centred on the footprint.)
         ctx.separate(rooms)
@@ -293,7 +296,10 @@ class GraphEngine:
             edges.append(Edge(i, j, graph.edge(e.a, e.b).rel))
         entrance = next((idx[n.id] for n in graph.rooms() if n.kind == "entrance"), 0)
         entry = (rooms[entrance].center_x, rooms[entrance].center_y)
-        return EngineResult(rooms=rooms, edges=edges, entry=entry,
+        # The rules' deep end is the climax (None when the set grew none, as
+        # for one room: pacing then takes the deepest by hops).
+        climax = next((idx[n.id] for n in graph.rooms() if n.kind == "deep"), None)
+        return EngineResult(rooms=rooms, edges=edges, entry=entry, climax=climax,
                             record=self._record(rs, grown, order, idx, edges, graph, rooms))
 
     @staticmethod

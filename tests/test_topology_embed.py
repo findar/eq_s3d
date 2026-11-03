@@ -15,6 +15,8 @@ G9  ``above`` / ``below`` / ``level`` hold after elevation unless counted in
     ``relations_broken``.
 G10 grown rooms fit an Envelope as classic ones do.
 G11 umbrella Req 21: one entrance, one climax, solvable gates.
+G12 (task 19) rooms carry their kind; the rules' ``deep`` room is the climax
+    and the boss, every seed.
 """
 
 from __future__ import annotations
@@ -314,3 +316,55 @@ def test_entrance_climax_and_solvable_gates(s, n, locks, theme):
     assert climaxes[0].id != entrances[0].id
     assert 1 <= len(spec.gates) <= locks
     assert solvable_walk(spec) == {r.id for r in spec.rooms}
+
+
+# ---------------------------------------------------------------------------
+# G12: rooms carry their kind; the deep end is the climax (task 19)
+# ---------------------------------------------------------------------------
+
+# set label -> the dungeon theme that picks it (themes.toml), so the rooms
+# are labelled and carry ``boss``.
+CLIMAX_THEMES = {"classic_eq": "fortress", "warren": "warren", "temple": "temple"}
+
+
+@pytest.mark.parametrize("label", sorted(CLIMAX_THEMES))
+@pytest.mark.parametrize("n", [2, 3, 6, 12, 20])
+def test_deep_room_is_the_climax_and_the_boss(label, n):
+    theme = CLIMAX_THEMES[label]
+    for s in range(8):
+        gen = LayoutGenerator("dungeon", seed=s, engine="graph")
+        spec = gen.generate(f"g{s}", room_count=n, dungeon_theme=theme,
+                            add_lights=False, locks=1)
+        grown = spec.rooms[:n]                  # crossings may add waypoints
+        assert all(r.kind for r in grown), (s, [r.id for r in grown if not r.kind])
+        assert {r.id: r.kind for r in grown} == {
+            rid: v["kind"] for rid, v in gen.layout_record["rooms"].items()}
+        deep = [r.id for r in grown if r.kind == "deep"]
+        climax = [r.id for r in spec.rooms if r.role == "climax"]
+        boss = [r.id for r in spec.rooms if r.boss]
+        assert len(deep) == 1 and climax == deep == boss, (s, deep, climax, boss)
+        assert [r.kind for r in spec.rooms if r.role == "entrance"] == ["entrance"]
+
+
+def test_one_room_has_no_climax():
+    gen = LayoutGenerator("dungeon", seed=1, engine="graph")
+    spec = gen.generate("g1", room_count=1, dungeon_theme="fortress", add_lights=False)
+    assert [r.role for r in spec.rooms] == ["entrance"]
+    assert not any(r.boss for r in spec.rooms)
+
+
+def test_engine_climax_loses_to_the_entrance():
+    """An engine's climax is used as given, unless it is the entrance room
+    (an Envelope's way in can pick it): then the deepest by hops."""
+    from generators.zone_spec import RoomSpec
+    rooms = lambda: [RoomSpec(id=f"room_{i}", center_x=100.0 * i, center_y=0.0)
+                     for i in range(4)]
+    edges = [(0, 1), (1, 2), (2, 3)]
+    gen = LayoutGenerator("dungeon", seed=0)
+    r = rooms()
+    assert gen._apply_pacing(r, edges, entry=(0.0, 0.0), size_bias=False, climax=1) == 0
+    assert [x.role for x in r] == ["entrance", "climax", "standard", "deadend"]
+    assert [x.graph_depth for x in r] == [0, 1, 2, 3]
+    r = rooms()
+    gen._apply_pacing(r, edges, entry=(0.0, 0.0), size_bias=False, climax=0)
+    assert [x.role for x in r] == ["entrance", "standard", "standard", "climax"]

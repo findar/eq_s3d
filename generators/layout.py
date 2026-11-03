@@ -334,7 +334,8 @@ class LayoutGenerator:
         if entry is None:
             entry = result.entry
         entrance = self._apply_pacing(rooms, edges, entry,
-                                      size_bias=not self.engine.sizes_rooms)
+                                      size_bias=not self.engine.sizes_rooms,
+                                      climax=result.climax)
 
         # Content / semantic layer (box themes only): label rooms with a
         # semantic type + theme and apply the shape/proportion/ceiling/floor
@@ -567,7 +568,8 @@ class LayoutGenerator:
     def _apply_pacing(self, rooms: List[RoomSpec],
                       edges: List[Tuple[int, int]],
                       entry: Optional[Tuple[float, float]] = None,
-                      size_bias: bool = True) -> int:
+                      size_bias: bool = True,
+                      climax: Optional[int] = None) -> int:
         """
         Analyse the room graph to assign each room a role and depth:
 
@@ -576,7 +578,12 @@ class LayoutGenerator:
                        *entry* point (an Envelope's way in), the room nearest
                        it instead.
           - depth    : graph hops from the entrance (BFS). The progression axis.
-          - climax   : the room with the greatest graph depth (boss chamber).
+          - climax   : the room with the greatest graph depth (boss chamber),
+                       or the *climax* room an engine names (the graph
+                       engine's ``deep`` room). The entrance wins if the two
+                       coincide (an Envelope's way in can pick the deep room);
+                       the climax then falls back to the deepest by hops. One
+                       room has no climax.
           - hub      : a crossroads (graph degree >= 3).
           - deadend  : a leaf (degree 1) that isn't the entrance.
           - standard : everything else.
@@ -624,8 +631,12 @@ class LayoutGenerator:
         for i in range(n):
             rooms[i].graph_depth = gdepth.get(i, 0)
 
-        # Climax = deepest room (ties broken by lowest index for determinism).
-        climax = max(range(n), key=lambda i: (rooms[i].graph_depth, -i)) if n > 1 else entrance
+        # Climax = the engine's pick, else the deepest room (ties broken by
+        # lowest index for determinism). Depth stays BFS from the entrance.
+        if n == 1:
+            climax = entrance
+        elif climax is None or not 0 <= climax < n or climax == entrance:
+            climax = max(range(n), key=lambda i: (rooms[i].graph_depth, -i))
 
         # Assign roles.
         for i in range(n):
