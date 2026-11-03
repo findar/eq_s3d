@@ -55,7 +55,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: rules/topology/classic_eq.toml, rules/topology/layers/temple.toml, rules/topology/themes.toml, tests/test_ruleset_classic_eq.py
   - Reqs: 5.1, 5.3
 
-- [ ] 6. Base set warren
+- [x] 6. Base set warren
   - Card: [cards/06-warren.md](cards/06-warren.md)
   - Type: agent · Size: S · Depends: 1, 4, 5
   - Owns: rules/topology/warren.toml, tests/test_ruleset_warren.py, rules/topology/themes.toml
