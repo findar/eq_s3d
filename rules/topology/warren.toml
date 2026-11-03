@@ -1,0 +1,233 @@
+# rules/topology/warren.toml -- kobold and gnoll burrows (roadmap step 6).
+#
+# The second base rule set for the graph layout engine, written only as data:
+# nothing in the loader or the driver knows about it. It grows a room graph
+# the same way classic_eq.toml does (read that file first, its comments cover
+# the format): a start graph with placeholders (kind "Area"), rules applied
+# stage by stage (the [[recipe]] at the end) until no placeholder is left and
+# the graph has exactly the requested number of rooms.
+#
+# What it aims for: the warren-like zones of the stock topology survey
+# (design.md, finding 5). Only blackburrow survived the survey's check, so its
+# single values are widened by +-0.05 into bands. Next to classic_eq, a warren
+# has more short loops, a shallower deep end and more small rooms; its dead-end
+# share sits at the low end of classic's. What this recipe grows over
+# 40 seeds x 5-30 rooms (tests/test_ruleset_warren.py checks it against the
+# bands and against classic_eq over the same seeds):
+#
+#   measure               blackburrow  band         grown: mean  p50   p10-p90    mean, n >= 20   classic_eq mean
+#   dead-end share        0.16         0.11 - 0.21         0.18  0.17  0.07-0.31  0.16            0.33
+#   cycle rank per room   0.24         0.19 - 0.29         0.24  0.24  0.14-0.33  0.28            0.15
+#   deep-end distance     0.22         0.17 - 0.27         0.25  0.24  0.18-0.33  0.21            0.36
+#   size mix  tiny / small / medium / large / huge:
+#     blackburrow 0.03 / 0.41      / 0.30      / 0.14      / 0.14
+#     band        0-0.08 / 0.36-0.46 / 0.25-0.35 / 0.09-0.19 / 0.09-0.19
+#     grown       0.01 / 0.41      / 0.32      / 0.14      / 0.12   (means)
+#     classic_eq  0    / 0.30      / 0.32      / 0.22      / 0.16
+#
+# As with classic_eq, small graphs sit above the bands on dead ends and deep
+# end (with 5 rooms the deep end is 2 hops = 0.4 away) and the bigger ones
+# land mid-band. How the shape comes about: the start graph already holds a
+# loop and three ways out of the entrance, so the warren spreads sideways from
+# the start; most growth is rings of three small burrows and forks, and very
+# little of it lengthens a tunnel.
+
+[set]
+name        = "warren"
+description = "Kobold or gnoll burrows: many small rooms, short loops, a shallow den."
+placement   = "spring"
+
+# The start graph: the entrance with three ways out. Two of them meet again at
+# the den (the deep end), a loop of four from the start; the third is a side
+# burrow. Every placeholder starts one hop from the entrance, which is what
+# keeps the deep end shallow. (The loop of four through two placeholders also
+# caps how much either of them can grow in line: loops are 5 rooms at most.)
+start_nodes = [ {id = "e", kind = "entrance", size = "medium"},
+                {id = "a", kind = "Area"},
+                {id = "b", kind = "Area"},
+                {id = "c", kind = "Area"},
+                {id = "d", kind = "deep",     size = "huge"} ]
+start_edges = [ {a = "e", b = "a"}, {a = "a", b = "d"},
+                {a = "e", b = "b"}, {a = "b", b = "d"},
+                {a = "e", b = "c"} ]
+
+# ---------------------------------------------------------------------------
+# Rules. The format is classic_eq's: match, replace, edges, reattach. Only the
+# base room kinds are used (entrance, chamber, passage, hub, lair, hall,
+# deep), so themes map them to room types as they do for classic_eq.
+# ---------------------------------------------------------------------------
+
+# A tunnel gets one placeholder longer. Low weight: long tunnels make the
+# deep end deeper, and a warren is wide rather than long.
+[rules.lengthen]
+description = "A tunnel gets one placeholder longer"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "y", kind = "Area"} ]
+edges    = [ {a = "x", b = "y"} ]
+reattach = { x = ["x", "y"] }
+
+# A small passage in line, and the floor drops after it ("x is below p").
+[rules.tunnel]
+description = "A small passage room in line, going down"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "p", kind = "passage", size = "small"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "p", b = "x", rel = "below"} ]
+reattach = { x = ["p", "x"] }
+
+# A tiny crawl in line: the warren's only tiny rooms (blackburrow has 3 %).
+[rules.squeeze]
+description = "A tiny crawl in line"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "p", kind = "passage", size = "tiny"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "p", b = "x"} ]
+reattach = { x = ["p", "x"] }
+
+# A huge cave in line: the main source of huge rooms after the den.
+# (A cave beside the tunnel with a burrow looping back was tried: it pushed
+# loops past the band and the deep end deeper, since both its rooms sit a
+# hop further out.)
+[rules.cavern]
+description = "A big cave in line"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "c", kind = "chamber", size = "huge"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "c", b = "x"} ]
+reattach = { x = ["c", "x"] }
+
+# A small dead-end den: the placeholder keeps its edges and gains a room.
+[rules.den]
+description = "A small dead-end den"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "l", kind = "lair", size = "small"} ]
+edges    = [ {a = "x", b = "l"} ]
+reattach = { x = ["x"] }
+
+# A fork: a large hub takes the placeholder's place (all its edges) with two
+# new placeholders off it. Forks spread the warren sideways.
+[rules.hub]
+description = "A large hub with two ways off it"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "h", kind = "hub", size = "large"},
+             {id = "x", kind = "Area"}, {id = "y", kind = "Area"} ]
+edges    = [ {a = "h", b = "x"}, {a = "h", b = "y"} ]
+reattach = { x = ["h"] }
+
+# The warren's signature: a ring of three, two burrows that leave the
+# placeholder and come back to it. One loop and no dead end per two rooms.
+[rules.burrow]
+description = "A ring of three: a small and a medium burrow that join back"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "a", kind = "chamber", size = "small"},
+             {id = "b", kind = "chamber", size = "medium"} ]
+edges    = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "x"} ]
+reattach = { x = ["x"] }
+
+# Two tunnels that meet again further on (a loop of four in line). It
+# lengthens the way by two, so it is weighted low.
+[rules.ring]
+description = "Two tunnels that meet again"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "a", kind = "chamber", size = "medium"},
+             {id = "b", kind = "passage", size = "small"},
+             {id = "y", kind = "Area"} ]
+edges    = [ {a = "x", b = "a"}, {a = "a", b = "y"}, {a = "x", b = "b"}, {a = "b", b = "y"} ]
+reattach = { x = ["x", "y"] }
+
+# A new edge between two finished chambers 2-3 hops apart (a loop of 3-4).
+# It adds no room, so it spends none of a stage's budget: keep it beside
+# rules that grow. (The sizes on p and q are required by the checker but
+# ignored: a kept node of unchanged kind keeps its size.)
+[rules.shortcut]
+description = "Join two chambers 2-3 hops apart"
+match      = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
+match_hops = { p_q = [2, 3] }
+replace    = [ {id = "p", kind = "chamber", size = "small"},
+               {id = "q", kind = "chamber", size = "small"} ]
+edges      = [ {a = "p", b = "q"} ]
+reattach   = { p = ["p"], q = ["q"] }
+
+# The next three grow from finished rooms, so the last stage can still reach
+# the room count when every placeholder left is boxed in (4 connections, or
+# on a loop that can't get longer). Sizes on p, q and c are ignored as above.
+
+# A small passage on the edge between two joined chambers.
+[rules.split]
+description = "A small passage between two joined chambers"
+match       = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
+match_edges = [ {a = "p", b = "q"} ]
+replace     = [ {id = "p", kind = "chamber", size = "small"},
+                {id = "m", kind = "passage", size = "small"},
+                {id = "q", kind = "chamber", size = "small"} ]
+edges       = [ {a = "p", b = "m"}, {a = "m", b = "q"} ]
+reattach    = { p = ["p"], q = ["q"] }
+
+# A small burrow joined to both of two joined chambers (a ring of three
+# grown from finished rooms; the edge between them stays).
+[rules.nook]
+description = "A small burrow off a chamber that joins its neighbour too"
+match       = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
+match_edges = [ {a = "p", b = "q"} ]
+replace     = [ {id = "p", kind = "chamber", size = "small"},
+                {id = "m", kind = "chamber", size = "small"},
+                {id = "q", kind = "chamber", size = "small"} ]
+edges       = [ {a = "p", b = "q"}, {a = "p", b = "m"}, {a = "m", b = "q"} ]
+reattach    = { p = ["p"], q = ["q"] }
+
+# A small dead-end den off a finished chamber.
+[rules.annex]
+description = "A small den off a finished chamber"
+match    = [ {id = "c", kind = "chamber"} ]
+replace  = [ {id = "c", kind = "chamber", size = "small"},
+             {id = "l", kind = "lair", size = "small"} ]
+edges    = [ {a = "c", b = "l"} ]
+reattach = { c = ["c"] }
+
+# Finishing: a placeholder becomes a room and keeps every edge. Three sizes,
+# so the last stage's weights set the small / medium / large mix.
+[rules.finish]
+description = "A placeholder becomes a small chamber"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "chamber", size = "small"} ]
+reattach = { x = ["x"] }
+
+# The same, medium.
+[rules.finish_medium]
+description = "A placeholder becomes a medium chamber"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "chamber", size = "medium"} ]
+reattach = { x = ["x"] }
+
+# The same, large.
+[rules.finish_large]
+description = "A placeholder becomes a large chamber"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "chamber", size = "large"} ]
+reattach = { x = ["x"] }
+
+# ---------------------------------------------------------------------------
+# The recipe: stages in order, as in classic_eq (`apply` weights, `share` of
+# the room budget, the last stage "rest" with growth rules beside the
+# finishing ones).
+# ---------------------------------------------------------------------------
+
+# A few first rooms off the entrance's ways: mostly forks and caves, hardly
+# any tunnel length.
+[[recipe]]
+stage = "Tunnels"
+apply = { lengthen = 0.5, tunnel = 0.5, cavern = 1, hub = 2 }
+share = 0.1
+
+# Most rooms: rings of burrows, forks and dens. Raise `burrow` for more
+# loops, `den` for more dead ends, `ring` or `lengthen` for a deeper warren.
+[[recipe]]
+stage = "Burrows"
+apply = { burrow = 3, ring = 0.5, hub = 1, den = 1.5, squeeze = 0.2, cavern = 0.6 }
+share = 0.5
+
+# Finish every placeholder, mostly as small and medium chambers; keep growing
+# from finished rooms until the count is reached.
+[[recipe]]
+stage = "Finish"
+apply = { finish = 1.6, finish_medium = 1.4, finish_large = 0.8, burrow = 0.3, nook = 0.3, split = 0.3, shortcut = 0.2, annex = 0.3 }
+share = "rest"

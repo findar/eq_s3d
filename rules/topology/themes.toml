@@ -7,4 +7,5 @@
 # instead of the theme's; the theme's layers still apply when they fit it.
 
 default = { base = "classic_eq" }
+warren  = { base = "warren" }
 temple  = { base = "classic_eq", layers = ["temple"] }
