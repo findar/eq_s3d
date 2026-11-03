@@ -208,12 +208,14 @@ placeholders off the way. `passage` uses a relation:
 `{a = "p", b = "x", rel = "below"}`, so the floor drops after the passage.
 `great_hall` uses a condition: `when = { race_scale = ">=1.5" }`.
 
-`shortcut` matches two finished rooms by distance and adds only an edge:
+`shortcut` matches two finished rooms by distance and adds only an edge.
+They must be exactly 3 hops apart, so the new loop is a ring of four (at 2
+hops it would be a triangle, which the driver rejects; see "The invariants"):
 
 ```toml
 [rules.shortcut]
 match      = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
-match_hops = { p_q = [2, 3] }
+match_hops = { p_q = [3, 3] }
 replace    = [ {id = "p", kind = "chamber", size = "medium"},
                {id = "q", kind = "chamber", size = "medium"} ]
 edges      = [ {a = "p", b = "q"} ]
@@ -321,9 +323,15 @@ that would break one and tries another:
   node's outside edges go somewhere.
 - **Degree at most 4.** A room opens at most one wall per side. Areas count
   toward a room's degree.
-- **Loops of 3 to 5.** Every edge on a cycle lies on a cycle of 3 to 5
+- **Loops of 4 to 5.** Every edge on a cycle lies on a cycle of 4 to 5
   nodes. Areas count as nodes, and since each becomes at least one room, a
-  loop through an Area can only get longer.
+  loop through an Area can only get longer. A ring of three is rejected,
+  even through an Area: the router leaves a room through the wall facing
+  the other room, so a triangle puts two of its corridors on one wall,
+  where they overlap past the doorway and the build splits or drops one.
+  Write loops as rings of four or five (`loop` in `classic_eq` hangs three
+  rooms off the placeholder and joins them back), and give `match_hops`
+  rules a minimum of 3.
 - **Exact room count.** Rooms plus Areas never pass n, because each Area
   still needs a room. The last Area is never finished while the graph is
   short of n, unless some growth rule left in the recipe can grow without an

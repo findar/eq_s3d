@@ -16,20 +16,25 @@
 # bands and against classic_eq over the same seeds):
 #
 #   measure               blackburrow  band         grown: mean  p50   p10-p90    mean, n >= 20   classic_eq mean
-#   dead-end share        0.16         0.11 - 0.21         0.18  0.17  0.07-0.31  0.16            0.33
-#   cycle rank per room   0.24         0.19 - 0.29         0.24  0.24  0.14-0.33  0.28            0.15
-#   deep-end distance     0.22         0.17 - 0.27         0.25  0.24  0.18-0.33  0.21            0.36
+#   dead-end share        0.16         0.11 - 0.21         0.17  0.15  0.04-0.33  0.12            0.31
+#   cycle rank per room   0.24         0.19 - 0.29         0.23  0.23  0.12-0.33  0.28            0.13
+#   deep-end distance     0.22         0.17 - 0.27         0.26  0.25  0.18-0.34  0.21            0.37
 #   size mix  tiny / small / medium / large / huge:
 #     blackburrow 0.03 / 0.41      / 0.30      / 0.14      / 0.14
 #     band        0-0.08 / 0.36-0.46 / 0.25-0.35 / 0.09-0.19 / 0.09-0.19
-#     grown       0.01 / 0.41      / 0.32      / 0.14      / 0.12   (means)
-#     classic_eq  0    / 0.30      / 0.32      / 0.22      / 0.16
+#     grown       0.01 / 0.43      / 0.32      / 0.14      / 0.11   (means)
+#     classic_eq  0    / 0.35      / 0.29      / 0.21      / 0.16
+#
+# Every loop is a ring of four or five, as in classic_eq (a triangle can't be
+# built: two of its corridors would share a wall). The built warrens keep
+# their loops: tests/test_topology_embed.py measures the corridors' graph at
+# cycles 0.22, dead ends 0.15, deep end 0.25 over its sweep of 10-30 rooms.
 #
 # As with classic_eq, small graphs sit above the bands on dead ends and deep
 # end (with 5 rooms the deep end is 2 hops = 0.4 away) and the bigger ones
 # land mid-band. How the shape comes about: the start graph already holds a
 # loop and three ways out of the entrance, so the warren spreads sideways from
-# the start; most growth is rings of three small burrows and forks, and very
+# the start; most growth is rings of four small burrows and forks, and very
 # little of it lengthens a tunnel.
 
 [set]
@@ -111,15 +116,18 @@ replace  = [ {id = "h", kind = "hub", size = "large"},
 edges    = [ {a = "h", b = "x"}, {a = "h", b = "y"} ]
 reattach = { x = ["h"] }
 
-# The warren's signature: a ring of three, two burrows that leave the
-# placeholder and come back to it. One loop and no dead end per two rooms.
+# The warren's signature: a ring of four, three burrows that leave the
+# placeholder and come back to it. One loop and no dead end per three rooms.
+# (Not a ring of three: corridors leave rooms through facing walls, so a
+# triangle puts two corridors on one wall and the build drops one of them.)
 [rules.burrow]
-description = "A ring of three: a small and a medium burrow that join back"
+description = "A ring of four: three small and medium burrows that join back"
 match    = [ {id = "x", kind = "Area"} ]
 replace  = [ {id = "x", kind = "Area"},
              {id = "a", kind = "chamber", size = "small"},
-             {id = "b", kind = "chamber", size = "medium"} ]
-edges    = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "x"} ]
+             {id = "b", kind = "chamber", size = "medium"},
+             {id = "c", kind = "chamber", size = "small"} ]
+edges    = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "c"}, {a = "c", b = "x"} ]
 reattach = { x = ["x"] }
 
 # Two tunnels that meet again further on (a loop of four in line). It
@@ -134,14 +142,14 @@ replace  = [ {id = "x", kind = "Area"},
 edges    = [ {a = "x", b = "a"}, {a = "a", b = "y"}, {a = "x", b = "b"}, {a = "b", b = "y"} ]
 reattach = { x = ["x", "y"] }
 
-# A new edge between two finished chambers 2-3 hops apart (a loop of 3-4).
+# A new edge between two finished chambers 3 hops apart (a loop of 4).
 # It adds no room, so it spends none of a stage's budget: keep it beside
 # rules that grow. (The sizes on p and q are required by the checker but
 # ignored: a kept node of unchanged kind keeps its size.)
 [rules.shortcut]
-description = "Join two chambers 2-3 hops apart"
+description = "Join two chambers 3 hops apart"
 match      = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
-match_hops = { p_q = [2, 3] }
+match_hops = { p_q = [3, 3] }
 replace    = [ {id = "p", kind = "chamber", size = "small"},
                {id = "q", kind = "chamber", size = "small"} ]
 edges      = [ {a = "p", b = "q"} ]
@@ -162,16 +170,17 @@ replace     = [ {id = "p", kind = "chamber", size = "small"},
 edges       = [ {a = "p", b = "m"}, {a = "m", b = "q"} ]
 reattach    = { p = ["p"], q = ["q"] }
 
-# A small burrow joined to both of two joined chambers (a ring of three
-# grown from finished rooms; the edge between them stays).
+# Two small burrows from one of two joined chambers round to the other (a
+# ring of four grown from finished rooms; the edge between them stays).
 [rules.nook]
-description = "A small burrow off a chamber that joins its neighbour too"
+description = "Two small burrows that link two joined chambers a second way"
 match       = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
 match_edges = [ {a = "p", b = "q"} ]
 replace     = [ {id = "p", kind = "chamber", size = "small"},
                 {id = "m", kind = "chamber", size = "small"},
+                {id = "o", kind = "chamber", size = "small"},
                 {id = "q", kind = "chamber", size = "small"} ]
-edges       = [ {a = "p", b = "q"}, {a = "p", b = "m"}, {a = "m", b = "q"} ]
+edges       = [ {a = "p", b = "q"}, {a = "p", b = "m"}, {a = "m", b = "o"}, {a = "o", b = "q"} ]
 reattach    = { p = ["p"], q = ["q"] }
 
 # A small dead-end den off a finished chamber.
@@ -222,12 +231,12 @@ share = 0.1
 # loops, `den` for more dead ends, `ring` or `lengthen` for a deeper warren.
 [[recipe]]
 stage = "Burrows"
-apply = { burrow = 3, ring = 0.5, hub = 1, den = 1.5, squeeze = 0.2, cavern = 0.6 }
+apply = { burrow = 4.5, ring = 0.2, hub = 1, den = 1.8, squeeze = 0.2, cavern = 0.4 }
 share = 0.5
 
 # Finish every placeholder, mostly as small and medium chambers; keep growing
 # from finished rooms until the count is reached.
 [[recipe]]
 stage = "Finish"
-apply = { finish = 1.6, finish_medium = 1.4, finish_large = 0.8, burrow = 0.3, nook = 0.3, split = 0.3, shortcut = 0.2, annex = 0.3 }
+apply = { finish = 1.2, finish_medium = 1.7, finish_large = 0.8, burrow = 0.3, nook = 0.6, split = 0.3, shortcut = 0.6, annex = 0.3 }
 share = "rest"

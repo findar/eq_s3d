@@ -12,12 +12,19 @@
 # 40 seeds x 5-30 rooms (tests/test_ruleset_classic_eq.py checks it):
 #
 #   measure               band (stock)   grown: mean  p50   p10-p90    mean, n >= 20
-#   dead-end share        0.12 - 0.35           0.32  0.29  0.19-0.50  0.27
-#   cycle rank per room   0.07 - 0.25           0.15  0.15  0.00-0.25  0.18
-#   deep-end distance     0.26 - 0.39           0.36  0.35  0.25-0.50  0.30
+#   dead-end share        0.12 - 0.35           0.31  0.28  0.17-0.57  0.25
+#   cycle rank per room   0.07 - 0.25           0.13  0.14  0.00-0.23  0.17
+#   deep-end distance     0.26 - 0.39           0.37  0.36  0.25-0.50  0.30
 #   size mix  tiny / small / medium / large / huge:
 #     band    0 / 0.17-0.38 / 0.23-0.52 / 0.20-0.24 / 0.09-0.18
-#     grown   0 / 0.30      / 0.32      / 0.22      / 0.16       (means)
+#     grown   0 / 0.35      / 0.29      / 0.21      / 0.16       (means)
+#
+# Loops are rings of four or five, never three: corridors leave a room
+# through the wall facing the other room, so a triangle puts two corridors on
+# one wall and the build splits or drops one. With rings of four the built
+# dungeons keep their loops (tests/test_topology_embed.py checks the corridors'
+# graph against the same bands: cycles 0.13, dead ends 0.29, deep end 0.34 over
+# its sweep of 10-30 rooms).
 #
 # Small graphs sit above the bands on dead ends and deep end: with 5 rooms the
 # entrance and the deep end are already 2 of the 5 and at least 2 hops apart.
@@ -112,15 +119,18 @@ replace  = [ {id = "h", kind = "hub", size = "large"},
 edges    = [ {a = "h", b = "x"}, {a = "h", b = "y"} ]
 reattach = { x = ["h"] }
 
-# The short loop: two rooms that leave the placeholder and come back to it.
-# Adds a cycle and no dead end, and doesn't lengthen the way.
+# The short loop: three rooms that leave the placeholder and come back to it,
+# a ring of four. Adds a cycle and no dead end, and doesn't lengthen the way.
+# (Not a ring of three: corridors leave rooms through facing walls, so a
+# triangle puts two corridors on one wall and the build drops one of them.)
 [rules.loop]
-description = "A ring of three: two rooms that join back"
+description = "A ring of four: three rooms that join back"
 match    = [ {id = "x", kind = "Area"} ]
 replace  = [ {id = "x", kind = "Area"},
              {id = "a", kind = "chamber", size = "small"},
-             {id = "b", kind = "chamber", size = "medium"} ]
-edges    = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "x"} ]
+             {id = "b", kind = "chamber", size = "medium"},
+             {id = "c", kind = "chamber", size = "small"} ]
+edges    = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "c"}, {a = "c", b = "x"} ]
 reattach = { x = ["x"] }
 
 # Two routes on the way through: a large chamber one way, a passage the
@@ -135,14 +145,14 @@ replace  = [ {id = "x", kind = "Area"},
 edges    = [ {a = "x", b = "a"}, {a = "a", b = "y"}, {a = "x", b = "b"}, {a = "b", b = "y"} ]
 reattach = { x = ["x", "y"] }
 
-# A new edge between two finished chambers 2-3 hops apart (a loop of 3-4).
+# A new edge between two finished chambers 3 hops apart (a loop of 4).
 # Matches rooms, not placeholders, and adds no room: it spends none of a
 # stage's budget, so keep its weight low next to rules that grow.
 # (p and q keep their sizes: the kind is unchanged.)
 [rules.shortcut]
-description = "Join two chambers 2-3 hops apart"
+description = "Join two chambers 3 hops apart"
 match      = [ {id = "p", kind = "chamber"}, {id = "q", kind = "chamber"} ]
-match_hops = { p_q = [2, 3] }
+match_hops = { p_q = [3, 3] }
 replace    = [ {id = "p", kind = "chamber", size = "medium"},
                {id = "q", kind = "chamber", size = "medium"} ]
 edges      = [ {a = "p", b = "q"} ]
@@ -228,7 +238,7 @@ share = 0.1
 # Most rooms: forks, short loops and dead ends off the way.
 [[recipe]]
 stage = "Side rooms"
-apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3, cavern = 0.3 }
+apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3.5, cavern = 0.3 }
 share = 0.45
 
 # A few more loops, some of them as second routes along the way.
@@ -241,5 +251,5 @@ share = 0.1
 # the count is reached.
 [[recipe]]
 stage = "Finish"
-apply = { finish = 1.8, finish_large = 1.2, branch = 0.5, loop = 0.5, shortcut = 0.3, split = 0.3, annex = 0.3, deepen = 0.3 }
+apply = { finish = 1.6, finish_large = 1.4, branch = 0.5, loop = 0.5, shortcut = 0.3, split = 0.3, annex = 0.3, deepen = 0.3 }
 share = "rest"

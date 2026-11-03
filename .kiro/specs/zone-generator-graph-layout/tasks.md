@@ -124,5 +124,5 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 - [ ] 18. Loops survive placement
   - Card: [cards/18-loops-survive.md](cards/18-loops-survive.md)
   - Type: agent · Size: M · Depends: 8
-  - Owns: generators/topology/embed.py, generators/layout.py, generators/topology/rewrite.py, rules/topology/classic_eq.toml, rules/topology/warren.toml, rules/topology/layers/temple.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py
+  - Owns: generators/topology/embed.py, generators/layout.py, generators/topology/rewrite.py, rules/topology/classic_eq.toml, rules/topology/warren.toml, rules/topology/layers/temple.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py, tests/test_topology_rewrite.py, docs/TOPOLOGY_RULES.md
   - Reqs: 5.1, 6.4

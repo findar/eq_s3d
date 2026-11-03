@@ -46,12 +46,15 @@ Decisions the design leaves open (task 4):
 - **Degree.** Every node, Areas included, has at most 4 neighbours, and Areas
   count toward a room's degree: an Area ends as at least one room that keeps
   every edge it has (``finish`` moves them all to one room).
-- **Loops.** Every edge that lies on some cycle lies on a cycle of 3 to 5
+- **Loops.** Every edge that lies on some cycle lies on a cycle of 4 to 5
   nodes (shortest cycle through the edge = BFS distance between its ends
   without it, plus one). Areas count as nodes: each becomes at least one
   room, so a loop through an Area can only grow, and the check rejects the
-  application that would take it past 5. On the finished graph (no Areas) it
-  reads in rooms. Checked over the whole graph after each application.
+  application that would take it past 5. A ring of three is rejected even
+  through an Area (task 18): corridors leave a room through the wall facing
+  the other room, so a triangle puts two corridors on one wall and the build
+  drops one of them. On the finished graph (no Areas) it reads in rooms.
+  Checked over the whole graph after each application.
 - **Budgets.** A stage's budget is round-half-up(share x n) plus what earlier
   stages left unspent when they ran out of matches. It is spent by growth in
   rooms + Areas (an Area is a room to come), so ``lengthen`` spends 1 and
@@ -88,7 +91,7 @@ from generators.topology.graph import ENTRANCE, Node, TopologyGraph
 from generators.topology.ruleset import WHEN_KEYS, Rule, RuleSet, Stage
 
 MAX_DEGREE = 4
-LOOP_MIN = 3
+LOOP_MIN = 4
 LOOP_MAX = 5
 CAP_FACTOR = 8
 
@@ -296,7 +299,7 @@ def shortest_cycle_through(graph: TopologyGraph, a: str, b: str) -> Optional[int
 
 
 def invariant_violation(graph: TopologyGraph) -> Optional[str]:
-    """Why ``graph`` breaks Req 4.2 (connected, degree <= 4, loops of 3-5), or None."""
+    """Why ``graph`` breaks Req 4.2 (connected, degree <= 4, loops of 4-5), or None."""
     if not graph.connected():
         return "not connected"
     for n in graph.node_ids():
@@ -306,6 +309,8 @@ def invariant_violation(graph: TopologyGraph) -> Optional[str]:
         c = shortest_cycle_through(graph, e.a, e.b)
         if c is not None and c > LOOP_MAX:
             return f"edge {e.a}-{e.b} is on a loop of {c} (max {LOOP_MAX})"
+        if c is not None and c < LOOP_MIN:
+            return f"edge {e.a}-{e.b} is on a loop of {c} (min {LOOP_MIN})"
     return None
 
 
