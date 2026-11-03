@@ -25,7 +25,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 
 ## Tasks
 
-- [ ] 1. Measure the stock dungeon topology
+- [x] 1. Measure the stock dungeon topology
   - Card: [cards/01-topology-survey.md](cards/01-topology-survey.md)
   - Type: agent · Size: M · Depends: —
   - Owns: scripts/dungeon_topology_survey.py, .kiro/specs/zone-generator-graph-layout/design.md
