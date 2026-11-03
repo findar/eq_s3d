@@ -53,11 +53,11 @@ edges = [ {a = "x", b = "l"} ]
 reattach = { x = ["x"] }
 
 [rules.loop]
-description = "A ring of three"
+description = "A ring of four"
 match = [ {id = "x", kind = "Area"} ]
 replace = [ {id = "x", kind = "Area"}, {id = "a", kind = "chamber", size = "small"},
-            {id = "b", kind = "chamber", size = "small"} ]
-edges = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "x"} ]
+            {id = "b", kind = "chamber", size = "small"}, {id = "c", kind = "chamber", size = "small"} ]
+edges = [ {a = "x", b = "a"}, {a = "a", b = "b"}, {a = "b", b = "c"}, {a = "c", b = "x"} ]
 reattach = { x = ["x"] }
 
 [rules.shortcut]
@@ -309,8 +309,13 @@ def test_invariants():
     ring = lambda k: _g({f"r{i}": "chamber" for i in range(k)},
                         [(f"r{i}", f"r{(i + 1) % k}") for i in range(k)])
     assert invariant_violation(ring(5)) is None
+    assert invariant_violation(ring(4)) is None
     assert shortest_cycle_through(ring(5), "r0", "r1") == 5
     assert "loop of 6" in invariant_violation(ring(6))
+    # A ring of three can't be built (two corridors on one wall; task 18).
+    assert "loop of 3 (min 4)" in invariant_violation(ring(3))
+    tri = _g({"e": "entrance", "a": AREA, "c": "chamber"}, [("e", "a"), ("a", "c"), ("c", "e")])
+    assert "loop of 3" in invariant_violation(tri)    # even through an Area
     star = _g({"h": "hub"} | {f"s{i}": "lair" for i in range(5)}, [("h", f"s{i}") for i in range(5)])
     assert "5 connections" in invariant_violation(star)
     assert invariant_violation(_g({"a": "chamber", "b": "chamber"}, [])) == "not connected"
@@ -322,11 +327,11 @@ def test_invariants():
 def _check_g3(res, n):
     g = res.graph
     assert len(g.rooms()) == n and not g.areas()
-    assert invariant_violation(g) is None             # connected, degree <= 4, loops 3-5
+    assert invariant_violation(g) is None             # connected, degree <= 4, loops 4-5
     assert max((g.degree(x) for x in g.node_ids()), default=0) <= 4
     for e in g.edges():
         c = shortest_cycle_through(g, e.a, e.b)
-        assert c is None or 3 <= c <= 5
+        assert c is None or 4 <= c <= 5
 
 
 @settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])

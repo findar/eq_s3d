@@ -18,9 +18,12 @@ Three parts:
   same names. A placement module may extend both
   (``ruleset.PLACEMENTS += ("maze",)``; ``PLACEMENT_FUNCS["maze"] = ...``).
   ``ruleset`` never imports this module, so there is no cycle.
-- :func:`spring`, the one step 6 placement: a breadth-first start beside each
-  room's first placed neighbour on a free wall side, spring iterations, then
-  the layout's own separation (``ctx.separate``) and the Envelope's centring.
+- :func:`spring`, the one step 6 placement: a breadth-first start that gives
+  each of a room's neighbours its own wall side (the router leaves a room
+  through the wall facing the other room, so two corridors on one wall
+  overlap and Job B splits or drops one; task 18), spring iterations that keep
+  every edge on its start side, then the layout's own separation
+  (``ctx.separate``) and the Envelope's centring.
 
 Every pair test goes through :func:`may_overlap_in_plan` (always False in
 step 6: no room sits over another). Step 7's stacking changes that function
@@ -162,18 +165,234 @@ K_SPRING = 0.5
 K_REPEL = 0.6
 
 
+def _ring_mates(graph: TopologyGraph, rooms: Sequence[str]) -> Dict[str, Dict[frozenset, int]]:
+    """For each room p, its neighbour pairs that share a short loop through p:
+    ``mates[p][frozenset((u, w))]`` = hops from u to w without p (2 for a ring
+    of four, 3 for a ring of five). Such a pair wants perpendicular walls of p
+    (the ring drawn round a corner); on opposite walls the loop has to wrap
+    round p and its corridors land on walls already taken."""
+    inset = set(rooms)
+    mates: Dict[str, Dict[frozenset, int]] = {}
+    for p in rooms:
+        nb = [m for m in graph.neighbours(p) if m in inset]
+        out: Dict[frozenset, int] = {}
+        for i, u in enumerate(nb):
+            dist = {u: 0}
+            frontier = [u]
+            for d in range(1, 4):
+                nxt = []
+                for x in frontier:
+                    for y in graph.neighbours(x):
+                        if y in inset and y != p and y not in dist:
+                            dist[y] = d
+                            nxt.append(y)
+                frontier = nxt
+            for w in nb[i + 1:]:
+                if w in dist:
+                    out[frozenset((u, w))] = dist[w]
+        mates[p] = out
+    return mates
+
+
+def _placing_order(graph: TopologyGraph, order: Sequence[str],
+                   mates: Dict[str, Dict[frozenset, int]],
+                   root: Optional[str] = None) -> List[str]:
+    """Breadth-first from the first room; each room's unplaced neighbours are
+    taken ring members first (rooms on a short loop through it, so they get
+    the corner sides), dead ends last, then in ``order``."""
+    if not order:
+        return []
+    rank = {r: k for k, r in enumerate(order)}
+    inset = set(order)
+    root = order[0] if root is None else root
+    seen = {root}
+    out = [root]
+    k = 0
+    while len(out) < len(order):
+        if k == len(out):                    # a room nothing reaches: start there
+            r = next(r for r in order if r not in seen)
+            seen.add(r)
+            out.append(r)
+        p = out[k]
+        k += 1
+        on_ring = {x for pair in mates[p] for x in pair}
+        nxt = sorted((m for m in graph.neighbours(p) if m in inset and m not in seen),
+                     key=lambda m: (m not in on_ring,
+                                    sum(1 for x in graph.neighbours(m) if x in inset) == 1,
+                                    rank[m]))
+        for m in nxt:
+            seen.add(m)
+            out.append(m)
+    return out
+
+
+#: Side tie-break orders the start tries (the first is SIDES' own): rotations
+#: and mirror images of E, N, W, S. START_ROOTS: rooms the start may place
+#: first. The start keeps the first try with the fewest wall and footprint
+#: clashes.
+START_ROOTS = 8
+SIDE_ORDERS: Tuple[Tuple[str, ...], ...] = (
+    ("E", "N", "W", "S"), ("N", "W", "S", "E"), ("W", "S", "E", "N"), ("S", "E", "N", "W"),
+    ("E", "S", "W", "N"), ("S", "W", "N", "E"), ("W", "N", "E", "S"), ("N", "E", "S", "W"))
+
+
+def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
+                   half: Dict[str, Point], gap: float) -> int:
+    """Wall clashes (a room's corridors sharing a wall, as the router picks
+    walls) plus pairs of rooms kept apart in plan that sit within ``gap``."""
+    inset = set(order)
+    bad = 0
+    for u in order:
+        walls = [_side_toward(pos[u], half[u], pos[m], half[m])
+                 for m in graph.neighbours(u) if m in inset]
+        bad += len(walls) - len(set(walls))
+    for i, a in enumerate(order):
+        for b in order[i + 1:]:
+            if (not may_overlap_in_plan(graph.node(a), graph.node(b))
+                    and _box_gap(pos[a], half[a], pos[b], half[b]) < gap - 1e-6):
+                bad += 1
+    return bad
+
+
 def start_positions(graph: TopologyGraph, order: Sequence[str],
-                    half: Dict[str, Point], run: float, gap: float,
-                    anchored: Optional[set] = None) -> Dict[str, Point]:
-    """Breadth-first start: each room beside its first placed neighbour on a
-    free wall side: the side that clashes with the fewest placed rooms, then
-    (for a room that closes a loop) lies nearest its other placed neighbours,
-    then leaves the most room to the rest (so it points away from them)."""
+                    half: Dict[str, Point], run: float, gap: float) -> Dict[str, Point]:
+    """The best of :func:`start_once` over START_ROOTS roots (the first room,
+    then the best-connected) and :data:`SIDE_ORDERS` (fewest
+    :func:`layout_clashes`, the first on a tie; a clash-free start ends the
+    search), then :func:`repair` if it still clashes."""
+    inset = set(order)
+    deg = {r: sum(1 for m in graph.neighbours(r) if m in inset) for r in order}
+    rank = {r: k for k, r in enumerate(order)}
+    roots = list(order[:1]) + sorted(order[1:], key=lambda r: (-deg[r], rank[r]))[:START_ROOTS - 1]
+    best = None
+    for root in roots:
+        for sides in SIDE_ORDERS:
+            pos = start_once(graph, order, half, run, gap, sides, root)
+            score = layout_clashes(graph, order, pos, half, gap)
+            if best is None or score < best[0]:
+                best = (score, pos)
+            if score == 0:
+                break
+        if best[0] == 0:
+            break
+    pos = best[1]
+    if best[0]:
+        repair(graph, order, pos, half, run, gap)
+    return pos
+
+
+#: Sweeps of :func:`repair` at most.
+REPAIR_SWEEPS = 4
+#: Shifts across a wall that :func:`repair` tries, in the two rooms' half-extents.
+REPAIR_SHIFTS = (0.0, -0.5, 0.5, -1.0, 1.0)
+
+
+def repair(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
+           half: Dict[str, Point], run: float, gap: float) -> None:
+    """Move rooms, one at a time, to the spot beside or in the corner of their
+    neighbours that leaves fewer clashes (:func:`layout_clashes`, counted
+    locally), until a sweep moves nothing. In place."""
+    inset = set(order)
+    nbrs = {u: [m for m in graph.neighbours(u) if m in inset] for u in order}
+    nodes = {r: graph.node(r) for r in order}
+    dirs = dict(SIDES)
+
+    def side(a: str, pa: Point, b: str, pb: Point) -> str:
+        return _side_toward(pa, half[a], pb, half[b])
+
+    def local(u: str, c: Point) -> int:
+        bad = 0
+        mine = [side(u, c, m, pos[m]) for m in nbrs[u]]
+        bad += len(mine) - len(set(mine))
+        for m in nbrs[u]:
+            sm = side(m, pos[m], u, c)
+            bad += sum(1 for x in nbrs[m] if x != u and side(m, pos[m], x, pos[x]) == sm)
+        for r in order:
+            if (r != u and not may_overlap_in_plan(nodes[u], nodes[r])
+                    and _box_gap(c, half[u], pos[r], half[r]) < gap - 1e-6):
+                bad += 1
+        return bad
+
+    def spread(u: str, c: Point) -> float:
+        return sum(max(0.0, _box_gap(c, half[u], pos[m], half[m])) for m in nbrs[u])
+
+    def beside(q: str, u: str, sd: str, shift: float = 0.0) -> Point:
+        """u one run past q's ``sd`` wall, moved across it by ``shift`` times
+        the two rooms' half-extents across (still on that wall up to 1)."""
+        dx, dy = dirs[sd]
+        ext = abs(dx) * (half[q][0] + half[u][0]) + abs(dy) * (half[q][1] + half[u][1])
+        across = abs(dy) * (half[q][0] + half[u][0]) + abs(dx) * (half[q][1] + half[u][1])
+        return (pos[q][0] + dx * (ext + run) + abs(dy) * shift * across,
+                pos[q][1] + dy * (ext + run) + abs(dx) * shift * across)
+
+    for _sweep in range(REPAIR_SWEEPS):
+        moved = False
+        for u in order:
+            now = local(u, pos[u])
+            if now == 0 or not nbrs[u]:
+                continue
+            cands = [beside(q, u, sd, f) for q in nbrs[u] for sd, _d in SIDES
+                     for f in REPAIR_SHIFTS]
+            cands += [(beside(q, u, sx)[0], beside(r, u, sy)[1])
+                      for q in nbrs[u] for r in nbrs[u] if r != q
+                      for sx in ("E", "W") for sy in ("N", "S")]
+            best = (now, spread(u, pos[u]), pos[u])
+            for c in cands:
+                b = local(u, c)
+                if b < best[0] or (b == best[0] and b < now and spread(u, c) < best[1]):
+                    best = (b, spread(u, c), c)
+            if best[0] < now:
+                pos[u] = best[2]
+                moved = True
+        if not moved:
+            break
+
+
+def start_once(graph: TopologyGraph, order: Sequence[str],
+               half: Dict[str, Point], run: float, gap: float,
+               side_order: Sequence[str] = ("E", "N", "W", "S"),
+               root: Optional[str] = None) -> Dict[str, Point]:
+    """Breadth-first start: each room beside a placed neighbour on a free wall
+    side, or in the corner where two placed neighbours' free sides meet.
+
+    Candidates are ranked by (twice the wall clashes plus footprint clashes,
+    footprint clashes, ring-mate sides, distance to its placed neighbours and
+    to the placed rooms a loop through it will close on, room left, then a
+    fixed order); springs and separation clear a footprint clash, a wall
+    clash stays. A wall clash is a corridor that would leave a room
+    through a wall another of its corridors uses: the router exits a room
+    through the wall facing the other room, so two corridors on one wall
+    overlap past the doorway and Job B splits or drops one (finding 1: one
+    opening per wall side; degree <= 4 makes it possible)."""
     pos: Dict[str, Point] = {}
-    used: Dict[str, set] = {r: set() for r in order}
+    used: Dict[str, Dict[str, str]] = {r: {} for r in order}   # side -> neighbour
     rank = {r: k for k, r in enumerate(order)}
     nodes = {r: graph.node(r) for r in order}
-    for u in order:
+    mates = _ring_mates(graph, order)
+    dirs = dict(SIDES)
+
+    def beside(q: str, u: str, d: Point) -> Point:
+        dx, dy = d
+        ext = abs(dx) * (half[q][0] + half[u][0]) + abs(dy) * (half[q][1] + half[u][1])
+        return (pos[q][0] + dx * (ext + run), pos[q][1] + dy * (ext + run))
+
+    def ring_bad(u: str, q: str, side: str) -> int:
+        """u on q's ``side``: ring mates of u at q on the opposite side, or
+        left without a perpendicular side of q to take."""
+        bad = 0
+        for pair in mates.get(q, {}):
+            if u not in pair:
+                continue
+            (w,) = tuple(pair - {u})
+            if w in pos:
+                sw = next((sd for sd, m in used[q].items() if m == w), None)
+                bad += sw == _OPPOSITE[side]
+            else:
+                perp = ("N", "S") if side in "EW" else ("E", "W")
+                bad += all(sd in used[q] for sd in perp)
+        return bad
+
+    for u in _placing_order(graph, order, mates, root):
         placed_nbrs = sorted((m for m in graph.neighbours(u) if m in pos), key=rank.get)
         if not placed_nbrs:
             # The entrance (or a room nothing placed reaches): beside the layout.
@@ -183,45 +402,84 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
                 x1 = max(p[0] + half[r][0] for r, p in pos.items())
                 pos[u] = (x1 + run + half[u][0], 0.0)
             continue
-        p = placed_nbrs[0]
-        free = [s for s in SIDES if s[0] not in used[p]] or list(SIDES)
+        # Placed rooms a loop through u will close on later, through rooms not
+        # placed yet (2 or 3 hops away): u leans toward them.
+        pending: Dict[str, int] = {}
+        frontier = [x for x in graph.neighbours(u) if x in rank and x not in pos]
+        seen_x = set(frontier) | {u}
+        for hops in (2, 3):
+            nxt = []
+            for x in frontier:
+                for y in graph.neighbours(x):
+                    if y not in rank or y in seen_x:
+                        continue
+                    seen_x.add(y)
+                    if y in pos:
+                        if y not in placed_nbrs:
+                            pending.setdefault(y, hops)
+                    else:
+                        nxt.append(y)
+            frontier = nxt
+        free = {q: [sd for sd in side_order if sd not in used[q]] for q in placed_nbrs}
+        cands = []
+        for qk, q in enumerate(placed_nbrs):
+            sides = free[q] or (list(side_order) if qk == 0 else [])
+            for k, sd in enumerate(sides):
+                cands.append(((qk, k), beside(q, u, dirs[sd])))
+        npl = len(placed_nbrs)
+        for qk, q in enumerate(placed_nbrs):
+            for rk, r in enumerate(placed_nbrs):
+                if r == q:
+                    continue
+                for sx in (sd for sd in free[q] if sd in "EW"):
+                    for sy in (sd for sd in free[r] if sd in "NS"):
+                        c = (beside(q, u, dirs[sx])[0], beside(r, u, dirs[sy])[1])
+                        cands.append(((npl + qk, rk), c))
         best = None
-        for k, (name, (dx, dy)) in enumerate(free):
-            ext = abs(dx) * (half[p][0] + half[u][0]) + abs(dy) * (half[p][1] + half[u][1])
-            c = (pos[p][0] + dx * (ext + run), pos[p][1] + dy * (ext + run))
+        for tie, c in cands:
+            walls = 0
+            mine = set()
+            for m in placed_nbrs:
+                sm = _side_toward(pos[m], half[m], c, half[u])
+                su = _side_toward(c, half[u], pos[m], half[m])
+                walls += (sm in used[m]) + (su in mine)
+                mine.add(su)
             clashes = 0
             room = math.inf
-            for r, q in pos.items():
-                if r == p or may_overlap_in_plan(nodes[u], nodes[r]):
+            for r, qq in pos.items():
+                if may_overlap_in_plan(nodes[u], nodes[r]):
                     continue
-                g = _box_gap(c, half[u], q, half[r])
+                g = _box_gap(c, half[u], qq, half[r])
                 if g < gap:
                     clashes += 1
-                room = min(room, g)
+                if r not in placed_nbrs:
+                    room = min(room, g)
+            rings = sum(ring_bad(u, m, _side_toward(pos[m], half[m], c, half[u]))
+                        for m in placed_nbrs)
             # A room closing a loop sits as near its other placed neighbours
             # as the free sides allow, so the loop is drawn locally.
             close = sum(max(0.0, _box_gap(c, half[u], pos[m], half[m]))
-                        for m in placed_nbrs[1:])
-            key = (clashes, round(close, 6), -room, k)
+                        for m in placed_nbrs)
+            close += sum(max(0.0, _box_gap(c, half[u], pos[m], half[m])) / (h - 1)
+                         for m, h in pending.items())
+            key = (2 * walls + clashes, clashes, rings, round(close, 6), -room, tie)
             if best is None or key < best[0]:
                 best = (key, c)
         pos[u] = best[1]
-        if anchored is not None:
-            anchored.add(frozenset((p, u)))
         for m in placed_nbrs:
-            used[m].add(_side_toward(pos[m], half[m], pos[u], half[u]))
-            used[u].add(_side_toward(pos[u], half[u], pos[m], half[m]))
+            used[m].setdefault(_side_toward(pos[m], half[m], pos[u], half[u]), u)
+            used[u].setdefault(_side_toward(pos[u], half[u], pos[m], half[m]), m)
     return pos
 
 
 def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
                  pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Node],
-                 run: float, gap: float, anchored=None,
+                 run: float, gap: float,
                  iterations: Optional[int] = None) -> Dict[str, Point]:
-    """Spring iterations: each edge pulls its rooms toward its rest length
-    (the rooms' extents along the edge plus one run) and toward a shared axis
-    (so its corridor runs straight); every other pair repels, more strongly
-    the nearer their footprints."""
+    """Spring iterations: each edge keeps the wall side it starts on (b rests
+    one run past a's wall on that axis, centred across it, so its corridor
+    runs straight and stays on that wall); every other pair repels, more
+    strongly the nearer their footprints."""
     n = len(order)
     if n < 2:
         return dict(pos)
@@ -230,12 +488,12 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     P = np.array([pos[r] for r in order], dtype=float)
     H = np.array([half[r] for r in order], dtype=float)
     E = np.array([(idx[a], idx[b]) for a, b in edges], dtype=int).reshape(-1, 2)
-    # The side each edge starts on, as a unit axis from a to b; T marks the
-    # edges rooms were placed along.
+    # The side each edge starts on, as a unit axis from a to b. Every edge
+    # keeps it (task 18): a loop edge left to pull toward a bare rest
+    # distance could swing onto a wall another corridor uses.
     dirs = dict(SIDES)
     S = np.array([dirs[_side_toward(pos[a], half[a], pos[b], half[b])] for a, b in edges],
                  dtype=float).reshape(-1, 2)
-    T = np.array([frozenset(e) in (anchored or ()) for e in edges], dtype=bool)
     joined = np.zeros((n, n), dtype=bool)
     if len(E):
         joined[E[:, 0], E[:, 1]] = True
@@ -257,19 +515,9 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
         if len(E):
             a, b = E[:, 0], E[:, 1]
             d = P[b] - P[a]
-            # Edges a room was placed along keep their wall side: b rests one
-            # run past a's wall on that axis, centred across it.
             rest = (np.abs(S[:, 0]) * (H[a, 0] + H[b, 0])
                     + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]) + run)
-            f_dir = K_SPRING * (d - S * rest[:, None])
-            # The others (loop-closing edges) pull toward their rest distance.
-            dist = np.hypot(d[:, 0], d[:, 1])
-            dist = np.where(dist < 1e-6, 1e-6, dist)
-            u = d / dist[:, None]
-            rest = (np.abs(u[:, 0]) * (H[a, 0] + H[b, 0])
-                    + np.abs(u[:, 1]) * (H[a, 1] + H[b, 1]) + run)
-            f_len = (K_SPRING * (dist - rest))[:, None] * u
-            f = np.where(T[:, None], f_dir, f_len)
+            f = K_SPRING * (d - S * rest[:, None])
             np.add.at(F, a, f)
             np.add.at(F, b, -f)
         # Repulsion over every pair kept apart in plan.
@@ -300,12 +548,11 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
     """The ``spring`` placement: room centres for ``order`` (before separation
     and the Envelope; :func:`place` does those)."""
     run = RUN_FACTOR * corridor_width
-    anchored: set = set()
-    pos = start_positions(graph, order, half, run, gap, anchored)
+    pos = start_positions(graph, order, half, run, gap)
     edges = [(e.a, e.b) for e in graph.edges()
              if graph.node(e.a).is_room and graph.node(e.b).is_room]
     nodes = {r: graph.node(r) for r in order}
-    return spring_relax(order, edges, pos, half, nodes, run, gap, anchored)
+    return spring_relax(order, edges, pos, half, nodes, run, gap)
 
 
 #: The Placement registry: name -> callable(graph, order, half, corridor_width,
@@ -338,7 +585,8 @@ def fit_to_envelope(centres: Dict[str, Point], half: Dict[str, Point],
 
 __all__ = [
     "SIZE_SCALE", "SPREAD", "base_side", "area_matched_base", "room_size", "may_overlap_in_plan",
-    "bfs_order", "SIDES", "start_positions", "spring_relax", "spring",
+    "bfs_order", "SIDES", "SIDE_ORDERS", "START_ROOTS", "layout_clashes", "start_positions",
+    "start_once", "repair", "spring_relax", "spring",
     "PLACEMENT_FUNCS", "fit_to_envelope",
     "RUN_FACTOR", "REPEL_RUNS", "ITERATIONS", "K_SPRING", "K_REPEL",
 ]

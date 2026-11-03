@@ -7,7 +7,10 @@ and the graph engine, through Job B (``LayoutGenerator.generate``).
 G7  rooms take their class size; no two footprints overlap in plan; the
     classic corridor clearance holds; the ``entrance`` node is the entrance
     room; the final graph is connected.
-G8  Edge_Fidelity over the sweep: mean at or above the bar.
+G8  Edge_Fidelity over the sweep, per set (classic_eq, warren, temple): mean
+    at or above the bar. The BUILT graph (the corridors after Job B) keeps the
+    survey's shape: cycles per room, dead-end share and deep-end distance in
+    each base set's band on the sweep mean (task 18).
 G9  ``above`` / ``below`` / ``level`` hold after elevation unless counted in
     ``relations_broken``.
 G10 grown rooms fit an Envelope as classic ones do.
@@ -35,22 +38,36 @@ from tests.strategies import seeds
 from tests.test_corridor_clearance import clearance_violations
 from tests.test_envelope import _boxes, _disc, _inside_exactly
 from tests.test_properties_layout import _connected
+from tests.test_ruleset_classic_eq import SHAPE_BANDS as CLASSIC_BANDS
+from tests.test_ruleset_warren import BANDS as WARREN_BANDS, SHAPES as WARREN_SHAPES
 
 THEMES = st.sampled_from(["", "temple"])     # classic_eq, classic_eq + temple
 TOUCH = 1e-6
 
-# G8: Edge_Fidelity measured over this sweep (both sets) at task 8: mean
-# 0.9018 (min 0.72; 96 layouts). The bar is the measured mean less a margin, floored at
+# G8: Edge_Fidelity measured over this sweep (seeds x room counts, 48 layouts
+# per set). Task 8 measured 0.9018 for classic_eq and temple together; task 18
+# (rings of four, one wall side per neighbour) measured the means below (min
+# 0.81, 0.75, 0.82). The bar is the measured mean less a margin, floored at
 # the design's 0.85. Below it the placement is the bug, not the bar.
 SWEEP_SEEDS = range(8)
 SWEEP_NS = (6, 10, 15, 20, 25, 30)
-SWEEP_THEMES = ("", "temple")
-FIDELITY_MEASURED = 0.9018
-FIDELITY_BAR = max(0.85, FIDELITY_MEASURED - 0.03)
+# set label -> (rule set for GraphEngine, dungeon theme)
+SWEEP_SETS = {"classic_eq": (None, ""), "warren": ("warren", ""), "temple": (None, "temple")}
+FIDELITY_MEASURED = {"classic_eq": 0.9834, "warren": 0.9602, "temple": 0.9816}
+FIDELITY_BAR = {k: max(0.85, v - 0.03) for k, v in FIDELITY_MEASURED.items()}
+# The built-shape check skips the 6-room layouts: a graph that small can't
+# show the shape (its entrance and deep end are already a third of it), as
+# the rule-set tests say. Bands: design.md finding 5, as tasks 5 and 6 test
+# the grammar graphs against them. Task 18 measured, on rooms >= 10:
+# classic_eq cycles 0.134, dead ends 0.287, deep end 0.338; warren 0.217,
+# 0.152, 0.247 (task 8's placement: classic_eq built cycles 0.038 and warren
+# 0.045, both under their bands).
+SHAPE_MIN_ROOMS = 10
+BUILT_BANDS = {"classic_eq": CLASSIC_BANDS, "warren": {m: WARREN_BANDS[m] for m in WARREN_SHAPES}}
 
 
-def _graph_layout(seed, n, theme="", **kw):
-    gen = LayoutGenerator("dungeon", seed=seed, engine=GraphEngine())
+def _graph_layout(seed, n, theme="", rule_set=None, **kw):
+    gen = LayoutGenerator("dungeon", seed=seed, engine=GraphEngine(rule_set))
     spec = gen.generate(f"g{seed}", room_count=n, dungeon_theme=theme,
                         add_lights=False, **kw)
     return gen, spec
@@ -180,26 +197,64 @@ def _ctx(s, n, theme):
 # G8 and G9 over the sweep
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=1)
-def _sweep():
+@lru_cache(maxsize=None)
+def _sweep(label):
+    rule_set, theme = SWEEP_SETS[label]
     out = []
-    for theme in SWEEP_THEMES:
-        for n in SWEEP_NS:
-            for s in SWEEP_SEEDS:
-                gen, spec = _graph_layout(1000 * n + s, n, theme)
-                out.append((spec, gen.layout_record))
+    for n in SWEEP_NS:
+        for s in SWEEP_SEEDS:
+            gen, spec = _graph_layout(1000 * n + s, n, theme, rule_set)
+            out.append((spec, gen.layout_record))
     return out
 
 
-def test_edge_fidelity_over_the_sweep():
-    fids = [rec["edge_fidelity"] for _spec, rec in _sweep()]
+def _built_shape(spec, record):
+    """Cycles per room, dead-end share and deep-end distance of the graph the
+    corridors build (Job B's, not the grammar's)."""
+    n = len(spec.rooms)
+    adj = {r.id: set() for r in spec.rooms}
+    for c in spec.corridors:
+        adj[c.from_room].add(c.to_room)
+        adj[c.to_room].add(c.from_room)
+    pairs = sum(len(v) for v in adj.values()) // 2
+    entrance = next(rid for rid, v in record["rooms"].items() if v["kind"] == "entrance")
+    dist = {entrance: 0}
+    queue = [entrance]
+    for u in queue:
+        for v in sorted(adj[u]):
+            if v not in dist:
+                dist[v] = dist[u] + 1
+                queue.append(v)
+    return {"cycles_per_room": (pairs - n + 1) / n,
+            "dead_end": sum(1 for v in adj.values() if len(v) == 1) / n,
+            "deep_end": max(dist.values()) / n}
+
+
+@pytest.mark.parametrize("label", sorted(SWEEP_SETS))
+def test_edge_fidelity_over_the_sweep(label):
+    fids = [rec["edge_fidelity"] for _spec, rec in _sweep(label)]
     mean = statistics.mean(fids)
-    assert mean >= FIDELITY_BAR, f"mean Edge_Fidelity {mean:.4f} < bar {FIDELITY_BAR:.4f}"
+    bar = FIDELITY_BAR[label]
+    assert mean >= bar, f"{label}: mean Edge_Fidelity {mean:.4f} < bar {bar:.4f}"
+
+
+@pytest.mark.parametrize("label", sorted(BUILT_BANDS))
+def test_built_graph_keeps_the_survey_shape(label):
+    """Loops survive placement (task 18): the corridors Job B builds still
+    have the set's survey shape on the sweep mean."""
+    rows = [_built_shape(spec, rec) for spec, rec in _sweep(label)
+            if len(spec.rooms) >= SHAPE_MIN_ROOMS]
+    bad = []
+    for m, (lo, hi) in BUILT_BANDS[label].items():
+        mean = statistics.fmean(r[m] for r in rows)
+        if not lo <= mean <= hi:
+            bad.append(f"{m}: built mean {mean:.3f}, band {lo:.2f}-{hi:.2f}")
+    assert not bad, f"{label}: " + "; ".join(bad)
 
 
 def test_relations_hold_unless_counted():
     held = total = 0
-    for spec, rec in _sweep():
+    for spec, rec in (x for label in SWEEP_SETS for x in _sweep(label)):
         broken = _broken(spec, rec)
         assert rec["relations_broken"] == broken
         n_rel = sum(1 for e in rec["edges"] if e[2] != "any")
