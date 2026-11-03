@@ -32,7 +32,7 @@ from core.ter import SHADER_OPAQUE
 
 from . import semantics
 from .envelope import Envelope, EnvelopeFitError
-from .layout_engine import (BuildContext, ClassicEngine, ENGINES, RELATIONS,
+from .layout_engine import (ClassicEngine, ENGINES, RELATIONS,
                             LayoutContext, LayoutEngine)
 from .routing import corridor_route, plan_route, exit_axis_x, route_footprint
 from .zone_types import STYLE_PROFILE
@@ -77,6 +77,32 @@ def _profile_mean(profile: dict, path: list, default: float) -> float:
         val = node["mean"]
         return val if val and val > 0 else default
     return default
+
+
+# An ``above`` / ``below`` edge holds when the floors differ by at least this
+# much in its direction; ``level`` when they're within LEVEL_TOL.
+RELATION_RISE = 1.0
+LEVEL_TOL = 1e-3
+
+
+def relations_broken(rooms: List[RoomSpec],
+                     relations: Dict[Tuple[int, int], str]) -> int:
+    """How many vertical relations the final floors don't hold. ``(i, j):
+    "above"`` wants room j's floor above room i's (design "Vertical
+    relations")."""
+    broken = 0
+    for (i, j), rel in relations.items():
+        dz = rooms[j].floor_z - rooms[i].floor_z
+        if rel == "above":
+            ok = dz >= RELATION_RISE - LEVEL_TOL
+        elif rel == "below":
+            ok = dz <= -RELATION_RISE + LEVEL_TOL
+        elif rel == "level":
+            ok = abs(dz) <= LEVEL_TOL
+        else:
+            ok = True
+        broken += not ok
+    return broken
 
 
 # Zone types that use the box backend and therefore support the semantic layer.
@@ -181,6 +207,11 @@ class LayoutGenerator:
         #               ramp. 0.5 ≈ 26.6°, comfortably under the traversability
         #               agent's 40° walkable-slope cap.
         self.max_grade = 0.5
+
+        # The engine's record of the last layout (None for classic), with
+        # Job B's edge_fidelity and relations_broken added. What the sidecar's
+        # layout block reports.
+        self.layout_record: Optional[dict] = None
 
         # Advisory warnings from the last generate() (e.g. ``rooms_reduced``
         # when an Envelope could not hold every requested room).
@@ -372,6 +403,8 @@ class LayoutGenerator:
             self._fit_floors(rooms, edges, entrance, envelope)
 
         self._build_corridors(spec, rooms, edges)
+        self.layout_record = self._layout_record(result, rooms, edges, relations,
+                                                 elevation)
 
         # Point every surface still on the bare default name at the shared
         # Material_Name (themed rooms already carry their own; Req 1.3).
@@ -393,9 +426,29 @@ class LayoutGenerator:
 
         return spec
 
+    @staticmethod
+    def _layout_record(result, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                       relations: Dict[Tuple[int, int], str],
+                       elevation: bool) -> Optional[dict]:
+        """The engine's record plus what Job B did to its graph:
+        ``edge_fidelity`` (the engine's edges still present as corridors, over
+        their count) and ``relations_broken`` (``above`` / ``below`` / ``level``
+        edges whose final floors don't hold the relation; None with elevation
+        off, where relations don't act)."""
+        if result.record is None:
+            return None
+        rec = dict(result.record)
+        grammar = {frozenset((e[0], e[1])) for e in result.edges}
+        final = {frozenset(e) for e in edges}
+        rec["edge_fidelity"] = (len(grammar & final) / len(grammar)) if grammar else 1.0
+        rec["relations_broken"] = (relations_broken(rooms, relations)
+                                   if elevation else None)
+        return rec
+
     def _layout_context(self, room_count: int, theme: str,
                         race: str) -> LayoutContext:
         """The seam's one coupling to this generator (design "The seam")."""
+        from .topology.rewrite import BuildContext   # see layout_engine.__getattr__
         return LayoutContext(
             rng=self.rng,
             room_min=self.room_min, room_max=self.room_max,
