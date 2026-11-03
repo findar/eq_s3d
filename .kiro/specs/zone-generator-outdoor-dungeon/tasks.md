@@ -79,7 +79,7 @@ The design's five open questions were answered on 2026-11-01
   - Owns: web/index.html, web/src/main.ts
   - Reqs: 6.1
 
-- [ ] 10. HUMAN: first look at an outdoor dungeon
+- [x] 10. HUMAN: first look at an outdoor dungeon
   - Card: [cards/10-human-first-look.md](cards/10-human-first-look.md)
   - Type: human · Depends: 6, 7, 9
 
@@ -94,7 +94,7 @@ The design's five open questions were answered on 2026-11-01
   - Owns: docs/ACCEPTANCE.md, tests/test_outdoor_dungeon_build.py
   - Reqs: 8.3, exit criteria 1–2
 
-- [ ] 13. HUMAN: outdoor dungeon acceptance pass
+- [x] 13. HUMAN: outdoor dungeon acceptance pass
   - Card: [cards/13-human-acceptance.md](cards/13-human-acceptance.md)
   - Type: human · Depends: 12
 
