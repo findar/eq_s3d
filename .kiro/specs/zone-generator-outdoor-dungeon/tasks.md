@@ -70,7 +70,7 @@ The design's five open questions were answered on 2026-11-01
 - [x] 8. Maps and preview
   - Card: [cards/08-maps-and-preview.md](cards/08-maps-and-preview.md)
   - Type: agent · Size: S · Depends: 6
-  - Owns: generators/mapgeom.py, generators/eqmap.py, tests/test_outdoor_dungeon_maps.py
+  - Owns: generators/mapgeom.py, generators/eqmap.py, tests/test_outdoor_dungeon_maps.py, generators/envelope.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_entrance.py, tests/test_outdoor_dungeon_controls.py (entrance-room fix)
   - Reqs: 7.2, 7.3
 
 - [ ] 9. Web: zone type and controls

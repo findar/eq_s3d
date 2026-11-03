@@ -14,4 +14,4 @@ The outline and EQ map files show the open ground and the dungeon, the dungeon o
 - M2's depth bands already handle stacked floors; check before changing them.
 
 ## Result
-✔ 9b003b0 · 1004 passed
+✔ 9b003b0, fix a274f20 · 1013 passed
