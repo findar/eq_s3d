@@ -49,7 +49,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: generators/topology/rewrite.py, tests/test_topology_rewrite.py
   - Reqs: 4
 
-- [ ] 5. Base set classic_eq and the temple layer
+- [x] 5. Base set classic_eq and the temple layer
   - Card: [cards/05-classic-eq.md](cards/05-classic-eq.md)
   - Type: agent · Size: M · Depends: 1, 4
   - Owns: rules/topology/classic_eq.toml, rules/topology/layers/temple.toml, rules/topology/themes.toml, tests/test_ruleset_classic_eq.py
