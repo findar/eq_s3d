@@ -4,9 +4,11 @@ generators/layout.py
 Procedural zone layout. Generates a ZoneSpec (rooms + corridors + lights) from
 high-level parameters, constrained by a style profile.
 
-Layout uses a TinyKeep-style spatial algorithm (scatter → separate → Delaunay →
-MST + loop edges → graph-based elevation → wall-to-wall corridors), which
-produces composed hub-and-branch dungeons without overlaps or tangling. Room
+The rooms and their graph come from a Layout_Engine (``generators/layout_engine.py``);
+the default ``ClassicEngine`` is TinyKeep (scatter → separate → Delaunay → MST +
+loop edges). Everything after it lives here: pacing, themes, graph-based
+elevation, crossing and conflict fixes, wall-to-wall corridors, gating. The
+result is a composed hub-and-branch dungeon without overlaps or tangling. Room
 sizes track the theme's measured footprint; the result feeds all three geometry
 backends (box, organic cave, heightfield terrain) unchanged.
 
@@ -20,7 +22,7 @@ import json
 import random
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 from .zone_spec import (
     ZoneSpec, RoomSpec, CorridorSpec, LightSpec, RegionSpec, MaterialSpec,
@@ -30,6 +32,8 @@ from core.ter import SHADER_OPAQUE
 
 from . import semantics
 from .envelope import Envelope, EnvelopeFitError
+from .layout_engine import (BuildContext, ClassicEngine, ENGINES, RELATIONS,
+                            LayoutContext, LayoutEngine)
 from .routing import corridor_route, plan_route, exit_axis_x, route_footprint
 from .zone_types import STYLE_PROFILE
 
@@ -94,7 +98,16 @@ class LayoutGenerator:
         spec = gen.generate("myrealm", room_count=5)
     """
 
-    def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None):
+    def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None,
+                 engine: Union[LayoutEngine, str, None] = None):
+        # The Layout_Engine that lays out the rooms and their graph (Job A);
+        # ``None`` is the classic TinyKeep engine, a string names one in
+        # ``layout_engine.ENGINES``.
+        if engine is None:
+            engine = ClassicEngine()
+        elif isinstance(engine, str):
+            engine = ENGINES[engine]()
+        self.engine: LayoutEngine = engine
         # Normalise / legacy-map the zone type (``outdoor`` -> ``wilderness``)
         # so the backend registry and terrain routing always see the current
         # vocabulary, whatever a caller hands in.
@@ -263,19 +276,34 @@ class LayoutGenerator:
             self._apply_room_scale(room_count)
         shared = self._add_default_materials(spec, dungeon_race)
 
-        # --- TinyKeep-style layout -------------------------------------
-        # 1. Scatter rooms in an ellipse, 2. separate them, 3. classify
-        #    main/filler, 4. Delaunay graph, 5. MST + a few loop edges,
-        #    6. assign elevation over the graph, 7. wall-to-wall corridors.
-        rooms = self._scatter_rooms(room_count, envelope)
-        self._separate_rooms(rooms)
-        edges = self._connect_rooms(rooms)          # list of (i, j) index pairs
+        # --- Job A: the rooms and their graph, from the Layout_Engine ----
+        # (classic: scatter in an ellipse, separate, Delaunay, MST + a few
+        # loop edges). Then Job B: pacing, elevation over the graph,
+        # wall-to-wall corridors.
+        result = self.engine.generate(
+            self._layout_context(room_count, dungeon_theme, dungeon_race),
+            room_count, envelope)
+        rooms = result.rooms
+        # Job B works on plain (i, j) pairs; the vertical relations go to the
+        # elevation pass alone (only the ones that constrain anything).
+        edges = [(e[0], e[1]) for e in result.edges]
+        relations = {(e[0], e[1]): e[2] for e in result.edges
+                     if len(e) > 2 and e[2] != "any"}
+        bad = sorted(set(relations.values()) - set(RELATIONS))
+        if bad:
+            raise ValueError(f"{self.engine.name}: unknown edge relation(s) {bad}; "
+                             f"expected one of {RELATIONS}")
 
         # Pacing: derive entrance / depth / roles from the graph, then bias
         # room geometry (and later lighting) by role & depth so the zone reads
-        # as a progression rather than a flat set of equal rooms.
-        entrance = self._apply_pacing(rooms, edges,
-                                      envelope.entry if envelope is not None else None)
+        # as a progression rather than a flat set of equal rooms. The way in
+        # is the Envelope's when it has one (the hill's side), else the
+        # engine's; an engine that sizes its own rooms skips the role bias.
+        entry = envelope.entry if envelope is not None else None
+        if entry is None:
+            entry = result.entry
+        entrance = self._apply_pacing(rooms, edges, entry,
+                                      size_bias=not self.engine.sizes_rooms)
 
         # Content / semantic layer (box themes only): label rooms with a
         # semantic type + theme and apply the shape/proportion/ceiling/floor
@@ -296,7 +324,7 @@ class LayoutGenerator:
         self._separate_rooms(rooms)
 
         if elevation:
-            self._assign_elevation(rooms, edges, entrance)
+            self._assign_elevation(rooms, edges, entrance, relations)
         elif themed:
             # Elevation is off, but the semantic layer perturbed floor_z (sunk
             # arenas / sumps, raised thrones). Those biased floors never went
@@ -364,6 +392,18 @@ class LayoutGenerator:
             self._apply_gating(spec, rooms, edges, entrance, n_locks=locks)
 
         return spec
+
+    def _layout_context(self, room_count: int, theme: str,
+                        race: str) -> LayoutContext:
+        """The seam's one coupling to this generator (design "The seam")."""
+        return LayoutContext(
+            rng=self.rng,
+            room_min=self.room_min, room_max=self.room_max,
+            ceiling=self.ceiling, corridor_width=self.corridor_width,
+            separate=self._separate_rooms,
+            build=BuildContext(zone_type=self.zone_type, theme=theme, race=race,
+                               race_scale=semantics.race_scale(race),
+                               room_count=room_count))
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement
@@ -473,7 +513,8 @@ class LayoutGenerator:
 
     def _apply_pacing(self, rooms: List[RoomSpec],
                       edges: List[Tuple[int, int]],
-                      entry: Optional[Tuple[float, float]] = None) -> int:
+                      entry: Optional[Tuple[float, float]] = None,
+                      size_bias: bool = True) -> int:
         """
         Analyse the room graph to assign each room a role and depth:
 
@@ -487,7 +528,8 @@ class LayoutGenerator:
           - deadend  : a leaf (degree 1) that isn't the entrance.
           - standard : everything else.
 
-        Then bias room geometry by role & depth so the shape reflects the pacing.
+        Then bias room geometry by role & depth so the shape reflects the pacing
+        (unless *size_bias* is False: an engine that sizes its own rooms).
         Returns the entrance room index.
         """
         n = len(rooms)
@@ -546,7 +588,8 @@ class LayoutGenerator:
             else:
                 rooms[i].role = "standard"
 
-        self._bias_rooms_by_role(rooms)
+        if size_bias:
+            self._bias_rooms_by_role(rooms)
         return entrance
 
     def _bias_rooms_by_role(self, rooms: List[RoomSpec]) -> None:
@@ -571,46 +614,8 @@ class LayoutGenerator:
             r.height = max(40.0, r.height * cs)
 
     # ------------------------------------------------------------------
-    # TinyKeep layout steps
+    # Separation (engines reach it through LayoutContext.separate)
     # ------------------------------------------------------------------
-
-    def _scatter_rooms(self, room_count: int,
-                       envelope: Optional[Envelope] = None) -> List[RoomSpec]:
-        """
-        Step 1: scatter rooms inside an ellipse. Sizes drawn from a normal
-        distribution around the theme's room scale so a few rooms are large
-        (hubs) and most are smaller (connective), à la TinyKeep. With an
-        Envelope the ellipse is centred on its footprint and no wider than it.
-        """
-        mean_side = (self.room_min + self.room_max) / 2
-        std_side = (self.room_max - self.room_min) / 3
-        # Ellipse radius grows with room count so rooms have space to separate.
-        spread = mean_side * (0.8 + 0.5 * room_count)
-        ox = oy = 0.0
-        if envelope is not None:
-            spread = min(spread, 2.0 * max(0.0, envelope.inradius - mean_side / 2))
-            ox, oy = envelope.centre
-
-        rooms: List[RoomSpec] = []
-        for i in range(room_count):
-            # Random point in an ellipse (slightly wider than tall for a
-            # natural footprint ratio).
-            px, py = self._rand_in_ellipse(spread, spread * 0.75)
-            w = max(self.room_min * 0.6, self.rng.gauss(mean_side, std_side))
-            d = max(self.room_min * 0.6, self.rng.gauss(mean_side, std_side))
-            rooms.append(RoomSpec(
-                id=f"room_{i}",
-                center_x=px + ox, center_y=py + oy, floor_z=0.0,
-                width=w, depth=d, height=self.ceiling,
-            ))
-        return rooms
-
-    def _rand_in_ellipse(self, rx: float, ry: float) -> Tuple[float, float]:
-        import math
-        t = 2 * math.pi * self.rng.random()
-        u = self.rng.random() + self.rng.random()
-        r = (2 - u) if u > 1 else u
-        return rx * r * math.cos(t) / 2, ry * r * math.sin(t) / 2
 
     def _separate_rooms(self, rooms: List[RoomSpec],
                         iterations: Optional[int] = None) -> None:
@@ -657,58 +662,6 @@ class LayoutGenerator:
                         moved = True
             if not moved:
                 break
-
-    def _connect_rooms(self, rooms: List[RoomSpec]) -> List[Tuple[int, int]]:
-        """
-        Steps 3–5: build a connection graph via Delaunay triangulation, reduce
-        it to a minimum spanning tree (guarantees reachability, mostly tree-
-        shaped), then add back a few edges to create loops/alternate paths.
-        Returns a list of (i, j) room-index edges.
-        """
-        n = len(rooms)
-        if n <= 1:
-            return []
-        if n == 2:
-            return [(0, 1)]
-
-        pts = [(r.center_x, r.center_y) for r in rooms]
-
-        # Candidate edges from Delaunay triangulation (fall back to a chain if
-        # scipy/Delaunay is unavailable or degenerate — e.g. collinear points).
-        candidate = self._delaunay_edges(pts)
-        if not candidate:
-            return [(i, i + 1) for i in range(n - 1)]
-
-        # Minimum spanning tree over candidate edges (Kruskal).
-        import math
-        weighted = sorted(
-            candidate,
-            key=lambda e: (pts[e[0]][0] - pts[e[1]][0]) ** 2
-                          + (pts[e[0]][1] - pts[e[1]][1]) ** 2,
-        )
-        parent = list(range(n))
-
-        def find(x):
-            while parent[x] != x:
-                parent[x] = parent[parent[x]]
-                x = parent[x]
-            return x
-
-        mst: List[Tuple[int, int]] = []
-        extra: List[Tuple[int, int]] = []
-        for i, j in weighted:
-            ri, rj = find(i), find(j)
-            if ri != rj:
-                parent[ri] = rj
-                mst.append((i, j))
-            else:
-                extra.append((i, j))
-
-        # Add back ~12% of the non-tree edges for loops/alternate routes.
-        self.rng.shuffle(extra)
-        n_add = max(0, int(len(extra) * 0.12))
-        mst.extend(extra[:n_add])
-        return mst
 
     def _resolve_crossings(self, rooms: List[RoomSpec],
                            edges: List[Tuple[int, int]]) -> bool:
@@ -1039,30 +992,27 @@ class LayoutGenerator:
 
         return removed_any
 
-    def _delaunay_edges(self, pts: List[Tuple[float, float]]) -> List[Tuple[int, int]]:
-        """Delaunay triangulation edges via scipy; empty list on failure."""
-        try:
-            import numpy as np
-            from scipy.spatial import Delaunay
-            tri = Delaunay(np.array(pts))
-            edges = set()
-            for simplex in tri.simplices:
-                for a in range(3):
-                    for b in range(a + 1, 3):
-                        i, j = int(simplex[a]), int(simplex[b])
-                        edges.add((min(i, j), max(i, j)))
-            return list(edges)
-        except Exception:
-            return []
-
     def _assign_elevation(self, rooms: List[RoomSpec],
                           edges: List[Tuple[int, int]],
-                          entrance: int = 0) -> None:
+                          entrance: int = 0,
+                          relations: Optional[Dict[Tuple[int, int], str]] = None
+                          ) -> None:
         """
         Step 6: assign floor heights over the graph via BFS from the entrance,
         so connected rooms can sit at different Z and corridors ramp/step
         between them. Height changes propagate along edges (not arbitrarily),
         which keeps elevation coherent rather than random.
+
+        *relations* maps an edge ``(i, j)`` to where room j sits relative to
+        room i (design "Vertical relations"); an edge not in it is ``any``:
+          - ``any``: the change happens with ``elevation_chance``, up or down
+            at random (rng draws: chance, rise, sign; the rise and sign only
+            when the chance hits and the rise survives the cap).
+          - ``above`` / ``below``: the change always happens, in that
+            direction (rng draws: rise only).
+          - ``level``: no change (no rng draws).
+        The rise is bounded by the run the same way for all of them, so
+        ``_relax_elevation`` may still pull a room to keep a loop walkable.
         """
         from collections import defaultdict, deque
         adj = defaultdict(list)
@@ -1078,8 +1028,11 @@ class LayoutGenerator:
                 if nxt in visited:
                     continue
                 visited.add(nxt)
+                rel = self._relation(relations, cur, nxt)
                 z = rooms[cur].floor_z
-                if self.rng.random() < self.elevation_chance:
+                if rel == "level":
+                    pass
+                elif rel != "any" or self.rng.random() < self.elevation_chance:
                     rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
                     # Bound the rise by what the corridor run can carry at a
                     # walkable grade. The geometry confines the rise to one leg;
@@ -1091,7 +1044,11 @@ class LayoutGenerator:
                     run = self._elevation_run(rooms[cur], rooms[nxt])
                     rise = min(rise, run * self.max_grade)
                     if rise >= 1.0:
-                        z += rise * self.rng.choice([1, -1])
+                        if rel == "any":
+                            sign = self.rng.choice([1, -1])
+                        else:
+                            sign = 1 if rel == "above" else -1
+                        z += rise * sign
                 rooms[nxt].floor_z = z
                 q.append(nxt)
 
@@ -1102,6 +1059,19 @@ class LayoutGenerator:
         # band of ALL its neighbours until it settles, so every corridor — tree
         # or loop — ends up walkable.
         self._relax_elevation(rooms, adj, entrance)
+
+    @staticmethod
+    def _relation(relations: Optional[Dict[Tuple[int, int], str]],
+                  i: int, j: int) -> str:
+        """Where room j sits relative to room i: the relation of edge (i, j),
+        or of (j, i) turned round; ``any`` when neither carries one."""
+        if not relations:
+            return "any"
+        rel = relations.get((i, j))
+        if rel is not None:
+            return rel
+        rel = relations.get((j, i), "any")
+        return {"above": "below", "below": "above"}.get(rel, rel)
 
     def _relax_semantic_floors(self, rooms: List[RoomSpec],
                                edges: List[Tuple[int, int]],

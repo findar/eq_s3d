@@ -84,3 +84,35 @@ def test_heightfield_layout_matches_golden():
     spec = LayoutGenerator("wilderness", seed=9).generate("g_hf", room_count=7)
     assert _spec_hash(spec) == (
         "2d7a22328be50d0760b17d21c4b6a1ef190aef1a625f95b84f90fb0bc8104a93")
+
+
+class _StubEngine:
+    """Three rooms in a row, sized by the engine, entered from the east end,
+    rising then level: Job B's three touch points in one layout."""
+    name = "stub"
+    sizes_rooms = True
+
+    def generate(self, ctx, room_count, envelope):
+        from generators.layout_engine import EngineResult, Edge
+        from generators.zone_spec import RoomSpec
+        rooms = [RoomSpec(id=f"room_{k}", center_x=-1200.0 + 1200.0 * k, center_y=0.0,
+                          floor_z=0.0, width=300.0, depth=300.0, height=ctx.ceiling)
+                 for k in range(3)]
+        ctx.separate(rooms)
+        return EngineResult(rooms=rooms,
+                            edges=[Edge(2, 1, "below"), Edge(1, 0, "level")],
+                            entry=(5000.0, 0.0))
+
+
+def test_engine_touch_points():
+    """The engine's entry picks the entrance, ``sizes_rooms`` skips the role
+    bias, and edge relations steer elevation (room 1 below room 2 on every
+    seed, room 0 level with room 1)."""
+    for seed in range(5):
+        gen = LayoutGenerator("dungeon", seed=seed, engine=_StubEngine())
+        spec = gen.generate("stub", room_count=3, add_lights=False)
+        r0, r1, r2 = spec.rooms
+        assert r2.role == "entrance" and r0.role == "climax"
+        assert all(r.width == 300.0 and r.depth == 300.0 for r in spec.rooms)
+        assert r1.floor_z < r2.floor_z - 1.0
+        assert abs(r0.floor_z - r1.floor_z) < 1e-6
