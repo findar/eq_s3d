@@ -37,7 +37,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: generators/layout_engine.py, generators/layout.py, tests/test_layout_engine.py
   - Reqs: 2
 
-- [ ] 3. Rule-set format, loader and checks
+- [x] 3. Rule-set format, loader and checks
   - Card: [cards/03-ruleset-format.md](cards/03-ruleset-format.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/topology/__init__.py, generators/topology/graph.py, generators/topology/ruleset.py, tests/test_topology_ruleset.py
