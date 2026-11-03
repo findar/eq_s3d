@@ -376,7 +376,7 @@ keeps its identity, so its earlier edges and attributes stay).
 
 **Driver.** For each recipe stage: while the stage's room budget isn't spent,
 list every match of the stage's rules, drop the ones whose result breaks an
-invariant (connected; degree ≤ 4; loops close over 3–5 rooms) or can no
+invariant (connected; degree ≤ 4; loops close over 4–5 rooms: a ring of three puts two of a room's corridors on one wall, and Job B drops the closing edge, task 18) or can no
 longer reach exactly n rooms (each remaining `Area` still needs a room, so a
 rule is legal only if rooms so far + its rooms + `Area`s left ≤ n), pick one
 by weight (candidates in sorted order, then the rng), apply it. A stage with
@@ -529,7 +529,7 @@ python scripts/topology_rules.py draw classic_eq --out output/rules/
 |---|-----------|------|
 | G1 | Classic builds are byte-identical to today (Zone_Spec JSON, `.eqg` contents) | 2.2, 7.3 |
 | G2 | Every check failure names file, rule or stage, field; a mutated valid file fails with the field it broke | 3.2, 3.3 |
-| G3 | Every grown graph has no `Area` left, is connected, has exactly n rooms, max degree ≤ 4, loops of 3–5 | 4.1, 4.2 |
+| G3 | Every grown graph has no `Area` left, is connected, has exactly n rooms, max degree ≤ 4, loops of 4–5 | 4.1, 4.2 |
 | G4 | The driver terminates or raises `TopologyError`; same seed, same graph | 4.3, 4.4 |
 | G5 | A layer merges without changing its base file; the merged set passes the checks | 4.5 |
 | G6 | Each base set's shape measures fall in its survey bands; `warren` differs from `classic_eq` in the measured direction | 5 |
@@ -549,7 +549,7 @@ over built zones (task 12), not a per-commit property.
 - **Placement is the hard part.** A graph the plane can't hold cleanly gets
   split and pruned by Job B until it is TinyKeep's graph again, or worse.
   Edge_Fidelity is measured from the first placement commit, and the rules
-  keep loops short (3–5 rooms) so every loop can be drawn locally.
+  keep loops short (4–5 rooms) so every loop can be drawn locally; task 18 found rings of three lose their closing edge almost always, and gave each neighbour its own wall at placement.
 - **Springs settle into local minima.** A spring layout can fold a branch
   across the main path. The breadth-first start keeps it near a clean layout,
   and fidelity shows when it doesn't.
