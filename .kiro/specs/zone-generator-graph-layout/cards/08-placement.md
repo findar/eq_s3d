@@ -6,10 +6,10 @@ Index entry: `tasks.md` task 8. Requirements 6. Design "Size classes", "Placemen
 `embed.py`: size classes to footprints and heights, the Placement registry with `spring`, and the `may_overlap_in_plan` predicate (always False). `GraphEngine` in `layout_engine.py` (rule set → graph → placement → `EngineResult`). In `layout.py`, the role size bias skipped for engines that size rooms, and elevation reading edge relations.
 
 ## Done when
-- [ ] G7: rooms take their class's size; grown layouts never overlap in plan, keep the classic corridor clearance; the `entrance` node is the entrance room; the final graph (after Job B) is connected; over seeds, n and both sets.
-- [ ] G8: Edge_Fidelity measured over the sweep seeds; the bar (≥ 0.85) and the measured mean are in the commit body and the test.
-- [ ] G9: `above` / `below` / `level` hold after elevation unless the loop relax broke them, which is counted.
-- [ ] G10: with a synthetic Envelope (as in `tests/test_envelope.py`), grown rooms fit as classic ones do. G11: umbrella Req 21 holds.
+- [x] G7: rooms take their class's size; grown layouts never overlap in plan, keep the classic corridor clearance; the `entrance` node is the entrance room; the final graph (after Job B) is connected; over seeds, n and both sets.
+- [x] G8: Edge_Fidelity measured over the sweep seeds; the bar (≥ 0.85) and the measured mean are in the commit body and the test.
+- [x] G9: `above` / `below` / `level` hold after elevation unless the loop relax broke them, which is counted.
+- [x] G10: with a synthetic Envelope (as in `tests/test_envelope.py`), grown rooms fit as classic ones do. G11: umbrella Req 21 holds.
       → verify: `python -m pytest tests/test_topology_embed.py tests/test_layout_engine.py -q`
 
 ## Pitfalls
@@ -20,3 +20,4 @@ Index entry: `tasks.md` task 8. Requirements 6. Design "Size classes", "Placemen
 - Two `BuildContext`s exist with the same fields: `generators/layout_engine.py` (task 2) and `generators/topology/rewrite.py` (task 4, with `.get` for `when`). Keep one: `layout_engine` imports topology's. Both files are in this task's Owns (add `generators/topology/rewrite.py` for that one import if needed, and say so).
 
 ## Result
+✔ 1fbc058 · 1112 passed
