@@ -418,10 +418,9 @@ def label_rooms(spec: ZoneSpec,
 
         r.semantic_type = type_name
         r.room_theme = arch.name
-        # The boss room: the pacing climax, or on a grown layout the rules'
-        # deep end (it takes the climax type; the deepest-by-hops room the
-        # climax role picks is often a side room there).
-        r.boss = (r.kind == "deep") if r.kind else (r.role == "climax")
+        # The boss room is the pacing climax (on a grown layout the engine
+        # names the rules' deep end as the climax).
+        r.boss = r.role == "climax"
 
         # Suggestion fields (data only — never placed geometry).
         r.prop_hints = list(rt.props)
