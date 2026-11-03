@@ -1,14 +1,18 @@
-"""Outdoor-dungeon task 6: the backend and the gate (D4, D6, D7, retry)."""
+"""Outdoor-dungeon task 6: the backend and the gate (D4, D6, D7, retry); task
+12: the time budget (Req 8.3)."""
 
 import random
+import time
 
 import pytest
 
+from ai.expand import plan_to_spec
+from ai.schema import ZonePlan
 from generators import outdoor_dungeon as od
 from generators.backends import TerrainBackend
 from generators.builder import ZoneBuilder
-from generators.pipeline import GenerationFailed, generate_validated
-from generators.wilderness.build import build_wilderness_ter, wilderness_spec
+from generators.pipeline import DEFAULT_TIMEOUT_S, GenerationFailed, generate_validated
+from generators.wilderness.build import _landscape, build_wilderness_ter, wilderness_spec
 
 
 def _build(tmp_path, seed, name="odtest"):
@@ -72,3 +76,21 @@ def test_planning_failure_is_retried_on_a_fresh_seed(tmp_path):
                            output_dir=tmp_path, write_glb=False, failure_log=None)
     assert err.value.failures[0].checks == ["plan"]
     assert not (tmp_path / ".attempts").exists()
+
+
+@pytest.mark.slow
+def test_full_generate_fits_the_time_budget(tmp_path):
+    """Req 8.3: a full gated generate (planning with its retries, the build,
+    the bowl and room gate, the format check, maps and the GLB) of the
+    heaviest theme takes at most 60 s, the pipeline's own timeout."""
+    _landscape.cache_clear()  # time a cold build, not a cache hit
+    plan = ZonePlan(name="odtime", zone_type="outdoor_dungeon", room_count=5,
+                    dungeon_theme="fortress").validate()
+    t0 = time.perf_counter()
+    vb = generate_validated(lambda s: plan_to_spec(plan, seed=s, trees="dense",
+                                                   trees_source="cli"),
+                            zone_type="outdoor_dungeon", zone_id="odtime",
+                            output_dir=tmp_path, rng=random.Random(12), failure_log=None)
+    elapsed = time.perf_counter() - t0
+    assert vb.validated
+    assert elapsed <= DEFAULT_TIMEOUT_S["outdoor_dungeon"] == 60.0, elapsed
