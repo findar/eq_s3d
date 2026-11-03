@@ -61,10 +61,10 @@ The design's five open questions were answered on 2026-11-01
   - Owns: generators/backends.py, generators/pipeline.py, generators/builder.py, generators/outdoor_dungeon.py, tests/test_outdoor_dungeon_build.py
   - Reqs: 5, 7.1, 8.2
 
-- [ ] 7. Zone type, prompt words, controls, sidecar
+- [x] 7. Zone type, prompt words, controls, sidecar
   - Card: [cards/07-zone-type.md](cards/07-zone-type.md)
   - Type: agent · Size: M · Depends: 6
-  - Owns: generators/zone_types.py, ai/rule_planner.py, ai/expand.py, main.py, server/app.py, tests/test_outdoor_dungeon_controls.py
+  - Owns: generators/zone_types.py, ai/rule_planner.py, ai/expand.py, main.py, server/app.py, tests/test_outdoor_dungeon_controls.py, generators/backends.py, generators/outdoor_dungeon.py, generators/builder.py, generators/pipeline.py, web/index.html (zone-type option), tests/test_hygiene.py, tests/strategies.py, tests/test_server.py, tests/test_properties_build.py, tests/test_properties_pipeline.py, tests/test_properties_layout.py (zone-type lists)
   - Reqs: 6
 
 - [ ] 8. Maps and preview

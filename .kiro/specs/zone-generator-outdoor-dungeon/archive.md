@@ -47,3 +47,10 @@ questions on 2026-11-01, each with the recommended option:
   `TerrainBackend` builds it when that section is present; the pipeline
   gates it with `outdoor_dungeon_report` and retries `PLAN_ERRORS` on a
   fresh seed. Task 7 maps the new zone type onto this, not a new path.
+- **`outdoor_dungeon` is a landscape zone type (task 7, 2026-11-02):**
+  `zone_types.LANDSCAPE_ZONE_TYPES` (wilderness, outdoor_dungeon) is the one
+  list of types that take `edges` and `trees` (CLI, server) and that the
+  room-graph property samplers leave out. The planner checks its phrases
+  (cave in a hill, hillside cave, barrow, ...) before the word scores. The
+  sidecar's `outdoor_dungeon` block (envelope, rock cover, entrances with a
+  tunnel id, outdoor spawn) comes from `outdoor_dungeon.sidecar_block`.
