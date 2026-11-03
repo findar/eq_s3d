@@ -18,8 +18,9 @@ Step 6 puts Job A behind a `LayoutEngine` seam and adds a second engine:
 ```
             ┌─ ClassicEngine: scatter → separate → Delaunay/MST/loops   (today)
 Job A ──────┤
-            └─ GrownEngine:   Topology_Grammar → Topology_Graph → Embedding
-                                (no coordinates)                (rooms in the plane)
+            └─ GrownEngine:   rewrite rules → Topology_Graph → spring layout
+                              (iterate to no      (no coordinates)  (rooms in the plane)
+                               placeholders)
                  │
                  ▼  (rooms, edges): the contract Job B already takes
 Job B: pacing, themes, elevation, crossings, conflicts, Envelope fit,
@@ -29,8 +30,14 @@ Job B: pacing, themes, elevation, crossings, conflicts, Envelope fit,
 Box backend / terrain backend, walkability gate, maps   (unchanged)
 ```
 
-The grammar is a topology grammar only. It says which rooms connect; it
-places no locks, keys or bosses. Pacing still derives roles from the graph
+This is graph rewriting as shaggydev's "Graph rewriting" (2022-11-20) lays
+it out: a manual start graph with placeholders, rules that replace a pattern
+with a structure, repeated until nothing is left to rewrite, then a
+physics-style layout (springs between connected nodes, repulsion between all)
+and hallways along the edges. Our hallways are the existing corridor router.
+
+The grammar is a topology grammar only. It says which rooms connect and what
+kind of room each is; it places no locks, keys or bosses. Pacing still derives roles from the graph
 (umbrella Req 32.2) and gating still cuts spanning-tree edges (umbrella
 Req 21.5–21.8), so the grown graph's shape (a deep end far from the entrance,
 dead-end side rooms, loops) is what changes the play, through the code that
@@ -98,44 +105,73 @@ class LayoutEngine(Protocol):
 
 ## Topology_Grammar (`generators/topology/`)
 
-`graph.py` holds the `TopologyGraph`: nodes with a tag (`entry`, `spine`,
-`branch`, `loop`, `wing`) and an undirected edge set. `rewrite.py` holds the
-driver, `rules.py` the rules and profiles.
+`graph.py` holds the `TopologyGraph`: labelled nodes and an undirected edge
+set, with the shape measures (dead-end share, cycle rank, deep-end distance).
+`rewrite.py` holds the matcher and the driver; `rules.py` holds the rules and
+profiles as data.
 
-**Start graph:** `entry — spine — deep`, three nodes (smaller requests are
-cut down: 1 room is `entry`, 2 is `entry — deep`).
+**Labels.** One placeholder, `Area` (a part of the dungeon not yet decided),
+and the room kinds: `entrance`, `chamber`, `passage` (a small linking room),
+`hub` (a crossroads), `lair` (a dead end), `deep` (the far end). The kinds
+are advisory: pacing still derives roles from the finished graph (umbrella
+Req 32.2), and the sidecar records the kinds for the themes and later steps.
 
-**Rules.** Each adds exactly one room, so the driver reaches the requested
-count in `n − 3` committed steps, and can't overshoot:
+**Start graph:** `entrance — Area — deep`. (1 room: `entrance`; 2 rooms:
+`entrance — deep`; both skip the rules.)
 
-| rule | what it does | tag |
-|------|--------------|-----|
-| `extend` | split a spine edge with a new room (the spine grows; the deep end moves away) | spine |
-| `branch` | hang a new dead-end room off a spine or wing room | branch |
-| `deepen` | extend a branch by one room (a side passage, not just a closet) | branch |
-| `loop` | add a room joined to two rooms 2–4 hops apart (a loop around) | loop |
-| `wing` | turn a branch room into a small hub: hang a second room off it | wing |
+**A rule** is a declaration:
 
-**Driver.** Pick a rule by profile weight, pick its site uniformly among the
-legal ones (rng, sorted candidate order), apply to a copy, check the
-invariants (connected; degree ≤ 4; loops close over 3–5 rooms), commit or
-reject. A rule with no legal site drops out for that step. The step cap is
-`8 × n` attempts; reaching it raises `TopologyError` naming the cap and the
-profile. Same idea as the wilderness rewrite (`generators/wilderness/rewrite.py`:
-apply, check, commit, capped), but the code is not shared: the wilderness
-rewrite works on matrix cells and its goldens pin it; a shared driver would
-be a third user's job.
+```python
+Rule("branch",
+     pattern=["Area"],                      # nodes to find (labels; edges between them)
+     replace=["Area", "lair"], edges=[(0, 1)],
+     reattach={0: 0},                       # pattern node 0's outside edges go to replacement node 0
+     rooms=1)                               # net rooms added once its placeholders finish
+```
 
-**Profiles** (weights over the five rules; task 4 sets the numbers from the
+The matcher finds every placement of a pattern (labels, and the pattern's
+edges present between the matched nodes; patterns are 1–3 nodes, so brute
+force over a graph of at most 30 rooms and a few placeholders is cheap). The
+pattern's outside connections reattach as the rule says: this is the
+article's "specify where external connections end up", and it's what keeps
+the graph connected by construction.
+
+**The v1 rules** (task 4 weights them from the survey):
+
+| rule | pattern → replacement | shape it makes |
+|------|-----------------------|----------------|
+| `lengthen` | `Area` → `Area — Area` | a longer way through |
+| `passage` | `Area` → `passage — Area` | a small room on the way |
+| `branch` | `Area` → `Area` + `lair` hanging off it | a dead-end side room |
+| `side_wing` | `Area` → `Area` + `hub — {lair, lair}` hanging off it | a wing of side rooms |
+| `crossroads` | `Area` → `hub` joined to `Area`, `Area` (outside edges split between them) | a fork that meets again downstream |
+| `loop` | `Area` → a ring of `chamber, Area, Area` (outside edges on two ring nodes) | a loop around |
+| `shortcut` | `chamber`, `chamber` 2–3 hops apart, no edge → add the edge | a loop between finished rooms (a 2-node pattern) |
+| `finish` | `Area` → `chamber` | ends a placeholder |
+
+**Driver.** Each step: list every match of every rule, drop the ones whose
+result breaks an invariant (connected; degree ≤ 4; loops close over 3–5
+rooms) or can no longer finish at exactly n rooms (each remaining `Area`
+needs at least one room, so a rule is legal only if rooms so far + its rooms
++ placeholders left ≤ n), pick one by profile weight (candidates in sorted
+order, then the rng), apply it, repeat. When the room budget is spent only
+`finish` is legal, so every placeholder ends as a room and the count is
+exact. The step cap is `8 × n`; reaching it raises `TopologyError` naming
+the cap and the profile. Same discipline as the wilderness rewrite
+(`generators/wilderness/rewrite.py`: apply, check, commit, capped), but the
+code is not shared: that one rewrites matrix cells and its goldens pin it.
+
+**Profiles** are weights over the rules (task 4 sets the numbers from the
 survey):
 
-- `linear`: mostly `extend`, some `branch`, no `loop` or `wing` (meets
-  umbrella Req 22.2 by construction: only `branch` makes degree 3).
+- `linear`: `lengthen`, `passage`, some `branch`; no `loop`, `crossroads`,
+  `side_wing` or `shortcut` (meets umbrella Req 22.2: only `branch` makes a
+  degree-3 room).
 - `branching`: the classic EQ mix from the survey.
-- `looped`: `branching` with `loop` weighted up.
+- `looped`: `branching` with `loop`, `crossroads` and `shortcut` up.
 
-The graph records how many times each rule committed; the sidecar carries
-it (Req 6.3).
+The driver counts each rule's applications; the sidecar carries the counts
+(Req 6.3).
 
 ## Embedding (`generators/topology/embed.py`)
 
@@ -144,22 +180,29 @@ corridors (lessons-learned "Same-axis room pairs need a Z-route"), and Job B
 splits a corridor that crosses a third room and drops loop corridors that
 conflict. So the Embedding's job is to put connected rooms near each other on
 a free side and unconnected rooms apart, so that Job B has little to change.
+It is the article's physics layout, with rooms as rectangles:
 
-1. **Order:** breadth-first from `entry`, spine before branches.
-2. **Place:** each room goes beside its first placed neighbour, on one of
-   that neighbour's free sides (N, S, E, W: finding 1), at a gap of one
-   corridor run (drawn from the context's band). The side is picked to point
-   away from rooms already placed; a loop room is placed between its two
-   anchors.
-3. **Relax:** a few spring passes pull connected rooms together and push
-   unconnected ones apart, then `ctx.separate` resolves overlaps exactly as
-   for classic rooms (so Req 5.1's clearance is the same code).
-4. **Envelope:** the layout is centred on the footprint and scaled to the
+1. **Sizes:** each room's footprint is drawn like the classic engine's (same
+   band, same gaussian), so the themed shapes and the role biases behave the
+   same.
+2. **Start positions:** breadth-first from `entrance`, each room beside its
+   first placed neighbour on a free side (N, S, E, W: finding 1), pointing
+   away from rooms already placed. A good start keeps the springs from
+   folding the graph over itself.
+3. **Springs:** iterate: each edge pulls its two rooms toward a rest length
+   of their half-sizes plus one corridor run; every pair of rooms repels,
+   more strongly as their footprints near each other. Fixed iteration count
+   and step size; all from the context's rng and sizes, so it's
+   deterministic.
+4. **Overlaps:** `ctx.separate` resolves what's left exactly as for classic
+   rooms (Req 5.1's clearance is the same code).
+5. **Connections:** the Topology_Graph's edges are the `(i, j)` edges handed
+   to Job B, which routes the corridors. The `entrance` room's centre goes to
+   pacing as the entry point (the Envelope's `entry` mechanism from step 5),
+   so it becomes the entrance room (Req 5.2).
+6. **Envelope:** the layout is centred on the footprint and scaled to the
    inradius, as `_scatter_rooms` does; Job B's existing fit check and the
-   Envelope retry loop do the rest (Req 5.3).
-
-Room sizes are drawn like the classic engine's (same band, same gaussian),
-so the themed shapes and the role biases behave the same.
+   Envelope retry loop do the rest (Req 5.4).
 
 **Edge_Fidelity bar.** Task 5 measures the Edge_Fidelity (grammar edges
 still present as corridors after Job B, over the grammar's edge count) on
@@ -196,12 +239,12 @@ rooms and corridors, so classic builds get `{"engine": "classic", "shape":
 | P | Statement | Reqs |
 |---|-----------|------|
 | G1 | Classic builds are byte-identical to today (Zone_Spec JSON, `.eqg` contents) | 2.2, 6.2 |
-| G2 | Every grown graph is connected, has exactly n rooms, max degree ≤ 4, loops of 3–5 | 3.1, 3.2 |
-| G3 | The driver terminates or raises `TopologyError`; same seed, same graph | 3.3, 3.4 |
+| G2 | Every grown graph has no placeholder left, is connected, has exactly n rooms, max degree ≤ 4, loops of 3–5 | 3.2, 3.3 |
+| G3 | The driver terminates or raises `TopologyError`; same seed, same graph | 3.4, 3.5 |
 | G4 | Profile shape stats fall in the survey bands; `linear` meets umbrella 22.2; cycle ranks order for 14 rooms | 4 |
-| G5 | Grown rooms never overlap and keep the corridor clearance; the final graph is connected | 5.1, 5.2 |
-| G6 | Mean Edge_Fidelity ≥ the bar over the sweep seeds | 5.2 |
-| G7 | Grown rooms fit an Envelope as classic ones do | 5.3 |
+| G5 | Grown rooms never overlap and keep the corridor clearance; the `entrance` node is the entrance room; the final graph is connected | 5.1–5.3 |
+| G6 | Mean Edge_Fidelity ≥ the bar over the sweep seeds | 5.3 |
+| G7 | Grown rooms fit an Envelope as classic ones do | 5.4 |
 | G8 | Umbrella Req 21 holds on grown layouts (entrance, climax, solvable gates) | 7.1 |
 | G9 | Grown builds pass the walkability gate; same inputs, same `.eqg` | 7.2, 7.3 |
 
@@ -215,6 +258,9 @@ plus gate is seconds per seed.
   cleanly gets split and pruned by Job B until it is TinyKeep's graph again,
   or worse. Edge_Fidelity is measured from the first embedding commit, and the
   rules keep loops short (3–5 rooms) so every loop can be drawn locally.
+- **Springs settle into local minima.** A spring layout can fold a branch
+  across the spine. The breadth-first start positions keep it near a clean
+  layout, and fidelity shows when it doesn't.
 - **Overlap pushes break adjacency.** `_separate_rooms` moves rooms along the
   axis of least overlap and can carry a room off its neighbour's side. The
   relax pass and the gap at placement keep pushes small; task 5 measures how
@@ -259,7 +305,10 @@ plus gate is seconds per seed.
 
 1. Job B is shared and unchanged; an engine produces only rooms and edges.
 2. The grammar shapes topology only: no locks, keys or bosses in it.
-3. Every rule adds one room, so the room count is exact by construction.
-4. The seam lands first and is proven byte-identical by goldens captured
+3. Rules are data (pattern, replacement, reattachment, rooms added); the
+   room budget check plus `finish` makes the count exact.
+4. Placement is a spring layout over the finished graph, then the existing
+   separation; connections are the existing corridor router.
+5. The seam lands first and is proven byte-identical by goldens captured
    before the move.
-5. Measure the stock dungeons first (task 1) and set the profiles from them.
+6. Measure the stock dungeons first (task 1) and set the profiles from them.

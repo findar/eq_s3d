@@ -3,10 +3,10 @@
 Index entry: `tasks.md` task 4. Requirements 4. Design "Topology_Grammar".
 
 ## Goal
-The five rules (`extend`, `branch`, `deepen`, `loop`, `wing`) and the `linear`, `branching`, `looped` profiles, weighted so the grown graphs fall in the survey's bands.
+The v1 rules of the design table (`lengthen`, `passage`, `branch`, `side_wing`, `crossroads`, `loop`, `shortcut`, `finish`) as data, and the `linear`, `branching`, `looped` profiles, weighted so the grown graphs fall in the survey's bands.
 
 ## Done when
-- [ ] Each rule adds exactly one room and is tested on a small graph.
+- [ ] Each rule is tested on a small graph: its replacement, its reattachment, and the rooms it adds.
 - [ ] G4: over seeds and room counts 5–30, each profile's shape stats fall inside the design finding 3 bands; `linear` meets umbrella Req 22.2; for 14 rooms cycle ranks order `linear` ≤ `branching` < `looped`.
       → verify: `python -m pytest tests/test_topology_profiles.py -q`
 - [ ] The weights and the bands they hit are in the commit body.

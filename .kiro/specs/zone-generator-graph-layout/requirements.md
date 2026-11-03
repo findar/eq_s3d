@@ -15,12 +15,15 @@ effect of where the rooms happened to land. Its shape can't be asked for:
 not a long winding spine, a wing of side rooms, a loop back to the start, or
 a deep end.
 
-This step adds a second way to make the room graph: **grow** it. Start from a
-small graph and rewrite it with rules (extend the spine, add a branch, close
-a loop, add a wing) until it has the requested number of rooms, then place the
-rooms in the plane to fit that graph. Everything after the graph (pacing,
-themes, elevation, corridors, locks, the walkability gate, maps, textures)
-runs unchanged.
+This step adds a second way to make the room graph, by **graph
+rewriting** (the method shaggydev's "Graph rewriting" article,
+2022-11-20, lays out): start from a small graph with placeholder nodes,
+apply rules that each find a pattern in the graph and replace it with a
+bigger structure, and repeat until no placeholder is left. Then place the
+rooms with a spring layout (connected rooms pull together, all rooms push
+apart) and create the connections as corridors. Everything after the graph
+(pacing, themes, elevation, corridors, locks, the walkability gate, maps,
+textures) runs unchanged.
 
 What this is not: the Dormans mission grammar of locks and keys, which ROADMAP
 "Deliberately NOT doing" rules out ("EQ gates by depth/danger, not Zelda-style
@@ -50,15 +53,19 @@ vertical connectors (step 7), room wall styles (step 8), what's inside rooms
   shared by all engines.
 - **Classic_Engine**: today's TinyKeep scheme, behind the Layout_Engine seam.
 - **Grown_Engine**: the new engine: Topology_Grammar, then Embedding.
-- **Topology_Graph**: an abstract room graph with no coordinates: nodes are
-  rooms, edges are connections, each node tagged with how it was made (spine,
-  branch, loop, wing).
-- **Topology_Grammar**: the rewrite rules and the driver that applies them to
-  a Topology_Graph, checking the invariants at every step.
+- **Topology_Graph**: an abstract room graph with no coordinates. Each node
+  has a label: a placeholder (`Area`) that rules still expand, or a room kind
+  (`entrance`, `chamber`, `passage`, `hub`, `lair`, `deep`). Edges are
+  connections.
+- **Rewrite_Rule**: a pattern (a small labelled subgraph, usually one
+  placeholder node) and a replacement subgraph, plus where the pattern's
+  outside connections reattach in the replacement. Rules are data, not code.
+- **Topology_Grammar**: the start graph, the Rewrite_Rules, and the driver that
+  finds matches, applies a rule, checks the invariants and repeats.
 - **Topology_Profile**: a set of rule weights (`linear`, `branching`,
   `looped`) that gives a family of graph shapes.
-- **Embedding**: placing a Topology_Graph's rooms in the plane so that the
-  existing corridor router can join every edge.
+- **Embedding**: placing a finished Topology_Graph's rooms in the plane (a
+  spring layout) so that the existing corridor router can join every edge.
 - **Edge_Fidelity**: the share of the Topology_Graph's edges that survive as
   corridors after the shared layout steps (crossing splits, conflict drops).
 
@@ -97,18 +104,25 @@ after it.
 
 ### Requirement 3: Topology_Grammar
 
-**User Story:** As a developer, I want the graph grown by rules that can't
-loop forever or break the graph, so that growing is safe and reproducible.
+**User Story:** As a developer, I want the graph grown by rewrite rules that
+can't loop forever or break the graph, so that growing is safe and
+reproducible, and a new dungeon shape is new rules, not new code.
 
-1. The grammar SHALL start from a fixed start graph and apply weighted rules
-   until the graph has exactly the requested number of rooms (1–30).
-2. After every applied rule the graph SHALL be connected, no room SHALL have
+1. A Rewrite_Rule SHALL be declared as data: a pattern, a replacement, the
+   reattachment of the pattern's outside connections, and the number of rooms
+   it adds.
+2. The grammar SHALL start from a start graph holding placeholders, and repeat
+   (find the matches of every rule, pick one by profile weight, apply it)
+   until no placeholder is left, with the graph then holding exactly the
+   requested number of rooms (1–30).
+3. After every applied rule the graph SHALL be connected, no room SHALL have
    more than 4 connections (a room opens at most one wall per side), and each
    loop SHALL close over a bounded number of rooms; a rule application that
-   would break one of these SHALL be rejected and the graph kept as it was.
-3. The driver SHALL stop within a hard step cap and raise an error naming the
+   would break one of these, or leave too few or too many rooms to finish at
+   the requested count, SHALL be rejected and the graph kept as it was.
+4. The driver SHALL stop within a hard step cap and raise an error naming the
    cap if it is reached, never loop.
-4. The same seed and inputs SHALL give the same Topology_Graph.
+5. The same seed and inputs SHALL give the same Topology_Graph.
 
 ### Requirement 4: Graph shape
 
@@ -127,12 +141,15 @@ ones: a deep end worth reaching, side rooms, the odd loop.
 **User Story:** As a user, I want the rooms placed so the dungeon has the
 graph that was grown, with the corridors and walls as good as today's.
 
-1. The Embedding SHALL place every room with no footprint overlap and the
-   same corridor clearance the Classic_Engine's rooms get.
-2. The room graph after the shared layout steps SHALL be connected for every
+1. The Embedding SHALL place rooms by a spring layout over the Topology_Graph,
+   then resolve every footprint overlap with the same separation and corridor
+   clearance the Classic_Engine's rooms get.
+2. The Topology_Graph's `entrance` room SHALL be the layout's entrance room
+   (pacing still derives every role from the graph, umbrella Req 32.2).
+3. The room graph after the shared layout steps SHALL be connected for every
    seed, and its Edge_Fidelity SHALL be at least the design's bar on average
    over the sweep seeds (design "Embedding").
-3. WITH an Envelope, the grown rooms SHALL fit it as the Classic_Engine's do,
+4. WITH an Envelope, the grown rooms SHALL fit it as the Classic_Engine's do,
    dropping rooms with the `rooms_reduced` warning when they don't.
 
 ### Requirement 6: Choosing the engine
