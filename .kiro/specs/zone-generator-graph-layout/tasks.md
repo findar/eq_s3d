@@ -93,13 +93,13 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 
 - [ ] 12. Gate sweep on built zones
   - Card: [cards/12-gate-sweep.md](cards/12-gate-sweep.md)
-  - Type: agent · Size: M · Depends: 10
+  - Type: agent · Size: M · Depends: 10, 18
   - Owns: tests/test_graph_layout_build.py, generators/topology/embed.py, rules/topology/
   - Reqs: 8
 
 - [ ] 13. HUMAN: first look, classic against graph
   - Card: [cards/13-human-first-look.md](cards/13-human-first-look.md)
-  - Type: human · Depends: 7, 11, 12
+  - Type: human · Depends: 7, 11, 12, 18
 
 - [ ] 14. Tune from the first look
   - Card: [cards/14-tuning.md](cards/14-tuning.md)
@@ -120,3 +120,9 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Card: [cards/17-close.md](cards/17-close.md)
   - Type: agent · Size: S · Depends: 16 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-graph-layout/, .kiro/specs/zone-generator/
+
+- [ ] 18. Loops survive placement
+  - Card: [cards/18-loops-survive.md](cards/18-loops-survive.md)
+  - Type: agent · Size: M · Depends: 8
+  - Owns: generators/topology/embed.py, generators/layout.py, generators/topology/rewrite.py, rules/topology/classic_eq.toml, rules/topology/warren.toml, rules/topology/layers/temple.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py
+  - Reqs: 5.1, 6.4

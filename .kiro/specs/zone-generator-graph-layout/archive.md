@@ -45,6 +45,8 @@ questions on 2026-11-03:
 - **Two base sets to prove extensibility:** `classic_eq` and `warren`, plus
   the `temple` layer.
 
+- **Grown rooms keep the classic floor area (task 8, 2026-11-03):** the size-class base is divided by the grown graph's RMS class multiplier, so a grown zone has the same total room area as a classic one of the same count. Without it a `classic_eq` mix had ~1.5× the area and grown rooms failed tight Envelopes (not 3 rooms in a 1000 u disc, where classic fits 3–5). Size classes are therefore relative within a zone; the zone type and race still set absolute scale.
+
 ## Follow-ups
 
 - **Prompt words choose the topology** (umbrella Req 22.5–22.7): words like
