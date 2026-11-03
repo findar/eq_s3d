@@ -183,26 +183,32 @@ def host_envelope(spec: ZoneSpec, ter: TerFile, *,
 
 def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
                        room_count: int = DEFAULT_ROOMS, scale: float = 1.0,
-                       **kwargs) -> Tuple[ZoneSpec, List[str]]:
+                       engine=None, **kwargs) -> Tuple[ZoneSpec, List[str]]:
     """A box-dungeon layout inside ``envelope``, rooms sized to it.
 
     The mean room side is ``scale * ROOM_FILL * inradius / sqrt(room_count)``,
-    set through the generator's size multiplier. Returns the layout and the
-    generator's warnings (``rooms_reduced`` when rooms were dropped)."""
-    gen = LayoutGenerator("dungeon", seed=seed)
+    set through the generator's size multiplier. ``engine`` is the
+    Layout_Engine (``None`` is classic; see ``ai.expand.layout_engine``); the
+    layout's ``layout`` field carries its record (``None`` for classic).
+    Returns the layout and the generator's warnings (``rooms_reduced`` when
+    rooms were dropped)."""
+    gen = LayoutGenerator("dungeon", seed=seed, engine=engine)
     gen.ceiling = ROOM_HEIGHT
     gen._apply_room_scale(room_count)
     base = (gen.room_min + gen.room_max) / 2.0
     gen.size_multiplier = scale * ROOM_FILL * envelope.inradius / math.sqrt(room_count) / base
     spec = gen.generate(name, room_count=room_count, envelope=envelope, **kwargs)
+    spec.layout = gen.layout_record
     return spec, list(gen.warnings)
 
 
 def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
                  seed: Optional[int], room_count: int = DEFAULT_ROOMS,
-                 **kwargs) -> Tuple[ZoneSpec, List[str], "Entrance"]:
+                 engine=None, **kwargs) -> Tuple[ZoneSpec, List[str], "Entrance"]:
     """The dungeon under ``host``: its layout (with warnings) and the
-    Entrance into its entrance room.
+    Entrance into its entrance room. ``engine`` is the one Layout_Engine every
+    shrink step lays out with (built once by the caller, not re-chosen per
+    scale).
 
     Rooms start at the size the Envelope suggests and shrink by
     ``FIT_SHRINK`` (up to ``FIT_SHRINKS`` times) until every room asked for
@@ -213,7 +219,8 @@ def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
     for shrink in range(FIT_SHRINKS + 1):
         try:
             layout, warnings = layout_in_envelope(name, seed, envelope, room_count,
-                                                  scale=FIT_SHRINK ** shrink, **kwargs)
+                                                  scale=FIT_SHRINK ** shrink,
+                                                  engine=engine, **kwargs)
             # The Tunnel opens into the layout's entrance room, so the pacing
             # (depth, climax, keys) runs from the way in.
             first = next(r.id for r in layout.rooms if r.role == "entrance")
@@ -629,10 +636,12 @@ def is_outdoor_dungeon(spec: ZoneSpec) -> bool:
 
 
 def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_BIOME,
-                         room_count: int = DEFAULT_ROOMS, **layout_kwargs) -> ZoneSpec:
+                         room_count: int = DEFAULT_ROOMS, engine=None,
+                         **layout_kwargs) -> ZoneSpec:
     """One spec for an outdoor dungeon: the host wilderness spec (Host_Hill
     terrain at the outdoor-dungeon size) with the dungeon laid out inside its
-    Envelope and an Entrance planned to it.
+    Envelope and an Entrance planned to it. ``engine`` is the dungeon's
+    Layout_Engine (``None`` is classic); its record rides on ``spec.layout``.
 
     Raises one of ``PLAN_ERRORS`` when the seed's hill can't hold the minimum
     rooms or no wall gives an Entrance (the pipeline retries on a fresh
@@ -643,7 +652,8 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     ter = build_wilderness_ter(spec, f"ter_{name}", 1)
     envelope = host_envelope(spec, ter)
     layout, warnings, entrance = plan_dungeon(spec, ter, envelope, name, seed, room_count,
-                                              **layout_kwargs)
+                                              engine=engine, **layout_kwargs)
+    spec.layout = layout.layout
     spec.rooms = layout.rooms
     spec.corridors = layout.corridors
     spec.lights = layout.lights

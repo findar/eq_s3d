@@ -43,7 +43,9 @@ from generators.zone_types import (
 from analyzer.style_builder import REFERENCE_ZONES
 from ai.planner import make_plan, get_planner
 from ai.expand import plan_to_spec
-from ai.schema import ZonePlan
+from ai.schema import (
+    LAYOUT_ZONE_TYPES, VALID_LAYOUTS, ZonePlan, available_rule_sets,
+)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -378,6 +380,44 @@ def _require_trees(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]
     return raw
 
 
+def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
+    """Validate ``controls.layout`` / ``controls.rule_set`` (graph-layout
+    Req 7.1) in place, before any build or write.
+
+    Absent or ``null`` -> the plan default (classic, the theme's set). A value
+    that isn't one of ``VALID_LAYOUTS`` / ``available_rule_sets()`` is a 400
+    naming the allowed values. Asking for a graph layout or a rule set on a
+    zone type that doesn't take them (not dungeon or outdoor_dungeon) is a
+    400, as ``edges`` / ``trees`` are on a type with no landscape; the default
+    ``classic`` / ``""`` is accepted there, since it changes nothing.
+    """
+    for key in ("layout", "rule_set"):
+        if key in c and c[key] is None:
+            c.pop(key)
+    layout = c.get("layout")
+    if layout is not None:
+        if not isinstance(layout, str) or layout.strip().lower() not in VALID_LAYOUTS:
+            raise HTTPException(
+                400, f"layout must be one of {', '.join(VALID_LAYOUTS)}")
+        layout = c["layout"] = layout.strip().lower()
+    rule_set = c.get("rule_set")
+    if rule_set is not None:
+        sets = available_rule_sets()
+        if not isinstance(rule_set, str) or (rule_set.strip()
+                                             and rule_set.strip() not in sets):
+            raise HTTPException(
+                400, f"rule_set must be one of {', '.join(sets)} "
+                     "(or \"\" for the theme's set)")
+        rule_set = c["rule_set"] = rule_set.strip()
+    if zone_type not in LAYOUT_ZONE_TYPES:
+        if layout == "graph":
+            raise HTTPException(
+                400, "layout only applies to zone_type dungeon or outdoor_dungeon")
+        if rule_set:
+            raise HTTPException(
+                400, "rule_set only applies to zone_type dungeon or outdoor_dungeon")
+
+
 class GenerateRequest(BaseModel):
     # An extra/unknown key (e.g. a legacy ``target_shortname``) is ignored like
     # any other non-field key rather than rejected (Req 8.1).
@@ -396,7 +436,9 @@ class GenerateRequest(BaseModel):
         description="Controls sub-object: zone_type, room_count, size, "
                     "verticality, locks, edges (wilderness Rim, e.g. "
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
-                    "none/sparse/normal/dense), …",
+                    "none/sparse/normal/dense), layout (classic/graph) and "
+                    "rule_set (a base set, \"\" for the theme's; dungeon and "
+                    "outdoor_dungeon only), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.
@@ -615,9 +657,15 @@ def generate(req: GenerateRequest):
         # it is taken out (and validated) before from_controls sees the dict.
         edges = _require_edges(c, canonical_zone_type(raw_zone_type))
         trees = _require_trees(c, canonical_zone_type(raw_zone_type))
+        _require_layout(c, canonical_zone_type(raw_zone_type))
 
         # Proven equal to the legacy LayoutGenerator path by the 17.4 golden test.
-        plan = ZonePlan.from_controls(c, warnings)
+        # ``validate()`` raises ValueError on a value it refuses (an unknown
+        # layout or rule set): a bad request, not a server fault.
+        try:
+            plan = ZonePlan.from_controls(c, warnings)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
         plan.name = zone_id
         plan_dict = plan.to_dict()
         zone_type = plan.zone_type
