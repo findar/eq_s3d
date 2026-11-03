@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -63,18 +63,25 @@ class Envelope:
         Minimum terrain thickness left above any ceiling.
     sample
         Spacing (u) of the footprint samples a box is tested at.
+    entry
+        Where the dungeon is entered from (XY), or ``None``. The layout makes
+        the room nearest it the entrance room, so the pacing (depth, climax,
+        keys) runs from the side the way in is dug from.
     """
     footprint: Tuple[Point, ...]
     floor_limit: float
     surface: Callable[[np.ndarray, np.ndarray], np.ndarray]
     rock_cover: float
     sample: float = 8.0
+    entry: Optional[Point] = None
 
     def __post_init__(self):
         if len(self.footprint) < 3:
             raise ValueError("Envelope footprint needs at least 3 vertices")
         object.__setattr__(self, "footprint",
                            tuple((float(x), float(y)) for x, y in self.footprint))
+        if self.entry is not None:
+            object.__setattr__(self, "entry", (float(self.entry[0]), float(self.entry[1])))
 
     # -- footprint ---------------------------------------------------------
 

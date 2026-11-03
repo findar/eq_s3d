@@ -21,7 +21,8 @@ def _build(seed, edges):
                            zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
     ter = build_wilderness_ter(host, "hill", 1)
     dungeon, warnings = od.layout_in_envelope("d", seed * 7 + 1, od.host_envelope(host, ter))
-    entrance = od.plan_entrance(host, ter, dungeon)
+    first = next(r.id for r in dungeon.rooms if r.role == "entrance")
+    entrance = od.plan_entrance(host, ter, dungeon, room_id=first)
     merged = od.build_outdoor_ter(host, ter, dungeon, entrance, "zone")
     return host, ter, dungeon, entrance, merged
 
@@ -112,6 +113,17 @@ def test_every_room_reached_from_outdoors(built):
     reached = flood_reachable(surf, seed_face_for(surf, host.safe_point))
     for room in dungeon.rooms:
         assert set(_faces_in_room(surf, room).tolist()) & reached, room.id
+
+
+def test_tunnel_opens_into_the_entrance_room(built):
+    """The way in is the start of the pacing: the Tunnel's room is the
+    layout's entrance room, the room nearest the hill's approach foot."""
+    host, _, dungeon, entrance, _ = built
+    fx, fy = od.approach_foot(od.landscape_for(host).matrix.landform)
+    nearest = min(dungeon.rooms, key=lambda r: (r.center_x - fx) ** 2 + (r.center_y - fy) ** 2)
+    room = next(r for r in dungeon.rooms if r.id == entrance.room_id)
+    assert room.role == "entrance" and room is nearest
+    assert room.graph_depth == 0
 
 
 def test_no_landform_no_entrance():

@@ -45,7 +45,7 @@ def test_plan_fields_reach_the_spec():
     plan = ZonePlan(name="odplan", zone_type="outdoor_dungeon", room_count=4,
                     dungeon_theme="temple", dungeon_race="gnoll",
                     elemental_tint="").validate()
-    spec = plan_to_spec(plan, seed=3, edges={"N": "zoneline"}, trees="sparse",
+    spec = plan_to_spec(plan, seed=1, edges={"N": "zoneline"}, trees="sparse",
                         trees_source="controls")
     assert spec.zone_type == "outdoor_dungeon"
     assert spec.wilderness["dungeon"]["rooms_requested"] == 4

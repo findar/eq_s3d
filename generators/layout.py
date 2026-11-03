@@ -274,7 +274,8 @@ class LayoutGenerator:
         # Pacing: derive entrance / depth / roles from the graph, then bias
         # room geometry (and later lighting) by role & depth so the zone reads
         # as a progression rather than a flat set of equal rooms.
-        entrance = self._apply_pacing(rooms, edges)
+        entrance = self._apply_pacing(rooms, edges,
+                                      envelope.entry if envelope is not None else None)
 
         # Content / semantic layer (box themes only): label rooms with a
         # semantic type + theme and apply the shape/proportion/ceiling/floor
@@ -471,12 +472,15 @@ class LayoutGenerator:
     # ------------------------------------------------------------------
 
     def _apply_pacing(self, rooms: List[RoomSpec],
-                      edges: List[Tuple[int, int]]) -> int:
+                      edges: List[Tuple[int, int]],
+                      entry: Optional[Tuple[float, float]] = None) -> int:
         """
         Analyse the room graph to assign each room a role and depth:
 
           - entrance : a peripheral room (outermost from the layout centroid),
-                       so players enter from the edge, not the middle.
+                       so players enter from the edge, not the middle. With an
+                       *entry* point (an Envelope's way in), the room nearest
+                       it instead.
           - depth    : graph hops from the entrance (BFS). The progression axis.
           - climax   : the room with the greatest graph depth (boss chamber).
           - hub      : a crossroads (graph degree >= 3).
@@ -497,13 +501,21 @@ class LayoutGenerator:
             adj[i].append(j)
             adj[j].append(i)
 
-        # Entrance = the room farthest from the layout centroid (peripheral).
-        cx = sum(r.center_x for r in rooms) / n
-        cy = sum(r.center_y for r in rooms) / n
-        entrance = max(
-            range(n),
-            key=lambda i: (rooms[i].center_x - cx) ** 2 + (rooms[i].center_y - cy) ** 2,
-        )
+        if entry is not None:
+            # Entrance = the room nearest the way in.
+            ex, ey = entry
+            entrance = min(
+                range(n),
+                key=lambda i: (rooms[i].center_x - ex) ** 2 + (rooms[i].center_y - ey) ** 2,
+            )
+        else:
+            # Entrance = the room farthest from the layout centroid (peripheral).
+            cx = sum(r.center_x for r in rooms) / n
+            cy = sum(r.center_y for r in rooms) / n
+            entrance = max(
+                range(n),
+                key=lambda i: (rooms[i].center_x - cx) ** 2 + (rooms[i].center_y - cy) ** 2,
+            )
 
         # BFS graph-depth from the entrance.
         gdepth = {entrance: 0}
