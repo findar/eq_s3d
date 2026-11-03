@@ -43,7 +43,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: generators/topology/__init__.py, generators/topology/graph.py, generators/topology/ruleset.py, tests/test_topology_ruleset.py
   - Reqs: 3.1–3.3
 
-- [ ] 4. Rewrite driver, recipes and layers
+- [x] 4. Rewrite driver, recipes and layers
   - Card: [cards/04-rewrite-driver.md](cards/04-rewrite-driver.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: generators/topology/rewrite.py, tests/test_topology_rewrite.py
