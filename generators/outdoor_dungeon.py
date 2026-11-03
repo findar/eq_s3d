@@ -158,18 +158,19 @@ def host_envelope(spec: ZoneSpec, ter: TerFile, *,
 
     ``entrance_floor`` defaults to the TER height at the hill's foot on the
     approach side (the open ground the Entrance will open onto); the floor
-    limit is ``FLOOR_DEPTH`` below it."""
+    limit is ``FLOOR_DEPTH`` below it. That foot is the Envelope's entry, so
+    the layout's entrance room is the one nearest it."""
     land = landscape_for(spec)
     landform = land.matrix.landform
     if landform is None:
         raise ValueError(f"spec {spec.name!r} has no Landform to build an Envelope under")
     surface = ter_surface(ter, land.synth.origin, land.synth.resolution,
                           land.bowl.heights.shape)
+    foot = approach_foot(landform)
     if entrance_floor is None:
-        fx, fy = approach_foot(landform)
-        entrance_floor = float(surface(fx, fy))
+        entrance_floor = float(surface(*foot))
     return Envelope(host_footprint(landform), entrance_floor - FLOOR_DEPTH,
-                    surface, rock_cover)
+                    surface, rock_cover, entry=foot)
 
 
 def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
@@ -354,9 +355,11 @@ def _boxes_covered(dungeon: ZoneSpec, surface, cover: float, sample: float = 8.0
 
 
 def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
-                  rock_cover: float = ROCK_COVER) -> Entrance:
+                  rock_cover: float = ROCK_COVER,
+                  room_id: Optional[str] = None) -> Entrance:
     """The Entrance with the least Apron digging, over every room wall facing
-    the approach, every strip that fits in its wall and every portal row.
+    the approach (only room ``room_id``'s when given), every strip that fits
+    in its wall and every portal row.
 
     A candidate must keep ``rock_cover`` over the Tunnel all the way (the
     headwall included), ramp within ``MAX_GRADE``, stay clear of every other
@@ -387,7 +390,7 @@ def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
     h = TUNNEL_HEIGHT
     candidates = []
     for room in dungeon.rooms:
-        if h > room.height:
+        if h > room.height or room_id not in (None, room.id):
             continue
         wall = {"W": room.center_x - room.width / 2, "E": room.center_x + room.width / 2,
                 "S": room.center_y - room.depth / 2, "N": room.center_y + room.depth / 2}[side]
@@ -425,7 +428,8 @@ def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
         dug = _grid_surface(_apron(grid, e)[0], grid.origin, grid.res)
         if _boxes_covered(dungeon, dug, rock_cover):
             return e
-    raise EntranceError(f"no room wall facing {side} gives a Tunnel under the terrain")
+    raise EntranceError(f"no wall of {room_id or 'any room'} facing {side} "
+                        "gives a Tunnel under the terrain")
 
 
 def _face(ter: TerFile, pts, normal, material: int, uv_scale: float = 1.0 / 128.0) -> None:
@@ -600,7 +604,10 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     ter = build_wilderness_ter(spec, f"ter_{name}", 1)
     envelope = host_envelope(spec, ter)
     layout, warnings = layout_in_envelope(name, seed, envelope, room_count, **layout_kwargs)
-    entrance = plan_entrance(spec, ter, layout)
+    # The Tunnel opens into the layout's entrance room, so the pacing (depth,
+    # climax, keys) runs from the way in.
+    first = next(r.id for r in layout.rooms if r.role == "entrance")
+    entrance = plan_entrance(spec, ter, layout, room_id=first)
     spec.rooms = layout.rooms
     spec.corridors = layout.corridors
     spec.lights = layout.lights

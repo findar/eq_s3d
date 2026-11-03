@@ -54,3 +54,12 @@ questions on 2026-11-01, each with the recommended option:
   (cave in a hill, hillside cave, barrow, ...) before the word scores. The
   sidecar's `outdoor_dungeon` block (envelope, rock cover, entrances with a
   tunnel id, outdoor spawn) comes from `outdoor_dungeon.sidecar_block`.
+- **Maps need no outdoor-dungeon code (task 8, 2026-11-02):** M2's depth
+  bands put the dungeon (with the lowland, the spawn's Main_Band) and the
+  hill over it on separate bands, each with its own map file;
+  `tests/test_outdoor_dungeon_maps.py` pins it on the shipped files.
+- **The Tunnel opens into the entrance room (task 8, 2026-11-02):** an
+  Envelope's optional `entry` (the approach foot) makes the room nearest it
+  the layout's entrance, so pacing, elevation and keys run from the way in;
+  `plan_entrance(room_id=)` digs only to that room. Never re-tag roles after
+  the layout: room sizes, floors, themes and keys already follow them.

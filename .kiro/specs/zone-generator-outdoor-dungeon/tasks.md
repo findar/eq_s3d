@@ -67,10 +67,10 @@ The design's five open questions were answered on 2026-11-01
   - Owns: generators/zone_types.py, ai/rule_planner.py, ai/expand.py, main.py, server/app.py, tests/test_outdoor_dungeon_controls.py, generators/backends.py, generators/outdoor_dungeon.py, generators/builder.py, generators/pipeline.py, web/index.html (zone-type option), tests/test_hygiene.py, tests/strategies.py, tests/test_server.py, tests/test_properties_build.py, tests/test_properties_pipeline.py, tests/test_properties_layout.py (zone-type lists)
   - Reqs: 6
 
-- [ ] 8. Maps and preview
+- [x] 8. Maps and preview
   - Card: [cards/08-maps-and-preview.md](cards/08-maps-and-preview.md)
   - Type: agent · Size: S · Depends: 6
-  - Owns: generators/mapgeom.py, generators/eqmap.py, tests/test_outdoor_dungeon_maps.py
+  - Owns: generators/mapgeom.py, generators/eqmap.py, tests/test_outdoor_dungeon_maps.py, generators/envelope.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_entrance.py, tests/test_outdoor_dungeon_controls.py (entrance-room fix)
   - Reqs: 7.2, 7.3
 
 - [ ] 9. Web: zone type and controls
