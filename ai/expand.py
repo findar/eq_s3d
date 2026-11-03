@@ -64,7 +64,9 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                 plan.name, rng_seed, edges, biome=intent.biome,
                 room_count=plan.room_count, locks=plan.locks,
                 dungeon_theme=plan.dungeon_theme, dungeon_race=plan.dungeon_race,
-                elemental_tint=(plan.elemental_tint or None))
+                elemental_tint=(plan.elemental_tint or None),
+                engine=layout_engine(plan.layout, plan.rule_set))
+            spec.layout = layout_block(spec.layout, spec)
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
             spec.wilderness["biome_substitution"] = intent.substitution.to_dict()

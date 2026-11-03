@@ -18,7 +18,9 @@ import sys
 from pathlib import Path
 
 from ai.expand import plan_to_spec
-from ai.schema import ZonePlan
+from ai.schema import (
+    LAYOUT_ZONE_TYPES, VALID_LAYOUTS, ZonePlan, available_rule_sets,
+)
 from core.env import env_value
 from core.paths import (
     OutputRoot,
@@ -121,6 +123,28 @@ def _edges_arg(value: str) -> dict:
         raise argparse.ArgumentTypeError(str(exc))
 
 
+def _layout_arg(value: str) -> str:
+    """``--layout`` converter: one of ``VALID_LAYOUTS`` (case-insensitive),
+    else exit 2 naming them."""
+    v = value.strip().lower()
+    if v not in VALID_LAYOUTS:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not one of: {', '.join(VALID_LAYOUTS)}")
+    return v
+
+
+def _rule_set_arg(value: str) -> str:
+    """``--rule-set`` converter: a base set under ``rules/topology/`` (or
+    ``""`` for the theme's set), else exit 2 naming them."""
+    v = value.strip()
+    sets = available_rule_sets()
+    if v and v not in sets:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not one of: {', '.join(sets)} "
+            "(or \"\" for the theme's set)")
+    return v
+
+
 def cmd_generate(args) -> None:
     # Resolve the zone type. ``--zone-type`` / ``--theme`` share one dest and
     # are already converted + validated by ``_zone_type_arg`` (so a disabled or
@@ -146,6 +170,11 @@ def cmd_generate(args) -> None:
         "verticality": args.verticality,
         "locks": args.locks,
     }
+    # The layout engine (graph-layout Req 7.1): only named when given, so a
+    # run without them builds the plan it always did.
+    for key in ("layout", "rule_set"):
+        if getattr(args, key, None) is not None:
+            controls[key] = getattr(args, key)
     plan = ZonePlan.from_controls(controls)
     # The positional is the Build_Name (lower-cased + validated by
     # ``_build_name_arg``); it names every artifact. The zone id — the per-build
@@ -265,6 +294,13 @@ def main(argv: list[str] | None = None) -> None:
                    choices=["none", "sparse", "normal", "dense"],
                    help="Wilderness / outdoor-dungeon tree density "
                         "(default normal)")
+    g.add_argument("--layout", type=_layout_arg, default=None,
+                   metavar="{" + ",".join(VALID_LAYOUTS) + "}",
+                   help="Layout engine for dungeon / outdoor_dungeon: classic "
+                        "(TinyKeep, the default) or graph (rule-grown)")
+    g.add_argument("--rule-set", dest="rule_set", type=_rule_set_arg, default=None,
+                   help="Graph layout base rule set (" + ", ".join(available_rule_sets())
+                        + "); default: the dungeon theme's")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -282,6 +318,15 @@ def main(argv: list[str] | None = None) -> None:
             and canonical_zone_type(args.zone_type) not in LANDSCAPE_ZONE_TYPES):
         parser.error("--trees only applies to --zone-type wilderness or "
                      "outdoor_dungeon")
+    # As --edges / --trees: a graph layout or a rule set on a zone type that
+    # doesn't take them is a usage error (the default classic is a no-op).
+    if canonical_zone_type(args.zone_type) not in LAYOUT_ZONE_TYPES:
+        if getattr(args, "layout", None) == "graph":
+            parser.error("--layout graph only applies to --zone-type dungeon or "
+                         "outdoor_dungeon")
+        if getattr(args, "rule_set", None):
+            parser.error("--rule-set only applies to --zone-type dungeon or "
+                         "outdoor_dungeon")
 
     # Refusal (Req 10.2): right after parsing — before any build or write —
     # refuse an output directory that resolves to, inside, or around the

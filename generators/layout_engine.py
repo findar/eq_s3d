@@ -231,10 +231,21 @@ class GraphEngine:
     (the theme's layers still apply when they fit it); ``theme`` overrides
     the build's dungeon theme. With neither, the set comes from
     ``ctx.build.theme`` through ``rules/topology/themes.toml``.
+
+    Two options for a placement inside an Envelope (the outdoor dungeon sets
+    them per attempt; an Envelope-free layout ignores both):
+    ``facing`` picks which of ``embed.face_entry``'s ranked turns/mirrors
+    faces the entrance room toward the way in (0 the best; ``facings`` of
+    them), and ``entrance_side`` is the least width and depth of the rules'
+    entrance room (the wall facing the way in has to hold a Tunnel), whatever
+    the zone's room scale.
     """
 
     name = "graph"
     sizes_rooms = True
+    facings = 8              # len(embed.FACINGS)
+    facing: int = 0
+    entrance_side: float = 0.0
 
     def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
                  theme: Optional[str] = None,
@@ -269,12 +280,22 @@ class GraphEngine:
                                        [graph.node(r).size for r in order])
         sizes = {r: embed.room_size(graph.node(r).size, base, ctx.ceiling, ctx.rng)
                  for r in order}
+        entrance = next((n.id for n in graph.rooms() if n.kind == "entrance"), None)
+        if envelope is not None and entrance is not None and self.entrance_side > 0:
+            w, d, h = sizes[entrance]
+            sizes[entrance] = (max(w, self.entrance_side), max(d, self.entrance_side), h)
         half = {r: (w / 2, d / 2) for r, (w, d, _h) in sizes.items()}
         place = embed.PLACEMENT_FUNCS[rs.placement]
         gap = ctx.corridor_width + 1.0
         centres = place(graph, order, half, ctx.corridor_width, gap)
         if envelope is not None:
-            centres = embed.fit_to_envelope(centres, half, envelope)
+            # Face the rules' entrance room toward the Envelope's way in (a
+            # quarter turn / mirror of the whole layout), so the pacing's
+            # entrance, the room nearest the way in, is that room.
+            centres, half, swapped = embed.face_entry(centres, half, envelope, entrance,
+                                                      rank=self.facing)
+            if swapped:
+                sizes = {r: (d, w, h) for r, (w, d, h) in sizes.items()}
 
         rooms: List[RoomSpec] = []
         for k, r in enumerate(order):
