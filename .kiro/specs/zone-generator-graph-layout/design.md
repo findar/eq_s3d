@@ -79,12 +79,79 @@ Measured at `67e5b69`.
    classes slot in before it: rules say "small", the zone type says how big
    small is, the race scales the result. An ogre lair and a halfling lair use
    the same rule.
-5. **Stock dungeon topology: task 1.** The survey walks the stock dungeons
-   (befallen, crushbone, najena, gukbottom, guktop, permafrost, soldunga,
-   kaesora, sebilis, chardok; warren-like, reported apart: blackburrow,
-   runnyeye) and fills this finding with chamber count, chamber sizes,
-   degrees, cycle rank, dead-end share and deep-end distance. Its numbers set
-   the two base sets' recipes and the bands of Req 5.1.
+5. **Stock dungeon topology (task 1).** `scripts/dungeon_topology_survey.py
+   --eq-path F:\everquest_rof2` takes each zone's WLD floor (standable
+   faces whose WLD winding marks them floors, since the walk surface's |nz|
+   test also passes ceilings), rasters it in 4 u cells with one node per
+   floor level, keeps the largest connected floor and measures each node's
+   distance to the floor's edge. **Width threshold: 40 u.** Floor wider than
+   that is chamber; the rest is passage. Our corridors are
+   `max(40, side × 0.25)` (50 u at the default band). Stock corridors measure
+   12–28 u (ridge-width p25/p50 per zone). 40 u is above every stock corridor
+   and equal to our narrowest. Wide floor is split at doorways (a watershed:
+   two rooms stay apart when the floor where they meet is under 0.75 of the
+   narrower room's width), then grown back. Edges join chambers that touch
+   or share a passage. A passage meeting k ≥ 3 chambers adds k − 1 edges, so
+   loops made only of passages are not counted. Entry chamber: the chamber
+   nearest the map file's zone-in label (`to_<zone>` / `from_<zone>`). Safe
+   points and zone lines are server data. Each graph was checked by eye over
+   its EQ map lines: the RoF2 set, or `F:\EQlegends\maps` where RoF2 has no
+   file (only crushbone has one there).
+
+   | zone | N | side p10/50/90 (u) | degree 1/2/3/4/5+ | cycle rank | cyc/N | dead-end | deep-end | size mix t/s/m/l/h % | passage |
+   |------|---|--------------------|-------------------|------------|-------|----------|----------|----------------------|---------|
+   | befallen | 24 | 53/75/125 | 7/11/3/3/0 | 2 | 0.08 | 0.29 | 0.38 | 0/29/33/21/17 | 28 % |
+   | najena | 25 | 51/64/97 | 7/9/6/2/1 | 4 | 0.16 | 0.28 | 0.40 | 0/24/48/20/8 | 50 % |
+   | permafrost | 32 | 50/66/113 | 3/16/7/4/2 | 10 | 0.31 | 0.09 | 0.25 | 0/41/19/22/19 | 47 % |
+   | sebilis | 46 | 51/59/98 | 18/14/10/3/1 | 3 | 0.07 | 0.39 | 0.28 | 0/13/54/22/11 | 52 % |
+   | chardok | 77 | 51/70/117 | 13/42/17/5/0 | 8 | 0.10 | 0.17 | 0.32 | 0/35/29/25/12 | 41 % |
+   | *crushbone* | 29 | 57/87/247 | 4/14/5/3/3 | 10 | 0.34 | 0.14 | 0.17 | 0/31/28/17/24 | 22 % |
+   | *gukbottom* | 11 | 53/58/66 | 4/5/2/0/0 | 0 | 0.00 | 0.36 | 0.45 | 0/9/82/0/9 | 87 % |
+   | *guktop* | 17 | 48/60/96 | 4/7/6/0/0 | 2 | 0.12 | 0.24 | 0.65 | 0/35/41/12/12 | 64 % |
+   | *soldunga* | 15 | 51/59/88 | 4/7/4/0/0 | 1 | 0.07 | 0.27 | 0.33 | 0/7/67/20/7 | 80 % |
+   | *kaesora* | 20 | 56/65/102 | 6/6/5/2/1 | 4 | 0.20 | 0.30 | 0.45 | 0/10/45/35/10 | 56 % |
+   | blackburrow (warren) | 37 | 55/77/135 | 6/16/12/1/2 | 9 | 0.24 | 0.16 | 0.22 | 3/41/30/14/14 | 43 % |
+   | *runnyeye* (warren) | 18 | 50/64/78 | 5/4/5/4/0 | 5 | 0.28 | 0.28 | 0.39 | 0/22/61/11/6 | 79 % |
+
+   Every graph is one component. Size mix: each chamber's side over the
+   zone's median side, binned at the Size_Class centres 0.5/0.75/1.0/1.4/1.9
+   (bounds at the geometric means).
+
+   **Excluded (in italics above; wrong against the map):** crushbone (outdoor:
+   the open valley is cut into arbitrary chambers); gukbottom (its rooms are
+   cell-sized, under the threshold, and the flooded halls aren't floor);
+   guktop (the flooded east halls aren't floor, so only the west half is
+   graphed); soldunga (the central cave tunnels hold no chamber, so one
+   passage edge spans 600 u); kaesora (the temple with the zone-in is a
+   separate floor, reached by a drop); runnyeye (its upper two levels are
+   tunnels with no chamber, so their rooms and loops vanish).
+
+   **Bands (p10–p90 over the zones kept), for tasks 5 and 6:**
+
+   | measure | classic_eq (5 zones) | warren (blackburrow only) |
+   |---------|----------------------|---------------------------|
+   | dead-end share | 0.12–0.35 | 0.16 |
+   | cycle rank per room | 0.07–0.25 | 0.24 |
+   | deep-end distance | 0.26–0.39 | 0.22 |
+   | tiny / small / medium / large / huge share | 0 / 0.17–0.38 / 0.23–0.52 / 0.20–0.24 / 0.09–0.18 | 0.03 / 0.41 / 0.30 / 0.14 / 0.14 |
+   | chambers | 24–65 | 37 |
+   | median chamber side | 61–73 u | 77 u |
+
+   **How `warren` differs:** more loops per room (top of the classic band),
+   a shallower deep end (below the classic band), and more small chambers.
+   Its dead-end share sits at the low end of classic. Only one warren zone
+   survived the check, so its "band" is a single point. Task 5 should widen
+   it (for example ±0.05) rather than treat it as exact. The excluded
+   runnyeye points the same way on loops (0.28 per room).
+
+   **Uncertainty:** the split depends on the threshold. At 32 / 40 / 48 u the
+   classic dead-end band is 0.15–0.32 / 0.12–0.35 / 0.19–0.36, cycles per
+   room 0.06–0.21 / 0.07–0.25 / 0.08–0.15, and deep-end 0.23–0.34 /
+   0.26–0.39 / 0.34–0.51. The ratios hold; chamber counts and deep-end
+   don't. The doorway split barely matters (0 vs 0.75 changes no band by
+   more than 0.01). Big lumpy caves (blackburrow's lower cavern) split into
+   several chambers, and rooms joined by an opening wider than 0.75 of the
+   room stay one chamber (befallen's main hall and its two side rooms).
 
 ## The seam (`generators/layout_engine.py`)
 
