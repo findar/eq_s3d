@@ -17,3 +17,4 @@ Index entry: `tasks.md` task 1. Requirements 1. Design "Research findings" 7.
 - No tests: a script that writes a finding.
 
 ## Result
+✔ 03f0deb · survey
