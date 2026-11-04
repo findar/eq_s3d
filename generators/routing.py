@@ -19,6 +19,11 @@ A corridor route is one of three shapes:
 * **L-bend** (2 legs) — the genuine cross-axis case (one opening on an E/W
   wall, the other on an N/S wall): a perpendicular leg out of A then a
   perpendicular leg into B.
+* **U** (3 legs, step 7) — both openings on walls facing the SAME way, named
+  by ``CorridorSpec.side``: a stub out of each wall, joined by a middle leg
+  that runs past both rooms on that side. A stair between two rooms stacked
+  over each other takes it (the rooms overlap in plan, so no pair of facing
+  walls has a gap between them). The middle leg carries the rise.
 
 `Route` records the waypoints (one point per bend, >= 2), which axis each leg
 runs along, which leg carries the entire elevation change, and the kind. The
@@ -51,13 +56,13 @@ class Route:
     `carry`      index of the leg that carries the entire elevation change, or
                  -1 to mean "carry the longest leg" (the geometry builder's
                  default).
-    `kind`       "straight" | "z" | "l".
+    `kind`       "straight" | "z" | "l" | "u".
     """
 
     waypoints: Tuple[Tuple[float, float], ...]   # >= 2 points
     axes: Tuple[bool, ...]                        # True = leg runs along X
     carry: int                                    # leg that carries the rise
-    kind: str                                     # "straight" | "z" | "l"
+    kind: str                                     # "straight" | "z" | "l" | "u"
 
 
 def plan_route(from_xy: Tuple[float, float], to_xy: Tuple[float, float],
@@ -132,6 +137,35 @@ def plan_route(from_xy: Tuple[float, float], to_xy: Tuple[float, float],
     return Route(waypoints=waypoints, axes=axes, carry=carry, kind=kind)
 
 
+# A U-route's middle leg runs this many corridor widths past the outermost
+# opening, so the bend squares (half a width) clear the wall with half a width
+# to spare.
+U_REACH = 1.0
+SIDES_OUT = {"N": (False, 1.0), "S": (False, -1.0), "E": (True, 1.0), "W": (True, -1.0)}
+
+
+def plan_u_route(from_xy: Tuple[float, float], to_xy: Tuple[float, float],
+                 side: str, width: float) -> Route:
+    """The U-route between two openings on walls facing ``side``: a stub out
+    of each wall (perpendicular to it, outward), joined by a middle leg
+    ``U_REACH`` corridor widths past the outermost opening. Leg 1 carries the
+    rise, as a Z-corridor's jog does, so both stubs stay flat at their own
+    room's floor."""
+    if side not in SIDES_OUT:
+        raise ValueError(f"unknown corridor side {side!r}; expected N, S, E or W")
+    exit_x, sign = SIDES_OUT[side]
+    (fx, fy), (tx, ty) = from_xy, to_xy
+    if exit_x:
+        out = (max(fx, tx) if sign > 0 else min(fx, tx)) + sign * U_REACH * width
+        waypoints = ((fx, fy), (out, fy), (out, ty), (tx, ty))
+        axes = (True, False, True)
+    else:
+        out = (max(fy, ty) if sign > 0 else min(fy, ty)) + sign * U_REACH * width
+        waypoints = ((fx, fy), (fx, out), (tx, out), (tx, ty))
+        axes = (False, True, False)
+    return Route(waypoints=waypoints, axes=axes, carry=1, kind="u")
+
+
 def exit_axis_x(acx: float, acy: float, ahw: float, ahd: float,
                 bcx: float, bcy: float, bhw: float, bhd: float) -> bool:
     """Which wall AXIS the A→B corridor exits A along: True = E/W (runs X).
@@ -167,8 +201,13 @@ def corridor_route(cor: CorridorSpec, rooms: Mapping[str, RoomSpec]) -> Route:
     same basis `LayoutGenerator._wall_point` now uses to cut the walls),
     computed INDEPENDENTLY per end so a genuine cross-axis pair still routes as
     an L. When the corridor records no rooms (hand-authored spec), both ends
-    fall back to the endpoint delta, treating the pair as same-axis.
+    fall back to the endpoint delta, treating the pair as same-axis. A
+    corridor with a ``side`` is a U-route (``plan_u_route``) whatever its
+    rooms.
     """
+    if cor.side:
+        return plan_u_route((cor.from_x, cor.from_y), (cor.to_x, cor.to_y),
+                            cor.side, cor.width)
     a = rooms.get(cor.from_room)
     b = rooms.get(cor.to_room)
     if a is not None and b is not None:

@@ -52,7 +52,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: generators/topology/rewrite.py, generators/topology/ruleset.py, generators/topology/embed.py, generators/layout_engine.py, tests/test_topology_levels.py
   - Reqs: 4.1, 4.2
 
-- [ ] 5. The shared layout steps in 3D
+- [x] 5. The shared layout steps in 3D
   - Card: [cards/05-job-b-3d.md](cards/05-job-b-3d.md)
   - Type: agent · Size: M · Depends: 3, 4
   - Owns: generators/layout.py, generators/routing.py, generators/zone_spec.py, analyzer/traverse.py (room faces only), tests/test_layout_levels.py
