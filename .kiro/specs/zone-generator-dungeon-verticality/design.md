@@ -170,6 +170,120 @@ Measured at `8edf1df`.
    none outside Unrest's roof. Tread grouping can pick up flat floor beside a
    stair, which is why riser maxima reach 4–12 u; the p50s are robust. None
    of this has been checked in the client.
+8. **Race body heights and stock rooms (task 16).**
+   `scripts/race_size_survey.py --eq-path F:\everquest_rof2`.
+
+   **Body height H.** H is the race's default height from the client's
+   `racedata.txt` (last two fields of each race row, male/female, in world
+   units: the size of an NPC spawned at the race's default, the same units
+   as an NPC's `size`). The character models were posed and measured as a
+   check: each model's WLD skeleton (0x10) with its bones' rest tracks
+   (0x13 → 0x12 frame 0, quaternion + shift/256 + scale = the shift
+   denominator/256, composed down the bone tree) moves the skinned mesh's
+   vertex pieces; "native" is the Z extent of the body and head-0 meshes.
+   Every humanoid model is 6–7 u tall natively whatever its race (the frost
+   giant is 6.8, the ogre 6.5), so the meshes are authored at one scale and
+   the client sizes each race on top: the model can't give H on its own. It
+   gives proportions: the dragon's length is 2.7× its height (tail
+   included), so a dragon at H 21 is ~56 u long. Humanoid plan extents are
+   arm spans (the rest pose is a T-pose).
+
+   | race | H (u) | model (race id, archive) | native Z (u) | others |
+   |---|---|---|---|---|
+   | default (human) | 6 | HUM (1, globalhum_chr) | 7.1 | HUF 6.9 |
+   | goblin | 6 | GOB (40, runnyeye_chr) | 7.1 | |
+   | froglok | 5 | FRG (26, gukbottom_chr) | 4.9 | FRO (330) 5.0, H 5 |
+   | kobold | 5 | KOB (48, kob_chr) | 5.7 | |
+   | lizardman | 6 | LIZ (51, liz_chr) | 6.5 | |
+   | gnoll | 6 | GNN (39, blackburrow_chr) | 7.3 | |
+   | sarnak | 9 | SRW (131, chardok_chr) | 6.9 | |
+   | troll | 8 | TRM (9, globaltrm_chr) | 7.2 | TRF 7.1 |
+   | ogre | 9 | OGM (10, globalogm_chr) | 6.5 | OGF 7.0 |
+   | giant | 22 | FSG frost giant (188, kael_chr) | 6.8 | STG storm giant (189) 6.7, H 20; GIA (18) 6.9, H 21 |
+   | dragon | 21 | DRA (49, dra_chr) | 36.2 (97 long) | DR2 Velious dragon (184) 15.3 native, 62 long, H 25 |
+   | orc (reference) | 6 | ORC (54, crushbone_chr) | 5.9 | |
+
+   Every race was found. The code ↔ race-id pairs are EQ's race list, not
+   read from a file. The walk agent's player height is 6 u, the human H.
+
+   **Rooms.** Step 6's walk and chamber split, with the width threshold
+   scaled to the race (40 u × H/6: 33 u for frogloks and kobolds, 60 u for
+   sarnak and ogres, ~140 u for giants and dragons; at 40 u Veeshan's Peak's
+   tunnels read as chambers). Height = the p50, over a chamber's floor, of
+   the headroom to the first ceiling-wound face (vault = p90); chambers less
+   than half under a ceiling are open and left out; a flat lid at the zone's
+   top counts as sky. Per zone p10/p50/p90 over the covered chambers (N),
+   in H:
+
+   | zone | race (H) | N | height u | height / H | vault / H | side u | side / H |
+   |---|---|---|---|---|---|---|---|
+   | befallen | default (6) | 24 | 14/14/18 | 2.3/2.3/3.1 | 2.3/2.3/4.5 | 53/75/125 | 8.9/12.4/20.9 |
+   | blackburrow | gnoll (6) | 37 | 25/49/96 | 4.1/8.2/15.9 | 5.3/10.0/17.2 | 57/74/124 | 9.4/12.3/20.6 |
+   | runnyeye | goblin (6) | 18 | 12/12/21 | 2.0/2.0/3.5 | 2.0/2.6/4.8 | 50/64/78 | 8.4/10.6/13.0 |
+   | droga | goblin (6) | 124 | 16/17/48 | 2.7/2.8/8.0 | 2.7/4.0/8.0 | 55/87/155 | 9.2/14.5/25.9 |
+   | soldunga | kobold (5) | 27 | 12/12/38 | 2.4/2.4/7.6 | 2.4/4.0/8.4 | 42/54/93 | 8.4/10.8/18.7 |
+   | guktop | froglok (5) | 30 | 13/19/31 | 2.7/3.9/6.3 | 2.8/5.2/7.8 | 42/51/93 | 8.3/10.2/18.6 |
+   | gukbottom | froglok (5) | 29 | 14/15/35 | 2.8/3.1/6.9 | 2.8/4.4/9.3 | 45/51/69 | 8.9/10.2/13.8 |
+   | cazicthule | lizardman (6) | 23 | 13/28/77 | 2.2/4.7/12.8 | 2.2/4.7/14.1 | 50/61/120 | 8.3/10.2/20.0 |
+   | chardok | sarnak (9) | 31 | 25/45/95 | 2.8/5.0/10.5 | 4.4/6.7/14.9 | 73/87/111 | 8.1/9.7/12.4 |
+   | oggok | ogre (9) | 23 | 30/40/55 | 3.4/4.4/6.1 | 3.7/4.8/6.6 | 67/80/119 | 7.5/8.9/13.2 |
+   | kael | giant (22) | 8 | 124/140/302 | 5.7/6.4/13.7 | 6.9/7.5/15.5 | 151/168/228 | 6.9/7.6/10.4 |
+   | soldungb | dragon (21) | 1 | 98 | 4.7 | 5.7 | 164 | 7.8 |
+   | veeshan | dragon (21) | 18 | 80/157/383 | 3.8/7.5/18.2 | 3.8/7.6/21.3 | 142/196/344 | 6.8/9.3/16.4 |
+   | sleeper | dragon (21) | 12 | 92/96/192 | 4.4/4.6/9.1 | 4.4/4.6/9.1 | 132/205/443 | 6.3/9.8/21.1 |
+   | skyshrine | dragon (21) | 15 | 80/95/139 | 3.8/4.5/6.6 | 3.9/5.0/6.7 | 131/217/413 | 6.3/10.3/19.7 |
+
+   Plans and side views were read by eye. **Crushbone is left out:** it is
+   outdoor and its sky lid (620 u) sits under a higher face, so its valley
+   reads as 100 H rooms. At the dragon threshold Nagafen's lair (soldungb)
+   keeps one chamber, the lair itself (98 u, 4.7 H); the rest of the zone
+   is kobold and goblin tunnels under it. Kael keeps 8 chambers: halls of
+   5.7–6.4 H and two forecourts under the cavern roof at ~14 H. Oggok and
+   Cazic-Thule lose their lidded yards (5 open chambers each). Veeshan's
+   Peak's 18 H is its great cavern.
+
+   Across the 15 zones kept (p10–p90 across zones; median in brackets):
+   height zone-p10 2.3–4.6 H (2.8), zone-p50 2.4–7.0 H (4.5), zone-p90
+   4.0–15.1 H (7.6); side zone-p10 6.5–9.1 H (8.3), zone-p50 8.3–12.4 H
+   (10.2), zone-p90 11.2–21.0 H (18.6). Once divided by H the big races'
+   rooms land in the same range as the small ones': Kael's and the dragon
+   zones' heights (4.5–7.5 H at p50) sit beside Blackburrow's and
+   Chardok's, so one set of multiples for every race holds.
+
+   **Proposed bands (the same for every race; only H changes):**
+   - room height **[2.5 H, 10 H]**: `tiny` at 2.5 H (stock's low rooms,
+     the zones' p10 median 2.8 H; Befallen, Runnyeye and the Guks sit at
+     2–3 H), `huge` at 10 H (above the zone-p90 median 7.6 H, under
+     Veeshan's and Blackburrow's 15–18 H caverns);
+   - footprint side **[8 H, 20 H]**: `tiny` at 8 H (the zone-p10 median
+     8.3 H), `huge` at 20 H (the zone-p90s reach 21 H). The low end is
+     partly the chamber definition: a chamber is floor wider than 6.7 H.
+
+   In units: human (H 6) rooms 15–60 u tall, 48–120 u across; ogre (9)
+   23–90 u, 72–180 u; giant (22) 55–220 u, 176–440 u; dragon (21) 53–210 u,
+   168–420 u (a 56 u dragon fits the smallest).
+
+   **Against our numbers.** Our human dungeon rooms are 121 u tall at
+   `medium` (97–182 u from `tiny` to `huge`): 16–30 H, 1.6–3× the proposed
+   maximum and ~4× stock's typical human room (Befallen 14 u, 2.3 H). The
+   medium side is ~340 u at 10 rooms (57 H; 290–440 u for 14–6 rooms), ~3×
+   the 20 H maximum. Outdoor-dungeon rooms (80 u) are 13 H. The walk
+   agent's 6 u player is the human H. At the bands a human dungeon room is
+   about the height a giant's or dragon's is today relative to its body;
+   today's human rooms are roughly giant-sized (121 u = 5.5 giant H).
+
+   **Not verified / uncertain.** How the client scales a model to its
+   race's height is not in the client files: H assumes an NPC at default
+   size stands its racedata height tall (true for the human, 6 u, against
+   the 6–7 u meshes). The dragon model's native 36 u comes from the
+   shift-denominator-as-scale reading (its pelvis bone has scale 6.2);
+   read the other way it would be 6 u, so dragon proportions rest on that
+   reading (it is the one that poses the Luclin human correctly). Named
+   NPCs often spawn above their race's default (Nagafen, Vox and the VP
+   dragons are server data, not here). Room heights under-read where a
+   ceiling-wound beam or ledge sits over the floor and over-read where a
+   lid escaped the test. Kael has only 8 chambers and Nagafen's lair one.
+   None of this has been checked in the client.
 
 ## Levels
 
