@@ -137,8 +137,9 @@ def test_unmapped_kind_falls_back_with_a_note():
 
 def test_type_keeps_the_size_class_area():
     """A grown room keeps its footprint area through the type's shape bias
-    (rules own size); only the race scale changes it. Classic rooms still
-    take the type's footprint multiplier."""
+    (rules own size), race or no race: the graph engine applies the race
+    scale before placement (task 20), so semantics doesn't scale it again.
+    Classic rooms still take the type's footprint multiplier."""
     from generators.zone_spec import RoomSpec
     throne = semantics.ROOM_TYPES["throne"]           # footprint 1.6, aspect 1.5
     grown = RoomSpec(id="g", center_x=0, center_y=0, width=300, depth=200, kind="deep")
@@ -147,7 +148,7 @@ def test_type_keeps_the_size_class_area():
     assert grown.width / grown.depth == pytest.approx(1.5 * 1.5)
     ogre = RoomSpec(id="o", center_x=0, center_y=0, width=300, depth=200, kind="deep")
     semantics._apply_shape(ogre, throne, "ogre")
-    assert ogre.width * ogre.depth == pytest.approx(300 * 200 * 1.4 ** 2)
+    assert ogre.width * ogre.depth == pytest.approx(300 * 200)
     classic = RoomSpec(id="c", center_x=0, center_y=0, width=300, depth=200)
     semantics._apply_shape(classic, throne, "")
     assert classic.width * classic.depth == pytest.approx(300 * 200 * 1.6 ** 2 * 1.5)

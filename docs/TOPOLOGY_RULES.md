@@ -206,7 +206,8 @@ reattach = { x = ["x", "y"] }
 of x's edges to a new hub (`reattach = { x = ["h"] }`), which hangs two
 placeholders off the way. `passage` uses a relation:
 `{a = "p", b = "x", rel = "below"}`, so the floor drops after the passage.
-`great_hall` uses a condition: `when = { race_scale = ">=1.5" }`.
+`great_hall` uses a condition: `when = { race_scale = ">=1.4" }`, so only
+the big races (ogres, giants) get it.
 
 `shortcut` matches two finished rooms by distance and adds only an edge.
 They must be exactly 3 hops apart, so the new loop is a ring of four (at 2
@@ -281,7 +282,7 @@ python scripts/topology_rules.py draw classic_eq --theme temple --out output/rul
      distance) and the size class mix, each as p10 / p50 / p90 / mean.
 
    It exits 1 if any graph raised. A `when` rule that never fires may only
-   need the right context (`great_hall` needs `--race-scale 1.5`).
+   need the right context (`great_hall` needs `--race-scale 1.4`).
 3. **draw** writes `<set>.html` (or `<set>-<theme>.html`) with the start
    graph, the recipe as a table, a before and after diagram for every rule,
    the rules of every layer that fits, and one example graph grown at 15
