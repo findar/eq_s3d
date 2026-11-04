@@ -46,7 +46,7 @@ import numpy as np
 
 from core.pfs import PfsArchive
 from core.ter import FLAG_PASSABLE, TerFile
-from generators.geometry import is_auto_stair, stair_layout
+from generators.geometry import MeshBuilder, is_auto_stair, stair_layout
 from generators.routing import Rect, corridor_route, route_footprint
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
@@ -889,7 +889,8 @@ def flood_reachable(surf: WalkSurface, seed_face: int) -> set:
     return reached
 
 
-def _faces_in_room(surf: WalkSurface, room: RoomSpec) -> np.ndarray:
+def _faces_in_room(surf: WalkSurface, room: RoomSpec,
+                   rooms: Optional[List[RoomSpec]] = None) -> np.ndarray:
     """
     Indices of standable faces whose floor lies within the room footprint.
 
@@ -900,6 +901,14 @@ def _faces_in_room(surf: WalkSurface, room: RoomSpec) -> np.ndarray:
     the room's own floor height. For open terrain (outdoor/cave), the nominal
     ``floor_z`` won't match the undulating heightfield, so if the Z band selects
     nothing we fall back to all XY-matching faces — the terrain IS the floor.
+
+    ``rooms`` (the spec's rooms) z-bounds that fallback for stacked builds
+    (step 7): a room stacked over or under this one in plan is another storey,
+    so the fallback keeps only faces between the nearest such room below
+    (over its ceiling) and above (under its floor). The band test already
+    picks a room's own floor when it was built; without the bound a room
+    with no floor of its own would be "found" on the storey above or below.
+    A layout without stacked rooms (no plan overlap) is unchanged.
     """
     (xmin, ymin, zmin), (xmax, ymax, zmax) = room.bounds
     std_idx = np.nonzero(surf.standable)[0]
@@ -924,8 +933,32 @@ def _faces_in_room(surf: WalkSurface, room: RoomSpec) -> np.ndarray:
         return xy_idx[in_z]
     # Terrain case: no face in the nominal floor band — the open ground under
     # this footprint IS the room floor. Return the XY matches (the flood fill
-    # decides reachability).
-    return xy_idx
+    # decides reachability), but none on a storey stacked above or below.
+    lo, hi = _storey_band(room, rooms)
+    if lo == -np.inf and hi == np.inf:
+        return xy_idx
+    return xy_idx[(xy_cen[:, 2] > lo) & (xy_cen[:, 2] < hi)]
+
+
+def _storey_band(room: RoomSpec, rooms: Optional[List[RoomSpec]]):
+    """``(lo, hi)``: the ceiling of the highest room under ``room`` and the
+    floor of the lowest room over it, among the rooms overlapping it in plan
+    (a stacked build's other storeys); infinite where there is none."""
+    lo, hi = -np.inf, np.inf
+    if not rooms:
+        return lo, hi
+    (x0, y0, z0), (x1, y1, z1) = room.bounds
+    for r in rooms:
+        if r.id == room.id:
+            continue
+        (rx0, ry0, rz0), (rx1, ry1, rz1) = r.bounds
+        if min(x1, rx1) - max(x0, rx0) <= 1e-6 or min(y1, ry1) - max(y0, ry0) <= 1e-6:
+            continue
+        if rz1 <= z0:
+            lo = max(lo, rz1)
+        elif rz0 >= z1:
+            hi = min(hi, rz0)
+    return lo, hi
 
 
 FLOOR_Z_TOL = 8.0
@@ -1215,9 +1248,17 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         # leave the region; the deck over it stays. Empty for every corridor a
         # layout makes today, so the region below is the historic one.
         bridged = bridged_rooms(cor, crossed_ids, rooms_by_id, agent)
+        # A stacked build (step 7): a crossed room the corridor passes wholly
+        # over or under is another storey, not a crossing, and its footprint
+        # stays in the region: its floor and ceiling are a Slab or more from
+        # the corridor's floor, so the flood can't step onto them, and the
+        # corridor's own rooms may lie over or under it too.
+        stacked = (stacked_rooms(cor, route, crossed_ids - bridged, rooms_by_id, agent)
+                   if is_stacked_build(spec) else {})
         exclude = [_room_footprint(r) for r in spec.rooms
                    if r.id not in (cor.from_room, cor.to_room)
-                   and r.id in crossed_ids and r.id not in bridged]
+                   and r.id in crossed_ids and r.id not in bridged
+                   and r.id not in stacked]
         deck_band = None
         if bridged:
             lo = min(cor.from_z, cor.to_z) - agent.max_step_up
@@ -1228,8 +1269,8 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         region_faces = _region_faces(surf, include, exclude, deck_band)
         faces_set = {int(f) for f in region_faces}
 
-        start = {int(f) for f in _faces_in_room(surf, a)} & faces_set
-        goal = {int(f) for f in _faces_in_room(surf, b)} & faces_set
+        start = {int(f) for f in _faces_in_room(surf, a, spec.rooms)} & faces_set
+        goal = {int(f) for f in _faces_in_room(surf, b, spec.rooms)} & faces_set
 
         connected = False
         reason = ""
@@ -1249,7 +1290,7 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         # GENUINELY cuts through another room (centreline span > hw -- the same
         # bar the layout splits on, so detection and prevention agree). A mere
         # corner graze is not a crossing and leaves the gap diagnosis in place.
-        walled = crossed_ids - bridged
+        walled = crossed_ids - bridged - set(stacked)
         if not connected and walled:
             reason = f"crosses room {sorted(walled)[0]}"
 
@@ -1560,6 +1601,50 @@ def bridged_rooms(cor: CorridorSpec, crossed_ids, rooms: Mapping[str, RoomSpec],
         if (lo >= r.floor_z + agent.player_height
                 and hi + agent.player_height <= r.floor_z + r.height):
             out.add(rid)
+    return out
+
+
+def is_stacked_build(spec: ZoneSpec) -> bool:
+    """Does the spec's layout block put rooms on more than one Level (a
+    stacked build, step 7)? Only there does a corridor pass over or under a
+    room; on any other spec a corridor over a room's roof is still the
+    "crosses room" failure (task 2's rule)."""
+    levels = (spec.layout or {}).get("levels") or {}
+    return len(set(levels.values())) > 1
+
+
+def stacked_rooms(cor: CorridorSpec, route, crossed_ids,
+                  rooms: Mapping[str, RoomSpec], agent: AgentModel
+                  ) -> Dict[str, Tuple[float, float]]:
+    """The crossed rooms ``cor`` passes wholly over or under (a stacked
+    build's other storeys, step 7), each with the corridor's floor band over
+    it: ``{room id: (lowest floor, highest floor)}``. The band is taken over
+    the route's legs whose footprint overlaps the room (the carry leg spans
+    its whole rise); the corridor's tube (floor to floor + height) must lie
+    under the room's floor or over its ceiling all along it."""
+    out: Dict[str, Tuple[float, float]] = {}
+    if not crossed_ids:
+        return out
+    wps = list(route.waypoints)
+    zs, _ = MeshBuilder._waypoint_zs(wps, None if route.carry < 0 else route.carry,
+                                     cor.from_z, cor.to_z)
+    hw = cor.width / 2
+    for rid in crossed_ids:
+        r = rooms.get(rid)
+        if r is None:
+            continue
+        fp = _room_footprint(r)
+        lo, hi = np.inf, -np.inf
+        for k in range(len(wps) - 1):
+            (x0, y0), (x1, y1) = wps[k], wps[k + 1]
+            leg = (min(x0, x1) - hw, min(y0, y1) - hw, max(x0, x1) + hw, max(y0, y1) + hw)
+            if (min(leg[2], fp[2]) - max(leg[0], fp[0]) > 1e-6
+                    and min(leg[3], fp[3]) - max(leg[1], fp[1]) > 1e-6):
+                lo, hi = min(lo, zs[k], zs[k + 1]), max(hi, zs[k], zs[k + 1])
+        if lo > hi:
+            continue
+        if hi + cor.height <= r.floor_z or lo >= r.floor_z + r.height:
+            out[rid] = (float(lo), float(hi))
     return out
 
 
@@ -2272,7 +2357,7 @@ def validate(eqg_path: str | Path,
     room_faces_by_id: Dict[str, np.ndarray] = {}
     reached_by_id: Dict[str, List[int]] = {}
     for room in spec.rooms:
-        rf = _faces_in_room(surf, room)
+        rf = _faces_in_room(surf, room, spec.rooms)
         room_faces_by_id[room.id] = rf
         reached_by_id[room.id] = [int(f) for f in rf if int(f) in reachable]
     reachable_room_ids = {rid for rid, rl in reached_by_id.items() if rl}

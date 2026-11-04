@@ -18,11 +18,12 @@ ai.expand.plan_to_spec drives through this generator.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import random
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from .zone_spec import (
     ZoneSpec, RoomSpec, CorridorSpec, LightSpec, RegionSpec, MaterialSpec,
@@ -34,6 +35,7 @@ from . import semantics
 from .envelope import Envelope, EnvelopeFitError
 from .layout_engine import (ClassicEngine, ENGINES, RELATIONS,
                             LayoutContext, LayoutEngine)
+from .geometry import AUTO_STAIRS, MIN_LANE, MeshBuilder, stair_layout
 from .routing import corridor_route, plan_route, exit_axis_x, route_footprint
 from .zone_types import STYLE_PROFILE
 
@@ -103,6 +105,44 @@ def relations_broken(rooms: List[RoomSpec],
             ok = True
         broken += not ok
     return broken
+
+
+# Stacked builds (step 7): the floor variation ramps give WITHIN a Level, as a
+# band this wide centred on the Level's height. Job B's floor-to-floor height
+# grows by it, so two Levels keep the Slab whatever the variation does
+# (design "Levels": "bounded so two Levels never meet"). Two Slabs: small next
+# to the ~135 u Level, like step 6's gentlest ramps.
+LEVEL_VARIATION = 28.0
+
+# How far a U-route stair's door sits in from the end of its wall.
+U_DOOR_MARGIN = 2.0
+
+
+class _Stack(NamedTuple):
+    """What Job B knows of a stacked build: each room's Level and the
+    floor-to-floor height it places them at."""
+    levels: List[int]
+    level_height: float
+    variation: float
+
+    def base(self, k: int) -> float:
+        return self.levels[k] * self.level_height
+
+    def band(self, k: int) -> Tuple[float, float]:
+        h = self.variation / 2
+        return self.base(k) - h, self.base(k) + h
+
+
+class _Shape(NamedTuple):
+    """An edge's corridor as Job B plans it on a stacked build: the corridor
+    (``id`` still blank), its route, its floor as ``(rect, zlo, zhi, pin)``
+    pieces (``zhi`` is the tube's top; ``pin`` the room a Z-corridor's stub
+    and bend stay level with), and the first room it passes through without
+    the Slab's clearance (None: clear)."""
+    cor: CorridorSpec
+    route: object
+    pieces: List[Tuple[Tuple[float, float, float, float], float, float, Optional[int]]]
+    blocked: Optional[int]
 
 
 # Zone types that use the box backend and therefore support the semantic layer.
@@ -217,6 +257,14 @@ class LayoutGenerator:
         # when an Envelope could not hold every requested room).
         self.warnings: List[str] = []
 
+        # A stacked build's Levels (step 7), or None: Job B then runs as in
+        # step 6, byte for byte. Set per layout pass by ``_generate_once``.
+        self._stack: Optional[_Stack] = None
+        self._shapes: Dict[Tuple[int, int], _Shape] = {}
+        # A stair's route as the conflict pass re-routed it (an index into
+        # its ``_stair_candidates``), kept while the floors move.
+        self._stair_route: Dict[Tuple[int, int], int] = {}
+
     def _apply_room_scale(self, room_count: int) -> None:
         """
         Set room_min/room_max (and corridor width) from the theme's measured
@@ -306,6 +354,9 @@ class LayoutGenerator:
         if envelope is None:
             self._apply_room_scale(room_count)
         shared = self._add_default_materials(spec, dungeon_race)
+        self._stack = None
+        self._shapes = {}
+        self._stair_route = {}
 
         # --- Job A: the rooms and their graph, from the Layout_Engine ----
         # (classic: scatter in an ellipse, separate, Delaunay, MST + a few
@@ -350,12 +401,20 @@ class LayoutGenerator:
                 archetype=dungeon_theme, race=dungeon_race,
                 tint=elemental_tint, overrides=room_type_overrides)
 
+        # A stacked build (an engine gave rooms on more than one Level) runs
+        # Job B in 3D from here: rooms on different Levels may overlap in plan,
+        # floors sit at their Level, an edge across Levels is a stair.
+        self._stack = self._stack_for(result, rooms)
+
         # Role biasing resized rooms (climax/hub grew, dead-ends shrank), so
         # re-separate to resolve any overlaps the new sizes introduced. Keep
         # the graph edges — only positions shift slightly.
-        self._separate_rooms(rooms)
+        self._separate_rooms(rooms, storeys=self._storeys(rooms))
 
-        if elevation:
+        if self._stack is not None:
+            self._assign_stacked_elevation(rooms, edges, entrance, relations,
+                                           elevation, themed)
+        elif elevation:
             self._assign_elevation(rooms, edges, entrance, relations)
         elif themed:
             # Elevation is off, but the semantic layer perturbed floor_z (sunk
@@ -387,6 +446,7 @@ class LayoutGenerator:
         # adjacency: the new A–C / C–B edges join rooms whose heights were set
         # against the OLD graph, so a split could otherwise leave a cliff. On a
         # flat zone every floor_z is 0 and the relax is a no-op.
+        self._shapes = {}
         graph_changed = self._resolve_crossings(rooms, edges)
         # Drop a loop edge from any pair of corridors that would cross too close
         # in Z (the residual open-space conflict class the through-room split
@@ -403,9 +463,14 @@ class LayoutGenerator:
         if envelope is not None:
             self._fit_floors(rooms, edges, entrance, envelope)
 
+        self._shapes = {}
         self._build_corridors(spec, rooms, edges)
         self.layout_record = self._layout_record(result, rooms, edges, relations,
                                                  elevation)
+        if self._stack is not None and self.layout_record is not None:
+            # The floor-to-floor height the floors were placed at (the
+            # engine's, grown to hold the rooms as themed, plus the variation).
+            self.layout_record["level_height"] = self._stack.level_height
 
         # Point every surface still on the bare default name at the shared
         # Material_Name (themed rooms already carry their own; Req 1.3).
@@ -682,7 +747,8 @@ class LayoutGenerator:
     # ------------------------------------------------------------------
 
     def _separate_rooms(self, rooms: List[RoomSpec],
-                        iterations: Optional[int] = None) -> None:
+                        iterations: Optional[int] = None,
+                        storeys: Optional[list] = None) -> None:
         """
         Step 2: push overlapping rooms apart (no physics engine needed). Each
         iteration nudges any overlapping pair apart along their centre-to-centre
@@ -694,7 +760,16 @@ class LayoutGenerator:
         rooms (task 14, seed 1955208177 corr_4). One unit of slack on top lets
         the iterative push stop a hair short and still clear the corridor.
         Heightfield zones keep the earlier half-width gap.
+
+        *storeys* (a stacked build, step 7): each room's ``embed.Storey``. A
+        pair that ``embed.may_overlap_in_plan`` (different Levels, the Slab
+        between them) is left where it is, one over the other.
         """
+        stacked = None
+        if storeys is not None:
+            from .topology.embed import may_overlap_in_plan
+            stacked = {(a, b) for a in range(len(rooms)) for b in range(a + 1, len(rooms))
+                       if may_overlap_in_plan(storeys[a], storeys[b])}
         if self.corridor_clearance:
             gap = max(self.corridor_width, 30.0) + 1.0
             iterations = iterations or 200
@@ -705,6 +780,8 @@ class LayoutGenerator:
             moved = False
             for a in range(len(rooms)):
                 for b in range(a + 1, len(rooms)):
+                    if stacked and (a, b) in stacked:
+                        continue
                     ra, rb = rooms[a], rooms[b]
                     # Required half-separation on each axis (AABB + gap)
                     min_dx = (ra.width + rb.width) / 2 + gap
@@ -745,10 +822,17 @@ class LayoutGenerator:
         become duplicates or self-loops after a split are dropped. Returns True
         if any edge changed (the caller re-relaxes elevation on the new graph).
         """
-        crossed_room = partial(
-            self._crossed_room if self.corridor_clearance
-            else self._crossed_room_centreline, rooms)
+        if self._stack is not None:
+            # Stacked: judged in 3D, a corridor over or under a room with the
+            # Slab's clearance doesn't cross it (step 7).
+            crossed_room = partial(self._crossed_room_3d, rooms)
+        else:
+            crossed_room = partial(
+                self._crossed_room if self.corridor_clearance
+                else self._crossed_room_centreline, rooms)
 
+        stacked = self._stack is not None
+        split = set()
         changed = False
         # Work queue of edges to (re)check; splitting pushes the two halves back.
         pending = list(edges)
@@ -765,6 +849,17 @@ class LayoutGenerator:
                 continue
             key = (min(i, j), max(i, j))
             c = crossed_room(i, j)
+            if c is not None and stacked:
+                # Stacked: a split's halves may each be blocked by the other's
+                # room (a stair round a corner of its own Level), so an edge
+                # is split once; met again it is kept and reported.
+                if key in split:
+                    note = f"crosses_room: {rooms[i].id}-{rooms[j].id}"
+                    if note not in self.warnings:
+                        self.warnings.append(note)
+                    c = None
+                else:
+                    split.add(key)
             if c is None:
                 if key not in seen:
                     seen.add(key)
@@ -775,6 +870,13 @@ class LayoutGenerator:
             pending.append((i, c))
             pending.append((c, j))
 
+        if stacked:
+            # Never drop an edge for want of budget (the graph must stay whole).
+            for i, j in pending:
+                key = (min(i, j), max(i, j))
+                if i != j and key not in seen:
+                    seen.add(key)
+                    resolved.append((i, j))
         if changed:
             edges[:] = resolved
         return changed
@@ -986,6 +1088,8 @@ class LayoutGenerator:
 
         def clash(ea, eb) -> bool:
             """Do the corridors of edges ea and eb overlap where they mustn't?"""
+            if self._stack is not None:
+                return self._clash_3d(rooms, ea, eb)
             shared = set(ea) & set(eb)
             if not self.corridor_clearance:
                 if shared:
@@ -1014,8 +1118,12 @@ class LayoutGenerator:
                  for v in range(len(rooms)) if roots[v] != side),
                 key=lambda e: (rooms[e[0]].center_x - rooms[e[1]].center_x) ** 2
                 + (rooms[e[0]].center_y - rooms[e[1]].center_y) ** 2)
+            # (Stacked: a stand-in must be clear of every room, its own
+            # included, judged in 3D.)
+            crossed = ((lambda rs, i, j: self._shape(rs, i, j).blocked)
+                       if self._stack is not None else self._crossed_room)
             for e in cands:
-                if (self._crossed_room(rooms, *e) is None
+                if (crossed(rooms, *e) is None
                         and not any(clash(e, o) for o in rest)):
                     return e
             return None
@@ -1038,6 +1146,11 @@ class LayoutGenerator:
             if pair is None:
                 break
             a, b = pair
+            if self._stack is not None and self._reroute_stair(rooms, edges, (a, b)):
+                # Stacked: a stair moved to another of its routes, clear of
+                # every room and corridor; the graph is unchanged.
+                safety -= 1
+                continue
             if is_removable(a, edges):
                 del edges[a]
             elif is_removable(b, edges):
@@ -1178,9 +1291,13 @@ class LayoutGenerator:
                     continue
                 lo, hi = float("-inf"), float("inf")
                 for m in adj[i]:
-                    cap = self._elevation_run(rooms[i], rooms[m]) * self.max_grade
+                    cap = self._edge_cap(rooms, i, m)
                     lo = max(lo, rooms[m].floor_z - cap)
                     hi = min(hi, rooms[m].floor_z + cap)
+                if self._stack is not None:
+                    # Stacked: the room stays in its Level's band.
+                    blo, bhi = self._stack.band(i)
+                    lo, hi = max(lo, blo), min(hi, bhi)
                 if lo <= hi:
                     newz = min(max(rooms[i].floor_z, lo), hi)
                 else:
@@ -1210,7 +1327,7 @@ class LayoutGenerator:
         worst = 0.0
         for i in nodes:
             for m in adj[i]:
-                cap = self._elevation_run(rooms[i], rooms[m]) * self.max_grade
+                cap = self._edge_cap(rooms, i, m)
                 caps[(i, m)] = cap
                 worst = max(worst,
                             abs(rooms[i].floor_z - rooms[m].floor_z) - cap)
@@ -1235,6 +1352,9 @@ class LayoutGenerator:
         shift = z[entrance] - low[entrance] if entrance in low else 0.0
         for i in nodes:
             rooms[i].floor_z = low[i] + shift
+            if self._stack is not None:
+                blo, bhi = self._stack.band(i)
+                rooms[i].floor_z = min(max(rooms[i].floor_z, blo), bhi)
 
     def _fit_floors(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
                     entrance: int, envelope: Envelope, passes: int = 4) -> None:
@@ -1341,7 +1461,24 @@ class LayoutGenerator:
         """
         Step 7: a wall-to-wall corridor for each graph edge, ramping/stepping
         where the two rooms differ in height.
+
+        A stacked build takes each corridor from its planned shape
+        (``_shape``): an edge across Levels is a planned stair
+        (``steps = AUTO_STAIRS``), on facing walls or a U-route.
         """
+        if self._stack is not None:
+            for k, (i, j) in enumerate(edges):
+                cor = dataclasses.replace(self._shape(rooms, i, j).cor, id=f"corr_{k}")
+                spec.corridors.append(cor)
+                a, b = rooms[i], rooms[j]
+                if cor.side:
+                    for r in (a, b):
+                        if cor.side not in r.open_walls:
+                            r.open_walls.append(cor.side)
+                else:
+                    self._open_facing_walls(a, b)
+                    self._open_facing_walls(b, a)
+            return
         for k, (i, j) in enumerate(edges):
             a, b = rooms[i], rooms[j]
             # Elevation is carried by a smooth ramp (steps=0). The geometry
@@ -1366,6 +1503,313 @@ class LayoutGenerator:
             ))
             self._open_facing_walls(a, b)
             self._open_facing_walls(b, a)
+
+    # ------------------------------------------------------------------
+    # Stacked builds (step 7): Job B in 3D
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _stack_for(result, rooms: List[RoomSpec]) -> Optional[_Stack]:
+        """The build's ``_Stack`` when the engine gave rooms on more than one
+        Level, else None (one Level is step 6's Job B, unchanged). The
+        floor-to-floor height is the engine's, grown so the tallest room as
+        themed still has the Slab over it, plus ``LEVEL_VARIATION``."""
+        levels = result.levels
+        if levels is None or len(set(levels)) < 2:
+            return None
+        from .topology.embed import SLAB
+        lh = max(result.level_height or 0.0, max(r.height for r in rooms) + SLAB)
+        return _Stack(list(levels), lh + LEVEL_VARIATION, LEVEL_VARIATION)
+
+    def _storeys(self, rooms: List[RoomSpec]) -> Optional[list]:
+        """Each room's ``embed.Storey`` at its Level's height (None unstacked)."""
+        if self._stack is None:
+            return None
+        from .topology.embed import Storey
+        return [Storey(lv, self._stack.base(k), r.height)
+                for k, (lv, r) in enumerate(zip(self._stack.levels, rooms))]
+
+    def _is_stair(self, i: int, j: int) -> bool:
+        return self._stack is not None and self._stack.levels[i] != self._stack.levels[j]
+
+    def _edge_cap(self, rooms: List[RoomSpec], i: int, m: int) -> float:
+        """How far apart the floors of an edge's two rooms may be: its ramp's
+        run times ``max_grade``. A stair edge (across Levels) is carried by a
+        planned stair at the stair grade (RISER_CAP / TREAD_DEPTH), which
+        folds into a Switchback when its leg is short, so any rise its Levels
+        ask for fits: its band is unbounded and each room keeps to its own
+        Level's band instead (``_Stack.band``)."""
+        if self._is_stair(i, m):
+            return float("inf")
+        return self._elevation_run(rooms[i], rooms[m]) * self.max_grade
+
+    def _assign_stacked_elevation(self, rooms: List[RoomSpec],
+                                  edges: List[Tuple[int, int]], entrance: int,
+                                  relations: Optional[Dict[Tuple[int, int], str]],
+                                  elevation: bool, themed: bool) -> None:
+        """Floors of a stacked build: Level x level height, plus a variation
+        inside ``_Stack.band`` (the semantic sink/raise, then step 6's random
+        rises over the edges within a Level, capped by the run as there). A
+        stair edge passes its room's variation on unchanged. Then the relax
+        pass, which keeps every room in its band."""
+        from collections import defaultdict, deque
+        st = self._stack
+        half = st.variation / 2
+        adj = defaultdict(list)
+        for i, j in edges:
+            adj[i].append(j)
+            adj[j].append(i)
+        delta = [min(max(r.floor_z, -half), half) for r in rooms]
+        if elevation:
+            visited = {entrance}
+            q = deque([entrance])
+            while q:
+                cur = q.popleft()
+                for nxt in adj[cur]:
+                    if nxt in visited:
+                        continue
+                    visited.add(nxt)
+                    z = delta[cur]
+                    rel = self._relation(relations, cur, nxt)
+                    if not self._is_stair(cur, nxt) and rel != "level" and (
+                            rel != "any" or self.rng.random() < self.elevation_chance):
+                        rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
+                        rise = min(rise, self._elevation_run(rooms[cur], rooms[nxt])
+                                   * self.max_grade)
+                        if rise >= 1.0:
+                            z += rise * self.rng.choice([1, -1])
+                    delta[nxt] = min(max(z, -half), half)
+                    q.append(nxt)
+        for k, r in enumerate(rooms):
+            r.floor_z = st.base(k) + delta[k]
+        if elevation or themed:
+            self._relax_elevation(rooms, adj, entrance)
+
+    @staticmethod
+    def _z_clear(zlo: float, zhi: float, room: RoomSpec) -> bool:
+        """Is a corridor tube from ``zlo`` (its lowest floor) to ``zhi`` (its
+        highest ceiling) over or under ``room`` with the Slab between?"""
+        from .topology.embed import SLAB
+        return (zlo >= room.floor_z + room.height + SLAB - 1e-6
+                or zhi + SLAB <= room.floor_z + 1e-6)
+
+    def _facing_cor(self, a: RoomSpec, b: RoomSpec, steps: int) -> CorridorSpec:
+        """The step 6 corridor between the facing walls of *a* and *b*."""
+        fx, fy = self._wall_point(a, b)
+        tx, ty = self._wall_point(b, a)
+        return CorridorSpec(id="", from_x=fx, from_y=fy, to_x=tx, to_y=ty,
+                            from_z=a.floor_z, to_z=b.floor_z,
+                            width=self.corridor_width, height=self.corridor_height,
+                            steps=steps, from_room=a.id, to_room=b.id)
+
+    def _u_cor(self, a: RoomSpec, b: RoomSpec, side: str, a_far: bool = True,
+               b_far: bool = True) -> Optional[CorridorSpec]:
+        """A stair on a U-route out of the walls of *a* and *b* facing *side*,
+        each door at one end of its wall: the end away from the other room
+        (``*_far``, the middle leg then runs the length of both) or the end
+        toward it (the middle leg stays clear of a corridor leaving the far
+        part of that wall). None when a wall can't hold the door or the middle
+        leg is too short to fold a Switchback."""
+        hw = self.corridor_width / 2
+        inset = 2.0                      # as _wall_point
+        exit_x = side in ("E", "W")
+        sign = 1.0 if side in ("N", "E") else -1.0
+
+        def wall(r: RoomSpec) -> float:
+            if exit_x:
+                return r.center_x + sign * (r.width / 2 - inset)
+            return r.center_y + sign * (r.depth / 2 - inset)
+
+        ta, tb = (a.center_y, b.center_y) if exit_x else (a.center_x, b.center_x)
+        ha, hb = (a.depth / 2, b.depth / 2) if exit_x else (a.width / 2, b.width / 2)
+        reach_a, reach_b = ha - hw - U_DOOR_MARGIN, hb - hw - U_DOOR_MARGIN
+        if reach_a < 0 or reach_b < 0:
+            return None
+        sgn = 1.0 if tb >= ta else -1.0
+        da = ta - sgn * reach_a if a_far else ta + sgn * reach_a
+        db = tb + sgn * reach_b if b_far else tb - sgn * reach_b
+        if abs(db - da) < 2 * hw + 2 * MIN_LANE:
+            return None
+        (fx, fy), (tx, ty) = (((wall(a), da), (wall(b), db)) if exit_x
+                              else ((da, wall(a)), (db, wall(b))))
+        return CorridorSpec(id="", from_x=fx, from_y=fy, to_x=tx, to_y=ty,
+                            from_z=a.floor_z, to_z=b.floor_z,
+                            width=self.corridor_width, height=self.corridor_height,
+                            steps=AUTO_STAIRS, from_room=a.id, to_room=b.id,
+                            side=side)
+
+    def _stair_candidates(self, rooms: List[RoomSpec], i: int, j: int
+                          ) -> List[CorridorSpec]:
+        """The ways a stair between rooms i and j (on different Levels) may
+        go, in the order tried: between their facing walls when the rooms
+        stand a corridor apart on that axis (as separation leaves two rooms
+        on one Level), then U-routes on the four sides, the two across the
+        pair's offset first (the longest middle legs), each with its doors at
+        the far ends of the walls, then the near end of one or both."""
+        a, b = rooms[i], rooms[j]
+        out = []
+        ex = self._exit_axis_x(a, b)
+        sep = (abs(b.center_x - a.center_x) - (a.width + b.width) / 2 if ex
+               else abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2)
+        if sep >= self.corridor_width:
+            out.append(self._facing_cor(a, b, AUTO_STAIRS))
+        across_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
+        sides = ("N", "S", "E", "W") if across_x else ("E", "W", "N", "S")
+        for a_far, b_far in ((True, True), (False, True), (True, False), (False, False)):
+            for side in sides:
+                cor = self._u_cor(a, b, side, a_far, b_far)
+                if cor is not None:
+                    out.append(cor)
+        return out
+
+    def _make_shape(self, rooms: List[RoomSpec], i: int, j: int,
+                    cor: CorridorSpec) -> _Shape:
+        """``cor``'s planned floor as pieces, and the first room it passes
+        through without the Slab's clearance. A stair is judged against its
+        own two rooms too (only its end stubs may enter them, through their
+        doors); a corridor within a Level only against third rooms, as
+        ``_crossed_room``. A stair the builder can't fold (``cramped``) is
+        blocked by its own first room."""
+        by_id = {r.id: r for r in rooms}
+        route = corridor_route(cor, by_id)
+        wps = list(route.waypoints)
+        n = len(wps) - 1
+        zs, _carry = MeshBuilder._waypoint_zs(
+            wps, None if route.carry < 0 else route.carry, cor.from_z, cor.to_z)
+        hw, H = cor.width / 2, cor.height
+        z_kind = route.kind == "z"
+        pieces = []
+        for k in range(n):
+            (x0, y0), (x1, y1) = wps[k], wps[k + 1]
+            pin = (i if k == 0 else j if k == n - 1 else None) if z_kind else None
+            pieces.append(((min(x0, x1) - hw, min(y0, y1) - hw,
+                            max(x0, x1) + hw, max(y0, y1) + hw),
+                           min(zs[k], zs[k + 1]), max(zs[k], zs[k + 1]) + H, pin))
+        for w in range(1, n):
+            cx, cy = wps[w]
+            pin = (i if w == 1 else j if w == n - 1 else None) if z_kind else None
+            pieces.append(((cx - hw, cy - hw, cx + hw, cy + hw), zs[w], zs[w] + H, pin))
+        stair = cor.steps < 0
+        if stair:
+            lay = stair_layout(cor, by_id)
+            if lay is None or lay.cramped:
+                return _Shape(cor, route, pieces, i)
+            if lay.stairwell is not None:
+                pieces.append((lay.stairwell, min(cor.from_z, cor.to_z),
+                               max(cor.from_z, cor.to_z) + H, None))
+        blocked = None
+        for k, r in enumerate(rooms):
+            own = k in (i, j)
+            if own and not stair:
+                continue
+            rx0, ry0 = r.center_x - r.width / 2, r.center_y - r.depth / 2
+            rx1, ry1 = r.center_x + r.width / 2, r.center_y + r.depth / 2
+            for p, ((x0, y0, x1, y1), zlo, zhi, _pin) in enumerate(pieces):
+                if own and ((k == i and p == 0) or (k == j and p == n - 1)):
+                    continue
+                if (min(x1, rx1) - max(x0, rx0) > _TOUCH
+                        and min(y1, ry1) - max(y0, ry0) > _TOUCH
+                        and not self._z_clear(zlo, zhi, r)):
+                    blocked = k
+                    break
+            if blocked is not None:
+                break
+        return _Shape(cor, route, pieces, blocked)
+
+    def _shape(self, rooms: List[RoomSpec], i: int, j: int) -> _Shape:
+        """Edge i-j's planned corridor on a stacked build (cached until the
+        floors move). Within a Level it is step 6's facing-wall corridor; an
+        edge across Levels is a planned stair on the first candidate route
+        (``_stair_candidates``) that is clear of every room, its Switchback's
+        stairwell included, else the first one only a third room blocks (the
+        crossing split can route round that room), else the first."""
+        key = (i, j)
+        if key in self._shapes:
+            return self._shapes[key]
+        a, b = rooms[i], rooms[j]
+        if not self._is_stair(i, j):
+            shape = self._make_shape(rooms, i, j, self._facing_cor(a, b, 0))
+        else:
+            shapes = [self._make_shape(rooms, i, j, c)
+                      for c in self._stair_candidates(rooms, i, j)]
+            pick = self._stair_route.get(key)
+            if pick is not None and pick < len(shapes) and shapes[pick].blocked is None:
+                shapes.insert(0, shapes.pop(pick))
+            shape = (next((s for s in shapes if s.blocked is None), None)
+                     or next((s for s in shapes if s.blocked not in (i, j)), None)
+                     or (shapes[0] if shapes else None))
+            if shape is None:
+                shape = self._make_shape(rooms, i, j, self._facing_cor(a, b, AUTO_STAIRS))
+                shape = shape._replace(blocked=i)
+        self._shapes[key] = shape
+        return shape
+
+    def _reroute_stair(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                       pair: Tuple[int, int]) -> bool:
+        """Two corridors clash: move whichever of them is a stair to another
+        of its routes that is clear of every room and clashes with no other
+        corridor. False when neither can move."""
+        for idx in pair:
+            i, j = edges[idx]
+            if not self._is_stair(i, j):
+                continue
+            old = self._shapes.get((i, j))
+            for n, cor in enumerate(self._stair_candidates(rooms, i, j)):
+                shape = self._make_shape(rooms, i, j, cor)
+                if shape.blocked is not None:
+                    continue
+                self._shapes[(i, j)] = shape
+                if not any(self._clash_3d(rooms, (i, j), e)
+                           for k, e in enumerate(edges) if k != idx):
+                    self._stair_route[(i, j)] = n
+                    return True
+            if old is not None:
+                self._shapes[(i, j)] = old
+            else:
+                self._shapes.pop((i, j), None)
+        return False
+
+    def _crossed_room_3d(self, rooms: List[RoomSpec], i: int, j: int
+                         ) -> Optional[int]:
+        """``_crossed_room`` on a stacked build: the third room edge i-j's
+        planned corridor passes through without the Slab's clearance, or
+        None. A stair no route can place clear of its own rooms can't be
+        split; it is kept and reported in ``warnings`` (``stair_unplaced``)."""
+        blocked = self._shape(rooms, i, j).blocked
+        if blocked is None:
+            return None
+        if blocked in (i, j):
+            note = f"stair_unplaced: {rooms[i].id}-{rooms[j].id}"
+            if note not in self.warnings:
+                self.warnings.append(note)
+            return None
+        return blocked
+
+    def _clash_3d(self, rooms: List[RoomSpec], ea: Tuple[int, int],
+                  eb: Tuple[int, int]) -> bool:
+        """Do the planned corridors of edges ea and eb overlap without the
+        clearance between them? Two from the same room may share its doorway
+        stub and bend (``_resolve_conflicts``); stairwells count as floor.
+
+        The clearance between two tubes is the Slab, but at least a corridor
+        height + 1: the gate (``analyzer.traverse.corridor_conflicts``, design
+        decision 16) wants that much between two floors, and it reads a
+        tube's ceiling with its floor (the walk surface takes ceilings as
+        floor), so it measures from the lower tube's ceiling."""
+        from .topology.embed import SLAB
+        shared = set(ea) & set(eb)
+        sa, sb = self._shape(rooms, *ea), self._shape(rooms, *eb)
+        clear = max(SLAB, min(sa.cor.height, sb.cor.height) + 1.0)
+        pa, pb = sa.pieces, sb.pieces
+        for (ra, za0, za1, ka) in pa:
+            for (rb, zb0, zb1, kb) in pb:
+                if ka is not None and ka == kb and ka in shared:
+                    continue
+                if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
+                        and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH
+                        and zb0 - za1 < clear and za0 - zb1 < clear):
+                    return True
+        return False
 
     # ------------------------------------------------------------------
     # Helpers

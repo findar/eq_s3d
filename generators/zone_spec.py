@@ -122,6 +122,13 @@ class CorridorSpec:
     from_room: str = ""
     to_room: str = ""
 
+    # A U-route (step 7, a stair between stacked rooms): both openings are on
+    # walls facing this way ("N", "S", "E" or "W"), each stub leaves its wall
+    # outward and the middle leg runs past both rooms (``routing.plan_u_route``).
+    # "" (every corridor before step 7) lets ``corridor_route`` pick the
+    # straight / Z / L route; the JSON carries the key only when it is set.
+    side: str = ""
+
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
     def floor_z(self) -> float:
@@ -212,6 +219,14 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
     return d
 
 
+def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
+    """A corridor's JSON; ``side`` only when set (step 6 corridors carry none)."""
+    d = asdict(cor)
+    if not d.get("side"):
+        d.pop("side", None)
+    return d
+
+
 # ---------------------------------------------------------------------------
 # Top-level spec
 # ---------------------------------------------------------------------------
@@ -292,7 +307,7 @@ class ZoneSpec:
             "safe_point": list(self.safe_point),
             "materials": {k: asdict(v) for k, v in self.materials.items()},
             "rooms": [_room_dict(r) for r in self.rooms],
-            "corridors": [asdict(c) for c in self.corridors],
+            "corridors": [_corridor_dict(c) for c in self.corridors],
             "lights": [asdict(l) for l in self.lights],
             "regions": [asdict(r) for r in self.regions],
             "gates": [asdict(g) for g in self.gates],
