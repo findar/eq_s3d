@@ -511,6 +511,25 @@ def _corridor_result_tuples(results) -> list:
     ]
 
 
+def _reference_floors_only(ter, ref_agent, opt_surf):
+    """The frozen reference's walk surface under the floor rule.
+
+    The reference stands on faces of either winding (``|n.z|``); since
+    verticality task 18 the live surface stands on floors only (wound up), so
+    a box ceiling is no longer standable. The reference stays frozen: it walks
+    the same mesh with every down-wound flat face (a ceiling) collapsed to a
+    point, so it can't stand there, and then carries the mesh's own normals
+    and centroids (the connector walk reads ceilings by them). Everything this
+    property compares is still the speed-up against the fork point.
+    """
+    from dataclasses import replace
+    hide = opt_surf.normals[:, 2] <= -ref_agent.min_up_normal
+    polys = [replace(p, v2=p.v1, v3=p.v1) if hide[k] else p
+             for k, p in enumerate(ter.polygons)]
+    ref = RT.build_walk_surface(replace(ter, polygons=polys), ref_agent)
+    return replace(ref, normals=opt_surf.normals, centroids=opt_surf.centroids)
+
+
 @pytest.mark.slow
 @build_settings(10)
 # Regression anchor: the first box build this property exercised end to end
@@ -604,7 +623,7 @@ def test_walk_surface_equivalence(zone_type, n, vert, s):
         ter, _zone_name = T.load_ter_from_eqg(result.eqg_path)
 
         opt_surf = T.build_walk_surface(ter, agent)
-        ref_surf = RT.build_walk_surface(ter, ref_agent)
+        ref_surf = _reference_floors_only(ter, ref_agent, opt_surf)
 
         # Live optimised per-room results (validate builds its own optimised
         # surface from the same .eqg).
