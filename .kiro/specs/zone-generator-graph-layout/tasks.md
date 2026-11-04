@@ -106,7 +106,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Type: agent · Size: S · Depends: 13
   - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, tests/test_server.py, tests/test_hygiene.py (allowlist), tests/test_graph_layout_controls.py, rules/topology/layers/temple.toml, tests/test_ruleset_classic_eq.py
 
-- [ ] 15. Acceptance section, thorough run, timing
+- [x] 15. Acceptance section, thorough run, timing
   - Card: [cards/15-release-prep.md](cards/15-release-prep.md)
   - Type: agent · Size: S · Depends: 14
   - Owns: docs/ACCEPTANCE.md, tests/test_graph_layout_build.py

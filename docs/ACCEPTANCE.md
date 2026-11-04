@@ -818,3 +818,172 @@ dungeon never builds (its rooms are taller than the hill).
 - [ ] **[DEFERRED]** Zoning in through the zoneline, walking the mouth and
       the tunnel, and the map in the RoF2 client need a takeover install; it
       moves to M6's in-engine smoke load.
+
+---
+
+## Step 6 — Graph layouts
+
+> Roadmap step 6 (`zone-generator-graph-layout`). A dungeon's room graph can
+> now be **grown** instead of scattered. **Classic** (the default) is
+> TinyKeep: rooms are scattered, pushed apart and joined by a cut-down
+> triangulation, so the graph is whatever the rooms' positions give.
+> **Graph** grows the graph first, by rewrite rules: start from a small graph
+> of placeholders, apply rules (pattern → replacement) stage by stage until
+> none is left, then place the rooms with a spring layout and make the
+> corridors. The rules give every room a **kind** (`entrance`, `chamber`,
+> `hub`, `lair`, `hall`, `passage`, `deep`) and a **size class** (`tiny` …
+> `huge`); the theme maps kinds onto its room types (a temple's `deep` is its
+> inner sanctum, a fortress's its throne room) and the race scales the units.
+> The rules live in **rule sets**, TOML files under `rules/topology/`: two
+> base sets, `classic_eq` (shaped like the classic dungeons) and `warren`
+> (shaped like Blackburrow: more short loops, fewer dead ends, a shallower
+> deep end, more small rooms), and one **theme layer**, `temple` (a nave: a
+> large hall with two small chapels). Rule set **From theme** takes the
+> theme's base set and layers (Warren → `warren`; Temple → `classic_eq` +
+> `temple`; any other theme or none → `classic_eq`). Everything after the
+> graph (pacing, themes, elevation, corridors, locks, the walkability gate,
+> maps, textures) is as before. Restart the Server on the merged code first
+> and check the side panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. **Every case is made from the Controls panel alone** (Zone
+type, Rooms, Theme, Race, Layout, Rule set, Seed); leave the description box
+empty, since a description doesn't take the Layout toggle. Size, Verticality
+and Locks stay at their defaults (medium, moderate, 0); Theme and Race stay
+None unless the row names them. Each builds on the first attempt.
+
+| # | Controls | Seed | What it shows (sidecar) |
+|---|----------|------|-------------------------|
+| a | Dungeon, 12 rooms, Layout **Classic** | 4 | `layout.engine: classic`; no loop, 5 dead ends |
+| b | Dungeon, 12 rooms, Layout **Graph**, Rule set **classic_eq** | 4 | `classic_eq`, no layers; 1 loop, 5 dead ends; kinds entrance, chamber ×6, lair ×3, passage, deep |
+| c | Dungeon, 12 rooms, Layout **Graph**, Rule set **warren** | 4 | `warren`; 3 loops, 1 dead end, a shallow deep end (0.25 against b's 0.50); 5 small rooms and no large |
+| d | Dungeon, 12 rooms, Theme **Temple**, Layout **Graph**, Rule set From theme | 4 | `classic_eq` + layer `temple`; `nave` applied (a large `hall` with two small `lair` chapels); the `deep` room is the `inner_sanctum` and the boss room |
+| e | Dungeon, 12 rooms, Race **Ogre**, Layout **Graph**, Rule set From theme | 4 | b's graph and size classes (the same `applied` list), rooms scaled up by the ogre's 1.4 (mean floor area ~2× b's); the theme falls back to `fortress`, the `deep` room is the `throne` |
+| f | Dungeon, 12 rooms, Race **Giant**, Layout **Graph**, Rule set From theme | 3 | race scale 2.2 reaches the big-race rule `great_hall` (`race_scale >= 1.5`; an ogre's 1.4 doesn't): a `huge` `hall` on the way; rooms far bigger again |
+| g | Outdoor dungeon, 5 rooms, Layout **Graph**, Rule set From theme, Landscape defaults | 4 | `classic_eq` under the hill: the mouth opens into the `entrance` room and the `deep` room is the climax |
+
+Cases a, b and c share seed and room count on purpose: compare them side by
+side. They use 12 rooms rather than the first look's 9 because the shapes
+differ more clearly with more rooms. A temple needs at least 7 rooms for its
+nave (with fewer it doesn't fit: the sidecar still lists the `temple` layer
+but `applied` has no `nave`), so keep d at 9 or more.
+
+From the command line (cases a, b, c and g). The CLI has `--layout` and
+`--rule-set` but **no dungeon theme or race flag** (its `--theme` is the old
+alias for `--zone-type`), so d, e and f are made in the Controls panel only:
+
+```bash
+python main.py generate graph_a --zone-type dungeon --rooms 12 --seed 4 --layout classic
+python main.py generate graph_b --zone-type dungeon --rooms 12 --seed 4 --layout graph --rule-set classic_eq
+python main.py generate graph_c --zone-type dungeon --rooms 12 --seed 4 --layout graph --rule-set warren
+python main.py generate graph_g --zone-type outdoor_dungeon --rooms 5 --seed 4 --layout graph
+```
+
+Case h is the rule tooling, from the repo root:
+
+```bash
+python scripts/topology_rules.py check                     # every shipped file and each theme's merged set
+python scripts/topology_rules.py dry-run classic_eq --graphs 20 --rooms 5-20
+python scripts/topology_rules.py dry-run warren --graphs 20 --rooms 5-20
+python scripts/topology_rules.py dry-run classic_eq --theme temple --rooms 9-16 --race-scale 1.6
+python scripts/topology_rules.py draw classic_eq --out output/rules/
+python scripts/topology_rules.py draw warren --out output/rules/
+python scripts/topology_rules.py draw classic_eq --theme temple --out output/rules/
+```
+
+### G.1 — Shape and connectivity
+
+- [ ] **[MUST] Reads as a dungeon** — b, c and d have a way in, side rooms
+      and a deep end worth reaching, not a ring of equal rooms or a string of
+      beads.
+- [ ] **[MUST] Every room on foot** — In each of a–g, walk from the spawn to
+      every room; no room is cut off (case g: in through the mouth, as O.3).
+- [ ] **[MUST] Corridors as good as Classic's** — b–g have no new odd joins:
+      every corridor meets its rooms flush, none runs through a room or along
+      a wall face, and no two rooms overlap in plan.
+- [ ] **[SHOULD] Loops show** — b's loop and c's three loops can be walked
+      round, coming back to where they started.
+
+### G.2 — Rule sets look different
+
+- [ ] **[MUST] A warren is a warren** — On the map (M), c looks unlike b:
+      more loops, fewer dead ends, the deep end nearer the way in, smaller
+      rooms.
+- [ ] **[MUST] The temple shows its nave** — d has one large hall with two
+      small rooms off it as chapels.
+- [ ] **[SHOULD] Graph and Classic differ** — a and b, same seed and rooms,
+      are different dungeons on the map (rooms still look alike in 3D; see
+      Known limits).
+
+### G.3 — Sizes and pacing
+
+- [ ] **[MUST] Sizes fit the part** — Rooms the sidecar's `layout.rooms`
+      tags `huge` or `large` (the deep room, halls, hubs) are clearly bigger
+      than the `small` lairs and dead ends.
+- [ ] **[MUST] The deep room is the climax** — In every Graph case the room
+      whose `layout.rooms` kind is `deep` is the one the Pacing panel (and
+      `rooms[].role`) calls `climax`; in a themed case (d, e, f) it is also
+      the boss room (`boss: true`). The `entrance` kind is the `entrance`
+      role, where the spawn stands.
+- [ ] **[MUST] The race scales the rooms** — e is b's dungeon with bigger
+      rooms; f is bigger again and has its great hall. Corridors and ramps
+      stay walkable for the player.
+
+### G.4 — Controls and sidecar
+
+- [ ] **[MUST] Controls** — Theme and Race show for Dungeon, City and
+      Outdoor dungeon; Layout for Dungeon and Outdoor dungeon; Rule set only
+      while Layout is Graph. Each setting reaches the build (check the
+      sidecar's `content` and `layout`).
+- [ ] **[MUST] From theme** — Theme **Warren**, Layout Graph, Rule set From
+      theme, 12 rooms, seed 4 builds with `layout.rule_set: warren` (c's
+      graph); Theme Temple gives `classic_eq` with `layers: ["temple"]`.
+- [ ] **[MUST] Sidecar `layout` block** — A Graph build's `<name>.zone.json`
+      has `layout` with `engine: graph`, `rule_set`, `layers`,
+      `placement: spring`, `applied` (the stage and rule of each application,
+      in order), `rooms` (per room: `kind`, `size`, `district`, `node`),
+      `edges` (each with its vertical relation), `shape` (`dead_end_share`,
+      `cycle_rank`, `deep_end`), `edge_fidelity` (1.0 in every case above)
+      and `relations_broken` (0). A Classic build's block has
+      `engine: classic` and `shape`.
+- [ ] **[MUST] Pinned seed repeats; blank seed is fresh** — As in W.4, for
+      Graph as for Classic.
+- [ ] **[SHOULD] Snappy** — A Graph build takes no longer than the Classic
+      build of the same controls plus 10 s; in practice it is quicker (14
+      rooms, seed 4: Classic ~4 s, Graph ~1 s).
+
+### G.5 — Tooling and the guide
+
+- [ ] **[MUST] check** — `check` prints `ok` for every shipped file and each
+      theme's merged set, and ends `all checks passed`. A broken copy (say a
+      replace kind misspelt `hubb`) fails with a line naming the file, the
+      rule, the field and what was expected.
+- [ ] **[MUST] dry-run** — Reports each stage's completion, how often each
+      rule fired (and any that never did), the shape measures and the size
+      mix. Without `--race-scale 1.5` or more, `great_hall` is listed as
+      never fired; it is the big-race rule, so that is expected.
+- [ ] **[MUST] draw** — Writes `classic_eq.html`, `warren.html` and
+      `classic_eq-temple.html` into `output/rules/`; each shows the start
+      graph, the recipe and every rule as a before → after diagram, clear
+      enough to write a rule from.
+- [ ] **[SHOULD] The guide** — `docs/TOPOLOGY_RULES.md` explains the format
+      with the shipped sets as examples and how to check, dry-run and draw;
+      following it you could add a rule to a copy of `classic_eq` and see it
+      fire in a dry run.
+
+Known limits (follow-ups in the spec's `archive.md`, not failures here):
+rooms all look alike (every room is a rectangle with its zone's textures, so
+Classic and Graph are hard to tell apart in 3D and kinds don't show; room
+shapes are step 8, room contents step 9); description words don't choose a
+layout (a description builds Classic; words like "maze" choosing a rule set
+are a fast follow); one level only (`above` / `below` act through elevation;
+stacked rooms and stairs are step 7); the warren bands rest on one stock zone
+(Blackburrow); and a race with no theme builds fortress rooms (cases e and
+f), the existing default.
+
+### G.6 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Walking a grown dungeon, its loops and its room sizes
+      in the RoF2 client needs a takeover install; it moves to M6's in-engine
+      smoke load.
