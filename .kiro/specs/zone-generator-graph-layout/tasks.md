@@ -88,7 +88,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 - [x] 11. Web: Layout toggle and rule set
   - Card: [cards/11-web.md](cards/11-web.md)
   - Type: agent · Size: S · Depends: 10
-  - Owns: web/index.html, web/src/main.ts, web/src/api.ts
+  - Owns: web/index.html, web/src/main.ts, web/src/api.ts, tests/test_hygiene.py (allowlists)
   - Reqs: 7.1
 
 - [x] 12. Gate sweep on built zones

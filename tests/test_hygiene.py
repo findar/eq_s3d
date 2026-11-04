@@ -353,7 +353,9 @@ def test_zone_type_surface_is_three():
 
     # web/index.html zone-type <option value="..."> values.
     html = _read("web/index.html")
-    option_vals = set(re.findall(r'<option\s+value="([^"]+)"', html))
+    select = re.search(r'<select id="zone-type">(.*?)</select>', html, re.S)
+    assert select, "could not find the zone-type <select> in web/index.html"
+    option_vals = set(re.findall(r'<option\s+value="([^"]+)"', select.group(1)))
     assert option_vals == DEFINED_ZONE_TYPES, (
         f"web/index.html zone-type <option> values = {sorted(option_vals)}"
     )
@@ -613,6 +615,7 @@ _ALLOWED_WEB_INPUT_IDS = {
     "prompt", "seed",                                      # description + seed
     "edge-n", "edge-e", "edge-s", "edge-w",  # wilderness map edges (task 3)
     "trees",  # wilderness tree density (trees spec task 9)
+    "layout", "rule-set",  # graph layouts (graph-layout spec task 11)
 }
 
 # The CLI ``generate`` option/flag names the geometry slice is allowed to add,
