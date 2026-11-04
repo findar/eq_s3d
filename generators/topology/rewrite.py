@@ -55,6 +55,14 @@ Decisions the design leaves open (task 4):
   the other room, so a triangle puts two corridors on one wall and the build
   drops one of them. On the finished graph (no Areas) it reads in rooms.
   Checked over the whole graph after each application.
+- **Levels agree** (step 7, task 4). Every ``above`` / ``below`` / ``level``
+  edge must agree with the others round every loop
+  (``ruleset.relative_levels``): an application that makes a loop go down
+  twice and up once is rejected, like one that breaks the invariants above.
+  ``any`` edges constrain nothing. Areas count as nodes, as for loops: an
+  Area's edges keep their relations when it is rewritten, so the check is the
+  safe side of a reattach that might have split such a loop between rooms.
+  Placement reads the Levels off the finished graph (``embed.assign_levels``).
 - **Budgets.** A stage's budget is round-half-up(share x n) plus what earlier
   stages left unspent when they ran out of matches. It is spent by growth in
   rooms + Areas (an Area is a room to come), so ``lengthen`` spends 1 and
@@ -88,7 +96,7 @@ from typing import (
 )
 
 from generators.topology.graph import ENTRANCE, Node, TopologyGraph
-from generators.topology.ruleset import WHEN_KEYS, Rule, RuleSet, Stage
+from generators.topology.ruleset import WHEN_KEYS, Rule, RuleSet, Stage, relative_levels
 
 MAX_DEGREE = 4
 LOOP_MIN = 4
@@ -299,7 +307,8 @@ def shortest_cycle_through(graph: TopologyGraph, a: str, b: str) -> Optional[int
 
 
 def invariant_violation(graph: TopologyGraph) -> Optional[str]:
-    """Why ``graph`` breaks Req 4.2 (connected, degree <= 4, loops of 4-5), or None."""
+    """Why ``graph`` breaks Req 4.2 (connected, degree <= 4, loops of 4-5) or
+    step 7's Levels (the vertical relations agree round every loop), or None."""
     if not graph.connected():
         return "not connected"
     for n in graph.node_ids():
@@ -311,7 +320,7 @@ def invariant_violation(graph: TopologyGraph) -> Optional[str]:
             return f"edge {e.a}-{e.b} is on a loop of {c} (max {LOOP_MAX})"
         if c is not None and c < LOOP_MIN:
             return f"edge {e.a}-{e.b} is on a loop of {c} (min {LOOP_MIN})"
-    return None
+    return relative_levels(graph.edges())[1]
 
 
 # ---------------------------------------------------------------------------

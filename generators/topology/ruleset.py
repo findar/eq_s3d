@@ -33,6 +33,10 @@ Format decisions the design leaves open (task 3):
   stage's ``stage``, ``apply`` and ``share``; several inserts after the same
   stage keep their file order.
 - A layer's rule may not reuse a name already in the base or an earlier layer.
+- (Step 7, task 4.) A rule's replacement edges, and a set's start edges, must
+  agree on Levels: following ``above`` (+1), ``below`` (-1) and ``level`` (0)
+  round any loop of them must come back to where it started
+  (:func:`relative_levels`). ``any`` edges constrain nothing.
 """
 
 from __future__ import annotations
@@ -237,6 +241,56 @@ class ThemeMap:
 
     def entry_for(self, theme: Optional[str]) -> ThemeEntry:
         return self.entries.get(theme or DEFAULT_THEME, self.entries[DEFAULT_THEME])
+
+
+# ---------------------------------------------------------------------------
+# Levels from the vertical relations (step 7, design "Levels")
+# ---------------------------------------------------------------------------
+
+#: Level change from an edge's first node to its second, per relation
+#: (``any`` is absent: it constrains nothing).
+LEVEL_STEP: Dict[str, int] = {"above": 1, "below": -1, "level": 0}
+
+
+def relative_levels(edges: Sequence[Edge]
+                    ) -> Tuple[Dict[str, Tuple[str, int]], Optional[str]]:
+    """Group the nodes joined by ``above`` / ``below`` / ``level`` edges.
+
+    Returns ``({node: (group, offset)}, conflict)``: each node of a group
+    (the nodes those edges join, ``group`` its least id) has the Level
+    ``offset`` relative to that node. ``conflict`` is None when every such
+    edge agrees, else one line naming the edge that disagrees with the
+    others round a loop (e.g. a loop that goes down twice and up once).
+    Nodes on ``any`` edges alone are not listed. Sorted throughout, so the
+    result and the message don't depend on edge order.
+    """
+    adj: Dict[str, List[Tuple[str, int, str]]] = {}
+    for e in edges:
+        step = LEVEL_STEP.get(e.rel)
+        if step is None:
+            continue
+        adj.setdefault(e.a, []).append((e.b, step, e.rel))
+        adj.setdefault(e.b, []).append((e.a, -step, {"above": "below", "below": "above"}
+                                        .get(e.rel, e.rel)))
+    out: Dict[str, Tuple[str, int]] = {}
+    for root in sorted(adj):
+        if root in out:
+            continue
+        out[root] = (root, 0)
+        stack = [root]
+        while stack:
+            u = stack.pop(0)
+            lu = out[u][1]
+            for v, step, rel in sorted(adj[u]):
+                want = lu + step
+                if v not in out:
+                    out[v] = (root, want)
+                    stack.append(v)
+                elif out[v][1] != want:
+                    return out, (f"the vertical relations disagree round a loop: "
+                                 f"{v!r} is {rel} {u!r} (Level {want} from {root!r}), "
+                                 f"but the other relations put it at Level {out[v][1]}")
+    return out, None
 
 
 # ---------------------------------------------------------------------------
@@ -512,9 +566,18 @@ class _Checker:
             if "replace" in tbl else []
         repl_ids = [n.id for n in repl]
         edges = self.edges(tbl["edges"], where, "edges", repl_ids) if "edges" in tbl else []
+        self.levels_agree(edges, where, "edges")
         reattach = self.reattach(tbl["reattach"], where, match_ids, repl_ids) if "reattach" in tbl else []
         return Rule(name, desc, tuple(match), tuple(match_edges), tuple(hops), tuple(repl),
                     tuple(edges), tuple(reattach), tuple(when), self.file)
+
+    def levels_agree(self, edges: Sequence[Edge], where: str, fld: str) -> None:
+        """Step 7: the edges' vertical relations must agree round every loop."""
+        conflict = relative_levels(edges)[1]
+        if conflict is not None:
+            self.fail(where, fld, conflict, raw=True,
+                      expected="above / below / level relations that agree round every "
+                               "loop (going round, the Levels must come back to the start)")
 
     def hops(self, raw: Any, where: str, match_ids: Sequence[str],
              match_edges: Sequence[Edge]) -> List[Hops]:
@@ -745,6 +808,7 @@ def load_rule_set(path: Union[str, Path]) -> RuleSet:
                  expected='exactly one node with kind = "entrance"')
     start_edges = chk.edges(st["start_edges"], "set", "start_edges", [n.id for n in start]) \
         if "start_edges" in st else []
+    chk.levels_agree(start_edges, "set", "start_edges")
     rules = chk.rules(data.get("rules", _MISSING), all_kinds, required=True)
     recipe = chk.recipe(data.get("recipe", _MISSING)) if "recipe" in data else []
     if "recipe" in data:
@@ -921,6 +985,7 @@ def load_for_theme(rules_dir: Union[str, Path], theme: Optional[str],
 
 __all__ = [
     "PLACEMENTS", "WHEN_KEYS", "COMPARISONS", "REST", "DEFAULT_THEME",
+    "LEVEL_STEP", "relative_levels",
     "CheckError", "RuleSetError", "Condition", "Hops", "Rule", "Stage", "Insert",
     "RuleSet", "ThemeLayer", "ThemeEntry", "ThemeMap",
     "load_rule_set", "load_layer", "load_theme_map", "merge", "load_for_theme",

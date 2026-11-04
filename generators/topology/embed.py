@@ -25,9 +25,16 @@ Three parts:
   every edge on its start side, then the layout's own separation
   (``ctx.separate``) and the Envelope's centring.
 
-Every pair test goes through :func:`may_overlap_in_plan` (always False in
-step 6: no room sits over another). Step 7's stacking changes that function
-alone.
+Every pair test goes through :func:`may_overlap_in_plan`. Step 7 (task 4)
+gives it Levels: :func:`assign_levels` reads each room's Level off the grown
+graph's vertical relations, :func:`storeys` turns Levels and room heights into
+floor heights (one :func:`level_height` per build), and two rooms may overlap
+in plan only on different Levels with at least the :data:`SLAB` between the
+upper floor and the lower ceiling. A placement given ``storeys`` doesn't push
+such pairs apart and pulls a stair edge (one across Levels) together so the
+upper room sits partly over its partner (:data:`STAIR_REST`). Without
+``storeys`` (the step 6 call) every room is a plain graph node and nothing
+overlaps.
 
 Nothing here draws from the rng except :func:`room_size`; the spring layout is
 a fixed number of fixed-size steps, so the same graph and sizes always give
@@ -37,12 +44,13 @@ the same positions.
 from __future__ import annotations
 
 import math
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
 
 from generators.topology.graph import ENTRANCE, Node, TopologyGraph
 from generators.topology import ruleset as _ruleset
+from generators.topology.ruleset import LEVEL_STEP, relative_levels
 
 Point = Tuple[float, float]
 
@@ -97,15 +105,110 @@ def room_size(size: Optional[str], base: float, ceiling: float,
 
 
 # ---------------------------------------------------------------------------
-# The plan predicate (step 7 changes only this)
+# Levels and the plan predicate (step 7, design "Levels", "Stacking")
 # ---------------------------------------------------------------------------
 
-def may_overlap_in_plan(a: Node, b: Node) -> bool:
+#: The least solid thickness between a lower room's ceiling and the floor of
+#: a room over it (design finding 7: the stock median, band 11-39 u).
+SLAB = 14.0
+
+
+class Storey(NamedTuple):
+    """What :func:`may_overlap_in_plan` reads about a room: its Level, its
+    floor height and its own height (at race scale)."""
+
+    level: int
+    floor: float
+    height: float
+
+    @property
+    def ceiling(self) -> float:
+        return self.floor + self.height
+
+
+def assign_levels(graph: TopologyGraph) -> Dict[str, int]:
+    """Each node's Level: breadth-first from the entrance (sorted neighbours),
+    ``above`` +1, ``below`` -1, ``level`` 0 from the neighbour it is reached
+    from; an ``any`` edge gives the room it reaches first its neighbour's Level
+    (and with it every room tied to that one by the other relations, so they
+    still agree). A part the entrance can't reach starts at Level 0 from its
+    least id. The entrance is Level 0.
+
+    Raises ValueError when the relations disagree round a loop (the rewrite
+    driver never grows such a graph: ``rewrite.invariant_violation``).
+    """
+    rel, conflict = relative_levels(graph.edges())
+    if conflict is not None:
+        raise ValueError(conflict)
+    ids = graph.node_ids()
+    if not ids:
+        return {}
+    shift: Dict[str, int] = {}
+    level: Dict[str, int] = {}
+
+    def put(v: str, want: int) -> None:
+        group, off = rel.get(v, (v, 0))
+        if group not in shift:
+            shift[group] = want - off
+        level[v] = shift[group] + off
+
+    entrance = next((n.id for n in graph.rooms() if n.kind == ENTRANCE), ids[0])
+    for start in [entrance] + ids:
+        if start in level:
+            continue
+        put(start, 0)
+        queue = [start]
+        while queue:
+            u = queue.pop(0)
+            for e in graph.incident(u):            # read from u, sorted by e.b
+                if e.b in level:
+                    continue
+                put(e.b, level[u] + LEVEL_STEP.get(e.rel, 0))
+                queue.append(e.b)
+    return level
+
+
+def level_height(heights: Sequence[float], slab: float = SLAB) -> float:
+    """Floor to floor between two Levels: the tallest room plus the Slab
+    (design finding 7; one per build, so any room fits under any other)."""
+    return (max(heights) if heights else 0.0) + slab
+
+
+def storeys(levels: Dict[str, int], heights: Dict[str, float],
+            height: Optional[float] = None) -> Dict[str, Storey]:
+    """Each room's :class:`Storey`, its floor at Level x ``height`` (the
+    :func:`level_height` of these rooms when None)."""
+    if height is None:
+        height = level_height(list(heights.values()))
+    return {r: Storey(levels[r], levels[r] * height, heights[r]) for r in heights}
+
+
+def may_overlap_in_plan(a: Any, b: Any, slab: float = SLAB) -> bool:
     """May rooms ``a`` and ``b`` overlap in plan (one above the other)?
 
-    Always False in step 6: every pair of footprints stays apart.
+    Only two :class:`Storey` values on different Levels whose vertical gap
+    (the upper floor less the lower ceiling) is at least ``slab``. Anything
+    without a Level (a plain graph ``Node``, as step 6 passed) never may.
     """
-    return False
+    la, lb = getattr(a, "level", None), getattr(b, "level", None)
+    if la is None or lb is None or la == lb:
+        return False
+    lo, hi = (a, b) if la < lb else (b, a)
+    return hi.floor - lo.ceiling >= slab - 1e-9
+
+
+def is_stair(a: Any, b: Any) -> bool:
+    """An edge between these rooms crosses Levels (a Vertical_Connector)."""
+    la, lb = getattr(a, "level", None), getattr(b, "level", None)
+    return la is not None and lb is not None and la != lb
+
+
+def _plan_keys(graph: TopologyGraph, order: Sequence[str],
+               storeys: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """What the pair tests read per room: its Storey, or its graph node."""
+    if storeys is not None:
+        return {r: storeys[r] for r in order}
+    return {r: graph.node(r) for r in order}
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +266,10 @@ STEP_START = 0.5
 STEP_END = 0.05
 K_SPRING = 0.5
 K_REPEL = 0.6
+#: A stair edge's rest distance, as a share of the two rooms' extents along
+#: the edge (no corridor run): 0.5 puts the upper room's centre over the lower
+#: room's wall, about half of each footprint over the other.
+STAIR_REST = 0.5
 
 
 def _ring_mates(graph: TopologyGraph, rooms: Sequence[str]) -> Dict[str, Dict[frozenset, int]]:
@@ -237,10 +344,12 @@ SIDE_ORDERS: Tuple[Tuple[str, ...], ...] = (
 
 
 def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
-                   half: Dict[str, Point], gap: float) -> int:
+                   half: Dict[str, Point], gap: float,
+                   storeys: Optional[Dict[str, Any]] = None) -> int:
     """Wall clashes (a room's corridors sharing a wall, as the router picks
     walls) plus pairs of rooms kept apart in plan that sit within ``gap``."""
     inset = set(order)
+    keys = _plan_keys(graph, order, storeys)
     bad = 0
     for u in order:
         walls = [_side_toward(pos[u], half[u], pos[m], half[m])
@@ -248,14 +357,15 @@ def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Po
         bad += len(walls) - len(set(walls))
     for i, a in enumerate(order):
         for b in order[i + 1:]:
-            if (not may_overlap_in_plan(graph.node(a), graph.node(b))
+            if (not may_overlap_in_plan(keys[a], keys[b])
                     and _box_gap(pos[a], half[a], pos[b], half[b]) < gap - 1e-6):
                 bad += 1
     return bad
 
 
 def start_positions(graph: TopologyGraph, order: Sequence[str],
-                    half: Dict[str, Point], run: float, gap: float) -> Dict[str, Point]:
+                    half: Dict[str, Point], run: float, gap: float,
+                    storeys: Optional[Dict[str, Any]] = None) -> Dict[str, Point]:
     """The best of :func:`start_once` over START_ROOTS roots (the first room,
     then the best-connected) and :data:`SIDE_ORDERS` (fewest
     :func:`layout_clashes`, the first on a tie; a clash-free start ends the
@@ -267,8 +377,8 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
     best = None
     for root in roots:
         for sides in SIDE_ORDERS:
-            pos = start_once(graph, order, half, run, gap, sides, root)
-            score = layout_clashes(graph, order, pos, half, gap)
+            pos = start_once(graph, order, half, run, gap, sides, root, storeys)
+            score = layout_clashes(graph, order, pos, half, gap, storeys)
             if best is None or score < best[0]:
                 best = (score, pos)
             if score == 0:
@@ -277,7 +387,7 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
             break
     pos = best[1]
     if best[0]:
-        repair(graph, order, pos, half, run, gap)
+        repair(graph, order, pos, half, run, gap, storeys)
     return pos
 
 
@@ -288,13 +398,14 @@ REPAIR_SHIFTS = (0.0, -0.5, 0.5, -1.0, 1.0)
 
 
 def repair(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
-           half: Dict[str, Point], run: float, gap: float) -> None:
+           half: Dict[str, Point], run: float, gap: float,
+           storeys: Optional[Dict[str, Any]] = None) -> None:
     """Move rooms, one at a time, to the spot beside or in the corner of their
     neighbours that leaves fewer clashes (:func:`layout_clashes`, counted
     locally), until a sweep moves nothing. In place."""
     inset = set(order)
     nbrs = {u: [m for m in graph.neighbours(u) if m in inset] for u in order}
-    nodes = {r: graph.node(r) for r in order}
+    nodes = _plan_keys(graph, order, storeys)
     dirs = dict(SIDES)
 
     def side(a: str, pa: Point, b: str, pb: Point) -> str:
@@ -351,7 +462,8 @@ def repair(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
 def start_once(graph: TopologyGraph, order: Sequence[str],
                half: Dict[str, Point], run: float, gap: float,
                side_order: Sequence[str] = ("E", "N", "W", "S"),
-               root: Optional[str] = None) -> Dict[str, Point]:
+               root: Optional[str] = None,
+               storeys: Optional[Dict[str, Any]] = None) -> Dict[str, Point]:
     """Breadth-first start: each room beside a placed neighbour on a free wall
     side, or in the corner where two placed neighbours' free sides meet.
 
@@ -367,7 +479,7 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
     pos: Dict[str, Point] = {}
     used: Dict[str, Dict[str, str]] = {r: {} for r in order}   # side -> neighbour
     rank = {r: k for k, r in enumerate(order)}
-    nodes = {r: graph.node(r) for r in order}
+    nodes = _plan_keys(graph, order, storeys)
     mates = _ring_mates(graph, order)
     dirs = dict(SIDES)
 
@@ -473,13 +585,17 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
 
 
 def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
-                 pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Node],
+                 pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
                  run: float, gap: float,
                  iterations: Optional[int] = None) -> Dict[str, Point]:
     """Spring iterations: each edge keeps the wall side it starts on (b rests
     one run past a's wall on that axis, centred across it, so its corridor
     runs straight and stays on that wall); every other pair repels, more
-    strongly the nearer their footprints."""
+    strongly the nearer their footprints. ``nodes`` are what the pair tests
+    read (graph nodes, or Storeys): a pair that may overlap in plan doesn't
+    repel, and a stair edge (across Levels) rests :data:`STAIR_REST` of the
+    two rooms' extents apart, with no run, so the upper room sits partly over
+    its partner."""
     n = len(order)
     if n < 2:
         return dict(pos)
@@ -488,6 +604,7 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     P = np.array([pos[r] for r in order], dtype=float)
     H = np.array([half[r] for r in order], dtype=float)
     E = np.array([(idx[a], idx[b]) for a, b in edges], dtype=int).reshape(-1, 2)
+    stair = np.array([is_stair(nodes[a], nodes[b]) for a, b in edges], dtype=bool)
     # The side each edge starts on, as a unit axis from a to b. Every edge
     # keeps it (task 18): a loop edge left to pull toward a bare rest
     # distance could swing onto a wall another corridor uses.
@@ -517,6 +634,8 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
             d = P[b] - P[a]
             rest = (np.abs(S[:, 0]) * (H[a, 0] + H[b, 0])
                     + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]) + run)
+            if stair.any():
+                rest = np.where(stair, (rest - run) * STAIR_REST, rest)
             f = K_SPRING * (d - S * rest[:, None])
             np.add.at(F, a, f)
             np.add.at(F, b, -f)
@@ -544,19 +663,23 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
 
 
 def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
-           corridor_width: float, gap: float) -> Dict[str, Point]:
+           corridor_width: float, gap: float,
+           storeys: Optional[Dict[str, Storey]] = None) -> Dict[str, Point]:
     """The ``spring`` placement: room centres for ``order`` (before separation
-    and the Envelope; :func:`place` does those)."""
+    and the Envelope; :func:`place` does those). With ``storeys`` (step 7)
+    rooms on different Levels may overlap and stair edges pull together."""
     run = RUN_FACTOR * corridor_width
-    pos = start_positions(graph, order, half, run, gap)
+    pos = start_positions(graph, order, half, run, gap, storeys)
     edges = [(e.a, e.b) for e in graph.edges()
              if graph.node(e.a).is_room and graph.node(e.b).is_room]
-    nodes = {r: graph.node(r) for r in order}
+    nodes = _plan_keys(graph, order, storeys)
     return spring_relax(order, edges, pos, half, nodes, run, gap)
 
 
 #: The Placement registry: name -> callable(graph, order, half, corridor_width,
-#: gap) -> {room id: centre}. Names must be the checker's ``ruleset.PLACEMENTS``.
+#: gap, storeys=None) -> {room id: centre}. Names must be the checker's
+#: ``ruleset.PLACEMENTS``. ``storeys`` (step 7) is passed only when the build
+#: stacks, so a placement written before it still works on one Level.
 PLACEMENT_FUNCS: Dict[str, Callable[..., Dict[str, Point]]] = {"spring": spring}
 
 _missing = set(_ruleset.PLACEMENTS) - set(PLACEMENT_FUNCS)
@@ -634,6 +757,7 @@ def face_entry(centres: Dict[str, Point], half: Dict[str, Point], envelope,
 
 __all__ = [
     "SIZE_SCALE", "SPREAD", "base_side", "area_matched_base", "room_size", "may_overlap_in_plan",
+    "SLAB", "Storey", "assign_levels", "level_height", "storeys", "is_stair", "STAIR_REST",
     "bfs_order", "SIDES", "SIDE_ORDERS", "START_ROOTS", "layout_clashes", "start_positions",
     "start_once", "repair", "spring_relax", "spring",
     "PLACEMENT_FUNCS", "fit_to_envelope", "FACINGS", "face_entry",
