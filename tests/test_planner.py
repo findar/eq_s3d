@@ -221,6 +221,9 @@ class TestControlsGolden:
             "zone_type": zone_type,
             "rooms": rooms,
             "elevation": elevation,
+            # The legacy path is the classic engine; graph is the default
+            # since graph-layout task 21, so name it.
+            "layout": "classic",
         })
         new = plan_to_spec(plan, seed).to_dict()
 

@@ -195,6 +195,14 @@ unclimbable ramp; (2) ramps land flush at both openings and are subdivided
 finely enough to climb; (3) no corridor runs through a third room or crosses
 another corridor.
 
+> **Layout: Classic (since step 6, task 21).** These seeds are Classic
+> (TinyKeep) regression seeds, so build the Controls cases with Layout
+> **Classic**. A description has no Layout toggle and now builds Graph, so
+> the two prompt-driven M0 seeds walk a Graph layout: walk them as fresh
+> layouts against the same three bars (like the seed-break note above), and
+> for the Classic walk build the same seed from the Controls panel (Dungeon,
+> 30 rooms, Layout Classic).
+
 - [ ] **[MUST] M0 seed — `create a dungeon with 30 rooms`, seed `1949459644`**
       — prompt-driven, flat AND elevated. (M1-moved layout; see the seed-break
       note.)
@@ -339,8 +347,9 @@ The preview shows each material's base colour, not the real DDS textures.
 
 ### Cases
 
-Dungeon cases: zone type **dungeon**, **12 rooms**, seed pinned. Elevated means
-Elevation checked at **moderate**. The wilderness case uses the Edges box.
+Dungeon cases: zone type **dungeon**, **12 rooms**, Layout **Classic**, seed
+pinned (the seeds are Classic corridor-bug seeds; since step 6 Graph is the
+default, so pick Classic). Elevated means Elevation checked at **moderate**. The wilderness case uses the Edges box.
 
 | # | Zone type | Settings | Seed |
 |---|-----------|----------|------|
@@ -350,16 +359,16 @@ Elevation checked at **moderate**. The wilderness case uses the Edges box.
 | d | dungeon | 12 rooms, flat | 7 |
 | e | wilderness | edges N zoneline, E river (Step 1 case c) | 1955208177 |
 
-Case b builds with every floor at the same height on the current code (its
-rooms got no rise), so it is a second flat case in practice; c is the one with
+Case b builds with every floor at the same height on Classic (its rooms got
+no rise), so it is a second flat case in practice; c is the one with
 real height changes. Each case builds on the first attempt from the command
 line too, which is what the `.txt` overlay check below uses:
 
 ```bash
-python main.py generate accept_a --zone-type dungeon --rooms 12 --verticality moderate --seed 1955208177
-python main.py generate accept_b --zone-type dungeon --rooms 12 --verticality moderate --seed 1516796975
-python main.py generate accept_c --zone-type dungeon --rooms 12 --verticality moderate --seed 678358326
-python main.py generate accept_d --zone-type dungeon --rooms 12 --verticality flat --seed 7
+python main.py generate accept_a --zone-type dungeon --rooms 12 --verticality moderate --seed 1955208177 --layout classic
+python main.py generate accept_b --zone-type dungeon --rooms 12 --verticality moderate --seed 1516796975 --layout classic
+python main.py generate accept_c --zone-type dungeon --rooms 12 --verticality moderate --seed 678358326 --layout classic
+python main.py generate accept_d --zone-type dungeon --rooms 12 --verticality flat --seed 7 --layout classic
 python main.py generate accept_e --zone-type wilderness --seed 1955208177 --edges N=zoneline,E=river
 ```
 
@@ -574,6 +583,12 @@ in-client check is M6.
 Pin the seed. Cases b and c use the description box; the rest use the
 Controls panel. Each builds on the first attempt.
 
+> **Layout: Graph (since step 6, task 21).** The dungeon cases (a, b, c) now
+> build with the default Graph layout; re-checked on Graph, each still builds
+> on the first attempt with the materials below. Nothing here depends on the
+> engine (materials come from the theme and race), so Layout stays at its
+> default; Layout Classic (or `--layout classic`) gives the pre-step-6 rooms.
+
 | # | How | Seed | Materials |
 |---|-----|------|-----------|
 | a | dungeon, 12 rooms, flat | 7 | `dungeon_floor`, `_wall`, `_ceiling` |
@@ -658,6 +673,11 @@ python main.py generate tex_e --zone-type wilderness --seed 1955208177 --edges N
 Pin the seed. Cases a–d use the description box; e and f the Controls panel.
 Each builds on the first attempt.
 
+> **Layout: Graph (since step 6, task 21).** The dungeon cases (a–e) now build
+> with the default Graph layout; re-checked on Graph, each still builds on the
+> first attempt with its theme's materials. The surfaces come from the theme,
+> not the engine, so Layout stays at its default.
+
 | # | How | Seed | Walls / floors / ceilings |
 |---|-----|------|---------------------------|
 | a | `a gnoll temple dungeon with 8 rooms` | 7 | dressed stone / flagstone / cave rock |
@@ -732,6 +752,14 @@ python main.py generate looks_f --zone-type city --seed 7
 
 Pin the seed. Cases a–d use the description box; e–g the Controls panel with
 **Outdoor dungeon** picked. Each builds on the first attempt.
+
+> **Layout: Graph (since step 6, task 21).** Every case now lays its dungeon
+> out with the default Graph layout (d with the `warren` set, the rest
+> `classic_eq`, c with the `temple` layer); re-checked on Graph, each still
+> builds on the first attempt with the theme, race and room count below. The
+> checks (landscape, mouth, walk, maps) hold for either engine, so Layout
+> stays at its default; Layout Classic (or `--layout classic`) gives the
+> step 5 dungeon.
 
 | # | How | Seed | What it shows |
 |---|-----|------|---------------|
@@ -824,8 +852,10 @@ dungeon never builds (its rooms are taller than the hill).
 ## Step 6 — Graph layouts
 
 > Roadmap step 6 (`zone-generator-graph-layout`). A dungeon's room graph can
-> now be **grown** instead of scattered. **Classic** (the default) is
-> TinyKeep: rooms are scattered, pushed apart and joined by a cut-down
+> now be **grown** instead of scattered. **Graph** is the default since
+> task 21: a dungeon or outdoor dungeon request that names no layout (the
+> Controls panel untouched, a description, the CLI without `--layout`) is
+> grown. **Classic** is TinyKeep: rooms are scattered, pushed apart and joined by a cut-down
 > triangulation, so the graph is whatever the rooms' positions give.
 > **Graph** grows the graph first, by rewrite rules: start from a small graph
 > of placeholders, apply rules (pattern → replacement) stage by stage until
@@ -849,7 +879,8 @@ dungeon never builds (its rooms are taller than the hill).
 
 Pin the seed. **Every case is made from the Controls panel alone** (Zone
 type, Rooms, Theme, Race, Layout, Rule set, Seed); leave the description box
-empty, since a description doesn't take the Layout toggle. Size, Verticality
+empty, since a description doesn't take the Layout toggle (it always builds
+Graph with the theme's rule set). Size, Verticality
 and Locks stay at their defaults (medium, moderate, 0); Theme and Race stay
 None unless the row names them. Each builds on the first attempt.
 
@@ -939,6 +970,15 @@ python scripts/topology_rules.py draw classic_eq --theme temple --out output/rul
       Outdoor dungeon; Layout for Dungeon and Outdoor dungeon; Rule set only
       while Layout is Graph. Each setting reaches the build (check the
       sidecar's `content` and `layout`).
+- [ ] **[MUST] Graph is the default** — On a fresh page load the Layout
+      select shows **Graph** (its first option) with Rule set **From theme**
+      visible. Dungeon, 9 rooms, seed 3, Layout left alone: the sidecar has
+      `layout.engine: graph`; switch Layout to Classic and generate again:
+      `engine: classic`. A description build (`a dungeon with 9 rooms`, seed
+      3) has `engine: graph`. From the command line,
+      `python main.py generate d1 --zone-type dungeon --rooms 9 --seed 3`
+      gives `engine: graph` and the same with `--layout classic` gives
+      `classic`. City and Wilderness show no Layout and build as before.
 - [ ] **[MUST] From theme** — Theme **Warren**, Layout Graph, Rule set From
       theme, 12 rooms, seed 4 builds with `layout.rule_set: warren` (c's
       graph); Theme Temple gives `classic_eq` with `layers: ["temple"]`.
@@ -979,8 +1019,8 @@ Known limits (follow-ups in the spec's `archive.md`, not failures here):
 rooms all look alike (every room is a rectangle with its zone's textures, so
 Classic and Graph are hard to tell apart in 3D and kinds don't show; room
 shapes are step 8, room contents step 9); description words don't choose a
-layout (a description builds Classic; words like "maze" choosing a rule set
-are a fast follow); one level only (`above` / `below` act through elevation;
+layout (a description builds Graph with the theme's rule set; words like
+"maze" choosing a rule set are a fast follow); one level only (`above` / `below` act through elevation;
 stacked rooms and stairs are step 7); the warren bands rest on one stock zone
 (Blackburrow); and a race with no theme builds fortress rooms (cases e and
 f), the existing default.

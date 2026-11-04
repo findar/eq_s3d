@@ -30,10 +30,30 @@ def _graph_spec(theme="", rooms=10, seed=3, **kw):
 # --- the plan fields --------------------------------------------------------
 
 def test_plan_defaults_and_legacy():
-    plan = ZonePlan.from_dict({"zone_type": "dungeon", "room_count": 6})
-    assert (plan.layout, plan.rule_set) == ("classic", "")
+    # Task 21: a new request with no layout is graph on the layout zone types,
+    # classic (ignored) elsewhere; a saved pre-step-6 plan rebuilds classic.
+    for zt in ("dungeon", "outdoor_dungeon"):
+        plan = ZonePlan.from_dict({"zone_type": zt, "room_count": 6})
+        assert (plan.layout, plan.rule_set) == ("graph", "")
+        assert ZonePlan.from_controls({"zone_type": zt}).layout == "graph"
+        assert ZonePlan(zone_type=zt).validate().layout == "graph"
+    for zt in ("city", "wilderness"):
+        assert ZonePlan.from_dict({"zone_type": zt}).layout == "classic"
+    old = {"zone_type": "dungeon", "room_count": 6}
+    assert ZonePlan.from_saved(old).layout == "classic"
+    assert ZonePlan.from_saved(dict(old, layout="graph")).layout == "graph"
     again = ZonePlan.from_dict(ZonePlan(layout="graph", rule_set="warren").to_dict())
     assert (again.layout, again.rule_set) == ("graph", "warren")
+
+
+def test_saved_plan_rebuilds_classic_byte_identically():
+    """A plan saved before step 6 (no ``layout``) rebuilds the zone an explicit
+    classic plan builds: the same spec, not the new graph default."""
+    old = {"zone_type": "dungeon", "room_count": 7, "name": "old"}
+    saved = plan_to_spec(ZonePlan.from_saved(old), seed=5).to_dict()
+    classic = plan_to_spec(ZonePlan.from_dict(dict(old, layout="classic")),
+                           seed=5).to_dict()
+    assert saved == classic and "layout" not in saved
 
 
 def test_rule_sets_are_discovered():
@@ -60,7 +80,7 @@ def test_other_zone_types_ignore_the_toggle():
 # --- expand: engine and rule set ---------------------------------------------
 
 def test_classic_spec_has_no_layout():
-    spec = plan_to_spec(ZonePlan(name="c", room_count=6).validate(), seed=1)
+    spec = plan_to_spec(ZonePlan(name="c", room_count=6, layout="classic").validate(), seed=1)
     assert spec.layout is None
     d = spec.to_dict()
     assert "layout" not in d and all("kind" not in r for r in d["rooms"])
@@ -168,7 +188,8 @@ def _check_shape(shape):
 
 
 def test_classic_sidecar_layout_block(tmp_path):
-    spec = plan_to_spec(ZonePlan(name="sc", room_count=6).validate(), seed=4)
+    spec = plan_to_spec(ZonePlan(name="sc", room_count=6, layout="classic").validate(),
+                        seed=4)
     lay = _sidecar(spec, tmp_path)["layout"]
     assert set(lay) == {"engine", "shape"} and lay["engine"] == "classic"
     _check_shape(lay["shape"])

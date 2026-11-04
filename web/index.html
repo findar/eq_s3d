@@ -99,11 +99,12 @@
         <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
              only) the topology rule set. "From theme" lets the dungeon theme
              pick its base set; the others are the shipped base sets under
-             rules/topology/ (the server 400s on any other name). -->
+             rules/topology/ (the server 400s on any other name). Graph is
+             the default (graph-layout task 21); Classic is TinyKeep. -->
         <label>Layout
           <select id="layout">
-            <option value="classic" selected>Classic</option>
-            <option value="graph">Graph</option>
+            <option value="graph" selected>Graph</option>
+            <option value="classic">Classic</option>
           </select>
         </label>
         <label>Rule set

@@ -35,21 +35,25 @@ def _spec_hash(spec) -> str:
 
 # label -> (ZonePlan fields, seed, Zone_Spec sha256, .eqg[:-4] sha256).
 # The Zone_Spec is hashed as the layout leaves it: the build adds to it.
+# The room-graph cases name ``layout="classic"`` since task 21 made graph the
+# default: these goldens pin the classic engine.
 GOLDENS = {
     # Plain dungeon with elevation (moderate verticality).
     "dungeon": (
-        dict(zone_type="dungeon", room_count=8), 7,
+        dict(zone_type="dungeon", room_count=8, layout="classic"), 7,
         "b61698e1e6ca1968e04b0f4426ea439ed7cdc39b917dad0571a0a5090400bcee",
         "483e769eda2b5680538a1a7d9b67629c37447af969c3477945fcf7b4277ebb6c"),
     # Flat dungeon (no elevation pass).
     "dungeon_flat": (
-        dict(zone_type="dungeon", room_count=6, elevation=False), 3,
+        dict(zone_type="dungeon", room_count=6, elevation=False,
+             layout="classic"), 3,
         "ebd555a660198b83a9b8504517da4a7eb096ae9ebc2d66dd242f2687858821ff",
         "bf0d0ee0c03783266cb510ed254506a4944dabe37a690bc27caf41d9fdc902d9"),
     # Themed dungeon with locks, race scale and dramatic elevation.
     "temple_locks": (
         dict(zone_type="dungeon", room_count=9, locks=2, dungeon_theme="temple",
-             dungeon_race="troll", verticality="dramatic"), 11,
+             dungeon_race="troll", verticality="dramatic",
+             layout="classic"), 11,
         "e6d8b333faf276b08de4c4b091d1001e6f3605f9b998d579665dc54412857889",
         "040e2dbfe27c87dfc51773a154361eb6fcb171afa1c420cd9c591002452b141d"),
     "city": (
@@ -64,7 +68,8 @@ GOLDENS = {
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).
     "outdoor_dungeon": (
-        dict(zone_type="outdoor_dungeon", room_count=5, locks=1), 3,
+        dict(zone_type="outdoor_dungeon", room_count=5, locks=1,
+             layout="classic"), 3,
         "13d6b5aebbb9d5588e93710e1a56a9e70e83f55d96d20d5f70b922218c4a8f27",
         "3f157d1a9423443fd57bfb1cbb0d7e06c353a3df7defc40647f91001c093b5ee"),
 }

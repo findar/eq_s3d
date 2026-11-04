@@ -203,7 +203,8 @@ graph and the room sizes the rules chose, with corridors as good as today's.
 
 1. A Layout toggle (`classic` | `graph`) SHALL pick the engine from the
    Controls panel, the CLI and the server, for `dungeon` and
-   `outdoor_dungeon` zones; `classic` is the default.
+   `outdoor_dungeon` zones; `graph` is the default (task 21; a plan saved
+   without the field rebuilds `classic`).
 2. With `graph`, the rule set SHALL come from the dungeon theme (each theme
    names its base set and layers; no theme gives `classic_eq`), unless the
    request names a base set.

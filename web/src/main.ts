@@ -367,8 +367,9 @@ async function doGenerate(mode: Mode) {
     const landscape = usesControl(zoneType, "edges");
     const edges = landscape ? readEdges() : undefined;
     const trees = landscape ? ($("trees") as HTMLSelectElement).value : undefined;
-    // Hidden controls are left out (the server's defaults: classic, the
-    // theme's set); the rule set rides only with the graph engine.
+    // Hidden controls are left out (the server's defaults: graph on a
+    // dungeon / outdoor dungeon, the theme's set); the rule set rides only
+    // with the graph engine.
     const layout = usesControl(zoneType, "layout") ? readLayout() : undefined;
     const ruleSet = layout === "graph"
       ? ($("rule-set") as HTMLSelectElement).value : undefined;

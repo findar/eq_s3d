@@ -25,15 +25,23 @@ from analyzer.rof2check import KNOWN_SHADERS
 from core.ter import PROP_DIFFUSE, TerFile
 from generators.builder import ZoneBuilder
 
+def _classic(plan):
+    """The plan on the classic engine: the goldens were recorded on it, and
+    graph is the default since graph-layout task 21."""
+    plan.layout = "classic"
+    return plan
+
+
 # (label, how to build the spec) -> golden geometry hash
 CASES = {
-    "dungeon_plain": lambda: plan_to_spec(ZonePlan(name="names", zone_type="dungeon"), seed=7),
-    "dungeon_gnoll_temple": lambda: plan_to_spec(
-        make_plan("a gnoll temple dungeon with 8 rooms", name="names"), seed=7),
-    "dungeon_kobold_tomb_lava": lambda: plan_to_spec(
-        make_plan("a kobold tomb full of lava with 6 rooms", name="names"), seed=11),
-    "dungeon_temple_no_race": lambda: plan_to_spec(
-        make_plan("a temple dungeon with 6 rooms", name="names"), seed=5),
+    "dungeon_plain": lambda: plan_to_spec(ZonePlan(name="names", zone_type="dungeon",
+                                                   layout="classic"), seed=7),
+    "dungeon_gnoll_temple": lambda: plan_to_spec(_classic(
+        make_plan("a gnoll temple dungeon with 8 rooms", name="names")), seed=7),
+    "dungeon_kobold_tomb_lava": lambda: plan_to_spec(_classic(
+        make_plan("a kobold tomb full of lava with 6 rooms", name="names")), seed=11),
+    "dungeon_temple_no_race": lambda: plan_to_spec(_classic(
+        make_plan("a temple dungeon with 6 rooms", name="names")), seed=5),
     "city": lambda: plan_to_spec(ZonePlan(name="names", zone_type="city"), seed=7),
     "wilderness": lambda: plan_to_spec(ZonePlan(name="names", zone_type="wilderness"),
                                        seed=7, edges={"N": "zoneline", "E": "river"}),

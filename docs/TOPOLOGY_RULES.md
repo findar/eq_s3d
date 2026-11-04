@@ -10,6 +10,11 @@ The design is in `.kiro/specs/zone-generator-graph-layout/design.md`. The
 code is in `generators/topology/`: `ruleset.py` loads and checks files,
 `rewrite.py` grows graphs, and `draw.py` draws them.
 
+Graph is the default layout for `dungeon` and `outdoor_dungeon` zones
+(graph-layout task 21): a request that names no layout grows its rooms by
+these rules. Classic (TinyKeep) is Layout **Classic** in the Controls panel
+or `--layout classic` on the command line.
+
 ## What graph rewriting is here
 
 The engine follows shaggydev's "Graph rewriting" (2022-11-20). A dungeon

@@ -26,13 +26,22 @@ def uv_scale(spec, ter, material_index):
     density = spec.materials[ter.materials[material_index].name].texel_density
     return 1.0 / density if density else DEFAULT_UV_SCALE
 
+def _classic(plan):
+    """The plan on the classic engine: these cases were recorded on it, and
+    graph is the default since graph-layout task 21."""
+    plan.layout = "classic"
+    return plan
+
+
 SPECS = {
     "dungeon_flat": lambda: plan_to_spec(ZonePlan(name="wuv", zone_type="dungeon",
-                                                  verticality="flat"), seed=7),
+                                                  verticality="flat", layout="classic"),
+                                         seed=7),
     "dungeon_elevated": lambda: plan_to_spec(ZonePlan(name="wuv", zone_type="dungeon",
-                                                      verticality="dramatic"), seed=678358326),
-    "dungeon_themed": lambda: plan_to_spec(make_plan("a gnoll temple dungeon with 8 rooms",
-                                                     name="wuv"), seed=7),
+                                                      verticality="dramatic",
+                                                      layout="classic"), seed=678358326),
+    "dungeon_themed": lambda: plan_to_spec(_classic(make_plan(
+        "a gnoll temple dungeon with 8 rooms", name="wuv")), seed=7),
     "city": lambda: plan_to_spec(ZonePlan(name="wuv", zone_type="city"), seed=7),
 }
 
