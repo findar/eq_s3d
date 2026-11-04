@@ -133,7 +133,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: generators/layout_engine.py, generators/layout.py, ai/expand.py, tests/test_graph_layout_plan.py, tests/test_topology_embed.py, generators/semantics.py
   - Reqs: 6.3, 7.4
 
-- [ ] 20. Big races keep their loops; ogres get great halls
+- [x] 20. Big races keep their loops; ogres get great halls
   - Card: [cards/20-big-races.md](cards/20-big-races.md)
   - Type: agent · Size: M · Depends: 15
   - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/semantics.py, rules/topology/classic_eq.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, docs/ACCEPTANCE.md, tests/test_graph_layout_plan.py, docs/TOPOLOGY_RULES.md, .kiro/specs/zone-generator-graph-layout/design.md (great_hall example, Size classes; widened by the lead)
