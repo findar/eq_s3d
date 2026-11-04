@@ -276,9 +276,15 @@ class GraphEngine:
         grown = grow(rs, room_count, rng=ctx.rng, context=ctx.build)
         graph = grown.graph
         order = embed.bfs_order(graph)
+        # Rooms are placed at their final size: the build's race scale goes on
+        # here, before placement, and semantics leaves it off rooms with a kind
+        # (task 20). Scaled after placement (2.2 for giants), the rooms pushed
+        # into each other, re-separation moved them onto shared walls and Job B
+        # split or dropped the loops.
+        scale = ctx.build.race_scale or 1.0
         base = embed.area_matched_base(embed.base_side(ctx.room_min, ctx.room_max),
-                                       [graph.node(r).size for r in order])
-        sizes = {r: embed.room_size(graph.node(r).size, base, ctx.ceiling, ctx.rng)
+                                       [graph.node(r).size for r in order]) * scale
+        sizes = {r: embed.room_size(graph.node(r).size, base, ctx.ceiling * scale, ctx.rng)
                  for r in order}
         entrance = next((n.id for n in graph.rooms() if n.kind == "entrance"), None)
         if envelope is not None and entrance is not None and self.entrance_side > 0:

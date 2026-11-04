@@ -17,6 +17,8 @@ G10 grown rooms fit an Envelope as classic ones do.
 G11 umbrella Req 21: one entrance, one climax, solvable gates.
 G12 (task 19) rooms carry their kind; the rules' ``deep`` room is the climax
     and the boss, every seed.
+Task 20: ogre and giant graph dungeons keep Edge_Fidelity and the classic
+    cycles per room (rooms placed at their race-scaled size).
 """
 
 from __future__ import annotations
@@ -265,6 +267,55 @@ def test_relations_hold_unless_counted():
     assert total > 0
     # Most relations survive the loop relax (task 8 measured 85 of 100 held).
     assert held / total >= 0.7, (held, total)
+
+
+# Big races (task 20). Measured over this sweep (plan_to_spec, dungeon,
+# graph, seeds 0-11 x 10/15/20 rooms): with the race scale applied after
+# placement, giants kept 0.865 of their edges (worst 0.53) and built 0.063
+# cycles per room; placed at their final size, 0.991 and 0.101 (ogre 0.993
+# and 0.101, both with great halls; no race 0.991 and 0.103).
+BIG_RACE_SEEDS = range(12)
+BIG_RACE_NS = (10, 15, 20)
+BIG_RACE_FIDELITY = 0.95
+
+
+@lru_cache(maxsize=None)
+def _race_sweep(race):
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    out = []
+    for s in BIG_RACE_SEEDS:
+        for n in BIG_RACE_NS:
+            plan = ZonePlan(name="r", zone_type="dungeon", room_count=n,
+                            dungeon_race=race, layout="graph").validate()
+            out.append(plan_to_spec(plan, seed=s))
+    return out
+
+
+@pytest.mark.parametrize("race", ["ogre", "giant"])
+def test_big_races_keep_their_loops(race):
+    """Rooms are placed at their race-scaled size, so the loops survive Job B
+    and the built graph has the classic cycles per room; big races get great
+    halls."""
+    specs = _race_sweep(race)
+    fid = statistics.mean(sp.layout["edge_fidelity"] for sp in specs)
+    cycles = statistics.mean(
+        (len({frozenset((c.from_room, c.to_room)) for c in sp.corridors})
+         - len(sp.rooms) + 1) / len(sp.rooms) for sp in specs)
+    lo, hi = CLASSIC_BANDS["cycles_per_room"]
+    assert fid >= BIG_RACE_FIDELITY, f"{race}: mean Edge_Fidelity {fid:.3f}"
+    assert lo <= cycles <= hi, f"{race}: built cycles per room {cycles:.3f}, band {lo}-{hi}"
+    assert any(a[1] == "great_hall" for sp in specs for a in sp.layout["applied"])
+
+
+def test_race_scale_applies_once():
+    """The race scale goes on grown rooms once (in the engine): a giant's
+    rooms average 2.2^2 the floor area of no race's, not 2.2^4."""
+    def mean_area(race):
+        return statistics.mean(r.width * r.depth for sp in _race_sweep(race)
+                               for r in sp.rooms if r.kind)
+    ratio = mean_area("giant") / mean_area("")
+    assert 2.2 ** 2 * 0.8 <= ratio <= 2.2 ** 2 * 1.25, ratio
 
 
 def test_relations_not_counted_without_elevation():

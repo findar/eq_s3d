@@ -191,12 +191,12 @@ replace  = [ {id = "l", kind = "lair", size = "small"},
 edges    = [ {a = "l", b = "m"} ]
 reattach = { l = ["l"] }
 
-# Offered only when the build's race is big (ogres, giants: race scale 1.5
+# Offered only when the build's race is big (ogres, giants: race scale 1.4
 # or more). `when` keys: theme, race, race_scale, zone_type, room_count; a
 # value, a list (any of), or a comparison string.
 [rules.great_hall]
 description = "Big races get a great hall on the way"
-when     = { race_scale = ">=1.5" }
+when     = { race_scale = ">=1.4" }
 match    = [ {id = "x", kind = "Area"} ]
 replace  = [ {id = "g", kind = "hall", size = "huge"}, {id = "x", kind = "Area"} ]
 edges    = [ {a = "g", b = "x"} ]

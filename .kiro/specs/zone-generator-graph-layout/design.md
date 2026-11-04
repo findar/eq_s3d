@@ -251,7 +251,7 @@ reattach = { x = ["x"] }
 
 [rules.great_hall]
 description = "Big races get a great hall on the way"
-when     = { race_scale = ">=1.5" }    # offered only in this context
+when     = { race_scale = ">=1.4" }    # offered only to big races (ogres, giants)
 match    = [ {id = "x", kind = "Area"} ]
 replace  = [ {id = "x", kind = "Area"}, {id = "g", kind = "hall", size = "huge"} ]
 edges    = [ {a = "x", b = "g"} ]
@@ -407,7 +407,10 @@ sizes:
 | large | 1.4 | 1.2 |
 | huge | 1.9 | 1.5 |
 
-The race scale applies afterwards in `semantics`, as today. The rules own
+The graph engine places rooms at their race-scaled size (base side and
+height times the build's `race_scale`), and `semantics` doesn't scale a
+room with a kind again (task 20: scaled after placement, giants lost their
+loops to re-separation). The rules own
 size, so the role bias in `_apply_pacing` is skipped for this engine
 (`sizes_rooms`).
 
