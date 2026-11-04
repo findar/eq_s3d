@@ -91,10 +91,10 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: web/index.html, web/src/main.ts, web/src/api.ts
   - Reqs: 7.1
 
-- [ ] 12. Gate sweep on built zones
+- [x] 12. Gate sweep on built zones
   - Card: [cards/12-gate-sweep.md](cards/12-gate-sweep.md)
   - Type: agent · Size: M · Depends: 10, 18
-  - Owns: tests/test_graph_layout_build.py, generators/topology/embed.py, rules/topology/
+  - Owns: tests/test_graph_layout_build.py, generators/topology/embed.py, rules/topology/, generators/outdoor_dungeon.py, tests/test_layout_engine.py, tests/test_outdoor_envelope.py, tests/test_entrance.py
   - Reqs: 8
 
 - [ ] 13. HUMAN: first look, classic against graph

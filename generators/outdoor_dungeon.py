@@ -152,6 +152,59 @@ def host_footprint(landform: Landform, sides: int = 64) -> Tuple[Tuple[float, fl
                   cy + r * math.sin(2 * math.pi * k / sides)) for k in range(sides))
 
 
+def bowl_interior(land) -> Tuple[float, float, float, float]:
+    """The bowl's interior ``(x0, y0, x1, y1)``: the zone less the Rim's
+    boundary strips (``bowl._segment_band``, the off-map bands the bowl gate
+    tests). Nothing of the dungeon may sit in a strip: the gate reads any
+    reached floor there as the flood escaping the bowl, and a room there is
+    under the map's edge."""
+    from generators.wilderness.bowl import _segment_band
+
+    synth, matrix = land.synth, land.matrix
+    nx, ny = synth.heights.shape
+    ox, oy = synth.origin
+    res = float(synth.resolution)
+    x0, y0, x1, y1 = ox, oy, ox + nx * res, oy + ny * res
+    for k, ec in enumerate(matrix.edges):
+        band = _segment_band(synth, matrix, k)
+        if band is None:
+            continue
+        bx0, by0, bx1, by1 = band
+        if ec.side == "W":
+            x0 = max(x0, bx1)
+        elif ec.side == "E":
+            x1 = min(x1, bx0)
+        elif ec.side == "S":
+            y0 = max(y0, by1)
+        elif ec.side == "N":
+            y1 = min(y1, by0)
+    return x0, y0, x1, y1
+
+
+def clip_to_rect(poly, rect) -> Tuple[Tuple[float, float], ...]:
+    """Polygon ``poly`` clipped to the axis-aligned ``rect`` (x0, y0, x1, y1)
+    (Sutherland-Hodgman; a convex polygon stays convex)."""
+    x0, y0, x1, y1 = rect
+    planes = ((0, x0, 1.0), (0, x1, -1.0), (1, y0, 1.0), (1, y1, -1.0))
+    pts = [tuple(map(float, p)) for p in poly]
+    for axis, edge, sign in planes:
+        if not pts:
+            break
+        out = []
+        for k, cur in enumerate(pts):
+            prev = pts[k - 1]
+            cin = sign * (cur[axis] - edge) >= 0.0
+            pin = sign * (prev[axis] - edge) >= 0.0
+            if cin != pin:
+                t = (edge - prev[axis]) / (cur[axis] - prev[axis])
+                out.append((prev[0] + t * (cur[0] - prev[0]),
+                            prev[1] + t * (cur[1] - prev[1])))
+            if cin:
+                out.append(cur)
+        pts = out
+    return tuple(pts)
+
+
 def approach_foot(landform: Landform) -> Tuple[float, float]:
     """Where the Landform's flank meets the open ground on its approach side."""
     dx, dy = _SIDE_STEP[landform.approach]
@@ -177,7 +230,10 @@ def host_envelope(spec: ZoneSpec, ter: TerFile, *,
     foot = approach_foot(landform)
     if entrance_floor is None:
         entrance_floor = float(surface(*foot))
-    return Envelope(host_footprint(landform), entrance_floor - FLOOR_DEPTH,
+    # The hill disc can reach past the bowl's interior (the default hill's
+    # does, under the W Rim); the Envelope is the disc clipped to it.
+    footprint = clip_to_rect(host_footprint(landform), bowl_interior(land))
+    return Envelope(footprint, entrance_floor - FLOOR_DEPTH,
                     surface, rock_cover, entry=foot)
 
 
@@ -683,6 +739,15 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     envelope = host_envelope(spec, ter)
     layout, warnings, entrance = plan_dungeon(spec, ter, envelope, name, seed, room_count,
                                               engine=engine, **layout_kwargs)
+    # The Apron lowers the ground in front of the Mouth; when it reaches the
+    # Outdoor_Spawn, the safe point drops with it onto the dug ground.
+    grid = _host_grid(spec, ter)
+    dug, _ = _apron(grid, entrance)
+    sx, sy, sz = spec.safe_point
+    before = float(_grid_surface(grid.z, grid.origin, grid.res)(sx, sy))
+    after = float(_grid_surface(dug, grid.origin, grid.res)(sx, sy))
+    if after < before:
+        spec.safe_point = (sx, sy, sz + after - before)
     spec.layout = layout.layout
     spec.rooms = layout.rooms
     spec.corridors = layout.corridors
