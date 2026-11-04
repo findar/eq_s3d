@@ -546,13 +546,22 @@ def _plane_z_at(tri: np.ndarray, px: float, py: float) -> float:
 
 
 def build_walk_surface(ter: TerFile, agent: AgentModel, *,
-                       skip_passable: bool = True) -> WalkSurface:
+                       skip_passable: bool = True,
+                       floors_up: bool = True) -> WalkSurface:
     """
     Classify standable triangles and build walkable adjacency between them.
 
-    A face is standable when its geometric normal points up within the walkable
-    slope cap. Two standable faces are adjacent (the agent can walk between them)
-    when their floors genuinely MEET: either they share a mesh vertex (an exact
+    A face is standable when it is a FLOOR: its winding normal points up within
+    the walkable slope cap. A ceiling's underside (the same flat face wound the
+    other way) is never standable, so a storey's ceiling can't pass as floor
+    under the storey above (verticality task 18). Our builders wind floors up
+    and ceilings down (``generators.geometry``; ``mapgeom`` reads floors the
+    same way), and so does the EQG we write. ``floors_up=False`` is for meshes
+    wound the other way, as the WLD loaders of the step 6/7 surveys read stock
+    zones (floor normals point down there).
+
+    Two standable faces are adjacent (the agent can walk between them) when
+    their floors genuinely MEET: either they share a mesh vertex (an exact
     weld -- one 3D point, zero step), or their XY footprints actually touch (true
     triangle overlap, or an edge-to-edge gap within ``adjacency_eps`` by the real
     minimum XY distance) AND their interpolated floor heights AT THAT CONTACT
@@ -584,10 +593,10 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
     normals[safe] = raw_n[safe] / lens[safe, None]
     centroids = (a + b + c) / 3.0
 
-    # Standable: normal points up (either winding) steeply enough. We use |nz|
-    # so winding direction doesn't matter — what matters is the face is near
-    # horizontal and faces the sky.
-    nz = np.abs(normals[:, 2])
+    # Standable: a floor-wound face (normal up, or down for a WLD-wound mesh)
+    # within the slope cap. A two-sided slab is floor on top (wound up) and
+    # ceiling underneath (wound down): only its top is stood on.
+    nz = normals[:, 2] if floors_up else -normals[:, 2]
     standable = safe & (nz >= agent.min_up_normal)
     if skip_passable:
         passable = np.array([bool(p.flags & FLAG_PASSABLE) for p in ter.polygons])
@@ -1248,13 +1257,14 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         # leave the region; the deck over it stays. Empty for every corridor a
         # layout makes today, so the region below is the historic one.
         bridged = bridged_rooms(cor, crossed_ids, rooms_by_id, agent)
-        # A stacked build (step 7): a crossed room the corridor passes wholly
-        # over or under is another storey, not a crossing, and its footprint
-        # stays in the region: its floor and ceiling are a Slab or more from
-        # the corridor's floor, so the flood can't step onto them, and the
-        # corridor's own rooms may lie over or under it too.
-        stacked = (stacked_rooms(cor, route, crossed_ids - bridged, rooms_by_id, agent)
-                   if is_stacked_build(spec) else {})
+        # A crossed room the corridor passes wholly over or under, with the
+        # Slab between (a stacked build's other storey, step 7), is not a
+        # crossing, and its footprint stays in the region: its floor is far
+        # from the corridor's floor and its ceiling is no floor at all, so the
+        # flood can't step onto either, and the corridor's own rooms may lie
+        # over or under it too. Any spec, stacked by a layout or not.
+        stacked = stacked_rooms(cor, route, crossed_ids - bridged, rooms_by_id,
+                                agent)
         exclude = [_room_footprint(r) for r in spec.rooms
                    if r.id not in (cor.from_room, cor.to_room)
                    and r.id in crossed_ids and r.id not in bridged
@@ -1390,12 +1400,12 @@ def _corridor_floor_z(surf: WalkSurface, cor: CorridorSpec,
     corridors can be compared cell-by-cell over the XY intersection.
 
     Crucially, the region footprint is an XY test, so where a SECOND corridor
-    crosses this one it drops its own floor (and ceiling) faces into this
-    corridor's footprint too. Keeping those would merge the two corridors' Z
-    ranges and make every overlapping pair "conflict" regardless of how far apart
-    they sit in Z — defeating design decision 16's clearance exemption. So we
-    keep only faces that belong to THIS corridor's own tube: a face whose
-    centroid Z lies within the tube (from its expected floor at that XY up to the
+    crosses this one it drops its own floor faces into this corridor's
+    footprint too. Keeping those would merge the two corridors' Z ranges and
+    make every overlapping pair "conflict" regardless of how far apart they
+    sit in Z — defeating design decision 16's clearance exemption. So we keep
+    only faces that belong to THIS corridor's own tube: a face whose centroid
+    Z lies within the tube (from its expected floor at that XY up to the
     floor + the corridor's height, with ``max_step_up`` slack). A crossing
     corridor passing over (above the ceiling) or under (below the floor) is
     excluded, so a pair separated by at least the clearance shares no floor in
@@ -1441,11 +1451,13 @@ def corridor_conflicts(surf: WalkSurface, spec: ZoneSpec,
 
     Design decision 12: two corridors that SHARE NO ROOM conflict when their
     route footprints intersect in XY AND their walkable floors over the
-    intersection are closer in Z than the clearance. Decision 16: clearance is
-    the lower corridor's ``height`` + 1 u (the box backend models no ceiling
-    thickness), never less than ``agent.player_height``; a pair separated by at
-    least the clearance is NOT a conflict — so a future open **bridge** kind that
-    spans over another corridor at a separated height is exempt by construction,
+    intersection are closer in Z than the clearance. Floors only: a tube's
+    ceiling is wound down, so it is not on the walk surface (task 18).
+    Decision 16: clearance is the lower corridor's ``height`` + 1 u (the box
+    backend models no ceiling thickness), never less than
+    ``agent.player_height``; a pair separated by at least the clearance is NOT
+    a conflict — so a future open **bridge** kind that spans over another
+    corridor at a separated height is exempt by construction,
     not by a special case.
 
     Returns a sorted list of conflicting ``(corridor_id, corridor_id)`` pairs
@@ -1604,15 +1616,6 @@ def bridged_rooms(cor: CorridorSpec, crossed_ids, rooms: Mapping[str, RoomSpec],
     return out
 
 
-def is_stacked_build(spec: ZoneSpec) -> bool:
-    """Does the spec's layout block put rooms on more than one Level (a
-    stacked build, step 7)? Only there does a corridor pass over or under a
-    room; on any other spec a corridor over a room's roof is still the
-    "crosses room" failure (task 2's rule)."""
-    levels = (spec.layout or {}).get("levels") or {}
-    return len(set(levels.values())) > 1
-
-
 def stacked_rooms(cor: CorridorSpec, route, crossed_ids,
                   rooms: Mapping[str, RoomSpec], agent: AgentModel
                   ) -> Dict[str, Tuple[float, float]]:
@@ -1621,7 +1624,11 @@ def stacked_rooms(cor: CorridorSpec, route, crossed_ids,
     it: ``{room id: (lowest floor, highest floor)}``. The band is taken over
     the route's legs whose footprint overlaps the room (the carry leg spans
     its whole rise); the corridor's tube (floor to floor + height) must lie
-    under the room's floor or over its ceiling all along it."""
+    under the room's floor or over its ceiling, with the Slab between, all
+    along it (the layout's rule, ``LayoutGenerator._z_clear``). Closer than
+    the Slab, the corridor runs through the room's roof or floor: the
+    "crosses room" failure."""
+    from generators.topology.embed import SLAB
     out: Dict[str, Tuple[float, float]] = {}
     if not crossed_ids:
         return out
@@ -1643,7 +1650,8 @@ def stacked_rooms(cor: CorridorSpec, route, crossed_ids,
                 lo, hi = min(lo, zs[k], zs[k + 1]), max(hi, zs[k], zs[k + 1])
         if lo > hi:
             continue
-        if hi + cor.height <= r.floor_z or lo >= r.floor_z + r.height:
+        if (hi + cor.height + SLAB <= r.floor_z + 1e-6
+                or lo >= r.floor_z + r.height + SLAB - 1e-6):
             out[rid] = (float(lo), float(hi))
     return out
 
@@ -1842,7 +1850,7 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
       headroom".
 
     Winding is the floor/ceiling test: the box backend winds floors up and
-    ceilings down (the flood's ``|n.z|`` can't tell them apart).
+    ceilings down (the walk surface's standable faces are the floors).
     """
     rooms = rooms or {}
     if route is None:

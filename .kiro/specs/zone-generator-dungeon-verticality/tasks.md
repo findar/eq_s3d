@@ -124,7 +124,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: generators/semantics.py, generators/topology/embed.py, generators/layout.py, ai/schema.py, web/index.html, tests/test_race_sizing.py, tests/test_layout_engine.py (raced goldens, deliberately)
   - Reqs: 10
 
-- [ ] 18. The gate stops reading ceilings as floor
+- [x] 18. The gate stops reading ceilings as floor
   - Card: [cards/18-ceilings-not-floor.md](cards/18-ceilings-not-floor.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: analyzer/traverse.py, tests/test_traverse_connectors.py, tests/test_traverse_ceilings.py, generators/layout.py (the corridor clearance only)

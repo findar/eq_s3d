@@ -921,13 +921,15 @@ class TestMapPostPass:
         assert warn == ["outline_unavailable:RuntimeError: boom at C:secretpathkey"]
         assert vb.warnings == data["warnings"]
 
-    def test_safe_point_off_floor_falls_back(self, tmp_path):
-        def factory(seed):
-            spec = _good_factory()(seed)
-            spec.safe_point = (1_000_000.0, 1_000_000.0, 0.0)
-            return spec
-        # Ungated: a safe point off the floor would fail the gate itself.
-        vb = _run(factory, tmp_path, validate_enabled=False)
+    def test_safe_point_off_floor_falls_back(self, tmp_path, monkeypatch):
+        # The walk stands on floors only (verticality task 18), so a safe
+        # point off the floor seeds on the nearest floor and still gets an
+        # outline; it used to seed on a ceiling and reach no floor. The empty
+        # floor region is forced at the seed instead: no face to start from.
+        import generators.mapgeom as mg
+        monkeypatch.setattr(mg, "seed_face_for", lambda surf, point: None)
+        # Ungated: the gate's own seed is not patched, but keep it out.
+        vb = _run(_good_factory(), tmp_path, validate_enabled=False)
         assert not (vb.build_dir / "maps").exists()
         data = self._sidecar(vb)
         assert data["outline"] is None
