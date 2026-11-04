@@ -78,7 +78,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
 
 - [ ] 9. Gate sweep on built multi-level zones
   - Card: [cards/09-gate-sweep.md](cards/09-gate-sweep.md)
-  - Type: agent · Size: M · Depends: 6, 7, 8, 17
+  - Type: agent · Size: M · Depends: 6, 7, 8, 17, 18
   - Owns: tests/test_vertical_build.py, generators/topology/embed.py, rules/topology/
   - Reqs: 9
 
@@ -123,3 +123,9 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Type: agent · Size: M · Depends: 5, 16
   - Owns: generators/semantics.py, generators/topology/embed.py, generators/layout.py, ai/schema.py, web/index.html, tests/test_race_sizing.py, tests/test_layout_engine.py (raced goldens, deliberately)
   - Reqs: 10
+
+- [ ] 18. The gate stops reading ceilings as floor
+  - Card: [cards/18-ceilings-not-floor.md](cards/18-ceilings-not-floor.md)
+  - Type: agent · Size: M · Depends: 5
+  - Owns: analyzer/traverse.py, tests/test_traverse_connectors.py, tests/test_traverse_ceilings.py, generators/layout.py (the corridor clearance only)
+  - Reqs: 2, 4.3, 6.2
