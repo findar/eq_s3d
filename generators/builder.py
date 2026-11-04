@@ -124,15 +124,110 @@ def shape_measures(spec: ZoneSpec) -> dict:
     }
 
 
+def room_levels(spec: ZoneSpec) -> Dict[str, int]:
+    """Each room's Level (room id -> Level): the layout record's ``levels``
+    on a stacked graph build, else every room on Level 0."""
+    levels = (spec.layout or {}).get("levels") or {}
+    return {r.id: int(levels.get(r.id, 0)) for r in spec.rooms}
+
+
+def connector_record(spec: ZoneSpec) -> Dict[str, dict]:
+    """Each corridor as a connector (corridor id -> record): ``kind`` is
+    ``stair`` (``steps`` != 0 with a rise), ``ramp`` (a rise, ``steps`` 0)
+    or ``flat``; ``rise`` the floor-height difference |to_z - from_z|;
+    ``risers`` the stair's risers (a planned stair's from
+    ``geometry.stair_layout``, the builder's own plan; a hand-picked count
+    as given; 0 for a ramp or flat corridor); ``switchback`` whether the
+    stair folds into a Switchback (a cramped planned stair is built
+    straight, so it is not one)."""
+    from .geometry import stair_layout
+
+    rooms = {r.id: r for r in spec.rooms}
+    out: Dict[str, dict] = {}
+    for c in spec.corridors:
+        rise = abs(c.to_z - c.from_z)
+        risers, switchback = 0, False
+        if rise <= 0.01:
+            kind = "flat"
+        elif c.steps == 0:
+            kind = "ramp"
+        else:
+            kind = "stair"
+            lay = stair_layout(c, rooms) if c.steps < 0 else None
+            if lay is not None:
+                risers = lay.plan.risers
+                switchback = lay.plan.switchback and not lay.cramped
+            else:
+                risers = max(c.steps, 0)
+        out[c.id] = {"kind": kind, "rise": round(rise, 2), "risers": risers,
+                     "switchback": switchback}
+    return out
+
+
+def _union_area(rects: List[Tuple[float, float, float, float]]) -> float:
+    """Area of the union of axis-aligned rectangles (x0, y0, x1, y1), by
+    coordinate compression (exact; the room counts here are small)."""
+    rects = [r for r in rects if r[2] > r[0] and r[3] > r[1]]
+    if not rects:
+        return 0.0
+    xs = sorted({v for r in rects for v in (r[0], r[2])})
+    area = 0.0
+    for xa, xb in zip(xs, xs[1:]):
+        spans = sorted((r[1], r[3]) for r in rects if r[0] <= xa and r[2] >= xb)
+        cover, top = 0.0, None
+        for y0, y1 in spans:
+            if top is None or y0 > top:
+                cover += y1 - y0
+                top = y1
+            elif y1 > top:
+                cover += y1 - top
+                top = y1
+        area += cover * (xb - xa)
+    return area
+
+
+def stacked_share(spec: ZoneSpec, levels: Optional[Dict[str, int]] = None) -> float:
+    """The Stacked_Share of the spec's rooms: the room floor area that has
+    another room's floor above it in plan, over the total room floor area.
+
+    Method: each room's floor is its footprint rectangle; the part of it
+    covered by the union of the footprints of rooms on a HIGHER Level is
+    stacked (rooms on one Level never overlap in plan, and a room on a
+    higher Level stands at least the Slab over it, so Level order is height
+    order). Corridors and stairs are left out: they are thin and the share
+    is about rooms over rooms. 0.0 with one Level."""
+    levels = room_levels(spec) if levels is None else levels
+    total = covered = 0.0
+    for r in spec.rooms:
+        (x0, y0, _), (x1, y1, _) = r.bounds
+        total += (x1 - x0) * (y1 - y0)
+        above = []
+        for o in spec.rooms:
+            if levels[o.id] <= levels[r.id]:
+                continue
+            (a0, b0, _), (a1, b1, _) = o.bounds
+            above.append((max(x0, a0), max(y0, b0), min(x1, a1), min(y1, b1)))
+        covered += _union_area(above)
+    return round(covered / total, 4) if total > 0 else 0.0
+
+
 def layout_sidecar(spec: ZoneSpec) -> Optional[dict]:
     """The sidecar's ``layout`` block: the engine's record from
     ``spec.layout`` (``{"engine": "classic"}`` for a classic layout) plus
-    the built graph's ``shape``. ``None`` for a zone with no rooms
-    (wilderness)."""
+    the built graph's ``shape``. A graph build (``spec.layout`` set) also
+    gets ``levels`` (room id -> Level, all 0 when unstacked), ``connectors``
+    (``connector_record``) and ``stacked_share``; a classic build leaves
+    them out (one Level, no stairs: its block is step 6's). ``None`` for a
+    zone with no rooms (wilderness)."""
     if not spec.rooms:
         return None
     block = dict(spec.layout) if spec.layout is not None else {"engine": "classic"}
     block["shape"] = shape_measures(spec)
+    if spec.layout is not None:
+        levels = room_levels(spec)
+        block["levels"] = levels
+        block["connectors"] = connector_record(spec)
+        block["stacked_share"] = stacked_share(spec, levels)
     return block
 
 

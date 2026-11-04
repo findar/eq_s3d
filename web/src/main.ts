@@ -277,8 +277,10 @@ function readSeed(): number | undefined {
 // The zone types each Controls-panel control applies to; for the others it is
 // hidden (the server ignores it there). "edges" is the landscape fieldset (map
 // edges and trees); the rest are the room-graph controls. Mirrors the server's
-// expand path: rooms and locks reach an outdoor dungeon's layout, size and
-// verticality only a dungeon's or city's; layout (and, under it, the rule
+// expand path: rooms and locks reach an outdoor dungeon's layout, size only a
+// dungeon's or city's; verticality a dungeon's (classic or graph layout), a
+// city's and an outdoor dungeon's (step 7: it scales the Levels the hill
+// holds); layout (and, under it, the rule
 // set) a dungeon's or outdoor dungeon's (server LAYOUT_ZONE_TYPES); the
 // dungeon theme and race every room-graph type's (server CONTENT_ZONE_TYPES:
 // a city goes through the same semantic layer as a dungeon). Keys are the
@@ -287,7 +289,7 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   rooms: ["dungeon", "city", "outdoor_dungeon"],
   locks: ["dungeon", "city", "outdoor_dungeon"],
   size: ["dungeon", "city"],
-  verticality: ["dungeon", "city"],
+  verticality: ["dungeon", "city", "outdoor_dungeon"],
   edges: ["wilderness", "outdoor_dungeon"],
   layout: ["dungeon", "outdoor_dungeon"],
   "dungeon-theme": ["dungeon", "city", "outdoor_dungeon"],
