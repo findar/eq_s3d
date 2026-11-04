@@ -99,7 +99,7 @@ def test_classic_eq_reads_as_specified(classic):
     assert [(e.a, e.b) for e in classic.start_edges] == [("e", "a"), ("a", "d")]
     assert set(NAMED_RULES) <= set(classic.rules)
     gh = classic.rules["great_hall"].when
-    assert [(c.key, c.op, c.value) for c in gh] == [("race_scale", ">=", 1.5)]
+    assert [(c.key, c.op, c.value) for c in gh] == [("race_scale", ">=", 1.4)]
     used = {r for s in classic.recipe for r in s.apply}
     assert used == set(classic.rules), "every rule takes part in some stage"
     assert classic.recipe[-1].is_rest
@@ -167,14 +167,17 @@ def test_g6_classic_eq_grows_into_the_classic_bands(classic):
 
 
 def test_great_hall_only_for_big_races(classic):
-    small = big = 0
+    # Ogres (1.4) and giants (2.2) are the big races; trolls (1.15) are not.
+    small = 0
+    big = {1.4: 0, 2.2: 0}
     for seed in range(10):
         small += sum(a.rule == "great_hall"
-                     for a in grow(classic, 20, seed, BuildContext(race_scale=1.0)).applied)
-        res = grow(classic, 20, seed, BuildContext(race_scale=2.0))
-        _g3(res.graph, 20)
-        big += sum(a.rule == "great_hall" for a in res.applied)
-    assert small == 0 and big > 0
+                     for a in grow(classic, 20, seed, BuildContext(race_scale=1.15)).applied)
+        for scale in big:
+            res = grow(classic, 20, seed, BuildContext(race_scale=scale))
+            _g3(res.graph, 20)
+            big[scale] += sum(a.rule == "great_hall" for a in res.applied)
+    assert small == 0 and all(big.values()), big
 
 
 # ---------------------------------------------------------------------------

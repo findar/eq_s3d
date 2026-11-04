@@ -859,13 +859,15 @@ None unless the row names them. Each builds on the first attempt.
 | b | Dungeon, 12 rooms, Layout **Graph**, Rule set **classic_eq** | 4 | `classic_eq`, no layers; 1 loop, 5 dead ends; kinds entrance, chamber ×6, lair ×3, passage, deep |
 | c | Dungeon, 12 rooms, Layout **Graph**, Rule set **warren** | 4 | `warren`; 3 loops, 1 dead end, a shallow deep end (0.25 against b's 0.50); 5 small rooms and no large |
 | d | Dungeon, 12 rooms, Theme **Temple**, Layout **Graph**, Rule set From theme | 4 | `classic_eq` + layer `temple`; `nave` applied (a large `hall` with two small `lair` chapels); the `deep` room is the `inner_sanctum` and the boss room |
-| e | Dungeon, 12 rooms, Race **Ogre**, Layout **Graph**, Rule set From theme | 4 | b's graph and size classes (the same `applied` list), rooms scaled up by the ogre's 1.4 (mean floor area ~2× b's); the theme falls back to `fortress`, the `deep` room is the `throne` |
-| f | Dungeon, 12 rooms, Race **Giant**, Layout **Graph**, Rule set From theme | 3 | race scale 2.2 reaches the big-race rule `great_hall` (`race_scale >= 1.5`; an ogre's 1.4 doesn't): a `huge` `hall` on the way; rooms far bigger again |
+| e | Dungeon, 12 rooms, Race **Ogre**, Layout **Graph**, Rule set From theme | 3 | the ogre's race scale 1.4 reaches the big-race rule `great_hall` (`race_scale >= 1.4`): a `huge` `hall` on the way (room_1); 2 loops, 3 dead ends; rooms scaled up by 1.4 (mean floor area ~1.8× b's); the theme falls back to `fortress`, the `deep` room is the `throne` |
+| f | Dungeon, 12 rooms, Race **Giant**, Layout **Graph**, Rule set From theme | 3 | e's graph (the same `applied` list, great hall included) at the giant's 2.2: rooms far bigger again (mean floor area ~2.5× e's), the same 2 loops and `edge_fidelity` 1.0 |
 | g | Outdoor dungeon, 5 rooms, Layout **Graph**, Rule set From theme, Landscape defaults | 4 | `classic_eq` under the hill: the mouth opens into the `entrance` room and the `deep` room is the climax |
 
 Cases a, b and c share seed and room count on purpose: compare them side by
 side. They use 12 rooms rather than the first look's 9 because the shapes
-differ more clearly with more rooms. A temple needs at least 7 rooms for its
+differ more clearly with more rooms. Cases e and f share seed 3 on purpose:
+both races are big, so they grow the same graph and differ only in scale
+(seed 4 grows no great hall). A temple needs at least 7 rooms for its
 nave (with fewer it doesn't fit: the sidecar still lists the `temple` layer
 but `applied` has no `nave`), so keep d at 9 or more.
 
@@ -926,8 +928,9 @@ python scripts/topology_rules.py draw classic_eq --theme temple --out output/rul
       `rooms[].role`) calls `climax`; in a themed case (d, e, f) it is also
       the boss room (`boss: true`). The `entrance` kind is the `entrance`
       role, where the spawn stands.
-- [ ] **[MUST] The race scales the rooms** — e is b's dungeon with bigger
-      rooms; f is bigger again and has its great hall. Corridors and ramps
+- [ ] **[MUST] The race scales the rooms** — e's rooms are clearly bigger
+      than b's and it has its great hall; f is e's dungeon bigger again.
+      Neither loses a loop to its size (f has e's two). Corridors and ramps
       stay walkable for the player.
 
 ### G.4 — Controls and sidecar
@@ -961,7 +964,7 @@ python scripts/topology_rules.py draw classic_eq --theme temple --out output/rul
       rule, the field and what was expected.
 - [ ] **[MUST] dry-run** — Reports each stage's completion, how often each
       rule fired (and any that never did), the shape measures and the size
-      mix. Without `--race-scale 1.5` or more, `great_hall` is listed as
+      mix. Without `--race-scale 1.4` or more, `great_hall` is listed as
       never fired; it is the big-race rule, so that is expected.
 - [ ] **[MUST] draw** — Writes `classic_eq.html`, `warren.html` and
       `classic_eq-temple.html` into `output/rules/`; each shows the start

@@ -506,10 +506,13 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
     from its Size_Class (graph-layout Req 6.1: rules own size), so the type
     keeps only its PROPORTION: the aspect stretch is applied, then the
     footprint is renormalised to the area the room came with (the type's
-    footprint multiplier drops out). Ceiling mood, floor sink and the race
-    scale still apply.
+    footprint multiplier drops out). Ceiling mood and floor sink still apply.
+    Its size already has the race scale (the graph engine places rooms at
+    their final size, task 20), so the scale is not applied a second time to
+    its footprint or ceiling; the floor sink still scales by race.
     """
     scale = race_scale(race)
+    size_scale = 1.0 if room.kind else scale
 
     # Footprint + aspect: stretch the longer axis for processional rooms.
     fw = rt.footprint
@@ -524,9 +527,9 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
         fw *= k
         fd *= k
 
-    room.width = max(80.0, room.width * fw * scale)
-    room.depth = max(80.0, room.depth * fd * scale)
-    room.height = max(50.0, room.height * rt.ceiling * scale)
+    room.width = max(80.0, room.width * fw * size_scale)
+    room.depth = max(80.0, room.depth * fd * size_scale)
+    room.height = max(50.0, room.height * rt.ceiling * size_scale)
 
     # Elevation character: nudge the floor height (sunken/raised). Scaled by
     # race so a giant's sunken arena sinks proportionally. This is a hint on the
