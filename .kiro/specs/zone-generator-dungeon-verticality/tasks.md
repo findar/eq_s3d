@@ -46,7 +46,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: generators/geometry.py, tests/test_stair_geometry.py, analyzer/traverse.py (planned stairs)
   - Reqs: 3.1–3.3
 
-- [ ] 4. Levels and stacking in the graph engine
+- [x] 4. Levels and stacking in the graph engine
   - Card: [cards/04-levels.md](cards/04-levels.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/topology/rewrite.py, generators/topology/ruleset.py, generators/topology/embed.py, generators/layout_engine.py, tests/test_topology_levels.py

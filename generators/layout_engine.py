@@ -87,6 +87,11 @@ class EngineResult:
     climax: Optional[int] = None         # the room the engine names the climax
                                          # (an index into rooms); None: deepest by hops
     record: Optional[dict] = None        # what the sidecar's layout block reports
+    # Step 7 (task 4): each room's Level (index-aligned with ``rooms``; 0 is the
+    # entrance's) and the floor-to-floor height between Levels, from an engine
+    # that stacks. None: one Level, Job B places every floor as in step 6.
+    levels: Optional[List[int]] = None
+    level_height: Optional[float] = None
 
 
 class LayoutEngine(Protocol):
@@ -239,6 +244,15 @@ class GraphEngine:
     them), and ``entrance_side`` is the least width and depth of the rules'
     entrance room (the wall facing the way in has to hold a Tunnel), whatever
     the zone's room scale.
+
+    ``stacking`` (step 7, task 4; off by default) gives the rooms Levels from
+    the rules' vertical relations (``embed.assign_levels``) and places them
+    in 3D: rooms on different Levels may overlap in plan, stair edges pull
+    together, and separation runs within each Level. The result then carries
+    ``levels`` and ``level_height``. Off, the shipped rule sets' ``below``
+    edges stay step 6's ramp hints and the output is step 6's, byte for byte
+    (``tests/test_topology_levels.py`` goldens). The Verticality control turns
+    it on once the rules and Job B are ready (tasks 5 and 6).
     """
 
     name = "graph"
@@ -249,8 +263,9 @@ class GraphEngine:
 
     def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
                  theme: Optional[str] = None,
-                 rules_dir: Union[str, Path, None] = None):
+                 rules_dir: Union[str, Path, None] = None, stacking: bool = False):
         self.rule_set = rule_set
+        self.stacking = stacking
         self.theme = theme
         self.rules_dir = Path(rules_dir) if rules_dir is not None else RULES_DIR
         self._loaded: Dict[Tuple[Optional[str], Optional[str]], "RuleSet"] = {}
@@ -293,7 +308,17 @@ class GraphEngine:
         half = {r: (w / 2, d / 2) for r, (w, d, _h) in sizes.items()}
         place = embed.PLACEMENT_FUNCS[rs.placement]
         gap = ctx.corridor_width + 1.0
-        centres = place(graph, order, half, ctx.corridor_width, gap)
+        # Levels go in before placement (step 7): heights at race scale, as
+        # the rooms are placed.
+        levels = level_h = storeys = None
+        if self.stacking:
+            levels = embed.assign_levels(graph)
+            heights = {r: sizes[r][2] for r in order}
+            level_h = embed.level_height(list(heights.values()))
+            storeys = embed.storeys(levels, heights, level_h)
+            centres = place(graph, order, half, ctx.corridor_width, gap, storeys=storeys)
+        else:
+            centres = place(graph, order, half, ctx.corridor_width, gap)
         if envelope is not None:
             # Face the rules' entrance room toward the Envelope's way in (a
             # quarter turn / mirror of the whole layout), so the pacing's
@@ -312,8 +337,14 @@ class GraphEngine:
                                   district=graph.node(r).district,
                                   kind=graph.node(r).kind))
         # (Separation pushes pairs symmetrically, so an Envelope layout stays
-        # centred on the footprint.)
-        ctx.separate(rooms)
+        # centred on the footprint.) Stacked, each Level separates on its own:
+        # ``ctx.separate`` (Job B's ``_separate_rooms``) is a plan test, and
+        # rooms on different Levels may overlap.
+        if levels is None:
+            ctx.separate(rooms)
+        else:
+            for lv in sorted({levels[r] for r in order}):
+                ctx.separate([rooms[k] for k, r in enumerate(order) if levels[r] == lv])
 
         idx = {r: k for k, r in enumerate(order)}
         edges: List[Edge] = []
@@ -326,8 +357,14 @@ class GraphEngine:
         # The rules' deep end is the climax (None when the set grew none, as
         # for one room: pacing then takes the deepest by hops).
         climax = next((idx[n.id] for n in graph.rooms() if n.kind == "deep"), None)
+        record = self._record(rs, grown, order, idx, edges, graph, rooms)
+        room_levels = None
+        if levels is not None:
+            room_levels = [levels[r] for r in order]
+            record["levels"] = {rooms[k].id: lv for k, lv in enumerate(room_levels)}
+            record["level_height"] = level_h
         return EngineResult(rooms=rooms, edges=edges, entry=entry, climax=climax,
-                            record=self._record(rs, grown, order, idx, edges, graph, rooms))
+                            record=record, levels=room_levels, level_height=level_h)
 
     @staticmethod
     def _record(rs, grown, order, idx, edges, graph=None, rooms=None) -> dict:
