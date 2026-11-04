@@ -104,7 +104,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 - [ ] 14. Tune from the first look
   - Card: [cards/14-tuning.md](cards/14-tuning.md)
   - Type: agent · Size: S · Depends: 13
-  - Owns: rules/topology/, generators/topology/, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py
+  - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, tests/test_server.py, tests/test_hygiene.py (allowlist), tests/test_graph_layout_controls.py
 
 - [ ] 15. Acceptance section, thorough run, timing
   - Card: [cards/15-release-prep.md](cards/15-release-prep.md)
