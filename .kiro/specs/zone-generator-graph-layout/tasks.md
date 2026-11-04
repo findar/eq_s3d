@@ -114,7 +114,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 
 - [ ] 16. HUMAN: graph layout acceptance pass
   - Card: [cards/16-human-acceptance.md](cards/16-human-acceptance.md)
-  - Type: human · Depends: 15
+  - Type: human · Depends: 15, 20
 
 - [ ] 17. Close step 6
   - Card: [cards/17-close.md](cards/17-close.md)
@@ -132,3 +132,9 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Type: agent · Size: M · Depends: 9, 18
   - Owns: generators/layout_engine.py, generators/layout.py, ai/expand.py, tests/test_graph_layout_plan.py, tests/test_topology_embed.py, generators/semantics.py
   - Reqs: 6.3, 7.4
+
+- [ ] 20. Big races keep their loops; ogres get great halls
+  - Card: [cards/20-big-races.md](cards/20-big-races.md)
+  - Type: agent · Size: M · Depends: 15
+  - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/semantics.py, rules/topology/classic_eq.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, docs/ACCEPTANCE.md
+  - Reqs: 6.1, 6.4
