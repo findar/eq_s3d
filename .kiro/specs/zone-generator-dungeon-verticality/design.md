@@ -260,6 +260,26 @@ happens to fix it; task 8 measures it.
   `connectors` (corridor id → kind, rise, risers, switchback) and
   `stacked_share`.
 
+## Race-sized rooms (Req 10; user, 2026-11-04)
+
+Today a race is one multiplier (`semantics.RACE_SCALE`: goblin 0.85 ... ogre
+1.4, giant 2.2) applied to every room, so an ogre can still roll a `small`
+room barely bigger than a human's, and nothing caps the top. The code already
+notes the gap: "Real per-race limits should come from EQ model bounding
+boxes ... which we do not yet have."
+
+The model instead: each race has a **body height** H (measured, finding 8;
+the default race is a human, H about the walk agent's 6 u), and a **room
+band** for height and footprint, each `[min, max]` as multiples of H. Size
+classes (`tiny` ... `huge`) then pick a point inside the band (tiny at the
+minimum, huge at the maximum) instead of multiplying a race-free base. So an
+ogre's `tiny` room is sized for an ogre, a dragon's `huge` hall is vast, and a
+human's `huge` hall is still a human's. The band multiples are set once from
+the stock zones (task 16 measures rooms against the races that live in them,
+e.g. Kael's halls for giants, Nagafen's lair and Veeshan's Peak for dragons)
+and are the same for every race; only H changes. Both engines use the bands;
+the Level_Height follows from the banded heights.
+
 ## Correctness properties
 
 | P | Statement | Reqs |
@@ -274,6 +294,7 @@ happens to fix it; task 8 measures it.
 | V8 | Multi-level outdoor dungeons: rooms under the hill with the cover, one Entrance at the top Level, every room reached | 7 |
 | V9 | Stacked builds map each Level on its own depth band | 8.3 |
 | V10 | First-try gate rate ≥ step 6's; same inputs, same `.eqg`; time ≤ step 6 + 10 s | 9 |
+| V11 | Every room's height and footprint lie inside its race's bands, for every size class and both engines | 10 |
 
 ## Risks
 

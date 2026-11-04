@@ -2,7 +2,7 @@
 
 > **STATUS: roadmap step 7, ready.** Written 2026-11-04 at master `8edf1df`;
 > the user took the recommended answer to every open question the same day
-> (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 15 tasks).
+> (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 17 tasks).
 
 ## Introduction
 
@@ -186,6 +186,25 @@ hill, not only across under it.
 3. The same inputs SHALL give byte-identical `.eqg` contents (footer aside).
 4. A multi-level build SHALL take at most the step 6 graph build's time plus
    10 s on the reference machine.
+
+### Requirement 10: Rooms sized for their builders
+
+**User Story:** As a user, I want a dungeon's rooms to fit the race that made
+it: an ogre never builds small rooms, dragons need vast halls, and a human
+wouldn't build a dragon's.
+
+1. Each dungeon race SHALL have a measured body height, taken from its
+   character model in the client files where possible (design finding 8),
+   the default (human) race included; `dragon` SHALL join the races.
+2. Each race SHALL have a room-height band (a minimum and a maximum, from its
+   body height) and a footprint band; every room's size class SHALL fall
+   inside its race's bands, so a race's smallest room is still sized for it
+   and its largest stops at the race's maximum.
+3. Both engines SHALL use the bands (the Classic engine already scales by
+   race); the Level_Height (Req 4) SHALL follow from the banded room heights.
+4. A build with no race SHALL use the default race's bands; builds whose
+   sizes change because of the bands (raced builds of either engine) SHALL
+   say so in the commit that changes them, with the old and new goldens.
 
 ## Exit criteria
 

@@ -31,6 +31,8 @@ recommended on all and continue"):
 
 - **Numbers from the survey (task 1, 2026-11-04):** Slab 14 u (stock median; band 11-39); Level_Height = the tallest overlapped lower room + the Slab (~135 u for dungeon rooms, ~94 u for outdoor-dungeon rooms); Riser_Cap 2.0 u (stock risers 1.0 u median, 2.0 u p90); tread 3.0 u (grade 0.67, 34 deg, the stock median). Req 6 bands over nine zones: Stacked_Share 0.02-0.36, 2-4 levels, span 1.1-3.7 floor-to-floor gaps. Unrest is excluded (its yard swamps the floor).
 
+- **Rooms sized for their builders (user, 2026-11-04):** "Our room height should end up confirming to whatever the related race size is to some degree. An ogre would never have small rooms ... baseline overall minimum height per type and then also decide on maximums ... Dragons need lots of space but it would be unlikely for a human to create a dungeon with the same sized rooms." Added as Requirement 10 and tasks 16 (measure race body heights and stock rooms) and 17 (race bands replace the race multiplier, both engines, `dragon` added). Outdoor dungeons (task 7) and the gate sweep (task 9) wait for it.
+
 ## Follow-ups
 
 - **Stock stacking is low rooms over low rooms** (task 1): where stock floors stack they are only ~28 u apart (14 u of headroom), because corridors and low rooms stack, not halls. Our rooms are about four times taller, so a Level is ~135 u. A low stacking room type (a crawlway, a cellar, a gallery) would bring built dungeons closer to stock.

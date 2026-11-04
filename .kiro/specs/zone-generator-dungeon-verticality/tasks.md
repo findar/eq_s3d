@@ -66,7 +66,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
 
 - [ ] 7. Outdoor dungeons go down
   - Card: [cards/07-outdoor-levels.md](cards/07-outdoor-levels.md)
-  - Type: agent · Size: M · Depends: 6
+  - Type: agent · Size: M · Depends: 6, 17
   - Owns: generators/outdoor_dungeon.py, generators/envelope.py, tests/test_outdoor_levels.py
   - Reqs: 7
 
@@ -78,7 +78,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
 
 - [ ] 9. Gate sweep on built multi-level zones
   - Card: [cards/09-gate-sweep.md](cards/09-gate-sweep.md)
-  - Type: agent · Size: M · Depends: 6, 7, 8
+  - Type: agent · Size: M · Depends: 6, 7, 8, 17
   - Owns: tests/test_vertical_build.py, generators/topology/embed.py, rules/topology/
   - Reqs: 9
 
@@ -111,3 +111,15 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Card: [cards/15-close.md](cards/15-close.md)
   - Type: agent · Size: S · Depends: 14 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-dungeon-verticality/, .kiro/specs/zone-generator/
+
+- [ ] 16. Measure race body heights and stock room sizes
+  - Card: [cards/16-race-survey.md](cards/16-race-survey.md)
+  - Type: agent · Size: M · Depends: —
+  - Owns: scripts/race_size_survey.py, .kiro/specs/zone-generator-dungeon-verticality/design.md (finding 8 only)
+  - Reqs: 10.1
+
+- [ ] 17. Rooms sized for their race
+  - Card: [cards/17-race-rooms.md](cards/17-race-rooms.md)
+  - Type: agent · Size: M · Depends: 5, 16
+  - Owns: generators/semantics.py, generators/topology/embed.py, generators/layout.py, ai/schema.py, web/index.html, tests/test_race_sizing.py, tests/test_layout_engine.py (raced goldens, deliberately)
+  - Reqs: 10
