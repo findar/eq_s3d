@@ -40,7 +40,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: analyzer/traverse.py, tests/test_traverse_connectors.py
   - Reqs: 2
 
-- [ ] 3. Stair geometry and switchbacks
+- [x] 3. Stair geometry and switchbacks
   - Card: [cards/03-stair-geometry.md](cards/03-stair-geometry.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/geometry.py, tests/test_stair_geometry.py, analyzer/traverse.py (planned stairs)
