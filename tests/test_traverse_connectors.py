@@ -379,12 +379,22 @@ class TestBridges:
         assert cont.connected, cont.reason
 
     def test_deck_over_a_low_halls_roof_still_crosses(self):
-        # A hall whose ceiling is under the deck isn't bridged: the deck would
-        # be through its roof, so the old "crosses room" verdict stands.
-        spec, surf = bridge_case(hall_height=40.0)
+        # A hall whose roof is under the deck by less than the Slab (14 u)
+        # isn't bridged and isn't another storey: the deck runs through its
+        # roof, so the "crosses room" verdict stands.
+        spec, surf = bridge_case(hall_height=50.0)
         bridged, _, cont = bridge_verdict(spec, surf)
         assert bridged == set()
         assert not cont.connected and cont.reason == "crosses room c"
+
+    def test_deck_a_slab_over_a_low_halls_roof_walks(self):
+        # 20 u over the roof (>= the Slab): the hall is a storey under the
+        # deck (the layout's Slab rule), on any spec. Its ceiling is wound
+        # down, so it is no floor for the deck to fall onto.
+        spec, surf = bridge_case(hall_height=40.0)
+        bridged, _, cont = bridge_verdict(spec, surf)
+        assert bridged == set()
+        assert cont.connected, cont.reason
 
     @pytest.mark.parametrize("kw, end", [
         (dict(gap_to=5.0), "(b end)"),
