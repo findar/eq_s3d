@@ -19,3 +19,4 @@ The user decided at task 16 (2026-11-04): "graph should be the default going for
 - Frontend-only changes never run the Python suite (task 11 broke hygiene that way): run it.
 
 ## Result
+✔ 4f6a48a · 1225 passed; browser check pending
