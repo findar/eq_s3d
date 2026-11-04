@@ -28,7 +28,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
 
 ## Tasks
 
-- [ ] 1. Measure the stock vertical anatomy
+- [x] 1. Measure the stock vertical anatomy
   - Card: [cards/01-vertical-survey.md](cards/01-vertical-survey.md)
   - Type: agent · Size: M · Depends: —
   - Owns: scripts/dungeon_vertical_survey.py, .kiro/specs/zone-generator-dungeon-verticality/design.md
