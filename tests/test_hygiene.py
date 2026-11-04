@@ -616,6 +616,7 @@ _ALLOWED_WEB_INPUT_IDS = {
     "edge-n", "edge-e", "edge-s", "edge-w",  # wilderness map edges (task 3)
     "trees",  # wilderness tree density (trees spec task 9)
     "layout", "rule-set",  # graph layouts (graph-layout spec task 11)
+    "dungeon-theme", "dungeon-race",  # graph-layout spec task 14
 }
 
 # The CLI ``generate`` option/flag names the geometry slice is allowed to add,

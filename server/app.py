@@ -44,7 +44,8 @@ from analyzer.style_builder import REFERENCE_ZONES
 from ai.planner import make_plan, get_planner
 from ai.expand import plan_to_spec
 from ai.schema import (
-    LAYOUT_ZONE_TYPES, VALID_LAYOUTS, ZonePlan, available_rule_sets,
+    LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
+    ZonePlan, available_rule_sets,
 )
 
 # ---------------------------------------------------------------------------
@@ -418,6 +419,50 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
                 400, "rule_set only applies to zone_type dungeon or outdoor_dungeon")
 
 
+# The zone types a dungeon theme / race reaches: the room-graph types. A
+# dungeon and a city go through the semantic layer in LayoutGenerator
+# (generators/layout.py _SEMANTIC_ZONE_TYPES); an outdoor dungeon lays out its
+# rooms as a dungeon (generators/outdoor_dungeon.py) and keeps both. A
+# wilderness has no rooms, so neither means anything there.
+CONTENT_ZONE_TYPES = ("dungeon", "city", "outdoor_dungeon")
+
+# controls key -> its allowed values (ai/schema.py).
+_CONTENT_CONTROLS = {
+    "dungeon_theme": VALID_DUNGEON_THEMES,
+    "dungeon_race": VALID_DUNGEON_RACES,
+}
+
+
+def _require_content(c: dict[str, Any], zone_type: Optional[str]) -> None:
+    """Validate ``controls.dungeon_theme`` / ``controls.dungeon_race`` in place,
+    before any build or write (graph-layout task 14).
+
+    Absent, ``null`` or ``""`` -> none. Any other value must be one of the
+    schema's list (case and surrounding space ignored), else a 400 naming the
+    allowed values; ``ZonePlan.validate`` would otherwise drop it silently and
+    build an unthemed zone. A theme or race on a zone type outside
+    ``CONTENT_ZONE_TYPES`` is a 400, as ``layout: graph`` is on a type with no
+    layout; ``""`` is accepted there, since it changes nothing.
+    """
+    for key, allowed in _CONTENT_CONTROLS.items():
+        if key not in c:
+            continue
+        raw = c[key]
+        if raw is None:
+            c.pop(key)
+            continue
+        value = raw.strip().lower() if isinstance(raw, str) else None
+        if value is None or (value and value not in allowed):
+            raise HTTPException(
+                400, f"{key} must be one of {', '.join(allowed)} "
+                     "(or \"\" for none)")
+        c[key] = value
+        if value and zone_type not in CONTENT_ZONE_TYPES:
+            raise HTTPException(
+                400, f"{key} only applies to zone_type "
+                     f"{', '.join(CONTENT_ZONE_TYPES[:-1])} or {CONTENT_ZONE_TYPES[-1]}")
+
+
 class GenerateRequest(BaseModel):
     # An extra/unknown key (e.g. a legacy ``target_shortname``) is ignored like
     # any other non-field key rather than rejected (Req 8.1).
@@ -438,7 +483,9 @@ class GenerateRequest(BaseModel):
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
                     "none/sparse/normal/dense), layout (classic/graph) and "
                     "rule_set (a base set, \"\" for the theme's; dungeon and "
-                    "outdoor_dungeon only), …",
+                    "outdoor_dungeon only), dungeon_theme and dungeon_race "
+                    "(\"\" for none; dungeon, city and outdoor_dungeon "
+                    "only), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.
@@ -658,6 +705,7 @@ def generate(req: GenerateRequest):
         edges = _require_edges(c, canonical_zone_type(raw_zone_type))
         trees = _require_trees(c, canonical_zone_type(raw_zone_type))
         _require_layout(c, canonical_zone_type(raw_zone_type))
+        _require_content(c, canonical_zone_type(raw_zone_type))
 
         # Proven equal to the legacy LayoutGenerator path by the 17.4 golden test.
         # ``validate()`` raises ValueError on a value it refuses (an unknown
