@@ -12,10 +12,11 @@ room floors, the landing flush with both flights, headroom over every tread,
 walls wherever a floor ends, and the wall UV convention.
 
 Task 2's gate checks (``classify_corridor``, ``check_connector``,
-``corridor_continuity``) are run on the built mesh too. They judge a straight
-stair whose flight fills its leg; a Switchback, and a compact flight on a leg
-much longer than its run, are pinned as strict xfails naming what the gate
-still needs (see ``GATE_NEEDS``).
+``corridor_continuity``) judge every planned stair on the built mesh: the
+gate reads ``steps == AUTO_STAIRS`` through ``stair_layout``, walks its
+``path`` against its ``profile`` and includes its stairwell. A gap cut into
+a built switchback's landing must fail it, and the crossing check's floor
+height (``_route_floor_z_at``) must read the stair's real floors.
 """
 
 import dataclasses
@@ -452,77 +453,104 @@ def test_stair_uvs_follow_the_wall_convention(spec):
 # Task 2's gate on the built mesh
 # ---------------------------------------------------------------------------
 #
-# The gate knows a Staircase as ``steps > 0`` spread evenly over the carry
-# leg's straight line. A planned stair is judged here as the gate's
-# equivalent: the same mesh, the corridor's ``steps`` set to the planned
-# risers. What it still needs to judge every planned stair:
-GATE_NEEDS = (
-    "gate needs: is_staircase/classify_corridor to read steps == AUTO_STAIRS "
-    "through generators.geometry.stair_layout (riser = plan.riser, tread = "
-    "plan.tread); check_connector to walk StairLayout.path with expected_z "
-    "from StairLayout.profile (not the carry leg's straight line, linear over "
-    "the whole leg); corridor_continuity to add StairLayout.stairwell to the "
-    "corridor's region")
+# Every verdict is on the corridor as the layout asks for it (steps ==
+# AUTO_STAIRS); the gate finds the stair through ``stair_layout``.
 
-
-def gate_verdicts(spec):
+def gate_verdicts(spec, ter=None):
     rooms = {r.id: r for r in spec.rooms}
     cor = spec.corridors[0]
-    lay = stair_layout(cor, rooms)
-    surf = build_walk_surface(build_mesh(spec).to_ter(spec.name), AGENT)
-    judged = dataclasses.replace(cor, steps=lay.plan.risers)
-    gspec = dataclasses.replace(spec, corridors=[judged])
-    oracle = T.classify_corridor(judged, AGENT, rooms)
-    mesh = T.check_connector(surf, judged, rooms, AGENT)
-    cont = T.corridor_continuity(surf, gspec, AGENT)[0]
+    ter = ter or build_mesh(spec).to_ter(spec.name)
+    surf = build_walk_surface(ter, AGENT)
+    oracle = T.classify_corridor(cor, AGENT, rooms)
+    mesh = T.check_connector(surf, cor, rooms, AGENT)
+    cont = T.corridor_continuity(surf, spec, AGENT)[0]
     return oracle, mesh, cont
 
 
 def assert_gate_passes(spec):
+    lay = stair_layout(spec.corridors[0], {x.id: x for x in spec.rooms})
     (ok, why), mesh, cont = gate_verdicts(spec)
     assert ok, why
     assert mesh.ok, mesh.reason
-    assert all(abs(abs(r) - stair_layout(
-        spec.corridors[0], {x.id: x for x in spec.rooms}).plan.riser) < 1e-3
-        for r in mesh.risers)
+    assert mesh.kind == "stair"
+    assert len(mesh.risers) == lay.plan.risers
+    assert all(abs(abs(r) - lay.plan.riser) < 1e-3 for r in mesh.risers)
     assert cont.connected, cont.reason
 
 
 @settings(max_examples=30, deadline=None)
 @given(
     rise=st.floats(1.0, 60.0).flatmap(lambda m: st.sampled_from([m, -m])),
-    slack=st.floats(0.0, 1.0),
+    run=st.floats(12.0, 240.0),
     width=st.floats(12.0, 50.0),
     along_x=st.booleans(),
     reverse=st.booleans(),
+    jog=st.sampled_from([0.0, 0.0, 70.0, -90.0, 160.0]),
 )
-def test_gate_passes_straight_stairs_filling_their_leg(rise, slack, width,
-                                                       along_x, reverse):
-    """A straight stair whose flight (nearly) fills its leg: the gate's
-    linear expectation stays within a riser of the floor, so all three
-    checks judge it, and pass it."""
-    plan = stair_plan(rise, 1e9)
-    spec = stair_spec(rise, plan.run + slack, width, along_x=along_x,
-                      reverse=reverse)
+@example(rise=40.0, run=200.0, width=40.0, along_x=True, reverse=False, jog=0.0)
+@example(rise=30.0, run=20.0, width=40.0, along_x=True, reverse=False, jog=0.0)
+@example(rise=-30.0, run=20.0, width=40.0, along_x=False, reverse=True, jog=0.0)
+@example(rise=60.0, run=100.0, width=20.0, along_x=True, reverse=False, jog=90.0)
+def test_gate_passes_planned_stairs(rise, run, width, along_x, reverse, jog):
+    """Straight (compact flight on any leg) and switchback, on straight and
+    Z routes, up and down: all three gate checks pass the built stair."""
+    spec = stair_spec(rise, run, width, along_x=along_x, reverse=reverse,
+                      jog=jog)
     lay = stair_layout(spec.corridors[0], {r.id: r for r in spec.rooms})
-    assert not lay.plan.switchback
+    assume(lay is not None and not lay.cramped)
+    if lay.stairwell:
+        assume(not any(_overlap_area(lay.stairwell, r)
+                       for r in _room_rects(spec.rooms)))
     assert_gate_passes(spec)
 
 
-@pytest.mark.xfail(strict=True, reason=GATE_NEEDS)
+def test_gate_fails_a_switchback_with_no_landing():
+    """The gate isn't vacuous: cut the landing out of a built switchback and
+    the connector walk and continuity both report the gap."""
+    spec = stair_spec(30.0, 20.0)
+    lay = stair_layout(spec.corridors[0], {r.id: r for r in spec.rooms})
+    assert lay.plan.switchback
+    zm = (lay.from_z + lay.to_z) / 2
+    (lx, ly), (mx, my) = lay.path[2], lay.path[3]
+    ter = build_mesh(spec).to_ter(spec.name)
+    keep = []
+    for p in ter.polygons:
+        vs = [ter.vertices[i] for i in (p.v1, p.v2, p.v3)]
+        cx = sum(v.x for v in vs) / 3
+        cy = sum(v.y for v in vs) / 3
+        landing = (all(abs(v.z - zm) < 1e-6 for v in vs) and vs[0].nz > 0.5
+                   and min(lx, mx) - 6 <= cx <= max(lx, mx) + 6
+                   and min(ly, my) - 6 <= cy <= max(ly, my) + 6)
+        if not landing:
+            keep.append(p)
+    assert len(keep) < len(ter.polygons)
+    ter.polygons = keep
+    (ok, _), mesh, cont = gate_verdicts(spec, ter)
+    assert ok                                   # the spec itself is fine
+    assert not mesh.ok and "gap" in mesh.reason, mesh.reason
+    assert not cont.connected
+
+
 @pytest.mark.parametrize("spec", [
-    stair_spec(30.0, 20.0), stair_spec(-30.0, 20.0, along_x=False),
-    stair_spec(60.0, 100.0, 20.0, jog=90.0)],
-    ids=["switchback", "switchback-down-y", "switchback-z"])
-def test_gate_passes_switchbacks(spec):
-    assert stair_layout(spec.corridors[0],
-                        {r.id: r for r in spec.rooms}).plan.switchback
-    assert_gate_passes(spec)
-
-
-@pytest.mark.xfail(strict=True, reason=GATE_NEEDS)
-def test_gate_passes_compact_flight_on_a_long_leg():
-    spec = stair_spec(40.0, 200.0)
-    assert not stair_layout(spec.corridors[0],
-                            {r.id: r for r in spec.rooms}).plan.switchback
-    assert_gate_passes(spec)
+    stair_spec(40.0, 200.0), stair_spec(30.0, 20.0),
+    stair_spec(-60.0, 100.0, 20.0, along_x=False, jog=90.0)],
+    ids=["compact-long-leg", "switchback", "switchback-z-down"])
+def test_crossing_check_reads_the_stair_floor(spec):
+    """``_route_floor_z_at`` (the corridor-crossing check's own-tube test)
+    puts every floor face of the built stair within a riser of its height."""
+    rooms = {r.id: r for r in spec.rooms}
+    cor = spec.corridors[0]
+    lay = stair_layout(cor, rooms)
+    route = T.corridor_route(cor, rooms)
+    mesh = Mesh(spec)
+    rects = _room_rects(spec.rooms)
+    checked = 0
+    for tri in mesh.floors:
+        c = tri.mean(axis=0)
+        if any(x0 <= c[0] <= x1 and y0 <= c[1] <= y1
+               for x0, y0, x1, y1 in rects):
+            continue
+        z = T._route_floor_z_at(route, cor, c[0], c[1], lay)
+        assert abs(z - c[2]) <= lay.plan.riser + EPS, (c, z)
+        checked += 1
+    assert checked > 10
