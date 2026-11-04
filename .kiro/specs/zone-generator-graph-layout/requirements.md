@@ -1,8 +1,9 @@
 # Requirements Document
 
-> **STATUS: roadmap step 6, ready.** Written 2026-11-03 at master `67e5b69`;
-> the user settled the open questions the same day (`archive.md`
-> "Decisions"). Task index: `tasks.md` (card format, 21 tasks).
+> **STATUS: roadmap step 6, DONE.** Written 2026-11-03 at master `67e5b69`,
+> signed off 2026-11-04 (master `264b55a`). The user settled the open
+> questions on 2026-11-03 (`archive.md` "Decisions"). What landed:
+> `archive.md`. Task index: `tasks.md` (card format, 21 tasks).
 
 ## Introduction
 

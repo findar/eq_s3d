@@ -641,6 +641,7 @@ the requirements.
 #### Acceptance Criteria
 
 1. THE Layout_Generator SHALL lay out rooms with the TinyKeep scheme (scatter, separate, triangulate, spanning tree, added loop edges) such that no two room footprints overlap and, for every topology and at least 3 non-collinear rooms, every Room_Graph edge is a Delaunay edge of the room centres and the Room_Graph contains a minimum spanning tree of that triangulation.
+   > **Amended by step 6** (design decision 26): holds for the classic layout engine; graph layouts (the default since step 6) grow their graph by rewrite rules.
 2. THE Layout_Generator SHALL derive Pacing_Roles as a function of the Room_Graph and room centres alone; Pacing_Roles may bias room size during layout, and THE Layout_Generator SHALL NOT add, remove or re-route rooms or corridors to satisfy a Pacing_Role.
 3. THE Layout_Generator SHALL place Gates only on existing corridors with keys in existing rooms, producing for a given seed the same rooms and corridors with k locks as with 0 locks.
 4. THE Zone_Builder SHALL write `.eqg` archives containing no `.mod` entries and `.zon` files containing no placeable-object instances, and SHALL carry prop suggestions only as `prop_hints` in the Sidecar.

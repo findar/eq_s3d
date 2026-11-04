@@ -112,11 +112,11 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: docs/ACCEPTANCE.md, tests/test_graph_layout_build.py
   - Reqs: 8.4, exit criteria 1–2
 
-- [ ] 16. HUMAN: graph layout acceptance pass
+- [x] 16. HUMAN: graph layout acceptance pass
   - Card: [cards/16-human-acceptance.md](cards/16-human-acceptance.md)
   - Type: human · Depends: 15, 20, 21
 
-- [ ] 17. Close step 6
+- [x] 17. Close step 6
   - Card: [cards/17-close.md](cards/17-close.md)
   - Type: agent · Size: S · Depends: 16 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-graph-layout/, .kiro/specs/zone-generator/
