@@ -198,7 +198,7 @@ happens to fix it; task 8 measures it.
   over a floor limit 150 u down may not hold them for big rooms. The
   Envelope drops rooms with `rooms_reduced` before it fails.
 
-## Open questions (for the user; defaults recommended)
+## Open questions (answered 2026-11-04: the defaults; see `archive.md`)
 
 1. **Which vertical connectors.** Default: staircases (straight and
    switchback) in this step, bridges as a later task in the step after a

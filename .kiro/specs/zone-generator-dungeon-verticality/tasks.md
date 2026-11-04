@@ -23,9 +23,8 @@ Index fields: `Type` is `agent` or `human`. `Size` is S (≤ 2 files) / M (≤ 5
 L (split it). `Depends` lists task numbers. `Owns` lists the files and folders
 the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 
-**Not ready to run:** the design's open questions are not answered yet. Record
-the answers in `archive.md` "Decisions" before starting any task; task 11
-(bridges) exists only if Open question 1 keeps bridges in this step.
+The design's open questions were answered on 2026-11-04 (`archive.md`
+"Decisions"): bridges stay in the step as task 11, after the first look.
 
 ## Tasks
 

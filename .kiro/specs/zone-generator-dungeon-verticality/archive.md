@@ -9,9 +9,23 @@ Nothing yet. Rows are added at the close step (task 15).
 
 ## Decisions
 
-The design's "Decisions" section (1–5) stands. The open questions (design
-"Open questions") are not answered yet; record the user's answers here before
-task 1 starts.
+The design's "Decisions" section (1–5) stands. The user took the
+recommended answer to all five open questions on 2026-11-04 ("Do
+recommended on all and continue"):
+
+- **Connectors (Open question 1):** staircases (straight and switchback) in
+  this step; bridges as a later task in the step (task 11) after the first
+  look at the stairs; one-way drops out.
+- **Stair collision (Open question 2):** real treads and risers are both the
+  look and the collision (risers ≤ 2.5 u, which the walk agent and the client
+  climb).
+- **What drives stacking (Open question 3):** the rules' vertical relations,
+  scaled by the existing Verticality control (`flat` / `moderate` /
+  `dramatic`); no Levels control.
+- **Outdoor dungeons (Open question 4):** multi-level, the floor limit
+  following Verticality, at most the Levels the hill holds.
+- **Direction (Open question 5):** up and down from the entrance (towers and
+  cellars both).
 
 ## Follow-ups
 

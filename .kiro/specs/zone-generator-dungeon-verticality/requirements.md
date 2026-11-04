@@ -1,9 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 7, DRAFT: open questions not answered yet.** Written
-> 2026-11-04 at master `8edf1df`. The design's open questions need the user's
-> answers before any task starts (`design.md` "Open questions"; answers go in
-> `archive.md` "Decisions"). Task index: `tasks.md` (card format, 15 tasks).
+> **STATUS: roadmap step 7, ready.** Written 2026-11-04 at master `8edf1df`;
+> the user took the recommended answer to every open question the same day
+> (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 15 tasks).
 
 ## Introduction
 
