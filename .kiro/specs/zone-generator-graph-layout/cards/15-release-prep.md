@@ -14,3 +14,4 @@ Index entry: `tasks.md` task 15. Requirements 8.4, exit criteria 1–2.
 ## Pitfalls
 
 ## Result
+✔ 48686eb · 1220 passed (thorough)
