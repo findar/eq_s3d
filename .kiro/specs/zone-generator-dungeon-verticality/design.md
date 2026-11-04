@@ -68,12 +68,108 @@ Measured at `8edf1df`.
    Levels need roughly two rooms plus a Slab (~180 u): the floor limit must
    go deeper for multi-level outdoor dungeons, which also answers step 5's
    follow-up that the Verticality control is ignored there.
-7. **Stock vertical anatomy: task 1.** The survey (extending step 6's
-   `scripts/dungeon_topology_survey.py` walk) reports vertical span, level
-   count, Stacked_Share, level-to-level height and stair dimensions for the
-   stock dungeons, and fills this finding. Its numbers set the Level_Height,
-   the Riser_Cap, the tread depth, the rules' vertical weights and the
-   bands of Req 6.
+7. **Stock vertical anatomy (task 1).**
+   `scripts/dungeon_vertical_survey.py --eq-path F:\everquest_rof2` reuses
+   step 6's walk (floor-wound WLD faces on the 4 u layered raster, the
+   largest piece the agent walks). A level is a floor-height cluster holding
+   at least 10 % of the floor area (the count at 5 % is in brackets).
+   Stacked means another walked floor more than 12 u (`STACK_GAP`) above in
+   the same column. Gap is the distance to that floor (p10/50/90). Headroom
+   and slab split the gap at the first ceiling face over the lower floor
+   (p50). A connector is floor with a grade of at least 0.35 that rises at
+   least 12 u. A stair is a connector whose flat faces form 3 or more
+   distinct treads. Going is the run per riser, landings included. Water is
+   the share of the walked floor under a passable WLD face (water or lava
+   plane). Dropped is the floor-wound area outside the walked piece, with
+   the share of it that lies under a passable face.
+
+   | zone | floor k u² | span p10–p90 | levels | Stacked | gap | headroom / slab | steepest (grade) | stairs: n, riser, going | water; dropped (wet) |
+   |---|---|---|---|---|---|---|---|---|---|
+   | befallen | 291 | 57 | 3 [3] | 11 % | 17/28/40 | 16 / 13 | 0.91 | 3, 1.0, 2.3 | 0 %; 3 k |
+   | najena | 274 | 28 | 1 [1] | 4 % | 13/28/29 | 14 / 14 | 0.76 | 1, 1.0, 8.2 | 3 %; 3 k |
+   | permafrost | 497 | 46 | 2 [2] | 8 % | 14/42/56 | 14 / 28 | 1.00 | 0 | 0 %; 177 k (0 %) |
+   | sebilis | 508 | 88 | 2 [2] | 2 % | 14/18/27 | 16 / 2 | 1.18 | 14, 1.0, 2.0 | 1 %; 531 k (20 %) |
+   | chardok | 878 | 351 | 2 [5] | 13 % | 20/157/358 | 30 / 83 | 0.99 | 9, 2.0, 3.2 | 1 %; 118 k (37 %) |
+   | blackburrow | 522 | 171 | 4 [4] | 34 % | 24/59/148 | 42 / 19 | 0.99 | 1 (rock ledges, 5.0) | 19 %; 70 k (3 %) |
+   | runnyeye | 402 | 132 | 4 [4] | 46 % | 23/46/86 | 12 / 26 | 0.71 | 2, 1.0, 1.8 | 10 %; 66 k (93 %) |
+   | guktop | 272 | 84 | 2 [2] | 1 % | 14/28/28 | 14 / 14 | 0.88 | 2, 1.0, 3.1 | 10 %; 460 k (38 %) |
+   | gukbottom | 452 | 96 | 2 [2] | 6 % | 15/28/56 | 14 / 14 | 1.03 | 8, 1.0, 1.9 | 2 %; 273 k (45 %) |
+   | *unrest* | 557 | 18 | 1 [2] | 17 % | 14/22/36 | 14 / 6 | 0.94 | 9, 1.0, 1.6 | 1 %; 117 k (13 %) |
+
+   Every zone's side view (height against its longer plan axis, coloured by
+   level) was read by eye. **Unrest is excluded:** its outdoor yard is most
+   of the floor at one height, so its level count and span describe the
+   yard. The house really is four storeys (cellar at −14, then 0, 16 and
+   44 u), but each storey holds under a tenth of the floor, and the roof top
+   walks as floor. The other nine read right. Blackburrow and Runnyeye are
+   stacked warrens of four levels each. Befallen has three tiers about 28 u
+   apart. Permafrost has two, 42 u apart. Sebilis, Chardok and the Guks
+   mostly descend and stack little. Najena's lower tiers (−14, −28, −45 u)
+   each hold under 5 %, so it counts as one level.
+
+   **Water.** Floor under shallow water is walked and counts: Blackburrow's
+   stream (19 % of its floor) and some of Runnyeye's and Guktop's halls
+   (10 % each). Floor under deep water is reached only by swimming, so it
+   drops out. That removes Runnyeye's pool (93 % of its dropped floor is
+   wet), part of Chardok's moat, and Guk's flooded halls: Guktop drops
+   1.7 times the floor it keeps, Gukbottom 0.6 times, and about 40 % of that
+   lies under water. Sebilis drops more than it keeps, but only 20 % of that
+   is wet. "Dropped" is an upper bound: it also holds unreached ledges and
+   wall tops, and the wet test (a passable face up to 80 u above) can't tell
+   water from other passable faces. So the numbers for Sebilis and the two
+   Guks describe their dry parts, and with the swim-only halls their
+   stacking could be higher. They stay in the bands. Leaving all three out
+   would give Stacked_Share 0.06–0.40 and a level count of 1.5–4.0.
+
+   **Bands for Req 6** (p10–p90 over the nine kept zones):
+   - Stacked_Share **0.02–0.36**;
+   - level count **1.8–4.0**, i.e. 2–4 levels, with Najena's 1 as the low
+     tail;
+   - span p10–p90 **42–207 u**, or **1.1–3.7** stock level-to-level gaps
+     (span divided by the zone's gap p50).
+   Stock floors stack much tighter than our rooms (below), so a built
+   dungeon's span should be checked in Level_Heights against the 1.1–3.7
+   band. The span in units only holds at stock scale.
+
+   **Starting values.**
+   - **Slab = 14 u.** This is the median of the zones' slab p50s (band
+     11–39 u). Najena, Guktop and Gukbottom are exactly 14. Sebilis's is
+     2 u: there is almost nothing between its stacked floors.
+   - **Level_Height = the tallest lower room overlapped + Slab.** For our
+     dungeon rooms (0.4 × the measured 303 u ceiling = 121 u) that is about
+     135 u. For outdoor dungeon rooms (80 u) it is 94 u. The stock levels
+     are much tighter: floor to floor over a stacked spot is 28 u at the
+     median (zone p50s 18–157 u, band 26–79 u), and level centres sit
+     28–70 u apart. The stock headroom where floors stack is only 14 u at
+     the median, so in stock dungeons it is corridors and low rooms that
+     stack, not tall halls. Our rooms are about 4 times that tall, so our
+     Level_Height cannot follow the stock 28 u. A lower stacking room (a
+     stair hall or corridor-height room under another) is how to get
+     closer, and is left as a follow-up.
+   - **Riser_Cap = 2.0 u.** Stock stair risers are 1.0 u at p10 and p50
+     and 2.0 u at p90, over 40 stairs. Every Chardok stair uses 2.0 u; the
+     rest use 1.0 u. In Sebilis and Gukbottom, for example, 14 u-wide
+     treads are 1 u deep, so the stairs climb at 45°. 2.0 u is the stock
+     maximum and sits under the design's 2.5 u start and the agent's 3 u
+     step-up. It also halves the tread count against stock's 1 u. The one
+     coarser "stair" (Blackburrow, 4–6 u) is flat rock ledges on a slope,
+     not a built stair.
+   - **Tread depth = 3.0 u.** Stock going is 2.3 u at p50 (zone p50s
+     1.6–3.2 u, with landings), and stock stairs climb at a grade of 0.63–0.70
+     at the zone p50s (32–35°), up to 1.18. A 3 u tread under 2 u risers is
+     a grade of 0.67 (34°), the stock median. The design's 4 u start would
+     give 0.5, the grade of our ramps.
+   - **Steep ramps.** Connectors that aren't stairs reach grades of
+     0.84–1.0 (40–45°) in Permafrost, Blackburrow and Chardok, but only over
+     short rises (13–27 u). The p50 rise of a stock connector is 15–28 u.
+     Our ramps stay at `max_grade` 0.5. Stairs take the steep climbs.
+
+   **Not verified:** the walk is the agent's, not the client's (the agent
+   steps up to 3 u; the client may climb more). A floor-wound ceiling that
+   joins the walked piece would count as stacked floor; the side views show
+   none outside Unrest's roof. Tread grouping can pick up flat floor beside a
+   stair, which is why riser maxima reach 4–12 u; the p50s are robust. None
+   of this has been checked in the client.
 
 ## Levels
 
