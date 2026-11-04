@@ -50,9 +50,21 @@ def test_surface_is_the_ter_and_footprint_the_hill(seed):
         assert float(env.top_at(x, y)) == pytest.approx(float(env.surface(x, y)) - od.ROCK_COVER)
 
     assert env.rock_cover == od.ROCK_COVER
-    assert env.centre == pytest.approx((cx, cy), abs=1e-6)
+    # The footprint is the hill's disc (centre and radius from the Landform)
+    # clipped to the bowl's interior: every vertex is on the circle inside
+    # the interior, or on a clip line inside the circle, and no vertex lies
+    # in a boundary strip (graph-layout task 12: a room under the map's edge
+    # reads to the bowl gate as the flood escaping).
+    x0, y0, x1, y1 = od.bowl_interior(landscape_for(spec))
+    on_clip = 0
     for x, y in env.footprint:
-        assert math.hypot(x - cx, y - cy) == pytest.approx(reach)
+        assert x0 - 1e-6 <= x <= x1 + 1e-6 and y0 - 1e-6 <= y <= y1 + 1e-6
+        d = math.hypot(x - cx, y - cy)
+        clipped = min(abs(x - x0), abs(x - x1), abs(y - y0), abs(y - y1)) < 1e-6
+        assert d == pytest.approx(reach) or (clipped and d < reach + 1e-6), (x, y)
+        on_clip += clipped and d < reach - 1e-6
+    # The default hill reaches past one side's strip on these seeds.
+    assert on_clip >= 2
     fx, fy = od.approach_foot(lf)
     assert env.floor_limit == pytest.approx(float(env.surface(fx, fy)) - od.FLOOR_DEPTH)
     # The hill stands over its foot: there is a room's height of band at its middle.
@@ -76,12 +88,20 @@ def test_default_room_count_fits_every_sampled_seed():
             assert LayoutGenerator.fits(layout, env)
 
 
-@pytest.mark.parametrize("seed", [0, 3, 6, 7, 13])
-def test_themed_dungeon_shrinks_rooms_to_plan(seed):
+@pytest.mark.parametrize("seed", [1, 2, 9, 10, 12])
+def test_themed_dungeon_shrinks_rooms_to_plan(seed, monkeypatch):
     """A fortress's room types and climax outgrow the Envelope's sizing; these
-    seeds failed to plan (rooms missed the hill, or the sunk entrance room got
-    no Tunnel) until rooms were shrunk to a size that plans. Every room asked
+    seeds fail to plan (rooms miss the hill, or the sunk entrance room gets
+    no Tunnel) unless rooms are shrunk to a size that plans. Every room asked
     for is kept, the Tunnel opens into the entrance room."""
+    with monkeypatch.context() as m:
+        m.setattr(od, "FIT_SHRINKS", 0)
+        try:
+            unshrunk = od.outdoor_dungeon_spec("fort", seed, room_count=4,
+                                               dungeon_theme="fortress")
+        except od.PLAN_ERRORS:
+            unshrunk = None
+        assert unshrunk is None or len(unshrunk.rooms) < 4, "seed plans without shrinking"
     spec = od.outdoor_dungeon_spec("fort", seed, room_count=4, dungeon_theme="fortress")
     assert len(spec.rooms) == 4
     data = spec.wilderness[od.DUNGEON_KEY]

@@ -60,11 +60,13 @@ GOLDENS = {
         dict(zone_type="wilderness"), 4,
         "a948f132378258b14e6606cc06faf248f712cca2b7317e627ce5dda6c56fcc62",
         "a2e1c432fcfa542dee2f319204dfff949655736144e41a2fb7f90a59b7ec55a4"),
-    # Envelope-confined dungeon under a hill, with a lock.
+    # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
+    # deliberately, by graph-layout task 12: the Envelope is now the hill's
+    # disc clipped to the bowl's interior (no room under the map's edge).
     "outdoor_dungeon": (
         dict(zone_type="outdoor_dungeon", room_count=5, locks=1), 3,
-        "67d927b8b9d08cff44ca8b102b5fd71bfdd85c6d861128be85863ed34b0ea10a",
-        "956532446854e9f8198d782d77dbfa9ad3827d9b394f0372e5804caa4ef5abee"),
+        "13d6b5aebbb9d5588e93710e1a56a9e70e83f55d96d20d5f70b922218c4a8f27",
+        "3f157d1a9423443fd57bfb1cbb0d7e06c353a3df7defc40647f91001c093b5ee"),
 }
 
 
