@@ -187,11 +187,14 @@ def test_temple_builds_apply_nave_and_leave_the_base_alone(classic):
     temple = load_for_theme(RULES, "temple")
     naves = 0
     for seed in range(10):
-        for n in (10, 15, 20, 25, 30):
+        # From 7 rooms: the nave adds 3 to the entrance, the deep end and the
+        # main path, so a smaller temple has no room for it (task 14 found the
+        # nave missing below 10 rooms when its stage share rounded to 0).
+        for n in (7, 8, 9, 10, 15, 20, 25, 30):
             res = grow(temple, n, _seed(seed, n), BuildContext(theme="temple", race_scale=1.0))
             _g3(res.graph, n)
             naves += any(a.rule == "nave" for a in res.applied)
-    assert naves == 50, f"nave in only {naves} of 50 temple builds of 10+ rooms"
+    assert naves == 80, f"nave in only {naves} of 80 temple builds of 7+ rooms"
     assert classic == before
     assert load_rule_set(BASE) == before
     assert BASE.read_bytes() == before_bytes

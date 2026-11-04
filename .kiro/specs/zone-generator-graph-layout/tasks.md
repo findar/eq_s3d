@@ -101,10 +101,10 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Card: [cards/13-human-first-look.md](cards/13-human-first-look.md)
   - Type: human · Depends: 7, 11, 12, 18
 
-- [ ] 14. Tune from the first look
+- [x] 14. Tune from the first look
   - Card: [cards/14-tuning.md](cards/14-tuning.md)
   - Type: agent · Size: S · Depends: 13
-  - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, tests/test_server.py, tests/test_hygiene.py (allowlist), tests/test_graph_layout_controls.py
+  - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, tests/test_server.py, tests/test_hygiene.py (allowlist), tests/test_graph_layout_controls.py, rules/topology/layers/temple.toml, tests/test_ruleset_classic_eq.py
 
 - [ ] 15. Acceptance section, thorough run, timing
   - Card: [cards/15-release-prep.md](cards/15-release-prep.md)

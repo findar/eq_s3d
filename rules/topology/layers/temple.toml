@@ -40,7 +40,7 @@ reattach = { x = ["n", "x"] }
 after = "Main path"
 stage = "Nave"
 apply = { nave = 1 }
-share = 0.05
+share = 0.1        # 0.1 so round(share x n) >= 1 from 5 rooms: a nave in every temple from 7 rooms (it adds 3; below that it cannot fit)
 
 # Add weight to a stage of the base recipe, by the stage's name: bigger
 # temples sometimes get a second nave among the side rooms. It competes with
