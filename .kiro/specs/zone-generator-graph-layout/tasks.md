@@ -114,7 +114,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
 
 - [ ] 16. HUMAN: graph layout acceptance pass
   - Card: [cards/16-human-acceptance.md](cards/16-human-acceptance.md)
-  - Type: human · Depends: 15, 20
+  - Type: human · Depends: 15, 20, 21
 
 - [ ] 17. Close step 6
   - Card: [cards/17-close.md](cards/17-close.md)
@@ -138,3 +138,9 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Type: agent · Size: M · Depends: 15
   - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/semantics.py, rules/topology/classic_eq.toml, tests/test_topology_embed.py, tests/test_ruleset_classic_eq.py, docs/ACCEPTANCE.md, tests/test_graph_layout_plan.py, docs/TOPOLOGY_RULES.md, .kiro/specs/zone-generator-graph-layout/design.md (great_hall example, Size classes; widened by the lead)
   - Reqs: 6.1, 6.4
+
+- [ ] 21. Graph becomes the default layout
+  - Card: [cards/21-graph-default.md](cards/21-graph-default.md)
+  - Type: agent · Size: M · Depends: 20
+  - Owns: ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, docs/ACCEPTANCE.md, docs/TOPOLOGY_RULES.md, tests/ (tests that relied on the classic default, made explicit)
+  - Reqs: 7.1, 7.3

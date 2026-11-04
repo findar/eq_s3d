@@ -2,7 +2,7 @@
 
 > **STATUS: roadmap step 6, ready.** Written 2026-11-03 at master `67e5b69`;
 > the user settled the open questions the same day (`archive.md`
-> "Decisions"). Task index: `tasks.md` (card format, 20 tasks).
+> "Decisions"). Task index: `tasks.md` (card format, 21 tasks).
 
 ## Introduction
 
