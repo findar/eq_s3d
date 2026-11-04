@@ -385,7 +385,8 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
     """Validate ``controls.layout`` / ``controls.rule_set`` (graph-layout
     Req 7.1) in place, before any build or write.
 
-    Absent or ``null`` -> the plan default (classic, the theme's set). A value
+    Absent or ``null`` -> the plan default (graph on a dungeon / outdoor
+    dungeon since task 21, the theme's set; classic, ignored, elsewhere). A value
     that isn't one of ``VALID_LAYOUTS`` / ``available_rule_sets()`` is a 400
     naming the allowed values. Asking for a graph layout or a rule set on a
     zone type that doesn't take them (not dungeon or outdoor_dungeon) is a
@@ -648,6 +649,12 @@ def generate(req: GenerateRequest):
         if not is_enabled(plan.zone_type):
             planned_zone_type = plan.zone_type
             plan.zone_type = DEFAULT_ZONE_TYPE
+            # The plan's layout was resolved for the planned type; re-resolve
+            # it for the substitute so it gets the new-request default too
+            # (a prompt plan names no layout, graph-layout task 21).
+            if planned_zone_type not in LAYOUT_ZONE_TYPES:
+                plan.layout = ""
+                plan.validate()
             warnings.append(
                 f"zone_type_substituted:{planned_zone_type}->{DEFAULT_ZONE_TYPE}"
             )

@@ -170,8 +170,9 @@ def cmd_generate(args) -> None:
         "verticality": args.verticality,
         "locks": args.locks,
     }
-    # The layout engine (graph-layout Req 7.1): only named when given, so a
-    # run without them builds the plan it always did.
+    # The layout engine (graph-layout Req 7.1): only named when given; a run
+    # without ``--layout`` takes the plan default (graph on a dungeon /
+    # outdoor dungeon since task 21; ``--layout classic`` for TinyKeep).
     for key in ("layout", "rule_set"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
@@ -296,8 +297,8 @@ def main(argv: list[str] | None = None) -> None:
                         "(default normal)")
     g.add_argument("--layout", type=_layout_arg, default=None,
                    metavar="{" + ",".join(VALID_LAYOUTS) + "}",
-                   help="Layout engine for dungeon / outdoor_dungeon: classic "
-                        "(TinyKeep, the default) or graph (rule-grown)")
+                   help="Layout engine for dungeon / outdoor_dungeon: graph "
+                        "(rule-grown, the default) or classic (TinyKeep)")
     g.add_argument("--rule-set", dest="rule_set", type=_rule_set_arg, default=None,
                    help="Graph layout base rule set (" + ", ".join(available_rule_sets())
                         + "); default: the dungeon theme's")

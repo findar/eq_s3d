@@ -45,8 +45,17 @@ VALID_ELEMENTAL_TINTS = ["lava", "ice", "water"]
 # Layout engine (graph-layout Req 7): ``classic`` is the TinyKeep layout,
 # ``graph`` grows the room graph by a rule set. Only these zone types take it;
 # every other type ignores the two fields.
+#
+# Defaults (graph-layout task 21, decision 26: "graph should be the default
+# going forward"). A NEW request that doesn't name a layout gets
+# ``DEFAULT_LAYOUT`` (graph) on a dungeon / outdoor dungeon; other zone types
+# resolve to ``classic``, which they ignore, so their plans are unchanged. A
+# plan SAVED before step 6 has no ``layout`` key and was built classic, so
+# ``ZonePlan.from_saved`` reads a missing key as ``LEGACY_LAYOUT`` (classic):
+# the same saved plan and pinned seed keep rebuilding the same zone.
 VALID_LAYOUTS = ["classic", "graph"]
-DEFAULT_LAYOUT = "classic"
+DEFAULT_LAYOUT = "graph"
+LEGACY_LAYOUT = "classic"
 LAYOUT_ZONE_TYPES = ("dungeon", "outdoor_dungeon")
 
 # The base rule sets ship as rules/topology/<name>.toml (themes.toml is the
@@ -97,9 +106,11 @@ class ZonePlan:
     elemental_tint: str = ""         # from VALID_ELEMENTAL_TINTS ("" = default)
 
     # Layout engine (dungeon / outdoor_dungeon only; other types ignore it).
+    # "" means "not chosen": ``validate()`` resolves it to ``DEFAULT_LAYOUT``
+    # (graph) on a dungeon / outdoor dungeon and to ``classic`` elsewhere.
     # ``rule_set`` "" takes the set from the dungeon theme (themes.toml); a
     # base set name picks that set (the theme's layers still apply if they fit).
-    layout: str = DEFAULT_LAYOUT     # from VALID_LAYOUTS
+    layout: str = ""                 # "" or one of VALID_LAYOUTS
     rule_set: str = ""               # "" or one of available_rule_sets()
 
     # Free-text mood/notes, passed through for texture descriptions / future use
@@ -138,7 +149,13 @@ class ZonePlan:
         # The layout fields are an error when unknown, not a silent fallback
         # (graph-layout design "Selection and the sidecar"): a wrong engine or
         # rule set would otherwise build a different zone than asked for.
-        self.layout = str(self.layout or DEFAULT_LAYOUT).strip().lower()
+        # An unchosen layout takes the new-request default on the zone types
+        # that have an engine; a saved pre-step-6 plan never reaches here
+        # unchosen (``from_saved`` fills in classic first).
+        self.layout = str(self.layout or "").strip().lower()
+        if not self.layout:
+            self.layout = (DEFAULT_LAYOUT if self.zone_type in LAYOUT_ZONE_TYPES
+                           else LEGACY_LAYOUT)
         if self.layout not in VALID_LAYOUTS:
             raise ValueError(f"layout {self.layout!r} is not one of: "
                              f"{', '.join(VALID_LAYOUTS)}")
@@ -163,11 +180,36 @@ class ZonePlan:
         # accepted here and mapped forward; ``zone_type`` wins when both keys
         # are present. Every other unknown key (``target_shortname`` and
         # friends, Req 8.1) is dropped.
+        #
+        # The dict is read as a NEW request (controls, the LLM planner's JSON):
+        # a missing ``layout`` takes the new-request default. Rebuilding a plan
+        # saved before step 6 goes through ``from_saved``, which reads a
+        # missing ``layout`` as classic (graph-layout task 21).
         allowed = {f for f in cls.__dataclass_fields__}
         clean = {k: v for k, v in d.items() if k in allowed and k != "theme"}
         clean.pop("zone_type", None)
         clean["zone_type"] = canonical_zone_type(read_zone_type(d)) or DEFAULT_ZONE_TYPE
         return cls(**clean).validate(warnings)
+
+    @classmethod
+    def from_saved(cls, d: Mapping[str, Any],
+                   warnings: Optional[List[str]] = None) -> "ZonePlan":
+        """A plan dict saved by an earlier build (a response's or sidecar's
+        ``plan``) -> ZonePlan, for rebuilding it.
+
+        ``from_dict`` treats its dict as a NEW request, so a missing ``layout``
+        takes the current default (graph). A plan saved before graph-layout
+        step 6 has no ``layout`` key at all, and every such plan was built
+        with the classic engine (classic was the only one, then the default
+        until task 21). This is the load boundary that knows the dict is old,
+        so here a missing key means ``LEGACY_LAYOUT`` (classic): the saved
+        plan and its seed rebuild the same zone, byte for byte, as before the
+        default changed. A saved plan that names its layout keeps it.
+        """
+        merged: Dict[str, Any] = dict(d)
+        if not merged.get("layout"):
+            merged["layout"] = LEGACY_LAYOUT
+        return cls.from_dict(merged, warnings)
 
     @classmethod
     def from_controls(cls, d: Mapping[str, Any],

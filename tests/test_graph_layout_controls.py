@@ -73,7 +73,7 @@ def test_cli_passes_the_values_to_the_plan(monkeypatch, tmp_path):
     main.main(["generate", "ok", "--layout", "GRAPH", "--rule-set", SETS[-1],
                "--output", str(tmp_path)])
     assert seen["layout"] == "graph" and seen["rule_set"] == SETS[-1]
-    # The default classic is accepted (a no-op) on a type that takes no layout.
+    # Classic is accepted (a no-op) on a type that takes no layout.
     main.main(["generate", "ok", "--zone-type", "city", "--layout", "classic",
                "--output", str(tmp_path)])
     assert seen["layout"] == "classic"
@@ -137,6 +137,44 @@ def test_server_takes_theme_and_race_into_the_plan(client, monkeypatch):
         assert resp.status_code == 418, resp.text
         plan = seen.pop()
         assert (plan.dungeon_theme, plan.dungeon_race) == want, zone_type
+
+
+def test_new_requests_default_to_graph(client, monkeypatch, tmp_path):
+    """Task 21: a request that names no layout plans graph on a dungeon and an
+    outdoor dungeon through the CLI and the server's controls and prompt
+    modes; other zone types stay classic. Stops before any build."""
+    import ai.planner as planner_mod
+    seen = []
+
+    def stop(plan, **kwargs):
+        seen.append(plan)
+        raise app_mod.HTTPException(418, "stop")
+    monkeypatch.setattr(app_mod, "plan_to_spec", stop)
+    monkeypatch.setattr(main, "plan_to_spec", stop)
+    monkeypatch.setattr(main, "generate_validated",
+                        lambda factory, **kw: factory(1))
+    monkeypatch.setattr(tempfile, "tempdir", tempfile.tempdir)
+    planner_mod.set_planner(RulePlanner())
+    try:
+        for zone_type, want in [("dungeon", "graph"), ("outdoor_dungeon", "graph"),
+                                ("city", "classic")]:
+            resp = client.post("/api/generate", json={
+                "mode": "controls", "seed": 1, "controls": {"zone_type": zone_type}})
+            assert resp.status_code == 418, resp.text
+            assert seen.pop().layout == want, ("controls", zone_type)
+            with pytest.raises(app_mod.HTTPException):
+                main.main(["generate", "d", "--zone-type", zone_type,
+                           "--output", str(tmp_path)])
+            assert seen.pop().layout == want, ("cli", zone_type)
+        for prompt, want in [("a dungeon with 6 rooms", "graph"),
+                             ("a cave in a hill where kobolds live", "graph"),
+                             ("a city with 6 rooms", "classic")]:
+            resp = client.post("/api/generate", json={
+                "mode": "prompt", "seed": 1, "prompt": prompt})
+            assert resp.status_code == 418, resp.text
+            assert seen.pop().layout == want, prompt
+    finally:
+        planner_mod.set_planner(None)
 
 
 # --- builds -------------------------------------------------------------------
@@ -310,7 +348,7 @@ def test_graph_entrance_room_holds_a_tunnel_through_the_shrink():
 
 
 def test_classic_outdoor_dungeon_is_unchanged():
-    """No toggle: the outdoor dungeon lays out classic and records no engine
+    """Layout classic: the outdoor dungeon lays out classic and records no engine
     (the builder's sidecar then writes ``{"engine": "classic", ...}``)."""
     spec = plan_to_spec(_plan("e", "classic"), seed=5)
     assert spec.layout is None
