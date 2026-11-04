@@ -14,7 +14,8 @@ attempt seeds (the pipeline draws them from ``random.Random(seed)``), one
 attempt each, and graph's first-attempt pass rate must be no worse than
 classic's. Both rates are printed (``-s`` shows them).
 
-Also here: the same inputs give the same ``.eqg`` (footer aside,
+Also here: a graph build's time against a classic build's (Req 8.4); the
+same inputs give the same ``.eqg`` (footer aside,
 lessons-learned "Two .eqg writes are never byte-identical"), and the two
 outdoor-dungeon bugs the sweep found (a room under the map's edge; the
 Spawn left floating over the Apron).
@@ -24,6 +25,7 @@ the 3D viewer (task 13 does that).
 """
 
 import random
+import time
 
 import pytest
 
@@ -156,3 +158,30 @@ def test_spawn_stands_on_the_dug_apron(tmp_path):
     assert ground < undug - 1.0          # the trench does run under the Spawn
     # (The bowl field and the TER grid differ by a few hundredths.)
     assert sz == pytest.approx(ground, abs=0.1)
+
+
+def _timed_generate(tmp_path, layout, rooms, seed):
+    """Seconds for one full generate on a pinned seed: plan to spec, build,
+    walkability gate, format check, maps and the GLB (the server's path)."""
+    plan = _plan("dungeon", layout, "", "", rooms, name="gltime")
+    t0 = time.perf_counter()
+    vb = generate_validated(lambda s: plan_to_spec(plan, seed=s), zone_type="dungeon",
+                            zone_id="gltime", seed=seed, output_dir=tmp_path,
+                            failure_log=None)
+    elapsed = time.perf_counter() - t0
+    assert vb.validated and vb.attempts == 1, (layout, vb.attempts)
+    return elapsed
+
+
+@pytest.mark.slow
+def test_graph_build_time_within_classic_plus_10s(tmp_path):
+    """Req 8.4: a 14-room graph build takes at most a classic build of the same
+    inputs plus 10 s. The best of two runs each, alternating, so a busy machine
+    (the thorough run's workers) slows both alike rather than failing one."""
+    runs = {"classic": [], "graph": []}
+    for k in range(2):
+        for layout in runs:
+            runs[layout].append(_timed_generate(tmp_path / f"{layout}{k}", layout, 14, 4))
+    classic, graph = min(runs["classic"]), min(runs["graph"])
+    print(f"\n14 rooms, seed 4: classic {classic:.2f} s, graph {graph:.2f} s")
+    assert graph <= classic + 10.0, runs
