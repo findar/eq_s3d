@@ -61,6 +61,41 @@
         <label>Locks
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
+        <!-- Dungeon, city and outdoor dungeon only: the dungeon theme
+             (archetype) and the inhabiting race (a size scale). The values
+             are ai/schema.py VALID_DUNGEON_THEMES / VALID_DUNGEON_RACES,
+             hard-coded here (no route lists them; the server 400s on any
+             other value). "None" sends "", no theme or race. -->
+        <label>Theme
+          <select id="dungeon-theme">
+            <option value="" selected>None</option>
+            <option value="fortress">Fortress</option>
+            <option value="war_city">War city</option>
+            <option value="warren">Warren</option>
+            <option value="temple">Temple</option>
+            <option value="tomb">Tomb</option>
+            <option value="wizard_lair">Wizard lair</option>
+            <option value="corrupted_sanctum">Corrupted sanctum</option>
+            <option value="mine_delve">Mine delve</option>
+            <option value="sunken_ruin">Sunken ruin</option>
+            <option value="lava_forge">Lava forge</option>
+            <option value="ice_keep">Ice keep</option>
+          </select>
+        </label>
+        <label>Race
+          <select id="dungeon-race">
+            <option value="" selected>None</option>
+            <option value="goblin">Goblin</option>
+            <option value="froglok">Froglok</option>
+            <option value="kobold">Kobold</option>
+            <option value="lizardman">Lizardman</option>
+            <option value="gnoll">Gnoll</option>
+            <option value="sarnak">Sarnak</option>
+            <option value="troll">Troll</option>
+            <option value="ogre">Ogre</option>
+            <option value="giant">Giant</option>
+          </select>
+        </label>
         <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
              only) the topology rule set. "From theme" lets the dungeon theme
              pick its base set; the others are the shipped base sets under

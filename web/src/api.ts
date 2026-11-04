@@ -17,6 +17,10 @@ export interface GenerateControls {
   layout?: string;
   // Graph layout only: a base rule set, or "" for the theme's set.
   rule_set?: string;
+  // Dungeon / city / outdoor dungeon only: ai/schema.py VALID_DUNGEON_THEMES /
+  // VALID_DUNGEON_RACES, or "" for none.
+  dungeon_theme?: string;
+  dungeon_race?: string;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:

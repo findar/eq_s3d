@@ -279,7 +279,10 @@ function readSeed(): number | undefined {
 // edges and trees); the rest are the room-graph controls. Mirrors the server's
 // expand path: rooms and locks reach an outdoor dungeon's layout, size and
 // verticality only a dungeon's or city's; layout (and, under it, the rule
-// set) a dungeon's or outdoor dungeon's (server LAYOUT_ZONE_TYPES).
+// set) a dungeon's or outdoor dungeon's (server LAYOUT_ZONE_TYPES); the
+// dungeon theme and race every room-graph type's (server CONTENT_ZONE_TYPES:
+// a city goes through the same semantic layer as a dungeon). Keys are the
+// control's element id.
 const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   rooms: ["dungeon", "city", "outdoor_dungeon"],
   locks: ["dungeon", "city", "outdoor_dungeon"],
@@ -287,6 +290,8 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   verticality: ["dungeon", "city"],
   edges: ["wilderness", "outdoor_dungeon"],
   layout: ["dungeon", "outdoor_dungeon"],
+  "dungeon-theme": ["dungeon", "city", "outdoor_dungeon"],
+  "dungeon-race": ["dungeon", "city", "outdoor_dungeon"],
 };
 
 function usesControl(zoneType: string, control: string): boolean {
@@ -367,6 +372,11 @@ async function doGenerate(mode: Mode) {
     const layout = usesControl(zoneType, "layout") ? readLayout() : undefined;
     const ruleSet = layout === "graph"
       ? ($("rule-set") as HTMLSelectElement).value : undefined;
+    // Theme and race: "" (None) is sent as-is; hidden, they are left out.
+    const dungeonTheme = usesControl(zoneType, "dungeon-theme")
+      ? ($("dungeon-theme") as HTMLSelectElement).value : undefined;
+    const dungeonRace = usesControl(zoneType, "dungeon-race")
+      ? ($("dungeon-race") as HTMLSelectElement).value : undefined;
     params = {
       mode,
       controls: {
@@ -375,6 +385,8 @@ async function doGenerate(mode: Mode) {
         ...(trees ? { trees } : {}),
         ...(layout ? { layout } : {}),
         ...(ruleSet !== undefined ? { rule_set: ruleSet } : {}),
+        ...(dungeonTheme !== undefined ? { dungeon_theme: dungeonTheme } : {}),
+        ...(dungeonRace !== undefined ? { dungeon_race: dungeonRace } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
     };
@@ -384,7 +396,9 @@ async function doGenerate(mode: Mode) {
       (edges ? ` edges=${JSON.stringify(edges)}` : "") +
       (trees ? ` trees=${trees}` : "") +
       (layout ? ` layout=${layout}` : "") +
-      (ruleSet !== undefined ? ` rule_set=${ruleSet || "(theme)"}` : "") + seedNote,
+      (ruleSet !== undefined ? ` rule_set=${ruleSet || "(theme)"}` : "") +
+      (dungeonTheme !== undefined ? ` theme=${dungeonTheme || "(none)"}` : "") +
+      (dungeonRace !== undefined ? ` race=${dungeonRace || "(none)"}` : "") + seedNote,
     );
   }
 
@@ -511,7 +525,7 @@ $("reset-view").addEventListener("click", () => {
 
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees",
-                  "layout", "rule-set"]) {
+                  "layout", "rule-set", "dungeon-theme", "dungeon-race"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });

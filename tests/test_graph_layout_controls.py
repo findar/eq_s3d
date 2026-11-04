@@ -1,6 +1,7 @@
 """Graph-layout task 10: ``--layout`` / ``--rule-set`` on the CLI, ``layout`` /
 ``rule_set`` in the server's controls, and the outdoor dungeon laying out
-with the engine they pick (Req 7.1, 6.6)."""
+with the engine they pick (Req 7.1, 6.6). Task 14: ``dungeon_theme`` /
+``dungeon_race`` in the server's controls."""
 
 import json
 import tempfile
@@ -12,7 +13,9 @@ import main
 import server.app as app_mod
 from ai.expand import plan_to_spec
 from ai.rule_planner import RulePlanner
-from ai.schema import ZonePlan, available_rule_sets
+from ai.schema import (
+    VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, ZonePlan, available_rule_sets,
+)
 import generators.outdoor_dungeon as od
 
 SETS = available_rule_sets()
@@ -93,6 +96,49 @@ def test_server_bad_value_is_a_400(client, controls, named):
     assert not any(app_mod.OUTPUT_DIR.iterdir())     # refused before any write
 
 
+@pytest.mark.parametrize("controls, named", [
+    ({"dungeon_theme": "castle"}, VALID_DUNGEON_THEMES),
+    ({"dungeon_theme": 7}, VALID_DUNGEON_THEMES),
+    ({"dungeon_race": "dragon"}, VALID_DUNGEON_RACES),
+    ({"dungeon_race": ["ogre"]}, VALID_DUNGEON_RACES),
+    ({"zone_type": "wilderness", "dungeon_theme": "temple"},
+     ["dungeon", "city", "outdoor_dungeon"]),
+    ({"zone_type": "wilderness", "dungeon_race": "ogre"},
+     ["dungeon", "city", "outdoor_dungeon"]),
+])
+def test_server_bad_theme_or_race_is_a_400(client, controls, named):
+    resp = client.post("/api/generate", json={
+        "mode": "controls", "controls": {"zone_type": "dungeon", **controls}})
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert all(n in detail for n in named), detail
+    assert not any(app_mod.OUTPUT_DIR.iterdir())     # refused before any write
+
+
+def test_server_takes_theme_and_race_into_the_plan(client, monkeypatch):
+    """The two controls reach the plan normalised; "" (None) and null are
+    none, and are accepted on a wilderness, where they mean nothing."""
+    seen = []
+
+    def stop(plan, **kwargs):        # the plan, then no build
+        seen.append(plan)
+        raise app_mod.HTTPException(418, "stop")
+    monkeypatch.setattr(app_mod, "plan_to_spec", stop)
+    for zone_type, theme, race, want in [
+        ("dungeon", " Temple ", "OGRE", ("temple", "ogre")),
+        ("city", "fortress", "", ("fortress", "")),
+        ("outdoor_dungeon", "", "kobold", ("", "kobold")),
+        ("wilderness", "", None, ("", "")),
+    ]:
+        controls = {"zone_type": zone_type, "dungeon_theme": theme,
+                    "dungeon_race": race}
+        resp = client.post("/api/generate", json={
+            "mode": "controls", "seed": 1, "controls": controls})
+        assert resp.status_code == 418, resp.text
+        plan = seen.pop()
+        assert (plan.dungeon_theme, plan.dungeon_race) == want, zone_type
+
+
 # --- builds -------------------------------------------------------------------
 
 @pytest.mark.slow
@@ -135,6 +181,30 @@ def test_server_builds_a_graph_outdoor_dungeon(client):
     body = resp.json()
     assert body["zone_type"] == "outdoor_dungeon" and body["validated"]
     assert _server_sidecar(body)["layout"]["engine"] == "graph"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("controls, layers", [
+    ({"dungeon_theme": "temple"}, ["temple"]),
+    ({"dungeon_race": "ogre"}, []),
+])
+def test_server_builds_a_themed_graph_dungeon(client, controls, layers):
+    """Task 14: a graph temple dungeon and a graph ogre dungeon from the
+    controls alone (no description); the sidecar shows the theme, the race and
+    the graph engine, and the temple grew with the temple layer."""
+    resp = client.post("/api/generate", json={
+        "mode": "controls", "seed": 3,
+        "controls": {"zone_type": "dungeon", "rooms": 9, "layout": "graph",
+                     "rule_set": "", **controls}})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["validated"] and body["plan"]["layout"] == "graph"
+    side = _server_sidecar(body)
+    content = side["content"]
+    for key, value in controls.items():
+        assert content[key] == value, content
+    assert side["layout"]["engine"] == "graph"
+    assert side["layout"]["layers"] == layers
 
 
 # --- the outdoor dungeon on the step 5 acceptance seeds ------------------------
