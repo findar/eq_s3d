@@ -137,10 +137,13 @@ def test_no_room_under_the_map_edge(tmp_path, seed):
 
 @pytest.mark.slow
 def test_spawn_stands_on_the_dug_apron(tmp_path):
-    """On this seed the Apron's trench runs under the Outdoor_Spawn; the safe
-    point kept the undug ground's height and floated 33 u over the floor
-    (``safe_point`` failed). It now takes the dug ground's height."""
-    spec, result = _outdoor(tmp_path, "temple", 8, 1097127993)
+    """On this seed the Apron's trench runs under the Outdoor_Spawn (46 u
+    deep there); the safe point used to keep the undug ground's height and
+    float over the floor (``safe_point`` failed, first seen on temple seed
+    1097127993). It now takes the dug ground's height. Fortress, not temple:
+    it has no theme layer, so a layer retune can't move the case away (the
+    temple nave fix did once)."""
+    spec, result = _outdoor(tmp_path, "fortress", 8, 2)
     fmt = check_eqg(result.eqg_path, spec)
     assert fmt.passed, fmt.failed_checks
     # The spec is also the host terrain's: its undug TER, then the Apron.
