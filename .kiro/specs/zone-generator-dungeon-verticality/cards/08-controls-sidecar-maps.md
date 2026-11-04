@@ -15,4 +15,4 @@ Verticality shows for graph dungeons and outdoor dungeons in the Controls panel;
 - The frontend build stamps the git hash: build after the final commit, or the page shows a stale-build banner.
 
 ## Result
-✔ edd683a · 1303 passed; browser check pending
+✔ edd683a · 1303 passed; browser check ✔ (Verticality shows for dungeon, city, outdoor dungeon; a graph outdoor dungeon at dramatic builds with the new keys)

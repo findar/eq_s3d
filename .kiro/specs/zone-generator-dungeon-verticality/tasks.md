@@ -70,7 +70,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: generators/outdoor_dungeon.py, generators/envelope.py, tests/test_outdoor_levels.py
   - Reqs: 7
 
-- [ ] 8. Controls, sidecar and maps
+- [x] 8. Controls, sidecar and maps
   - Card: [cards/08-controls-sidecar-maps.md](cards/08-controls-sidecar-maps.md)
   - Type: agent · Size: S · Depends: 5
   - Owns: web/src/main.ts, generators/builder.py, tests/test_level_sidecar_maps.py
