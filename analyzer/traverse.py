@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import math
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
 
@@ -46,6 +46,7 @@ import numpy as np
 
 from core.pfs import PfsArchive
 from core.ter import FLAG_PASSABLE, TerFile
+from generators.geometry import is_auto_stair, stair_layout
 from generators.routing import Rect, corridor_route, route_footprint
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
@@ -1196,6 +1197,12 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         fp_a = _room_footprint(a)
         fp_b = _room_footprint(b)
         include = leg_rects + [fp_a, fp_b]
+        # A planned Switchback climbs in a stairwell beside its carry leg.
+        lay = stair_layout(cor, rooms_by_id)
+        if lay is not None and lay.stairwell is not None:
+            e = agent.adjacency_eps
+            x0, y0, x1, y1 = lay.stairwell
+            include.append((x0 - e, y0 - e, x1 + e, y1 + e))
         # Exclude only the rooms the corridor's centreline GENUINELY cuts through
         # (span > hw) -- the same bar ``_resolve_crossings`` splits on. A room
         # the corridor merely grazes (span <= hw, left unsplit by the layout on
@@ -1265,8 +1272,14 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
     return results
 
 
-def _route_floor_z_at(route, cor: CorridorSpec, x: float, y: float) -> float:
+def _route_floor_z_at(route, cor: CorridorSpec, x: float, y: float,
+                      lay=None) -> float:
     """Expected floor height of ``cor``'s own tube at the XY point ``(x, y)``.
+
+    For a planned stair, ``lay`` (its ``stair_layout``) gives the walk path
+    and the pitch line: the height is the profile at the nearest point of the
+    route walked through the stair (``_walk_path``), so a compact flight's
+    level approaches and a switchback's stairwell read at their real heights.
 
     Mirrors the geometry builder's carry-leg rule (``MeshBuilder._emit_route``):
     the entire rise is confined to leg ``carry`` (defaulting to the longest leg),
@@ -1276,6 +1289,19 @@ def _route_floor_z_at(route, cor: CorridorSpec, x: float, y: float) -> float:
     :func:`_corridor_floor_z` tell this corridor's own floor apart from a second
     corridor crossing its footprint at a different height.
     """
+    if lay is not None and not lay.cramped:
+        pts, cum, s_off = _walk_path(route, lay)
+        best_d, best_s = float("inf"), 0.0
+        for k in range(len(pts) - 1):
+            (ax, ay), (bx, by) = pts[k], pts[k + 1]
+            dx, dy = bx - ax, by - ay
+            seg2 = dx * dx + dy * dy
+            t = 0.0 if seg2 <= 1e-12 else max(0.0, min(1.0, (
+                (x - ax) * dx + (y - ay) * dy) / seg2))
+            d = (x - ax - t * dx) ** 2 + (y - ay - t * dy) ** 2
+            if d < best_d:
+                best_d, best_s = d, cum[k] + t * (cum[k + 1] - cum[k])
+        return float(_profile_z(lay, best_s - s_off))
     wps = route.waypoints
     n_legs = len(wps) - 1
     if n_legs <= 0:
@@ -1347,13 +1373,17 @@ def _corridor_floor_z(surf: WalkSurface, cor: CorridorSpec,
     # the real rooms so the gate measures the geometry that was actually built.
     route = corridor_route(cor, rooms if rooms is not None else {})
     rects = route_footprint(route, hw)
+    lay = stair_layout(cor, rooms if rooms is not None else {})
+    if lay is not None and lay.stairwell is not None:
+        rects = rects + [lay.stairwell]
     faces = _region_faces(surf, rects, [])
     cell = max(agent.adjacency_eps * 4.0, 16.0)
     slack = agent.max_step_up
     buckets: Dict[Tuple[int, int], List[float]] = {}
     for f in faces:
         c = surf.centroids[f]
-        floor_z = _route_floor_z_at(route, cor, float(c[0]), float(c[1]))
+        floor_z = _route_floor_z_at(route, cor, float(c[0]), float(c[1]),
+                                    lay)
         # Only this corridor's own tube: floor (minus a step) up through the
         # clearance (plus a step). Crossing corridors at a separated height fall
         # outside this band and are dropped.
@@ -1461,9 +1491,52 @@ PROFILE_INSET = 4.0
 
 def is_staircase(cor: CorridorSpec) -> bool:
     """True when the builder makes treads and risers for ``cor``: ``steps``
-    > 0 and a height change (``_add_straight_leg``'s own condition)."""
+    > 0 and a height change (``_add_straight_leg``'s own condition), or a
+    planned stair (``steps == AUTO_STAIRS``, ``generators.geometry``)."""
     return bool(cor.steps and cor.steps > 0
-                and abs(cor.to_z - cor.from_z) > 0.01)
+                and abs(cor.to_z - cor.from_z) > 0.01) or is_auto_stair(cor)
+
+
+def _planned(cor: CorridorSpec, rooms):
+    """How the gate judges ``cor``: ``(cor, layout)``. A planned stair gives
+    its ``stair_layout`` (the one the builder built from); a cramped one,
+    built as the hand-count stair stretched over its leg, is judged as that
+    stair (``steps`` = its risers, no layout). Any other corridor comes back
+    as it is, with no layout."""
+    lay = stair_layout(cor, rooms or {})
+    if lay is None:
+        return cor, None
+    if lay.cramped:
+        return replace(cor, steps=lay.plan.risers), None
+    return cor, lay
+
+
+def _walk_path(route, lay):
+    """The route walked through a planned stair: the legs before the carry
+    leg, the stair's ``path``, the legs after. Returns (points, arc lengths,
+    arc length of ``lay.path[0]``)."""
+    wps = list(route.waypoints)
+    k = lay.carry
+    raw = wps[:k + 1] + list(lay.path) + wps[k + 2:]
+    mark = k + 1                       # lay.path[0] in raw
+    pts, off = [], 0
+    for i, p in enumerate(raw):
+        dup = bool(pts) and abs(p[0] - pts[-1][0]) + abs(p[1] - pts[-1][1]) < 1e-9
+        if not dup:
+            pts.append((float(p[0]), float(p[1])))
+        if i == mark:
+            off = len(pts) - 1
+    cum = [0.0]
+    for p, q in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.hypot(q[0] - p[0], q[1] - p[1]))
+    return pts, cum, cum[off]
+
+
+def _profile_z(lay, s):
+    """The planned stair's pitch line at arc length ``s`` along its path
+    (level at from_z before it, at to_z after)."""
+    xs, zs = zip(*lay.profile)
+    return np.interp(s, xs, zs)
 
 
 def bridged_rooms(cor: CorridorSpec, crossed_ids, rooms: Mapping[str, RoomSpec],
@@ -1556,10 +1629,14 @@ def _stair_failures_spec(corr: CorridorSpec, agent: AgentModel,
                          ) -> List[Tuple[str, str]]:
     """The spec-level staircase verdict: (class, detail) per failure."""
     rooms = rooms or {}
+    corr, lay = _planned(corr, rooms)
     route = corridor_route(corr, rooms)
     fl = _flight_of(corr, route)
     dz = abs(corr.to_z - corr.from_z)
-    r = dz / corr.steps
+    # A planned stair: its own riser and tread, every riser on the leg (none
+    # at a doorway), and the ceiling following its pitch line.
+    n = lay.plan.risers if lay is not None else corr.steps
+    r = lay.plan.riser if lay is not None else dz / corr.steps
     out: List[Tuple[str, str]] = []
 
     # Landings: each doorway must meet its room's floor. A room the corridor
@@ -1586,7 +1663,8 @@ def _stair_failures_spec(corr: CorridorSpec, agent: AgentModel,
         jump = off
         touches = (fl.carry == 0) if end == "from" else (fl.carry == fl.n_legs - 1)
         # The builder's last riser stands at the flight's high-coordinate end.
-        riser_here = touches and (fl.up_coord if end == "to" else not fl.up_coord)
+        riser_here = (lay is None and touches
+                      and (fl.up_coord if end == "to" else not fl.up_coord))
         if riser_here:
             jump = off + (fl.b_z - fl.a_z) / corr.steps
         if abs(jump) > agent.max_step_up:
@@ -1598,12 +1676,13 @@ def _stair_failures_spec(corr: CorridorSpec, agent: AgentModel,
         out.append(("riser too tall",
                     f"stair step ~{r:.1f}u exceeds step-up "
                     f"{agent.max_step_up:.1f}u (too tall to climb)"))
-    if corr.steps >= 2 and r >= RISER_MIN:
-        tread = fl.length / corr.steps
+    if n >= 2 and r >= RISER_MIN:
+        tread = lay.plan.tread if lay is not None else fl.length / corr.steps
         if tread < agent.min_tread:
             out.append(("tread too short",
                         f"tread {tread:.2f}u under {agent.min_tread:.1f}u"))
-    headroom = corr.height - (r if fl.b_z < fl.a_z else 0.0)
+    descends = (corr.to_z < corr.from_z) if lay is not None else fl.b_z < fl.a_z
+    headroom = corr.height - (r if descends else 0.0)
     if headroom < agent.player_height:
         out.append(("no headroom",
                     f"{headroom:.1f}u over a tread under player height "
@@ -1687,10 +1766,21 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
     stair = is_staircase(cor)
     kind = "stair" if stair else "bridge"
     hw = cor.width / 2
-    rise = (abs(cor.to_z - cor.from_z) / cor.steps) if stair else 0.0
+    # A planned stair is walked along its own path, against its pitch line.
+    cor, lay = _planned(cor, rooms) if stair else (cor, None)
+    if not stair:
+        rise = 0.0
+    elif lay is not None:
+        rise = lay.plan.riser
+    else:
+        rise = abs(cor.to_z - cor.from_z) / cor.steps
 
     # ---- the path: route waypoints, extended into each room ---------------
-    wps = [np.asarray(p, dtype=np.float64) for p in route.waypoints]
+    if lay is not None:
+        walk_pts, _, s_lay = _walk_path(route, lay)
+        wps = [np.asarray(p, dtype=np.float64) for p in walk_pts]
+    else:
+        wps = [np.asarray(p, dtype=np.float64) for p in route.waypoints]
 
     def _unit(d):
         n = float(np.hypot(d[0], d[1]))
@@ -1719,16 +1809,24 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
         return pts_a[i] + (pts_a[i + 1] - pts_a[i]) * t[:, None]
 
     # Arc position of waypoint k is cum[k + 1] (pts[0] is the room inset).
-    carry = _resolve_carry(route)
-    span = _built_leg(route, carry, hw, abs(cor.to_z - cor.from_z) > 0.01)
-    if span is None:
-        f0 = f1 = float(cum[carry + 1])
+    if lay is not None:
+        # The flights run from the profile's first rise to its last.
+        s0 = float(cum[1]) + s_lay
+        f0 = s0 + lay.profile[1][0]
+        f1 = s0 + lay.profile[-2][0]
     else:
-        f0 = float(cum[carry + 1]) + span[0]
-        f1 = float(cum[carry + 1]) + span[1]
+        carry = _resolve_carry(route)
+        span = _built_leg(route, carry, hw, abs(cor.to_z - cor.from_z) > 0.01)
+        if span is None:
+            f0 = f1 = float(cum[carry + 1])
+        else:
+            f0 = float(cum[carry + 1]) + span[0]
+            f1 = float(cum[carry + 1]) + span[1]
 
     def expected_z(s):
         s = np.asarray(s, dtype=np.float64)
+        if lay is not None:
+            return _profile_z(lay, s - s0)
         if f1 - f0 <= 1e-9:
             return np.where(s <= f0, cor.from_z, cor.to_z)
         t = np.clip((s - f0) / (f1 - f0), 0.0, 1.0)
@@ -1787,7 +1885,9 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
 
     # ---- sample the floor along the path -----------------------------------
     ds = PROFILE_STEP
-    if stair and f1 - f0 > 1e-9:
+    if lay is not None:
+        ds = max(0.01, min(ds, lay.plan.tread / 4))
+    elif stair and f1 - f0 > 1e-9:
         ds = max(0.01, min(ds, (f1 - f0) / cor.steps / 4))
     S = np.linspace(0.0, total, max(2, int(math.ceil(total / ds)) + 1))
     ds = float(S[1] - S[0])
@@ -1994,8 +2094,9 @@ def classify_corridor(corr: CorridorSpec, agent: AgentModel,
     run = math.hypot(corr.to_x - corr.from_x, corr.to_y - corr.from_y)
     if dz < 1e-3:
         return True, "flat"
-    if corr.steps and corr.steps > 0:
-        step = dz / corr.steps
+    if is_staircase(corr):
+        judged, lay = _planned(corr, rooms)
+        step = lay.plan.riser if lay is not None else dz / judged.steps
         failures = _stair_failures_spec(corr, agent, rooms)
         if failures:
             return False, _order(failures, STAIR_FAILURES)

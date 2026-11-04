@@ -31,6 +31,225 @@ MAX_SEG_RISE = 2.5
 
 
 # ---------------------------------------------------------------------------
+# Planned staircases (verticality step 7, Requirement 3)
+# ---------------------------------------------------------------------------
+#
+# A corridor asks for a planned stair with ``steps = AUTO_STAIRS`` (-1): the
+# builder picks the risers itself. ``steps = 0`` (ramp) and ``steps > 0`` (a
+# hand-picked count spread over the carry leg) build exactly as before. The
+# stair constants live here, in one place, set from task 1's survey (design
+# finding 7): over 40 stock stairs risers are 1.0 u median and 2.0 u at p90
+# (Chardok's all 2.0), and 3 u treads under 2 u risers give the stock median
+# grade, 0.67 (34 deg).
+
+# The tallest riser a generated stair uses: under the walk agent's 3 u step-up
+# (archive "Stair collision": real treads and risers are the collision).
+RISER_CAP = 2.0
+# The run of one tread, in world units (over the gate's 2 u minimum).
+TREAD_DEPTH = 3.0
+# The narrowest lane a switchback flight is built at. A carry leg shorter
+# than two lanes can't fold a switchback; it is built as a stretched straight
+# stair (``steps`` = the planned risers), which the gate then names.
+MIN_LANE = 6.0
+# ``CorridorSpec.steps`` value asking for a planned stair.
+AUTO_STAIRS = -1
+
+
+@dataclass(frozen=True)
+class StairPlan:
+    """How a stair climbs ``rise`` on a carry leg of a given length.
+
+    ``risers`` = ceil(rise / RISER_CAP) and ``run`` = risers × tread for a
+    straight stair; when the leg is shorter than that run the stair is a
+    Switchback: two flights of half the rise each (``flight_risers`` risers
+    apiece, so ``risers`` is even) with a flat landing between them.
+    """
+    rise: float          # |dz|
+    risers: int          # all risers of the stair
+    riser: float         # each riser's height (<= the cap)
+    tread: float         # each tread's run
+    run: float           # the straight stair's run: ceil(rise / cap) × tread
+    switchback: bool
+
+    @property
+    def flights(self) -> int:
+        return 2 if self.switchback else 1
+
+    @property
+    def flight_risers(self) -> int:
+        return self.risers // self.flights
+
+    @property
+    def flight_run(self) -> float:
+        return self.flight_risers * self.tread
+
+
+def stair_plan(rise: float, leg_length: float, *, riser_cap: float = RISER_CAP,
+               tread: float = TREAD_DEPTH) -> StairPlan:
+    """The stair for ``rise`` (either sign) on a leg ``leg_length`` long:
+    straight when the leg holds risers × tread, else a Switchback."""
+    rise = abs(rise)
+    n = max(1, int(math.ceil(rise / riser_cap - 1e-9)))
+    run = n * tread
+    if leg_length + 1e-6 >= run:
+        return StairPlan(rise, n, rise / n, tread, run, False)
+    m = int(math.ceil(n / 2))
+    return StairPlan(rise, 2 * m, rise / (2 * m), tread, run, True)
+
+
+def is_auto_stair(cor: CorridorSpec) -> bool:
+    """True when ``cor`` asks for a planned stair and has a rise to climb."""
+    return cor.steps < 0 and abs(cor.to_z - cor.from_z) > 0.01
+
+
+@dataclass(frozen=True)
+class StairLayout:
+    """Where a planned stair sits on its route (``stair_layout``).
+
+    ``start``/``end`` are the carry leg's built span in route order (from_z
+    at ``start``). A straight stair is one flight centred on that span. A
+    Switchback folds into a stairwell box beside the span: two lanes
+    ``lane`` wide side by side along the leg (at its ``placement`` end); the
+    walk turns out of the leg into lane 1, climbs flight 1 away from the leg,
+    crosses the landing, climbs flight 2 back in lane 2 and rejoins the leg.
+    ``side`` is the cross-axis direction (+1/-1) the stairwell lies on, and
+    ``stairwell`` its plan rectangle (x0, y0, x1, y1): the box task 5 keeps
+    clear of rooms. ``path`` is the walk's centreline through the leg, in
+    route order, and ``profile`` the stair's pitch line along it as (arc
+    length from ``path[0]``, z) breakpoints: level, each flight from its first
+    tread's start to its last riser, level. The built floor is within one
+    riser of it everywhere. ``cramped``: the leg can't hold even two lanes,
+    so the stair is built straight with ``plan.risers`` stretched over the leg
+    (its profile is then linear over the leg).
+    """
+    plan: StairPlan
+    carry: int
+    along_x: bool
+    start: Tuple[float, float]
+    end: Tuple[float, float]
+    from_z: float
+    to_z: float
+    lane: float
+    side: int = 0
+    placement: str = ""
+    stairwell: Optional[Tuple[float, float, float, float]] = None
+    path: Tuple[Tuple[float, float], ...] = ()
+    profile: Tuple[Tuple[float, float], ...] = ()
+    cramped: bool = False
+
+
+def stair_layout(cor: CorridorSpec, rooms) -> Optional[StairLayout]:
+    """The planned stair of ``cor`` on its route, or None when ``cor`` isn't
+    a planned stair (``steps`` >= 0, or no rise). ``rooms`` maps room id to
+    RoomSpec, as for ``corridor_route``."""
+    if not is_auto_stair(cor):
+        return None
+    route = corridor_route(cor, rooms)
+    carry = None if route.carry < 0 else route.carry
+    return _layout_stair(list(route.waypoints), list(route.axes), carry,
+                         cor.from_z, cor.to_z, cor.width / 2,
+                         avoid=_room_rects(rooms.values()))
+
+
+def _room_rects(rooms):
+    """Room footprints as (x0, y0, x1, y1): what a stairwell keeps off."""
+    out = []
+    for r in rooms:
+        (x0, y0, _), (x1, y1, _) = r.bounds
+        out.append((x0, y0, x1, y1))
+    return out
+
+
+def _uv_to_xy(along_x: bool, u: float, v: float) -> Tuple[float, float]:
+    """A leg's (along, cross) coordinates to world XY."""
+    return (u, v) if along_x else (v, u)
+
+
+def _uv_rect(along_x, u0, u1, v0, v1):
+    """An (along, cross) rectangle as a world (x0, y0, x1, y1)."""
+    ua, ub = min(u0, u1), max(u0, u1)
+    va, vb = min(v0, v1), max(v0, v1)
+    return (ua, va, ub, vb) if along_x else (va, ua, vb, ub)
+
+
+def _overlap_area(a, b) -> float:
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    return w * h if w > 1e-6 and h > 1e-6 else 0.0
+
+
+def _layout_stair(waypoints, axes, carry, from_z, to_z, hw, avoid=()
+                  ) -> Optional[StairLayout]:
+    """``stair_layout`` on a route's waypoints (``carry`` None = longest).
+    A Switchback's stairwell goes at the end and side of the leg that
+    overlaps least of the route's other legs and the ``avoid`` rectangles
+    (room footprints); the first of start/+, start/-, end/+, end/- on a tie."""
+    zs, carry = MeshBuilder._waypoint_zs(waypoints, carry, from_z, to_z)
+    ends = MeshBuilder._leg_ends(waypoints, carry, hw, zs)
+    if ends is None:
+        return None
+    (sx, sy), (ex, ey) = ends
+    along_x = axes[carry]
+    us, ue = (sx, ex) if along_x else (sy, ey)
+    c = sy if along_x else sx
+    length = abs(ue - us)
+    if length < 1e-6:
+        return None
+    z0, z1 = zs[carry], zs[carry + 1]
+    plan = stair_plan(z1 - z0, length)
+    base = dict(plan=plan, carry=carry, along_x=along_x, start=ends[0],
+                end=ends[1], from_z=z0, to_z=z1)
+    if not plan.switchback:
+        fa = (length - plan.run) / 2
+        return StairLayout(lane=2 * hw, path=(ends[0], ends[1]),
+                           profile=((0.0, z0), (fa, z0), (fa + plan.run, z1),
+                                    (length, z1)), **base)
+    lane = min(2 * hw, length / 2)
+    if lane < MIN_LANE:
+        return StairLayout(lane=lane, path=(ends[0], ends[1]), cramped=True,
+                           profile=((0.0, z0), (length, z1)), **base)
+
+    d = 1.0 if ue > us else -1.0
+    depth = plan.flight_run + lane
+    # The route's other legs (bend squares included) and the rooms: the
+    # stairwell keeps off them where it can.
+    others = list(avoid)
+    for k in range(len(waypoints) - 1):
+        if k == carry:
+            continue
+        (ax, ay), (bx, by) = waypoints[k], waypoints[k + 1]
+        others.append((min(ax, bx) - hw, min(ay, by) - hw,
+                       max(ax, bx) + hw, max(ay, by) + hw))
+    best = None
+    for placement in ("start", "end"):
+        a1 = us if placement == "start" else ue - 2 * d * lane
+        for side in (1, -1):
+            ve = c + side * hw
+            rect = _uv_rect(along_x, a1, a1 + 2 * d * lane, ve, ve + side * depth)
+            cost = sum(_overlap_area(rect, o) for o in others)
+            if best is None or cost < best[0] - 1e-9:
+                best = (cost, placement, side, a1, rect)
+    _, placement, side, a1, rect = best
+    ve = c + side * hw
+    u1 = a1 + d * lane / 2           # lane 1's centre line
+    u2 = a1 + 1.5 * d * lane         # lane 2's
+    vl = ve + side * (plan.flight_run + lane / 2)   # across the landing
+    path = (ends[0], _uv_to_xy(along_x, u1, c), _uv_to_xy(along_x, u1, vl),
+            _uv_to_xy(along_x, u2, vl), _uv_to_xy(along_x, u2, c), ends[1])
+    cum = [0.0]
+    for p, q in zip(path, path[1:]):
+        cum.append(cum[-1] + abs(q[0] - p[0]) + abs(q[1] - p[1]))
+    zm = (z0 + z1) / 2
+    fr = plan.flight_run
+    f1 = cum[1] + hw                 # flight 1 leaves the leg's edge
+    f2 = cum[3] + lane / 2           # flight 2 leaves the landing's edge
+    profile = ((0.0, z0), (f1, z0), (f1 + fr, zm), (f2, zm), (f2 + fr, z1),
+               (cum[-1], z1))
+    return StairLayout(lane=lane, side=side, placement=placement,
+                       stairwell=rect, path=path, profile=profile, **base)
+
+
+# ---------------------------------------------------------------------------
 # Mesh builder
 # ---------------------------------------------------------------------------
 
@@ -258,7 +477,8 @@ class MeshBuilder:
             list(route.waypoints), list(route.axes), carry=z_carry,
             from_z=cor.from_z, to_z=cor.to_z,
             hw=hw, height=cor.height, steps=cor.steps,
-            floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat)
+            floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat,
+            avoid=_room_rects(spec.rooms) if cor.steps < 0 else ())
 
     @staticmethod
     def _seg_len(waypoints, k):
@@ -277,7 +497,7 @@ class MeshBuilder:
         return zs, carry
 
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
-                    steps, floor_mat, wall_mat, ceiling_mat):
+                    steps, floor_mat, wall_mat, ceiling_mat, avoid=()):
         """
         Shared multi-segment corridor builder. `waypoints` is an ordered list of
         (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
@@ -301,6 +521,15 @@ class MeshBuilder:
         zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
 
         for k in range(len(waypoints) - 1):
+            if (steps < 0 and k == carry
+                    and abs(zs[k + 1] - zs[k]) > 0.01):
+                # A planned stair (steps == AUTO_STAIRS) on the carry leg.
+                lay = _layout_stair(waypoints, axes, carry, from_z, to_z, hw,
+                                    avoid)
+                if lay is not None:
+                    self._add_planned_stair(lay, hw, height, floor_mat,
+                                            wall_mat, ceiling_mat)
+                    continue
             ends = self._leg_ends(waypoints, k, hw, zs)
             if ends is None:
                 continue   # the bend squares already cover this short leg
@@ -598,6 +827,184 @@ class MeshBuilder:
                     self.add_quad((c0, p1, lo), (c1, p1, lo),
                                   (c1, p1, hi), (c0, p1, hi),
                                   normal=(0, -1, 0), material=wall_mat)
+
+    # ------------------------------------------------------------------
+    # Planned staircases (steps == AUTO_STAIRS)
+    # ------------------------------------------------------------------
+    #
+    # Built in the carry leg's own (u, v) frame: u along the leg, v across.
+    # Every piece is a flat-floored box rectangle; its ceiling is level or
+    # slopes along one axis (following the flight's pitch line), and it is
+    # walled on the edges listed. Risers are wall quads facing the lower tread.
+
+    # The world side a (u, v) edge maps to: "u0" is the edge at the lower u.
+    _EDGE_SIDE = {True: {"u0": "W", "u1": "E", "v0": "S", "v1": "N"},
+                  False: {"u0": "S", "u1": "N", "v0": "W", "v1": "E"}}
+
+    def _stair_piece(self, along_x, u0, u1, v0, v1, fz, cz, edges,
+                     floor_mat, wall_mat, ceiling_mat):
+        """One flat-floored piece over u0..u1 × v0..v1 at floor height ``fz``.
+        ``cz(u, v)`` is the ceiling height (linear in u or v); ``edges`` the
+        (u, v) edges ("u0", "u1", "v0", "v1") to wall."""
+        ua, ub = min(u0, u1), max(u0, u1)
+        va, vb = min(v0, v1), max(v0, v1)
+        if ub - ua < 1e-6 or vb - va < 1e-6:
+            return
+        x0, y0, x1, y1 = _uv_rect(along_x, ua, ub, va, vb)
+
+        def ceil_at(x, y):
+            return cz(x, y) if along_x else cz(y, x)
+
+        self.add_quad((x0, y0, fz), (x1, y0, fz), (x1, y1, fz), (x0, y1, fz),
+                      normal=(0, 0, 1), material=floor_mat)
+        self.add_quad((x0, y1, ceil_at(x0, y1)), (x1, y1, ceil_at(x1, y1)),
+                      (x1, y0, ceil_at(x1, y0)), (x0, y0, ceil_at(x0, y0)),
+                      normal=(0, 0, -1), material=ceiling_mat)
+        sides = self._EDGE_SIDE[along_x]
+        for edge in edges:
+            side = sides[edge]
+            if side in "SN":
+                y = y0 if side == "S" else y1
+                self._stair_wall(side, y, x0, x1, fz,
+                                 ceil_at(x0, y), ceil_at(x1, y), wall_mat)
+            else:
+                x = x0 if side == "W" else x1
+                self._stair_wall(side, x, y0, y1, fz,
+                                 ceil_at(x, y0), ceil_at(x, y1), wall_mat)
+
+    def _stair_wall(self, side, plane, a, b, lo, hi_a, hi_b, wall_mat):
+        """A wall on side ``side`` of a piece (facing into it), a..b along the
+        side, from ``lo`` up to ``hi_a`` at a and ``hi_b`` at b. Corner order
+        as ``_add_bend_wall``."""
+        if side == "S":
+            self.add_quad((a, plane, lo), (a, plane, hi_a), (b, plane, hi_b),
+                          (b, plane, lo), normal=(0, 1, 0), material=wall_mat)
+        elif side == "N":
+            self.add_quad((b, plane, lo), (b, plane, hi_b), (a, plane, hi_a),
+                          (a, plane, lo), normal=(0, -1, 0), material=wall_mat)
+        elif side == "W":
+            self.add_quad((plane, b, lo), (plane, b, hi_b), (plane, a, hi_a),
+                          (plane, a, lo), normal=(1, 0, 0), material=wall_mat)
+        else:
+            self.add_quad((plane, a, lo), (plane, a, hi_a), (plane, b, hi_b),
+                          (plane, b, lo), normal=(-1, 0, 0), material=wall_mat)
+
+    def _stair_riser(self, along_x, axis, p, a, b, lo, hi, lower_below,
+                     wall_mat):
+        """A riser on the plane ``axis`` = p ("u" or "v"), a..b along the other
+        axis, lo..hi in Z, facing the lower tread: on the low-coordinate side
+        when ``lower_below``."""
+        edge = axis + ("1" if lower_below else "0")
+        side = self._EDGE_SIDE[along_x][edge]
+        self._add_bend_wall(side, p, min(a, b), max(a, b), lo, hi, wall_mat)
+
+    def _stair_flight(self, along_x, axis, s0, d, z0, n, r, height, l0, l1,
+                      floor_mat, wall_mat, ceiling_mat):
+        """A flight of ``n`` treads of TREAD_DEPTH and ``n`` risers of ``r``
+        (signed), starting at position ``s0`` on ``axis`` ("u" runs the flight
+        along the leg, "v" across it) and walking in direction ``d`` (+1/-1).
+        The first tread is at ``z0``; each riser stands at a tread's far end,
+        so the last climbs to z0 + n·r at s0 + d·n·TREAD_DEPTH. The other axis
+        spans l0..l1, walled both sides. The ceiling follows the pitch line,
+        z0 + height at s0 to z0 + n·r + height at the flight's end."""
+        T = TREAD_DEPTH
+        run = n * T
+
+        def cz(u, v):
+            s = (u if axis == "u" else v) - s0
+            t = min(1.0, max(0.0, d * s / run))
+            return z0 + height + n * r * t
+
+        lower_below = (r > 0) == (d > 0)
+        for j in range(n):
+            a, b = s0 + d * j * T, s0 + d * (j + 1) * T
+            if axis == "u":
+                self._stair_piece(along_x, a, b, l0, l1, z0 + j * r, cz,
+                                  ("v0", "v1"), floor_mat, wall_mat,
+                                  ceiling_mat)
+            else:
+                self._stair_piece(along_x, l0, l1, a, b, z0 + j * r, cz,
+                                  ("u0", "u1"), floor_mat, wall_mat,
+                                  ceiling_mat)
+            lo, hi = sorted((z0 + j * r, z0 + (j + 1) * r))
+            self._stair_riser(along_x, axis, b, l0, l1, lo, hi, lower_below,
+                              wall_mat)
+
+    def _add_planned_stair(self, lay: StairLayout, hw, height, floor_mat,
+                           wall_mat, ceiling_mat):
+        """Build a planned stair (``stair_layout``) on its carry leg."""
+        plan = lay.plan
+        along_x = lay.along_x
+        (sx, sy), (ex, ey) = lay.start, lay.end
+        us, ue = (sx, ex) if along_x else (sy, ey)
+        c = sy if along_x else sx
+        z0, z1 = lay.from_z, lay.to_z
+        mats = (floor_mat, wall_mat, ceiling_mat)
+        length = abs(ue - us)
+        d = 1.0 if ue > us else -1.0
+
+        if lay.cramped:
+            # No room for two lanes: the hand-count stair stretched over the
+            # leg (its treads come out short; the gate names it).
+            self._add_straight_leg(sx, sy, z0, ex, ey, z1, along_x, hw,
+                                   height, plan.risers, *mats)
+            return
+
+        def level(z):
+            return lambda u, v: z + height
+
+        if not plan.switchback:
+            # One flight centred on the leg, level approaches either side.
+            n, r = plan.risers, (z1 - z0) / plan.risers
+            fa = us + d * (length - plan.run) / 2
+            fb = fa + d * plan.run
+            self._stair_piece(along_x, us, fa, c - hw, c + hw, z0, level(z0),
+                              ("v0", "v1"), *mats)
+            self._stair_flight(along_x, "u", fa, d, z0, n, r, height,
+                               c - hw, c + hw, *mats)
+            self._stair_piece(along_x, fb, ue, c - hw, c + hw, z1, level(z1),
+                              ("v0", "v1"), *mats)
+            return
+
+        # Switchback: lanes 1 and 2 side by side along the leg, flights out
+        # across it into the stairwell and back, a landing at the far end.
+        m = plan.flight_risers
+        r = (z1 - z0) / (2 * m)
+        zm = z0 + m * r
+        lane, side = lay.lane, lay.side
+        a1 = us if lay.placement == "start" else ue - 2 * d * lane
+        a2 = a1 + d * lane                  # the dividing wall
+        a3 = a1 + 2 * d * lane
+        ve = c + side * hw                  # the leg's edge on the stairwell side
+        vfar = c - side * hw                # its other edge
+        vl = ve + side * plan.flight_run    # the landing's near edge
+        vend = vl + side * lane             # the stairwell's far wall
+
+        # Lane 1's dividing-wall edge: its high-u edge when lane 1 is the
+        # low-u lane (the walk runs toward +u).
+        mid_u = "u1" if d > 0 else "u0"
+        far_v = "v0" if vfar < ve else "v1"
+
+        # The leg: a level approach, the two lane squares, a level approach.
+        if lay.placement == "end":
+            self._stair_piece(along_x, us, a1, c - hw, c + hw, z0, level(z0),
+                              ("v0", "v1"), *mats)
+        self._stair_piece(along_x, a1, a2, c - hw, c + hw, z0, level(z0),
+                          (far_v, mid_u), *mats)
+        self._stair_piece(along_x, a2, a3, c - hw, c + hw, z1, level(z1),
+                          (far_v, "u0" if mid_u == "u1" else "u1"), *mats)
+        if lay.placement == "start":
+            self._stair_piece(along_x, a3, ue, c - hw, c + hw, z1, level(z1),
+                              ("v0", "v1"), *mats)
+        # Flight 1 out across the leg in lane 1; the landing; flight 2 back
+        # in lane 2, its last riser at the leg's edge onto lane 2's square.
+        self._stair_flight(along_x, "v", ve, side, z0, m, r, height, a1, a2,
+                           *mats)
+        far_end = "v1" if side > 0 else "v0"
+        self._stair_piece(along_x, a1, a3, vl, vend, zm, level(zm),
+                          ("u0", "u1", far_end), *mats)
+        self._stair_flight(along_x, "v", vl, -side, zm, m, r, height, a2, a3,
+                           *mats)
 
     # ------------------------------------------------------------------
     # Emit
