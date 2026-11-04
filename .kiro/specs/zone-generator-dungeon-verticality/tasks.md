@@ -112,7 +112,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Type: agent · Size: S · Depends: 14 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-dungeon-verticality/, .kiro/specs/zone-generator/
 
-- [ ] 16. Measure race body heights and stock room sizes
+- [x] 16. Measure race body heights and stock room sizes
   - Card: [cards/16-race-survey.md](cards/16-race-survey.md)
   - Type: agent · Size: M · Depends: —
   - Owns: scripts/race_size_survey.py, .kiro/specs/zone-generator-dungeon-verticality/design.md (finding 8 only)
