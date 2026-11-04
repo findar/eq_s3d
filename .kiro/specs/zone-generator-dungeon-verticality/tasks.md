@@ -34,7 +34,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: scripts/dungeon_vertical_survey.py, .kiro/specs/zone-generator-dungeon-verticality/design.md
   - Reqs: 1
 
-- [ ] 2. The gate learns stairs and bridges
+- [x] 2. The gate learns stairs and bridges
   - Card: [cards/02-gate-connectors.md](cards/02-gate-connectors.md)
   - Type: agent · Size: M · Depends: —
   - Owns: analyzer/traverse.py, tests/test_traverse_connectors.py

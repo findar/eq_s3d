@@ -83,6 +83,20 @@ class AgentModel:
         """normal.z threshold: cos(slope) for a standable face."""
         return math.cos(math.radians(self.walkable_slope_deg))
 
+    @property
+    def min_tread(self) -> float:
+        """Shortest stair tread the agent can stand on: ``adjacency_eps``.
+
+        The walk joins two floor faces whose footprints come within
+        ``adjacency_eps`` of each other in XY. A tread shorter than that lets
+        the tread below it and the tread above it "touch", so the agent model
+        can no longer tell the tread apart from a seam: it is not a place to
+        stand, only a crack between two risers. Tied to the agent so a finer
+        seam tolerance allows finer treads. (Generated stairs start at a 4 u
+        tread, design "Staircases".)
+        """
+        return self.adjacency_eps
+
 
 # ---------------------------------------------------------------------------
 # Bowl-gate parameters (wilderness; defaulted so the dungeon gate is unchanged)
@@ -961,8 +975,17 @@ def _rects_overlap(a: Rect, b: Rect) -> bool:
 
 
 def _region_faces(surf: WalkSurface, include: List[Rect],
-                  exclude: List[Rect]) -> np.ndarray:
-    """Standable faces whose centroid XY is in ``include`` and not in ``exclude``."""
+                  exclude: List[Rect],
+                  exclude_outside_z: Optional[List[Tuple[Rect, float, float]]] = None,
+                  ) -> np.ndarray:
+    """Standable faces whose centroid XY is in ``include`` and not in ``exclude``.
+
+    ``exclude_outside_z`` holds ``(rect, zlo, zhi)`` entries for rooms a Bridge
+    crosses: a face in ``rect`` is dropped unless its centroid Z is within
+    ``[zlo, zhi]`` (the deck's band), so the crossed room's own floor and
+    ceiling leave the region while the deck through its air stays. ``None``
+    (every caller but a bridge) is the historic test.
+    """
     std_idx = np.nonzero(surf.standable)[0]
     if len(std_idx) == 0:
         return std_idx
@@ -971,6 +994,11 @@ def _region_faces(surf: WalkSurface, include: List[Rect],
     for k in range(len(std_idx)):
         x, y = float(cen[k, 0]), float(cen[k, 1])
         if _xy_in_rects(x, y, include) and not _xy_in_rects(x, y, exclude):
+            if exclude_outside_z:
+                z = float(cen[k, 2])
+                if any(_xy_in_rects(x, y, [r]) and not (lo <= z <= hi)
+                       for r, lo, hi in exclude_outside_z):
+                    continue
             keep[k] = True
     return std_idx[keep]
 
@@ -1175,11 +1203,22 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         # own floor where it legitimately runs beside that room.
         crossed_ids = set(_genuinely_crossed_rooms(
             route, hw, spec, cor, agent.adjacency_eps))
+        # A Bridge: a crossed room the corridor passes through at height, in
+        # its air (see ``bridged_rooms``). Only that room's floor and ceiling
+        # leave the region; the deck over it stays. Empty for every corridor a
+        # layout makes today, so the region below is the historic one.
+        bridged = bridged_rooms(cor, crossed_ids, rooms_by_id, agent)
         exclude = [_room_footprint(r) for r in spec.rooms
                    if r.id not in (cor.from_room, cor.to_room)
-                   and r.id in crossed_ids]
+                   and r.id in crossed_ids and r.id not in bridged]
+        deck_band = None
+        if bridged:
+            lo = min(cor.from_z, cor.to_z) - agent.max_step_up
+            hi = max(cor.from_z, cor.to_z) + agent.max_step_up
+            deck_band = [(_room_footprint(rooms_by_id[rid]), lo, hi)
+                         for rid in sorted(bridged)]
 
-        region_faces = _region_faces(surf, include, exclude)
+        region_faces = _region_faces(surf, include, exclude, deck_band)
         faces_set = {int(f) for f in region_faces}
 
         start = {int(f) for f in _faces_in_room(surf, a)} & faces_set
@@ -1203,8 +1242,22 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         # GENUINELY cuts through another room (centreline span > hw -- the same
         # bar the layout splits on, so detection and prevention agree). A mere
         # corner graze is not a crossing and leaves the gap diagnosis in place.
-        if not connected and crossed_ids:
-            reason = f"crosses room {sorted(crossed_ids)[0]}"
+        walled = crossed_ids - bridged
+        if not connected and walled:
+            reason = f"crosses room {sorted(walled)[0]}"
+
+        # A Vertical_Connector (a Staircase, or a Bridge) is walkable only if
+        # its built floor also passes the connector check: risers, treads,
+        # headroom and flush ends, read off the same mesh. The flood above
+        # can't see a tread too short or a ceiling too low. Not run for flat
+        # corridors and ramps, whose verdict stays the flood's alone.
+        if (start and goal and not walled
+                and (is_staircase(cor) or bridged)):
+            chk = check_connector(surf, cor, rooms_by_id, agent,
+                                  route=route, bridged=bridged)
+            if not chk.ok:
+                connected = False
+                reason = chk.reason
 
         results.append(CorridorResult(
             cor.id, cor.from_room, cor.to_room, connected, reason))
@@ -1363,7 +1416,561 @@ def corridor_conflicts(surf: WalkSurface, spec: ZoneSpec,
     return sorted(set(pairs))
 
 
-def classify_corridor(corr: CorridorSpec, agent: AgentModel) -> Tuple[bool, str]:
+# ---------------------------------------------------------------------------
+# Vertical connectors: Staircases and Bridges (verticality step 7, Req 2)
+# ---------------------------------------------------------------------------
+#
+# The flood above joins two floor faces when they touch within
+# ``adjacency_eps`` and their heights agree within ``max_step_up``. That is
+# exactly the riser rule, but it is blind to two things a stair needs: a tread
+# long enough to stand on, and a ceiling high enough to walk under. So a
+# connector gets a second, stricter look at the same mesh: a walk along the
+# corridor's centreline (``check_connector``), reading the floor under each
+# point, every riser it climbs, the tread between risers and the ceiling over
+# the floor. The spec-level oracle (``classify_corridor``) predicts the same
+# verdict from the corridor's numbers; the two are built to agree:
+#
+#   * a riser is a jump in floor height where the floor is discontinuous; the
+#     oracle's riser is ``|to_z - from_z| / steps`` (the builder's).
+#   * a tread is the run between two risers; the oracle's is the built carry
+#     leg's length / ``steps`` (the builder pulls a leg back by half a width at
+#     a bend; ``_built_leg`` mirrors it).
+#   * headroom is the lowest ceiling over the floor; the builder's ceiling
+#     follows the treads, so it is the corridor height, less one riser when
+#     the stair descends along the axis it is built on.
+#   * a landing is where the flight meets flat floor: a room's doorway or a
+#     bend. A break there that isn't the stair's own riser is a gap.
+#
+# The failure classes, in the order a reason lists them. Each detail follows
+# its class name after a colon; several classes are joined with "; ".
+STAIR_FAILURES = ("gap at landing", "riser too tall", "tread too short",
+                  "no headroom", "gap in flight", "too steep")
+BRIDGE_FAILURES = ("gap at bridge end", "gap in bridge deck",
+                   "bridge deck too steep", "no headroom")
+
+# A floor jump smaller than this is a lip, not a riser: it makes no tread.
+RISER_MIN = 0.1
+# A riser at a landing that differs from the stair's own riser by more than
+# this is a landing mismatch, not the stair's riser.
+LANDING_TOL = 0.05
+# Centreline sample spacing (u) for the connector walk; finer for fine treads.
+PROFILE_STEP = 0.1
+# How far the connector walk starts and ends inside each room's floor.
+PROFILE_INSET = 4.0
+
+
+def is_staircase(cor: CorridorSpec) -> bool:
+    """True when the builder makes treads and risers for ``cor``: ``steps``
+    > 0 and a height change (``_add_straight_leg``'s own condition)."""
+    return bool(cor.steps and cor.steps > 0
+                and abs(cor.to_z - cor.from_z) > 0.01)
+
+
+def bridged_rooms(cor: CorridorSpec, crossed_ids, rooms: Mapping[str, RoomSpec],
+                  agent: AgentModel) -> set:
+    """The rooms ``cor`` crosses as a Bridge: through the room's air.
+
+    A crossed room (the route genuinely cuts its footprint) is bridged when
+    the corridor's floor stays at least a player's height above the room's
+    floor and a player's height below its ceiling, all the way: the deck is
+    in the room's volume, clear of its floor (a player under it) and of its
+    ceiling (a player on it). A corridor crossing a room at the room's own
+    floor is the "crosses room" failure, as before.
+    """
+    out = set()
+    lo = min(cor.from_z, cor.to_z)
+    hi = max(cor.from_z, cor.to_z)
+    for rid in crossed_ids:
+        r = rooms.get(rid)
+        if r is None:
+            continue
+        if (lo >= r.floor_z + agent.player_height
+                and hi + agent.player_height <= r.floor_z + r.height):
+            out.add(rid)
+    return out
+
+
+def _resolve_carry(route) -> int:
+    """The leg carrying the rise (the builder's rule: -1 → the longest)."""
+    wps = route.waypoints
+    n = len(wps) - 1
+    if route.carry is not None and route.carry >= 0:
+        return route.carry
+    return max(range(n), key=lambda k: abs(wps[k + 1][0] - wps[k][0])
+               + abs(wps[k + 1][1] - wps[k][1]))
+
+
+def _built_leg(route, k: int, hw: float, rising: bool):
+    """Leg ``k``'s built span as ``(t0, t1)`` distances from its start
+    waypoint, or None. Mirrors ``MeshBuilder._leg_ends``: a leg ending at a
+    bend is pulled back ``hw`` to the bend square; a rising leg too short for
+    that is built whole."""
+    wps = route.waypoints
+    n = len(wps) - 1
+    (x0, y0), (x1, y1) = wps[k], wps[k + 1]
+    length = abs(x1 - x0) + abs(y1 - y0)
+    t0 = hw if k > 0 else 0.0
+    t1 = hw if k < n - 1 else 0.0
+    if length - t0 - t1 <= 1e-6:
+        if length > 1e-6 and rising:
+            return 0.0, length
+        return None
+    return t0, length - t1
+
+
+@dataclass
+class _Flight:
+    """A staircase's flight as the builder makes it."""
+    carry: int
+    n_legs: int
+    length: float          # built carry-leg length
+    up_coord: bool         # the carry leg runs toward higher X/Y in route order
+    a_z: float             # builder's tread-0 height (low-coordinate end)
+    b_z: float             # builder's landing height (high-coordinate end)
+
+
+def _flight_of(cor: CorridorSpec, route) -> _Flight:
+    wps = route.waypoints
+    n = len(wps) - 1
+    carry = _resolve_carry(route)
+    span = _built_leg(route, carry, cor.width / 2,
+                      abs(cor.to_z - cor.from_z) > 0.01)
+    length = 0.0 if span is None else span[1] - span[0]
+    (x0, y0), (x1, y1) = wps[carry], wps[carry + 1]
+    up = (x1 - x0) + (y1 - y0) > 0
+    a_z, b_z = (cor.from_z, cor.to_z) if up else (cor.to_z, cor.from_z)
+    return _Flight(carry, n, length, up, a_z, b_z)
+
+
+def _order(failures: List[Tuple[str, str]], classes) -> str:
+    """One reason string: each class once (its first detail), in ``classes``
+    order."""
+    first: Dict[str, str] = {}
+    for cls, detail in failures:
+        first.setdefault(cls, detail)
+    return "; ".join(f"{c}: {first[c]}" for c in classes if c in first)
+
+
+def _stair_failures_spec(corr: CorridorSpec, agent: AgentModel,
+                         rooms: Optional[Mapping[str, RoomSpec]]
+                         ) -> List[Tuple[str, str]]:
+    """The spec-level staircase verdict: (class, detail) per failure."""
+    rooms = rooms or {}
+    route = corridor_route(corr, rooms)
+    fl = _flight_of(corr, route)
+    dz = abs(corr.to_z - corr.from_z)
+    r = dz / corr.steps
+    out: List[Tuple[str, str]] = []
+
+    # Landings: each doorway must meet its room's floor. A room the corridor
+    # names but whose wall the doorway misses by more than the seam tolerance
+    # is a hole; a floor height off by more than the step-up (after the
+    # stair's own riser, when the flight's top riser is at that door) is a
+    # step nobody climbs.
+    for end in ("from", "to"):
+        room = rooms.get(corr.from_room if end == "from" else corr.to_room)
+        if room is None:
+            continue
+        ex, ey, ez = ((corr.from_x, corr.from_y, corr.from_z) if end == "from"
+                      else (corr.to_x, corr.to_y, corr.to_z))
+        (rx0, ry0, _), (rx1, ry1, _) = room.bounds
+        miss = math.hypot(max(rx0 - ex, 0.0, ex - rx1),
+                          max(ry0 - ey, 0.0, ey - ry1))
+        if miss > agent.adjacency_eps:
+            out.append(("gap at landing",
+                        f"{end} doorway {miss:.1f}u short of {room.id}"))
+            continue
+        off = room.floor_z - ez
+        if abs(off) <= LANDING_TOL:
+            continue
+        jump = off
+        touches = (fl.carry == 0) if end == "from" else (fl.carry == fl.n_legs - 1)
+        # The builder's last riser stands at the flight's high-coordinate end.
+        riser_here = touches and (fl.up_coord if end == "to" else not fl.up_coord)
+        if riser_here:
+            jump = off + (fl.b_z - fl.a_z) / corr.steps
+        if abs(jump) > agent.max_step_up:
+            out.append(("gap at landing",
+                        f"{abs(jump):.1f}u step onto {room.id}'s floor exceeds "
+                        f"step-up {agent.max_step_up:.1f}u"))
+
+    if r > agent.max_step_up:
+        out.append(("riser too tall",
+                    f"stair step ~{r:.1f}u exceeds step-up "
+                    f"{agent.max_step_up:.1f}u (too tall to climb)"))
+    if corr.steps >= 2 and r >= RISER_MIN:
+        tread = fl.length / corr.steps
+        if tread < agent.min_tread:
+            out.append(("tread too short",
+                        f"tread {tread:.2f}u under {agent.min_tread:.1f}u"))
+    headroom = corr.height - (r if fl.b_z < fl.a_z else 0.0)
+    if headroom < agent.player_height:
+        out.append(("no headroom",
+                    f"{headroom:.1f}u over a tread under player height "
+                    f"{agent.player_height:.0f}u"))
+    return out
+
+
+@dataclass
+class ConnectorCheck:
+    """The mesh-level verdict on one Vertical_Connector (``check_connector``).
+
+    ``risers`` are the signed floor jumps the centreline walk climbed, in route
+    order; ``treads`` the runs between consecutive risers on the flight;
+    ``min_headroom`` the lowest ceiling over the corridor's floor (``inf`` when
+    open to the sky). ``reason`` lists each failure class once, in the order
+    of ``STAIR_FAILURES`` / ``BRIDGE_FAILURES``.
+    """
+    corridor_id: str
+    kind: str                      # "stair" | "bridge"
+    ok: bool
+    reason: str = ""
+    risers: List[float] = field(default_factory=list)
+    treads: List[float] = field(default_factory=list)
+    min_headroom: float = math.inf
+
+
+def _bary_z(P: np.ndarray, T: np.ndarray):
+    """Points ``P`` (N, 2) against triangles ``T`` (M, 3, 3): (inside, z),
+    each (N, M) — XY containment (edges inclusive) and the plane height."""
+    ax, ay, az = T[:, 0, 0], T[:, 0, 1], T[:, 0, 2]
+    bx, by, bz = T[:, 1, 0], T[:, 1, 1], T[:, 1, 2]
+    cx, cy, cz = T[:, 2, 0], T[:, 2, 1], T[:, 2, 2]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    ok = np.abs(det) > 1e-12
+    det = np.where(ok, det, 1.0)
+    px = P[:, 0:1]
+    py = P[:, 1:2]
+    l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / det
+    l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / det
+    l3 = 1.0 - l1 - l2
+    tol = 1e-7
+    inside = ok & (l1 >= -tol) & (l2 >= -tol) & (l3 >= -tol)
+    z = l1 * az + l2 * bz + l3 * cz
+    return inside, z
+
+
+def check_connector(surf: WalkSurface, cor: CorridorSpec,
+                    rooms: Mapping[str, RoomSpec], agent: AgentModel, *,
+                    route=None, bridged: Optional[set] = None) -> ConnectorCheck:
+    """Walk a Staircase or Bridge along its centreline on the built mesh.
+
+    The walk runs from ``PROFILE_INSET`` inside the from-room's floor, along
+    the corridor's route, to the same distance inside the to-room. At each
+    point it stands on the floor-wound face (normal up, within the slope cap)
+    nearest the floor it stood on before, among the faces near the height the
+    spec intends there (within one riser plus the step-up: a lower room's
+    floor under a bridge is not this corridor's floor). It records:
+
+    * a **riser** wherever the floor jumps (located exactly by bisection);
+      one taller than the step-up fails. On the flight it is "riser too tall";
+      at a landing, unless it is the stair's own riser, "gap at landing".
+    * a **hole** wherever no floor is underfoot for longer than
+      ``adjacency_eps`` (the walk's seam tolerance): "gap at landing" (or
+      "gap in flight" between two treads; "too steep" when the floor there is
+      a face over the slope cap). For a Bridge, a hole or step before or
+      after the bridged rooms is "gap at bridge end", over them "gap in bridge
+      deck".
+    * the **tread** between consecutive risers on the flight; one shorter than
+      ``agent.min_tread`` is "tread too short".
+    * the **headroom**: the lowest ceiling-wound face over the floor, along the
+      corridor (not inside the rooms); under ``agent.player_height`` is "no
+      headroom".
+
+    Winding is the floor/ceiling test: the box backend winds floors up and
+    ceilings down (the flood's ``|n.z|`` can't tell them apart).
+    """
+    rooms = rooms or {}
+    if route is None:
+        route = corridor_route(cor, rooms)
+    bridged = set(bridged or ())
+    stair = is_staircase(cor)
+    kind = "stair" if stair else "bridge"
+    hw = cor.width / 2
+    rise = (abs(cor.to_z - cor.from_z) / cor.steps) if stair else 0.0
+
+    # ---- the path: route waypoints, extended into each room ---------------
+    wps = [np.asarray(p, dtype=np.float64) for p in route.waypoints]
+
+    def _unit(d):
+        n = float(np.hypot(d[0], d[1]))
+        return d / n if n > 1e-9 else None
+
+    d0 = next((u for u in (_unit(wps[i] - wps[i + 1])
+                           for i in range(len(wps) - 1)) if u is not None), None)
+    d1 = next((u for u in (_unit(wps[i + 1] - wps[i])
+                           for i in reversed(range(len(wps) - 1))) if u is not None),
+              None)
+    if d0 is None or d1 is None:
+        return ConnectorCheck(cor.id, kind, False,
+                              "gap at landing: corridor has no length")
+    pts = [wps[0] + d0 * PROFILE_INSET] + wps + [wps[-1] + d1 * PROFILE_INSET]
+    seg = np.array([float(np.hypot(*(pts[i + 1] - pts[i])))
+                    for i in range(len(pts) - 1)])
+    cum = np.concatenate([[0.0], np.cumsum(seg)])
+    total = float(cum[-1])
+    pts_a = np.array(pts)
+
+    def point_at(s):
+        s = np.atleast_1d(np.asarray(s, dtype=np.float64))
+        i = np.clip(np.searchsorted(cum, s, side="right") - 1, 0, len(seg) - 1)
+        t = np.where(seg[i] > 1e-12, (s - cum[i]) / np.where(seg[i] > 1e-12,
+                                                            seg[i], 1.0), 0.0)
+        return pts_a[i] + (pts_a[i + 1] - pts_a[i]) * t[:, None]
+
+    # Arc position of waypoint k is cum[k + 1] (pts[0] is the room inset).
+    carry = _resolve_carry(route)
+    span = _built_leg(route, carry, hw, abs(cor.to_z - cor.from_z) > 0.01)
+    if span is None:
+        f0 = f1 = float(cum[carry + 1])
+    else:
+        f0 = float(cum[carry + 1]) + span[0]
+        f1 = float(cum[carry + 1]) + span[1]
+
+    def expected_z(s):
+        s = np.asarray(s, dtype=np.float64)
+        if f1 - f0 <= 1e-9:
+            return np.where(s <= f0, cor.from_z, cor.to_z)
+        t = np.clip((s - f0) / (f1 - f0), 0.0, 1.0)
+        return cor.from_z + (cor.to_z - cor.from_z) * t
+
+    band = rise + agent.max_step_up + 1e-6
+    slope_rate = math.tan(math.radians(agent.walkable_slope_deg))
+
+    # ---- the faces near the path -------------------------------------------
+    margin = hw + agent.adjacency_eps + 1.0
+    pmin = pts_a.min(axis=0) - margin
+    pmax = pts_a.max(axis=0) + margin
+    tris_all = surf.verts[surf.faces] if len(surf.faces) else np.zeros((0, 3, 3))
+    if len(tris_all):
+        tmin = tris_all[:, :, :2].min(axis=1)
+        tmax = tris_all[:, :, :2].max(axis=1)
+        near = ((tmax[:, 0] >= pmin[0]) & (tmin[:, 0] <= pmax[0]) &
+                (tmax[:, 1] >= pmin[1]) & (tmin[:, 1] <= pmax[1]))
+    else:
+        near = np.zeros(0, bool)
+    nz = surf.normals[:, 2] if len(surf.faces) else np.zeros(0)
+    floor_m = near & surf.standable & (nz > 1e-9)
+    steep_m = near & ~surf.standable & (nz > 1e-6)
+    ceil_m = near & (nz < -1e-6)
+    T_floor = tris_all[floor_m]
+    T_steep = tris_all[steep_m]
+    T_ceil = tris_all[ceil_m]
+
+    def floors_at(s: float) -> np.ndarray:
+        """Floor heights in the band at arc position ``s``."""
+        if not len(T_floor):
+            return np.zeros(0)
+        P = point_at(s)
+        ins, z = _bary_z(P, T_floor)
+        ze = float(expected_z(s))
+        m = ins[0] & (np.abs(z[0] - ze) <= band)
+        return z[0][m]
+
+    def continues(s: float, s_ref: float, z_ref: float) -> bool:
+        """Is the floor at ``s`` a continuous surface from (s_ref, z_ref)?"""
+        c = floors_at(s)
+        return bool(len(c)) and bool(
+            np.any(np.abs(c - z_ref) <= slope_rate * abs(s - s_ref) + 1e-3))
+
+    def edge(s_in: float, s_out: float, z_ref: float) -> float:
+        """Bisect the edge of the surface holding (s_in, z_ref): ``s_in`` is on
+        it, ``s_out`` is not. Returns the last position still on it."""
+        lo, hi = s_in, s_out
+        for _ in range(40):
+            m = (lo + hi) / 2
+            if continues(m, s_in, z_ref):
+                lo = m
+            else:
+                hi = m
+        return lo
+
+    # ---- sample the floor along the path -----------------------------------
+    ds = PROFILE_STEP
+    if stair and f1 - f0 > 1e-9:
+        ds = max(0.01, min(ds, (f1 - f0) / cor.steps / 4))
+    S = np.linspace(0.0, total, max(2, int(math.ceil(total / ds)) + 1))
+    ds = float(S[1] - S[0])
+    jump_thr = slope_rate * ds + 1e-3
+    zexp = expected_z(S)
+
+    cand: List[np.ndarray] = []
+    steep_at = np.zeros(len(S), bool)
+    chunk = max(1, 2_000_000 // max(1, len(T_floor) + len(T_steep)))
+    for c0 in range(0, len(S), chunk):
+        P = point_at(S[c0:c0 + chunk])
+        ze = zexp[c0:c0 + chunk, None]
+        if len(T_floor):
+            ins, z = _bary_z(P, T_floor)
+            m = ins & (np.abs(z - ze) <= band)
+            cand.extend(z[k][m[k]] for k in range(len(P)))
+        else:
+            cand.extend(np.zeros(0) for _ in range(len(P)))
+        if len(T_steep):
+            ins, z = _bary_z(P, T_steep)
+            steep_at[c0:c0 + chunk] = np.any(
+                ins & (np.abs(z - ze) <= band + agent.player_height), axis=1)
+
+    floor_z = np.full(len(S), np.nan)
+    risers: List[Tuple[float, float, float]] = []  # (pos, signed rise, floor before)
+    breaks: List[Tuple[str, float, float, str]] = []  # (what, s0, s1, detail)
+    prev_k: Optional[int] = None                # last sample with floor
+    hole_k: Optional[int] = None                # first sample of current hole
+    steep_in_hole = False
+    for k in range(len(S)):
+        c = cand[k]
+        if len(c):
+            ref = floor_z[prev_k] if prev_k is not None else float(zexp[k])
+            z = float(c[int(np.argmin(np.abs(c - ref)))])
+        else:
+            z = None
+        if z is None:
+            if hole_k is None:
+                hole_k = k
+                steep_in_hole = False
+            steep_in_hole = steep_in_hole or bool(steep_at[k])
+            continue
+        floor_z[k] = z
+        if prev_k is None:
+            if hole_k is not None:       # no floor where the walk starts
+                right = S[k] if k == 0 else edge(S[k], S[hole_k], z)
+                breaks.append(("hole", 0.0, right,
+                               f"{right:.1f}u without floor"))
+        elif hole_k is not None:
+            zl = float(floor_z[prev_k])
+            left = edge(S[prev_k], S[hole_k], zl)
+            right = edge(S[k], S[k - 1], z)
+            gap = right - left
+            dz = z - zl
+            if gap > agent.adjacency_eps:
+                what = "steep" if steep_in_hole else "hole"
+                breaks.append((what, left, right,
+                               f"{gap:.1f}u without floor"
+                               if what == "hole" else
+                               f"{gap:.1f}u of floor over the "
+                               f"{agent.walkable_slope_deg:.0f}deg cap"))
+            elif abs(dz) >= RISER_MIN:
+                risers.append(((left + right) / 2, dz, zl))
+        else:
+            zl = float(floor_z[prev_k])
+            dz = z - zl
+            if abs(dz) > jump_thr:
+                pos = edge(S[prev_k], S[k], zl)
+                if abs(dz) >= RISER_MIN:
+                    risers.append((pos, dz, zl))
+        prev_k = k
+        hole_k = None
+    if hole_k is not None:                       # no floor where the walk ends
+        left = 0.0 if prev_k is None else edge(S[prev_k], S[hole_k],
+                                               float(floor_z[prev_k]))
+        breaks.append(("hole", left, total, f"{total - left:.1f}u without floor"))
+
+    # ---- headroom along the corridor (not inside the rooms) ----------------
+    min_head = math.inf
+    head_pts = [(float(S[k]), float(floor_z[k])) for k in range(len(S))
+                if not np.isnan(floor_z[k])]
+    for pos, dz, zl in risers:   # both sides of each riser: a tread's ends
+        head_pts.append((pos - 1e-6, zl))
+        head_pts.append((pos + 1e-6, zl + dz))
+    head_pts = [(s, z) for s, z in head_pts
+                if PROFILE_INSET - 1e-9 <= s <= total - PROFILE_INSET + 1e-9]
+    head_at = 0.0
+    if head_pts and len(T_ceil):
+        hs = np.array([p[0] for p in head_pts])
+        hz = np.array([p[1] for p in head_pts])
+        chunk = max(1, 2_000_000 // len(T_ceil))
+        for c0 in range(0, len(hs), chunk):
+            ins, z = _bary_z(point_at(hs[c0:c0 + chunk]), T_ceil)
+            above = ins & (z > hz[c0:c0 + chunk, None] + 1e-6)
+            room = np.where(above, z - hz[c0:c0 + chunk, None], np.inf).min(axis=1)
+            k = int(np.argmin(room))
+            if room[k] < min_head:
+                min_head = float(room[k])
+                head_at = float(hs[c0 + k])
+
+    # ---- verdict -------------------------------------------------------------
+    failures: List[Tuple[str, str]] = []
+    tol = 1e-3
+    step = agent.max_step_up
+    flight_risers = sorted(p for p, _, _ in risers if f0 - tol <= p <= f1 + tol)
+    treads = [float(b - a) for a, b in zip(flight_risers, flight_risers[1:])]
+
+    if stair:
+        for pos, dz, _ in risers:
+            if abs(dz) <= step:
+                continue
+            interior = f0 + tol < pos < f1 - tol
+            own = abs(abs(dz) - rise) <= LANDING_TOL
+            on_flight = f0 - tol <= pos <= f1 + tol
+            if interior or (on_flight and own):
+                failures.append(("riser too tall",
+                                 f"stair step ~{abs(dz):.1f}u exceeds step-up "
+                                 f"{step:.1f}u (too tall to climb)"))
+            else:
+                failures.append(("gap at landing",
+                                 f"{abs(dz):.1f}u step at the landing exceeds "
+                                 f"step-up {step:.1f}u"))
+        for what, s0, s1, detail in breaks:
+            if what == "steep":
+                failures.append(("too steep", detail))
+            elif f0 + tol < s0 and s1 < f1 - tol:
+                failures.append(("gap in flight", detail))
+            else:
+                failures.append(("gap at landing", detail))
+        if treads and min(treads) < agent.min_tread:
+            failures.append(("tread too short",
+                             f"tread {min(treads):.2f}u under "
+                             f"{agent.min_tread:.1f}u"))
+        classes = STAIR_FAILURES
+    else:
+        inb = []
+        for rid in bridged:
+            r = rooms.get(rid)
+            if r is None:
+                continue
+            (x0, y0, _), (x1, y1, _) = r.bounds
+            P = point_at(S)
+            m = ((P[:, 0] >= x0) & (P[:, 0] <= x1) &
+                 (P[:, 1] >= y0) & (P[:, 1] <= y1))
+            if m.any():
+                inb.extend([float(S[m].min()), float(S[m].max())])
+        b0, b1 = (min(inb), max(inb)) if inb else (f0, f1)
+
+        def where(s0, s1):
+            if s1 <= b0:
+                return "gap at bridge end", f" ({cor.from_room} end)"
+            if s0 >= b1:
+                return "gap at bridge end", f" ({cor.to_room} end)"
+            return "gap in bridge deck", ""
+
+        for pos, dz, _ in risers:
+            if abs(dz) > step:
+                cls, at = where(pos, pos)
+                failures.append((cls, f"{abs(dz):.1f}u step exceeds step-up "
+                                      f"{step:.1f}u{at}"))
+        for what, s0, s1, detail in breaks:
+            if what == "steep":
+                failures.append(("bridge deck too steep", detail))
+            else:
+                cls, at = where(s0, s1)
+                failures.append((cls, detail + at))
+        classes = BRIDGE_FAILURES
+
+    if min_head < agent.player_height:
+        failures.append(("no headroom",
+                         f"{min_head:.1f}u over the floor at {head_at:.1f}u "
+                         f"along, under player height "
+                         f"{agent.player_height:.0f}u"))
+
+    reason = _order(failures, classes)
+    return ConnectorCheck(cor.id, kind, not failures, reason,
+                          risers=[dz for _, dz, _ in sorted(risers)],
+                          treads=treads, min_headroom=min_head)
+
+
+def classify_corridor(corr: CorridorSpec, agent: AgentModel,
+                      rooms: Optional[Mapping[str, RoomSpec]] = None
+                      ) -> Tuple[bool, str]:
     """
     Judge a corridor's intended geometry against the agent, from the spec alone.
 
@@ -1372,6 +1979,16 @@ def classify_corridor(corr: CorridorSpec, agent: AgentModel) -> Tuple[bool, str]
     an oversized staircase, we can name that precisely instead of a generic gap.
     A flat/shallow corridor returns walkable=True (so the break is elsewhere —
     a true mesh disconnect).
+
+    A Staircase (``steps > 0``) is judged as the builder will make it, the
+    verdict ``check_connector`` reaches on the built mesh: "riser too tall"
+    (riser over the step-up), "tread too short" (built flight / steps under
+    ``agent.min_tread``), "no headroom" (corridor height, less a riser where the
+    ceiling descends over a tread, under the player's height) and, given
+    ``rooms``, "gap at landing" (a doorway off its room's wall, or a floor step
+    onto the room over the step-up). Each class is listed once, in
+    ``STAIR_FAILURES`` order. Without ``rooms`` the route is planned from the
+    endpoints alone, as the builder does for a corridor naming no rooms.
     """
     dz = abs(corr.to_z - corr.from_z)
     run = math.hypot(corr.to_x - corr.from_x, corr.to_y - corr.from_y)
@@ -1379,9 +1996,9 @@ def classify_corridor(corr: CorridorSpec, agent: AgentModel) -> Tuple[bool, str]
         return True, "flat"
     if corr.steps and corr.steps > 0:
         step = dz / corr.steps
-        if step > agent.max_step_up:
-            return False, (f"stair step ~{step:.1f}u exceeds step-up "
-                           f"{agent.max_step_up:.1f}u (too tall to climb)")
+        failures = _stair_failures_spec(corr, agent, rooms)
+        if failures:
+            return False, _order(failures, STAIR_FAILURES)
         return True, f"stairs ~{step:.1f}u/step"
     # Ramp: slope angle vs the walkable cap.
     slope = math.degrees(math.atan2(dz, max(run, 1e-6)))
@@ -1401,12 +2018,15 @@ def _diagnose_via_graph(room_id: str, spec: ZoneSpec, agent: AgentModel,
     mesh-geometry guess).
     """
     best: Optional[str] = None
+    rooms = {r.id: r for r in spec.rooms}
     for c in spec.corridors:
         ends = {c.from_room, c.to_room}
         if room_id not in ends:
             continue
         other = (ends - {room_id}).pop() if len(ends) == 2 else ""
-        walkable, why = classify_corridor(c, agent)
+        # Rooms only matter to a staircase's landings; a ramp or flat
+        # corridor's verdict is the historic one.
+        walkable, why = classify_corridor(c, agent, rooms)
         if not walkable:
             via = f" (reachable from {other})" if other in reachable_room_ids else ""
             return f"{c.id} {c.from_room}->{c.to_room}: {why}{via}"
