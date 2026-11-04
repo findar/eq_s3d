@@ -97,7 +97,7 @@ The design's open questions were settled on 2026-11-03 (`archive.md`
   - Owns: tests/test_graph_layout_build.py, generators/topology/embed.py, rules/topology/, generators/outdoor_dungeon.py, tests/test_layout_engine.py, tests/test_outdoor_envelope.py, tests/test_entrance.py
   - Reqs: 8
 
-- [ ] 13. HUMAN: first look, classic against graph
+- [x] 13. HUMAN: first look, classic against graph
   - Card: [cards/13-human-first-look.md](cards/13-human-first-look.md)
   - Type: human · Depends: 7, 11, 12, 18
 
