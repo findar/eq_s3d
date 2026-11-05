@@ -92,7 +92,8 @@ def test_stacked_sidecar_records_levels_connectors_and_share(stacked_build):
 def test_unstacked_graph_and_classic_blocks():
     """A graph build on one Level gets the keys (all Level 0, share 0); a
     classic build leaves them out (its block is step 6's)."""
-    graph = plan_to_spec(ZonePlan(name="g1", room_count=6, layout="graph").validate(),
+    graph = plan_to_spec(ZonePlan(name="g1", room_count=6, layout="graph",
+                                  verticality="flat").validate(),
                          seed=3)
     lay = layout_sidecar(graph)
     assert set(lay["levels"].values()) == {0}

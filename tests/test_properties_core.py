@@ -708,8 +708,12 @@ def test_walk_surface_equivalence(zone_type, n, vert, s):
     #    _region_faces) must give identical conflict pairs. A mismatch is a bug
     #    in the continuity flood, not in this property — fix it at the root in
     #    analyzer/traverse.py.
+    #    Both run with the live agent: the frozen reference AgentModel predates
+    #    the stair checks (no min_tread), and a stacked build (task 6: moderate
+    #    and dramatic graph dungeons stack) has stairs. The surfaces are what
+    #    this point compares.
     opt_corr = T.corridor_continuity(opt_surf, spec, agent)
-    ref_corr = T.corridor_continuity(ref_surf, spec, ref_agent)
+    ref_corr = T.corridor_continuity(ref_surf, spec, agent)
     assert _corridor_result_tuples(opt_corr) == _corridor_result_tuples(ref_corr), (
         f"corridor_continuity results differ between optimised and reference "
         f"surface {ctx}:\n"
@@ -720,7 +724,7 @@ def test_walk_surface_equivalence(zone_type, n, vert, s):
     )
 
     opt_conf = T.corridor_conflicts(opt_surf, spec, agent)
-    ref_conf = T.corridor_conflicts(ref_surf, spec, ref_agent)
+    ref_conf = T.corridor_conflicts(ref_surf, spec, agent)
     assert opt_conf == ref_conf, (
         f"corridor_conflicts differ between optimised and reference surface "
         f"{ctx}: opt={opt_conf} ref={ref_conf}"

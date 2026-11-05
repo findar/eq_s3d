@@ -16,6 +16,16 @@ box zones:
 
 `validate(check_corridors=True)` lives in `analyzer/traverse.py` and does not
 look at room footprints; the clearance property below is the guard.
+
+Stacked builds (step 7: moderate and dramatic graph dungeons put rooms on
+several Levels) keep both checks, Level-aware: a corridor may pass over or
+under a room on another storey when the Slab clears it all along (the gate's
+rule, as Job B's ``_z_clear`` and ``analyzer.traverse.stacked_rooms``, here
+judged piece by piece of the route), and a
+build has at most one depth band per Level (bands split only floors that
+stack in plan, so a Level standing clear of the others shares a band). A
+build on one Level is judged exactly as before: one band (the flat cases pin
+it).
 """
 
 from __future__ import annotations
@@ -26,6 +36,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ai.expand import plan_to_spec
+from generators.geometry import MeshBuilder
+from generators.topology.embed import SLAB
 from ai.schema import ZonePlan
 from generators import mapgeom
 from generators.backends import backend_for
@@ -90,22 +102,44 @@ def _inside(a, b):
             and a[2] <= b[2] + TOUCH and a[3] <= b[3] + TOUCH)
 
 
+def _piece_heights(cor, route):
+    """The floor's (lowest, highest) z on each ``route_footprint`` rectangle:
+    one per leg, then one per interior corner."""
+    wps = list(route.waypoints)
+    zs, _ = MeshBuilder._waypoint_zs(wps, None if route.carry < 0 else route.carry,
+                                     cor.from_z, cor.to_z)
+    legs = [(min(zs[k], zs[k + 1]), max(zs[k], zs[k + 1])) for k in range(len(wps) - 1)]
+    return legs + [(zs[i], zs[i]) for i in range(1, len(wps) - 1)]
+
+
+def _slab_clear(cor, lo, hi, room) -> bool:
+    """The corridor's tube (floor to floor + height) lies wholly under the
+    room's floor or over its ceiling with the Slab between."""
+    return (hi + cor.height + SLAB <= room.floor_z + 1e-6
+            or lo >= room.floor_z + room.height + SLAB - 1e-6)
+
+
 def clearance_violations(spec):
     """Every place a corridor's floor footprint lies inside a room beyond its
-    doorway: [(corridor id, room id, overlap rect)]."""
+    doorway, unless that piece of the corridor passes over or under the room
+    with the Slab between (another storey of a stacked build):
+    [(corridor id, room id, overlap rect)]."""
     rooms = {r.id: r for r in spec.rooms}
     out = []
     for cor in spec.corridors:
         hw = cor.width / 2
         route = corridor_route(cor, rooms)
         rects = route_footprint(route, hw)
+        heights = _piece_heights(cor, route)
         for r in spec.rooms:
             ends = [e for e, rid in (("from", cor.from_room), ("to", cor.to_room))
                     if rid == r.id]
             slabs = [_doorway_slab(r, route, e, hw) for e in ends]
-            for rect in rects:
+            for rect, (lo, hi) in zip(rects, heights):
                 ov = _overlap(rect, _room_rect(r))
                 if ov is not None and not any(_inside(ov, s) for s in slabs):
+                    if _slab_clear(cor, lo, hi, r):
+                        continue
                     out.append((cor.id, r.id, tuple(round(v, 2) for v in ov)))
     return out
 
@@ -113,6 +147,19 @@ def clearance_violations(spec):
 def _ter(spec):
     _ensure_materials(spec)
     return backend_for(spec.zone_type).build(spec, "ter_clear", 2)
+
+
+def _level_count(spec) -> int:
+    """The build's Levels: 1 unless its layout block names more."""
+    levels = (spec.layout or {}).get("levels") or {}
+    return len(set(levels.values())) or 1
+
+
+def _bands_ok(spec, bands) -> bool:
+    """One band on one Level; on several, at least one and at most one per
+    Level."""
+    n = _level_count(spec)
+    return len(bands) == 1 if n == 1 else 1 <= len(bands) <= n
 
 
 def _bands(spec):
@@ -148,7 +195,8 @@ def test_found_on_seeds_clear_and_one_band(zone_type, n, verticality, seed):
     spec = _plan_spec(zone_type, n, verticality, seed)
     assert clearance_violations(spec) == []
     bands = _bands(spec)
-    assert len(bands) == 1, f"seed {seed}: {len(bands)} depth bands"
+    assert _bands_ok(spec, bands), (
+        f"seed {seed}: {len(bands)} depth bands, {_level_count(spec)} Levels")
 
 
 @pytest.mark.slow
@@ -156,11 +204,13 @@ def test_found_on_seeds_clear_and_one_band(zone_type, n, verticality, seed):
 @given(s=seeds, zone_type=box_zone_types, n=room_counts_wide,
        verticality=st.sampled_from(["moderate", "dramatic"]))
 def test_elevated_box_builds_have_one_band(s, zone_type, n, verticality):
-    """A box build never stacks floors: one depth band, elevated or not."""
+    """A box build stacks floors only by Levels: at most one depth band per
+    Level (one for a build on one Level), elevated or not."""
     spec = _plan_spec(zone_type, n, verticality, s)
     bands = _bands(spec)
-    assert len(bands) == 1, (f"seed={s} {zone_type} rooms={n} {verticality}: "
-                             f"{len(bands)} depth bands")
+    assert _bands_ok(spec, bands), (
+        f"seed={s} {zone_type} rooms={n} {verticality}: "
+        f"{len(bands)} depth bands, {_level_count(spec)} Levels")
 
 
 def _ledges(spec):
@@ -202,18 +252,40 @@ def test_bend_walls_when_jog_is_short_or_long(dy):
     assert pts[:, 0].max() > 400.0
 
 
-def test_tight_bands_stay_within_grade_cap():
+def stair_or_ramp_violations(spec, gen):
+    """Corridors that break the walkable rise: a ramp steeper than run x 0.5
+    (``_elevation_run``), or a planned stair (step 7, between Levels) whose
+    risers exceed ``RISER_CAP`` or that is built cramped (treads stretched
+    under the planned depth)."""
+    from generators.geometry import RISER_CAP, is_auto_stair, stair_layout
+    rooms = {r.id: r for r in spec.rooms}
+    out = []
+    for c in spec.corridors:
+        if is_auto_stair(c):
+            sl = stair_layout(c, rooms)
+            if sl is None or sl.plan.riser > RISER_CAP + 1e-6 or sl.cramped:
+                out.append((c.id, "stair"))
+            continue
+        run = gen._elevation_run(rooms[c.from_room], rooms[c.to_room])
+        if abs(c.from_z - c.to_z) > run * 0.5 + 0.01:
+            out.append((c.id, "ramp"))
+    return out
+
+
+@pytest.mark.parametrize("layout", ["classic", "graph"])
+def test_tight_bands_stay_within_grade_cap(layout):
     # Seed 22, 22 dramatic rooms: zero-run Z jogs pin their rooms level, and the
     # relax clamp stalled at a conflicting-neighbours midpoint, leaving corr_0
     # 0.03 u over run * 0.5. The exact projection fallback must clear it.
+    # Classic is one Level (every corridor a ramp); the graph build stacks
+    # (step 7), its stairs judged by their risers.
     plan = ZonePlan(name="grade22", zone_type="dungeon", room_count=22,
-                    elevation=True, verticality="dramatic",
+                    elevation=True, verticality="dramatic", layout=layout,
                     dungeon_theme="sunken_ruin", dungeon_race="froglok")
     spec = plan_to_spec(plan, seed=22)
     gen = LayoutGenerator("dungeon")
     gen.size_multiplier = 1.0
     gen._apply_room_scale(22)
-    rooms = {r.id: r for r in spec.rooms}
-    for c in spec.corridors:
-        run = gen._elevation_run(rooms[c.from_room], rooms[c.to_room])
-        assert abs(c.from_z - c.to_z) <= run * 0.5 + 0.01, c.id
+    assert stair_or_ramp_violations(spec, gen) == []
+    if layout == "classic":
+        assert _level_count(spec) == 1 and all(c.steps >= 0 for c in spec.corridors)

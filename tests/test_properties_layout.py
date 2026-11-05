@@ -20,7 +20,8 @@ from hypothesis import strategies as st
 from ai.expand import plan_to_spec
 from ai.rule_planner import RulePlanner, _ZONE_TYPE_WORDS
 from ai.schema import ZonePlan
-from generators.geometry import MAX_SEG_RISE, build_mesh
+from generators.geometry import (MAX_SEG_RISE, RISER_CAP, build_mesh, is_auto_stair,
+                                 stair_layout)
 from generators.layout import LayoutGenerator
 from generators.zone_spec import ZoneSpec
 
@@ -309,6 +310,11 @@ def test_elevation_grade_cap(seed, zone_type, n, vert, elevation, semantic):
     into every neighbour's walkable band. Checking every corridor, not just tree
     edges, is what proves that relaxation held.
 
+    Stacked builds (step 7, graph dungeons at moderate/dramatic): a corridor
+    between Levels is a planned stair, judged by its risers instead; every
+    ramp keeps the cap. Flat and classic builds have no stairs, so this is
+    the property as it was for them.
+
     Validates: M0 Req 3.3; umbrella Req 1.6.
     """
     plan = ZonePlan(
@@ -337,6 +343,17 @@ def test_elevation_grade_cap(seed, zone_type, n, vert, elevation, semantic):
             f"corridor {c.id} references unknown room(s) "
             f"{c.from_room!r}/{c.to_room!r}"
         )
+
+        # A planned stair (step 7: a corridor between Levels of a stacked
+        # build) is not a ramp: it climbs by risers under RISER_CAP, built
+        # uncramped (the gate's stair check takes it from there). Every other
+        # corridor is a ramp or flat and keeps the grade cap.
+        if is_auto_stair(c):
+            sl = stair_layout(c, rooms_by_id)
+            assert sl is not None and sl.plan.riser <= RISER_CAP + 1e-6 and not sl.cramped, (
+                f"stair {c.id}: riser {sl.plan.riser if sl else None}, cramped "
+                f"{sl.cramped if sl else None}; seed={seed}, n={n}, verticality={vert!r}")
+            continue
 
         run = run_for(spec, zone_type, n, plan.size, a, b)
         dz = abs(c.from_z - c.to_z)

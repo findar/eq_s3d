@@ -31,6 +31,18 @@ _VERTICALITY = {
     "dramatic": (0.85, 60.0, 180.0),
 }
 
+# verticality -> (graph stacking, weight on the vertical rules): step 7
+# (design "Rule format"). A vertical rule is one whose replacement has an
+# ``above`` / ``below`` edge (``layout_engine.is_vertical``). ``flat`` is
+# stacking off, which leaves them out and keeps every room on one Level;
+# ``dramatic`` doubles their weight. The classic elevation mapping above
+# still applies to both engines.
+VERTICAL_RULES = {
+    "flat":     (False, 0.0),
+    "moderate": (True, 1.0),
+    "dramatic": (True, 2.0),
+}
+
 
 def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                  edges: Optional[Mapping[str, str]] = None,
@@ -65,7 +77,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                 room_count=plan.room_count, locks=plan.locks,
                 dungeon_theme=plan.dungeon_theme, dungeon_race=plan.dungeon_race,
                 elemental_tint=(plan.elemental_tint or None),
-                engine=layout_engine(plan.layout, plan.rule_set))
+                engine=layout_engine(plan.layout, plan.rule_set, outdoor=True))
             spec.layout = layout_block(spec.layout, spec)
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
@@ -81,7 +93,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
             spec.wilderness["trees_source"] = "prompt"
         return spec
 
-    engine = layout_engine(plan.layout, plan.rule_set) \
+    engine = layout_engine(plan.layout, plan.rule_set, plan.verticality) \
         if plan.zone_type in LAYOUT_ZONE_TYPES else None
     gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed, engine=engine)
 
@@ -124,13 +136,26 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     return spec
 
 
-def layout_engine(layout: str, rule_set: str = ""):
+def layout_engine(layout: str, rule_set: str = "", verticality: Optional[str] = None,
+                  outdoor: bool = False):
     """The Layout_Engine for a plan's ``layout`` / ``rule_set``: ``None``
     (classic) or a graph engine whose set comes from the dungeon theme
-    (``rules/topology/themes.toml``) unless *rule_set* names a base set."""
-    if layout == "graph":
+    (``rules/topology/themes.toml``) unless *rule_set* names a base set.
+
+    *verticality* (``flat`` / ``moderate`` / ``dramatic``) sets the graph
+    engine's stacking and the weight on the set's vertical rules
+    (``VERTICAL_RULES``); ``None`` is the engine's default: no stacking, so
+    no vertical rules. *outdoor* (the outdoor dungeon, until task 7 stacks
+    it) keeps the vertical rules at their weights as step 6's ramp hints,
+    stacking off."""
+    if layout != "graph":
+        return None
+    if outdoor:
+        return GraphEngine(rule_set or None, vertical_weight=1.0)
+    if verticality is None:
         return GraphEngine(rule_set or None)
-    return None
+    stacking, weight = VERTICAL_RULES.get(verticality, VERTICAL_RULES["moderate"])
+    return GraphEngine(rule_set or None, stacking=stacking, vertical_weight=weight)
 
 
 def layout_block(record: Optional[dict], spec: ZoneSpec) -> Optional[dict]:

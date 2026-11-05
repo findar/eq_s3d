@@ -31,6 +31,18 @@ replace  = [ {id = "n",  kind = "hall", size = "large"},
 edges    = [ {a = "n", b = "c1"}, {a = "n", b = "c2"}, {a = "n", b = "x"} ]
 reattach = { x = ["n", "x"] }
 
+# A crypt below a hall (a nave, or any hall the base set grew): a vertical
+# rule (step 7), so the Verticality control scales it like the base set's
+# (flat leaves it out). It grows from a finished hall, so it matches after
+# the Nave stage; the hall keeps its edges and its size.
+[rules.crypt]
+description = "A crypt down a stair under a hall"
+match    = [ {id = "h", kind = "hall"} ]
+replace  = [ {id = "h", kind = "hall", size = "large"},
+             {id = "k", kind = "lair", size = "medium"} ]
+edges    = [ {a = "h", b = "k", rel = "below"} ]
+reattach = { h = ["h"] }
+
 # Insert a stage of its own, after a named base stage: right after the
 # spine is laid, so every temple of 10 rooms or more gets its nave in line on
 # the way (5 % of 10 rooms rounds to a budget of 1; one nave spends it). Its
@@ -43,7 +55,8 @@ apply = { nave = 1 }
 share = 0.1        # 0.1 so round(share x n) >= 1 from 5 rooms: a nave in every temple from 7 rooms (it adds 3; below that it cannot fit)
 
 # Add weight to a stage of the base recipe, by the stage's name: bigger
-# temples sometimes get a second nave among the side rooms. It competes with
-# the base set's side-room rules (weights 0.3 to 3 there).
+# temples sometimes get a second nave among the side rooms, and some get a
+# crypt. They compete with the base set's side-room rules (weights 0.3 to 5
+# there).
 [stages."Side rooms"]
-apply = { nave = 1 }
+apply = { nave = 1, crypt = 1.5 }
