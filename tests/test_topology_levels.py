@@ -58,19 +58,21 @@ def _spec_hash(spec) -> str:
 # rules and the Verticality control now stacks moderate and dramatic builds,
 # so no plan builds step 6's output any more. The goldens now pin the
 # stacking-off path, ``flat`` (vertical rules left out, one Level).
+# Recaptured again, deliberately, by task 17: rooms at stock scale for their
+# race.
 GOLDENS = {
     "classic_eq": (dict(zone_type="dungeon", room_count=12, layout="graph",
                         verticality="flat"), 2,
-                   "f9444dc5e9b69b81b124e319ea95ce7acb7505441c6118dd802a4063a871dbe8"),
+                   "8a3ea79da01f38eadf3441981a689566c0246d8c34f589efabcbb91c4ed9d847"),
     "warren": (dict(zone_type="dungeon", room_count=12, layout="graph",
                     rule_set="warren", verticality="flat"), 2,
-               "6289b2e3592bc78720b9854d9226aa0f412d6da340c0473a290ce77a17786cd9"),
+               "e2bdc93de3d180994a7308ed9f60571dad5b256bfade30060f324468411e2b37"),
     "temple": (dict(zone_type="dungeon", room_count=10, layout="graph",
                     dungeon_theme="temple", verticality="flat"), 3,
-               "09207b762cf8a8db3eeb31e21c004f88e73ccd59a1f9e613b1462e8367f386d7"),
+               "18e78f6285a4152957b3b24641915cbda3727fb08d06b443517e8b36c30cedf2"),
     "ogre": (dict(zone_type="dungeon", room_count=9, layout="graph",
                   dungeon_race="ogre", locks=1, verticality="flat"), 21,
-             "9633c7b1441a18003b173c2661131070881a445242808b156d7704a0310b0e96"),
+             "8c9050ec0910c3b26e8f99cedf34e35508b45ebd3eda429a74ecd73daaee7370"),
 }
 
 

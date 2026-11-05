@@ -47,12 +47,15 @@ CASES = {
                                        seed=7, edges={"N": "zoneline", "E": "river"}),
 }
 
+# Room-graph geometry recaptured once, deliberately, by verticality step 7
+# task 17 (stock room scale). The city and the plain dungeon now hash alike:
+# same seed, same classic layout, and both are sized at the human's bands.
 GOLDEN = {
-    "city": "de6665a8ef469abe1e83879b",
-    "dungeon_gnoll_temple": "1a55c6628da81686c76516d9",
-    "dungeon_kobold_tomb_lava": "f74f01d52fa38a8b2f149957",
-    "dungeon_plain": "dc549f4069116e5c17e4d0a7",
-    "dungeon_temple_no_race": "5edd69e04b980f3337736693",
+    "city": "bc3b11e6ea48b85efb9af85b",
+    "dungeon_gnoll_temple": "242f92fff99bf3790928f08f",
+    "dungeon_kobold_tomb_lava": "8fe9a37a759634e83fadcfd3",
+    "dungeon_plain": "bc3b11e6ea48b85efb9af85b",
+    "dungeon_temple_no_race": "594f6c4090e6e445fc3e0d76",
     "wilderness": "8a84f45ee3baab987ea27961",
 }
 

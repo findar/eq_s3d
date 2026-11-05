@@ -17,6 +17,21 @@ Record pass/fail with the seed shown in the panel so issues are reproducible.
 A change is acceptable when every **[MUST]** item passes for several random
 seeds per theme.
 
+> **Stock scale (step 7, task 17).** Every room-graph build (dungeon, city,
+> outdoor dungeon; both layouts) changed size: rooms are sized for the race
+> that lives in them, at the stock zones' scale. With body height H (a human
+> is 6 u, an ogre 9, a giant 22, a dragon 21) every room is 2.5–10 H tall and
+> 8–20 H on a side, so a human dungeon's rooms are 15–60 u tall and 48–120 u
+> across (they were ~121 u tall and ~340 u across), and corridors are 3 H
+> wide and 2.5 H tall (18 × 15 u for a human; they were 40–85 u wide and
+> ~97 u tall). Size (small … huge) moves the rooms up or down their race's
+> band. Every pinned case below was rebuilt at this scale through the
+> server's generate route (60 cases, M1 through Step 6) and builds on the
+> first attempt; only Step 6's e and f moved seed (3 -> 4, see there).
+> Layouts differ from older screenshots. Outdoor dungeons shift their layout
+> up to half a terrain cell sideways so the entrance wall holds the Tunnel
+> (Step 5 case a needed it).
+
 ---
 
 ## A. Core generation (all themes)
@@ -890,15 +905,16 @@ None unless the row names them. Each builds on the first attempt.
 | b | Dungeon, 12 rooms, Layout **Graph**, Rule set **classic_eq** | 4 | `classic_eq`, no layers; 1 loop, 5 dead ends; kinds entrance, chamber ×6, lair ×3, passage, deep |
 | c | Dungeon, 12 rooms, Layout **Graph**, Rule set **warren** | 4 | `warren`; 3 loops, 1 dead end, a shallow deep end (0.25 against b's 0.50); 5 small rooms and no large |
 | d | Dungeon, 12 rooms, Theme **Temple**, Layout **Graph**, Rule set From theme | 4 | `classic_eq` + layer `temple`; `nave` applied (a large `hall` with two small `lair` chapels); the `deep` room is the `inner_sanctum` and the boss room |
-| e | Dungeon, 12 rooms, Race **Ogre**, Layout **Graph**, Rule set From theme | 3 | the ogre's race scale 1.4 reaches the big-race rule `great_hall` (`race_scale >= 1.4`): a `huge` `hall` on the way (room_1); 2 loops, 3 dead ends; rooms scaled up by 1.4 (mean floor area ~1.8× b's); the theme falls back to `fortress`, the `deep` room is the `throne` |
-| f | Dungeon, 12 rooms, Race **Giant**, Layout **Graph**, Rule set From theme | 3 | e's graph (the same `applied` list, great hall included) at the giant's 2.2: rooms far bigger again (mean floor area ~2.5× e's), the same 2 loops and `edge_fidelity` 1.0 |
+| e | Dungeon, 12 rooms, Race **Ogre**, Layout **Graph**, Rule set From theme | 4 | the ogre (body height 9 u, `race_scale` 1.5 = 9 / 6) reaches the big-race rule `great_hall` (`race_scale >= 1.4`): a `huge` `hall` on the way (room_4); rooms sized from the ogre's bands (mean floor area ~2.6× b's); the theme falls back to `fortress`, the `deep` room (room_5) is the `throne`; `edge_fidelity` 1.0 |
+| f | Dungeon, 12 rooms, Race **Giant**, Layout **Graph**, Rule set From theme | 4 | e's graph (the same `applied` list, great hall included) at the giant's body height, 22 u: rooms far bigger again (mean floor area ~6× e's, (22 / 9)²), `edge_fidelity` 1.0 |
 | g | Outdoor dungeon, 5 rooms, Layout **Graph**, Rule set From theme, Landscape defaults | 4 | `classic_eq` under the hill: the mouth opens into the `entrance` room and the `deep` room is the climax |
 
 Cases a, b and c share seed and room count on purpose: compare them side by
 side. They use 12 rooms rather than the first look's 9 because the shapes
-differ more clearly with more rooms. Cases e and f share seed 3 on purpose:
-both races are big, so they grow the same graph and differ only in scale
-(seed 4 grows no great hall). A temple needs at least 7 rooms for its
+differ more clearly with more rooms. Cases e and f share a seed on purpose:
+both races are big, so they grow the same graph and differ only in scale.
+(They were seed 3 until step 7: task 6's vertical rules moved the rng, and
+seed 3 no longer grows a great hall; seed 4 does.) A temple needs at least 7 rooms for its
 nave (with fewer it doesn't fit: the sidecar still lists the `temple` layer
 but `applied` has no `nave`), so keep d at 9 or more.
 
@@ -959,10 +975,11 @@ python scripts/topology_rules.py draw classic_eq --theme temple --out output/rul
       `rooms[].role`) calls `climax`; in a themed case (d, e, f) it is also
       the boss room (`boss: true`). The `entrance` kind is the `entrance`
       role, where the spawn stands.
-- [ ] **[MUST] The race scales the rooms** — e's rooms are clearly bigger
+- [ ] **[MUST] The race sizes the rooms** — e's rooms are clearly bigger
       than b's and it has its great hall; f is e's dungeon bigger again.
-      Neither loses a loop to its size (f has e's two). Corridors and ramps
-      stay walkable for the player.
+      Neither loses a loop to its size. Corridors and ramps stay walkable
+      for the player. (Since step 7 task 17 rooms are at stock scale for
+      their race; see "Stock scale" at the top.)
 
 ### G.4 — Controls and sidecar
 
@@ -993,8 +1010,9 @@ python scripts/topology_rules.py draw classic_eq --theme temple --out output/rul
 - [ ] **[MUST] Pinned seed repeats; blank seed is fresh** — As in W.4, for
       Graph as for Classic.
 - [ ] **[SHOULD] Snappy** — A Graph build takes no longer than the Classic
-      build of the same controls plus 10 s; in practice it is quicker (14
-      rooms, seed 4: Classic ~4 s, Graph ~1 s).
+      build of the same controls plus 10 s (14 rooms, seed 4, at stock
+      scale: Classic ~0.7 s, Graph ~1.4 s; before step 7 task 17 Classic
+      was ~4 s).
 
 ### G.5 — Tooling and the guide
 
