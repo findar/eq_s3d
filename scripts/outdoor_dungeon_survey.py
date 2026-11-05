@@ -169,7 +169,7 @@ def _clusters(points: np.ndarray, gap: float) -> int:
 
 def survey(eq_path: Path, zone: str, agent: AgentModel) -> dict:
     mesh = load_mesh(eq_path, zone)
-    surf = build_walk_surface(mesh, agent)
+    surf = build_walk_surface(mesh, agent, floors_up=False)  # WLD floors wind down (task 18)
     v, f = surf.verts, surf.faces
     tri = v[f]
     e1, e2 = tri[:, 1, :2] - tri[:, 0, :2], tri[:, 2, :2] - tri[:, 0, :2]

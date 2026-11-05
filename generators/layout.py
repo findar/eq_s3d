@@ -1791,15 +1791,15 @@ class LayoutGenerator:
         clearance between them? Two from the same room may share its doorway
         stub and bend (``_resolve_conflicts``); stairwells count as floor.
 
-        The clearance between two tubes is the Slab, but at least a corridor
-        height + 1: the gate (``analyzer.traverse.corridor_conflicts``, design
-        decision 16) wants that much between two floors, and it reads a
-        tube's ceiling with its floor (the walk surface takes ceilings as
-        floor), so it measures from the lower tube's ceiling."""
+        The clearance between two tubes is the Slab, from the lower tube's
+        top to the upper's floor (pieces run floor to top). The gate
+        (``analyzer.traverse.corridor_conflicts``, design decision 16) wants
+        a corridor height + 1 between the two floors, which that gives: it
+        reads floors only (task 18)."""
         from .topology.embed import SLAB
         shared = set(ea) & set(eb)
         sa, sb = self._shape(rooms, *ea), self._shape(rooms, *eb)
-        clear = max(SLAB, min(sa.cor.height, sb.cor.height) + 1.0)
+        clear = SLAB
         pa, pb = sa.pieces, sb.pieces
         for (ra, za0, za1, ka) in pa:
             for (rb, zb0, zb1, kb) in pb:

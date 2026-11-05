@@ -199,7 +199,9 @@ wouldn't build a dragon's.
 2. Each race SHALL have a room-height band (a minimum and a maximum, from its
    body height) and a footprint band; every room's size class SHALL fall
    inside its race's bands, so a race's smallest room is still sized for it
-   and its largest stops at the race's maximum.
+   and its largest stops at the race's maximum. The bands are stock scale
+   (user decision, 2026-11-04): room height 2.5-10 H and footprint side
+   8-20 H (design finding 8), corridors likewise from H.
 3. Both engines SHALL use the bands (the Classic engine already scales by
    race); the Level_Height (Req 4) SHALL follow from the banded room heights.
 4. A build with no race SHALL use the default race's bands; builds whose

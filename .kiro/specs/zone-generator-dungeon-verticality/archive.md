@@ -35,6 +35,10 @@ recommended on all and continue"):
 
 - **Stacked layouts (task 5, 2026-11-04):** floors at Level x level height with variation kept within +-14 u (`LEVEL_VARIATION` 28 u = two Slabs); a stair between stacked rooms is usually a U-route (both doors on walls facing the same way, the middle leg one corridor past both rooms carrying the stair; `CorridorSpec.side`, omitted from JSON when unset); stairwells are a clearance check against every room, not a placed room; a stacked edge is split at most once and never dropped for running out of splits. Stacked builds keep 0.85 of their edges (0.93 unstacked) because the gate reads ceilings as floor (task 18).
 
+- **The gate stands on floors only (task 18, 2026-11-04):** `build_walk_surface` takes a face as standable only when wound up (`floors_up=False` for WLD-wound meshes, floors down); a ceiling is never floor. A corridor over or under a crossed room with the Slab between is not a crossing on any spec (`is_stacked_build` is gone). Tubes on a stacked build keep the Slab between them (top of the lower to the upper floor). Stacked Edge_Fidelity on task 5's sweep: 0.85 -> 0.92 (0.93 unstacked).
+
+- **Stock scale (user, 2026-11-04):** "Stock scale". Task 16 found our rooms are 3-4 times stock size (human dungeon rooms 121 u tall and ~340 u across; stock human rooms 15-60 u tall and 48-120 u across). Every dungeon moves to the race bands, rooms and corridors both, Classic included: room height 2.5-10 H, footprint side 8-20 H, H from the client's `racedata.txt` (human 6, ogre 9, giant 22, dragon 21). Task 17.
+
 ## Follow-ups
 
 - **Stock stacking is low rooms over low rooms** (task 1): where stock floors stack they are only ~28 u apart (14 u of headroom), because corridors and low rooms stack, not halls. Our rooms are about four times taller, so a Level is ~135 u. A low stacking room type (a crawlway, a cellar, a gallery) would bring built dungeons closer to stock.
@@ -45,4 +49,4 @@ Carried in from earlier steps and relevant here:
   hill; task 7 measures whether a deeper floor limit fixes it.
 - **The walk surface takes ceilings as floor** (step 6 task 1): matters more
   once floors stack; task 1's survey keeps only floor-wound faces, and task 5
-  makes the gate's room-face test pick a room's own floor.
+  makes the gate's room-face test pick a room's own floor. Done by task 18.

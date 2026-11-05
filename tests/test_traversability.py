@@ -280,7 +280,7 @@ class TestFootprintContactAdjacency:
         # at the same Z -- a real flush walkable seam. Must stay connected; the
         # fix must not over-tighten and disconnect continuous floor.
         a = (0.0, 0.0, 0.0), (100.0, 0.0, 0.0), (0.0, 100.0, 0.0)
-        b = (100.5, 0.0, 0.0), (100.5, 100.0, 0.0), (200.0, 0.0, 0.0)
+        b = (100.5, 0.0, 0.0), (200.0, 0.0, 0.0), (100.5, 100.0, 0.0)
         surf = self._surface([a, b])
         assert 1 in surf.adjacency.get(0, []), (
             "coplanar triangles touching within eps must stay adjacent"
