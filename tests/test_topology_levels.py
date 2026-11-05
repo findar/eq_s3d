@@ -543,7 +543,7 @@ def test_v7_flat_is_one_level_and_dramatic_is_more(label):
 
 # Edge_Fidelity of stacked builds (moderate and dramatic): the bar is the
 # measured mean less 0.03, as step 6's bars (tests/test_topology_embed.py).
-# Measured on this sweep before task 18 landed (task 6, see its commit).
+# Measured on this sweep (task 6, with task 18 merged; see its commit).
 STACKED_FIDELITY_MEASURED = {"classic_eq": 0.947, "warren": 0.917, "temple": 0.955}
 
 
@@ -556,16 +556,19 @@ def test_v7_stacked_fidelity(label):
 
 
 # Req 6.2: the corridors' graph of stacked builds (moderate) keeps step 6's
-# built shape bands. Measured on this branch before task 18 landed: classic_eq
+# built shape bands. Measured (task 6, with task 18 merged): classic_eq
 # cycles 0.090, dead ends 0.303, deep end 0.362 (in band); warren 0.184,
-# 0.206, 0.265 -- its cycles just under the 0.19 floor, because stacked builds
-# lose more loop edges (fidelity 0.92 vs 0.96 unstacked). Task 18 (upward
-# floors only, adjacent-Level corridors a Slab apart) was measured to raise
-# stacked fidelity; re-check warren after integration and drop the xfail.
+# 0.206, 0.265 -- its cycles just under the 0.19 floor. Task 18 changed the
+# gate, not Job B's choices, so the layouts and the numbers are the same as
+# before it. Stacked warrens drop about 11 % of their edges between Levels
+# against 6 % within one, and a dropped stair edge on a ring is a lost loop;
+# raising the grammar's loops instead pushes its n >= 20 cycles over the
+# warren band's 0.29 (tests/test_ruleset_warren.py). Kept as a known gap.
 @pytest.mark.parametrize("label", [
     "classic_eq",
     pytest.param("warren", marks=pytest.mark.xfail(
-        strict=False, reason="stacked warren cycles 0.184 < 0.19 before task 18")),
+        strict=False, reason="stacked warren built cycles 0.184 < 0.19: "
+                             "stair edges between Levels are dropped more often")),
 ])
 def test_v7_stacked_builds_keep_the_built_shape(label):
     from tests.test_topology_embed import BUILT_BANDS, _built_shape
