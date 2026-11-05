@@ -67,7 +67,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
 - [ ] 7. Outdoor dungeons go down
   - Card: [cards/07-outdoor-levels.md](cards/07-outdoor-levels.md)
   - Type: agent · Size: M · Depends: 6, 17
-  - Owns: generators/outdoor_dungeon.py, generators/envelope.py, tests/test_outdoor_levels.py, generators/layout.py (`_fit_floors`, the stack's offset), generators/layout_engine.py (`GraphEngine.descend`), ai/expand.py (the outdoor engine and verticality)
+  - Owns: generators/outdoor_dungeon.py, generators/envelope.py, tests/test_outdoor_levels.py, generators/layout.py (`_fit_floors`, the stack's offset), generators/layout_engine.py (`GraphEngine.descend`), ai/expand.py (the outdoor engine and verticality), tests/test_graph_layout_build.py (the Apron case pinned at flat)
   - Reqs: 7
 
 - [x] 8. Controls, sidecar and maps

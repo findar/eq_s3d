@@ -116,9 +116,10 @@ def test_same_inputs_same_eqg(tmp_path, zone_type, rule_set, theme, rooms, seed)
     assert eqgs[0][:-4] == eqgs[1][:-4]
 
 
-def _outdoor(tmp_path, theme, rooms, seed, race=""):
+def _outdoor(tmp_path, theme, rooms, seed, race="", verticality="moderate"):
     plan = _plan("outdoor_dungeon", "graph", "classic_eq", theme, rooms)
     plan.dungeon_race = race
+    plan.verticality = verticality
     spec = plan_to_spec(plan.validate(), seed=seed)
     return spec, ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
 
@@ -149,7 +150,9 @@ def test_spawn_stands_on_the_dug_apron(tmp_path):
     temple nave fix did once). A troll's: at stock room scale (step 7 task
     17) a human's Tunnel is 15 u tall and its Apron rarely reaches the Spawn;
     a troll's 20 u Tunnel digs a 49 u trench under it on this seed."""
-    spec, result = _outdoor(tmp_path, "fortress", 8, 2, race="troll")
+    # Flat: this test is about the trench under the Spawn, not Levels (step 7
+    # task 7 stacks the default moderate build and moves its Entrance).
+    spec, result = _outdoor(tmp_path, "fortress", 8, 2, race="troll", verticality="flat")
     fmt = check_eqg(result.eqg_path, spec)
     assert fmt.passed, fmt.failed_checks
     # The spec is also the host terrain's: its undug TER, then the Apron.
