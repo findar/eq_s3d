@@ -99,7 +99,7 @@ def test_server_bad_value_is_a_400(client, controls, named):
 @pytest.mark.parametrize("controls, named", [
     ({"dungeon_theme": "castle"}, VALID_DUNGEON_THEMES),
     ({"dungeon_theme": 7}, VALID_DUNGEON_THEMES),
-    ({"dungeon_race": "dragon"}, VALID_DUNGEON_RACES),
+    ({"dungeon_race": "wyvern"}, VALID_DUNGEON_RACES),
     ({"dungeon_race": ["ogre"]}, VALID_DUNGEON_RACES),
     ({"zone_type": "wilderness", "dungeon_theme": "temple"},
      ["dungeon", "city", "outdoor_dungeon"]),

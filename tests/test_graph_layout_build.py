@@ -116,8 +116,10 @@ def test_same_inputs_same_eqg(tmp_path, zone_type, rule_set, theme, rooms, seed)
     assert eqgs[0][:-4] == eqgs[1][:-4]
 
 
-def _outdoor(tmp_path, theme, rooms, seed):
-    spec = plan_to_spec(_plan("outdoor_dungeon", "graph", "classic_eq", theme, rooms), seed=seed)
+def _outdoor(tmp_path, theme, rooms, seed, race=""):
+    plan = _plan("outdoor_dungeon", "graph", "classic_eq", theme, rooms)
+    plan.dungeon_race = race
+    spec = plan_to_spec(plan.validate(), seed=seed)
     return spec, ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
 
 
@@ -144,8 +146,10 @@ def test_spawn_stands_on_the_dug_apron(tmp_path):
     float over the floor (``safe_point`` failed, first seen on temple seed
     1097127993). It now takes the dug ground's height. Fortress, not temple:
     it has no theme layer, so a layer retune can't move the case away (the
-    temple nave fix did once)."""
-    spec, result = _outdoor(tmp_path, "fortress", 8, 2)
+    temple nave fix did once). A troll's: at stock room scale (step 7 task
+    17) a human's Tunnel is 15 u tall and its Apron rarely reaches the Spawn;
+    a troll's 20 u Tunnel digs a 49 u trench under it on this seed."""
+    spec, result = _outdoor(tmp_path, "fortress", 8, 2, race="troll")
     fmt = check_eqg(result.eqg_path, spec)
     assert fmt.passed, fmt.failed_checks
     # The spec is also the host terrain's: its undug TER, then the Apron.

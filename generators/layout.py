@@ -223,9 +223,21 @@ class LayoutGenerator:
         self.corridor_width = 50.0
         self.corridor_height = max(40.0, self.ceiling * 0.8)
 
-        # Optional overall size multiplier (small/large/huge from a plan).
-        # Applied on top of the theme-accurate base in _apply_room_scale.
+        # Optional overall size multiplier (small/large/huge from a plan),
+        # applied on top of the theme-accurate base in _apply_room_scale.
+        # Heightfield zones only: a room-graph zone (dungeon, city) sizes its
+        # rooms from its race's bands, and the plan's Size control shifts its
+        # rooms' position in them instead (``size_shift``,
+        # ``semantics.SIZE_SHIFT``; step 7 task 17).
         self.size_multiplier = 1.0
+        self.size_shift = 0.0
+        # The build's race (``generate``'s ``dungeon_race``): its body height
+        # sizes a room-graph zone's rooms, corridors and rises.
+        self.race = ""
+        # Elevation rises, in body heights (room-graph zones): the plan's
+        # Verticality sets them (``ai.expand._VERTICALITY``);
+        # ``_apply_room_scale`` turns them into ``step_rise_min/max``.
+        self.rise_h = (1.0, 3.5)
 
         # Placeholder room-size band; refined per generate() by room count.
         self.room_min = 150.0
@@ -234,10 +246,12 @@ class LayoutGenerator:
 
         # Elevation parameters. elevation_chance is the probability that a
         # connection between two rooms changes height. step_rise is the Z change
-        # per elevated connection.
+        # per elevated connection (room-graph zones: ``rise_h`` x H, set by
+        # _apply_room_scale).
         self.elevation_chance = 0.5
-        self.step_rise_min = 20.0
-        self.step_rise_max = 80.0
+        if not self.corridor_clearance:
+            self.step_rise_min = 20.0
+            self.step_rise_max = 80.0
 
         # Walkability bound for elevation (corridor-connection task #2). The
         # elevation magnitude used to be picked with no regard to how long the
@@ -267,10 +281,28 @@ class LayoutGenerator:
 
     def _apply_room_scale(self, room_count: int) -> None:
         """
-        Set room_min/room_max (and corridor width) from the theme's measured
-        floor area divided across `room_count` rooms, so the assembled zone's
-        footprint tracks the real indoor-vs-outdoor proportions.
+        Room-graph zones (dungeon, city; step 7 task 17): the room band, the
+        rooms' height, the corridors and the elevation rises from the build's
+        race (``self.race``) through ``semantics``: the classic engine scatters
+        around the band's medium side (``size_shift`` moves it), +-30 %. The
+        room count no longer sizes rooms: a zone's total size follows from its
+        rooms.
+
+        Heightfield zones: set room_min/room_max (and corridor width) from the
+        theme's measured floor area divided across `room_count` rooms, so the
+        assembled zone's footprint tracks the real indoor-vs-outdoor
+        proportions.
         """
+        if self.corridor_clearance:
+            t = semantics.band_position("medium", self.size_shift)
+            side = semantics.room_side(self.race, t)
+            self.room_min = side * 0.7
+            self.room_max = side * 1.3
+            self.ceiling = semantics.room_height(self.race, t)
+            self.corridor_width, self.corridor_height = semantics.corridor_size(self.race)
+            h = semantics.body_height(self.race)
+            self.step_rise_min, self.step_rise_max = self.rise_h[0] * h, self.rise_h[1] * h
+            return
         count = max(1, room_count)
         # Rooms don't tile perfectly (gaps, corridors), so target ~55% of the
         # per-room area share as actual room floor; the rest is spacing.
@@ -304,7 +336,8 @@ class LayoutGenerator:
 
         Content / semantic layer (dungeon theme, Step 1): *dungeon_theme* picks
         the archetype arc (e.g. "fortress", "temple", "sunken_ruin");
-        *dungeon_race* is a global scale multiplier ("giant", "froglok", …);
+        *dungeon_race* sizes the rooms and corridors ("giant", "froglok", …;
+        ``semantics.RACE_HEIGHT``);
         *elemental_tint* overrides the archetype's default tint ("" forces none,
         None uses the default). *room_type_overrides* maps room id → semantic
         type for planner-driven assignment. Semantic labelling only runs for the
@@ -318,6 +351,7 @@ class LayoutGenerator:
         Without an Envelope the layout is exactly as before.
         """
         self.warnings = []
+        self.race = dungeon_race or ""
         args = (name, add_lights, elevation, locks, dungeon_theme,
                 dungeon_race, elemental_tint, room_type_overrides)
         if envelope is None:
@@ -400,6 +434,11 @@ class LayoutGenerator:
                 spec, rooms, self.rng,
                 archetype=dungeon_theme, race=dungeon_race,
                 tint=elemental_tint, overrides=room_type_overrides)
+        # Every room-graph room ends inside its race's bands (Req 10): the
+        # role and room-type biases can push one past either end.
+        if self.corridor_clearance:
+            for room in rooms:
+                semantics.fit_to_band(room, self.race)
 
         # A stacked build (an engine gave rooms on more than one Level) runs
         # Job B in 3D from here: rooms on different Levels may overlap in plan,
@@ -522,7 +561,8 @@ class LayoutGenerator:
             separate=self._separate_rooms,
             build=BuildContext(zone_type=self.zone_type, theme=theme, race=race,
                                race_scale=semantics.race_scale(race),
-                               room_count=room_count))
+                               room_count=room_count),
+            size_shift=self.size_shift)
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement
@@ -740,7 +780,8 @@ class LayoutGenerator:
             fs, cs = role_scale.get(r.role, (1.0, 1.0))
             r.width *= fs
             r.depth *= fs
-            r.height = max(40.0, r.height * cs)
+            # Room-graph zones are clamped to the race's bands afterwards.
+            r.height = r.height * cs if self.corridor_clearance else max(40.0, r.height * cs)
 
     # ------------------------------------------------------------------
     # Separation (engines reach it through LayoutContext.separate)
@@ -771,7 +812,9 @@ class LayoutGenerator:
             stacked = {(a, b) for a in range(len(rooms)) for b in range(a + 1, len(rooms))
                        if may_overlap_in_plan(storeys[a], storeys[b])}
         if self.corridor_clearance:
-            gap = max(self.corridor_width, 30.0) + 1.0
+            # (Before stock scale this read max(width, 30): corridors were at
+            # least 40 u, so the 30 never applied. Stock corridors are 3 H.)
+            gap = self.corridor_width + 1.0
             iterations = iterations or 200
         else:
             gap = max(self.corridor_width * 0.5, 30.0)

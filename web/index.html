@@ -62,7 +62,7 @@
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
         <!-- Dungeon, city and outdoor dungeon only: the dungeon theme
-             (archetype) and the inhabiting race (a size scale). The values
+             (archetype) and the inhabiting race (its body height sizes the rooms). The values
              are ai/schema.py VALID_DUNGEON_THEMES / VALID_DUNGEON_RACES,
              hard-coded here (no route lists them; the server 400s on any
              other value). "None" sends "", no theme or race. -->
@@ -94,6 +94,7 @@
             <option value="troll">Troll</option>
             <option value="ogre">Ogre</option>
             <option value="giant">Giant</option>
+            <option value="dragon">Dragon</option>
           </select>
         </label>
         <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph

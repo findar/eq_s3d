@@ -71,12 +71,16 @@ class Edge(NamedTuple):
 class LayoutContext:
     """Everything an engine may use from the generator."""
     rng: random.Random
-    room_min: float                      # room side band (after _apply_room_scale)
+    room_min: float                      # classic room side spread (after _apply_room_scale)
     room_max: float
-    ceiling: float
+    ceiling: float                       # classic room height
     corridor_width: float
     separate: Callable[[List[RoomSpec]], None]   # LayoutGenerator._separate_rooms
     build: BuildContext
+    # The plan's Size control as a shift of the rooms' position in the race's
+    # bands (``semantics.SIZE_SHIFT``); the graph engine sizes its classes
+    # with it, the classic band (room_min/room_max/ceiling) already has it.
+    size_shift: float = 0.0
 
 
 @dataclass
@@ -320,15 +324,13 @@ class GraphEngine:
         grown = grow(rs, room_count, rng=ctx.rng, context=ctx.build)
         graph = grown.graph
         order = embed.bfs_order(graph)
-        # Rooms are placed at their final size: the build's race scale goes on
-        # here, before placement, and semantics leaves it off rooms with a kind
-        # (task 20). Scaled after placement (2.2 for giants), the rooms pushed
-        # into each other, re-separation moved them onto shared walls and Job B
-        # split or dropped the loops.
-        scale = ctx.build.race_scale or 1.0
-        base = embed.area_matched_base(embed.base_side(ctx.room_min, ctx.room_max),
-                                       [graph.node(r).size for r in order]) * scale
-        sizes = {r: embed.room_size(graph.node(r).size, base, ctx.ceiling * scale, ctx.rng)
+        # Rooms are placed at their final size: each class's point in the
+        # race's bands (step 7 task 17), before placement, and nothing scales
+        # them again (step 6 task 20: scaled after placement, the rooms pushed
+        # into each other, re-separation moved them onto shared walls and Job
+        # B split or dropped the loops).
+        race = ctx.build.race or ""
+        sizes = {r: embed.room_size(graph.node(r).size, race, ctx.rng, ctx.size_shift)
                  for r in order}
         entrance = next((n.id for n in graph.rooms() if n.kind == "entrance"), None)
         if envelope is not None and entrance is not None and self.entrance_side > 0:
@@ -337,8 +339,8 @@ class GraphEngine:
         half = {r: (w / 2, d / 2) for r, (w, d, _h) in sizes.items()}
         place = embed.PLACEMENT_FUNCS[rs.placement]
         gap = ctx.corridor_width + 1.0
-        # Levels go in before placement (step 7): heights at race scale, as
-        # the rooms are placed.
+        # Levels go in before placement (step 7): heights as the rooms are
+        # placed.
         levels = level_h = storeys = None
         if self.stacking:
             levels = embed.assign_levels(graph)

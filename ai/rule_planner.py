@@ -113,6 +113,7 @@ _RACE_WORDS = {
     "lizardman": ["lizardman", "lizardmen", "lizard men", "reptilian"],
     "gnoll": ["gnoll", "gnolls"],
     "sarnak": ["sarnak", "iksar"],
+    "dragon": ["dragon", "dragons", "wyrm", "wurm"],
 }
 
 # size → base room count and footprint multiplier

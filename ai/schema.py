@@ -31,14 +31,15 @@ VALID_ZONE_TYPES = list(DEFINED_ZONE_TYPES)
 VALID_REGION_KINDS = ["water", "lava", "ice", "pvp", "zoneline", "generic"]
 
 # Content / semantic layer (dungeon theme). Archetypes mirror
-# generators.semantics.ARCHETYPES; races mirror generators.semantics.RACE_SCALE.
+# generators.semantics.ARCHETYPES; races mirror generators.semantics.RACE_HEIGHT
+# (each race's body height sizes its rooms; the default race is a human).
 VALID_DUNGEON_THEMES = [
     "fortress", "war_city", "warren", "temple", "tomb", "wizard_lair",
     "corrupted_sanctum", "mine_delve", "sunken_ruin", "lava_forge", "ice_keep",
 ]
 VALID_DUNGEON_RACES = [
     "goblin", "froglok", "kobold", "lizardman", "gnoll", "sarnak", "troll",
-    "ogre", "giant",
+    "ogre", "giant", "dragon",
 ]
 VALID_ELEMENTAL_TINTS = ["lava", "ice", "water"]
 
@@ -315,8 +316,9 @@ ZONE_PLAN_JSON_SCHEMA = {
         "dungeon_race": {
             "type": "string",
             "enum": VALID_DUNGEON_RACES,
-            "description": "The race that built/inhabits the place. Scales room "
-                           "and corridor size (e.g. 'giant' = huge halls, "
+            "description": "The race that built/inhabits the place. Sizes rooms "
+                           "and corridors to its body height (e.g. 'giant' or "
+                           "'dragon' = vast halls, "
                            "'froglok'/'goblin' = smaller).",
         },
         "elemental_tint": {

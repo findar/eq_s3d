@@ -257,8 +257,8 @@ def run_for(spec, theme, room_count, size, a, b) -> float:
     computed by the PRODUCTION ``LayoutGenerator._elevation_run`` (umbrella
     Req 5.4: call the real function, don't re-implement it).
 
-    Builds a generator for ``theme`` with the plan's ``size`` footprint scale
-    (``ai.expand._SIZE_SCALE[size]``), applies ``_apply_room_scale(room_count)``
+    Builds a generator for ``theme`` with the plan's ``size`` band shift
+    (``ai.expand._SIZE_SHIFT[size]``) and the spec's race, applies ``_apply_room_scale(room_count)``
     (which sets ``corridor_width`` — the only generator state ``_route_legs``
     reads), and returns ``gen._elevation_run(a, b)`` for the two rooms ``a`` and
     ``b`` of the corridor under test.
@@ -270,7 +270,10 @@ def run_for(spec, theme, room_count, size, a, b) -> float:
     computation itself).
     """
     gen = LayoutGenerator(theme)
-    gen.size_multiplier = _expand._SIZE_SCALE[size]
+    gen.size_shift = _expand._SIZE_SHIFT[size]
+    # The corridor width (what the run reads) is the build's race's (step 7
+    # task 17); the spec records it.
+    gen.race = spec.dungeon_race or ""
     gen._apply_room_scale(room_count)
     return gen._elevation_run(a, b)
 

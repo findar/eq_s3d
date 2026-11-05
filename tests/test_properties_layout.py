@@ -331,7 +331,7 @@ def test_elevation_grade_cap(seed, zone_type, n, vert, elevation, semantic):
 
     # Resolve each corridor's two endpoint rooms by id so the run is computed
     # from the SAME RoomSpecs the generator used. `plan.size` (default "medium")
-    # is the footprint scale plan_to_spec applied via _SIZE_SCALE.
+    # is the band shift plan_to_spec applied via _SIZE_SHIFT.
     rooms_by_id = {r.id: r for r in spec.rooms}
 
     for c in spec.corridors:

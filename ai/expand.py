@@ -21,14 +21,20 @@ from generators.zone_spec import ZoneSpec, RegionSpec
 from generators.zone_types import STYLE_PROFILE
 from .schema import ZonePlan, LAYOUT_ZONE_TYPES
 
-# size → footprint scale applied to the layout generator's room spacing
-_SIZE_SCALE = {"small": 0.7, "medium": 1.0, "large": 1.5, "huge": 2.2}
+# size -> shift of every room's position in its race's bands (step 7 task 17:
+# rooms are sized from the race's body height, so Size moves them within the
+# race's own band instead of multiplying them).
+_SIZE_SHIFT = semantics.SIZE_SHIFT
 
-# verticality → elevation chance + rise magnitude
+# verticality -> elevation chance + rise magnitude, the rise in body heights
+# (H; 6 u for a human). Before stock scale the rises were 20-80 u and 60-180 u
+# under 121 u rooms; stock rooms are a quarter of that, and so are these
+# (moderate 6-21 u for a human, dramatic 15-45 u; stock connectors rise
+# 15-28 u at the median).
 _VERTICALITY = {
     "flat":     (0.0, 0.0, 0.0),
-    "moderate": (0.5, 20.0, 80.0),
-    "dramatic": (0.85, 60.0, 180.0),
+    "moderate": (0.5, 1.0, 3.5),
+    "dramatic": (0.85, 2.5, 7.5),
 }
 
 # verticality -> (graph stacking, weight on the vertical rules): step 7
@@ -97,15 +103,14 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         if plan.zone_type in LAYOUT_ZONE_TYPES else None
     gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed, engine=engine)
 
-    # Apply size as a multiplier on top of the theme-accurate base footprint.
-    # (generate() recomputes room scale from the measured profile; this persists.)
-    gen.size_multiplier = _SIZE_SCALE.get(plan.size, 1.0)
+    # Apply size as a shift within the race's room bands (generate() sizes
+    # the rooms from the race; this persists).
+    gen.size_shift = _SIZE_SHIFT.get(plan.size, 0.0)
 
-    # Apply verticality
+    # Apply verticality (rises in body heights; generate() turns them into u)
     chance, rise_min, rise_max = _VERTICALITY.get(plan.verticality, _VERTICALITY["moderate"])
     gen.elevation_chance = chance
-    gen.step_rise_min = rise_min
-    gen.step_rise_max = rise_max
+    gen.rise_h = (rise_min, rise_max)
 
     spec = gen.generate(
         plan.name,
