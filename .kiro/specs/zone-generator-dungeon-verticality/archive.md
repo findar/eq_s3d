@@ -43,6 +43,8 @@ recommended on all and continue"):
 
 - **Race bands in code (task 17, 2026-11-04):** `semantics.RACE_HEIGHT` (H) replaces `RACE_SCALE`; every room-graph room (both engines, city, outdoor dungeon) is clamped into [2.5 H, 10 H] tall and [8 H, 20 H] a side; Size_Class picks a geometric point (tiny 0 ... huge 1), the Size control shifts it (-0.125 / 0 / +0.125 / +0.25); corridors 3 H x 2.5 H; rises in H (moderate 1-3.5, dramatic 2.5-7.5); `race_scale` = H / 6 for rule conditions. The measured zone floor area no longer sizes rooms. Outdoor dungeons align the entrance wall to the terrain grid; ogres now plan under the hill, giants and dragons still drop rooms (task 7).
 
+- **Outdoor dungeons descend (task 7, 2026-11-04):** under a hill, Levels only go down from the entrance, so the Tunnel always enters the top Level (an all-up graph is turned upside down; towers become cellars). The general dungeon decision (up and down) stands for dungeons. The floor limit is 150 u under the Entrance plus one race Level height per extra Level (moderate 1, dramatic 2); `flat` and the classic layout stay one Level. Step 5's cases a-g build on two Levels at moderate and dramatic.
+
 ## Follow-ups
 
 - **Stock stacking is low rooms over low rooms** (task 1): where stock floors stack they are only ~28 u apart (14 u of headroom), because corridors and low rooms stack, not halls. Our rooms are about four times taller, so a Level is ~135 u. A low stacking room type (a crawlway, a cellar, a gallery) would bring built dungeons closer to stock.
@@ -53,10 +55,11 @@ recommended on all and continue"):
 - **Dragon stairs are long** (task 17): risers stay 2 u, so a dragon's ~250 u level height is a very long switchback. A race-scaled riser or ramp-and-stair mix for big races is worth a look at the first look.
 - **Height bands overlap at the top** (task 17): a human's tallest hall (60 u) is taller than a dragon's lowest room (52.5 u); footprints still separate (120 < 168 u).
 
+- **Giant and dragon outdoor dungeons drop rooms** (task 7): they always plan now, but giants keep every room in only 4-6 of 20 seeds and dragons 10-14 of 20 (5 rooms). A host sized to the race (a taller hill or a pit) would let them fit whole.
+
 Carried in from earlier steps and relevant here:
 
-- **Big-race outdoor dungeons never plan** (step 5): rooms taller than the
-  hill; task 7 measures whether a deeper floor limit fixes it.
+- **Big-race outdoor dungeons never plan** (step 5): resolved for ogres by stock scale (task 17); giants and dragons now plan with rooms dropped (task 7).
 - **The walk surface takes ceilings as floor** (step 6 task 1): matters more
   once floors stack; task 1's survey keeps only floor-wound faces, and task 5
   makes the gate's room-face test pick a room's own floor. Done by task 18.
