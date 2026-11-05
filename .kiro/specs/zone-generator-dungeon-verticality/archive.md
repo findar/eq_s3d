@@ -39,9 +39,13 @@ recommended on all and continue"):
 
 - **Stock scale (user, 2026-11-04):** "Stock scale". Task 16 found our rooms are 3-4 times stock size (human dungeon rooms 121 u tall and ~340 u across; stock human rooms 15-60 u tall and 48-120 u across). Every dungeon moves to the race bands, rooms and corridors both, Classic included: room height 2.5-10 H, footprint side 8-20 H, H from the client's `racedata.txt` (human 6, ogre 9, giant 22, dragon 21). Task 17.
 
+- **Verticality drives stacking (task 6, 2026-11-04):** `flat` = stacking off and no vertical rules; `moderate` = stacking on, weights as written; `dramatic` = vertical weights x2 (`GraphEngine` vertical-rule hook). `passage` (classic_eq) and `tunnel` (warren) stay real Level drops. Outdoor dungeons keep the vertical rules at weight 1 as ramp hints, stacking off, until task 7. Built means at moderate: Stacked_Share 0.08-0.10, 2.1-2.4 Levels, span 1.2-1.5 gaps (inside the survey bands); stacked fidelity 0.92-0.96.
+
 ## Follow-ups
 
 - **Stock stacking is low rooms over low rooms** (task 1): where stock floors stack they are only ~28 u apart (14 u of headroom), because corridors and low rooms stack, not halls. Our rooms are about four times taller, so a Level is ~135 u. A low stacking room type (a crawlway, a cellar, a gallery) would bring built dungeons closer to stock.
+
+- **Stacked warren loops** (task 6): 0.184 cycles per room against step 6's 0.19 floor (xfail): stacked warrens lose ~11% of their edges between Levels against 6% within one. For task 12's tuning.
 
 Carried in from earlier steps and relevant here:
 
