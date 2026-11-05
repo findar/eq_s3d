@@ -129,3 +129,9 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Type: agent · Size: M · Depends: 5
   - Owns: analyzer/traverse.py, tests/test_traverse_connectors.py, tests/test_traverse_ceilings.py, generators/layout.py (the corridor clearance only)
   - Reqs: 2, 4.3, 6.2
+
+- [ ] 19. Outdoor corridors and stairs stay inside the bowl
+  - Card: [cards/19-outdoor-bowl.md](cards/19-outdoor-bowl.md)
+  - Type: agent · Size: S · Depends: 9
+  - Owns: generators/outdoor_dungeon.py, generators/envelope.py, tests/test_outdoor_levels.py, tests/test_vertical_build.py
+  - Reqs: 7.2
