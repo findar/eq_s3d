@@ -49,6 +49,10 @@ recommended on all and continue"):
 
 - **Stacked warren loops** (task 6): 0.184 cycles per room against step 6's 0.19 floor (xfail): stacked warrens lose ~11% of their edges between Levels against 6% within one. For task 12's tuning.
 
+- **Cities now share dungeon geometry** (task 17): with the zone-type floor area no longer sizing rooms, a plain city and a plain classic dungeon on the same seed build the same rooms (materials and lights differ). Cities need their own sizing or layout (streets, plazas) to read as cities.
+- **Dragon stairs are long** (task 17): risers stay 2 u, so a dragon's ~250 u level height is a very long switchback. A race-scaled riser or ramp-and-stair mix for big races is worth a look at the first look.
+- **Height bands overlap at the top** (task 17): a human's tallest hall (60 u) is taller than a dragon's lowest room (52.5 u); footprints still separate (120 < 168 u).
+
 Carried in from earlier steps and relevant here:
 
 - **Big-race outdoor dungeons never plan** (step 5): rooms taller than the
