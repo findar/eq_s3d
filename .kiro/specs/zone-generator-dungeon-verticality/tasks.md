@@ -64,10 +64,10 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: rules/topology/, ai/expand.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py, tests/test_topology_levels.py, generators/layout_engine.py (vertical-weight hook), tests/test_corridor_clearance.py, tests/test_properties_layout.py, tests/test_properties_core.py, tests/test_graph_layout_controls.py, tests/test_level_sidecar_maps.py (one flat plan)
   - Reqs: 5, 6
 
-- [ ] 7. Outdoor dungeons go down
+- [x] 7. Outdoor dungeons go down
   - Card: [cards/07-outdoor-levels.md](cards/07-outdoor-levels.md)
   - Type: agent · Size: M · Depends: 6, 17
-  - Owns: generators/outdoor_dungeon.py, generators/envelope.py, tests/test_outdoor_levels.py
+  - Owns: generators/outdoor_dungeon.py, generators/envelope.py, tests/test_outdoor_levels.py, generators/layout.py (`_fit_floors`, the stack's offset), generators/layout_engine.py (`GraphEngine.descend`), ai/expand.py (the outdoor engine and verticality), tests/test_graph_layout_build.py (the Apron case pinned at flat)
   - Reqs: 7
 
 - [x] 8. Controls, sidecar and maps

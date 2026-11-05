@@ -10,7 +10,9 @@ client walks it (two triangles per quad, split along the (i, j)-(i+1, j+1)
 diagonal), not the design matrix. The footprint is the hill region: a disc at
 the placed Landform's centre out to where its relief falls to half (radius
 plus half the flank). The Rock_Cover and floor limit are the survey defaults
-(design finding 4).
+(design finding 4); a stacked dungeon (step 7 task 7, Verticality
+``moderate`` / ``dramatic``) reaches deeper, a race Level height per extra
+Level (:func:`floor_depth`), with its entrance room on the top Level.
 
 ``layout_in_envelope`` sizes the rooms to the Envelope, not to the dungeon
 style profile's whole-zone floor area (which would give rooms the size of
@@ -64,6 +66,7 @@ from generators.wilderness.matrix import (DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZON
                                           Landform)
 from generators.wilderness.biome import load_biome_kit
 from generators.zone_spec import MaterialSpec, ZoneSpec
+from generators.topology.embed import SLAB
 
 #: Minimum terrain left above any ceiling (design finding 4: stock p10 rock
 #: is 12-22 u).
@@ -71,6 +74,10 @@ ROCK_COVER: float = 24.0
 #: How far below the Entrance's floor the dungeon may reach (finding 4:
 #: covered floor sits at most ~130 u below the open ground near it).
 FLOOR_DEPTH: float = 150.0
+#: Levels below the entrance's that the Verticality control asks the floor
+#: limit to make room for (step 7 task 7): ``flat`` none (one Level, as step
+#: 5), ``moderate`` one more (two Levels), ``dramatic`` two (three).
+EXTRA_LEVELS: Dict[str, int] = {"flat": 0, "moderate": 1, "dramatic": 2}
 #: Rooms laid out under the default Host_Hill.
 DEFAULT_ROOMS: int = 5
 #: When a dungeon can't be planned with every room asked for (they don't all
@@ -206,14 +213,37 @@ def approach_foot(landform: Landform) -> Tuple[float, float]:
     return landform.centre[0] + dx * reach, landform.centre[1] + dy * reach
 
 
+def level_height(race: str = "") -> float:
+    """Floor to floor of a stacked dungeon of ``race`` at its tallest: the
+    race's tallest room, the Slab over it and the Levels' floor variation
+    (``layout.LayoutGenerator._stack_for``)."""
+    from generators.layout import LEVEL_VARIATION
+    from generators.topology.embed import SLAB
+    return semantics.room_bands(race)[1][1] + SLAB + LEVEL_VARIATION
+
+
+def floor_depth(verticality: Optional[str] = None, race: str = "") -> float:
+    """How far under the Entrance's floor the dungeon may reach: step 5's
+    ``FLOOR_DEPTH``, plus a Level height (the race's, at its tallest) for
+    each extra Level the Verticality control asks for (``EXTRA_LEVELS``).
+    ``None`` or ``flat`` is step 5's. The hill still caps the dungeon from
+    above (its surface less the Rock_Cover) and around (its footprint), so a
+    Level the hill can't hold is not built: its rooms are dropped with
+    ``rooms_reduced``."""
+    extra = EXTRA_LEVELS.get(verticality or "flat", 0)
+    return FLOOR_DEPTH + extra * level_height(race)
+
+
 def host_envelope(spec: ZoneSpec, ter: TerFile, *,
                   rock_cover: float = ROCK_COVER,
-                  entrance_floor: Optional[float] = None) -> Envelope:
+                  entrance_floor: Optional[float] = None,
+                  depth: float = FLOOR_DEPTH) -> Envelope:
     """The Envelope under a host-hill spec's built terrain.
 
     ``entrance_floor`` defaults to the TER height at the hill's foot on the
     approach side (the open ground the Entrance will open onto); the floor
-    limit is ``FLOOR_DEPTH`` below it. That foot is the Envelope's entry, so
+    limit is ``depth`` (``FLOOR_DEPTH``; deeper for a multi-level dungeon,
+    :func:`floor_depth`) below it. That foot is the Envelope's entry, so
     the layout's entrance room is the one nearest it."""
     land = landscape_for(spec)
     landform = land.matrix.landform
@@ -227,7 +257,7 @@ def host_envelope(spec: ZoneSpec, ter: TerFile, *,
     # The hill disc can reach past the bowl's interior (the default hill's
     # does, under the W Rim); the Envelope is the disc clipped to it.
     footprint = clip_to_rect(host_footprint(landform), bowl_interior(land))
-    return Envelope(footprint, entrance_floor - FLOOR_DEPTH,
+    return Envelope(footprint, entrance_floor - depth,
                     surface, rock_cover, entry=foot)
 
 
@@ -591,10 +621,16 @@ def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
         for dj in (0, 1, 2):
             keep |= frozen[di:di + grid.nx, dj:dj + grid.ny]
     rooms = {r.id: r for r in dungeon.rooms}
+    # (id, rect, top): a blocker's top is its ceiling. On a stacked dungeon
+    # (step 7 task 7) a room or corridor on a lower Level that the Tunnel
+    # passes over with the Slab between doesn't block it; one Level (step 5)
+    # blocks in plan, as before.
+    stacked = bool((dungeon.layout or {}).get("levels"))
     blockers = [(r.id, (r.center_x - r.width / 2, r.center_y - r.depth / 2,
-                        r.center_x + r.width / 2, r.center_y + r.depth / 2))
+                        r.center_x + r.width / 2, r.center_y + r.depth / 2),
+                 r.floor_z + r.height)
                 for r in dungeon.rooms]
-    blockers += [(None, rect) for c in dungeon.corridors
+    blockers += [(None, rect, max(c.from_z, c.to_z) + c.height) for c in dungeon.corridors
                  for rect in route_footprint(corridor_route(c, rooms), c.width / 2)]
     # The Tunnel is one of the dungeon's corridors: its race's height.
     h = semantics.corridor_size(dungeon.dungeon_race)[1]
@@ -624,7 +660,10 @@ def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
                 if not _tunnel_covered(grid, e, rock_cover):
                     continue
                 strip = _strip_rect(ax, wall, grid.coord(ax, m), c0, c1)
-                if any(rid != room.id and _overlaps(strip, r) for rid, r in blockers):
+                low = min(e.room_floor, e.floor)
+                if any(rid != room.id and _overlaps(strip, r)
+                       and (not stacked or top + SLAB > low + 1e-6)
+                       for rid, r, top in blockers):
                     continue
                 apron, surfaced = _apron(grid, e)
                 if not surfaced:
@@ -801,11 +840,17 @@ def is_outdoor_dungeon(spec: ZoneSpec) -> bool:
 
 def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_BIOME,
                          room_count: int = DEFAULT_ROOMS, engine=None,
+                         verticality: Optional[str] = None,
                          **layout_kwargs) -> ZoneSpec:
     """One spec for an outdoor dungeon: the host wilderness spec (Host_Hill
     terrain at the outdoor-dungeon size) with the dungeon laid out inside its
     Envelope and an Entrance planned to it. ``engine`` is the dungeon's
     Layout_Engine (``None`` is classic); its record rides on ``spec.layout``.
+
+    ``verticality`` deepens the Envelope's floor limit (:func:`floor_depth`)
+    when the engine stacks (the graph engine at ``moderate`` / ``dramatic``,
+    ``ai.expand.layout_engine``); a one-Level dungeon (classic, or ``flat``)
+    keeps step 5's.
 
     Raises one of ``PLAN_ERRORS`` when the seed's hill can't hold the minimum
     rooms or no wall gives an Entrance (the pipeline retries on a fresh
@@ -814,7 +859,10 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
                            zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
     spec.zone_type = "outdoor_dungeon"
     ter = build_wilderness_ter(spec, f"ter_{name}", 1)
-    envelope = host_envelope(spec, ter)
+    depth = FLOOR_DEPTH
+    if getattr(engine, "stacking", False):
+        depth = floor_depth(verticality, layout_kwargs.get("dungeon_race") or "")
+    envelope = host_envelope(spec, ter, depth=depth)
     layout, warnings, entrance = plan_dungeon(spec, ter, envelope, name, seed, room_count,
                                               engine=engine, **layout_kwargs)
     # The Apron lowers the ground in front of the Mouth; when it reaches the
