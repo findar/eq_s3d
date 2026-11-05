@@ -279,8 +279,19 @@ class GraphEngine:
     room is on one Level; with it on their weights are times
     ``vertical_weight`` (``moderate`` 1, ``dramatic`` 2; ``ai/expand.py``).
     An explicit ``vertical_weight`` applies with stacking off too (the
-    outdoor dungeon keeps the rules as ramp hints until task 7 stacks it).
+    outdoor dungeon keeps them as ramp hints at ``flat``).
     A build with one Level is the same with stacking on or off.
+
+    ``descend`` (step 7 task 7, the outdoor dungeon: its Tunnel enters at the
+    top Level, and it should use more than one) keeps every Level at or
+    below the entrance's. The graph is grown again, up to
+    ``DESCEND_TRIES`` times in all, until its Levels go one way only and
+    there are at least two; one whose Levels all go up is turned over
+    (every Level negated and every edge's relation flipped: towers become
+    cellars). Out of tries, the first one-way graph is kept (else the last,
+    turned the way most of it goes with the rest pulled up to the
+    entrance's Level), and a graph on one Level puts its deep end (the
+    ``deep`` room, else the last room placed) a Level down.
     """
 
     name = "graph"
@@ -288,14 +299,16 @@ class GraphEngine:
     facings = 8              # len(embed.FACINGS)
     facing: int = 0
     entrance_side: float = 0.0
+    DESCEND_TRIES = 8
 
     def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
                  theme: Optional[str] = None,
                  rules_dir: Union[str, Path, None] = None, stacking: bool = False,
-                 vertical_weight: Optional[float] = None):
+                 vertical_weight: Optional[float] = None, descend: bool = False):
         self.rule_set = rule_set
         self.stacking = stacking
         self.vertical_weight = vertical_weight
+        self.descend = descend
         self.theme = theme
         self.rules_dir = Path(rules_dir) if rules_dir is not None else RULES_DIR
         self._loaded: Dict[Tuple[Optional[str], Optional[str]], "RuleSet"] = {}
@@ -322,6 +335,11 @@ class GraphEngine:
         if room_count < 1:
             return EngineResult(rooms=[], edges=[], record=self._record(rs, None, [], {}, []))
         grown = grow(rs, room_count, rng=ctx.rng, context=ctx.build)
+        flip = False
+        if self.stacking and self.descend:
+            grown = self._descending(rs, room_count, ctx, grown)
+            lv = embed.assign_levels(grown.graph).values()
+            flip = max(lv) > -min(lv)
         graph = grown.graph
         order = embed.bfs_order(graph)
         # Rooms are placed at their final size: each class's point in the
@@ -344,6 +362,15 @@ class GraphEngine:
         levels = level_h = storeys = None
         if self.stacking:
             levels = embed.assign_levels(graph)
+            if flip:
+                levels = {r: -lv for r, lv in levels.items()}
+            if self.descend:
+                levels = {r: min(lv, 0) for r, lv in levels.items()}
+                if len(set(levels.values())) == 1 and len(order) > 1:
+                    deep = next((n.id for n in graph.rooms() if n.kind == "deep"), order[-1])
+                    if deep == entrance:
+                        deep = order[-1]
+                    levels[deep] = -1
             heights = {r: sizes[r][2] for r in order}
             level_h = embed.level_height(list(heights.values()))
             storeys = embed.storeys(levels, heights, level_h)
@@ -382,7 +409,10 @@ class GraphEngine:
         for e in graph.edges():
             i, j = idx[e.a], idx[e.b]
             # graph.edge(a, b).rel says where b sits relative to a, as Edge does.
-            edges.append(Edge(i, j, graph.edge(e.a, e.b).rel))
+            rel = graph.edge(e.a, e.b).rel
+            if flip:
+                rel = _FLIP_REL.get(rel, rel)
+            edges.append(Edge(i, j, rel))
         entrance = next((idx[n.id] for n in graph.rooms() if n.kind == "entrance"), 0)
         entry = (rooms[entrance].center_x, rooms[entrance].center_y)
         # The rules' deep end is the climax (None when the set grew none, as
@@ -396,6 +426,25 @@ class GraphEngine:
             record["level_height"] = level_h
         return EngineResult(rooms=rooms, edges=edges, entry=entry, climax=climax,
                             record=record, levels=room_levels, level_height=level_h)
+
+    def _descending(self, rs, room_count: int, ctx: LayoutContext, grown):
+        """``grown``, or a graph grown again (``descend``): the first whose
+        Levels go one way from the entrance and number at least two, within
+        ``DESCEND_TRIES`` graphs in all; else the first one-way graph; else
+        the last."""
+        from .topology import embed
+        from .topology.rewrite import grow
+
+        fallback = None
+        for k in range(self.DESCEND_TRIES):
+            if k:
+                grown = grow(rs, room_count, rng=ctx.rng, context=ctx.build)
+            lv = list(embed.assign_levels(grown.graph).values())
+            if min(lv) >= 0 or max(lv) <= 0:
+                if min(lv) < max(lv):
+                    return grown
+                fallback = fallback or grown
+        return fallback or grown
 
     @staticmethod
     def _record(rs, grown, order, idx, edges, graph=None, rooms=None) -> dict:
@@ -415,6 +464,10 @@ class GraphEngine:
                     "kind": n.kind, "size": n.size, "district": n.district, "node": r}
             rec["edges"] = [[rooms[e.i].id, rooms[e.j].id, e.rel] for e in edges]
         return rec
+
+
+# A relation read the other way up (``GraphEngine.descend`` turning a graph over).
+_FLIP_REL = {"above": "below", "below": "above"}
 
 
 # The one place engine names map to engines.

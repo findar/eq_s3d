@@ -83,7 +83,9 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                 room_count=plan.room_count, locks=plan.locks,
                 dungeon_theme=plan.dungeon_theme, dungeon_race=plan.dungeon_race,
                 elemental_tint=(plan.elemental_tint or None),
-                engine=layout_engine(plan.layout, plan.rule_set, outdoor=True))
+                verticality=plan.verticality,
+                engine=layout_engine(plan.layout, plan.rule_set, plan.verticality,
+                                     outdoor=True))
             spec.layout = layout_block(spec.layout, spec)
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
@@ -150,13 +152,20 @@ def layout_engine(layout: str, rule_set: str = "", verticality: Optional[str] = 
     *verticality* (``flat`` / ``moderate`` / ``dramatic``) sets the graph
     engine's stacking and the weight on the set's vertical rules
     (``VERTICAL_RULES``); ``None`` is the engine's default: no stacking, so
-    no vertical rules. *outdoor* (the outdoor dungeon, until task 7 stacks
-    it) keeps the vertical rules at their weights as step 6's ramp hints,
-    stacking off."""
+    no vertical rules. *outdoor* (the outdoor dungeon): at ``flat`` (or
+    no verticality) the vertical rules stay at their weights as step 6's
+    ramp hints, stacking off, as before step 7; at ``moderate`` /
+    ``dramatic`` it stacks like any graph dungeon, its Levels only going
+    down from the entrance (``descend``: the Tunnel enters at the top
+    Level, step 7 task 7)."""
     if layout != "graph":
         return None
     if outdoor:
-        return GraphEngine(rule_set or None, vertical_weight=1.0)
+        if verticality in (None, "flat"):
+            return GraphEngine(rule_set or None, vertical_weight=1.0)
+        _stacking, weight = VERTICAL_RULES.get(verticality, VERTICAL_RULES["moderate"])
+        return GraphEngine(rule_set or None, stacking=True, vertical_weight=weight,
+                           descend=True)
     if verticality is None:
         return GraphEngine(rule_set or None)
     stacking, weight = VERTICAL_RULES.get(verticality, VERTICAL_RULES["moderate"])

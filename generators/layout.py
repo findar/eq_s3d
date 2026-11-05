@@ -120,13 +120,16 @@ U_DOOR_MARGIN = 2.0
 
 class _Stack(NamedTuple):
     """What Job B knows of a stacked build: each room's Level and the
-    floor-to-floor height it places them at."""
+    floor-to-floor height it places them at. ``offset`` moves the whole
+    stack up or down (an outdoor dungeon's ``_fit_floors`` sinks it under the
+    hill), keeping each Level's band and the Slab between them."""
     levels: List[int]
     level_height: float
     variation: float
+    offset: float = 0.0
 
     def base(self, k: int) -> float:
-        return self.levels[k] * self.level_height
+        return self.levels[k] * self.level_height + self.offset
 
     def band(self, k: int) -> Tuple[float, float]:
         h = self.variation / 2
@@ -1413,6 +1416,12 @@ class LayoutGenerator:
         a lower surface — a hill's flank — above theirs, and the relax pulled
         them back up through the rock: a third of host-hill builds dropped
         rooms.)
+
+        A stacked build (step 7 task 7) shifts the whole stack: its offset
+        moves with the floors, so the relax keeps each room in its Level's
+        band at the new height (it pulled them back to where the engine put
+        them before) and the Slab between Levels holds; a room's band is then
+        its Envelope band within its Level's.
         """
         from collections import defaultdict
         bands = []
@@ -1423,6 +1432,12 @@ class LayoutGenerator:
         shift = min(hi - r.floor_z for r, (_lo, hi) in zip(rooms, bands))
         for r in rooms:
             r.floor_z += shift
+        if self._stack is not None:
+            self._stack = self._stack._replace(offset=self._stack.offset + shift)
+            for k, (lo, hi) in enumerate(bands):
+                blo, bhi = self._stack.band(k)
+                if max(lo, blo) <= min(hi, bhi):
+                    bands[k] = (max(lo, blo), min(hi, bhi))
         adj = defaultdict(list)
         for i, j in edges:
             adj[i].append(j)
