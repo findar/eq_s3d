@@ -356,7 +356,7 @@ def entry_point(zone: str, labels):
 
 def load_floor(eq_path: Path, zone: str, agent: AgentModel) -> Floor:
     mesh = load_mesh(eq_path, zone)
-    surf = build_walk_surface(mesh, agent)
+    surf = build_walk_surface(mesh, agent, floors_up=False)  # WLD floors wind down (task 18)
     tri = surf.verts[surf.faces]
     # The walk surface takes |nz|, so ceilings pass as standable. WLD winds
     # its polygons the other way round: a floor's computed normal points down

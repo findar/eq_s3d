@@ -37,6 +37,8 @@ recommended on all and continue"):
 
 - **The gate stands on floors only (task 18, 2026-11-04):** `build_walk_surface` takes a face as standable only when wound up (`floors_up=False` for WLD-wound meshes, floors down); a ceiling is never floor. A corridor over or under a crossed room with the Slab between is not a crossing on any spec (`is_stacked_build` is gone). Tubes on a stacked build keep the Slab between them (top of the lower to the upper floor). Stacked Edge_Fidelity on task 5's sweep: 0.85 -> 0.92 (0.93 unstacked).
 
+- **Stock scale (user, 2026-11-04):** "Stock scale". Task 16 found our rooms are 3-4 times stock size (human dungeon rooms 121 u tall and ~340 u across; stock human rooms 15-60 u tall and 48-120 u across). Every dungeon moves to the race bands, rooms and corridors both, Classic included: room height 2.5-10 H, footprint side 8-20 H, H from the client's `racedata.txt` (human 6, ogre 9, giant 22, dragon 21). Task 17.
+
 ## Follow-ups
 
 - **Stock stacking is low rooms over low rooms** (task 1): where stock floors stack they are only ~28 u apart (14 u of headroom), because corridors and low rooms stack, not halls. Our rooms are about four times taller, so a Level is ~135 u. A low stacking room type (a crawlway, a cellar, a gallery) would bring built dungeons closer to stock.

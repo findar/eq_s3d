@@ -105,7 +105,7 @@ def load_faces(eq_path: Path, zone: str, agent: AgentModel, cache: Path = None):
             d = np.load(f)
             return d["floor"], d["ceil"], d["wet"]
     mesh = load_mesh(eq_path, zone)
-    surf = build_walk_surface(mesh, agent)
+    surf = build_walk_surface(mesh, agent, floors_up=False)  # WLD floors wind down (task 18)
     tri = surf.verts[surf.faces]
     # Same filter as load_floor: WLD floors wind with the normal down.
     floor = tri[np.nonzero(surf.standable & (surf.normals[:, 2] < 0))[0]]

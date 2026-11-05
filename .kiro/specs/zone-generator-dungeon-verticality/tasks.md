@@ -118,10 +118,10 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: scripts/race_size_survey.py, .kiro/specs/zone-generator-dungeon-verticality/design.md (finding 8 only)
   - Reqs: 10.1
 
-- [ ] 17. Rooms sized for their race
+- [ ] 17. Rooms sized for their race, at stock scale
   - Card: [cards/17-race-rooms.md](cards/17-race-rooms.md)
-  - Type: agent · Size: M · Depends: 5, 16
-  - Owns: generators/semantics.py, generators/topology/embed.py, generators/layout.py, ai/schema.py, web/index.html, tests/test_race_sizing.py, tests/test_layout_engine.py (raced goldens, deliberately)
+  - Type: agent · Size: M · Depends: 5, 6, 16
+  - Owns: generators/semantics.py, generators/topology/embed.py, generators/layout.py, generators/layout_engine.py, generators/outdoor_dungeon.py, ai/schema.py, ai/expand.py, web/index.html, docs/ACCEPTANCE.md, tests/test_race_sizing.py, tests/ (goldens and pinned seeds that change with the scale, deliberately)
   - Reqs: 10
 
 - [x] 18. The gate stops reading ceilings as floor
