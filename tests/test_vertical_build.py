@@ -8,12 +8,12 @@ Verticality setting:
 - dungeon x each base set (``classic_eq``, ``warren``) x plain, ``temple``
   and ``fortress`` x several room counts;
 - outdoor dungeon x ``classic_eq`` x ``temple`` and ``fortress``;
-- a big race (ogre) and the dragon, in a dungeon on both sets and (the ogre)
-  under a hill. Not the dragon under a hill: at ``flat`` it rarely plans
+- a big race (ogre) and the dragon, in a dungeon on both sets and under a
+  hill. The dragon under a hill joined in task 19, once its long U-route
+  stairs stopped running past the map edge under the boundary (the bowl
+  gate read that as a leak); at ``flat`` it still rarely plans
   (EnvelopeFitError, archive follow-up "Giant and dragon outdoor dungeons
-  drop rooms"), and stacked its long U-route stairs run past the map edge
-  under the boundary, which the bowl gate reads as a leak (reported from
-  task 9; the fit is in ``generators/outdoor_dungeon.py``).
+  drop rooms"), which only lowers the bar.
 
 Every stacked build (``moderate``, ``dramatic``) must pass within the
 pipeline's retry budget. The same plans are built at ``flat`` (step 6's graph
@@ -52,6 +52,8 @@ SWEEPS = {
        for rs in ("classic_eq", "warren") for race in ("ogre", "dragon")},
     "outdoor_dungeon-classic_eq-ogre": ("outdoor_dungeon", "classic_eq", "temple", "ogre", (5,),
                                         range(4), ("moderate",)),
+    "outdoor_dungeon-classic_eq-dragon": ("outdoor_dungeon", "classic_eq", "temple", "dragon",
+                                          (5,), range(4), ("moderate",)),
 }
 
 

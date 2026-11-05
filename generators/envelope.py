@@ -49,6 +49,31 @@ def _inside_polygon(poly: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarra
     return inside | on_edge
 
 
+def _convex_halfplanes(poly):
+    """A convex polygon's edges as inward half-planes ``(ox, oy, nx, ny)``
+    (a point p is inside when ``(p - o) . n >= 0`` for every edge, ``n`` a
+    unit inward normal), or None when the polygon isn't convex. Zero-length
+    edges (a clip can leave repeated vertices) are skipped."""
+    pts = np.asarray(poly, dtype=np.float64)
+    nxt = np.roll(pts, -1, axis=0)
+    e = nxt - pts
+    length = np.hypot(e[:, 0], e[:, 1])
+    keep = length > 1e-9
+    pts, e, length = pts[keep], e[keep], length[keep]
+    if len(pts) < 3:
+        return None
+    area2 = float(np.sum(pts[:, 0] * np.roll(pts[:, 1], -1) - np.roll(pts[:, 0], -1) * pts[:, 1]))
+    if abs(area2) < 1e-9:
+        return None
+    sign = 1.0 if area2 > 0 else -1.0
+    turn = e[:, 0] * np.roll(e[:, 1], -1) - e[:, 1] * np.roll(e[:, 0], -1)
+    if np.any(sign * turn < -1e-9):
+        return None
+    # Inward normal: left of each edge for a counter-clockwise polygon.
+    nx, ny = -sign * e[:, 1] / length, sign * e[:, 0] / length
+    return pts[:, 0].copy(), pts[:, 1].copy(), nx, ny
+
+
 @dataclass(frozen=True)
 class Envelope:
     """Where the dungeon may go.
@@ -82,6 +107,7 @@ class Envelope:
                            tuple((float(x), float(y)) for x, y in self.footprint))
         if self.entry is not None:
             object.__setattr__(self, "entry", (float(self.entry[0]), float(self.entry[1])))
+        object.__setattr__(self, "_halfplanes", _convex_halfplanes(self.footprint))
 
     # -- footprint ---------------------------------------------------------
 
@@ -113,7 +139,19 @@ class Envelope:
         return gx.ravel(), gy.ravel()
 
     def covers(self, x0: float, y0: float, x1: float, y1: float) -> bool:
-        """Does the footprint cover the rectangle (sampled, edges included)?"""
+        """Does the footprint cover the rectangle (sampled, edges included)?
+
+        A convex footprint (a disc, or one clipped to the bowl interior)
+        covers it exactly when it covers its four corners, tested against
+        every edge at once; the layout asks this of every stair route it
+        tries (step 7 task 19), so the sampled test was its hot spot."""
+        hp = self._halfplanes
+        if hp is not None:
+            ox, oy, nx, ny = hp
+            px = np.array([x0, x1, x0, x1])
+            py = np.array([y0, y0, y1, y1])
+            d = (px[None, :] - ox[:, None]) * nx[:, None] + (py[None, :] - oy[:, None]) * ny[:, None]
+            return bool((d >= -1e-6).all())
         gx, gy = self._grid(x0, y0, x1, y1)
         return bool(_inside_polygon(np.asarray(self.footprint), gx, gy).all())
 
