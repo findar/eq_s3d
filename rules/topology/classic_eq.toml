@@ -71,14 +71,73 @@ replace  = [ {id = "x", kind = "Area"}, {id = "y", kind = "Area"} ]
 edges    = [ {a = "x", b = "y"} ]
 reattach = { x = ["x", "y"] }
 
-# A narrow room in line on the way, and the floor drops after it:
-# rel = "below" reads "x is below p" (elevation acts on it; rooms never stack).
+# A narrow room in line on the way, and the way drops a Level after it:
+# rel = "below" reads "x is below p". A vertical rule (see below).
 [rules.passage]
 description = "A narrow passage room on the way through, going down"
 match    = [ {id = "x", kind = "Area"} ]
 replace  = [ {id = "p", kind = "passage", size = "small"}, {id = "x", kind = "Area"} ]
 edges    = [ {a = "p", b = "x", rel = "below"} ]
 reattach = { x = ["p", "x"] }
+
+# ---------------------------------------------------------------------------
+# Vertical rules (step 7). A rule with an "above" or "below" edge in its
+# replacement is a vertical rule: the edge joins two rooms on different
+# Levels (floors a storey apart, the upper room may stand over the lower one)
+# by a stair. The Verticality control scales every vertical rule's weight in
+# the recipe: flat 0 (left out: one Level), moderate as written, dramatic x2.
+# `passage` above is one too.
+# ---------------------------------------------------------------------------
+
+# The way on goes down a Level: a chamber in line on the way, and a stair
+# down from it to the rest of the way ("x is below d").
+[rules.descent]
+description = "The way on goes down a stair to the next Level"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "d", kind = "chamber", size = "medium"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "d", b = "x", rel = "below"} ]
+reattach = { x = ["d", "x"] }
+
+# A hub on the way (it takes all the placeholder's edges) with a way
+# on at its own Level and a stair down to a wing below it. The wing is a
+# placeholder, so later stages grow it into rooms on the lower Level.
+[rules.stair_hall]
+description = "A hub with a stair down to a wing below it"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "h", kind = "hub", size = "medium"},
+             {id = "x", kind = "Area"}, {id = "w", kind = "Area"} ]
+edges    = [ {a = "h", b = "x"}, {a = "h", b = "w", rel = "below"} ]
+reattach = { x = ["h"] }
+
+# A gallery: a small room up a stair from a large hall, standing over part of
+# it. A dead end, like side_wing's. (With bridges, task 11, a gallery could
+# also be crossed; here the stair is its only way in.)
+[rules.gallery]
+description = "A large hall with a gallery over it, up a stair"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "h", kind = "hall", size = "large"},
+             {id = "g", kind = "chamber", size = "small"} ]
+edges    = [ {a = "x", b = "h"}, {a = "h", b = "g", rel = "above"} ]
+reattach = { x = ["x"] }
+
+# A ring of four that goes down a Level and comes back up: two chambers
+# below the placeholder, joined to it by a stair each. Adds a loop and no
+# dead end. Only the two stairs carry a relation: the other two edges are
+# "any", so each room takes the Level of the room it is reached from (a
+# relation that has to hold exactly, "level", is one more for the elevation
+# pass to break). The driver rejects any rule application whose relations
+# disagree round a loop.
+[rules.undercroft]
+description = "A ring of four through the Level below"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "a", kind = "chamber", size = "small"},
+             {id = "b", kind = "chamber", size = "medium"},
+             {id = "c", kind = "chamber", size = "small"} ]
+edges    = [ {a = "x", b = "a", rel = "below"}, {a = "a", b = "b"},
+             {a = "b", b = "c", rel = "above"}, {a = "c", b = "x"} ]
+reattach = { x = ["x"] }
 
 # A huge chamber in line on the way. The main source of huge rooms after the
 # deep end itself (the stock zones have 9-18 % huge chambers).
@@ -232,13 +291,13 @@ reattach = { x = ["x"] }
 # after it, and a long spine overshoots the deep-end band.
 [[recipe]]
 stage = "Main path"
-apply = { lengthen = 2, passage = 1, cavern = 1.5 }
+apply = { lengthen = 2, passage = 1, cavern = 1.5, descent = 3 }
 share = 0.1
 
 # Most rooms: forks, short loops and dead ends off the way.
 [[recipe]]
 stage = "Side rooms"
-apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3.5, cavern = 0.3 }
+apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3.5, cavern = 0.3, stair_hall = 5, gallery = 3, undercroft = 1 }
 share = 0.45
 
 # A few more loops, some of them as second routes along the way.

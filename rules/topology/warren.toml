@@ -71,13 +71,68 @@ replace  = [ {id = "x", kind = "Area"}, {id = "y", kind = "Area"} ]
 edges    = [ {a = "x", b = "y"} ]
 reattach = { x = ["x", "y"] }
 
-# A small passage in line, and the floor drops after it ("x is below p").
+# A small passage in line, and the way drops a Level after it ("x is below
+# p"). A vertical rule (see below).
 [rules.tunnel]
 description = "A small passage room in line, going down"
 match    = [ {id = "x", kind = "Area"} ]
 replace  = [ {id = "p", kind = "passage", size = "small"}, {id = "x", kind = "Area"} ]
 edges    = [ {a = "p", b = "x", rel = "below"} ]
 reattach = { x = ["p", "x"] }
+
+# ---------------------------------------------------------------------------
+# Vertical rules (step 7). As in classic_eq: a rule with an "above" or
+# "below" edge in its replacement joins rooms on different Levels by a stair,
+# and the Verticality control scales its weight (flat 0, moderate as
+# written, dramatic x2). Blackburrow is four Levels of burrows stacked over
+# each other, so a warren goes up and down more than a classic dungeon.
+# `tunnel` above is one too.
+# ---------------------------------------------------------------------------
+
+# The way on goes down a Level: a small burrow in line and a stair down from
+# it ("x is below d").
+[rules.descent]
+description = "The tunnel goes down a stair to the next Level"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "d", kind = "chamber", size = "small"}, {id = "x", kind = "Area"} ]
+edges    = [ {a = "d", b = "x", rel = "below"} ]
+reattach = { x = ["d", "x"] }
+
+# A huge cave hub (it takes all the placeholder's edges) with a way on at its Level
+# and a stair down to a placeholder below, which later stages grow into a
+# lower warren.
+[rules.stair_hall]
+description = "A hub with a stair down to more burrows below it"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "h", kind = "hub", size = "huge"},
+             {id = "x", kind = "Area"}, {id = "w", kind = "Area"} ]
+edges    = [ {a = "h", b = "x"}, {a = "h", b = "w", rel = "below"} ]
+reattach = { x = ["h"] }
+
+# A gallery: a small den up a stair from a burrow, standing over part of it.
+[rules.gallery]
+description = "A burrow with a small den over it, up a stair"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "h", kind = "chamber", size = "medium"},
+             {id = "g", kind = "lair", size = "small"} ]
+edges    = [ {a = "x", b = "h"}, {a = "h", b = "g", rel = "above"} ]
+reattach = { x = ["x"] }
+
+# The burrow ring of four through the Level below: all three burrows under
+# the placeholder, a stair down to the first and up from the last. A loop
+# and no dead end, like `burrow`. The middle edges are "any": b takes the
+# Level of the burrow it is reached from, which is the lower one either way.
+[rules.sunken_burrow]
+description = "A ring of four burrows through the Level below"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "a", kind = "chamber", size = "small"},
+             {id = "b", kind = "chamber", size = "medium"},
+             {id = "c", kind = "chamber", size = "small"} ]
+edges    = [ {a = "x", b = "a", rel = "below"}, {a = "a", b = "b"},
+             {a = "b", b = "c"}, {a = "c", b = "x", rel = "above"} ]
+reattach = { x = ["x"] }
 
 # A tiny crawl in line: the warren's only tiny rooms (blackburrow has 3 %).
 [rules.squeeze]
@@ -224,19 +279,19 @@ reattach = { x = ["x"] }
 # any tunnel length.
 [[recipe]]
 stage = "Tunnels"
-apply = { lengthen = 0.5, tunnel = 0.5, cavern = 1, hub = 2 }
-share = 0.1
+apply = { lengthen = 0.5, tunnel = 1, cavern = 1, hub = 2, descent = 3, stair_hall = 3 }
+share = 0.15
 
 # Most rooms: rings of burrows, forks and dens. Raise `burrow` for more
 # loops, `den` for more dead ends, `ring` or `lengthen` for a deeper warren.
 [[recipe]]
 stage = "Burrows"
-apply = { burrow = 4.5, ring = 0.2, hub = 1, den = 1.8, squeeze = 0.2, cavern = 0.4 }
-share = 0.5
+apply = { burrow = 5.5, ring = 0.2, hub = 1, den = 1.8, squeeze = 0.2, cavern = 0.4, stair_hall = 4, gallery = 2, sunken_burrow = 6 }
+share = 0.45
 
 # Finish every placeholder, mostly as small and medium chambers; keep growing
 # from finished rooms until the count is reached.
 [[recipe]]
 stage = "Finish"
-apply = { finish = 1.2, finish_medium = 1.7, finish_large = 0.8, burrow = 0.3, nook = 0.6, split = 0.3, shortcut = 0.6, annex = 0.3 }
+apply = { finish = 1.2, finish_medium = 1.4, finish_large = 1.0, burrow = 0.3, nook = 0.6, split = 0.3, shortcut = 0.8, annex = 0.3 }
 share = "rest"

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import (TYPE_CHECKING, Callable, Dict, List, NamedTuple, Optional,
                     Protocol, Tuple, Type, Union)
@@ -227,6 +227,26 @@ class ClassicEngine:
 RULES_DIR = Path(__file__).resolve().parent.parent / "rules" / "topology"
 
 
+def is_vertical(rule) -> bool:
+    """A vertical rule (design "Rule format"): its replacement has an
+    ``above`` / ``below`` edge."""
+    return any(e.rel in ("above", "below") for e in rule.edges)
+
+
+def scale_vertical(rule_set: "RuleSet", factor: float) -> "RuleSet":
+    """*rule_set* with every vertical rule's recipe weight times *factor*; a
+    weight of 0 takes the rule out of its stages. Factor 1 is the set as is."""
+    if factor == 1.0:
+        return rule_set
+    vertical = {name for name, r in rule_set.rules.items() if is_vertical(r)}
+    recipe = tuple(
+        replace(stage, apply={k: w * factor if k in vertical else w
+                              for k, w in stage.apply.items()
+                              if not (k in vertical and w * factor <= 0)})
+        for stage in rule_set.recipe)
+    return replace(rule_set, recipe=recipe)
+
+
 class GraphEngine:
     """Graph rewriting (design "Placement"): a rule set grows a Topology_Graph
     of exactly n rooms, its placement lays the rooms out, and each grammar
@@ -249,10 +269,14 @@ class GraphEngine:
     the rules' vertical relations (``embed.assign_levels``) and places them
     in 3D: rooms on different Levels may overlap in plan, stair edges pull
     together, and separation runs within each Level. The result then carries
-    ``levels`` and ``level_height``. Off, the shipped rule sets' ``below``
-    edges stay step 6's ramp hints and the output is step 6's, byte for byte
-    (``tests/test_topology_levels.py`` goldens). The Verticality control turns
-    it on once the rules and Job B are ready (tasks 5 and 6).
+    ``levels`` and ``level_height``. Vertical rules need Levels (task 6):
+    with stacking off the set's vertical rules are left out
+    (``scale_vertical`` x 0, the Verticality control's ``flat``), so every
+    room is on one Level; with it on their weights are times
+    ``vertical_weight`` (``moderate`` 1, ``dramatic`` 2; ``ai/expand.py``).
+    An explicit ``vertical_weight`` applies with stacking off too (the
+    outdoor dungeon keeps the rules as ramp hints until task 7 stacks it).
+    A build with one Level is the same with stacking on or off.
     """
 
     name = "graph"
@@ -263,9 +287,11 @@ class GraphEngine:
 
     def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
                  theme: Optional[str] = None,
-                 rules_dir: Union[str, Path, None] = None, stacking: bool = False):
+                 rules_dir: Union[str, Path, None] = None, stacking: bool = False,
+                 vertical_weight: Optional[float] = None):
         self.rule_set = rule_set
         self.stacking = stacking
+        self.vertical_weight = vertical_weight
         self.theme = theme
         self.rules_dir = Path(rules_dir) if rules_dir is not None else RULES_DIR
         self._loaded: Dict[Tuple[Optional[str], Optional[str]], "RuleSet"] = {}
@@ -285,7 +311,10 @@ class GraphEngine:
         from .topology import embed
         from .topology.rewrite import grow
 
-        rs = self.rules_for(ctx.build.theme)
+        weight = self.vertical_weight
+        if weight is None:
+            weight = 1.0 if self.stacking else 0.0
+        rs = scale_vertical(self.rules_for(ctx.build.theme), weight)
         if room_count < 1:
             return EngineResult(rooms=[], edges=[], record=self._record(rs, None, [], {}, []))
         grown = grow(rs, room_count, rng=ctx.rng, context=ctx.build)
