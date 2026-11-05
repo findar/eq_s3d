@@ -41,6 +41,8 @@ recommended on all and continue"):
 
 - **Verticality drives stacking (task 6, 2026-11-04):** `flat` = stacking off and no vertical rules; `moderate` = stacking on, weights as written; `dramatic` = vertical weights x2 (`GraphEngine` vertical-rule hook). `passage` (classic_eq) and `tunnel` (warren) stay real Level drops. Outdoor dungeons keep the vertical rules at weight 1 as ramp hints, stacking off, until task 7. Built means at moderate: Stacked_Share 0.08-0.10, 2.1-2.4 Levels, span 1.2-1.5 gaps (inside the survey bands); stacked fidelity 0.92-0.96.
 
+- **Race bands in code (task 17, 2026-11-04):** `semantics.RACE_HEIGHT` (H) replaces `RACE_SCALE`; every room-graph room (both engines, city, outdoor dungeon) is clamped into [2.5 H, 10 H] tall and [8 H, 20 H] a side; Size_Class picks a geometric point (tiny 0 ... huge 1), the Size control shifts it (-0.125 / 0 / +0.125 / +0.25); corridors 3 H x 2.5 H; rises in H (moderate 1-3.5, dramatic 2.5-7.5); `race_scale` = H / 6 for rule conditions. The measured zone floor area no longer sizes rooms. Outdoor dungeons align the entrance wall to the terrain grid; ogres now plan under the hill, giants and dragons still drop rooms (task 7).
+
 ## Follow-ups
 
 - **Stock stacking is low rooms over low rooms** (task 1): where stock floors stack they are only ~28 u apart (14 u of headroom), because corridors and low rooms stack, not halls. Our rooms are about four times taller, so a Level is ~135 u. A low stacking room type (a crawlway, a cellar, a gallery) would bring built dungeons closer to stock.
