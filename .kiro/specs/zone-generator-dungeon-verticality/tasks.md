@@ -58,7 +58,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: generators/layout.py, generators/routing.py, generators/zone_spec.py, analyzer/traverse.py (room faces only), tests/test_layout_levels.py
   - Reqs: 4.3–4.5
 
-- [ ] 6. The rules go up and down
+- [x] 6. The rules go up and down
   - Card: [cards/06-vertical-rules.md](cards/06-vertical-rules.md)
   - Type: agent · Size: M · Depends: 1, 5
   - Owns: rules/topology/, ai/expand.py, tests/test_ruleset_classic_eq.py, tests/test_ruleset_warren.py, tests/test_topology_levels.py, generators/layout_engine.py (vertical-weight hook), tests/test_corridor_clearance.py, tests/test_properties_layout.py, tests/test_properties_core.py, tests/test_graph_layout_controls.py, tests/test_level_sidecar_maps.py (one flat plan)
