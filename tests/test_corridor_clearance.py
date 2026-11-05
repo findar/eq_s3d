@@ -284,7 +284,7 @@ def test_tight_bands_stay_within_grade_cap(layout):
                     dungeon_theme="sunken_ruin", dungeon_race="froglok")
     spec = plan_to_spec(plan, seed=22)
     gen = LayoutGenerator("dungeon")
-    gen.size_multiplier = 1.0
+    gen.race = "froglok"        # the run is measured at the froglok's corridor width
     gen._apply_room_scale(22)
     assert stair_or_ramp_violations(spec, gen) == []
     if layout == "classic":

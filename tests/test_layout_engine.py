@@ -36,30 +36,32 @@ def _spec_hash(spec) -> str:
 # label -> (ZonePlan fields, seed, Zone_Spec sha256, .eqg[:-4] sha256).
 # The Zone_Spec is hashed as the layout leaves it: the build adds to it.
 # The room-graph cases name ``layout="classic"`` since task 21 made graph the
-# default: these goldens pin the classic engine.
+# default: these goldens pin the classic engine. Every room-graph golden
+# (not wilderness) was recaptured once, deliberately, by verticality step 7
+# task 17: rooms and corridors moved to stock scale for their race.
 GOLDENS = {
     # Plain dungeon with elevation (moderate verticality).
     "dungeon": (
         dict(zone_type="dungeon", room_count=8, layout="classic"), 7,
-        "b61698e1e6ca1968e04b0f4426ea439ed7cdc39b917dad0571a0a5090400bcee",
-        "483e769eda2b5680538a1a7d9b67629c37447af969c3477945fcf7b4277ebb6c"),
+        "a3a6e9b1ff09cc68b0a83869d5968edcf7fef465386c7365fbe076db22ec5732",
+        "4b483b3a713d88d656e96da3150a54578401adc0e19a327d23dc2afbd6f9d1e1"),
     # Flat dungeon (no elevation pass).
     "dungeon_flat": (
         dict(zone_type="dungeon", room_count=6, elevation=False,
              layout="classic"), 3,
-        "ebd555a660198b83a9b8504517da4a7eb096ae9ebc2d66dd242f2687858821ff",
-        "bf0d0ee0c03783266cb510ed254506a4944dabe37a690bc27caf41d9fdc902d9"),
+        "8bd24445db6d130d1e6302515742dc2eede008b4422b2729ab12f3ed50362efa",
+        "e8c65bbc2df78b3a8c4d2c5258143df24872d08287a613fb64459517bd917314"),
     # Themed dungeon with locks, race scale and dramatic elevation.
     "temple_locks": (
         dict(zone_type="dungeon", room_count=9, locks=2, dungeon_theme="temple",
              dungeon_race="troll", verticality="dramatic",
              layout="classic"), 11,
-        "e6d8b333faf276b08de4c4b091d1001e6f3605f9b998d579665dc54412857889",
-        "040e2dbfe27c87dfc51773a154361eb6fcb171afa1c420cd9c591002452b141d"),
+        "c85faeb2f301fa8a8b8d236dbe623d757b684e39e11d8fbaced806117fa618f5",
+        "c5e9125f3a11aa7c040ded8d3010496a90550090f0f7e876b9b82fcb6243388c"),
     "city": (
         dict(zone_type="city", room_count=7), 5,
-        "627faad8a385580f191612a5bb663c5ce4c9db59368ca521a0c260ea6de0b8d2",
-        "0d4e257e73f914e7775a0923bba9191e942a406f6304b1d22dce96edb84f5983"),
+        "6a22604a597e2b805346bbad1d1dad640c408015592d8e8adb3c0c4c1e7ce170",
+        "2467f660f243c0e8061e643049622d3542ab51d891e20019b70e95c840c75ff5"),
     "wilderness": (
         dict(zone_type="wilderness"), 4,
         "a948f132378258b14e6606cc06faf248f712cca2b7317e627ce5dda6c56fcc62",
@@ -70,8 +72,8 @@ GOLDENS = {
     "outdoor_dungeon": (
         dict(zone_type="outdoor_dungeon", room_count=5, locks=1,
              layout="classic"), 3,
-        "13d6b5aebbb9d5588e93710e1a56a9e70e83f55d96d20d5f70b922218c4a8f27",
-        "3f157d1a9423443fd57bfb1cbb0d7e06c353a3df7defc40647f91001c093b5ee"),
+        "19961348631cfb376dab285f0da4de79662cc3f1a18596fa8996fc2661322c8a",
+        "3104ae3704fc1c5dcbdfb385ae53779e16549e7488fcdebed13126ae4cccc6ce"),
 }
 
 
@@ -103,7 +105,7 @@ class _StubEngine:
         from generators.layout_engine import EngineResult, Edge
         from generators.zone_spec import RoomSpec
         rooms = [RoomSpec(id=f"room_{k}", center_x=-1200.0 + 1200.0 * k, center_y=0.0,
-                          floor_z=0.0, width=300.0, depth=300.0, height=ctx.ceiling)
+                          floor_z=0.0, width=100.0, depth=100.0, height=ctx.ceiling)
                  for k in range(3)]
         ctx.separate(rooms)
         return EngineResult(rooms=rooms,
@@ -120,6 +122,6 @@ def test_engine_touch_points():
         spec = gen.generate("stub", room_count=3, add_lights=False)
         r0, r1, r2 = spec.rooms
         assert r2.role == "entrance" and r0.role == "climax"
-        assert all(r.width == 300.0 and r.depth == 300.0 for r in spec.rooms)
+        assert all(r.width == 100.0 and r.depth == 100.0 for r in spec.rooms)
         assert r1.floor_z < r2.floor_z - 1.0
         assert abs(r0.floor_z - r1.floor_z) < 1e-6

@@ -149,22 +149,24 @@ def test_record_names_set_layers_and_rooms():
 @settings(max_examples=scaled(25), deadline=None)
 @given(s=seeds, n=st.integers(1, 30), theme=THEMES)
 def test_engine_sizes_rooms_by_class(s, n, theme):
-    """Straight from the engine: every room's footprint is its class side
-    within the spread, its height the class height (race scaling and the
-    theme's room types come later, in semantics)."""
+    """Straight from the engine: every room's footprint is its class's side
+    in the race's band (step 7 task 17) within the spread and inside the
+    band, its height the class's height (the theme's room types come later,
+    in semantics)."""
+    from generators import semantics
     gen = LayoutGenerator("dungeon", seed=s)
     gen._apply_room_scale(n)
     ctx = gen._layout_context(n, theme, "")
     res = GraphEngine().generate(ctx, n, None)
-    classes = [res.record["rooms"][r.id]["size"] for r in res.rooms]
-    base = embed.area_matched_base(embed.base_side(ctx.room_min, ctx.room_max), classes)
+    (s0, s1), _h = semantics.room_bands("")
     assert len(res.rooms) == n
     for r in res.rooms:
-        foot, tall = embed.SIZE_SCALE[res.record["rooms"][r.id]["size"]]
-        side = base * foot
+        t = semantics.band_position(res.record["rooms"][r.id]["size"])
+        side = semantics.room_side("", t)
+        lo, hi = max(s0, side * (1 - embed.SPREAD)), min(s1, side * (1 + embed.SPREAD))
         for v in (r.width, r.depth):
-            assert side * (1 - embed.SPREAD) - 1e-6 <= v <= side * (1 + embed.SPREAD) + 1e-6
-        assert r.height == pytest.approx(ctx.ceiling * tall)
+            assert lo - 1e-6 <= v <= hi + 1e-6
+        assert r.height == pytest.approx(semantics.room_height("", t))
 
 
 @settings(max_examples=scaled(25), deadline=None)
@@ -309,13 +311,15 @@ def test_big_races_keep_their_loops(race):
 
 
 def test_race_scale_applies_once():
-    """The race scale goes on grown rooms once (in the engine): a giant's
-    rooms average 2.2^2 the floor area of no race's, not 2.2^4."""
+    """The race goes on grown rooms once (in the engine, from its bands): a
+    giant's rooms average (22/6)^2 the floor area of no race's (H 22 against
+    a human's 6), not that squared again."""
     def mean_area(race):
         return statistics.mean(r.width * r.depth for sp in _race_sweep(race)
                                for r in sp.rooms if r.kind)
     ratio = mean_area("giant") / mean_area("")
-    assert 2.2 ** 2 * 0.8 <= ratio <= 2.2 ** 2 * 1.25, ratio
+    k = (22.0 / 6.0) ** 2
+    assert k * 0.8 <= ratio <= k * 1.25, ratio
 
 
 def test_relations_not_counted_without_elevation():
@@ -346,11 +350,12 @@ def test_grown_rooms_fit_an_envelope(s, n, elevation):
 
 def test_tight_envelope_drops_grown_rooms_with_a_warning():
     gen = LayoutGenerator("dungeon", seed=1, engine=GraphEngine())
-    spec = gen.generate("tight", room_count=6, envelope=_disc(900))
+    # (900 u before stock room scale, step 7 task 17.)
+    spec = gen.generate("tight", room_count=6, envelope=_disc(200))
     assert MIN_ENVELOPE_ROOMS <= len(spec.rooms) < 6
     assert any(w.startswith("rooms_reduced:") for w in gen.warnings), gen.warnings
     for part, box in _boxes(spec):
-        assert _inside_exactly(900, *box), (part, box)
+        assert _inside_exactly(200, *box), (part, box)
 
 
 # ---------------------------------------------------------------------------

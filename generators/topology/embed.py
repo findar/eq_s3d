@@ -7,11 +7,10 @@ design "Size classes" and "Placement").
 Three parts:
 
 - :func:`room_size` turns a node's Size_Class into a footprint and height:
-  the zone type's base side (area-matched over the graph's classes,
-  :func:`area_matched_base`) times the class multiplier, with the classic
-  engine's spread (within 15 %), and the ceiling times the class's height
-  multiplier. The race scale comes later, in ``semantics``, as for classic
-  rooms.
+  the class's point in the race's room bands (``semantics``, step 7 task 17:
+  room height 2.5-10 H, footprint side 8-20 H, tiny at the minimum and huge
+  at the maximum), with the classic engine's spread (within 15 %) on the
+  footprint. Rooms are placed at that final size; nothing scales them again.
 - :data:`PLACEMENT_FUNCS`, the Placement registry: a rule set names its
   placement (``[set] placement``), the checker reads the names from
   ``ruleset.PLACEMENTS`` and this module registers the callables under the
@@ -58,50 +57,28 @@ Point = Tuple[float, float]
 # Size classes (design "Size classes")
 # ---------------------------------------------------------------------------
 
-#: Size_Class -> (footprint multiplier, height multiplier).
-SIZE_SCALE: Dict[str, Tuple[float, float]] = {
-    "tiny": (0.5, 0.8),
-    "small": (0.75, 0.9),
-    "medium": (1.0, 1.0),
-    "large": (1.4, 1.2),
-    "huge": (1.9, 1.5),
-}
 #: The classic engine's spread around the class side: a gaussian factor on
-#: each axis, clamped to 1 +- SPREAD.
+#: each axis, clamped to 1 +- SPREAD (and then to the race's band).
 SPREAD = 0.15
 _SPREAD_SIGMA = SPREAD / 2
 
 
-def base_side(room_min: float, room_max: float) -> float:
-    """The zone type's base room side for the requested count."""
-    return (room_min + room_max) / 2
-
-
-def area_matched_base(base: float, sizes: Sequence[Optional[str]]) -> float:
-    """The class base side that gives these rooms the floor area as many
-    classic rooms of side ``base`` would have: ``base`` over the RMS footprint
-    multiplier. ``_apply_room_scale`` sizes rooms so the zone's floor matches
-    the measured profile; the classes share that floor out instead of adding
-    to it (a classic_eq mix averages 1.5x medium's area otherwise, and grown
-    rooms fit an Envelope far worse than classic ones)."""
-    if not sizes:
-        return base
-    mean_sq = sum(SIZE_SCALE.get(z or "medium", SIZE_SCALE["medium"])[0] ** 2
-                  for z in sizes) / len(sizes)
-    return base / math.sqrt(mean_sq)
-
-
-def room_size(size: Optional[str], base: float, ceiling: float,
-              rng) -> Tuple[float, float, float]:
-    """(width, depth, height) of a room of Size_Class ``size``.
+def room_size(size: Optional[str], race: str, rng,
+              shift: float = 0.0) -> Tuple[float, float, float]:
+    """(width, depth, height) of a room of Size_Class ``size`` for ``race``
+    (step 7 task 17): the class's point in the race's bands
+    (``semantics.band_position``, after the Size control's ``shift``), the
+    footprint spread by up to SPREAD on each axis and kept inside the band.
 
     Two rng draws (width, then depth). An unknown or missing class is medium.
     """
-    foot, tall = SIZE_SCALE.get(size or "medium", SIZE_SCALE["medium"])
-    side = base * foot
+    from generators import semantics
+    t = semantics.band_position(size, shift)
+    side = semantics.room_side(race, t)
+    (s0, s1), _h = semantics.room_bands(race)
     w = side * min(1 + SPREAD, max(1 - SPREAD, rng.gauss(1.0, _SPREAD_SIGMA)))
     d = side * min(1 + SPREAD, max(1 - SPREAD, rng.gauss(1.0, _SPREAD_SIGMA)))
-    return w, d, ceiling * tall
+    return (min(s1, max(s0, w)), min(s1, max(s0, d)), semantics.room_height(race, t))
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +733,7 @@ def face_entry(centres: Dict[str, Point], half: Dict[str, Point], envelope,
 
 
 __all__ = [
-    "SIZE_SCALE", "SPREAD", "base_side", "area_matched_base", "room_size", "may_overlap_in_plan",
+    "SPREAD", "room_size", "may_overlap_in_plan",
     "SLAB", "Storey", "assign_levels", "level_height", "storeys", "is_stair", "STAIR_REST",
     "bfs_order", "SIDES", "SIDE_ORDERS", "START_ROOTS", "layout_clashes", "start_positions",
     "start_once", "repair", "spring_relax", "spring",

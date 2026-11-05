@@ -25,7 +25,7 @@ def buildable_names():
     and city material the layout and semantics code can register."""
     names = {}
     for zone_type in ("dungeon", "city"):
-        for race in [""] + sorted(semantics.RACE_SCALE):
+        for race in [""] + sorted(semantics.RACE_HEIGHT):
             shared = semantics.texture_set(zone_type, race)
             for s in SURFACES:
                 names[semantics.material_name(shared, s)] = (zone_type, None, s)

@@ -45,6 +45,7 @@ from the notch's outer edge until it meets the ground; nothing behind row
 
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
@@ -54,6 +55,7 @@ import numpy as np
 from core.ter import MAGIC_TERRAIN, Material, Polygon, TerFile, Vertex
 from generators.envelope import Envelope, EnvelopeFitError
 from generators.geometry import MeshBuilder, _ensure_materials
+from generators import semantics
 from generators.layout import LayoutGenerator
 from generators.routing import corridor_route, route_footprint
 from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,
@@ -71,25 +73,17 @@ ROCK_COVER: float = 24.0
 FLOOR_DEPTH: float = 150.0
 #: Rooms laid out under the default Host_Hill.
 DEFAULT_ROOMS: int = 5
-#: Mean room side as a share of the Envelope's inradius, before dividing by
-#: sqrt(room count): the rooms' combined floor is about this share squared
-#: of the inradius square, leaving room for separation and corridors.
-ROOM_FILL: float = 0.6
 #: When a dungeon can't be planned with every room asked for (they don't all
 #: fit, or the entrance room sits too deep for a Tunnel), it is planned again
-#: with rooms this much smaller, up to FIT_SHRINKS times. A theme's room
-#: types and the climax's role scale rooms up after they are sized (a
-#: fortress climax is about 2.5x the base side and up to 2.25x as tall), and
-#: one tall room under the flank sinks the whole layout (``_fit_floors``).
+#: with rooms this much smaller (in side), up to FIT_SHRINKS times. Rooms are
+#: sized from the race's bands like any dungeon's (step 7 task 17; before
+#: stock scale they were sized to the Envelope, 80 u tall), so a shrink is a
+#: step down the bands (``layout_in_envelope``) and never leaves them. A
+#: theme's room types and the climax's role scale rooms up after they are
+#: sized, and one tall room under the flank sinks the whole layout
+#: (``_fit_floors``).
 FIT_SHRINK: float = 0.85
 FIT_SHRINKS: int = 3
-#: Room height (the layout's ceiling) under a hill. The dungeon profile's
-#: 121 u leaves too thin a band under the flank; 80 u is still ~13 player
-#: heights, and 5 rooms then fit every seed sampled (0.8 fill or 121 u
-#: rooms drop rooms on a few).
-ROOM_HEIGHT: float = 80.0
-#: Tunnel height: the layout's corridor height for ROOM_HEIGHT rooms.
-TUNNEL_HEIGHT: float = 0.8 * ROOM_HEIGHT
 #: Steepest Tunnel ramp and Apron cone (rise / run): the layout's grade cap.
 MAX_GRADE: float = 0.5
 #: Furthest (in terrain rows) the Apron's trench may run to meet the ground.
@@ -252,10 +246,12 @@ def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
                        room_count: int = DEFAULT_ROOMS, scale: float = 1.0,
                        engine=None, facing: int = 0, entrance_side: float = 0.0,
                        **kwargs) -> Tuple[ZoneSpec, List[str]]:
-    """A box-dungeon layout inside ``envelope``, rooms sized to it.
+    """A box-dungeon layout inside ``envelope``.
 
-    The mean room side is ``scale * ROOM_FILL * inradius / sqrt(room_count)``,
-    set through the generator's size multiplier. ``engine`` is the
+    Rooms are sized from the race's bands as in any dungeon; ``scale`` (< 1
+    on a shrink) moves them down the bands by that factor in side
+    (``size_shift`` = log(scale) over the log of the side band's max/min),
+    still inside them. ``engine`` is the
     Layout_Engine (``None`` is classic; see ``ai.expand.layout_engine``); the
     layout's ``layout`` field carries its record (``None`` for classic).
     An engine that takes them (the graph engine) lays out with ``facing``
@@ -265,10 +261,8 @@ def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
     Returns the layout and the generator's warnings (``rooms_reduced`` when
     rooms were dropped)."""
     gen = LayoutGenerator("dungeon", seed=seed, engine=engine)
-    gen.ceiling = ROOM_HEIGHT
-    gen._apply_room_scale(room_count)
-    base = (gen.room_min + gen.room_max) / 2.0
-    gen.size_multiplier = scale * ROOM_FILL * envelope.inradius / math.sqrt(room_count) / base
+    lo, hi = semantics.ROOM_SIDE_BAND
+    gen.size_shift = math.log(scale) / math.log(hi / lo)
     options = hasattr(engine, "facing") and hasattr(engine, "entrance_side")
     if options:
         saved = (engine.facing, engine.entrance_side)
@@ -292,7 +286,9 @@ def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
 
     Rooms start at the size the Envelope suggests and shrink by
     ``FIT_SHRINK`` (up to ``FIT_SHRINKS`` times) until every room asked for
-    fits and the entrance room takes a Tunnel. An engine with ``facings``
+    fits and the entrance room takes a Tunnel (each layout first shifted so
+    its entrance wall holds a terrain cell, :func:`align_to_grid`). An engine
+    with ``facings``
     (the graph engine) tries each of its turns of the layout at a size before
     shrinking it, best-facing first, and keeps its entrance room at least
     :func:`tunnel_wall` on a side through every shrink. If no size keeps them
@@ -310,6 +306,7 @@ def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
                 # The Tunnel opens into the layout's entrance room, so the
                 # pacing (depth, climax, keys) runs from the way in.
                 first = next(r.id for r in layout.rooms if r.role == "entrance")
+                layout = align_to_grid(host, ter, envelope, layout, first)
                 entrance = plan_entrance(host, ter, layout, room_id=first)
             except PLAN_ERRORS as e:
                 error = e
@@ -320,6 +317,86 @@ def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
     if reduced is None:
         raise error
     return reduced
+
+
+#: How far (u) ``align_to_grid`` may lower a moved layout, in steps of
+#: ALIGN_DROP_STEP, to keep the rock cover over it: the fitted layout sits as
+#: high as the cover allows, so moving it sideways under a sloping flank
+#: needs it a little lower.
+ALIGN_DROP: float = 40.0
+ALIGN_DROP_STEP: float = 4.0
+
+
+def _translate(spec: ZoneSpec, axis: int, d: float, dz: float = 0.0) -> None:
+    """Move a layout's every point by ``d`` along ``axis`` (0 = x, 1 = y)
+    and ``dz`` up."""
+    def mv(x, y):
+        return (x + d, y) if axis == 0 else (x, y + d)
+    for r in spec.rooms:
+        r.center_x, r.center_y = mv(r.center_x, r.center_y)
+        r.floor_z += dz
+    for c in spec.corridors:
+        c.from_x, c.from_y = mv(c.from_x, c.from_y)
+        c.to_x, c.to_y = mv(c.to_x, c.to_y)
+        c.from_z += dz
+        c.to_z += dz
+    for lt in spec.lights:
+        lt.x, lt.y = mv(lt.x, lt.y)
+        lt.z += dz
+    for rg in spec.regions:
+        rg.center_x, rg.center_y = mv(rg.center_x, rg.center_y)
+        rg.center_z += dz
+    for g in spec.gates:
+        g.lock_x, g.lock_y = mv(g.lock_x, g.lock_y)
+        g.key_x, g.key_y = mv(g.key_x, g.key_y)
+        g.lock_z += dz
+        g.key_z += dz
+    sx, sy, sz = spec.safe_point
+    spec.safe_point = (*mv(sx, sy), sz + dz)
+
+
+def align_to_grid(host: ZoneSpec, ter: TerFile, envelope: Envelope, layout: ZoneSpec,
+                  room_id: str) -> ZoneSpec:
+    """``layout`` moved across the approach (by the least amount, under half
+    a terrain cell) so that room ``room_id``'s wall facing the approach holds
+    a whole cell between two vertex columns with ``DOOR_MARGIN`` either side,
+    which a Tunnel needs, and lowered as little as keeps it in the Envelope
+    (at most ``ALIGN_DROP``); unchanged when the wall already holds a cell,
+    is too short, or no such move fits.
+
+    Stock-scale rooms (step 7 task 17) are ~56-120 u across against a 40 u
+    cell, so whether a wall holds a cell used to be down to where the grid
+    happened to fall."""
+    land = landscape_for(host)
+    landform = land.matrix.landform
+    if landform is None:
+        return layout
+    ax, _out = _RUN[landform.approach]
+    cross = 1 - ax
+    grid = _host_grid(host, ter)
+    room = next(r for r in layout.rooms if r.id == room_id)
+    half = (room.depth if ax == 0 else room.width) / 2
+    mid = room.center_y if ax == 0 else room.center_x
+    lo, hi = mid - half + DOOR_MARGIN, mid + half - DOOR_MARGIN
+    if hi - lo < grid.res:
+        return layout
+    best = None
+    for q in range(grid.size(cross) - 1):
+        c0, c1 = grid.coord(cross, q), grid.coord(cross, q + 1)
+        s0, s1 = c1 - hi, c0 - lo          # shifts that put cell q in the wall
+        s = min(max(0.0, s0), s1)
+        if s0 <= s1 + 1e-9 and (best is None or abs(s) < abs(best)):
+            best = s
+    if best is None or abs(best) < 1e-9 or abs(best) > grid.res / 2:
+        return layout
+    drop = 0.0
+    while drop <= ALIGN_DROP + 1e-9:
+        moved = copy.deepcopy(layout)
+        _translate(moved, cross, best, -drop)
+        if LayoutGenerator.fits(moved, envelope):
+            return moved
+        drop += ALIGN_DROP_STEP
+    return layout
 
 
 # ---------------------------------------------------------------------------
@@ -519,7 +596,8 @@ def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
                 for r in dungeon.rooms]
     blockers += [(None, rect) for c in dungeon.corridors
                  for rect in route_footprint(corridor_route(c, rooms), c.width / 2)]
-    h = TUNNEL_HEIGHT
+    # The Tunnel is one of the dungeon's corridors: its race's height.
+    h = semantics.corridor_size(dungeon.dungeon_race)[1]
     candidates = []
     for room in dungeon.rooms:
         if h > room.height or room_id not in (None, room.id):

@@ -6,7 +6,7 @@ The content / semantic layer (Step 1 — single district).
 Turns the geometric room graph into a *place*: each room is assigned a semantic
 TYPE drawn from the zone's ARCHETYPE arc, coherent with the pacing graph
 (role + graph_depth) that layout.py already computes. The archetype, together
-with an inhabiting RACE (a global scale multiplier) and an optional ELEMENTAL
+with an inhabiting RACE (whose body height sizes the rooms) and an optional ELEMENTAL
 TINT (lava/ice/water region + light overlay), is realised through the EXISTING
 pipeline — shape/proportion bias, region volumes, lighting mood, elevation
 character, and per-room material (palette) selection. No new art is placed;
@@ -48,8 +48,8 @@ class RoomType:
                     halls); 1.0 keeps it square.
       ceiling     — multiplier on room height (ceiling mood).
       sink        — floor-height bias (negative = sunken, positive = raised),
-                    consumed as an elevation-character hint. In world units
-                    BEFORE race scaling.
+                    consumed as an elevation-character hint. In units of the
+                    pre-stock-scale human room (``SINK_PER_H`` turns it into H).
       light       — base light (r,g,b) 0-1 + intensity multiplier for the mood.
       region      — elemental region kind to flood the room with, or "".
       props       — set-dressing suggestions (data only).
@@ -327,31 +327,127 @@ def unmapped_kinds(archetype: str, kinds) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Race scale axis
+# Race-sized rooms (verticality step 7, Requirement 10; design "Race-sized
+# rooms", finding 8). The ONE place a room-graph zone's rooms and corridors
+# get their size, for both layout engines.
 #
-# KNOWN GAP (docs/RESEARCH.md): these multipliers are RELATIVE placeholders.
-# Real per-race limits should come from EQ model bounding boxes (doorway
-# clearance / headroom), which we do not yet have. Treat as a tunable knob, not
-# an accurate measurement. The RoF2 install at F:\everquest_rof2 could later be
-# mined for model bounds the way the era-fidelity edge-length table was.
+# Each race has a body height H: its default height in the client's
+# racedata.txt (world units; the human is 6 u, the walk agent's player
+# height). Every room's height and footprint side sit in a band of multiples
+# of H, the same for every race (task 16 measured stock rooms against the race
+# that lives in them; the user chose stock scale, 2026-11-04):
+#
+#   room height     [2.5 H, 10 H]   human 15-60 u, dragon 53-210 u
+#   footprint side  [8 H, 20 H]     human 48-120 u, dragon 168-420 u
+#
+# A Size_Class picks a point in the band (``CLASS_POSITION``: tiny at the
+# minimum, huge at the maximum), geometrically, so each class step is the same
+# ratio. The plan's Size control shifts that point (``SIZE_SHIFT``), still
+# inside the band. Corridors are a fixed multiple of H (stock corridors are
+# 12-28 u for humans, about 2-5 H wide). The measured whole-zone floor area no
+# longer sizes room-graph rooms; a zone's total size follows from its room
+# count and its rooms' classes.
 # ---------------------------------------------------------------------------
 
-RACE_SCALE: Dict[str, float] = {
-    "default": 1.0,     # human / iksar / dark-elf baseline
-    "goblin": 0.85,
-    "froglok": 0.9,
-    "kobold": 0.85,
-    "lizardman": 1.0,
-    "gnoll": 1.0,
-    "sarnak": 1.05,
-    "troll": 1.15,
-    "ogre": 1.4,
-    "giant": 2.2,       # Kael Drakkel — halls dwarf the player
+#: Body height H (u) per race: racedata.txt's default height (finding 8).
+RACE_HEIGHT: Dict[str, float] = {
+    "default": 6.0,     # human (HUM); the walk agent's 6 u player
+    "goblin": 6.0,
+    "froglok": 5.0,
+    "kobold": 5.0,
+    "lizardman": 6.0,
+    "gnoll": 6.0,
+    "sarnak": 9.0,
+    "troll": 8.0,
+    "ogre": 9.0,
+    "giant": 22.0,      # frost giant (Kael Drakkel)
+    "dragon": 21.0,     # DRA (Nagafen, Veeshan's Peak)
 }
+DEFAULT_RACE_HEIGHT = RACE_HEIGHT["default"]
+
+#: Room height and footprint side bands, as multiples of H.
+ROOM_HEIGHT_BAND: Tuple[float, float] = (2.5, 10.0)
+ROOM_SIDE_BAND: Tuple[float, float] = (8.0, 20.0)
+
+#: Size_Class -> position in the bands (0 the minimum, 1 the maximum).
+CLASS_POSITION: Dict[str, float] = {
+    "tiny": 0.0, "small": 0.25, "medium": 0.5, "large": 0.75, "huge": 1.0,
+}
+#: The plan's Size control: a shift of every room's band position (clamped
+#: to the band, so a race's rooms stay its own).
+SIZE_SHIFT: Dict[str, float] = {
+    "small": -0.125, "medium": 0.0, "large": 0.125, "huge": 0.25,
+}
+
+#: Corridor width and height, as multiples of H: 3 H wide (18 u for a human,
+#: inside stock's 12-28 u) and as tall as the lowest room (2.5 H, 15 u: over
+#: the 6 u player and never above a room's ceiling at a doorway).
+CORRIDOR_WIDTH_H = 3.0
+CORRIDOR_HEIGHT_H = ROOM_HEIGHT_BAND[0]
+#: The corridor band V11 checks (multiples of H; stock 2-5 H wide).
+CORRIDOR_WIDTH_BAND: Tuple[float, float] = (2.0, 5.0)
+CORRIDOR_HEIGHT_BAND: Tuple[float, float] = ROOM_HEIGHT_BAND
+
+#: A room type's floor sink/raise (``RoomType.sink``) is in units of a human
+#: room as it was before stock scale (121 u, 20 H); this turns it into H.
+#: A -30 u sump sinks 1.25 H (7.5 u for a human, 27.5 u for a giant).
+SINK_PER_H = 1.0 / 24.0
+
+
+def body_height(race: str) -> float:
+    """The race's body height H in world units (the default race: a human)."""
+    return RACE_HEIGHT.get((race or "default").lower(), DEFAULT_RACE_HEIGHT)
 
 
 def race_scale(race: str) -> float:
-    return RACE_SCALE.get((race or "default").lower(), 1.0)
+    """H over a human's: what the topology rules' ``race_scale`` condition
+    reads (``great_hall`` at >= 1.4: sarnak, ogres, giants, dragons)."""
+    return body_height(race) / DEFAULT_RACE_HEIGHT
+
+
+def band_position(size: Optional[str], shift: float = 0.0) -> float:
+    """A Size_Class's position in the bands, after the Size control's shift,
+    clamped to [0, 1]. An unknown or missing class is medium."""
+    t = CLASS_POSITION.get(size or "medium", CLASS_POSITION["medium"]) + shift
+    return min(1.0, max(0.0, t))
+
+
+def _band_at(band: Tuple[float, float], t: float, h: float) -> float:
+    lo, hi = band
+    return h * lo * (hi / lo) ** min(1.0, max(0.0, t))
+
+
+def room_side(race: str, t: float) -> float:
+    """Footprint side (u) at band position ``t`` for ``race``."""
+    return _band_at(ROOM_SIDE_BAND, t, body_height(race))
+
+
+def room_height(race: str, t: float) -> float:
+    """Room height (u) at band position ``t`` for ``race``."""
+    return _band_at(ROOM_HEIGHT_BAND, t, body_height(race))
+
+
+def room_bands(race: str) -> Tuple[Tuple[float, float], Tuple[float, float]]:
+    """``((side_min, side_max), (height_min, height_max))`` in u."""
+    h = body_height(race)
+    return ((ROOM_SIDE_BAND[0] * h, ROOM_SIDE_BAND[1] * h),
+            (ROOM_HEIGHT_BAND[0] * h, ROOM_HEIGHT_BAND[1] * h))
+
+
+def corridor_size(race: str) -> Tuple[float, float]:
+    """``(width, height)`` of the race's corridors, in u."""
+    h = body_height(race)
+    return CORRIDOR_WIDTH_H * h, CORRIDOR_HEIGHT_H * h
+
+
+def fit_to_band(room: RoomSpec, race: str) -> None:
+    """Clamp ``room``'s width, depth and height into ``race``'s bands. The
+    last step of sizing: the role and room-type biases (and the classic
+    engine's gaussian spread) can push a room past either end."""
+    (s0, s1), (h0, h1) = room_bands(race)
+    room.width = min(s1, max(s0, room.width))
+    room.depth = min(s1, max(s0, room.depth))
+    room.height = min(h1, max(h0, room.height))
 
 
 # Elemental tint → (region kind, light tint rgb, light intensity mult). The
@@ -377,8 +473,7 @@ def label_rooms(spec: ZoneSpec,
                 overrides: Optional[Dict[str, str]] = None) -> None:
     """
     Phase 1 — assign each room a semantic type + theme and realise the parts
-    that affect GEOMETRY (shape / proportion / ceiling / floor-height / race
-    scale) plus the suggestion fields. Call AFTER _apply_pacing (rooms must have
+    that affect GEOMETRY (shape / proportion / ceiling / floor-height) plus the suggestion fields. Call AFTER _apply_pacing (rooms must have
     role + graph_depth) and BEFORE re-separate / elevation, so the biased shapes
     are resolved for overlaps and elevation builds on the sunk/raised floors.
 
@@ -386,7 +481,7 @@ def label_rooms(spec: ZoneSpec,
     fields are recorded on *spec*.
 
     *archetype* selects the arc (defaults deterministically if unknown).
-    *race* is the global scale multiplier. *tint* overrides the archetype's
+    *race* sizes the floor sink (its body height). *tint* overrides the archetype's
     default elemental tint ("" to force none; None to use the archetype default).
     *overrides* maps room.id → semantic_type for planner-driven assignment.
     """
@@ -499,21 +594,21 @@ def _pick_by_depth(arc: Tuple[str, ...], room: RoomSpec, max_depth: int,
 def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
     """
     Compose the semantic-type shape bias with the pacing role scale already on
-    the room, then apply the race scale globally. Keeps floors flat/walkable —
-    only footprint, aspect, ceiling, and floor height change.
+    the room. Keeps floors flat/walkable — only footprint, aspect, ceiling, and
+    floor height change.
 
     A room grown by a rule set (it carries a ``kind``) has its footprint area
     from its Size_Class (graph-layout Req 6.1: rules own size), so the type
     keeps only its PROPORTION: the aspect stretch is applied, then the
     footprint is renormalised to the area the room came with (the type's
     footprint multiplier drops out). Ceiling mood and floor sink still apply.
-    Its size already has the race scale (the graph engine places rooms at
-    their final size, task 20), so the scale is not applied a second time to
-    its footprint or ceiling; the floor sink still scales by race.
-    """
-    scale = race_scale(race)
-    size_scale = 1.0 if room.kind else scale
 
+    The race is already in every room's size (both engines size rooms from
+    the race's bands, step 7 task 17), so it is never applied here; the
+    layout clamps the biased room back into the bands (``fit_to_band``). The
+    floor sink is in H (``SINK_PER_H``), so a giant's sunken arena sinks
+    proportionally.
+    """
     # Footprint + aspect: stretch the longer axis for processional rooms.
     fw = rt.footprint
     fd = rt.footprint
@@ -527,15 +622,15 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
         fw *= k
         fd *= k
 
-    room.width = max(80.0, room.width * fw * size_scale)
-    room.depth = max(80.0, room.depth * fd * size_scale)
-    room.height = max(50.0, room.height * rt.ceiling * size_scale)
+    room.width = room.width * fw
+    room.depth = room.depth * fd
+    room.height = room.height * rt.ceiling
 
-    # Elevation character: nudge the floor height (sunken/raised). Scaled by
-    # race so a giant's sunken arena sinks proportionally. This is a hint on the
-    # base floor_z; _assign_elevation still runs afterward over the graph.
+    # Elevation character: nudge the floor height (sunken/raised), in H. This
+    # is a hint on the base floor_z; _assign_elevation still runs afterward
+    # over the graph.
     if rt.sink:
-        room.floor_z += rt.sink * scale
+        room.floor_z += rt.sink * SINK_PER_H * body_height(race)
 
 
 def texture_set(zone_type: str, race: str = "", key: str = "") -> str:

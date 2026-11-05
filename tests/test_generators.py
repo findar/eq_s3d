@@ -10,6 +10,7 @@ from pathlib import Path
 from generators.zone_spec import ZoneSpec, RoomSpec, CorridorSpec, LightSpec, RegionSpec
 from generators.geometry import build_mesh, MeshBuilder
 from generators.layout import LayoutGenerator
+from generators import semantics
 from generators.builder import ZoneBuilder
 from core.pfs import PfsArchive
 from core.ter import TerFile
@@ -123,19 +124,25 @@ class TestLayout:
         o_side = wilderness.rooms[0].width
         assert o_side > d_side * 3, f"wilderness {o_side:.0f} vs dungeon {d_side:.0f}"
 
-    def test_size_multiplier_scales(self):
+    def test_size_shift_scales(self):
+        # The plan's Size control moves rooms up their race's bands (step 7
+        # task 17; it used to multiply them).
         base = LayoutGenerator(zone_type="dungeon", seed=1)
         base_spec = base.generate("b", room_count=5)
         big = LayoutGenerator(zone_type="dungeon", seed=1)
-        big.size_multiplier = 2.0
+        big.size_shift = 0.25
         big_spec = big.generate("g", room_count=5)
-        assert big_spec.rooms[0].width > base_spec.rooms[0].width * 1.5
+        assert big_spec.rooms[0].width > base_spec.rooms[0].width * 1.15
 
-    def test_more_rooms_smaller_each(self):
-        few = LayoutGenerator(zone_type="dungeon", seed=1).generate("f", room_count=3)
-        many = LayoutGenerator(zone_type="dungeon", seed=1).generate("m", room_count=15)
-        # Dividing the footprint across more rooms → smaller individual rooms
-        assert many.rooms[0].width < few.rooms[0].width
+    def test_room_count_does_not_size_rooms(self):
+        # Stock scale (step 7 task 17): a room is sized for its race, not by
+        # dividing a measured zone floor across the room count; more rooms
+        # make a bigger zone.
+        few, many = LayoutGenerator(zone_type="dungeon"), LayoutGenerator(zone_type="dungeon")
+        few._apply_room_scale(3)
+        many._apply_room_scale(15)
+        assert (few.room_min, few.room_max, few.ceiling) == (
+            many.room_min, many.room_max, many.ceiling)
 
 
 class TestTinyKeepLayout:
@@ -486,8 +493,9 @@ class TestSemantics:
         # Semantic shape bias must not tilt floors — rooms are still boxes with
         # a single floor_z (walkability invariant).
         spec = self._themed(theme="lava_forge", race="ogre")
+        (side, _s1), (low, _h1) = semantics.room_bands("ogre")
         for r in spec.rooms:
-            assert r.width > 0 and r.depth > 0 and r.height >= 50.0
+            assert r.width >= side and r.depth >= side and r.height >= low
 
     def test_sidecar_carries_semantic_fields(self, tmp_path):
         spec = self._themed(theme="wizard_lair", rooms=6)

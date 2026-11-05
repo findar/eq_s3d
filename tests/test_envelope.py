@@ -126,12 +126,14 @@ def test_same_seed_same_layout_in_an_envelope():
 # ---------------------------------------------------------------------------
 
 def test_tight_envelope_drops_rooms_with_a_warning():
+    # (Radii at stock room scale, step 7 task 17: rooms are ~4.5x smaller in
+    # side than before, so this disc was 900 u and the one below 300 u.)
     gen = LayoutGenerator("dungeon", seed=1)
-    spec = gen.generate("tight", room_count=6, envelope=_disc(900))
+    spec = gen.generate("tight", room_count=6, envelope=_disc(180))
     assert MIN_ENVELOPE_ROOMS <= len(spec.rooms) < 6
     assert any(w.startswith("rooms_reduced:") for w in gen.warnings), gen.warnings
     for part, box in _boxes(spec):
-        assert _inside_exactly(900, *box), (part, box)
+        assert _inside_exactly(180, *box), (part, box)
 
 
 def test_room_count_that_fits_has_no_warning():
@@ -144,4 +146,4 @@ def test_room_count_that_fits_has_no_warning():
 def test_too_small_for_the_minimum_raises():
     with pytest.raises(EnvelopeFitError):
         LayoutGenerator("dungeon", seed=0).generate("tiny", room_count=6,
-                                                    envelope=_disc(300))
+                                                    envelope=_disc(120))

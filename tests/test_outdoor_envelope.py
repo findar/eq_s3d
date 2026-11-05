@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from generators import outdoor_dungeon as od
+from generators import semantics
 from generators.layout import LayoutGenerator
 from generators.wilderness.build import build_wilderness_ter, landscape_for, wilderness_spec
 from generators.wilderness.matrix import DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE
@@ -67,8 +68,10 @@ def test_surface_is_the_ter_and_footprint_the_hill(seed):
     assert on_clip >= 2
     fx, fy = od.approach_foot(lf)
     assert env.floor_limit == pytest.approx(float(env.surface(fx, fy)) - od.FLOOR_DEPTH)
-    # The hill stands over its foot: there is a room's height of band at its middle.
-    assert float(env.top_at(cx, cy)) - env.floor_limit > od.ROOM_HEIGHT
+    # The hill stands over its foot: there is a room's height of band at its
+    # middle (a human's tallest room; od.ROOM_HEIGHT's 80 u before stock scale).
+    tallest = semantics.room_bands("")[1][1]
+    assert float(env.top_at(cx, cy)) - env.floor_limit > tallest
 
 
 def test_envelope_needs_a_landform():
@@ -88,12 +91,14 @@ def test_default_room_count_fits_every_sampled_seed():
             assert LayoutGenerator.fits(layout, env)
 
 
-@pytest.mark.parametrize("seed", [1, 2, 9, 10, 12])
+@pytest.mark.parametrize("seed", [8])
 def test_themed_dungeon_shrinks_rooms_to_plan(seed, monkeypatch):
-    """A fortress's room types and climax outgrow the Envelope's sizing; these
-    seeds fail to plan (rooms miss the hill, or the sunk entrance room gets
+    """A fortress's room types and climax outgrow the Envelope's sizing; this
+    seed fails to plan (rooms miss the hill, or the sunk entrance room gets
     no Tunnel) unless rooms are shrunk to a size that plans. Every room asked
-    for is kept, the Tunnel opens into the entrance room."""
+    for is kept, the Tunnel opens into the entrance room. (At stock room
+    scale, step 7 task 17, it is the only one of seeds 0-59 that needs the
+    shrink; step 5's seeds 1, 2, 9, 10 and 12 now plan without it.)"""
     with monkeypatch.context() as m:
         m.setattr(od, "FIT_SHRINKS", 0)
         try:
