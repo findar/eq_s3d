@@ -76,7 +76,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: web/src/main.ts, generators/builder.py, tests/test_level_sidecar_maps.py
   - Reqs: 8
 
-- [ ] 9. Gate sweep on built multi-level zones
+- [x] 9. Gate sweep on built multi-level zones
   - Card: [cards/09-gate-sweep.md](cards/09-gate-sweep.md)
   - Type: agent · Size: M · Depends: 6, 7, 8, 17, 18
   - Owns: tests/test_vertical_build.py, generators/topology/embed.py, rules/topology/

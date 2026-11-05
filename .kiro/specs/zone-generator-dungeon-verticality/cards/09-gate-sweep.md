@@ -6,8 +6,8 @@ Index entry: `tasks.md` task 9. Requirements 9. Design V10.
 Build multi-level graph dungeons and outdoor dungeons across both rule sets, themes, races and the three Verticality settings; run the walk gate on each; fix the root cause of anything that fails.
 
 ## Done when
-- [ ] A slow test sweeps built zones (dungeon: both sets × plain and two themes × moderate and dramatic; outdoor dungeon: moderate) and asserts each passes the gate first try or within the retry budget, printing the first-try rate.
-- [ ] The first-try rate is no worse than step 6's graph rate on the same seeds (both in the commit body); same inputs give the same `.eqg`.
+- [x] A slow test sweeps built zones (dungeon: both sets × plain and two themes × moderate and dramatic; outdoor dungeon: moderate) and asserts each passes the gate first try or within the retry budget, printing the first-try rate.
+- [x] The first-try rate is no worse than step 6's graph rate on the same seeds (both in the commit body); same inputs give the same `.eqg`.
       → verify: `python -m pytest tests/test_vertical_build.py -q`
 
 ## Pitfalls
@@ -15,3 +15,4 @@ Build multi-level graph dungeons and outdoor dungeons across both rule sets, the
 - Step 6 task 12 found step 5 bugs this way; expect the same.
 
 ## Result
+✔ a6b91ae · 1393 passed
