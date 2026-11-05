@@ -278,6 +278,9 @@ class LayoutGenerator:
         # step 6, byte for byte. Set per layout pass by ``_generate_once``.
         self._stack: Optional[_Stack] = None
         self._shapes: Dict[Tuple[int, int], _Shape] = {}
+        # The Envelope the layout pass fits (outdoor dungeons), or None: a
+        # stair route leaving its footprint is the last one tried.
+        self._envelope: Optional[Envelope] = None
         # A stair's route as the conflict pass re-routed it (an index into
         # its ``_stair_candidates``), kept while the floors move.
         self._stair_route: Dict[Tuple[int, int], int] = {}
@@ -392,6 +395,7 @@ class LayoutGenerator:
             self._apply_room_scale(room_count)
         shared = self._add_default_materials(spec, dungeon_race)
         self._stack = None
+        self._envelope = envelope
         self._shapes = {}
         self._stair_route = {}
 
@@ -1452,7 +1456,11 @@ class LayoutGenerator:
         """Does every room box and corridor swept box lie inside *envelope*?
 
         A corridor is tested leg by leg (``route_footprint``), each leg's box
-        spanning from the lower floor to the higher floor plus its height."""
+        spanning from the lower floor to the higher floor plus its height,
+        and a Switchback's stairwell (``stair_layout``, the box the builder
+        folds the stair into beside its leg) over the same heights: a
+        stairwell past the footprint's edge puts stair floor under the map's
+        edge (step 7 task 19)."""
         for r in spec.rooms:
             if not envelope.contains_box(
                     r.center_x - r.width / 2, r.center_y - r.depth / 2, r.floor_z,
@@ -1463,7 +1471,11 @@ class LayoutGenerator:
         for c in spec.corridors:
             z0 = min(c.from_z, c.to_z)
             z1 = max(c.from_z, c.to_z) + c.height
-            for x0, y0, x1, y1 in route_footprint(corridor_route(c, rooms), c.width / 2):
+            pieces = list(route_footprint(corridor_route(c, rooms), c.width / 2))
+            lay = stair_layout(c, rooms)
+            if lay is not None and lay.stairwell is not None:
+                pieces.append(lay.stairwell)
+            for x0, y0, x1, y1 in pieces:
                 if not envelope.contains_box(x0, y0, z0, x1, y1, z1):
                     return False
         return True
@@ -1793,14 +1805,30 @@ class LayoutGenerator:
             pick = self._stair_route.get(key)
             if pick is not None and pick < len(shapes) and shapes[pick].blocked is None:
                 shapes.insert(0, shapes.pop(pick))
-            shape = (next((s for s in shapes if s.blocked is None), None)
-                     or next((s for s in shapes if s.blocked not in (i, j)), None)
-                     or (shapes[0] if shapes else None))
+            # Routes inside the Envelope's footprint first (step 7 task 19).
+            inside = [s for s in shapes if self._in_envelope(s)]
+            shape = None
+            for pool in (inside, shapes):
+                shape = (next((s for s in pool if s.blocked is None), None)
+                         or next((s for s in pool if s.blocked not in (i, j)), None))
+                if shape is not None:
+                    break
+            if shape is None and shapes:
+                shape = shapes[0]
             if shape is None:
                 shape = self._make_shape(rooms, i, j, self._facing_cor(a, b, AUTO_STAIRS))
                 shape = shape._replace(blocked=i)
         self._shapes[key] = shape
         return shape
+
+    def _in_envelope(self, shape: _Shape) -> bool:
+        """Is every piece of ``shape`` (legs, bends, a Switchback's
+        stairwell) inside the Envelope's footprint? True with no Envelope.
+        Outdoors a stair route past it runs under the map's edge (step 7
+        task 19): the other routes are tried first, and ``fits`` rejects a
+        layout left with one."""
+        env = self._envelope
+        return env is None or all(env.covers(*p[0]) for p in shape.pieces)
 
     def _reroute_stair(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
                        pair: Tuple[int, int]) -> bool:
@@ -1814,7 +1842,7 @@ class LayoutGenerator:
             old = self._shapes.get((i, j))
             for n, cor in enumerate(self._stair_candidates(rooms, i, j)):
                 shape = self._make_shape(rooms, i, j, cor)
-                if shape.blocked is not None:
+                if shape.blocked is not None or not self._in_envelope(shape):
                     continue
                 self._shapes[(i, j)] = shape
                 if not any(self._clash_3d(rooms, (i, j), e)

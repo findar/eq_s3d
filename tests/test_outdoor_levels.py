@@ -180,3 +180,43 @@ def test_flat_outdoor_engine_is_step5s():
     engine = layout_engine("graph", "", "flat", outdoor=True)
     assert not engine.stacking and not engine.descend
     assert engine.vertical_weight == 1.0
+
+
+@pytest.mark.slow
+def test_dragon_stairs_stay_inside_the_bowl(tmp_path):
+    """Task 19 (Req 7.2): on seed 1654615998 (dragon, temple, 5 rooms,
+    moderate) a U-route stair's Switchback stairwell ran past the W map edge
+    (x < -440) under the boundary, and the bowl gate read the flood as
+    escaping (task 9). Every corridor piece (legs, bends, the stairwell the
+    builder folds the stair into) now stays inside the bowl interior, and
+    the build passes the gate on this seed."""
+    import random
+
+    from generators.geometry import stair_layout
+    from generators.pipeline import generate_validated
+    from generators.routing import corridor_route, route_footprint
+
+    plan = ZonePlan(name="odbowl", zone_type="outdoor_dungeon", room_count=5,
+                    dungeon_theme="temple", dungeon_race="dragon", layout="graph",
+                    rule_set="classic_eq", verticality="moderate").validate()
+    # The pipeline's first attempt seed for random.Random(0) is 1654615998
+    # (task 9's sweep seed 0); one attempt, so the gate passes first try.
+    vb = generate_validated(lambda s: plan_to_spec(plan, seed=s),
+                            zone_type=plan.zone_type, zone_id=plan.name,
+                            output_dir=tmp_path, write_glb=False,
+                            rng=random.Random(0), failure_log=None, max_attempts=1)
+    assert vb.seed == 1654615998 and vb.attempts == 1 and vb.validated
+    spec = vb.spec
+    x0, y0, x1, y1 = od.bowl_interior(od.landscape_for(spec))
+    rooms = {r.id: r for r in spec.rooms}
+    stairs = 0
+    for c in spec.corridors:
+        pieces = list(route_footprint(corridor_route(c, rooms), c.width / 2))
+        lay = stair_layout(c, rooms)
+        stairs += lay is not None
+        if lay is not None and lay.stairwell is not None:
+            pieces.append(lay.stairwell)
+        for p in pieces:
+            assert x0 - 1e-6 <= p[0] and p[2] <= x1 + 1e-6, (c.id, p)
+            assert y0 - 1e-6 <= p[1] and p[3] <= y1 + 1e-6, (c.id, p)
+    assert stairs, "no stair between Levels left to check"
