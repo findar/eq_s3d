@@ -82,7 +82,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: tests/test_vertical_build.py, generators/topology/embed.py, rules/topology/
   - Reqs: 9
 
-- [ ] 10. HUMAN: first look at multi-level dungeons
+- [x] 10. HUMAN: first look at multi-level dungeons
   - Card: [cards/10-human-first-look.md](cards/10-human-first-look.md)
   - Type: human · Depends: 9
 
