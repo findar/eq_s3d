@@ -795,8 +795,10 @@ class MeshBuilder:
                 if top is not None:
                     bands = [(top, ha, top, hb)]
                 else:
-                    bands = [(la + (ha - la) * k / rows, la + (ha - la) * (k + 1) / rows,
-                              lb + (hb - lb) * k / rows, lb + (hb - lb) * (k + 1) / rows)
+                    # The top row ends exactly at the ceiling: a rounding hair here reads as an
+                    # open seam to the gate (a hewn room, found drawing samples for step 9).
+                    bands = [(la + (ha - la) * k / rows, ha if k == rows - 1 else la + (ha - la) * (k + 1) / rows,
+                              lb + (hb - lb) * k / rows, hb if k == rows - 1 else lb + (hb - lb) * (k + 1) / rows)
                              for k in range(rows)]
                 for lo_a, hi_a, lo_b, hi_b in bands:
                     if hi_a <= lo_a or hi_b <= lo_b:

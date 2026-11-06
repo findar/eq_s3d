@@ -44,7 +44,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/room_features.py, generators/geometry.py, tests/test_feature_mesh.py
   - Reqs: 3
 
-- [ ] 4. Placement and the Spine
+- [x] 4. Placement and the Spine
   - Card: [cards/04-placement.md](cards/04-placement.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/room_layouts.py, tests/test_room_placement.py
