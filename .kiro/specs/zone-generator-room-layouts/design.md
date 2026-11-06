@@ -81,7 +81,7 @@ What this says, with its limits:
 
 ## Features
 
-`generators/features.py`, data on `RoomSpec.features` (default empty, left out of JSON).
+`generators/room_features.py`, data on `RoomSpec.features` (default empty, left out of JSON).
 
 | Feature | Shape | Top | Style's form |
 |---|---|---|---|
