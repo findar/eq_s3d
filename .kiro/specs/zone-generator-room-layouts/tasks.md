@@ -32,7 +32,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: scripts/room_feature_survey.py, .kiro/specs/zone-generator-room-layouts/design.md (finding 1 only)
   - Reqs: 1
 
-- [ ] 2. The gate learns Features
+- [x] 2. The gate learns Features
   - Card: [cards/02-gate-features.md](cards/02-gate-features.md)
   - Type: agent · Size: M · Depends: —
   - Owns: analyzer/traverse.py, generators/zone_spec.py (`RoomSpec.features`), generators/room_features.py (the data type only), tests/test_gate_features.py
