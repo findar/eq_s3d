@@ -86,7 +86,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Card: [cards/10-human-first-look.md](cards/10-human-first-look.md)
   - Type: human · Depends: 9
 
-- [ ] 11. Bridges
+- [x] 11. Bridges
   - Card: [cards/11-bridges.md](cards/11-bridges.md)
   - Type: agent · Size: M · Depends: 10
   - Owns: generators/geometry.py, generators/layout.py, generators/topology/embed.py, analyzer/traverse.py, rules/topology/, tests/test_bridges.py, generators/zone_spec.py (CorridorSpec.bridge), generators/topology/graph.py (the bridge tag), generators/layout_engine.py (bridge rules need stacking), docs/TOPOLOGY_RULES.md (tag row), tests/test_corridor_clearance.py (one pinned seed), archive.md (decision, follow-up)
