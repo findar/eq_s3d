@@ -13,7 +13,7 @@ The first look (task 10) had no findings, so this task closes the defects the ag
 - [x] No third-room clip over the 240-build sweep (0 of 240), asserted by a test; seed 7 restored.
 - [x] A bridge's connector record says `bridge`; the test in `tests/test_level_sidecar_maps.py` or `tests/test_bridges.py` pins it.
 - [x] The stacked-warren xfail is gone.
-- [ ] Any findings from the user's look at bridges are fixed or recorded as follow-ups.
+- [x] Any findings from the user's look at bridges are fixed or recorded as follow-ups.
       → verify: `python -m pytest tests/test_vertical_build.py tests/test_topology_levels.py tests/test_corridor_clearance.py tests/test_bridges.py tests/test_topology_embed.py -q`
 - [x] `python -m pytest tests/ -q` is green.
 
@@ -22,4 +22,4 @@ The first look (task 10) had no findings, so this task closes the defects the ag
 - A retune of warren must keep tasks 5, 6 and 18's bands.
 
 ## Result
-✔ 9d4466b · 1428 passed; awaiting the user's look at bridges
+✔ 9d4466b · 1429 passed; the user's look at bridges had no findings

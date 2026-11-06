@@ -92,7 +92,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: generators/geometry.py, generators/layout.py, generators/topology/embed.py, analyzer/traverse.py, rules/topology/, tests/test_bridges.py, generators/zone_spec.py (CorridorSpec.bridge), generators/topology/graph.py (the bridge tag), generators/layout_engine.py (bridge rules need stacking), docs/TOPOLOGY_RULES.md (tag row), tests/test_corridor_clearance.py (one pinned seed), archive.md (decision, follow-up)
   - Reqs: 2.1, 3.4
 
-- [ ] 12. Tune from the first look
+- [x] 12. Tune from the first look
   - Card: [cards/12-tuning.md](cards/12-tuning.md)
   - Type: agent · Size: S · Depends: 10, 11
   - Owns: rules/topology/, generators/topology/, generators/geometry.py (stairs), generators/layout.py (stair routes), generators/builder.py (connector record), tests/test_vertical_build.py, tests/test_corridor_clearance.py, tests/test_bridges.py, tests/test_level_sidecar_maps.py, tests/test_topology_embed.py, tests/test_ruleset_warren.py, tests/test_topology_levels.py
