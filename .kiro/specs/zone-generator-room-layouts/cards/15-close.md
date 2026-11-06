@@ -1,0 +1,16 @@
+# 15 — Close step 9
+
+Index entry: `tasks.md` task 15. **Where: MAIN checkout.**
+
+## Goal
+Land step 9 on the trackers. Step 8 is closed first (its own tasks 15 and 16).
+
+## Done when
+- [ ] `ROADMAP.md`: step 9 DONE with a Done-table row from `python scripts/task_status.py zone-generator-room-layouts --note 1-15`; "Pick up here" moves to step 10.
+- [ ] The umbrella records decision 29: Features, the Spine, recipes as data, POIs, and the line with step 11.
+- [ ] `archive.md` "What landed" filled in; requirements STATUS says done.
+- [ ] Committed, and `master` pushed.
+
+## Pitfalls
+
+## Result
