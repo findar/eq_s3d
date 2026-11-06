@@ -15,6 +15,6 @@ Vertical rules (step 7): a rule whose replacement has an `above` or `below`
 edge joins rooms on different Levels by a stair. The Verticality control
 scales them: `flat` leaves them out (one Level), `moderate` uses the weights
 as written, `dramatic` doubles them. The shipped examples are `passage`,
-`descent`, `stair_hall`, `gallery` and `undercroft` (classic_eq), `tunnel`,
+`descent`, `stair_hall`, `gallery`, `bridge_hall` and `undercroft` (classic_eq), `tunnel`,
 `descent`, `stair_hall`, `gallery` and `sunken_burrow` (warren), and `crypt`
 (the temple layer).

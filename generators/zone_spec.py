@@ -129,6 +129,12 @@ class CorridorSpec:
     # straight / Z / L route; the JSON carries the key only when it is set.
     side: str = ""
 
+    # A Bridge (step 7 task 11): the id of a lower room this corridor crosses
+    # at height, over a slot cut in that room's ceiling
+    # (``geometry.bridge_layout``). "" for every other corridor; the JSON
+    # carries the key only when it is set.
+    bridge: str = ""
+
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
     def floor_z(self) -> float:
@@ -220,10 +226,12 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
-    """A corridor's JSON; ``side`` only when set (step 6 corridors carry none)."""
+    """A corridor's JSON; ``side`` and ``bridge`` only when set (step 6
+    corridors carry neither)."""
     d = asdict(cor)
-    if not d.get("side"):
-        d.pop("side", None)
+    for key in ("side", "bridge"):
+        if not d.get(key):
+            d.pop(key, None)
     return d
 
 

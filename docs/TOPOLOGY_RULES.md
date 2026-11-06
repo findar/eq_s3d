@@ -90,7 +90,7 @@ Match nodes take only `id` and `kind`.
 |---|---|
 | `a`, `b` | node ids within the same list: match ids for `match_edges`, replacement ids for `edges`, start ids for `start_edges` |
 | `rel` | optional: `above`, `below`, `level` or `any` (the default). It reads "b relative to a": `{a = "p", b = "x", rel = "below"}` means x is below p |
-| `tags` | optional: `["threshold"]` is the only tag |
+| `tags` | optional: `["threshold"]`, or `["bridge"]` (step 7: the edge, on one Level, is a Bridge over the lower room one of its rooms is stair-joined to; the placement lines it up across that room) |
 
 There is at most one edge per pair of nodes, and no edge joins a node to
 itself. In step 6, `above` and `below` only change the floor height along

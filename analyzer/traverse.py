@@ -46,7 +46,7 @@ import numpy as np
 
 from core.pfs import PfsArchive
 from core.ter import FLAG_PASSABLE, TerFile
-from generators.geometry import MeshBuilder, is_auto_stair, stair_layout
+from generators.geometry import MeshBuilder, bridge_layout, is_auto_stair, stair_layout
 from generators.routing import Rect, corridor_route, route_footprint
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
@@ -1602,13 +1602,26 @@ def bridged_rooms(cor: CorridorSpec, crossed_ids, rooms: Mapping[str, RoomSpec],
     in the room's volume, clear of its floor (a player under it) and of its
     ceiling (a player on it). A corridor crossing a room at the room's own
     floor is the "crosses room" failure, as before.
+
+    A built Bridge (task 11: ``cor.bridge`` names the room and
+    ``geometry.bridge_layout`` places it) runs over the room's ceiling, which
+    is cut open under the deck: that room is bridged when the deck is at
+    least a player's height over its floor (the shaft over the slot is the
+    deck's headroom, which the connector walk measures).
     """
     out = set()
     lo = min(cor.from_z, cor.to_z)
     hi = max(cor.from_z, cor.to_z)
+    built = None
+    if cor.bridge and cor.bridge in crossed_ids:
+        built = bridge_layout(cor, rooms)
     for rid in crossed_ids:
         r = rooms.get(rid)
         if r is None:
+            continue
+        if built is not None and rid == built.room:
+            if min(built.z0, built.z1, lo) >= r.floor_z + agent.player_height:
+                out.add(rid)
             continue
         if (lo >= r.floor_z + agent.player_height
                 and hi + agent.player_height <= r.floor_z + r.height):

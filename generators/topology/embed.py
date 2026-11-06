@@ -248,6 +248,42 @@ K_REPEL = 0.6
 #: room's wall, about half of each footprint over the other.
 STAIR_REST = 0.5
 
+#: The edge tag a rule puts on a Bridge (step 7 task 11): ``a``-``b`` on one
+#: Level, crossing the lower room one of them is stair-joined to.
+BRIDGE_TAG = "bridge"
+
+
+def bridge_twins(graph: TopologyGraph, order: Sequence[str],
+                 storeys: Optional[Dict[str, Any]]) -> Dict[str, List[frozenset]]:
+    """For each room q, the pairs ``{u, h}`` it lays a Bridge between: q-u is
+    a ``bridge``-tagged edge on one Level and h is q's stair partner on a
+    lower Level (the least id), the room the
+    Bridge is meant to cross. The start puts u on q's wall facing h (so the
+    springs leave q over h's near part and u one run on, over the hall's
+    middle), and that shared wall is not a wall clash. Empty without
+    ``storeys`` or without tagged edges, so other graphs place as before."""
+    out: Dict[str, List[frozenset]] = {}
+    if storeys is None:
+        return out
+    inset = set(order)
+    for e in graph.edges():
+        if BRIDGE_TAG not in e.tags or e.a not in inset or e.b not in inset:
+            continue
+        if storeys[e.a].level != storeys[e.b].level:
+            continue
+        for q, u in ((e.a, e.b), (e.b, e.a)):
+            lower = [m for m in graph.neighbours(q)
+                     if m in inset and m != u and storeys[m].level < storeys[q].level]
+            if lower:
+                out.setdefault(q, []).append(frozenset((u, min(lower))))
+                break
+    return out
+
+
+def _twin(twins: Dict[str, List[frozenset]], q: str, x: str, y: Optional[str]) -> bool:
+    """Do ``x`` and ``y`` share q's wall as a Bridge and the hall it crosses?"""
+    return y is not None and x != y and frozenset((x, y)) in twins.get(q, ())
+
 
 def _ring_mates(graph: TopologyGraph, rooms: Sequence[str]) -> Dict[str, Dict[frozenset, int]]:
     """For each room p, its neighbour pairs that share a short loop through p:
@@ -327,11 +363,19 @@ def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Po
     walls) plus pairs of rooms kept apart in plan that sit within ``gap``."""
     inset = set(order)
     keys = _plan_keys(graph, order, storeys)
+    twins = bridge_twins(graph, order, storeys)
     bad = 0
     for u in order:
         walls = [_side_toward(pos[u], half[u], pos[m], half[m])
                  for m in graph.neighbours(u) if m in inset]
         bad += len(walls) - len(set(walls))
+        if u in twins:
+            nb = [m for m in graph.neighbours(u) if m in inset]
+            for pair in twins[u]:
+                x, y = tuple(pair)
+                if (x in nb and y in nb and walls[nb.index(x)] == walls[nb.index(y)]
+                        and walls.count(walls[nb.index(x)]) == 2):
+                    bad -= 1
     for i, a in enumerate(order):
         for b in order[i + 1:]:
             if (not may_overlap_in_plan(keys[a], keys[b])
@@ -383,6 +427,7 @@ def repair(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
     inset = set(order)
     nbrs = {u: [m for m in graph.neighbours(u) if m in inset] for u in order}
     nodes = _plan_keys(graph, order, storeys)
+    twins = bridge_twins(graph, order, storeys)
     dirs = dict(SIDES)
 
     def side(a: str, pa: Point, b: str, pb: Point) -> str:
@@ -392,9 +437,15 @@ def repair(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
         bad = 0
         mine = [side(u, c, m, pos[m]) for m in nbrs[u]]
         bad += len(mine) - len(set(mine))
+        for pair in twins.get(u, ()):
+            x, y = tuple(pair)
+            if (x in nbrs[u] and y in nbrs[u] and mine[nbrs[u].index(x)] == mine[nbrs[u].index(y)]
+                    and mine.count(mine[nbrs[u].index(x)]) == 2):
+                bad -= 1
         for m in nbrs[u]:
             sm = side(m, pos[m], u, c)
-            bad += sum(1 for x in nbrs[m] if x != u and side(m, pos[m], x, pos[x]) == sm)
+            bad += sum(1 for x in nbrs[m] if x != u and side(m, pos[m], x, pos[x]) == sm
+                       and not _twin(twins, m, u, x))
         for r in order:
             if (r != u and not may_overlap_in_plan(nodes[u], nodes[r])
                     and _box_gap(c, half[u], pos[r], half[r]) < gap - 1e-6):
@@ -458,6 +509,7 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
     rank = {r: k for k, r in enumerate(order)}
     nodes = _plan_keys(graph, order, storeys)
     mates = _ring_mates(graph, order)
+    twins = bridge_twins(graph, order, storeys)
     dirs = dict(SIDES)
 
     def beside(q: str, u: str, d: Point) -> Point:
@@ -511,8 +563,14 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
             frontier = nxt
         free = {q: [sd for sd in side_order if sd not in used[q]] for q in placed_nbrs}
         cands = []
+        # A Bridge's far room and the hall it crosses share q's wall: each
+        # may take the wall facing the other (bridge_twins).
+        twin_side = {q: _side_toward(pos[q], half[q], pos[w], half[w])
+                     for q in placed_nbrs for w in pos if _twin(twins, q, u, w)}
         for qk, q in enumerate(placed_nbrs):
             sides = free[q] or (list(side_order) if qk == 0 else [])
+            if q in twin_side and twin_side[q] not in sides:
+                sides = sides + [twin_side[q]]
             for k, sd in enumerate(sides):
                 cands.append(((qk, k), beside(q, u, dirs[sd])))
         npl = len(placed_nbrs)
@@ -527,12 +585,14 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
         best = None
         for tie, c in cands:
             walls = 0
+            miss = 0
             mine = set()
             for m in placed_nbrs:
                 sm = _side_toward(pos[m], half[m], c, half[u])
                 su = _side_toward(c, half[u], pos[m], half[m])
-                walls += (sm in used[m]) + (su in mine)
+                walls += (sm in used[m] and not _twin(twins, m, u, used[m][sm])) + (su in mine)
                 mine.add(su)
+                miss += m in twin_side and sm != twin_side[m]
             clashes = 0
             room = math.inf
             for r, qq in pos.items():
@@ -551,7 +611,7 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                         for m in placed_nbrs)
             close += sum(max(0.0, _box_gap(c, half[u], pos[m], half[m])) / (h - 1)
                          for m, h in pending.items())
-            key = (2 * walls + clashes, clashes, rings, round(close, 6), -room, tie)
+            key = (2 * walls + clashes, clashes, miss, rings, round(close, 6), -room, tie)
             if best is None or key < best[0]:
                 best = (key, c)
         pos[u] = best[1]

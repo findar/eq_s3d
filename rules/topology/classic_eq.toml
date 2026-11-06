@@ -110,8 +110,8 @@ edges    = [ {a = "h", b = "x"}, {a = "h", b = "w", rel = "below"} ]
 reattach = { x = ["h"] }
 
 # A gallery: a small room up a stair from a large hall, standing over part of
-# it. A dead end, like side_wing's. (With bridges, task 11, a gallery could
-# also be crossed; here the stair is its only way in.)
+# it. A dead end, like side_wing's: the stair is its only way in
+# (bridge_hall, below, crosses the hall to a second gallery).
 [rules.gallery]
 description = "A large hall with a gallery over it, up a stair"
 match    = [ {id = "x", kind = "Area"} ]
@@ -119,6 +119,29 @@ replace  = [ {id = "x", kind = "Area"},
              {id = "h", kind = "hall", size = "large"},
              {id = "g", kind = "chamber", size = "small"} ]
 edges    = [ {a = "x", b = "h"}, {a = "h", b = "g", rel = "above"} ]
+reattach = { x = ["x"] }
+
+# Two galleries over a large hall with a bridge between them (task 11): a
+# stair climbs from the hall to the first gallery, and the second is across
+# the hall's air on a deck. The "bridge" tag asks the placement to put the
+# second gallery on the first's wall facing the hall, so the springs leave
+# the two galleries over the hall's two ends and the corridor between them
+# over its middle; Job B then opens a slot in the hall's ceiling under the
+# deck (generators/geometry.py bridge_layout). The second gallery is a dead
+# end, and the hall is reachable on foot (from x), so a fall off the deck
+# lands somewhere the walk can leave. A build with stacking off leaves the rule
+# out (no Levels to bridge), even an outdoor dungeon at flat, which keeps the
+# other vertical rules as ramp hints. The hall is large, not huge: huge takes
+# the large share under the classic band.
+[rules.bridge_hall]
+description = "Two galleries over a large hall, a bridge between them"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"},
+             {id = "h", kind = "hall", size = "large"},
+             {id = "g", kind = "chamber", size = "small"},
+             {id = "f", kind = "chamber", size = "small"} ]
+edges    = [ {a = "x", b = "h"}, {a = "h", b = "g", rel = "above"},
+             {a = "g", b = "f", tags = ["bridge"]} ]
 reattach = { x = ["x"] }
 
 # A ring of four that goes down a Level and comes back up: two chambers
@@ -297,7 +320,7 @@ share = 0.1
 # Most rooms: forks, short loops and dead ends off the way.
 [[recipe]]
 stage = "Side rooms"
-apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3.5, cavern = 0.3, stair_hall = 5, gallery = 3, undercroft = 1 }
+apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3.5, cavern = 0.3, stair_hall = 5, gallery = 3, bridge_hall = 2, undercroft = 1 }
 share = 0.45
 
 # A few more loops, some of them as second routes along the way.

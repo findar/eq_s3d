@@ -45,9 +45,13 @@ recommended on all and continue"):
 
 - **Outdoor dungeons descend (task 7, 2026-11-04):** under a hill, Levels only go down from the entrance, so the Tunnel always enters the top Level (an all-up graph is turned upside down; towers become cellars). The general dungeon decision (up and down) stands for dungeons. The floor limit is 150 u under the Entrance plus one race Level height per extra Level (moderate 1, dramatic 2); `flat` and the classic layout stay one Level. Step 5's cases a-g build on two Levels at moderate and dramatic.
 
+- **Bridges (task 11, 2026-11-05):** a Bridge is a same-Level corridor flagged `CorridorSpec.bridge` = the lower room it crosses (omitted from JSON when unset). The deck runs at the upper Level OVER the lower room's ceiling (the stacked Slab always leaves room; the lower room's height is never changed); the ceiling is cut in a slot under the deck plus a half-width either side, walled as a shaft from the lower ceiling to the corridor's ceiling; rails 0.24 x corridor height (0.6 H), at least 3.5 u (over the step-up); deck 2 u thick, at least as long as it is wide, on one straight leg (`geometry.bridge_layout`, shared by builder, layout and gate). Job B bridges every same-Level corridor that can take one (straightening its doors onto one line if needed), one per lower room, shaft clear of every other room and corridor; no rng draws. The `bridge` edge tag (classic_eq `bridge_hall`, left out with stacking off) makes the placement put the far gallery on the near one's wall facing the hall. The gate counts a flagged room as bridged when the deck is a player height over its floor.
+
 ## Follow-ups
 
 - **Stock stacking is low rooms over low rooms** (task 1): where stock floors stack they are only ~28 u apart (14 u of headroom), because corridors and low rooms stack, not halls. Our rooms are about four times taller, so a Level is ~135 u. A low stacking room type (a crawlway, a cellar, a gallery) would bring built dungeons closer to stock.
+
+- **A stair's stub can clip a third room's corner** (found in task 11, not caused by bridges): a stacked edge is split once and then kept (task 5), so at 30 rooms a planned stair's flat stub can lie inside a room on its own Level. `clearance_violations` finds it on 4 of 240 classic builds (n = 12/20/30, moderate and dramatic, seeds 0-39), all at n = 30, and on 3 of 240 without `bridge_hall`, on other seeds. Seed 7 of those passes the gate, so the gate doesn't catch it. The hypothesis clearance test only misses it by its examples. For task 12.
 
 - **Stacked warren loops** (task 6): 0.184 cycles per room against step 6's 0.19 floor (xfail): stacked warrens lose ~11% of their edges between Levels against 6% within one. For task 12's tuning.
 
