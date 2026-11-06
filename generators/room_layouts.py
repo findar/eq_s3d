@@ -1,0 +1,356 @@
+"""What goes where in a room (roadmap step 9, design "The Spine and clearance").
+
+Features come after everything else: the room's Box, walls and doors are final, and nothing
+here changes them. A plan grid marks the floor. The Spine, the paths joining the doors, and
+each door's approach, stays clear. Arrangements propose spots; a spot that doesn't fit is
+dropped and recorded, so a room can be too full for its recipe but a build never fails for it.
+
+After each placement the doors are checked again, as the gate will check them from the mesh.
+"""
+
+from __future__ import annotations
+
+import math
+import random
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
+from scipy.ndimage import binary_dilation, label
+
+from .room_features import BOULDER, DAIS, PILLAR, PLINTH, POI, Feature, solid_plan
+
+CELL = 2.0              # the plan grid (u)
+SPINE_HALF_H = 1.0      # the Spine's half width, in H: 2 H clear, a corridor's clear width
+WALL_MARGIN_H = 1.0     # a solid stands this far from a wall, in H, so nothing snags behind it
+BODY_RADIUS = 2.0       # a player's middle stays this far from a solid (u), as the gate has it
+POCKET = 36.0           # free floor this big cut off from the doors is too much (u^2)
+ARRANGEMENTS: Tuple[str, ...] = ("centre", "far_end", "ring", "rows", "corners", "along_wall",
+                                 "scatter", "on_dais")
+MIN_HEAD_H = 2.0        # a dais leaves this much headroom, in H
+
+
+@dataclass(frozen=True)
+class Ask:
+    """One line of a recipe: put these Features here."""
+    kind: str
+    at: str
+    count: Tuple[int, int] = (1, 1)
+    side_h: float = 1.5             # across, in H
+    height_h: float = 0.0           # over the floor, in H; 0 is floor to ceiling
+    spacing_h: float = 8.0          # between neighbours in rows and along walls
+    radius: float = 0.35            # a ring, as a share of the room's short side
+    share: float = 0.25             # a dais's floor, as a share of the room's
+    chance: float = 1.0             # how likely this line is at all
+    poi: str = ""                   # a POI this Feature carries
+
+
+@dataclass
+class Placed:
+    features: List[Feature] = field(default_factory=list)
+    pois: List[POI] = field(default_factory=list)
+    dropped: List[str] = field(default_factory=list)
+
+
+class RoomGrid:
+    """The room's floor on a plan grid, with what must stay clear."""
+
+    def __init__(self, room, doors: Sequence, slots: Sequence, body_height: float):
+        (self.x0, self.y0, self.z0), (self.x1, self.y1, self.z1) = room.bounds
+        self.room, self.h = room, body_height
+        self.xs = np.arange(self.x0 + CELL / 2, self.x1, CELL)
+        self.ys = np.arange(self.y0 + CELL / 2, self.y1, CELL)
+        gx, gy = np.meshgrid(self.xs, self.ys, indexing="ij")
+        self.gx, self.gy = gx, gy
+        self.floor = (room.outline.contains(np.c_[gx.ravel(), gy.ravel()]).reshape(gx.shape)
+                      if room.outline is not None else np.ones(gx.shape, bool))
+        self.taken = np.zeros(gx.shape, bool)
+        for s in slots:
+            self.taken |= self.rect(s)
+        self.door_cells = [self._door_cell(d) for d in doors]
+        self.spine = self._spine(doors)
+
+    def rect(self, r) -> np.ndarray:
+        return (self.gx >= r[0]) & (self.gx <= r[2]) & (self.gy >= r[1]) & (self.gy <= r[3])
+
+    def _door_cell(self, door) -> Tuple[int, int]:
+        side, c0, c1 = door
+        mid = (c0 + c1) / 2
+        px, py = {"N": (mid, self.y1), "S": (mid, self.y0), "E": (self.x1, mid), "W": (self.x0, mid)}[side]
+        cand = np.argwhere(self.floor)
+        d = np.hypot(self.xs[cand[:, 0]] - px, self.ys[cand[:, 1]] - py)
+        c = cand[int(d.argmin())]
+        return int(c[0]), int(c[1])
+
+    def _path(self, a: Tuple[int, int], b: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """A shortest way over the floor from cell a to cell b."""
+        came: Dict[Tuple[int, int], Optional[Tuple[int, int]]] = {a: None}
+        queue = deque([a])
+        nx, ny = self.floor.shape
+        while queue:
+            cur = queue.popleft()
+            if cur == b:
+                break
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nb = (cur[0] + dx, cur[1] + dy)
+                if 0 <= nb[0] < nx and 0 <= nb[1] < ny and self.floor[nb] and nb not in came:
+                    came[nb] = cur
+                    queue.append(nb)
+        out = []
+        cur = b if b in came else None
+        while cur is not None:
+            out.append(cur)
+            cur = came[cur]
+        return out
+
+    def _spine(self, doors) -> np.ndarray:
+        """Paths joining the doors, a corridor's clear width wide, and each door's own strip
+        going in. The entrance room keeps its middle clear too: the spawn stands there."""
+        spine = np.zeros(self.floor.shape, bool)
+        for a, b in zip(self.door_cells, self.door_cells[1:]):
+            for c in self._path(a, b):
+                spine[c] = True
+        for c in self.door_cells:
+            spine[c] = True
+        if self.room.role == "entrance":
+            cx, cy = (self.x0 + self.x1) / 2, (self.y0 + self.y1) / 2
+            cand = np.argwhere(self.floor)
+            mid = cand[int(np.hypot(self.xs[cand[:, 0]] - cx, self.ys[cand[:, 1]] - cy).argmin())]
+            spine[int(mid[0]), int(mid[1])] = True
+        reach = max(1, int(round(SPINE_HALF_H * self.h / CELL)))
+        spine = binary_dilation(spine, iterations=reach)
+        for side, c0, c1 in doors:
+            depth = 2 * self.h + 2.0
+            if side in "NS":
+                y = self.y1 - depth if side == "N" else self.y0
+                spine |= self.rect((c0, y, c1, y + depth))
+            else:
+                x = self.x1 - depth if side == "E" else self.x0
+                spine |= self.rect((x, c0, x + depth, c1))
+        return spine & self.floor
+
+    def footprint(self, plan) -> np.ndarray:
+        pts = np.array(plan)
+        lo, hi = pts.min(axis=0), pts.max(axis=0)
+        return self.rect((lo[0], lo[1], hi[0], hi[1]))
+
+    def clear_for(self, cells: np.ndarray) -> bool:
+        """Do these cells stand on floor, clear of walls, the Spine and what's placed?"""
+        if not cells.any():
+            return False
+        margin = max(1, int(round(WALL_MARGIN_H * self.h / CELL)))
+        inner = ~binary_dilation(np.pad(~self.floor, 1, constant_values=True), iterations=margin)[1:-1, 1:-1]
+        return bool((cells <= inner).all() and not (cells & (self.spine | self.taken)).any())
+
+    def doors_stay_joined(self, cells: np.ndarray) -> bool:
+        """With these cells taken too, are the doors joined, and no floor cut off?"""
+        solid = binary_dilation(self.taken | cells, iterations=max(1, int(math.ceil(BODY_RADIUS / CELL))))
+        free = self.floor & ~solid
+        labels, n = label(free)
+        marks = {int(labels[c]) for c in self.door_cells}
+        if len(marks) > 1 or 0 in marks:
+            return False
+        joined = next(iter(marks), 0)
+        sizes = np.bincount(labels.ravel(), minlength=n + 1)
+        return not any(sizes[k] * CELL * CELL >= POCKET for k in range(1, n + 1) if k != joined)
+
+
+def _door_side(grid: RoomGrid) -> Tuple[float, float]:
+    """A unit vector from the doors toward the far side of the room."""
+    cx, cy = (grid.x0 + grid.x1) / 2, (grid.y0 + grid.y1) / 2
+    if not grid.door_cells:
+        return (0.0, 1.0)
+    dx = np.mean([grid.xs[c[0]] for c in grid.door_cells]) - cx
+    dy = np.mean([grid.ys[c[1]] for c in grid.door_cells]) - cy
+    n = math.hypot(dx, dy)
+    return (-dx / n, -dy / n) if n > 1e-6 else (0.0, 1.0)
+
+
+def _spots(grid: RoomGrid, ask: Ask, count: int, rng: random.Random) -> List[Tuple[float, float]]:
+    """Where an arrangement would put ``count`` things, best first."""
+    cx, cy = (grid.x0 + grid.x1) / 2, (grid.y0 + grid.y1) / 2
+    w, d = grid.x1 - grid.x0, grid.y1 - grid.y0
+    if ask.at == "centre":
+        # As near the middle as the way through allows.
+        step = ask.side_h * grid.h
+        return [(cx, cy)] + [(cx + sx * step, cy + sy * step) for sx, sy in
+                             ((0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (-1, 1), (1, -1), (-1, -1))]
+    if ask.at == "far_end":
+        fx, fy = _door_side(grid)
+        return [(cx + fx * w * s / 2, cy + fy * d * s / 2) for s in (0.7, 0.55, 0.4, 0.25)]
+    if ask.at == "ring":
+        r = ask.radius * min(w, d)
+        start = rng.uniform(0.0, 2 * math.pi / max(count, 1))
+        return [(cx + r * math.cos(start + 2 * math.pi * k / count),
+                 cy + r * math.sin(start + 2 * math.pi * k / count)) for k in range(count)]
+    if ask.at == "corners":
+        # Further in if a shaped room has no floor that far out.
+        return [(cx + sx * w * s, cy + sy * d * s) for s in (0.32, 0.25, 0.18)
+                for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    if ask.at == "rows":
+        step = ask.spacing_h * grid.h
+        if w >= d:
+            n = max(1, int(w * 0.8 // step))
+            run = [cx + (k - (n - 1) / 2) * step for k in range(n)]
+            return [(x, cy + s * d * 0.28) for x in run for s in (-1, 1)]
+        n = max(1, int(d * 0.8 // step))
+        run = [cy + (k - (n - 1) / 2) * step for k in range(n)]
+        return [(cx + s * w * 0.28, y) for y in run for s in (-1, 1)]
+    if ask.at == "along_wall":
+        step = ask.spacing_h * grid.h
+        fx, fy = _door_side(grid)
+        if abs(fx) >= abs(fy):
+            x = cx + math.copysign(w * 0.36, fx)
+            n = max(1, int(d * 0.8 // step))
+            return [(x, cy + (k - (n - 1) / 2) * step) for k in range(n)]
+        y = cy + math.copysign(d * 0.36, fy)
+        n = max(1, int(w * 0.8 // step))
+        return [(cx + (k - (n - 1) / 2) * step, y) for k in range(n)]
+    # scatter: any floor; more tries than asked, since many won't fit
+    cand = np.argwhere(grid.floor & ~grid.spine & ~grid.taken)
+    if len(cand) == 0:
+        return []
+    picks = [cand[rng.randrange(len(cand))] for _ in range(count * 6)]
+    return [(float(grid.xs[p[0]]), float(grid.ys[p[1]])) for p in picks]
+
+
+def _local_lift(room, plan) -> float:
+    """The most a moving floor rises under this footprint: a solid's top is measured from there."""
+    o = room.outline
+    if o is None or not o.lift:
+        return 0.0
+    pts = np.array(plan)
+    lo, hi = pts.min(axis=0) - 16.0, pts.max(axis=0) + 16.0
+    v = np.array(o.verts)
+    near = (v[:, 0] >= lo[0]) & (v[:, 0] <= hi[0]) & (v[:, 1] >= lo[1]) & (v[:, 1] <= hi[1])
+    return float(np.array(o.lift)[near].max()) if near.any() else 0.0
+
+
+def _local_drop(room, plan) -> float:
+    o = room.outline
+    if o is None or not o.drop:
+        return 0.0
+    pts = np.array(plan)
+    lo, hi = pts.min(axis=0) - 16.0, pts.max(axis=0) + 16.0
+    v = np.array(o.verts)
+    near = (v[:, 0] >= lo[0]) & (v[:, 0] <= hi[0]) & (v[:, 1] >= lo[1]) & (v[:, 1] <= hi[1])
+    return float(np.array(o.drop)[near].max()) if near.any() else 0.0
+
+
+def _dais(grid: RoomGrid, ask: Ask, rng: random.Random) -> Optional[Feature]:
+    """A raised floor against a wall, its steps toward the room, on the side furthest from the
+    doors that it fits. Shrinks to fit."""
+    fx, fy = _door_side(grid)
+    w, d = grid.x1 - grid.x0, grid.y1 - grid.y0
+    cx, cy = (grid.x0 + grid.x1) / 2, (grid.y0 + grid.y1) / 2
+    rise = (ask.height_h or 0.75) * grid.h
+    margin = WALL_MARGIN_H * grid.h
+    door_x = [grid.xs[c[0]] for c in grid.door_cells] or [cx]
+    door_y = [grid.ys[c[1]] for c in grid.door_cells] or [cy]
+
+    def clearance(side: str) -> float:
+        """How far this side's wall stands from the nearest door."""
+        if side in "NS":
+            y = grid.y1 if side == "N" else grid.y0
+            return float(min(abs(y - v) for v in door_y))
+        x = grid.x1 if side == "E" else grid.x0
+        return float(min(abs(x - v) for v in door_x))
+
+    for far in sorted("NSEW", key=lambda f: (-clearance(f), f)):
+        along_x = far in "NS"
+        toward = {"N": "S", "S": "N", "E": "W", "W": "E"}[far]
+        for scale in (1.0, 0.8, 0.65, 0.5):
+            area = ask.share * w * d * scale
+            run = (w if along_x else d) * 0.6 * math.sqrt(scale)
+            deep = area / run
+            if along_x:
+                a = grid.y1 - margin if far == "N" else grid.y0 + margin + deep
+                box = (cx - run / 2, a - deep, cx + run / 2, a)
+            else:
+                a = grid.x1 - margin if far == "E" else grid.x0 + margin + deep
+                box = (a - deep, cy - run / 2, a, cy + run / 2)
+            plan = [(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])]
+            height = _local_lift(grid.room, plan) + rise
+            if grid.room.height - _local_drop(grid.room, plan) - height < MIN_HEAD_H * grid.h:
+                continue
+            # Its steps need floor too: the footprint grows toward the room by their run.
+            run_out = _steps_run(height)
+            grown = (box[0] - (run_out if toward == "W" else 0), box[1] - (run_out if toward == "S" else 0),
+                     box[2] + (run_out if toward == "E" else 0), box[3] + (run_out if toward == "N" else 0))
+            cells = grid.rect(grown)
+            if grid.clear_for(cells) and grid.doors_stay_joined(cells):
+                grid.taken |= cells
+                return Feature(DAIS, plan, height=round(height, 3), steps_side=toward)
+    return None
+
+
+def _steps_run(height: float) -> float:
+    from .geometry import RISER_CAP, TREAD_DEPTH, dais_steps
+    return dais_steps(height) * TREAD_DEPTH if height > RISER_CAP else 0.0
+
+
+def place(room, doors: Sequence, slots: Sequence, asks: Sequence[Ask], body_height: float,
+          form: str, rng: random.Random) -> Placed:
+    """Stand a recipe's Features in a finished room. Touches nothing else about it."""
+    grid = RoomGrid(room, doors, slots, body_height)
+    out = Placed()
+    dais_at: Optional[Tuple[float, float, float, int]] = None
+    for ask in asks:
+        if ask.chance < 1.0 and rng.random() >= ask.chance:
+            continue
+        count = rng.randint(*ask.count)
+        if count <= 0:
+            continue
+        if ask.kind == DAIS:
+            feat = _dais(grid, ask, rng)
+            if feat is None:
+                out.dropped.append(f"{ask.kind} at {ask.at}")
+                continue
+            out.features.append(feat)
+            pts = np.array(feat.plan)
+            mx, my = pts.mean(axis=0)
+            dais_at = (float(mx), float(my), feat.height, len(out.features) - 1)
+            if ask.poi:
+                out.pois.append(POI(ask.poi, float(mx), float(my), grid.z0 + feat.height,
+                                    feature=len(out.features) - 1))
+            continue
+        side = ask.side_h * body_height
+        placed = 0
+        if ask.at == "on_dais":
+            spots = [] if dais_at is None else [(dais_at[0], dais_at[1])]
+        else:
+            spots = _spots(grid, ask, count, rng)
+        for x, y in spots:
+            if placed >= count:
+                break
+            plan = solid_plan(form, x, y, side, rng)
+            if ask.at == "on_dais":
+                # A dais's floor is its own: it stands on the top, and rises from there.
+                base = dais_at[2]
+                height = base + (ask.height_h * body_height or body_height)
+                out.features.append(Feature(ask.kind, plan, height=round(height, 3)))
+                placed += 1
+                continue
+            cells = grid.footprint(plan)
+            if not grid.clear_for(cells) or not grid.doors_stay_joined(cells):
+                continue
+            height = 0.0 if ask.kind == PILLAR or not ask.height_h else \
+                _local_lift(room, plan) + ask.height_h * body_height
+            if ask.kind != PILLAR and height <= 0:
+                height = _local_lift(room, plan) + body_height
+            grid.taken |= cells
+            out.features.append(Feature(ask.kind, plan, height=round(height, 3)))
+            placed += 1
+            if ask.poi:
+                # A solid's top isn't floor: its POI stands on the floor in front of it.
+                fx, fy = _door_side(grid)
+                reach = side / 2 + 2 * BODY_RADIUS
+                out.pois.append(POI(ask.poi, x - fx * reach, y - fy * reach, grid.z0 + _local_lift(room, plan),
+                                    feature=len(out.features) - 1))
+        if placed < count and ask.at not in ("scatter", "corners", "rows", "along_wall"):
+            out.dropped.append(f"{count - placed} {ask.kind} at {ask.at}")
+    return out
+
+
+__all__ = ["ARRANGEMENTS", "Ask", "BOULDER", "PILLAR", "PLINTH", "Placed", "RoomGrid", "place"]

@@ -1015,6 +1015,7 @@ FLOOR_Z_TOL = 8.0
 OUTLINE_TOL = 0.05    # how far a door, Throat or seam may be off (u)
 THROAT_CLEAR = 0.5    # a wall only counts as across a Throat this far in: cut pieces can
                       # graze a Throat's corner by a hair, and a real one spans it (u)
+BODY_RADIUS = 2.0     # how far a player's middle stays from a wall (u)
 DOOR_STUB = 3.0       # a corridor's end can stand this far into its room (u)
 
 
@@ -1140,7 +1141,9 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
     tri = surf.verts[surf.faces[faces]]
     nz = np.abs(surf.normals[faces, 2])
     tall = (nz < 0.7) & (tri[:, :, 2].min(axis=1) <= body) & (tri[:, :, 2].max(axis=1) >= body)
-    for t in outline.throats:
+    # A room holding solids may have one in a Throat with a way round it; check_features
+    # judges that, door to door.
+    for t in () if room.features else outline.throats:
         shrunk = (t[0] + THROAT_CLEAR, t[1] + THROAT_CLEAR, t[2] - THROAT_CLEAR, t[3] - THROAT_CLEAR)
         for w in tri[tall]:
             pts = w[:, :2]
@@ -1180,7 +1183,6 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
 # take the generator's word: a plan grid over the room, each cell free if it's floor and
 # a body's radius from every wall at body height.
 
-BODY_RADIUS = 2.0     # how far a player's middle stays from a wall (u)
 CLEAR_CELL = 2.0      # the grid's cell (u)
 WALLED_OFF = 36.0     # a pocket of free floor this big, with no door, is walled off (u^2)
 
