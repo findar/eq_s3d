@@ -1010,6 +1010,9 @@ FLOOR_Z_TOL = 8.0
 # Throat to the Core, nothing stands across a Throat, and the room is closed.
 
 OUTLINE_TOL = 0.05    # how far a door, Throat or seam may be off (u)
+THROAT_CLEAR = 0.5    # a wall only counts as across a Throat this far in: cut pieces can
+                      # graze a Throat's corner by a hair, and a real one spans it (u)
+DOOR_STUB = 3.0       # a corridor's end can stand this far into its room (u)
 
 
 def _door_strips(room: RoomSpec, spec: ZoneSpec):
@@ -1064,7 +1067,7 @@ def _open_seam(surf: WalkSurface, room: RoomSpec, faces: np.ndarray, doors, slot
     def allowed(a: np.ndarray, b: np.ndarray) -> bool:
         for side, c0, c1 in doors:
             axis, along = (1, 0) if side in ("N", "S") else (0, 1)
-            if (abs(a[axis] - planes[side]) <= tol and abs(b[axis] - planes[side]) <= tol
+            if (abs(a[axis] - planes[side]) <= DOOR_STUB and abs(b[axis] - planes[side]) <= DOOR_STUB
                     and min(a[along], b[along]) >= c0 - tol and max(a[along], b[along]) <= c1 + tol):
                 return True
         for s in slots:
@@ -1135,7 +1138,7 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
     nz = np.abs(surf.normals[faces, 2])
     tall = (nz < 0.7) & (tri[:, :, 2].min(axis=1) <= body) & (tri[:, :, 2].max(axis=1) >= body)
     for t in outline.throats:
-        shrunk = (t[0] + OUTLINE_TOL, t[1] + OUTLINE_TOL, t[2] - OUTLINE_TOL, t[3] - OUTLINE_TOL)
+        shrunk = (t[0] + THROAT_CLEAR, t[1] + THROAT_CLEAR, t[2] - THROAT_CLEAR, t[3] - THROAT_CLEAR)
         for w in tri[tall]:
             pts = w[:, :2]
             d = np.linalg.norm(pts[:, None] - pts[None], axis=2)
@@ -1293,12 +1296,26 @@ def _local_adjacency(surf: WalkSurface, agent: AgentModel,
                 fxy_min[fi][1] - eps <= fxy_max[fj][1] and
                 fxy_max[fi][1] + eps >= fxy_min[fj][1])
 
+    # Faces already joined can't change what a flood reaches, so their seam needn't be
+    # worked out; a shaped room's many welded floor faces would otherwise cost seconds.
+    parent = {f: f for f in subset}
+
+    def find(f: int) -> int:
+        while parent[f] != f:
+            parent[f] = parent[parent[f]]
+            f = parent[f]
+        return f
+
+    for fi, nbrs in adj.items():
+        for fj in nbrs:
+            parent[find(fi)] = find(fj)
+
     n = len(subset)
     for i in range(n):
         fi = subset[i]
         for j in range(i + 1, n):
             fj = subset[j]
-            if fj in adj[fi]:
+            if find(fi) == find(fj):
                 continue
             if not _bbox_near(fi, fj):
                 continue
@@ -1310,6 +1327,7 @@ def _local_adjacency(surf: WalkSurface, agent: AgentModel,
             if abs(zi - zj) <= agent.max_step_up:
                 adj[fi].add(fj)
                 adj[fj].add(fi)
+                parent[find(fi)] = find(fj)
 
     return {k: sorted(v) for k, v in adj.items() if k in subset_set}
 

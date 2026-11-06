@@ -5,7 +5,7 @@ The Topology_Graph: an abstract room graph with no coordinates (roadmap step 6,
 design "Rule-set files" and "Growing the graph").
 
 A node has a stable id, a ``kind`` (the placeholder ``Area`` or a room kind),
-and, for rooms, a Size_Class, plus ``shape`` (``rect`` only in step 6) and a
+and, for rooms, a Size_Class, plus ``shape`` (step 8; ``auto``: the wall style picks) and a
 ``district`` label. An edge is undirected for connectivity but carries a
 Vertical_Relation that reads in a direction: ``Edge(a, b, rel="above")`` means
 "b is above a". The graph stores each edge once under its sorted id pair and
@@ -39,7 +39,7 @@ BASE_KINDS: Tuple[str, ...] = (AREA,) + ROOM_KINDS
 SIZE_CLASSES: Tuple[str, ...] = ("tiny", "small", "medium", "large", "huge")
 RELATIONS: Tuple[str, ...] = ("above", "below", "level", "any")
 TAGS: Tuple[str, ...] = ("threshold", "bridge")
-SHAPES: Tuple[str, ...] = ("rect",)
+SHAPES: Tuple[str, ...] = ("auto", "rect", "blob", "long", "cut", "ell", "cross")
 
 _FLIP = {"above": "below", "below": "above", "level": "level", "any": "any"}
 
@@ -51,7 +51,7 @@ class Node:
     id: str
     kind: str
     size: Optional[str] = None
-    shape: str = "rect"
+    shape: str = "auto"
     district: int = 0
 
     @property

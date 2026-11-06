@@ -24,7 +24,7 @@ fits        = ["classic_eq"]           # base sets this layer can be merged onto
 [rules.nave]
 description = "A large hall on the way through with two small chapels off its sides"
 match    = [ {id = "x", kind = "Area"} ]
-replace  = [ {id = "n",  kind = "hall", size = "large"},
+replace  = [ {id = "n",  kind = "hall", size = "large", shape = "long"},
              {id = "c1", kind = "lair", size = "small"},
              {id = "c2", kind = "lair", size = "small"},
              {id = "x",  kind = "Area"} ]

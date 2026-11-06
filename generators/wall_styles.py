@@ -18,10 +18,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
+from .geometry import _bridge_slots, room_doors
 from .outline import COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, draw_outline
+from .semantics import body_height
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import (RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
-                               _type_name)
+                               _type_name, load_theme_map)
+from .zone_spec import ZoneSpec
 
 WALLS_DIR = Path(__file__).resolve().parent.parent / "rules" / "walls"
 RECT = "rect"
@@ -175,3 +178,36 @@ def load_styles(folder: Union[str, Path] = WALLS_DIR) -> Dict[str, WallStyle]:
     if errors:
         raise RuleSetError(errors)
     return styles
+
+
+THEMES_FILE = WALLS_DIR.parent / "topology" / "themes.toml"
+AUTO = "auto"
+
+
+def style_for_theme(theme: str) -> WallStyle:
+    """The wall style ``themes.toml`` gives a dungeon theme."""
+    return load_styles()[load_theme_map(THEMES_FILE).entry_for(theme or None).walls]
+
+
+def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
+    """Draw each room's Outline, last, once every door is known. Only ``room.outline``
+    and the sidecar record change, so a style can't move a layout. Each room draws from
+    its own stream, so one room's shape can't shift another's."""
+    height = body_height(spec.dungeon_race)
+    records = spec.layout["rooms"]
+    for room in spec.rooms:
+        rng = random.Random(f"{seed}:{room.id}")
+        record = records.get(room.id, {})
+        # What the rule asked for: applying a style again chooses afresh.
+        shape = record.setdefault("rule_shape", record.get("shape", AUTO))
+        if shape == AUTO:
+            shape = style.pick_shape(record.get("kind", room.kind), rng)
+        (x0, y0, _), (x1, y1, _) = room.bounds
+        box = (x0, y0, x1, y1)
+        room.outline = style.draw(box, room_doors(room, spec), _bridge_slots(room, spec),
+                                  shape, height, rng)
+        if records:
+            record["shape"] = shape
+            record["fill"] = 1.0 if room.outline is None else round(room.outline.fill(box), 3)
+    spec.layout["walls"] = style.name
+

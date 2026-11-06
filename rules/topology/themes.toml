@@ -1,11 +1,15 @@
 # rules/topology/themes.toml -- which rule set each dungeon theme grows with.
 #
-# theme = { base = "<base set file in this folder>", layers = ["<file in layers/>", ...] }
+# theme = { base = "<base set file in this folder>", layers = ["<file in layers/>", ...],
+#           walls = "<wall style in ../walls/, built unless named>" }
 #
 # Theme names are the dungeon themes (ai/schema.py VALID_DUNGEON_THEMES).
 # A theme not listed here uses `default`. A request can name a base set
 # instead of the theme's; the theme's layers still apply when they fit it.
 
 default = { base = "classic_eq" }
-warren  = { base = "warren" }
+warren  = { base = "warren", walls = "rough" }
 temple  = { base = "classic_eq", layers = ["temple"] }
+mine_delve = { base = "classic_eq", walls = "hewn" }
+lava_forge = { base = "classic_eq", walls = "hewn" }
+ice_keep   = { base = "classic_eq", walls = "hewn" }

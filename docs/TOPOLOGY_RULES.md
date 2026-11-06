@@ -81,7 +81,7 @@ The base kinds are `Area` (the placeholder) and the room kinds `entrance`,
 | `id` | everywhere | unique within the rule (or the start graph) |
 | `kind` | everywhere | a kind of the set: `Area`, a room kind, or one from `kinds` |
 | `size` | `start_nodes`, `replace` | required on every room node and forbidden on an `Area`: `tiny`, `small`, `medium`, `large`, `huge` |
-| `shape` | `start_nodes`, `replace` | optional; only `"rect"` exists now (room shapes come in step 8) |
+| `shape` | `start_nodes`, `replace` | optional; `"auto"` (the default: the wall style picks by kind), or a fixed `"rect"`, `"blob"`, `"long"`, `"cut"`, `"ell"`, `"cross"` (see "Wall styles") |
 | `district` | `start_nodes`, `replace` | optional whole number, default 0: a district label (structure only in step 6) |
 
 Match nodes take only `id` and `kind`.
