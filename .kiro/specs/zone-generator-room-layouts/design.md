@@ -25,45 +25,56 @@ exactly the build before this step (Req 8.1).
 
 ## Research findings
 
-### 1. What stands in stock rooms (first numbers, 15 zones, at spec time)
+### 1. What stands in stock rooms (task 1, `scripts/room_feature_survey.py`)
 
-Scratch surveys using step 8's kept zones and step 6's chamber split. Task 1 redoes them as a
-script, and adds arrangement and placed objects. "Feature" here is a connected group of wall
-faces at least 10 u inside the chamber's edge, at least 4 u tall, 2–60 u across. "Raised" is
-floor at least 2 u over the chamber's median, on at least 8% of it.
+Step 8's kept zones and step 6's chamber split. A **free-standing solid** is a connected group
+of wall faces at least 10 u inside the chamber's edge, at least 4 u tall, compact (at most 40 u
+across, no longer than 2.5 to 1) and facing every way. Other groups are **partitions**. **Raised**
+is floor at least 2 u over the chamber's median, on at least 8% of it. **Objects** are the zone's
+placed instances (`objects.wld`), not part of its mesh.
 
-| Zone | Style | Rooms | Rooms with a Feature | Features p50/p90 | Size p50/p90 (u) | Raised rooms | Raised area p50 | Rise p50 (u) |
-|---|---|---|---|---|---|---|---|---|
-| blackburrow | rough | 36 | 0.61 | 1/4 | 33/50 | 0.47 | 0.29 | 4.8 |
-| paw | rough | 32 | 0.69 | 2/4 | 30/56 | 0.47 | 0.28 | 3.9 |
-| crystal | rough | 21 | 0.43 | 1/3 | 29/42 | 0.29 | 0.33 | 5.3 |
-| runnyeye | rough | 17 | 0.88 | 2/6 | 21/49 | 0.00 | – | – |
-| soldungb | rough | 18 | 0.94 | 3/9 | 22/41 | 0.44 | 0.30 | 4.0 |
-| soldunga | rough | 15 | 0.93 | 2/3 | 24/52 | 0.33 | 0.22 | 4.0 |
-| permafrost | rough | 29 | 0.48 | 2/5 | 18/47 | 0.28 | 0.23 | 5.1 |
-| kaesora | hewn | 20 | 0.75 | 2/4 | 29/48 | 0.65 | 0.30 | 3.9 |
-| guktop | hewn | 13 | 0.85 | 4/6 | 36/56 | 0.15 | 0.28 | 6.3 |
-| najena | hewn | 22 | 0.55 | 2/4 | 29/42 | 0.18 | 0.24 | 4.8 |
-| gukbottom | hewn | 10 | 0.80 | 2/5 | 31/56 | 0.20 | 0.16 | 3.0 |
-| sebilis | hewn | 44 | 0.61 | 2/8 | 14/46 | 0.39 | 0.22 | 5.1 |
-| qcat | built | 5 | 0.60 | 1/6 | 10/20 | 0.00 | – | – |
-| befallen | built | 24 | 0.58 | 3/7 | 18/44 | 0.12 | 0.11 | 3.5 |
-| kurn | built | 40 | 0.82 | 3/7 | 21/42 | 0.17 | 0.21 | 8.1 |
+| Zone | Style | Rooms | Rooms with a solid | Side p50 | Rooms with a partition | Raised rooms | Raised share | Rise | Objects |
+|---|---|---|---|---|---|---|---|---|---|
+| blackburrow | rough | 36 | 0.11 | 10.5 | 0.75 | 0.47 | 0.29 | 4.8 | 283 |
+| paw | rough | 32 | 0.03 | 18.0 | 0.75 | 0.47 | 0.28 | 3.9 | 344 |
+| crystal | rough | 21 | 0.00 | – | 0.48 | 0.29 | 0.33 | 5.3 | 447 |
+| runnyeye | rough | 17 | 0.24 | 2.0 | 0.94 | 0.00 | – | – | 648 |
+| soldungb | rough | 18 | 0.28 | 4.0 | 0.89 | 0.44 | 0.30 | 4.0 | 337 |
+| soldunga | rough | 15 | 0.13 | 11.0 | 1.00 | 0.33 | 0.22 | 4.0 | 461 |
+| permafrost | rough | 29 | 0.17 | 31.3 | 0.48 | 0.28 | 0.23 | 5.1 | 502 |
+| kaesora | hewn | 20 | 0.05 | 18.5 | 0.85 | 0.65 | 0.30 | 3.9 | 396 |
+| guktop | hewn | 13 | 0.23 | 8.0 | 0.85 | 0.15 | 0.28 | 6.3 | 395 |
+| najena | hewn | 22 | 0.14 | 22.2 | 0.59 | 0.18 | 0.24 | 4.8 | 414 |
+| gukbottom | hewn | 10 | 0.20 | 4.0 | 0.70 | 0.20 | 0.16 | 3.0 | 482 |
+| sebilis | hewn | 44 | 0.18 | 6.0 | 0.61 | 0.39 | 0.22 | 5.1 | 501 |
+| qcat | built | 5 | 0.20 | 8.9 | 0.60 | 0.00 | – | – | 93 |
+| befallen | built | 24 | 0.25 | 22.0 | 0.62 | 0.12 | 0.11 | 3.5 | 346 |
+| kurn | built | 40 | 0.40 | 14.0 | 0.88 | 0.17 | 0.21 | 8.1 | 267 |
 
-What this says, with its limits:
+**Bands:** rooms with a solid: rough 0.00–0.28, hewn 0.05–0.23, built 0.20–0.40. Raised rooms:
+rough 0.00–0.47, hewn 0.15–0.65, built 0.00–0.17. Raised share 0.11–0.33, rise 3–8 u.
 
-- **Most stock rooms have something in them,** in every style. An empty floor is unusual.
-- **A few things, not many:** about 2 per room, up to 4–9. So "sparse and meaningful" is
-  closer to stock than a hall of columns everywhere.
-- **Raised floor is common and low:** a quarter of the room, 4–5 u up, about two steps.
-- **This measure over-counts:** a group 30–50 u across may be an interior partition, a stair
-  side or a raised floor's edge, not a free-standing thing. Task 1 must separate them by looking
-  at plots.
-- **It also under-counts:** every zone here has an `_obj.s3d` of placed objects, which this
-  sees none of, so stock statues and furniture (and some pillars) aren't in these numbers.
-  Those belong to step 11's side of the line, but they do mean mesh-only numbers are a floor.
-- **Sinks exist too** (0–44% of rooms have floor 2 u under the median), but much of that is the
-  stair or ramp a chamber includes. Open question 3 avoids real pits.
+What this says, and where it corrects the spec's first reading:
+
+- **The first reading over-counted three or four times.** It said most rooms hold about 2 solids.
+  Plots show that count was mostly partitions, stair sides and walls between rooms the split
+  had joined. Free-standing solids in the mesh are uncommon: 0–40% of rooms, usually one.
+- **What fills a stock room is placed objects:** 93–648 per zone, against 5–44 rooms, so many per
+  room. The commonest are torches, bones, rocks, benches, barrels and braziers (TORCH1, BONEPILE,
+  PAWROCK8, STONEBENCH, GUKBRAZIER1), and some pillars (CBPILLAR101). Those are step 11's side
+  of the line (umbrella Req 32.4), and they're why stock rooms feel fuller than these numbers.
+- **Raised floor is real and common:** up to two-thirds of rooms in a zone, about a quarter of the
+  room, about 4–5 u up. This is the mesh's main piece of room structure, more than pillars are.
+- **Inner walls are common too:** 48–100% of rooms have a partition, though this count still holds
+  stair sides and door frames. The spec has no partition Feature; worth a look at task 8.
+
+What this means for the design:
+
+- **Bar for solids:** with no objects until step 11, Features stand in for what objects give stock
+  rooms. So `normal` may run above stock's mesh-only count: named rooms always, ordinary rooms
+  mostly bare. W-style bars take stock's band as a floor, and at most 0.6 of rooms as a ceiling.
+- **Dais is the first Feature,** not pillars. Rise about 4–5 u, a quarter of the room.
+- **Rocks and boulders** are placed objects in stock. A mesh Boulder is a stand-in until step 11.
 
 ### 2. What the code already offers
 
@@ -178,6 +189,8 @@ free-standing Features, added in the map post-pass from `RoomSpec.features` (Ope
 
 ## Risks
 
+- **Features stand in for objects.** Stock's rooms read as full because of placed objects, which
+  we can't place until step 11. Rooms may read barer than stock whatever this step does.
 - **Scatter reads as random, not designed.** The biggest risk, and the point of naming
   arrangements: a throne room should look deliberate. Task 8 is an early look for it.
 - **Snagging.** Free-standing solids are what catches a player, and the gate has no body radius

@@ -19,6 +19,8 @@ The design's "Decisions" section stands. The user took the recommended answer to
 6. EQ map files gain lines for free-standing Features, in the map post-pass.
 7. Tasks 1–7 land now; step 8's human pass runs before or with task 8; step 8 closes before step 9.
 
+- **What the survey changed (task 1, 2026-11-06):** free-standing solids are in 0–40% of stock rooms, not most, and placed objects (93–648 per zone) fill the rest. Features stand in for objects until step 11: named rooms always, ordinary rooms mostly bare, a ceiling of 0.6 of rooms at `normal`. The Dais is the first Feature.
+
 ## Follow-ups
 
 Carried in from earlier steps and relevant here:
