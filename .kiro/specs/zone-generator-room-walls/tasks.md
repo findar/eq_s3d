@@ -59,7 +59,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/outline.py, generators/geometry.py, tests/test_relief.py
   - Reqs: 7
 
-- [ ] 7. Walls control, sidecar and maps
+- [x] 7. Walls control, sidecar and maps
   - Card: [cards/07-controls-maps.md](cards/07-controls-maps.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, generators/builder.py, generators/mapview.py, tests/test_hygiene.py, tests/test_walls_controls.py

@@ -15,4 +15,4 @@ Vertex heights: floors rise, ceilings fall, zero in Throats, flat at Bridge slot
 Lessons: walkable floors need deliberate shaping, the floor never sinks, and centroids across a seam must stay under the agent's step-up. Triangles must keep up-winding (task 18 of step 7) for the floor rule.
 
 ## Result
-✔ 578ee68 · 4 passed
+✔ 578ee68 · 1564 passed

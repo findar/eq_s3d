@@ -41,7 +41,11 @@ def zone_specs(draw) -> ZoneSpec:
         elevation=draw(st.booleans()),
         verticality=draw(verticality),
     )
-    return plan_to_spec(plan, seed=draw(seeds))
+    spec = plan_to_spec(plan, seed=draw(seeds))
+    # Rooms as Boxes: the frozen schematic knows no Outlines (test_walls_controls has them).
+    for room in spec.rooms:
+        room.outline = None
+    return spec
 
 
 def _spec_extents(spec: ZoneSpec):

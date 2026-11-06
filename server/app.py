@@ -45,7 +45,7 @@ from ai.planner import make_plan, get_planner
 from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
-    ZonePlan, available_rule_sets,
+    ZonePlan, available_rule_sets, available_wall_styles,
 )
 
 # ---------------------------------------------------------------------------
@@ -393,7 +393,7 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
     400, as ``edges`` / ``trees`` are on a type with no landscape; the default
     ``classic`` / ``""`` is accepted there, since it changes nothing.
     """
-    for key in ("layout", "rule_set"):
+    for key in ("layout", "rule_set", "walls"):
         if key in c and c[key] is None:
             c.pop(key)
     layout = c.get("layout")
@@ -411,6 +411,15 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
                 400, f"rule_set must be one of {', '.join(sets)} "
                      "(or \"\" for the theme's set)")
         rule_set = c["rule_set"] = rule_set.strip()
+    walls = c.get("walls")
+    if walls is not None:
+        styles = available_wall_styles()
+        if not isinstance(walls, str) or (walls.strip().lower()
+                                          and walls.strip().lower() not in styles):
+            raise HTTPException(
+                400, f"walls must be one of {', '.join(styles)} "
+                     "(or \"\" for the theme's style)")
+        walls = c["walls"] = walls.strip().lower()
     if zone_type not in LAYOUT_ZONE_TYPES:
         if layout == "graph":
             raise HTTPException(
@@ -418,6 +427,9 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
         if rule_set:
             raise HTTPException(
                 400, "rule_set only applies to zone_type dungeon or outdoor_dungeon")
+        if walls:
+            raise HTTPException(
+                400, "walls only applies to zone_type dungeon or outdoor_dungeon")
 
 
 # The zone types a dungeon theme / race reaches: the room-graph types. A
@@ -483,7 +495,8 @@ class GenerateRequest(BaseModel):
                     "verticality, locks, edges (wilderness Rim, e.g. "
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
                     "none/sparse/normal/dense), layout (classic/graph) and "
-                    "rule_set (a base set, \"\" for the theme's; dungeon and "
+                    "rule_set (a base set, \"\" for the theme's) and walls (a wall style, "
+                    "\"\" for the theme's); dungeon and "
                     "outdoor_dungeon only), dungeon_theme and dungeon_race "
                     "(\"\" for none; dungeon, city and outdoor_dungeon "
                     "only), …",

@@ -143,8 +143,9 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
 
     # A grown dungeon's rooms draw their real walls, last, when every door is known.
     if spec.layout is not None and plan.zone_type == "dungeon":
-        from generators.wall_styles import apply_walls, style_for_theme
-        apply_walls(spec, style_for_theme(plan.dungeon_theme), rng_seed)
+        from generators.wall_styles import apply_walls, load_styles, style_for_theme
+        style = load_styles()[plan.walls] if plan.walls else style_for_theme(plan.dungeon_theme)
+        apply_walls(spec, style, rng_seed)
     return spec
 
 

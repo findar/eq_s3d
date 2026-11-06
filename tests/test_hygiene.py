@@ -616,6 +616,7 @@ _ALLOWED_WEB_INPUT_IDS = {
     "edge-n", "edge-e", "edge-s", "edge-w",  # wilderness map edges (task 3)
     "trees",  # wilderness tree density (trees spec task 9)
     "layout", "rule-set",  # graph layouts (graph-layout spec task 11)
+    "walls",  # wall style (room walls spec task 7)
     "dungeon-theme", "dungeon-race",  # graph-layout spec task 14
 }
 
@@ -627,6 +628,7 @@ _ALLOWED_CLI_OPTIONS = {
     "--edges",  # wilderness Rim declaration (wilderness spec task 2)
     "--trees",  # wilderness tree density (trees spec task 8)
     "--layout", "--rule-set",  # layout engine (graph-layout spec task 10)
+    "--walls",  # wall style (room walls spec task 7)
     # housekeeping the task allows
     "--output", "--ter-version", "--no-validate",
     # deprecated aliases that share a dest (still a legacy input surface)

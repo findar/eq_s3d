@@ -161,6 +161,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     const rows: [string, string][] = [
       ["Size", p.size],
       ["Verticality", p.verticality],
+      ...(p.walls ? [["Walls", p.walls] as [string, string]] : []),
     ];
     if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
     if (p.mood) rows.push(["Mood", p.mood]);
@@ -322,11 +323,13 @@ function syncControlVisibility(): void {
     box.hidden = !on;
     box.style.display = on ? "" : "none";
   }
-  // The rule set only means something under the graph engine.
-  const ruleBox = $("rule-set").closest("label") as HTMLElement;
-  const ruleOn = usesControl(zoneType, "layout") && readLayout() === "graph";
-  ruleBox.hidden = !ruleOn;
-  ruleBox.style.display = ruleOn ? "" : "none";
+  // The rule set and wall style only mean something under the graph engine.
+  const graphOn = usesControl(zoneType, "layout") && readLayout() === "graph";
+  for (const id of ["rule-set", "walls"]) {
+    const box = $(id).closest("label") as HTMLElement;
+    box.hidden = !graphOn;
+    box.style.display = graphOn ? "" : "none";
+  }
 }
 
 function readLayout(): string {
@@ -375,6 +378,8 @@ async function doGenerate(mode: Mode) {
     const layout = usesControl(zoneType, "layout") ? readLayout() : undefined;
     const ruleSet = layout === "graph"
       ? ($("rule-set") as HTMLSelectElement).value : undefined;
+    const walls = layout === "graph"
+      ? ($("walls") as HTMLSelectElement).value : undefined;
     // Theme and race: "" (None) is sent as-is; hidden, they are left out.
     const dungeonTheme = usesControl(zoneType, "dungeon-theme")
       ? ($("dungeon-theme") as HTMLSelectElement).value : undefined;
@@ -388,6 +393,7 @@ async function doGenerate(mode: Mode) {
         ...(trees ? { trees } : {}),
         ...(layout ? { layout } : {}),
         ...(ruleSet !== undefined ? { rule_set: ruleSet } : {}),
+        ...(walls !== undefined ? { walls } : {}),
         ...(dungeonTheme !== undefined ? { dungeon_theme: dungeonTheme } : {}),
         ...(dungeonRace !== undefined ? { dungeon_race: dungeonRace } : {}),
       },
@@ -400,6 +406,7 @@ async function doGenerate(mode: Mode) {
       (trees ? ` trees=${trees}` : "") +
       (layout ? ` layout=${layout}` : "") +
       (ruleSet !== undefined ? ` rule_set=${ruleSet || "(theme)"}` : "") +
+      (walls !== undefined ? ` walls=${walls || "(theme)"}` : "") +
       (dungeonTheme !== undefined ? ` theme=${dungeonTheme || "(none)"}` : "") +
       (dungeonRace !== undefined ? ` race=${dungeonRace || "(none)"}` : "") + seedNote,
     );
@@ -528,7 +535,7 @@ $("reset-view").addEventListener("click", () => {
 
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees",
-                  "layout", "rule-set", "dungeon-theme", "dungeon-race"]) {
+                  "layout", "rule-set", "walls", "dungeon-theme", "dungeon-race"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });

@@ -171,11 +171,21 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         y = py(r.center_y) - rh / 2
         fill = _ROLE_FILL.get(r.role, _ROLE_FILL["standard"])
         stroke = _ROLE_STROKE.get(r.role, _ROLE_STROKE["standard"])
-        parts.append(
-            f'<rect x="{x:.1f}" y="{y:.1f}" width="{rw:.1f}" height="{rh:.1f}" '
-            f'rx="4" fill="{fill}" fill-opacity="{room_opacity}" stroke="{stroke}" '
-            f'stroke-width="1.5"/>'
-        )
+        if r.outline is not None:
+            # A shaped room: its real walls, not its Box (step 8).
+            for loop in r.outline.wall_loops():
+                pts = " ".join(f"{px(r.outline.verts[i][0]):.1f},{py(r.outline.verts[i][1]):.1f}"
+                               for i in loop)
+                parts.append(
+                    f'<polygon points="{pts}" fill="{fill}" fill-opacity="{room_opacity}" '
+                    f'stroke="{stroke}" stroke-width="1.5"/>'
+                )
+        else:
+            parts.append(
+                f'<rect x="{x:.1f}" y="{y:.1f}" width="{rw:.1f}" height="{rh:.1f}" '
+                f'rx="4" fill="{fill}" fill-opacity="{room_opacity}" stroke="{stroke}" '
+                f'stroke-width="1.5"/>'
+            )
         # Depth number in the room centre
         cx, cy = px(r.center_x), py(r.center_y)
         parts.append(
