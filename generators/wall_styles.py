@@ -224,5 +224,8 @@ def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
             record["outline"] = None if room.outline is None else [
                 [[round(x, 1), round(y, 1)] for x, y in (room.outline.verts[i] for i in loop)]
                 for loop in room.outline.wall_loops()]
+    # Flat and ramp corridors take the style's break; stairs and bridges stay as built.
+    for cor in spec.corridors:
+        cor.rough = style.corridor_break if cor.steps == 0 and not cor.bridge else 0.0
     spec.layout["walls"] = style.name
 

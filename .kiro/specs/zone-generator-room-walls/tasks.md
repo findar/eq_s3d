@@ -69,7 +69,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
   - Type: human · Depends: 6, 7
 
-- [ ] 9. Corridors match their rooms
+- [x] 9. Corridors match their rooms
   - Card: [cards/09-corridors.md](cards/09-corridors.md)
   - Type: agent · Size: M · Depends: 8
   - Owns: generators/geometry.py, tests/test_rough_corridors.py

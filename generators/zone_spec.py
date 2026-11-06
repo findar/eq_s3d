@@ -141,6 +141,10 @@ class CorridorSpec:
     # carries the key only when it is set.
     bridge: str = ""
 
+    # A corridor in a rock wall style (step 8): how far its walls and ceiling come in,
+    # as a share of its width and height. 0 is square; the JSON carries it only when set.
+    rough: float = 0.0
+
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
     def floor_z(self) -> float:
@@ -237,10 +241,10 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
-    """A corridor's JSON; ``side`` and ``bridge`` only when set (step 6
-    corridors carry neither)."""
+    """A corridor's JSON; ``side``, ``bridge`` and ``rough`` only when set (step 6
+    corridors carry none of them)."""
     d = asdict(cor)
-    for key in ("side", "bridge"):
+    for key in ("side", "bridge", "rough"):
         if not d.get(key):
             d.pop(key, None)
     return d

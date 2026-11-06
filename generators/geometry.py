@@ -14,6 +14,7 @@ viewed from the visible side.
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -454,6 +455,7 @@ def _ceiling_cells(x0, y0, x1, y1, holes):
 # UV units per world unit when a material has no texel_density: one texture
 # repeat per 100 u (the box backend's scale before interesting textures).
 DEFAULT_UV_SCALE = 0.01
+ROUGH_SPACING = 16.0    # a rough corridor's walls bend about this often (u)
 WALL_ROW = 14.0     # a shaped room's walls come in rows about this tall (the era's edge)
 
 
@@ -792,7 +794,7 @@ class MeshBuilder:
             hw=hw, height=cor.height, steps=cor.steps,
             floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat,
             avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
-            bridge=bridge_layout(cor, rooms) if cor.bridge else None)
+            bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough)
 
     @staticmethod
     def _seg_len(waypoints, k):
@@ -811,7 +813,7 @@ class MeshBuilder:
         return zs, carry
 
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
-                    steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None):
+                    steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None, rough=0.0):
         """
         Shared multi-segment corridor builder. `waypoints` is an ordered list of
         (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
@@ -853,6 +855,10 @@ class MeshBuilder:
                                      floor_mat, wall_mat, ceiling_mat)
                 continue
             leg_steps = steps if k == carry else 0
+            if rough > 0:
+                self._add_rough_leg(x0, y0, zs[k], x1, y1, zs[k + 1], axes[k], hw, height, rough,
+                                    floor_mat, wall_mat, ceiling_mat)
+                continue
             self._add_straight_leg(
                 x0, y0, zs[k], x1, y1, zs[k + 1],
                 axes[k], hw, height, leg_steps,
@@ -1019,6 +1025,67 @@ class MeshBuilder:
             self._add_ramp_corridor(a_pos, a_z, b_pos, b_z, c0, c1,
                                     height, along_x,
                                     floor_mat, wall_mat, ceiling_mat)
+
+    def _add_rough_leg(self, fx, fy, fz, tx, ty, tz, along_x, hw, height, rough,
+                       floor_mat, wall_mat, ceiling_mat):
+        """A leg with broken walls and a moving ceiling, square where it meets a room or
+        a bend. The floor is the same floor at the same heights, its full width, so every
+        route and continuity check holds; only what stands on it moves in, by up to
+        ``rough`` of the width each side and of the height above."""
+        axis = 0 if along_x else 1
+        a, b = ((fx, fy), (tx, ty)) if (fx, fy)[axis] <= (tx, ty)[axis] else ((tx, ty), (fx, fy))
+        a_z, b_z = (fz, tz) if a == (fx, fy) else (tz, fz)
+        a_pos, b_pos = a[axis], b[axis]
+        run = b_pos - a_pos
+        if run < 1e-6:
+            return
+        c0, c1 = a[1 - axis] - hw, a[1 - axis] + hw
+        n = max(int(math.ceil(abs(b_z - a_z) / MAX_SEG_RISE)), int(math.ceil(run / ROUGH_SPACING)), 1)
+        rng = random.Random(f"{a_pos:.2f},{c0:.2f},{b_pos:.2f}")
+        s0, s1, fall = [0.0], [0.0], [0.0]
+        for _ in range(n - 1):
+            s0.append(rng.uniform(0.0, rough * 2 * hw))
+            s1.append(rng.uniform(0.0, rough * 2 * hw))
+            fall.append(rng.uniform(0.0, rough * height))
+        s0.append(0.0)
+        s1.append(0.0)
+        fall.append(0.0)
+        scale = self._uv_scale[wall_mat]
+
+        def point(pos, cross, z):
+            return (pos, cross, z) if along_x else (cross, pos, z)
+
+        def wall(p0, q0, p1, q1, z0, z1, h0, h1, along0):
+            """One wall piece from (p0, q0) to (p1, q1), floor on its left going that way."""
+            pa, pb = point(p0, q0, 0.0), point(p1, q1, 0.0)
+            dx, dy = pb[0] - pa[0], pb[1] - pa[1]
+            length = math.hypot(dx, dy)
+            corners = [point(p0, q0, z0), point(p0, q0, h0), point(p1, q1, h1), point(p1, q1, z1)]
+            uvs = [(-along0 * scale, -z0 * scale), (-along0 * scale, -h0 * scale),
+                   (-(along0 + length) * scale, -h1 * scale), (-(along0 + length) * scale, -z1 * scale)]
+            self._add_face(corners, uvs, (-dy / length, dx / length, 0.0), wall_mat)
+            return length
+
+        along_a = along_b = 0.0
+        for i in range(n):
+            p0, p1 = a_pos + run * i / n, a_pos + run * (i + 1) / n
+            z0, z1 = a_z + (b_z - a_z) * i / n, a_z + (b_z - a_z) * (i + 1) / n
+            h0, h1 = z0 + height - fall[i], z1 + height - fall[i + 1]
+            # The floor and ceiling as _seg_quad lays them, full width, walls of no length.
+            if along_x:
+                self.add_quad((p0, c0, z0), (p1, c0, z1), (p1, c1, z1), (p0, c1, z0),
+                              normal=(0, 0, 1), material=floor_mat)
+                self.add_quad((p0, c1, h0), (p1, c1, h1), (p1, c0, h1), (p0, c0, h0),
+                              normal=(0, 0, -1), material=ceiling_mat)
+                along_a += wall(p0, c0 + s0[i], p1, c0 + s0[i + 1], z0, z1, h0, h1, along_a)
+                along_b += wall(p1, c1 - s1[i + 1], p0, c1 - s1[i], z1, z0, h1, h0, along_b)
+            else:
+                self.add_quad((c0, p0, z0), (c1, p0, z0), (c1, p1, z1), (c0, p1, z1),
+                              normal=(0, 0, 1), material=floor_mat)
+                self.add_quad((c0, p1, h1), (c1, p1, h1), (c1, p0, h0), (c0, p0, h0),
+                              normal=(0, 0, -1), material=ceiling_mat)
+                along_a += wall(p1, c0 + s0[i + 1], p0, c0 + s0[i], z1, z0, h1, h0, along_a)
+                along_b += wall(p0, c1 - s1[i], p1, c1 - s1[i + 1], z0, z1, h0, h1, along_b)
 
     def _add_corner_fill(self, square, cz, height, floor_mat, ceiling_mat):
         """
