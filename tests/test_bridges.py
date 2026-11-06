@@ -35,6 +35,7 @@ from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from analyzer.traverse import AgentModel, build_walk_surface
 from core.ter import TerFile
+from generators.builder import connector_record
 from generators.geometry import (AUTO_STAIRS, RAIL_MIN, bridge_layout, build_mesh)
 from generators.layout import LayoutGenerator
 from generators.pipeline import GenerationFailed, generate_validated
@@ -225,6 +226,13 @@ def test_bridge_layout_refuses(kw, why):
     assert bridge_layout(spec.corridors[0], rooms_of(spec)) is None, why
 
 
+def test_connector_record_says_bridge_and_names_the_lower_room():
+    (cid, rec), = connector_record(bridge_spec()).items()
+    assert rec["kind"] == "bridge" and rec["over"] == "c", (cid, rec)
+    (cid, rec), = connector_record(bridge_spec(bridge="")).items()
+    assert rec["kind"] != "bridge" and "over" not in rec, (cid, rec)
+
+
 def test_json_carries_bridge_only_when_set():
     spec = bridge_spec()
     d = spec.to_dict()
@@ -284,6 +292,15 @@ def test_bridge_dungeons_pass_the_gate_first_try(tmp_path):
     print(f"\nbridges grown in {len(grown)}/{len(SWEEP)} builds")
     assert not failed, failed
     assert len(grown) >= len(SWEEP) // 3, grown
+
+
+@pytest.mark.parametrize("n, seed", [(12, s) for s in range(6)])
+def test_built_bridges_are_recorded_as_bridges(n, seed):
+    spec = plan_to_spec(_plan(n, "dramatic"), seed=seed)
+    rec = connector_record(spec)
+    for c in spec.corridors:
+        assert (rec[c.id]["kind"] == "bridge") == bool(c.bridge), c.id
+        assert rec[c.id].get("over", "") == c.bridge, c.id
 
 
 def _hash(spec) -> str:

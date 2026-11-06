@@ -174,9 +174,9 @@ FOUND_ON = [
     ("dungeon", 12, "moderate", 1955208177),
     ("dungeon", 12, "flat", 1516796975),
     ("dungeon", 12, "moderate", 678358326),
-    # Seed 7 until step 7 task 11: bridge_hall moved the rng and that seed now
-    # lands on the stacked residual in archive.md's follow-ups (a stair's stub
-    # in a third room's corner). The bar is unchanged; only the seed moved.
+    # Seed 7 clipped a third room's corner with a stair's stub until step 7
+    # task 12; seed 9 stood in for it after task 11.
+    ("dungeon", 30, "moderate", 7),
     ("dungeon", 30, "moderate", 9),
 ]
 
@@ -200,6 +200,39 @@ def test_found_on_seeds_clear_and_one_band(zone_type, n, verticality, seed):
     bands = _bands(spec)
     assert _bands_ok(spec, bands), (
         f"seed {seed}: {len(bands)} depth bands, {_level_count(spec)} Levels")
+
+
+@pytest.mark.slow
+def test_no_corridor_clips_a_room_over_the_sweep():
+    """A stacked edge a third room blocks on every route, after its one split,
+    is dropped or swapped (step 7 task 12). It used to be kept, its stub in
+    that room's corner: 4 of these 240 builds, all at 30 rooms."""
+    builds = [("dungeon", n, v, s) for n in (12, 20, 30)
+              for v in ("moderate", "dramatic") for s in range(40)]
+    bad = [b for b in builds if clearance_violations(_plan_spec(*b))]
+    assert not bad, f"{len(bad)} of {len(builds)} builds: {bad[:5]}"
+
+
+@pytest.mark.parametrize("rule_set", ["classic_eq", "warren"])
+def test_stacked_corridors_clear_each_other_on_their_final_floors(monkeypatch, rule_set):
+    """Job B's last word on a stacked build: on the floors it builds, no two
+    corridors clash, restored edges included (step 7 task 12)."""
+    clashes = []
+    build = LayoutGenerator._build_corridors
+
+    def checked(self, spec, rooms, edges):
+        if self._stack is not None:
+            clashes.extend((a, b) for k, a in enumerate(edges) for b in edges[k + 1:]
+                           if self._clash_3d(rooms, a, b))
+        return build(self, spec, rooms, edges)
+
+    monkeypatch.setattr(LayoutGenerator, "_build_corridors", checked)
+    for n in (15, 30):
+        for s in range(8):
+            plan = ZonePlan(name="clear", zone_type="dungeon", room_count=n, layout="graph",
+                            rule_set=rule_set, verticality="dramatic").validate()
+            plan_to_spec(plan, seed=1000 * n + s)
+            assert not clashes, (n, s, clashes)
 
 
 @pytest.mark.slow

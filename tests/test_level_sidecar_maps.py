@@ -75,14 +75,16 @@ def test_stacked_sidecar_records_levels_connectors_and_share(stacked_build):
     levels = lay["levels"]
     for c in spec.corridors:
         rec = lay["connectors"][c.id]
-        assert set(rec) == {"kind", "rise", "risers", "switchback"}
+        extra = {"over"} if c.bridge else set()
+        assert set(rec) == {"kind", "rise", "risers", "switchback"} | extra
         assert rec["rise"] == pytest.approx(abs(c.to_z - c.from_z), abs=0.01)
         if levels[c.from_room] != levels[c.to_room]:
             # Every edge across Levels is a planned stair (task 5).
             assert c.steps == AUTO_STAIRS and rec["kind"] == "stair"
             assert rec["risers"] >= rec["rise"] / 2.0 - 1e-6     # Riser_Cap 2 u
         else:
-            assert rec["kind"] in ("ramp", "flat") and rec["risers"] == 0
+            kinds = ("bridge",) if c.bridge else ("ramp", "flat")
+            assert rec["kind"] in kinds and rec["risers"] == 0
             assert rec["switchback"] is False
     assert any(r["switchback"] for r in lay["connectors"].values())
     assert 0.0 < lay["stacked_share"] < 1.0
