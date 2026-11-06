@@ -107,7 +107,7 @@ def test_built_is_mostly_plain_rectangles():
     styles = load_styles()
     rng = random.Random(3)
     picks = [styles["built"].pick_shape("chamber", rng) for _ in range(400)]
-    assert picks.count(RECT) > 200
+    assert picks.count(RECT) == max(picks.count(s) for s in set(picks)), "the commonest shape"
     assert all(RECT not in table for s in ("rough", "hewn") for table in styles[s].shapes.values())
 
 

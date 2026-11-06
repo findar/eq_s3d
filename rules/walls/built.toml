@@ -17,7 +17,7 @@ ceiling_spread = [0.0, 0.0]
 corridor_break = 0.0
 
 [shapes]
-default = { rect = 5, cut = 2, ell = 1 }
+default = { rect = 4, cut = 3, ell = 1 }
 hall = { rect = 3, long = 1 }
 hub = { cross = 2, cut = 2, rect = 1 }
 deep = { cut = 2, rect = 1 }

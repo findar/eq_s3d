@@ -104,6 +104,10 @@ def _arrays(mesh):
     v = np.array([(p.x, p.y, p.z) for p in mesh.vertices], dtype=np.float64)
     f = np.array([(p.v1, p.v2, p.v3) for p in mesh.polygons
                   if not p.flags & FLAG_PASSABLE], dtype=np.int64)
+    # Weld, as ``load_mesh`` does for WLD: a built mesh repeats its vertices per face,
+    # and a straight run is found across shared edges.
+    v, welded = np.unique(np.round(v, 2), axis=0, return_inverse=True)
+    f = welded.ravel()[f]
     tri = v[f]
     n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     a = np.linalg.norm(n, axis=1)

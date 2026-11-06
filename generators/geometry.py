@@ -1066,6 +1066,24 @@ class MeshBuilder:
             self._add_face(corners, uvs, (-dy / length, dx / length, 0.0), wall_mat)
             return length
 
+        # One floor, on shared vertices: the walk gate then sees it joined without
+        # working out a seam between every two pieces.
+        floor_scale = self._uv_scale[floor_mat]
+        floor_at: Dict[Tuple[float, float, float], int] = {}
+
+        def floor_vertex(x, y, z):
+            k = floor_at.get((x, y, z))
+            if k is None:
+                k = floor_at[(x, y, z)] = len(self.vertices)
+                self.vertices.append(Vertex(x=x, y=y, z=z, nx=0, ny=0, nz=1,
+                                            u=x * floor_scale, v=-y * floor_scale))
+            return k
+
+        def floor_quad(*corners):
+            a_, b_, c_, d_ = (floor_vertex(*c) for c in corners)
+            self.polygons.append(Polygon(a_, b_, c_, floor_mat, 0))
+            self.polygons.append(Polygon(a_, c_, d_, floor_mat, 0))
+
         along_a = along_b = 0.0
         for i in range(n):
             p0, p1 = a_pos + run * i / n, a_pos + run * (i + 1) / n
@@ -1073,15 +1091,13 @@ class MeshBuilder:
             h0, h1 = z0 + height - fall[i], z1 + height - fall[i + 1]
             # The floor and ceiling as _seg_quad lays them, full width, walls of no length.
             if along_x:
-                self.add_quad((p0, c0, z0), (p1, c0, z1), (p1, c1, z1), (p0, c1, z0),
-                              normal=(0, 0, 1), material=floor_mat)
+                floor_quad((p0, c0, z0), (p1, c0, z1), (p1, c1, z1), (p0, c1, z0))
                 self.add_quad((p0, c1, h0), (p1, c1, h1), (p1, c0, h1), (p0, c0, h0),
                               normal=(0, 0, -1), material=ceiling_mat)
                 along_a += wall(p0, c0 + s0[i], p1, c0 + s0[i + 1], z0, z1, h0, h1, along_a)
                 along_b += wall(p1, c1 - s1[i + 1], p0, c1 - s1[i], z1, z0, h1, h0, along_b)
             else:
-                self.add_quad((c0, p0, z0), (c1, p0, z0), (c1, p1, z1), (c0, p1, z1),
-                              normal=(0, 0, 1), material=floor_mat)
+                floor_quad((c0, p0, z0), (c1, p0, z0), (c1, p1, z1), (c0, p1, z1))
                 self.add_quad((c0, p1, h1), (c1, p1, h1), (c1, p0, h0), (c0, p0, h0),
                               normal=(0, 0, -1), material=ceiling_mat)
                 along_a += wall(p1, c0 + s0[i + 1], p0, c0 + s0[i], z1, z0, h1, h0, along_a)

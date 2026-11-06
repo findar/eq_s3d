@@ -609,6 +609,7 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
 # ---------------------------------------------------------------------------
 
 MAX_GRADE = 0.45        # a floor's rise over run between vertices: about 24 degrees
+CEILING_GRADE = 0.8     # a ceiling's, about 39 degrees: any steeper and it reads as wall
 
 
 def _noise_01(pts: np.ndarray, scale: float, seed: int) -> np.ndarray:
@@ -646,12 +647,14 @@ def add_relief(outline: Outline, height: float, floor_rise: float, ceiling_fall:
     ea = np.array([e[0] for e in edges], dtype=np.int64)
     eb = np.array([e[1] for e in edges], dtype=np.int64)
     cap = np.hypot(*(pts[ea] - pts[eb]).T) * MAX_GRADE
-    for _ in range(len(pts)):
-        before = lift.copy()
-        np.minimum.at(lift, ea, lift[eb] + cap)
-        np.minimum.at(lift, eb, lift[ea] + cap)
-        if np.array_equal(before, lift):
-            break
+    ceiling_cap = cap / MAX_GRADE * CEILING_GRADE
+    for values, limit in ((lift, cap), (drop, ceiling_cap)):
+        for _ in range(len(pts)):
+            before = values.copy()
+            np.minimum.at(values, ea, values[eb] + limit)
+            np.minimum.at(values, eb, values[ea] + limit)
+            if np.array_equal(before, values):
+                break
 
     drop = np.minimum(drop, np.maximum(0.0, height - lift - min_head))
     outline.lift = [round(float(v), PLACES) for v in lift]

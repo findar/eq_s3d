@@ -87,7 +87,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/outdoor_dungeon.py, rules/topology/themes.toml, tests/test_outdoor_walls.py
   - Reqs: 10
 
-- [ ] 12. Gate sweep and stock bands
+- [x] 12. Gate sweep and stock bands
   - Card: [cards/12-sweep-bands.md](cards/12-sweep-bands.md)
   - Type: agent · Size: M · Depends: 9, 10, 11
   - Owns: tests/test_walls_build.py, rules/walls/

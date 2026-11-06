@@ -326,6 +326,20 @@ control's rule while Layout is Graph. `ZonePlan.walls`, `--walls` on the CLI,
    (Task 1 corrected this question's first reason, that stock built rooms aren't plain
    boxes: most are. The answer stands, with plain rectangles the commonest shape.)
 
+## Results of the tuning (task 12)
+
+Built zones on the survey's own code, median of six seeds at 20 rooms, flat:
+
+| Style | Axis_Share | Plumb | Edge | Run p50 | Fill | Flat floor | Ceiling spread | Flat ceiling | True Fill |
+|---|---|---|---|---|---|---|---|---|---|
+| rough | 0.46 | 0.99 | 10.7 | 17.3 | 0.69 | 0.82 | 0.27 | 0.51 | 0.73 |
+| hewn | 0.60 | 0.98 | 11.3 | 27.1 | 0.74 | 0.89 | 0.33 | 0.52 | 0.86 |
+| built | 0.91 | 1.00 | 11.9 | 34.6 | 0.76 | 1.00 | 0.00 | 1.00 | 0.93 |
+
+Inside finding 1's bands, except: hewn's run p50 sits just under its 28 u floor; built's
+Fill is 0.01 over; and built floors and ceilings are entirely flat, over the stock top of
+0.99 and 0.97. W11's test takes these with a 3% tolerance and leaves the flat tops open.
+
 ## Decisions
 
 1. A room keeps its Box as its allotment, and its Outline stays inside it.
