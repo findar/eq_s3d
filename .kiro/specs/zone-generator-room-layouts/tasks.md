@@ -26,7 +26,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
 
 ## Tasks
 
-- [ ] 1. Measure what stands in stock rooms
+- [x] 1. Measure what stands in stock rooms
   - Card: [cards/01-feature-survey.md](cards/01-feature-survey.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/room_feature_survey.py, .kiro/specs/zone-generator-room-layouts/design.md (finding 1 only)
