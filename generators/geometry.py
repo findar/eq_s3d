@@ -454,6 +454,7 @@ def _ceiling_cells(x0, y0, x1, y1, holes):
 # UV units per world unit when a material has no texel_density: one texture
 # repeat per 100 u (the box backend's scale before interesting textures).
 DEFAULT_UV_SCALE = 0.01
+WALL_ROW = 14.0     # a shaped room's walls come in rows about this tall (the era's edge)
 
 
 class MeshBuilder:
@@ -560,7 +561,11 @@ class MeshBuilder:
 
         ``extra_doors`` adds openings no corridor in the spec makes, as
         ``{side: [(c0, c1, top), ...]}`` like ``_door_openings`` (an outdoor
-        dungeon's Tunnel); the side must be in ``room.open_walls``."""
+        dungeon's Tunnel); the side must be in ``room.open_walls``. A room with
+        an Outline builds from that instead (``add_outline_room``)."""
+        if room.outline is not None:
+            self.add_outline_room(room, spec, extra_doors)
+            return
         (x0, y0, z0), (x1, y1, z1) = room.bounds
 
         floor_mat   = self.material_id(spec.materials[room.floor_material])
@@ -629,6 +634,90 @@ class MeshBuilder:
         else:               # "E": x = x1, normal -X
             self.add_quad((x1, a, lo), (x1, a, hi), (x1, b, hi), (x1, b, lo),
                           normal=(-1, 0, 0), material=wall_mat)
+
+    # ------------------------------------------------------------------
+    # Primitive: a shaped room (step 8, generators/outline.py)
+    # ------------------------------------------------------------------
+
+    def _add_face(self, corners, uvs, normal, material: int) -> None:
+        """A convex face with its own texture coordinates, fanned from corner 0."""
+        base = len(self.vertices)
+        for (cx, cy, cz), (u, v) in zip(corners, uvs):
+            self.vertices.append(Vertex(x=cx, y=cy, z=cz, nx=normal[0], ny=normal[1],
+                                        nz=normal[2], u=u, v=v))
+        for k in range(1, len(corners) - 1):
+            self.polygons.append(Polygon(base, base + k, base + k + 1, material, 0))
+
+    def add_outline_room(self, room: RoomSpec, spec: ZoneSpec,
+                         extra_doors: Optional[Dict[str, List[Tuple[float, float, float]]]] = None
+                         ) -> None:
+        """Vertical walls over the room's Outline, a floor and a ceiling meeting
+        them on shared vertices. Every Cell fans from its centre, so its edges
+        stay whole. Wall texture runs on round a bend: its U is the distance
+        along the wall, not each face's own projection."""
+        (x0, y0, z0), (x1, y1, z1) = room.bounds
+        outline = room.outline
+        floor_mat = self.material_id(spec.materials[room.floor_material])
+        wall_mat = self.material_id(spec.materials[room.wall_material])
+        ceiling_mat = self.material_id(spec.materials[room.ceiling_material])
+        slots = _bridge_slots(room, spec)
+
+        def under_slot(cx, cy):
+            return any(s[0] <= cx <= s[2] and s[1] <= cy <= s[3] for s in slots)
+
+        floor_uv = self._uv_scale[floor_mat]
+        ceiling_uv = self._uv_scale[ceiling_mat]
+        for cell in outline.cells:
+            pts = [outline.verts[i] for i in cell]
+            cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+            for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
+                tri = [(cx, cy), (ax, ay), (bx, by)]
+                self._add_face([(x, y, z0) for x, y in tri],
+                               [(x * floor_uv, -y * floor_uv) for x, y in tri],
+                               (0, 0, 1), floor_mat)
+                if not under_slot(cx, cy):
+                    tri = tri[::-1]
+                    self._add_face([(x, y, z1) for x, y in tri],
+                                   [(x * ceiling_uv, y * ceiling_uv) for x, y in tri],
+                                   (0, 0, -1), ceiling_mat)
+
+        doors = _door_openings(room, spec)
+        for side, cuts in (extra_doors or {}).items():
+            doors.setdefault(side, []).extend(cuts)
+        extents = {"S": (x0, x1), "N": (x0, x1), "W": (y0, y1), "E": (y0, y1)}
+        merged = {side: _merge_openings(doors.get(side, []), *extents[side]) for side in doors}
+        planes = (("S", 1, y0), ("N", 1, y1), ("W", 0, x0), ("E", 0, x1))
+
+        def door_top(a, b) -> Optional[float]:
+            """The lintel's underside if the wall edge a..b is in a doorway."""
+            for side, axis, plane in planes:
+                if abs(a[axis] - plane) > 0.01 or abs(b[axis] - plane) > 0.01:
+                    continue
+                lo, hi = sorted((a[1 - axis], b[1 - axis]))
+                for c0, c1, top in merged.get(side, ()):
+                    if lo >= c0 - 0.01 and hi <= c1 + 0.01:
+                        return top
+            return None
+
+        scale = self._uv_scale[wall_mat]
+        rows = max(1, math.ceil((z1 - z0) / WALL_ROW))
+        for loop in outline.wall_loops():
+            along = 0.0
+            pts = [outline.verts[i] for i in loop]
+            for a, b in zip(pts, pts[1:] + pts[:1]):
+                run = math.hypot(b[0] - a[0], b[1] - a[1])
+                normal = (-(b[1] - a[1]) / run, (b[0] - a[0]) / run, 0.0)
+                top = door_top(a, b)
+                bands = [(top, z1)] if top is not None else [
+                    (z0 + (z1 - z0) * k / rows, z0 + (z1 - z0) * (k + 1) / rows) for k in range(rows)]
+                for lo, hi in bands:
+                    if hi <= lo:
+                        continue
+                    self._add_face([(a[0], a[1], lo), (a[0], a[1], hi), (b[0], b[1], hi), (b[0], b[1], lo)],
+                                   [(-along * scale, -lo * scale), (-along * scale, -hi * scale),
+                                    (-(along + run) * scale, -hi * scale), (-(along + run) * scale, -lo * scale)],
+                                   normal, wall_mat)
+                along += run
 
     # ------------------------------------------------------------------
     # Primitive: a corridor (floor + ceiling + two side walls)
@@ -1347,6 +1436,19 @@ def build_mesh(spec: ZoneSpec) -> MeshBuilder:
         mb.add_corridor(cor, spec)
 
     return mb
+
+
+def room_doors(room: RoomSpec, spec: ZoneSpec,
+               extra_doors: Optional[Dict[str, List[Tuple[float, float, float]]]] = None):
+    """Each door on ``room``'s walls as (side, c0, c1), merged where they overlap,
+    the form ``outline.draw_outline`` takes."""
+    (x0, y0, _), (x1, y1, _) = room.bounds
+    extents = {"S": (x0, x1), "N": (x0, x1), "W": (y0, y1), "E": (y0, y1)}
+    doors = _door_openings(room, spec)
+    for side, cuts in (extra_doors or {}).items():
+        doors.setdefault(side, []).extend(cuts)
+    return [(side, c0, c1) for side in sorted(doors)
+            for c0, c1, _top in _merge_openings(doors[side], *extents[side])]
 
 
 def _door_openings(room: RoomSpec, spec: ZoneSpec

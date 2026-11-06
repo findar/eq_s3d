@@ -3,7 +3,7 @@
 Index entry: `tasks.md` task 3. Requirements 2, 4.
 
 ## Goal
-`generators/outline.py`: Voronoi and grid Cell_Complexes, Throats, Core, growth with shapes, Fill. `MeshBuilder.add_outline_room`: floor and ceiling fans, vertical walls on shared vertices, doors and lintels, flat for now (Relief is task 6). Driven by tests, with no layout producing one yet. Sets the polygon cap from a measured margin.
+`generators/outline.py`: Voronoi, facet and grid Cell_Complexes, Throats, Core, growth with shapes, Fill. `MeshBuilder.add_outline_room`: floor and ceiling fans, vertical walls on shared vertices, doors and lintels, flat for now (Relief is task 6). Driven by tests, with no layout producing one yet. Sets the polygon cap from a measured margin.
 
 ## Done when
 - [ ] W1 and W2 as Hypothesis properties over rooms, door sets and sizes.

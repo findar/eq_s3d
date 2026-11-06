@@ -18,7 +18,8 @@ The design's "Decisions" section stands. The user took the recommended answer to
 5. Stairs and bridges stay as built in this step; check them at the first look.
 6. `built` rooms change too (L-shapes, crosses, alcoves, cut corners, some plain rectangles); every Graph build changes once, its goldens recaptured with old and new hashes.
 
-- **What the survey changed (task 1, 2026-11-06):** Outlines take off about 5–20% of the Box (true Fill 0.80–0.95), because all-rectangle builds measure 0.78–0.81 on the survey's Fill and stock measures 0.64–0.75. Plain rectangles stay `built`'s commonest shape, with a new `cut` shape (corners cut) next. Rough Cells are about 5 H, hewn about 8 H, built modules about 4 H. Mixed zones are left out of the bands.
+- **What the survey changed (task 1, 2026-11-06):** Outlines take off about 5–20% of the Box (true Fill 0.80–0.95), because all-rectangle builds measure 0.78–0.81 on the survey's Fill and stock measures 0.64–0.75. Plain rectangles stay `built`'s commonest shape, with a new `cut` shape (corners cut) next. Mixed zones are left out of the bands.
+- **How each style draws (task 3, 2026-11-06, from looking at sample plans):** `rough` is Voronoi at about 4 H with walls wandering inward about 1.3 H, because Cells alone kept the Box's straight sides; `hewn` is a new `facet` complex, corners cut at uneven angles, because relaxed Voronoi drew the same bitten rectangles and stock hewn rooms are convex polygons; `built` is a 4 H grid. Fill floor 0.65.
 
 ## Follow-ups
 
