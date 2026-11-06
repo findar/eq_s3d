@@ -75,7 +75,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/geometry.py, tests/test_rough_corridors.py
   - Reqs: 8
 
-- [ ] 10. Textures follow the style
+- [x] 10. Textures follow the style
   - Card: [cards/10-textures.md](cards/10-textures.md)
   - Type: agent · Size: M · Depends: 8
   - Owns: generators/textures/, generators/semantics.py, tests/test_wall_textures.py
