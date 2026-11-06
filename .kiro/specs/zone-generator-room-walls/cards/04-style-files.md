@@ -3,7 +3,7 @@
 Index entry: `tasks.md` task 4. Requirements 5.
 
 ## Goal
-`rules/walls/{built,hewn,rough}.toml` and a strict loader in step 6's checker manner. `check` covers them; `draw` writes each style's sample Outlines; the guide explains them.
+`rules/walls/{built,hewn,rough}.toml` and a strict loader in step 6's checker manner. `check` covers them; a new `draw-walls` writes each style's sample rooms; the guide explains them.
 
 ## Done when
 - [ ] W10: every bad value (unknown key, wrong type, a shape that doesn't exist, a band out of order) fails, naming file, field and expected.

@@ -709,3 +709,51 @@ __all__ = [
     "graph_svg", "rule_svg", "rule_notes", "condition_text", "legend_svg",
     "recipe_table", "rule_card", "rule_set_html",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Wall styles (roadmap step 8)
+# ---------------------------------------------------------------------------
+
+def outline_svg(outline, box, *, title: str = "", scale: float = 1.6) -> str:
+    """One room in plan: its Box in grey, its floor, its walls."""
+    x0, y0, x1, y1 = box
+    pad = 6.0
+
+    def px(x: float, y: float) -> str:
+        return f"{_f((x - x0 + pad) * scale)},{_f((y1 - y + pad) * scale)}"
+
+    width, height = (x1 - x0 + 2 * pad) * scale, (y1 - y0 + 2 * pad) * scale
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_f(width)}" height="{_f(height)}" '
+             f'role="img" aria-label="{_esc(title)}">',
+             f'<rect x="{_f(pad * scale)}" y="{_f(pad * scale)}" width="{_f((x1 - x0) * scale)}" '
+             f'height="{_f((y1 - y0) * scale)}" fill="none" stroke="#bbb"/>']
+    if outline is None:
+        parts.append(f'<rect x="{_f(pad * scale)}" y="{_f(pad * scale)}" width="{_f((x1 - x0) * scale)}" '
+                     f'height="{_f((y1 - y0) * scale)}" fill="#eee" stroke="#b33" stroke-width="1.5"/>')
+    else:
+        for cell in outline.cells:
+            pts = " ".join(px(*outline.verts[i]) for i in cell)
+            parts.append(f'<polygon points="{pts}" fill="#eee"/>')
+        for loop in outline.wall_loops():
+            pts = " ".join(px(*outline.verts[i]) for i in loop)
+            parts.append(f'<polygon points="{pts}" fill="none" stroke="#b33" stroke-width="1.5"/>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def walls_html(rows) -> str:
+    """A page of sample rooms. ``rows``: (style name, description, [(caption, svg), ...])."""
+    body = []
+    for name, description, samples in rows:
+        body.append(f"<h2>{_esc(name)}</h2><p>{_esc(description)}</p><div class=row>")
+        for caption, svg in samples:
+            body.append(f"<figure>{svg}<figcaption>{_esc(caption)}</figcaption></figure>")
+        body.append("</div>")
+    return ("<!doctype html><meta charset=utf-8><title>Wall styles</title><style>"
+            "body{font:14px sans-serif;margin:24px;color:#222;background:#fff}"
+            ".row{display:flex;flex-wrap:wrap;gap:12px}figure{margin:0}"
+            "figcaption{text-align:center;color:#555}</style><h1>Wall styles</h1>"
+            "<p>Sample rooms in plan, 120 x 90 u with two doors, at a human's body height. "
+            "Grey is the room's Box, red its walls.</p>" + "".join(body))
+

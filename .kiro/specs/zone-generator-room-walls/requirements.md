@@ -125,8 +125,8 @@ file I can read, in the same manner as the topology rules.
    which shapes each room kind may take.
 3. Adding a style SHALL need no code change beyond a Cell_Complex it doesn't
    share with the shipped three.
-4. `scripts/topology_rules.py check` SHALL cover the style files, its `draw`
-   SHALL show sample Outlines for each style, and `docs/TOPOLOGY_RULES.md` SHALL
+4. `scripts/topology_rules.py check` SHALL cover the style files, a `draw-walls`
+   command SHALL show sample Outlines for each style, and `docs/TOPOLOGY_RULES.md` SHALL
    explain them.
 
 ### Requirement 6: Styles and shapes in the rules

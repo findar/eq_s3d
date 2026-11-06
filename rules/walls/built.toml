@@ -1,0 +1,28 @@
+# rules/walls/built.toml -- a dungeon of masonry.
+#
+# Measured on Befallen, Kurn's Tower and the Qeynos Catacombs (design finding 1).
+# Most stock built rooms are plain rectangles; the large ones often have their
+# corners cut. 71-96% of the wall area lies on the zone's grid, and floors and
+# ceilings are nearly all flat.
+# The guide is docs/TOPOLOGY_RULES.md, "Wall styles".
+
+[style]
+name = "built"
+description = "A dungeon of masonry: mostly rectangles, some cut corners and wings."
+complex = "grid"
+cell_size_h = 4.0
+fill = [0.80, 0.90]
+floor_relief_h = [0.0, 0.0]
+ceiling_spread = [0.0, 0.0]
+corridor_break = 0.0
+
+[shapes]
+default = { rect = 5, cut = 2, ell = 1 }
+hall = { rect = 3, long = 1 }
+hub = { cross = 2, cut = 2, rect = 1 }
+deep = { cut = 2, rect = 1 }
+
+[look]
+wall = "theme"
+floor = "theme"
+ceiling = "theme"

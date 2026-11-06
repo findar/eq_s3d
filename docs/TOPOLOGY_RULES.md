@@ -47,6 +47,8 @@ rules/topology/
   layers/temple.toml       theme layer: a nave with side chapels
   themes.toml              theme -> base set + layers
   README.md                points here
+rules/walls/
+  built.toml, hewn.toml, rough.toml   wall styles (see "Wall styles")
 ```
 
 A base set's `[set] name` must equal its file name without `.toml`. The same
@@ -393,3 +395,57 @@ run a dry-run.
    left and the measures sit where you want them, then `draw` and read the
    diagrams.
 7. To use the set for a theme, add it to `themes.toml`.
+
+## Wall styles
+
+The rules above decide a dungeon's rooms and how they join. A **wall style** decides
+what those rooms look like: `rules/walls/<name>.toml`, checked in the same way. Each
+room keeps its Box (the rectangle placement and corridors use) and draws its real
+walls inside it, so a style can never break a layout.
+
+```toml
+[style]
+name = "rough"              # must match the file's name
+description = "A natural cave."
+complex = "voronoi"         # how the Box divides: voronoi, grid or facet
+cell_size_h = 4.0           # Cell size, in the race's body heights (not for facet)
+wobble_h = 1.3              # how far each wall vertex wanders inward (optional)
+fill = [0.70, 0.85]         # floor over Box, before walls wander (not for facet)
+floor_relief_h = [0.0, 0.9] # how far a floor can rise
+ceiling_spread = [0.1, 0.6] # how far a ceiling can fall, over the room's height
+corridor_break = 0.15       # how far corridor walls come in, over its width
+
+[shapes]                    # room kind -> shape -> weight; `default` is required
+default = { blob = 2, ell = 1 }
+hall = { long = 3, blob = 1 }
+
+[look]                      # theme (the theme's own textures) or rock
+wall = "rock"
+floor = "rock"
+ceiling = "rock"
+```
+
+| Complex | Draws |
+|---|---|
+| `voronoi` | Irregular Cells. With `wobble_h`, no wall keeps to the Box's side. |
+| `facet` | One polygon: the Box with each corner cut at an uneven angle. `shape` sets how deep. |
+| `grid` | Square Cells with cuttable corners: wings, crosses and cut corners, walls on the grid. |
+
+| Shape | Means |
+|---|---|
+| `rect` | The plain Box. |
+| `blob` | Grows evenly from the middle. |
+| `cut` | Loses its corners first. |
+| `long` | Grows along the Box's long side: a gallery. |
+| `ell` | Two arms. |
+| `cross` | Four arms. |
+
+To see what a style draws, without building a zone:
+
+```bash
+python scripts/topology_rules.py check rules/walls/rough.toml
+python scripts/topology_rules.py draw-walls --out output/rules/
+```
+
+The numbers behind the shipped styles are in the room walls spec's design, finding 1
+(`scripts/wall_survey.py` measures them).

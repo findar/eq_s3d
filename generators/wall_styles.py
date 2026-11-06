@@ -1,0 +1,177 @@
+"""Wall styles (roadmap step 8): how a zone's rooms are drawn, as checked TOML data.
+
+Each file in ``rules/walls/`` is one style. It says how a room's Box is divided
+into Cells, how much floor stays, which shapes each room kind may take, how far
+floors and ceilings move, and what the walls should look like. Lengths are in H,
+the race's body height, so an ogre's cave has bigger bends for its bigger body.
+
+Failures are collected and named by file, table and field, in the same form as
+the topology rules (``generators/topology/ruleset.py``). These files will one day
+be written by a prompt; a wrong value must say what was expected. The guide is
+``docs/TOPOLOGY_RULES.md``.
+"""
+
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
+
+from .outline import COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, draw_outline
+from .topology.graph import ROOM_KINDS
+from .topology.ruleset import (RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
+                               _type_name)
+
+WALLS_DIR = Path(__file__).resolve().parent.parent / "rules" / "walls"
+RECT = "rect"
+#: A shape a style may name: an Outline's, or the plain Box.
+STYLE_SHAPES: Tuple[str, ...] = (RECT,) + OUTLINE_SHAPES
+DEFAULT_KIND = "default"
+#: What a style asks the texture layer for: the theme's own look, or rock.
+LOOKS: Tuple[str, ...] = ("theme", "rock")
+SURFACES: Tuple[str, ...] = ("wall", "floor", "ceiling")
+Band = Tuple[float, float]
+
+
+@dataclass(frozen=True)
+class WallStyle:
+    name: str
+    description: str
+    complex: str
+    cell_size_h: float                  # 0 for a complex with no Cell size
+    wobble_h: float                     # how far a wall vertex wanders inward
+    fill: Band                          # floor over Box (a facet room ignores it)
+    floor_relief_h: Band                # how far a floor rises
+    ceiling_spread: Band                # how far a ceiling falls, over the room's height
+    corridor_break: float               # how far a corridor's walls come in, over its width
+    shapes: Mapping[str, Mapping[str, float]]   # kind -> shape -> weight
+    look: Mapping[str, str]             # surface -> look
+
+    def pick_shape(self, kind: str, rng: random.Random) -> str:
+        """A shape for a room of this kind, by the style's weights."""
+        table = self.shapes.get(kind, self.shapes[DEFAULT_KIND])
+        names = sorted(table)
+        return rng.choices(names, weights=[table[n] for n in names])[0]
+
+    def draw(self, box: Rect, doors: List[Door], slots: List[Rect], shape: str, body_height: float,
+             rng: random.Random) -> Optional[Outline]:
+        """The room's Outline, or None for a plain Box."""
+        if shape == RECT:
+            return None
+        return draw_outline(box, doors, slots, complex=self.complex,
+                            cell_size=self.cell_size_h * body_height, shape=shape,
+                            fill=rng.uniform(*self.fill), rng=rng,
+                            wobble=self.wobble_h * body_height)
+
+
+def _number(chk: _Checker, tbl: Mapping, key: str, where: str, lo: float, hi: float,
+            default: Optional[float] = None) -> float:
+    v = tbl.get(key, _MISSING)
+    if v is _MISSING:
+        if default is None:
+            chk.fail(where, key, v, f"a number from {lo} to {hi}")
+            return 0.0
+        return default
+    if not _is_number(v) or not lo <= v <= hi:
+        chk.fail(where, key, v if _is_number(v) else _type_name(v), f"a number from {lo} to {hi}",
+                 raw=not _is_number(v))
+        return default if default is not None else 0.0
+    return float(v)
+
+
+def _band(chk: _Checker, tbl: Mapping, key: str, where: str, lo: float, hi: float) -> Band:
+    v = tbl.get(key, _MISSING)
+    ok = (isinstance(v, list) and len(v) == 2 and all(_is_number(x) for x in v)
+          and lo <= v[0] <= v[1] <= hi)
+    if not ok:
+        chk.fail(where, key, v, f"[low, high], low <= high, both from {lo} to {hi}")
+        return (lo, lo)
+    return (float(v[0]), float(v[1]))
+
+
+def _shapes(chk: _Checker, raw, kinds: Sequence[str]) -> Dict[str, Dict[str, float]]:
+    tbl = chk.table(raw, "top level", "shapes", "[shapes] with default = { blob = 1 }") \
+        if raw is not _MISSING else None
+    if raw is _MISSING:
+        chk.fail("top level", "shapes", raw, "a table of room kind -> shape weights")
+    if tbl is None:
+        return {}
+    out: Dict[str, Dict[str, float]] = {}
+    allowed = tuple(kinds) + (DEFAULT_KIND,)
+    chk.keys(tbl, "shapes", allowed, required=(DEFAULT_KIND,))
+    for kind, weights in tbl.items():
+        if kind not in allowed:
+            continue
+        w = chk.table(weights, "shapes", kind, "{ blob = 2, long = 1 }")
+        if w is None:
+            continue
+        if not w:
+            chk.fail("shapes", kind, "an empty table", "at least one shape", raw=True)
+        row: Dict[str, float] = {}
+        for shape, weight in w.items():
+            if shape not in STYLE_SHAPES:
+                chk.fail("shapes", f"{kind}.{shape}", "an unknown shape", _one_of(STYLE_SHAPES), raw=True)
+            elif not _is_number(weight) or weight <= 0:
+                chk.fail("shapes", f"{kind}.{shape}", weight, "a weight above 0")
+            else:
+                row[shape] = float(weight)
+        out[kind] = row
+    return out
+
+
+def load_style(path: Union[str, Path]) -> WallStyle:
+    """Load and check one style; raises ``RuleSetError`` with every failure."""
+    path = Path(path)
+    chk = _Checker(path.name)
+    data = _read_toml(path, chk)
+    chk.raise_if_failed()
+    chk.keys(data, "top level", ("style", "shapes", "look"), required=("style", "shapes", "look"))
+    st = chk.table(data.get("style", {}), "top level", "style", "[style] with name, complex") or {}
+    chk.keys(st, "style", ("name", "description", "complex", "cell_size_h", "wobble_h", "fill",
+                           "floor_relief_h", "ceiling_spread", "corridor_break"),
+             required=("name", "description", "complex", "floor_relief_h", "ceiling_spread",
+                       "corridor_break"))
+    name = chk.text(st, "name", "style", required=False)
+    if name and name != path.stem:
+        chk.fail("style", "name", name, f'"{path.stem}" (the file\'s name, so a theme finds it)')
+    desc = chk.text(st, "description", "style", required=False)
+    complex_ = st.get("complex", _MISSING)
+    if complex_ is not _MISSING and complex_ not in COMPLEXES:
+        chk.fail("style", "complex", complex_, _one_of(COMPLEXES))
+    facet = complex_ == "facet"
+    if facet:
+        for key in ("cell_size_h", "fill"):
+            if key in st:
+                chk.fail("style", key, st[key], "nothing: a facet room is its corner cuts")
+        cell, fill = 0.0, (0.0, 0.0)
+    else:
+        cell = _number(chk, st, "cell_size_h", "style", 1.0, 20.0)
+        fill = _band(chk, st, "fill", "style", 0.65, 1.0)
+    wobble = _number(chk, st, "wobble_h", "style", 0.0, 5.0, default=0.0)
+    relief = _band(chk, st, "floor_relief_h", "style", 0.0, 2.0)
+    spread = _band(chk, st, "ceiling_spread", "style", 0.0, 0.75)
+    broken = _number(chk, st, "corridor_break", "style", 0.0, 0.3)
+    shapes = _shapes(chk, data.get("shapes", _MISSING), ROOM_KINDS)
+    lk = chk.table(data.get("look", {}), "top level", "look", "[look] with wall, floor, ceiling") or {}
+    chk.keys(lk, "look", SURFACES, required=SURFACES)
+    for surface, value in lk.items():
+        if surface in SURFACES and value not in LOOKS:
+            chk.fail("look", surface, value, _one_of(LOOKS))
+    chk.raise_if_failed()
+    return WallStyle(name, desc, complex_, cell, wobble, fill, relief, spread, broken, shapes, dict(lk))
+
+
+def load_styles(folder: Union[str, Path] = WALLS_DIR) -> Dict[str, WallStyle]:
+    """Every style in ``folder`` by name; raises with all of their failures."""
+    styles: Dict[str, WallStyle] = {}
+    errors = []
+    for p in sorted(Path(folder).glob("*.toml")):
+        try:
+            s = load_style(p)
+            styles[s.name] = s
+        except RuleSetError as exc:
+            errors.extend(exc.errors)
+    if errors:
+        raise RuleSetError(errors)
+    return styles

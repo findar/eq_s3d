@@ -1,0 +1,27 @@
+# rules/walls/hewn.toml -- a man-made cave.
+#
+# Measured on Kaesora, Upper and Lower Guk, Najena and Sebilis (design finding 1).
+# Their rooms are convex polygons of 6-10 long sides, often cut at about 45 degrees,
+# joined by square passages: rooms that look laid out, not formed. 52-69% of the wall
+# area lies on the zone's grid.
+# The guide is docs/TOPOLOGY_RULES.md, "Wall styles".
+
+[style]
+name = "hewn"
+description = "A man-made cave: the Box with its corners cut, a few long facets."
+complex = "facet"
+floor_relief_h = [0.0, 0.5]
+ceiling_spread = [0.2, 0.5]
+corridor_break = 0.08
+
+[shapes]
+default = { blob = 2, cut = 1 }
+hall = { long = 3, blob = 1 }
+hub = { cross = 2, blob = 1 }
+lair = { blob = 2, ell = 1 }
+deep = { blob = 1 }
+
+[look]
+wall = "rock"
+floor = "theme"
+ceiling = "rock"
