@@ -136,6 +136,8 @@ nothing else changes byte for byte.
 - `rough` (`voronoi`): Voronoi of jittered seeds over the Box, spacing about 4 H. Every
   wall vertex then wanders inward by up to about 1.3 H (`wobble`), or a room keeps the
   Box's straight sides with bites out of them, which is how the first drawing looked.
+  In a small room it wanders less, at most 8% of the Box's short side (the thorough run
+  found a 48 u room losing too much floor).
 - `hewn` (`facet`): the Box with each corner cut at an uneven angle, one convex room of
   a few long facets, as Kaesora and Najena's are. A Throat keeps a stub of a corner
   piece where a door lands on one. Voronoi didn't suit this: relaxed large cells drew
@@ -332,7 +334,7 @@ Built zones on the survey's own code, median of six seeds at 20 rooms, flat:
 
 | Style | Axis_Share | Plumb | Edge | Run p50 | Fill | Flat floor | Ceiling spread | Flat ceiling | True Fill |
 |---|---|---|---|---|---|---|---|---|---|
-| rough | 0.46 | 0.99 | 10.7 | 17.3 | 0.69 | 0.82 | 0.27 | 0.51 | 0.73 |
+| rough | 0.46 | 0.99 | 10.7 | 17.3 | 0.69 | 0.82 | 0.27 | 0.51 | 0.75 |
 | hewn | 0.60 | 0.98 | 11.3 | 27.1 | 0.74 | 0.89 | 0.33 | 0.52 | 0.86 |
 | built | 0.91 | 1.00 | 11.9 | 34.6 | 0.76 | 1.00 | 0.00 | 1.00 | 0.93 |
 

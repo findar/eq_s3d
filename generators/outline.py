@@ -106,6 +106,7 @@ class Outline:
 EDGE_MAX = 14.0     # the era's edge: longer Cell edges split (design finding 1)
 PLACES = 3          # vertices keep this many decimals
 SNAP = 0.01         # points closer than this are one vertex
+WOBBLE_SHARE = 0.08 # a wall wanders at most this share of the Box's short side
 FILL_FLOOR = 0.65   # a room's floor never goes under this share of its Box
 SHAPES = ("blob", "long", "cut", "ell", "cross")
 COMPLEXES = ("voronoi", "grid", "facet")
@@ -594,6 +595,8 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
     keep = [cells[k] for k in np.nonzero(chosen)[0]]
     used = sorted({i for c in keep for i in c})
     remap = {old: new for new, old in enumerate(used)}
+    # Wandering walls scale down with a small room, or it loses too much of its floor.
+    wobble = min(wobble, WOBBLE_SHARE * min(x1 - x0, y1 - y0))
     keep = _close_holes([verts[i] for i in used], [[remap[i] for i in c] for c in keep])
     verts = [verts[i] for i in used]
     # Splitting edges moves a Cell's mean, so judge the fans again afterwards.
