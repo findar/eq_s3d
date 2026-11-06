@@ -286,7 +286,7 @@ control's rule while Layout is Graph. `ZonePlan.walls`, `--walls` on the CLI,
 - **Stacked seams.** A ceiling that moves changes the look of a room's top only; the
   Slab is safe because it only comes down.
 
-## Open questions (with recommended answers)
+## Open questions (answered 2026-11-06: the recommended answers; see `archive.md`)
 
 1. **Three style names and their look.** `built`, `hewn`, `rough`, as the roadmap's
    "dungeon, man-made cave, rough cave". *Recommended: yes.*

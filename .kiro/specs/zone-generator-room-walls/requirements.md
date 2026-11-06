@@ -1,7 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 8, draft.** Written 2026-11-06 at master `d09449c`.
-> The design's open questions wait on the user. Task index: `tasks.md` (card
+> **STATUS: roadmap step 8, ready.** Written 2026-11-06 at master `d09449c`;
+> the user took the recommended answer to every open question the same day
+> (`archive.md` "Decisions"). Task index: `tasks.md` (card
 > format, 16 tasks).
 
 ## Introduction
