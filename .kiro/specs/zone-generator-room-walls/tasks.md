@@ -41,7 +41,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/outline.py, generators/geometry.py, analyzer/traverse.py (a Throat's chain), tests/test_outline.py
   - Reqs: 2, 4
 
-- [ ] 4. Style files and their tooling
+- [x] 4. Style files and their tooling
   - Card: [cards/04-style-files.md](cards/04-style-files.md)
   - Type: agent · Size: M · Depends: 1, 3
   - Owns: rules/walls/, generators/wall_styles.py, scripts/topology_rules.py, generators/topology/draw.py, docs/TOPOLOGY_RULES.md, tests/test_wall_styles.py
