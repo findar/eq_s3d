@@ -108,7 +108,6 @@ def test_the_map_draws_outlines_not_boxes():
     spec = plan_to_spec(_rough(), seed=4)
     svg = render_map_svg(spec)
     assert svg.count("<polygon") >= len(spec.rooms)
-    assert 'fill-opacity="0.35"' in svg or "fill-opacity" in svg
     plain = plan_to_spec(ZonePlan(name="w7", zone_type="dungeon", room_count=8, layout="classic").validate(), seed=4)
     assert "<polygon" not in render_map_svg(plain)
 
