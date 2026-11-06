@@ -414,6 +414,7 @@ fill = [0.70, 0.85]         # floor over Box, before walls wander (not for facet
 floor_relief_h = [0.0, 0.9] # how far a floor can rise
 ceiling_spread = [0.1, 0.6] # how far a ceiling can fall, over the room's height
 corridor_break = 0.15       # how far corridor walls come in, over its width
+relief_scale_h = 5.0        # how far apart rises and falls are (optional, 5 unless set)
 
 [shapes]                    # room kind -> shape -> weight; `default` is required
 default = { blob = 2, ell = 1 }

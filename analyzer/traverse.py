@@ -954,7 +954,8 @@ def _faces_in_room(surf: WalkSurface, room: RoomSpec,
     if room.outline is not None:
         # A shaped room is only its Cells: floor in a corner of its Box is
         # something else's (step 8).
-        in_xy &= room.outline.contains(cen[:, :2])
+        hits = np.nonzero(in_xy)[0]
+        in_xy[hits] = room.outline.contains(cen[hits, :2])
     xy_idx = std_idx[in_xy]
     if len(xy_idx) == 0:
         return xy_idx
@@ -1290,12 +1291,6 @@ def _local_adjacency(surf: WalkSurface, agent: AgentModel,
     fxy_min = {fi: np.minimum.reduce(tris[fi][:, :2]) for fi in subset}
     fxy_max = {fi: np.maximum.reduce(tris[fi][:, :2]) for fi in subset}
 
-    def _bbox_near(fi: int, fj: int) -> bool:
-        return (fxy_min[fi][0] - eps <= fxy_max[fj][0] and
-                fxy_max[fi][0] + eps >= fxy_min[fj][0] and
-                fxy_min[fi][1] - eps <= fxy_max[fj][1] and
-                fxy_max[fi][1] + eps >= fxy_min[fj][1])
-
     # Faces already joined can't change what a flood reaches, so their seam needn't be
     # worked out; a shaped room's many welded floor faces would otherwise cost seconds.
     parent = {f: f for f in subset}
@@ -1310,14 +1305,15 @@ def _local_adjacency(surf: WalkSurface, agent: AgentModel,
         for fj in nbrs:
             parent[find(fi)] = find(fj)
 
+    lo = np.array([fxy_min[f] for f in subset])
+    hi = np.array([fxy_max[f] for f in subset])
     n = len(subset)
     for i in range(n):
         fi = subset[i]
-        for j in range(i + 1, n):
-            fj = subset[j]
+        near = ((lo[i + 1:] - eps <= hi[i]) & (hi[i + 1:] + eps >= lo[i])).all(axis=1)
+        for j in np.nonzero(near)[0] + i + 1:
+            fj = subset[int(j)]
             if find(fi) == find(fj):
-                continue
-            if not _bbox_near(fi, fj):
                 continue
             dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
             if pt is None or dist > eps:

@@ -12,7 +12,8 @@ description = "A man-made cave: the Box with its corners cut, a few long facets.
 complex = "facet"
 floor_relief_h = [0.0, 0.5]
 ceiling_spread = [0.2, 0.5]
-corridor_break = 0.08
+relief_scale_h = 12.0     # stock hewn ceilings are large flat stretches and a few falls
+corridor_break = 0.05
 
 [shapes]
 default = { blob = 2, cut = 1 }

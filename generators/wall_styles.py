@@ -41,7 +41,6 @@ MASONRY: Tuple[str, ...] = ("dressed_stone", "brick", "flagstone", "cobble", "pl
 Band = Tuple[float, float]
 MIN_HEAD_H = 2.0        # the least headroom, in body heights
 MIN_HEAD = 8.0          # and in u: the player is 6 u tall
-RELIEF_SCALE_H = 5.0    # how far apart a floor's or ceiling's rises and falls are, in H
 
 
 @dataclass(frozen=True)
@@ -57,6 +56,7 @@ class WallStyle:
     corridor_break: float               # how far a corridor's walls come in, over its width
     shapes: Mapping[str, Mapping[str, float]]   # kind -> shape -> weight
     look: Mapping[str, str]             # surface -> look
+    relief_scale_h: float = 5.0         # how far apart a floor's or ceiling's rises and falls are
 
     def pick_shape(self, kind: str, rng: random.Random) -> str:
         """A shape for a room of this kind, by the style's weights."""
@@ -79,7 +79,7 @@ class WallStyle:
                        floor_rise=rng.uniform(*self.floor_relief_h) * body_height,
                        ceiling_fall=rng.uniform(*self.ceiling_spread) * room_height,
                        min_head=max(MIN_HEAD_H * body_height, MIN_HEAD),
-                       scale=RELIEF_SCALE_H * body_height, rng=rng)
+                       scale=self.relief_scale_h * body_height, rng=rng)
         return outline
 
 
@@ -147,7 +147,7 @@ def load_style(path: Union[str, Path]) -> WallStyle:
     chk.keys(data, "top level", ("style", "shapes", "look"), required=("style", "shapes", "look"))
     st = chk.table(data.get("style", {}), "top level", "style", "[style] with name, complex") or {}
     chk.keys(st, "style", ("name", "description", "complex", "cell_size_h", "wobble_h", "fill",
-                           "floor_relief_h", "ceiling_spread", "corridor_break"),
+                           "floor_relief_h", "ceiling_spread", "corridor_break", "relief_scale_h"),
              required=("name", "description", "complex", "floor_relief_h", "ceiling_spread",
                        "corridor_break"))
     name = chk.text(st, "name", "style", required=False)
@@ -170,6 +170,7 @@ def load_style(path: Union[str, Path]) -> WallStyle:
     relief = _band(chk, st, "floor_relief_h", "style", 0.0, 2.0)
     spread = _band(chk, st, "ceiling_spread", "style", 0.0, 0.75)
     broken = _number(chk, st, "corridor_break", "style", 0.0, 0.3)
+    relief_scale = _number(chk, st, "relief_scale_h", "style", 1.0, 40.0, default=5.0)
     shapes = _shapes(chk, data.get("shapes", _MISSING), ROOM_KINDS)
     lk = chk.table(data.get("look", {}), "top level", "look", "[look] with wall, floor, ceiling") or {}
     chk.keys(lk, "look", SURFACES, required=SURFACES)
@@ -177,7 +178,8 @@ def load_style(path: Union[str, Path]) -> WallStyle:
         if surface in SURFACES and value not in LOOKS:
             chk.fail("look", surface, value, _one_of(LOOKS))
     chk.raise_if_failed()
-    return WallStyle(name, desc, complex_, cell, wobble, fill, relief, spread, broken, shapes, dict(lk))
+    return WallStyle(name, desc, complex_, cell, wobble, fill, relief, spread, broken, shapes, dict(lk),
+                     relief_scale)
 
 
 def load_styles(folder: Union[str, Path] = WALLS_DIR) -> Dict[str, WallStyle]:
