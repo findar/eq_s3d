@@ -93,7 +93,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: tests/test_walls_build.py, rules/walls/
   - Reqs: 12
 
-- [ ] 13. Tune from the looks
+- [x] 13. Tune from the looks
   - Card: [cards/13-tuning.md](cards/13-tuning.md)
   - Type: agent · Size: S · Depends: 12
   - Owns: rules/walls/, generators/outline.py, generators/geometry.py, tests/
