@@ -22,13 +22,15 @@ build) on the same attempt seeds (the pipeline draws them from
 must be no worse than flat's. The rates are printed (``-s`` shows them).
 
 Also here: a stacked build is reproducible (the PFS footer's write time aside,
-lessons-learned "Two .eqg writes are never byte-identical").
+lessons-learned "Two .eqg writes are never byte-identical"), and task 13's
+timing test (Requirement 9.4).
 
 A passing sweep is necessary, not sufficient: nothing here is looked at in the
 3D viewer (task 10 does that).
 """
 
 import random
+import time
 
 import pytest
 
@@ -122,3 +124,32 @@ def test_same_inputs_same_eqg(tmp_path, zone_type, rule_set, theme, race, rooms,
         result = ZoneBuilder(spec).build(output_dir=tmp_path / str(k), write_glb=False)
         eqgs.append(result.eqg_path.read_bytes())
     assert eqgs[0][:-4] == eqgs[1][:-4]
+
+
+def _timed_generate(tmp_path, verticality, rooms, seed):
+    """Seconds for one full generate on a pinned seed (the server's path, GLB
+    and maps included), and how many Levels the plan has."""
+    plan = _plan("dungeon", "classic_eq", "", "", rooms, verticality, name="vtime")
+    t0 = time.perf_counter()
+    vb = generate_validated(lambda s: plan_to_spec(plan, seed=s), zone_type="dungeon",
+                            zone_id="vtime", seed=seed, output_dir=tmp_path, failure_log=None)
+    elapsed = time.perf_counter() - t0
+    assert vb.validated and vb.attempts == 1, (verticality, vb.attempts)
+    return elapsed, len(set(room_levels(plan_to_spec(plan, seed=seed)).values()))
+
+
+@pytest.mark.slow
+def test_multi_level_build_time_within_flat_plus_10s(tmp_path):
+    """Req 9.4: a 14-room multi-level build takes at most step 6's graph build
+    (``flat``, the same inputs) plus 10 s. The best of two runs each,
+    alternating, as in ``test_graph_layout_build``."""
+    runs = {"flat": [], "dramatic": []}
+    levels = {}
+    for k in range(2):
+        for v in runs:
+            elapsed, levels[v] = _timed_generate(tmp_path / f"{v}{k}", v, 14, 8)
+            runs[v].append(elapsed)
+    assert levels == {"flat": 1, "dramatic": 3}
+    flat, dramatic = min(runs["flat"]), min(runs["dramatic"])
+    print(f"\n14 rooms, seed 8: flat {flat:.2f} s, dramatic {dramatic:.2f} s")
+    assert dramatic <= flat + 10.0, runs

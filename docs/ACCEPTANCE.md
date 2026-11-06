@@ -842,8 +842,8 @@ python main.py generate odungeon_f --zone-type outdoor_dungeon --rooms 4 --locks
 ### O.5 — Controls, sidecar and speed
 
 - [ ] **[MUST] Controls** — Picking **Outdoor dungeon** shows Rooms, Locks and
-      the Landscape box (edges, trees) and hides Size and Verticality; each
-      setting reaches the build (check the sidecar).
+      the Landscape box (edges, trees) and hides Size; Verticality shows
+      since step 7 (see Step 7); each setting reaches the build (check the sidecar).
 - [ ] **[MUST] Sidecar** — `<name>.zone.json` has an `outdoor_dungeon` block:
       `envelope` (bounds and floor limit), `rock_cover`, one `entrances` entry
       (tunnel id, room, apron centre, mouth) and `outdoor_spawn`; plus the
@@ -853,8 +853,8 @@ python main.py generate odungeon_f --zone-type outdoor_dungeon --rooms 4 --locks
       seconds typical; the pipeline budget is 60 s).
 
 Known limits (follow-ups in the spec's `archive.md`, not failures here):
-one level only (verticality is ROADMAP step 7), and an ogre or giant outdoor
-dungeon never builds (its rooms are taller than the hill).
+since step 7's stock scale ogre outdoor dungeons build, and giants and dragons
+build with rooms dropped (a taller host is a follow-up).
 
 ### O.6 — In-client check (deferred to M6)
 
@@ -1038,8 +1038,7 @@ rooms all look alike (every room is a rectangle with its zone's textures, so
 Classic and Graph are hard to tell apart in 3D and kinds don't show; room
 shapes are step 8, room contents step 9); description words don't choose a
 layout (a description builds Graph with the theme's rule set; words like
-"maze" choosing a rule set are a fast follow); one level only (`above` / `below` act through elevation;
-stacked rooms and stairs are step 7); the warren bands rest on one stock zone
+"maze" choosing a rule set are a fast follow); the warren bands rest on one stock zone
 (Blackburrow); and a race with no theme builds fortress rooms (cases e and
 f), the existing default.
 
@@ -1048,3 +1047,131 @@ f), the existing default.
 - [ ] **[DEFERRED]** Walking a grown dungeon, its loops and its room sizes
       in the RoF2 client needs a takeover install; it moves to M6's in-engine
       smoke load.
+
+---
+
+## Step 7 — Dungeon verticality
+
+> Roadmap step 7 (`zone-generator-dungeon-verticality`). A **Graph** dungeon
+> or outdoor dungeon now has **Levels**: rooms can sit directly above other
+> rooms, joined by **stairs** (treads and risers of about 2 u, usually two
+> flights turning back on themselves, because one Level is a long climb). A
+> corridor between same-Level rooms can be a **bridge**: a railed deck
+> crossing over a lower room, down a shaft cut through that room's ceiling.
+> **Verticality** sets how much of this there is: Flat is one Level, Moderate
+> uses the rules' weights, Dramatic doubles them. Dramatic is more on average
+> (about 2.7 Levels against 2.3 at 12 rooms) but about a third of seeds at 12
+> rooms stack the same at both, so the cases below use a seed that shows the
+> difference. Classic stays one Level. Restart the Server on the merged code
+> first and check the side panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. **Every case is made from the Controls panel alone**; leave the
+description box empty. Layout is Graph throughout, Size and Locks stay at
+their defaults (medium, 0), Theme and Race stay None and Rule set From theme
+unless the row names them. Each builds on the first attempt.
+
+| # | Controls | Seed | What it shows (sidecar `layout`) |
+|---|----------|------|-------------------------|
+| a | Dungeon, 12 rooms, Rule set **classic_eq**, **Flat** | 10 | One Level; `stacked_share` 0; 12 flat corridors; one EQ map file |
+| b | Dungeon, 12 rooms, Rule set **classic_eq**, **Moderate** | 10 | Levels 0 and 1 (9 and 3 rooms); `stacked_share` 0.06; 2 stairs, each 102 u up in 52 risers; 2 map layers |
+| c | Dungeon, 12 rooms, Rule set **classic_eq**, **Dramatic** | 10 | Levels 0, 1, 2 (4, 7, 1 rooms); `stacked_share` 0.13; 4 stairs; a bridge (`corr_4`) over `room_1`; 3 map layers |
+| d | Dungeon, 12 rooms, Rule set **warren**, **Moderate** | 10 | Levels -1 and 0 (4 and 8 rooms); `stacked_share` 0.04; 3 stairs; 2 map layers |
+| e | Dungeon, 12 rooms, Rule set **warren**, **Dramatic** | 10 | Levels -2, -1, 0 (3, 2, 7 rooms); `stacked_share` 0.08; 4 stairs; a bridge (`corr_4`) over `room_7`; 3 map layers |
+| f | Dungeon, 12 rooms, Theme **Temple**, **Moderate** | 13 | `classic_eq` + layer `temple`, `nave` applied; Levels -1, 0, 1 (1, 9, 2 rooms); `stacked_share` 0.07; 2 stairs; 3 map layers |
+| g | Dungeon, 12 rooms, Race **Ogre**, **Moderate** | 10 | `great_hall` applied; Levels -1, 0, 1 (1, 9, 2 rooms); 3 stairs, each 132 u up in 66 risers; 2 map layers |
+| h | Dungeon, 8 rooms, Race **Dragon**, **Moderate** | 10 | `great_hall` applied; Levels 0 and 1 (5 and 3 rooms); `stacked_share` 0.19; 2 stairs, each 252 u up in 126 risers; 2 map layers |
+| i | Outdoor dungeon, 8 rooms, **Dramatic**, Landscape defaults | 13 | Levels -1 and 0 (3 and 5 rooms), the tunnel entering Level 0; `stacked_share` 0.18; 2 stairs; a bridge (`corr_0`) over `room_6`; 3 map layers |
+| j | Dungeon, 12 rooms, Rule set **classic_eq**, **Moderate** | 11 | `bridge_hall` applied; Levels 0 and 1 (7 and 5 rooms); `stacked_share` 0.15; 2 bridges, `corr_4` over `room_1` and `corr_10` over `room_6`; 2 map layers |
+
+Cases a, b and c share seed and rule set on purpose, as do d and e: compare
+them side by side.
+
+### V.1 — Levels
+
+- [ ] **[MUST] Reads like a multi-level dungeon** — b, c, e and f have rooms
+      you can stand under and rooms you look up to; going up or down feels
+      like arriving somewhere new, as in Guk, Befallen or Unrest, not a flat
+      map with a few steps.
+- [ ] **[MUST] Every room on foot** — In each of a–j, walk from the spawn to
+      every room on every Level; no room is cut off (case i: in through the
+      mouth, as O.3).
+- [ ] **[MUST] No odd joins in 3D** — Stacked rooms don't poke into each
+      other, no corridor runs through a room, and a floor above isn't visible
+      through the ceiling below.
+- [ ] **[MUST] Verticality does what it says** — a is flat; c has more Levels
+      and more stacking than b, and e more than d. Layout Classic with the same
+      controls has one Level (its `layout` block has no `levels`).
+- [ ] **[MUST] Rule sets stay themselves** — d and e still read as warrens
+      (more loops, smaller rooms) and b and c as classic dungeons; f still has
+      its nave, one large hall with two small chapels.
+
+### V.2 — Stairs
+
+- [ ] **[MUST] Walk them both ways** — In b, walk up a stair and back down.
+      You don't catch on a riser, slide or fall through, and you can stop on
+      any tread and on the landing.
+- [ ] **[MUST] They look like stairs** — Separate treads and risers, walls
+      and a ceiling all the way, no gaps at the landing or where a flight
+      meets a room's floor.
+- [ ] **[MUST] Headroom** — Your head never hits the ceiling on a tread, a
+      landing or a stair door.
+- [ ] **[MUST] Doors along a wall** — A stair that starts partway along a
+      wall rather than at its middle still meets the room flush, and doesn't
+      clip another room.
+- [ ] **[SHOULD] Sized for the race** — g's stairs are longer and wider than
+      b's, and fit an ogre. h's are very long (see Known limits).
+
+### V.3 — Bridges
+
+- [ ] **[MUST] Walk the deck** — In j, cross both bridges: flush at both
+      ends, continuous, and the rails stop you walking off.
+- [ ] **[MUST] From below** — From `room_1` and `room_6`, look up through the
+      slot in the ceiling at the deck. The shaft's walls have no gaps, and you
+      can walk the room beneath without anything in your way.
+- [ ] **[SHOULD] Reads as a crossing** — Standing on a deck you look down
+      into a void and a room, in c, e and i as well as j.
+
+### V.4 — Outdoor dungeons
+
+- [ ] **[MUST] Goes down into the hill** — i's tunnel opens on the top Level;
+      the lower rooms are below it, never above. Nothing pokes out of the
+      hill's surface or past its foot.
+- [ ] **[MUST] The step 5 list still holds** — O.1–O.3 in case i: one
+      entrance, the spawn outside, every room reachable.
+
+### V.5 — Maps, controls and sidecar
+
+- [ ] **[MUST] One band per stacked Level** — The Files panel lists the map
+      layers the table gives. In the map, each stacked Level draws in its own
+      colour, and the rooms on it sit where they are in the 3D view. A Level
+      with nothing stacked on it can share a band (g has three Levels and two
+      layers).
+- [ ] **[MUST] Controls** — Verticality shows for Dungeon, City and Outdoor
+      dungeon, and each setting reaches the build (the side panel's plan shows
+      it).
+- [ ] **[MUST] Sidecar** — A Graph build's `<name>.zone.json` `layout` block
+      has `levels` (room id to Level), `stacked_share`, and `connectors` (per
+      corridor: `kind` of `flat`, `ramp`, `stair` or `bridge`, `rise`,
+      `risers`, `switchback`, and `over` on a bridge).
+- [ ] **[MUST] Pinned seed repeats; blank seed is fresh** — As in W.4, for a
+      stacked build as for a flat one.
+- [ ] **[SHOULD] Snappy** — A multi-level build takes no longer than the Flat
+      build of the same controls plus 10 s (14 rooms, seed 8: Flat ~0.3 s,
+      Dramatic ~2.4 s).
+
+Known limits (follow-ups in the spec's `archive.md`, not failures here):
+rooms are still rectangles that all look alike (room shapes are step 8, room
+contents step 9); a dragon's stairs are very long, because risers stay about
+2 u however big the race; an outdoor dungeon almost always has two Levels even
+at Dramatic (of 30 seeds at each size, none reached three at 5 rooms, one at
+8, four at 12); giant and dragon outdoor dungeons drop rooms; stacked floors
+sit further apart than stock, whose stacking is low rooms over low rooms; and
+a shaft over a tall hall, or a short deck, can read as a chimney or a landing
+(the user looked at bridges on 2026-11-05 and asked for no change).
+
+### V.6 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Walking stairs and bridges in the RoF2 client needs a
+      takeover install; it moves to M6's in-engine smoke load.
