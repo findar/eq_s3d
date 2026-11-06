@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from scipy.spatial import Voronoi, cKDTree
 
+from .field.noise import _value_noise_3d
+
 Rect = Tuple[float, float, float, float]    # x0, y0, x1, y1
 
 
@@ -30,13 +32,18 @@ class Outline:
     cells: List[List[int]]                  # convex Cells, counter-clockwise from above
     core: Rect                              # always floor; holds the Box's centre
     throats: List[Rect] = field(default_factory=list)   # one per door, Tunnel or slot
+    # Relief, per vertex, in u: how far the floor rises and the ceiling falls. Empty
+    # is flat, so a flat room's JSON is as short as it can be.
+    lift: List[float] = field(default_factory=list)
+    drop: List[float] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Outline":
         return cls(verts=[tuple(v) for v in d["verts"]],
                    cells=[list(c) for c in d["cells"]],
                    core=tuple(d["core"]),
-                   throats=[tuple(t) for t in d.get("throats", [])])
+                   throats=[tuple(t) for t in d.get("throats", [])],
+                   lift=list(d.get("lift", [])), drop=list(d.get("drop", [])))
 
     def contains(self, pts: np.ndarray, tol: float = 1e-6) -> np.ndarray:
         """Which of the plan points ``pts`` (N, 2) lie on the room's floor. Each
@@ -57,6 +64,12 @@ class Outline:
                     - (q[:, 1] - p[:, 1]) * (pts[:, 0, None] - p[:, 0])) >= -tol
 
         return (left_of(a, b) & left_of(b, c) & left_of(c, a)).any(axis=1)
+
+    def lift_at(self, i: int) -> float:
+        return self.lift[i] if self.lift else 0.0
+
+    def drop_at(self, i: int) -> float:
+        return self.drop[i] if self.drop else 0.0
 
     def fill(self, box: Rect) -> float:
         """The room's floor over its Box."""
@@ -586,3 +599,58 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
         if all(_fans_sound(final, c) for c in final_cells):
             break
     return Outline(verts=final, cells=final_cells, core=core, throats=throats)
+
+
+# ---------------------------------------------------------------------------
+# Relief (step 8, Requirement 7)
+# ---------------------------------------------------------------------------
+
+MAX_GRADE = 0.45        # a floor's rise over run between vertices: about 24 degrees
+
+
+def _noise_01(pts: np.ndarray, scale: float, seed: int) -> np.ndarray:
+    """Smooth noise over the plan, 0 to 1 (the lower half of the noise reads as flat)."""
+    z = np.zeros(len(pts), dtype=np.float32)
+    return np.clip(_value_noise_3d(pts[:, 0] / scale, pts[:, 1] / scale, z, seed) * 2.0, 0.0, 1.0)
+
+
+def add_relief(outline: Outline, height: float, floor_rise: float, ceiling_fall: float,
+               min_head: float, scale: float, rng: random.Random) -> None:
+    """Set the Outline's ``lift`` and ``drop``. A floor only rises and a ceiling only
+    falls, so a stacked room's Slab stands. Floors stay at their height in the Core
+    (the spawn stands there) and every Throat; ceilings stay in Throats, so lintels and
+    Bridge shafts meet them. No edge climbs over ``MAX_GRADE``, so the walk gate passes
+    the first time rather than on a retry. Headroom stays at least ``min_head``."""
+    if floor_rise <= 0 and ceiling_fall <= 0:
+        return
+    pts = np.array(outline.verts, dtype=np.float64)
+
+    def within(rects: List[Rect]) -> np.ndarray:
+        mask = np.zeros(len(pts), bool)
+        for r in rects:
+            mask |= (pts[:, 0] >= r[0] - 1e-3) & (pts[:, 0] <= r[2] + 1e-3) & \
+                    (pts[:, 1] >= r[1] - 1e-3) & (pts[:, 1] <= r[3] + 1e-3)
+        return mask
+
+    in_throat = within(outline.throats)
+    lift = _noise_01(pts, scale, rng.randrange(1 << 30)).astype(np.float64) * floor_rise
+    lift[in_throat | within([outline.core])] = 0.0
+    drop = _noise_01(pts, scale, rng.randrange(1 << 30)).astype(np.float64) * ceiling_fall
+    drop[in_throat] = 0.0
+
+    # The steepest a floor may climb, along each edge of the mesh: relax to the bound.
+    edges = {(min(a, b), max(a, b)) for c in outline.cells for a, b in zip(c, c[1:] + c[:1])}
+    ea = np.array([e[0] for e in edges], dtype=np.int64)
+    eb = np.array([e[1] for e in edges], dtype=np.int64)
+    cap = np.hypot(*(pts[ea] - pts[eb]).T) * MAX_GRADE
+    for _ in range(len(pts)):
+        before = lift.copy()
+        np.minimum.at(lift, ea, lift[eb] + cap)
+        np.minimum.at(lift, eb, lift[ea] + cap)
+        if np.array_equal(before, lift):
+            break
+
+    drop = np.minimum(drop, np.maximum(0.0, height - lift - min_head))
+    outline.lift = [round(float(v), PLACES) for v in lift]
+    outline.drop = [round(float(v), PLACES) for v in drop]
+
