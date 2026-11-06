@@ -11,9 +11,10 @@ Roadmap step 9: **interesting room layouts, POIs within rooms.** A generated roo
 an empty floor. It has a shape (step 8), a kind (step 6) and a list of props in its sidecar
 (`prop_hints`: "raised throne dais", "pillar ring"), but nothing stands in it.
 
-Stock rooms aren't empty. A first measure of 15 stock zones found solid features standing
-well inside the room's edge in 43–94% of rooms, usually about 2 per room and about 20–30 u
-across, and raised floor in up to 65% of rooms, typically 4–5 u up (design finding 1).
+Stock rooms aren't empty. Across 15 stock zones, up to two-thirds of a zone's rooms have raised
+floor, about a quarter of the room and 4–5 u up. Free-standing solids in the mesh are less common,
+in up to 40% of rooms, and hundreds of placed objects per zone fill the rest, which is step 11's
+side of the line (design finding 1).
 
 This step puts structure inside rooms, chosen by what each room is, without ever blocking
 the way through: a throne room gets a dais at its far end, a sanctum a ring of pillars, a
@@ -141,8 +142,9 @@ through or get caught in.
 
 ### Requirement 9: Like the stock zones, and everything else holds
 
-1. Over many seeds at `normal`, built zones SHALL measure inside the survey's bands with the
-   survey's own code.
+1. Over many seeds at `normal`, built zones SHALL measure inside the survey's bands for raised
+   floor, and for rooms with a solid at or above stock's band and at most 0.6, with the survey's
+   own code (Features stand in for placed objects until step 11; design finding 1).
 2. Classic builds, cities and wilderness SHALL be byte-identical. Step 6–8's bands, and the
    gate's first-try rate, SHALL still hold.
 3. The same inputs SHALL give byte-identical `.eqg` contents (footer aside).
