@@ -46,7 +46,8 @@ import numpy as np
 
 from core.pfs import PfsArchive
 from core.ter import FLAG_PASSABLE, TerFile
-from generators.geometry import MeshBuilder, bridge_layout, is_auto_stair, stair_layout
+from generators.geometry import (MeshBuilder, _bridge_slots, _door_openings, bridge_layout,
+                                 is_auto_stair, stair_layout)
 from generators.routing import Rect, corridor_route, route_footprint
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
@@ -291,6 +292,23 @@ class CorridorResult:
 
 
 @dataclass
+class OutlineResult:
+    """One shaped room's verdict (step 8, Requirement 3). ``reason`` is "" when it
+    passes, else one of:
+
+      * ``"door without a throat at <side> <c0>..<c1>"``
+      * ``"throat <rect> does not reach the core"``
+      * ``"wall across throat <rect>"``
+      * ``"no walkable path from the core to throat <rect>"``
+      * ``"no walkable floor in the core"``
+      * ``"open seam at (x, y, z)"``
+    """
+    room_id: str
+    ok: bool
+    reason: str = ""
+
+
+@dataclass
 class TraversalReport:
     zone_name: str
     agent: AgentModel
@@ -310,6 +328,8 @@ class TraversalReport:
     corridors: List[CorridorResult] = field(default_factory=list)
     conflicts: List[Tuple[str, str]] = field(default_factory=list)
     checked_corridors: bool = False
+    # Shaped rooms' verdicts (step 8); empty when no room has an Outline.
+    outlines: List[OutlineResult] = field(default_factory=list)
     # The walk surface ``validate`` built, so the outline extractor can reuse it
     # (M2 Pipeline post-pass). Not serialised; ``None`` on other report paths.
     surface: Optional["WalkSurface"] = field(default=None, repr=False,
@@ -317,7 +337,8 @@ class TraversalReport:
 
     @property
     def passed(self) -> bool:
-        return self.total_rooms > 0 and self.reachable_rooms == self.total_rooms
+        return (self.total_rooms > 0 and self.reachable_rooms == self.total_rooms
+                and all(o.ok for o in self.outlines))
 
     @property
     def corridors_passed(self) -> bool:
@@ -372,6 +393,9 @@ class TraversalReport:
                     )
             for ci, cj in self.conflicts:
                 lines.append(f"    !! {ci} conflicts with {cj}")
+        for o in self.outlines:
+            if not o.ok:
+                lines.append(f"    XX outline {o.room_id:<10} -> {o.reason}")
         for n in self.notes:
             lines.append(f"  note: {n}")
         return "\n".join(lines)
@@ -927,6 +951,10 @@ def _faces_in_room(surf: WalkSurface, room: RoomSpec,
         (cen[:, 0] >= xmin) & (cen[:, 0] <= xmax) &
         (cen[:, 1] >= ymin) & (cen[:, 1] <= ymax)
     )
+    if room.outline is not None:
+        # A shaped room is only its Cells: floor in a corner of its Box is
+        # something else's (step 8).
+        in_xy &= room.outline.contains(cen[:, :2])
     xy_idx = std_idx[in_xy]
     if len(xy_idx) == 0:
         return xy_idx
@@ -971,6 +999,168 @@ def _storey_band(room: RoomSpec, rooms: Optional[List[RoomSpec]]):
 
 
 FLOOR_Z_TOL = 8.0
+
+
+# ---------------------------------------------------------------------------
+# Shaped rooms (step 8, Requirement 3)
+# ---------------------------------------------------------------------------
+#
+# Everything outside a room still judges its Box, which is only stricter than its
+# walls. These checks read the mesh inside the Box: every door leads through a
+# Throat to the Core, nothing stands across a Throat, and the room is closed.
+
+OUTLINE_TOL = 0.05    # how far a door, Throat or seam may be off (u)
+
+
+def _door_strips(room: RoomSpec, spec: ZoneSpec):
+    """Each door on ``room``'s walls: (side, c0, c1) as ``_door_openings`` finds it."""
+    return [(side, c0, c1) for side, cuts in _door_openings(room, spec).items()
+            for c0, c1, _top in cuts]
+
+
+def _strip_in_throat(side: str, c0: float, c1: float, plane: float, t: Rect) -> bool:
+    """Does the Throat ``t`` hold the door strip on the wall at ``plane``?"""
+    tol = OUTLINE_TOL
+    if side in ("N", "S"):
+        return (t[0] <= c0 + tol and t[2] >= c1 - tol
+                and t[1] <= plane + tol and t[3] >= plane - tol)
+    return (t[1] <= c0 + tol and t[3] >= c1 - tol
+            and t[0] <= plane + tol and t[2] >= plane - tol)
+
+
+def _segment_hits_rect(p: np.ndarray, q: np.ndarray, r: Rect) -> bool:
+    """Does the plan segment ``p``..``q`` enter the open rect ``r``? (Liang-Barsky)"""
+    t0, t1 = 0.0, 1.0
+    d = q - p
+    for axis, lo, hi in ((0, r[0], r[2]), (1, r[1], r[3])):
+        if abs(d[axis]) < 1e-12:
+            if p[axis] <= lo or p[axis] >= hi:
+                return False
+            continue
+        a, b = (lo - p[axis]) / d[axis], (hi - p[axis]) / d[axis]
+        t0, t1 = max(t0, min(a, b)), min(t1, max(a, b))
+        if t0 >= t1:
+            return False
+    return True
+
+
+def _room_mesh_faces(surf: WalkSurface, room: RoomSpec) -> np.ndarray:
+    """The faces wholly inside the room's Box."""
+    (x0, y0, z0), (x1, y1, z1) = room.bounds
+    tol = OUTLINE_TOL
+    tri = surf.verts[surf.faces]
+    inside = ((tri[:, :, 0] >= x0 - tol) & (tri[:, :, 0] <= x1 + tol)
+              & (tri[:, :, 1] >= y0 - tol) & (tri[:, :, 1] <= y1 + tol)
+              & (tri[:, :, 2] >= z0 - tol) & (tri[:, :, 2] <= z1 + tol))
+    return np.nonzero(inside.all(axis=1))[0]
+
+
+def _open_seam(surf: WalkSurface, room: RoomSpec, faces: np.ndarray, doors, slots):
+    """A point on an edge only one face uses, away from every door and slot."""
+    (x0, y0, _), (x1, y1, z1) = room.bounds
+    planes = {"S": y0, "N": y1, "W": x0, "E": x1}
+    tol = OUTLINE_TOL
+
+    def allowed(a: np.ndarray, b: np.ndarray) -> bool:
+        for side, c0, c1 in doors:
+            axis, along = (1, 0) if side in ("N", "S") else (0, 1)
+            if (abs(a[axis] - planes[side]) <= tol and abs(b[axis] - planes[side]) <= tol
+                    and min(a[along], b[along]) >= c0 - tol and max(a[along], b[along]) <= c1 + tol):
+                return True
+        for s in slots:
+            if (abs(a[2] - z1) <= tol and abs(b[2] - z1) <= tol
+                    and min(a[0], b[0]) >= s[0] - tol and max(a[0], b[0]) <= s[2] + tol
+                    and min(a[1], b[1]) >= s[1] - tol and max(a[1], b[1]) <= s[3] + tol):
+                return True
+        return False
+
+    tri = surf.verts[surf.faces[faces]]
+    keys = np.round(tri, 2)
+    count: Dict[tuple, int] = {}
+    ends: Dict[tuple, tuple] = {}
+    for t, k in zip(tri, keys):
+        for i in range(3):
+            j = (i + 1) % 3
+            a, b = tuple(k[i]), tuple(k[j])
+            key = (a, b) if a < b else (b, a)
+            count[key] = count.get(key, 0) + 1
+            ends[key] = (t[i], t[j])
+    for key in sorted(count):
+        if count[key] == 1 and not allowed(*ends[key]):
+            a, b = ends[key]
+            mid = (a + b) / 2
+            return f"({mid[0]:.1f}, {mid[1]:.1f}, {mid[2]:.1f})"
+    return None
+
+
+def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
+                  agent: AgentModel) -> OutlineResult:
+    """Judge one shaped room from the mesh (see ``OutlineResult``)."""
+    outline = room.outline
+    (x0, y0, z0), (x1, y1, z1) = room.bounds
+    planes = {"S": y0, "N": y1, "W": x0, "E": x1}
+    doors = _door_strips(room, spec)
+    slots = _bridge_slots(room, spec)
+
+    def fail(reason: str) -> OutlineResult:
+        return OutlineResult(room.id, False, reason)
+
+    def in_core(t: Rect) -> bool:
+        c, tol = outline.core, OUTLINE_TOL
+        return t[0] <= c[2] + tol and t[2] >= c[0] - tol and t[1] <= c[3] + tol and t[3] >= c[1] - tol
+
+    used = []
+    for side, c0, c1 in doors:
+        holding = [t for t in outline.throats if _strip_in_throat(side, c0, c1, planes[side], t)]
+        if not holding:
+            return fail(f"door without a throat at {side} {c0:.1f}..{c1:.1f}")
+        used.extend(holding)
+    for t in outline.throats:
+        if not in_core(t):
+            return fail(f"throat {tuple(round(v, 1) for v in t)} does not reach the core")
+
+    # A wall across a Throat stands in it at body height. Any near-vertical face counts.
+    faces = _room_mesh_faces(surf, room)
+    body = z0 + agent.player_height / 2
+    tri = surf.verts[surf.faces[faces]]
+    nz = np.abs(surf.normals[faces, 2])
+    tall = (nz < 0.7) & (tri[:, :, 2].min(axis=1) <= body) & (tri[:, :, 2].max(axis=1) >= body)
+    for t in outline.throats:
+        shrunk = (t[0] + OUTLINE_TOL, t[1] + OUTLINE_TOL, t[2] - OUTLINE_TOL, t[3] - OUTLINE_TOL)
+        for w in tri[tall]:
+            pts = w[:, :2]
+            d = np.linalg.norm(pts[:, None] - pts[None], axis=2)
+            i, j = np.unravel_index(d.argmax(), d.shape)
+            if _segment_hits_rect(pts[i], pts[j], shrunk):
+                return fail(f"wall across throat {tuple(round(v, 1) for v in t)}")
+
+    # The floor joins the Core to every Throat, on the room's own floor faces.
+    own = _faces_in_room(surf, room, spec.rooms)
+    if len(own) == 0:
+        return fail("no walkable floor in the core")
+    cen = surf.centroids[own]
+
+    def faces_in(r: Rect) -> set:
+        m = (cen[:, 0] >= r[0]) & (cen[:, 0] <= r[2]) & (cen[:, 1] >= r[1]) & (cen[:, 1] <= r[3])
+        return {int(f) for f in own[m]}
+
+    start = faces_in(outline.core)
+    if not start:
+        return fail("no walkable floor in the core")
+    reached = _flood_subset(_local_adjacency(surf, agent, own), start)
+    for t in outline.throats:
+        if not faces_in(t) & reached:
+            return fail(f"no walkable path from the core to throat {tuple(round(v, 1) for v in t)}")
+
+    seam = _open_seam(surf, room, faces, doors, slots)
+    if seam is not None:
+        return fail(f"open seam at {seam}")
+    return OutlineResult(room.id, True)
+
+
+def outline_checks(surf: WalkSurface, spec: ZoneSpec, agent: AgentModel) -> List[OutlineResult]:
+    """Every shaped room's verdict; none for a build of plain Boxes."""
+    return [check_outline(surf, r, spec, agent) for r in spec.rooms if r.outline is not None]
 
 
 # ---------------------------------------------------------------------------
@@ -2409,6 +2599,8 @@ def validate(eqg_path: str | Path,
         ))
         if is_reachable:
             report.reachable_rooms += 1
+
+    report.outlines = outline_checks(surf, spec, agent)
 
     if check_corridors:
         report.checked_corridors = True

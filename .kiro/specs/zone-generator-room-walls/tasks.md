@@ -29,7 +29,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: scripts/wall_survey.py, .kiro/specs/zone-generator-room-walls/design.md (finding 1 only)
   - Reqs: 1
 
-- [ ] 2. The gate learns Outlines
+- [x] 2. The gate learns Outlines
   - Card: [cards/02-gate-outlines.md](cards/02-gate-outlines.md)
   - Type: agent · Size: M · Depends: —
   - Owns: analyzer/traverse.py, generators/zone_spec.py (`RoomSpec.outline`), generators/outline.py (the data type only), tests/test_gate_outlines.py
