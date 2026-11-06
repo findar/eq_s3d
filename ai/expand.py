@@ -87,6 +87,18 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                 engine=layout_engine(plan.layout, plan.rule_set, plan.verticality,
                                      outdoor=True))
             spec.layout = layout_block(spec.layout, spec)
+            # A grown dungeon under a hill draws its real walls; with no theme it's a
+            # cave, the Blackburrow it's modelled on.
+            if spec.layout is not None:
+                from generators.outdoor_dungeon import tunnel_doors
+                from generators.wall_styles import apply_walls, load_styles, style_for_theme
+                if plan.walls:
+                    style = load_styles()[plan.walls]
+                elif plan.dungeon_theme:
+                    style = style_for_theme(plan.dungeon_theme)
+                else:
+                    style = load_styles()["rough"]
+                apply_walls(spec, style, rng_seed, extra_doors=tunnel_doors(spec))
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
             spec.wilderness["biome_substitution"] = intent.substitution.to_dict()
