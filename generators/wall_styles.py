@@ -208,8 +208,9 @@ def _apply_look(spec: ZoneSpec, style: WallStyle) -> None:
     """Give each surface the look the style asks for. ``rock`` moves masonry onto a
     ``<set>_rock_<surface>`` material with the same colour, so a theme's tint carries
     over; a surface that isn't masonry (a lava forge's basalt, an ice keep's ice) keeps
-    its own character. Materials nothing uses any more go, so they aren't packed."""
+    its own character. A material replaced everywhere goes, so it isn't packed."""
     holders = list(spec.rooms) + list(spec.corridors)
+    replaced: List[str] = []
     for surface in SURFACES:
         if style.look[surface] != "rock":
             continue
@@ -226,15 +227,18 @@ def _apply_look(spec: ZoneSpec, style: WallStyle) -> None:
             for h in holders:
                 if getattr(h, field) == old:
                     setattr(h, field, new)
+            replaced.append(old)
     used = {getattr(h, f"{s}_material") for h in holders for s in SURFACES}
-    for name in [n for n in spec.materials if n not in used]:
+    for name in [n for n in replaced if n not in used]:
         del spec.materials[name]
 
 
-def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
+def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int,
+                extra_doors: Optional[Mapping[str, Dict[str, list]]] = None) -> None:
     """Draw each room's Outline, last, once every door is known. Only ``room.outline``
     and the sidecar record change, so a style can't move a layout. Each room draws from
-    its own stream, so one room's shape can't shift another's."""
+    its own stream, so one room's shape can't shift another's. ``extra_doors`` is room id
+    -> doors no corridor makes (an outdoor dungeon's Tunnel), as ``add_room`` takes them."""
     height = body_height(spec.dungeon_race)
     records = spec.layout["rooms"]
     for room in spec.rooms:
@@ -246,8 +250,12 @@ def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
             shape = style.pick_shape(record.get("kind", room.kind), rng)
         (x0, y0, _), (x1, y1, _) = room.bounds
         box = (x0, y0, x1, y1)
-        room.outline = style.draw(box, room_doors(room, spec), _bridge_slots(room, spec),
+        extra = (extra_doors or {}).get(room.id)
+        room.outline = style.draw(box, room_doors(room, spec, extra), _bridge_slots(room, spec),
                                   shape, height, rng, room_height=room.height)
+        if room.outline is not None and extra:
+            room.outline.extra_doors = [(side, c0, c1) for side, cuts in sorted(extra.items())
+                                        for c0, c1, _top in cuts]
         if records:
             record["shape"] = shape
             record["fill"] = 1.0 if room.outline is None else round(room.outline.fill(box), 3)

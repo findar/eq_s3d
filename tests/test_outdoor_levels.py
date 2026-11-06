@@ -111,6 +111,15 @@ def test_v8_outdoor_dungeon_goes_down(tmp_path, case, verticality):
     assert report.corridors_passed
 
 
+def _boxes(spec):
+    """The rooms without what wall styles add (step 8)."""
+    rooms = spec.to_dict()["rooms"]
+    for r in rooms:
+        for key in ("outline", "floor_material", "wall_material", "ceiling_material"):
+            r.pop(key, None)
+    return rooms
+
+
 @pytest.mark.parametrize("case", ["e", "f"])
 def test_flat_is_the_step5_dungeon(case):
     """``flat`` lays the outdoor dungeon out as before task 7: one Level,
@@ -120,7 +129,7 @@ def test_flat_is_the_step5_dungeon(case):
     before = od.outdoor_dungeon_spec(
         "odl" + case + "f", seed, edges, room_count=counts[0], locks=counts[1],
         engine=GraphEngine(None, vertical_weight=1.0))
-    assert spec.to_dict()["rooms"] == before.to_dict()["rooms"]
+    assert _boxes(spec) == _boxes(before), "the layout is step 5's; only its walls differ"
     assert spec.wilderness[od.DUNGEON_KEY] == before.wilderness[od.DUNGEON_KEY]
     assert "levels" not in spec.layout
     foot = od.approach_foot(od.landscape_for(spec).matrix.landform)

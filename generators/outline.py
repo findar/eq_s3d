@@ -36,6 +36,8 @@ class Outline:
     # is flat, so a flat room's JSON is as short as it can be.
     lift: List[float] = field(default_factory=list)
     drop: List[float] = field(default_factory=list)
+    # Doors no corridor makes (an outdoor dungeon's Tunnel): (side, c0, c1).
+    extra_doors: List[Tuple[str, float, float]] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Outline":
@@ -43,7 +45,8 @@ class Outline:
                    cells=[list(c) for c in d["cells"]],
                    core=tuple(d["core"]),
                    throats=[tuple(t) for t in d.get("throats", [])],
-                   lift=list(d.get("lift", [])), drop=list(d.get("drop", [])))
+                   lift=list(d.get("lift", [])), drop=list(d.get("drop", [])),
+                   extra_doors=[tuple(e) for e in d.get("extra_doors", [])])
 
     def contains(self, pts: np.ndarray, tol: float = 1e-6) -> np.ndarray:
         """Which of the plan points ``pts`` (N, 2) lie on the room's floor. Each

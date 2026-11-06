@@ -234,7 +234,7 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
     for key in ("kind", "outline"):
         if not d.get(key):
             d.pop(key, None)
-    for key in ("lift", "drop"):     # a flat room's relief is empty
+    for key in ("lift", "drop", "extra_doors"):     # empty on most rooms
         if "outline" in d and not d["outline"][key]:
             del d["outline"][key]
     return d

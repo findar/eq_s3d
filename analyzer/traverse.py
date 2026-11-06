@@ -1102,7 +1102,7 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
     outline = room.outline
     (x0, y0, z0), (x1, y1, z1) = room.bounds
     planes = {"S": y0, "N": y1, "W": x0, "E": x1}
-    doors = _door_strips(room, spec)
+    doors = _door_strips(room, spec) + list(outline.extra_doors)
     slots = _bridge_slots(room, spec)
 
     def fail(reason: str) -> OutlineResult:

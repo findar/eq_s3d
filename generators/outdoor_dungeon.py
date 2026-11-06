@@ -903,6 +903,18 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     return spec
 
 
+def tunnel_doors(spec: ZoneSpec) -> Dict[str, Dict[str, list]]:
+    """The Tunnel as a door, for the room it opens into: room id -> {side: [(c0, c1,
+    top)]}, the form ``add_room`` and ``wall_styles.apply_walls`` take."""
+    e = Entrance.from_dict(spec.wilderness[DUNGEON_KEY]["entrance"])
+    origin, res = landscape_for(spec).synth.origin, float(landscape_for(spec).synth.resolution)
+
+    def coord(k):
+        return origin[1 - e.axis] + (k + 0.5) * res
+
+    return {e.room_id: {e.side: [(coord(e.cross), coord(e.cross + 1), e.room_floor + e.height)]}}
+
+
 def build_outdoor_dungeon_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> TerFile:
     """The one TER an outdoor-dungeon spec ships: its host terrain with the
     Apron and Mouth, and its rooms, corridors and Tunnel."""
