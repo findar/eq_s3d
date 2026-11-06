@@ -95,7 +95,7 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
 - [ ] 12. Tune from the first look
   - Card: [cards/12-tuning.md](cards/12-tuning.md)
   - Type: agent · Size: S · Depends: 10, 11
-  - Owns: rules/topology/, generators/topology/, generators/geometry.py (stairs), tests/test_vertical_build.py
+  - Owns: rules/topology/, generators/topology/, generators/geometry.py (stairs), generators/layout.py (stair routes), generators/builder.py (connector record), tests/test_vertical_build.py, tests/test_corridor_clearance.py, tests/test_bridges.py, tests/test_level_sidecar_maps.py, tests/test_topology_embed.py, tests/test_ruleset_warren.py
 
 - [ ] 13. Acceptance section, thorough run, timing
   - Card: [cards/13-release-prep.md](cards/13-release-prep.md)
