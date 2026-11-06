@@ -35,7 +35,7 @@ from . import semantics
 from .envelope import Envelope, EnvelopeFitError
 from .layout_engine import (ClassicEngine, ENGINES, RELATIONS,
                             LayoutContext, LayoutEngine)
-from .geometry import AUTO_STAIRS, MIN_LANE, MeshBuilder, stair_layout
+from .geometry import AUTO_STAIRS, MIN_LANE, MeshBuilder, bridge_layout, stair_layout
 from .routing import corridor_route, plan_route, exit_axis_x, route_footprint
 from .zone_types import STYLE_PROFILE
 
@@ -1548,6 +1548,8 @@ class LayoutGenerator:
                 else:
                     self._open_facing_walls(a, b)
                     self._open_facing_walls(b, a)
+            self._mark_bridges(spec.corridors[len(spec.corridors) - len(edges):],
+                               rooms, edges)
             return
         for k, (i, j) in enumerate(edges):
             a, b = rooms[i], rooms[j]
@@ -1654,6 +1656,117 @@ class LayoutGenerator:
             r.floor_z = st.base(k) + delta[k]
         if elevation or themed:
             self._relax_elevation(rooms, adj, entrance)
+
+    def _mark_bridges(self, corridors: List[CorridorSpec], rooms: List[RoomSpec],
+                      edges: List[Tuple[int, int]]) -> None:
+        """Step 7 task 11: a corridor within a Level that passes over a room
+        on a lower Level becomes a Bridge over it (``CorridorSpec.bridge``)
+        wherever ``geometry.bridge_layout`` can place one: the deck stays
+        where the corridor already runs (the Slab over the lower ceiling, so
+        the crossing split and the conflict pass left it alone), and the
+        lower room's ceiling opens in a slot under it. The slot's shaft
+        (the slot, from the lower ceiling to the corridor's ceiling) must be
+        clear of every other room, every other corridor and every other
+        Bridge's shaft; one Bridge per lower room. Corridors and rooms keep
+        their routes, floors and sizes, so nothing else moves, and a build
+        with no such corridor is unchanged. No rng draws."""
+        levels = self._stack.levels
+        by_id = {r.id: r for r in rooms}
+        shafts: List[Tuple[Tuple[float, float, float, float], float, float]] = []
+        bridged = set()
+        for k, (i, j) in enumerate(edges):
+            if levels[i] != levels[j]:
+                continue
+            cor = corridors[k]
+            for m, hall in enumerate(rooms):
+                if levels[m] >= levels[i] or m in bridged:
+                    continue
+                for cand in (dataclasses.replace(cor, bridge=hall.id),
+                             self._straight_cor(rooms, edges, k, cor, hall)):
+                    bl = cand and bridge_layout(cand, by_id)
+                    if not bl:
+                        continue
+                    shaft = (bl.slot, bl.ceiling, bl.top)
+                    if self._shaft_clear(rooms, edges, k, m, shaft, shafts):
+                        for f in ("from_x", "from_y", "to_x", "to_y", "bridge"):
+                            setattr(cor, f, getattr(cand, f))
+                        self._shapes[(i, j)] = self._make_shape(rooms, i, j, cor)
+                        bridged.add(m)
+                        shafts.append(shaft)
+                        break
+                if cor.bridge:
+                    break
+
+    def _straight_cor(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                      k: int, cor: CorridorSpec, hall: RoomSpec
+                      ) -> Optional[CorridorSpec]:
+        """Corridor ``k`` as a Bridge over ``hall`` on one straight leg: both
+        doors on the same cross line, inside both rooms' facing walls (and as
+        near the hall's middle as they allow), so the deck needn't turn. None
+        when the walls share too little, when it is the route already, or
+        when the new route meets a room or another corridor (the planned
+        pieces, with the Slab between)."""
+        i, j = edges[k]
+        a, b = rooms[i], rooms[j]
+        hw = cor.width / 2
+        along_x = self._exit_axis_x(a, b)
+        (ax0, ay0, _), (ax1, ay1, _) = a.bounds
+        (bx0, by0, _), (bx1, by1, _) = b.bounds
+        lo, hi = (max(ay0, by0), min(ay1, by1)) if along_x else (max(ax0, bx0), min(ax1, bx1))
+        lo, hi = lo + 2 * hw, hi - 2 * hw
+        if hi < lo:
+            return None
+        mid = hall.center_y if along_x else hall.center_x
+        c = min(hi, max(lo, mid))
+        if along_x:
+            if abs(cor.from_y - c) < 1e-6 and abs(cor.to_y - c) < 1e-6:
+                return None
+            new = dataclasses.replace(cor, from_y=c, to_y=c, bridge=hall.id)
+        else:
+            if abs(cor.from_x - c) < 1e-6 and abs(cor.to_x - c) < 1e-6:
+                return None
+            new = dataclasses.replace(cor, from_x=c, to_x=c, bridge=hall.id)
+        shape = self._make_shape(rooms, i, j, new)
+        if shape.blocked is not None:
+            return None
+        from .topology.embed import SLAB
+        for q, e in enumerate(edges):
+            if q == k or set(e) & {i, j}:
+                continue
+            for ra, za0, za1, _ in shape.pieces:
+                for rb, zb0, zb1, _ in self._shape(rooms, *e).pieces:
+                    if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
+                            and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH
+                            and zb0 - za1 < SLAB and za0 - zb1 < SLAB):
+                        return None
+        return new
+
+    def _shaft_clear(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                     k: int, m: int, shaft, shafts) -> bool:
+        """Is a Bridge's shaft (``(slot, zlo, zhi)``) for corridor ``k`` over
+        room ``m`` clear of every other room, every other corridor's planned
+        pieces and the ``shafts`` already kept? Touching is clear."""
+        (x0, y0, x1, y1), zlo, zhi = shaft
+        tol = 1e-6
+
+        def hits(rect, z0, z1) -> bool:
+            return (min(x1, rect[2]) - max(x0, rect[0]) > _TOUCH
+                    and min(y1, rect[3]) - max(y0, rect[1]) > _TOUCH
+                    and z0 < zhi - tol and zlo < z1 - tol)
+
+        for q, r in enumerate(rooms):
+            if q == m:
+                continue
+            (rx0, ry0, _), (rx1, ry1, _) = r.bounds
+            if hits((rx0, ry0, rx1, ry1), r.floor_z, r.floor_z + r.height):
+                return False
+        for q, e in enumerate(edges):
+            if q == k:
+                continue
+            for rect, z0, z1, _pin in self._shape(rooms, *e).pieces:
+                if hits(rect, z0, z1):
+                    return False
+        return not any(hits(rect, z0, z1) for rect, z0, z1 in shafts)
 
     @staticmethod
     def _z_clear(zlo: float, zhi: float, room: RoomSpec) -> bool:

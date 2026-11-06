@@ -251,6 +251,17 @@ def scale_vertical(rule_set: "RuleSet", factor: float) -> "RuleSet":
     return replace(rule_set, recipe=recipe)
 
 
+def without_bridges(rule_set: "RuleSet") -> "RuleSet":
+    """*rule_set* without the rules that lay a ``bridge``-tagged edge: with
+    stacking off there are no Levels to bridge (step 7 task 11)."""
+    bridges = {name for name, r in rule_set.rules.items()
+               if any("bridge" in e.tags for e in r.edges)}
+    recipe = tuple(
+        replace(stage, apply={k: w for k, w in stage.apply.items() if k not in bridges})
+        for stage in rule_set.recipe)
+    return replace(rule_set, recipe=recipe)
+
+
 class GraphEngine:
     """Graph rewriting (design "Placement"): a rule set grows a Topology_Graph
     of exactly n rooms, its placement lays the rooms out, and each grammar
@@ -332,6 +343,8 @@ class GraphEngine:
         if weight is None:
             weight = 1.0 if self.stacking else 0.0
         rs = scale_vertical(self.rules_for(ctx.build.theme), weight)
+        if not self.stacking:
+            rs = without_bridges(rs)
         if room_count < 1:
             return EngineResult(rooms=[], edges=[], record=self._record(rs, None, [], {}, []))
         grown = grow(rs, room_count, rng=ctx.rng, context=ctx.build)

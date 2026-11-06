@@ -38,7 +38,7 @@ ROOM_KINDS: Tuple[str, ...] = ("entrance", "chamber", "passage", "hub", "lair", 
 BASE_KINDS: Tuple[str, ...] = (AREA,) + ROOM_KINDS
 SIZE_CLASSES: Tuple[str, ...] = ("tiny", "small", "medium", "large", "huge")
 RELATIONS: Tuple[str, ...] = ("above", "below", "level", "any")
-TAGS: Tuple[str, ...] = ("threshold",)
+TAGS: Tuple[str, ...] = ("threshold", "bridge")
 SHAPES: Tuple[str, ...] = ("rect",)
 
 _FLIP = {"above": "below", "below": "above", "level": "level", "any": "any"}

@@ -250,6 +250,204 @@ def _layout_stair(waypoints, axes, carry, from_z, to_z, hw, avoid=()
 
 
 # ---------------------------------------------------------------------------
+# Bridges (verticality step 7 task 11, Requirement 3.4)
+# ---------------------------------------------------------------------------
+#
+# A Bridge is a corridor between two rooms on one Level that crosses a lower
+# room's footprint; ``CorridorSpec.bridge`` names that room. The deck runs at
+# the corridor's own height, ABOVE the lower room's ceiling: a stacked layout
+# keeps the Slab between every upper floor and every lower ceiling, so the
+# deck always fits and the lower room keeps its height (nothing of it changes
+# but its ceiling). The lower room's ceiling is cut open in a slot under the
+# deck and ``margin`` either side of it, so the void reads from both levels:
+# from below, a slot in the roof with the deck across it; from the deck, a
+# drop past the rails into the room. The slot is a shaft up to the corridor's
+# ceiling: side walls ``margin`` off the deck from the lower ceiling to the
+# corridor's ceiling, the corridor's ceiling spanning the shaft, and each end
+# closed down to the lower ceiling round the deck (where the corridor goes on
+# past the room's wall, round the tube's opening; at a doorway, back to back
+# with the room's wall). The deck is a slab DECK_THICKNESS thick with a low
+# wall (rail) on each edge, RAIL_SHARE of the corridor's height (the corridor
+# is 2.5 H tall, so 0.6 H) and never under RAIL_MIN (over the walk agent's
+# 3 u step-up, so the walk can't step onto a rail). Falling past a rail lands
+# in the room below, which the gate requires reachable on foot anyway.
+
+#: The deck slab's thickness (its underside is the lower room's view of it).
+DECK_THICKNESS = 2.0
+#: A rail's height as a share of the corridor's height, and its least height.
+RAIL_SHARE = 0.24
+RAIL_MIN = 3.5
+#: The lower room's ceiling kept either side of the slot, in corridor
+#: half-widths; the slot's margin either side of the deck is one half-width,
+#: never less than MIN_MARGIN of one (else no bridge).
+LEDGE = 0.5
+MIN_MARGIN = 0.5
+
+
+@dataclass(frozen=True)
+class BridgeLayout:
+    """Where a Bridge's deck and slot sit (``bridge_layout``).
+
+    The deck is leg ``leg`` of the corridor's route (along X when
+    ``along_x``, on the cross line ``cross``) between ``s0`` and ``s1``
+    along that axis (s0 < s1): the stretch over the bridged ``room``. Its
+    floor is ``z0`` at s0 and ``z1`` at s1 (linear: a ramp's slope goes
+    through). ``ends`` says what closes each end: ``"wall"`` (the room's
+    wall, the corridor going on past it) or ``"door"`` (the doorway of the
+    room the corridor ends in). ``ceiling`` is the bridged room's ceiling,
+    ``margin`` the open slot either side of the deck, ``rail`` the rails'
+    height and ``top`` the shaft's highest point (the corridor's ceiling).
+    """
+    room: str
+    leg: int
+    along_x: bool
+    cross: float
+    s0: float
+    s1: float
+    z0: float
+    z1: float
+    hw: float
+    margin: float
+    ceiling: float
+    ends: Tuple[str, str]
+    rail: float
+    top: float
+
+    @property
+    def slot(self) -> Tuple[float, float, float, float]:
+        """The opening cut in the room's ceiling, (x0, y0, x1, y1)."""
+        w = self.hw + self.margin
+        return _uv_rect(self.along_x, self.s0, self.s1, self.cross - w, self.cross + w)
+
+    def z_at(self, s: float) -> float:
+        """The deck's floor height at ``s`` along the leg."""
+        if self.s1 - self.s0 <= 1e-9:
+            return self.z0
+        return self.z0 + (self.z1 - self.z0) * (s - self.s0) / (self.s1 - self.s0)
+
+
+def bridge_layout(cor: CorridorSpec, rooms) -> Optional[BridgeLayout]:
+    """The Bridge ``cor`` makes over the room ``cor.bridge`` names, or None
+    when it can't make one: not a bridge, a stair (``steps`` != 0), the room
+    missing or one of its own, a route that doesn't cross the room on exactly
+    one leg (or turns inside it), a slot that doesn't fit (``MIN_MARGIN``
+    within the room's ``LEDGE``, and at a doorway within that room's wall), a
+    deck shorter than it is wide, or a deck less than the Slab over the
+    room's ceiling. ``rooms`` maps room id
+    to RoomSpec, as for ``corridor_route``. The builder builds from it and
+    the layout plans with it, so the two agree."""
+    if not cor.bridge or cor.steps != 0 or cor.bridge in (cor.from_room, cor.to_room):
+        return None
+    room = rooms.get(cor.bridge)
+    if room is None:
+        return None
+    from .topology.embed import SLAB
+    route = corridor_route(cor, rooms)
+    wps = list(route.waypoints)
+    axes = list(route.axes)
+    zs, _carry = MeshBuilder._waypoint_zs(wps, None if route.carry < 0 else route.carry,
+                                          cor.from_z, cor.to_z)
+    hw = cor.width / 2
+    (rx0, ry0, _), (rx1, ry1, _) = room.bounds
+    fp = (rx0, ry0, rx1, ry1)
+    for i in range(1, len(wps) - 1):
+        if _overlap_area(MeshBuilder._bend_square(wps, i, hw), fp) > 0:
+            return None
+    hits = []
+    for k in range(len(wps) - 1):
+        ends = MeshBuilder._leg_ends(wps, k, hw, zs)
+        if ends is None:
+            continue
+        (ax, ay), (bx, by) = ends
+        if axes[k]:
+            rect = (min(ax, bx), ay - hw, max(ax, bx), ay + hw)
+        else:
+            rect = (ax - hw, min(ay, by), ax + hw, max(ay, by))
+        if _overlap_area(rect, fp) > 0:
+            hits.append((k, ends))
+    if len(hits) != 1:
+        return None
+    k, ((ax, ay), (bx, by)) = hits[0]
+    along_x = axes[k]
+    ua, ub = (ax, bx) if along_x else (ay, by)
+    c = ay if along_x else ax
+    h_lo, h_hi = (rx0, rx1) if along_x else (ry0, ry1)
+    c_lo, c_hi = (ry0, ry1) if along_x else (rx0, rx1)
+    lo, hi = min(ua, ub), max(ua, ub)
+    s0, s1 = max(lo, h_lo), min(hi, h_hi)
+
+    def z_leg(u):
+        if abs(ub - ua) <= 1e-9:
+            return zs[k]
+        return zs[k] + (zs[k + 1] - zs[k]) * (u - ua) / (ub - ua)
+
+    margin = min(hw, (c - hw) - (c_lo + LEDGE * hw), (c_hi - LEDGE * hw) - (c + hw))
+    end_kind = []
+    for low, s, past in ((True, s0, h_lo > lo + 1e-6), (False, s1, h_hi < hi - 1e-6)):
+        if past:
+            end_kind.append("wall")
+            continue
+        # The deck ends at the leg's own end there: a doorway, or no bridge.
+        wp = k if abs(s - ua) <= 1e-6 else k + 1
+        if wp not in (0, len(wps) - 1):
+            return None
+        door = rooms.get(cor.from_room if wp == 0 else cor.to_room)
+        if door is None:
+            return None
+        (dx0, dy0, _), (dx1, dy1, _) = door.bounds
+        d_lo, d_hi = (dy0, dy1) if along_x else (dx0, dx1)
+        margin = min(margin, (c - hw) - d_lo, d_hi - (c + hw))
+        # The doorway sits a little inside its room's wall: the slot starts
+        # at the wall, so the room's own floor stays whole.
+        a_lo, a_hi = (dx0, dx1) if along_x else (dy0, dy1)
+        if low:
+            s0 = max(s0, a_hi)
+        else:
+            s1 = min(s1, a_lo)
+        end_kind.append("door")
+    if margin < MIN_MARGIN * hw - 1e-9 or s1 - s0 < 2 * hw - 1e-9:
+        return None
+    z0, z1 = z_leg(s0), z_leg(s1)
+    ceiling = room.floor_z + room.height
+    if min(z0, z1) - ceiling < SLAB - 1e-6:
+        return None
+    rail = min(max(RAIL_MIN, RAIL_SHARE * cor.height), cor.height / 2)
+    return BridgeLayout(room=room.id, leg=k, along_x=along_x, cross=c, s0=s0, s1=s1,
+                        z0=z0, z1=z1, hw=hw, margin=margin, ceiling=ceiling,
+                        ends=(end_kind[0], end_kind[1]), rail=rail,
+                        top=max(z0, z1) + cor.height)
+
+
+def _bridge_slots(room: RoomSpec, spec: ZoneSpec):
+    """The slots Bridges cut in ``room``'s ceiling (none for every room no
+    corridor bridges, so those build exactly as before)."""
+    bridging = [c for c in spec.corridors if c.bridge == room.id]
+    if not bridging:
+        return []
+    rooms = {r.id: r for r in spec.rooms}
+    out = []
+    for c in bridging:
+        bl = bridge_layout(c, rooms)
+        if bl is not None:
+            out.append(bl.slot)
+    return out
+
+
+def _ceiling_cells(x0, y0, x1, y1, holes):
+    """The rectangle (x0, y0, x1, y1) less the ``holes``, as grid cells."""
+    xs = sorted({x0, x1, *(min(x1, max(x0, v)) for h in holes for v in (h[0], h[2]))})
+    ys = sorted({y0, y1, *(min(y1, max(y0, v)) for h in holes for v in (h[1], h[3]))})
+    out = []
+    for xa, xb in zip(xs, xs[1:]):
+        for ya, yb in zip(ys, ys[1:]):
+            mx, my = (xa + xb) / 2, (ya + yb) / 2
+            if any(h[0] < mx < h[2] and h[1] < my < h[3] for h in holes):
+                continue
+            out.append((xa, ya, xb, yb))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Mesh builder
 # ---------------------------------------------------------------------------
 
@@ -374,11 +572,15 @@ class MeshBuilder:
             (x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
             normal=(0, 0, 1), material=floor_mat,
         )
-        # Ceiling — normal points down (-Z), CCW from below
-        self.add_quad(
-            (x0, y1, z1), (x1, y1, z1), (x1, y0, z1), (x0, y0, z1),
-            normal=(0, 0, -1), material=ceiling_mat,
-        )
+        # Ceiling — normal points down (-Z), CCW from below. A room a Bridge
+        # crosses has the bridge's slot cut out of it (``bridge_layout``).
+        slots = _bridge_slots(room, spec)
+        for cx0, cy0, cx1, cy1 in (_ceiling_cells(x0, y0, x1, y1, slots) if slots
+                                   else [(x0, y0, x1, y1)]):
+            self.add_quad(
+                (cx0, cy1, z1), (cx1, cy1, z1), (cx1, cy0, z1), (cx0, cy0, z1),
+                normal=(0, 0, -1), material=ceiling_mat,
+            )
 
         # Walls (inward-facing). A side in open_walls is cut only where a
         # corridor meets it: wall pieces either side of each doorway and a
@@ -470,7 +672,8 @@ class MeshBuilder:
         # measurement and the continuity/terrain consumers. A Route's
         # carry == -1 means "carry the longest leg", which _emit_route spells
         # as carry=None.
-        route = corridor_route(cor, {r.id: r for r in spec.rooms})
+        rooms = {r.id: r for r in spec.rooms}
+        route = corridor_route(cor, rooms)
         z_carry = None if route.carry < 0 else route.carry
 
         self._emit_route(
@@ -478,7 +681,8 @@ class MeshBuilder:
             from_z=cor.from_z, to_z=cor.to_z,
             hw=hw, height=cor.height, steps=cor.steps,
             floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat,
-            avoid=_room_rects(spec.rooms) if cor.steps < 0 else ())
+            avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
+            bridge=bridge_layout(cor, rooms) if cor.bridge else None)
 
     @staticmethod
     def _seg_len(waypoints, k):
@@ -497,7 +701,7 @@ class MeshBuilder:
         return zs, carry
 
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
-                    steps, floor_mat, wall_mat, ceiling_mat, avoid=()):
+                    steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None):
         """
         Shared multi-segment corridor builder. `waypoints` is an ordered list of
         (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
@@ -534,6 +738,10 @@ class MeshBuilder:
             if ends is None:
                 continue   # the bend squares already cover this short leg
             (x0, y0), (x1, y1) = ends
+            if bridge is not None and k == bridge.leg:
+                self._add_bridge_leg(ends, zs[k], zs[k + 1], bridge, height,
+                                     floor_mat, wall_mat, ceiling_mat)
+                continue
             leg_steps = steps if k == carry else 0
             self._add_straight_leg(
                 x0, y0, zs[k], x1, y1, zs[k + 1],
@@ -716,6 +924,109 @@ class MeshBuilder:
         zc = cz + height
         self.add_quad((x0, y1, zc), (x1, y1, zc), (x1, y0, zc), (x0, y0, zc),
                       normal=(0, 0, -1), material=ceiling_mat)
+
+    # ------------------------------------------------------------------
+    # Bridges (step 7 task 11): the deck over a lower room's slot
+    # ------------------------------------------------------------------
+
+    def _facing_quad(self, pts, normal, material) -> None:
+        """A planar quad from four corners in any order, wound CCW seen from
+        the side ``normal`` points to (the winding is the floor/ceiling test)."""
+        cx = sum(p[0] for p in pts) / 4
+        cy = sum(p[1] for p in pts) / 4
+        cz = sum(p[2] for p in pts) / 4
+        n = normal
+        e1 = (1.0, 0.0, 0.0) if abs(n[0]) < 0.9 else (0.0, 1.0, 0.0)
+        d = sum(a * b for a, b in zip(e1, n))
+        e1 = tuple(a - d * b for a, b in zip(e1, n))
+        e2 = (n[1] * e1[2] - n[2] * e1[1], n[2] * e1[0] - n[0] * e1[2],
+              n[0] * e1[1] - n[1] * e1[0])
+
+        def ang(p):
+            q = (p[0] - cx, p[1] - cy, p[2] - cz)
+            return math.atan2(sum(a * b for a, b in zip(q, e2)),
+                              sum(a * b for a, b in zip(q, e1)))
+
+        a, b, c, e = sorted(pts, key=ang)
+        self.add_quad(a, b, c, e, normal=normal, material=material)
+
+    def _add_bridge_leg(self, ends, fz, tz, bl: "BridgeLayout", height,
+                        floor_mat, wall_mat, ceiling_mat) -> None:
+        """Leg ``bl.leg`` of a Bridge: the plain corridor up to the slot, the
+        deck and its shaft over it (``_add_bridge_span``), the plain corridor
+        after it. The ramp's slope runs straight through all three."""
+        (x0, y0), (x1, y1) = ends
+        ua, ub = (x0, x1) if bl.along_x else (y0, y1)
+
+        def z(u):
+            return fz if abs(ub - ua) <= 1e-9 else fz + (tz - fz) * (u - ua) / (ub - ua)
+
+        def xy(u):
+            return _uv_to_xy(bl.along_x, u, bl.cross)
+
+        lo, hi = min(ua, ub), max(ua, ub)
+        for p, q in ((lo, bl.s0), (bl.s1, hi)):
+            if q - p > 1e-6:
+                (px, py), (qx, qy) = xy(p), xy(q)
+                self._add_straight_leg(px, py, z(p), qx, qy, z(q), bl.along_x,
+                                       bl.hw, height, 0, floor_mat, wall_mat,
+                                       ceiling_mat)
+        self._add_bridge_span(bl, height, floor_mat, wall_mat, ceiling_mat)
+
+    def _add_bridge_span(self, bl: "BridgeLayout", height, floor_mat, wall_mat,
+                         ceiling_mat) -> None:
+        """The deck (floor, underside, edges and rails) and the shaft round
+        it (side walls down to the lower room's ceiling, the corridor's
+        ceiling across it, the two end walls), from ``bl.s0`` to ``bl.s1``.
+        Subdivided like a ramp so each deck face rises at most MAX_SEG_RISE."""
+        ax = bl.along_x
+        A = (1.0, 0.0, 0.0) if ax else (0.0, 1.0, 0.0)
+        V = (0.0, 1.0, 0.0) if ax else (1.0, 0.0, 0.0)
+        neg = lambda v: (-v[0], -v[1], -v[2])  # noqa: E731
+        up, down = (0.0, 0.0, 1.0), (0.0, 0.0, -1.0)
+
+        def P(u, v, z):
+            x, y = _uv_to_xy(ax, u, v)
+            return (x, y, z)
+
+        t = DECK_THICKNESS
+        hc = bl.ceiling
+        c, hw, m = bl.cross, bl.hw, bl.margin
+        d0, d1, w0, w1 = c - hw, c + hw, c - hw - m, c + hw + m
+        n = max(1, int(math.ceil(abs(bl.z1 - bl.z0) / MAX_SEG_RISE)))
+        for i in range(n):
+            p0 = bl.s0 + (bl.s1 - bl.s0) * i / n
+            p1 = bl.s0 + (bl.s1 - bl.s0) * (i + 1) / n
+            za, zb = bl.z_at(p0), bl.z_at(p1)
+            quad = self._facing_quad
+            # Deck: floor, underside, its two edges and a rail on each edge
+            # (both faces of a thin wall).
+            quad([P(p0, d0, za), P(p1, d0, zb), P(p1, d1, zb), P(p0, d1, za)], up, floor_mat)
+            quad([P(p0, d0, za - t), P(p1, d0, zb - t), P(p1, d1, zb - t), P(p0, d1, za - t)],
+                 down, wall_mat)
+            for v, out in ((d0, neg(V)), (d1, V)):
+                quad([P(p0, v, za - t), P(p1, v, zb - t), P(p1, v, zb), P(p0, v, za)],
+                     out, wall_mat)
+                for face in (out, neg(out)):
+                    quad([P(p0, v, za), P(p1, v, zb), P(p1, v, zb + bl.rail),
+                          P(p0, v, za + bl.rail)], face, wall_mat)
+            # Shaft: side walls from the lower ceiling to the corridor's
+            # ceiling, and that ceiling across the whole slot.
+            for v, inward in ((w0, V), (w1, neg(V))):
+                quad([P(p0, v, hc), P(p1, v, hc), P(p1, v, zb + height), P(p0, v, za + height)],
+                     inward, wall_mat)
+            quad([P(p0, w0, za + height), P(p1, w0, zb + height), P(p1, w1, zb + height),
+                  P(p0, w1, za + height)], down, ceiling_mat)
+        # Ends: closed from the lower ceiling up round the deck (the tube
+        # going on, or the room's doorway, fills the deck's own width).
+        for s, inward in ((bl.s0, A), (bl.s1, neg(A))):
+            z = bl.z_at(s)
+            for v0, v1 in ((w0, d0), (d1, w1)):
+                quad([P(s, v0, hc), P(s, v1, hc), P(s, v1, z + height), P(s, v0, z + height)],
+                     inward, wall_mat)
+            if z - t - hc > 1e-6:
+                quad([P(s, d0, hc), P(s, d1, hc), P(s, d1, z - t), P(s, d0, z - t)],
+                     inward, wall_mat)
 
     def _seg_quad(self, along_x, pos0, pos1, c0, c1, z_lo0, z_lo1, zc0, zc1,
                   floor_mat, wall_mat, ceiling_mat):
