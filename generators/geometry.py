@@ -456,6 +456,7 @@ def _ceiling_cells(x0, y0, x1, y1, holes):
 # repeat per 100 u (the box backend's scale before interesting textures).
 DEFAULT_UV_SCALE = 0.01
 ROUGH_SPACING = 16.0    # a rough corridor's walls bend about this often (u)
+STEP_WIDTH = 14.0   # a dais's steps are this wide, or most of its side (u)
 WALL_ROW = 14.0     # a shaped room's walls come in rows about this tall (the era's edge)
 
 
@@ -564,7 +565,9 @@ class MeshBuilder:
         ``extra_doors`` adds openings no corridor in the spec makes, as
         ``{side: [(c0, c1, top), ...]}`` like ``_door_openings`` (an outdoor
         dungeon's Tunnel); the side must be in ``room.open_walls``. A room with
-        an Outline builds from that instead (``add_outline_room``)."""
+        an Outline builds from that instead (``add_outline_room``). What stands in the room
+        (its Features) is built either way."""
+        self._add_features(room, spec)
         if room.outline is not None:
             self.add_outline_room(room, spec, extra_doors)
             return
@@ -636,6 +639,68 @@ class MeshBuilder:
         else:               # "E": x = x1, normal -X
             self.add_quad((x1, a, lo), (x1, a, hi), (x1, b, hi), (x1, b, lo),
                           normal=(-1, 0, 0), material=wall_mat)
+
+    # ------------------------------------------------------------------
+    # Primitive: what stands in a room (step 9, generators/room_features.py)
+    # ------------------------------------------------------------------
+
+    def _add_features(self, room: RoomSpec, spec: ZoneSpec) -> None:
+        if not room.features:
+            return
+        wall_mat = self.material_id(spec.materials[room.wall_material])
+        floor_mat = self.material_id(spec.materials[room.floor_material])
+        for feat in room.features:
+            top = feat.height if feat.height > 0 else room.height
+            self._add_solid(feat.plan, room.floor_z, room.floor_z + top, wall_mat,
+                            floor_mat if feat.kind == "dais" else wall_mat,
+                            walkable=feat.kind == "dais")
+            if feat.kind == "dais":
+                self._add_dais_steps(feat, room, wall_mat, floor_mat)
+
+    def _add_solid(self, plan, z0, z1, side_mat, top_mat, walkable=False) -> None:
+        """A closed solid over ``plan``, from z0 to z1. Its foot and head stand past a moving
+        floor or ceiling, so those meet it with no gap. Its caps close it; only a walkable
+        top faces up, so nothing else reads as floor."""
+        # Long sides split to the era's edge, in the caps too, so there's no T-junction.
+        pts = []
+        for a, b in zip(plan, list(plan[1:]) + list(plan[:1])):
+            pieces = max(1, math.ceil(math.hypot(b[0] - a[0], b[1] - a[1]) / WALL_ROW))
+            pts += [(a[0] + (b[0] - a[0]) * k / pieces, a[1] + (b[1] - a[1]) * k / pieces) for k in range(pieces)]
+        rows = max(1, math.ceil((z1 - z0) / WALL_ROW))
+        scale = self._uv_scale[side_mat]
+        along = 0.0
+        for k in range(len(pts)):
+            b, a = pts[k], pts[(k + 1) % len(pts)]      # reversed, so the floor outside is on the left
+            run = math.hypot(b[0] - a[0], b[1] - a[1])
+            if run < 1e-9:
+                continue
+            normal = (-(b[1] - a[1]) / run, (b[0] - a[0]) / run, 0.0)
+            for row in range(rows):
+                lo, hi = z0 + (z1 - z0) * row / rows, z0 + (z1 - z0) * (row + 1) / rows
+                self._add_face([(a[0], a[1], lo), (a[0], a[1], hi), (b[0], b[1], hi), (b[0], b[1], lo)],
+                               [(-along * scale, -lo * scale), (-along * scale, -hi * scale),
+                                (-(along + run) * scale, -hi * scale), (-(along + run) * scale, -lo * scale)],
+                               normal, side_mat)
+            along += run
+        cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+        top_uv = self._uv_scale[top_mat]
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            tri = [(cx, cy), a, b] if walkable else [(cx, cy), b, a]
+            self._add_face([(x, y, z1) for x, y in tri], [(x * top_uv, -y * top_uv) for x, y in tri],
+                           (0, 0, 1 if walkable else -1), top_mat)
+            tri = [(cx, cy), b, a]
+            self._add_face([(x, y, z0) for x, y in tri], [(x * top_uv, -y * top_uv) for x, y in tri],
+                           (0, 0, -1), top_mat)
+
+    def _add_dais_steps(self, feat, room: RoomSpec, wall_mat: int, floor_mat: int) -> None:
+        """Steps up the dais's ``steps_side``: each a closed block, the lowest furthest out. A
+        dais within one step-up needs none."""
+        n = dais_steps(feat.height)
+        if n == 0 or not feat.steps_side:
+            return
+        for k, plan in enumerate(step_plans(feat, n)):
+            self._add_solid(plan, room.floor_z, room.floor_z + feat.height * (k + 1) / (n + 1),
+                            wall_mat, floor_mat, walkable=True)
 
     # ------------------------------------------------------------------
     # Primitive: a shaped room (step 8, generators/outline.py)
@@ -1540,6 +1605,36 @@ def build_mesh(spec: ZoneSpec) -> MeshBuilder:
         mb.add_corridor(cor, spec)
 
     return mb
+
+
+def dais_steps(height: float) -> int:
+    """How many steps a dais this high needs: none within a riser, else enough that no riser
+    passes ``RISER_CAP``."""
+    return 0 if height <= RISER_CAP else int(math.ceil(height / RISER_CAP)) - 1
+
+
+def step_plans(feat, n: int) -> List[List[Tuple[float, float]]]:
+    """The footprints of a dais's ``n`` steps, lowest first, outside its ``steps_side``."""
+    xs, ys = [p[0] for p in feat.plan], [p[1] for p in feat.plan]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    along_x = feat.steps_side in ("N", "S")
+    mid = ((x0 + x1) if along_x else (y0 + y1)) / 2
+    width = min(STEP_WIDTH, (x1 - x0 if along_x else y1 - y0) * 0.8)
+    out = []
+    for k in range(n):
+        near, far = (n - 1 - k) * TREAD_DEPTH, (n - k) * TREAD_DEPTH
+        if feat.steps_side == "N":
+            a0, a1 = y1 + near, y1 + far
+        elif feat.steps_side == "S":
+            a0, a1 = y0 - far, y0 - near
+        elif feat.steps_side == "E":
+            a0, a1 = x1 + near, x1 + far
+        else:
+            a0, a1 = x0 - far, x0 - near
+        c0, c1 = mid - width / 2, mid + width / 2
+        out.append([(a0, c0), (a1, c0), (a1, c1), (a0, c1)] if not along_x
+                   else [(c0, a0), (c1, a0), (c1, a1), (c0, a1)])
+    return out
 
 
 def room_doors(room: RoomSpec, spec: ZoneSpec,

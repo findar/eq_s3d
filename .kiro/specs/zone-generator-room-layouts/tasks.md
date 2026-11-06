@@ -38,7 +38,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: analyzer/traverse.py, generators/zone_spec.py (`RoomSpec.features`), generators/room_features.py (the data type only), tests/test_gate_features.py
   - Reqs: 2
 
-- [ ] 3. Feature meshes
+- [x] 3. Feature meshes
   - Card: [cards/03-feature-mesh.md](cards/03-feature-mesh.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/room_features.py, generators/geometry.py, tests/test_feature_mesh.py

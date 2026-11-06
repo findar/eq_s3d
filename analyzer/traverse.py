@@ -1206,6 +1206,22 @@ def _free_cells(surf: WalkSurface, room: RoomSpec, agent: AgentModel):
         ab = b - a
         t = np.clip(((gx - a[0]) * ab[0] + (gy - a[1]) * ab[1]) / max(float(ab @ ab), 1e-9), 0.0, 1.0)
         free &= np.hypot(gx - (a[0] + t * ab[0]), gy - (a[1] + t * ab[1])) >= BODY_RADIUS
+    # The floor runs on under a solid, so inside one looks free. A solid shows by a cap: a
+    # raised top inside the room, or an underside wound down at the floor's height.
+    (_, _, _), (_, _, z1) = room.bounds
+    zs = tri[:, :, 2]
+    flat = nz > 0.9
+    lifted = max(room.outline.lift) if room.outline is not None and room.outline.lift else 0.0
+    raised = flat & (zs.min(axis=1) > z0 + lifted + 0.5) & (zs.max(axis=1) < z1 - 0.5) & (surf.normals[faces, 2] > 0)
+    under = flat & (zs.max(axis=1) < z0 + 0.5) & (surf.normals[faces, 2] < 0)
+    for cap in tri[raised | under]:
+        a, b, c = cap[:, :2]
+        d0 = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+        if abs(d0) < 1e-9:
+            continue
+        l0 = ((b[1] - c[1]) * (gx - c[0]) + (c[0] - b[0]) * (gy - c[1])) / d0
+        l1 = ((c[1] - a[1]) * (gx - c[0]) + (a[0] - c[0]) * (gy - c[1])) / d0
+        free &= ~((l0 >= 0) & (l1 >= 0) & (l0 + l1 <= 1))
     return xs, ys, free
 
 
