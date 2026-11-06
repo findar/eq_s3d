@@ -11,6 +11,7 @@ Usage::
     python scripts/topology_rules.py dry-run classic_eq --graphs 50 --rooms 5-20
     python scripts/topology_rules.py dry-run classic_eq --theme temple --race-scale 1.6
     python scripts/topology_rules.py draw classic_eq --out output/rules/
+    python scripts/topology_rules.py draw-walls --out output/rules/   # sample rooms per wall style
 
 ``<set>`` is a base set name in ``rules/topology/`` or a path to a ``.toml``
 file. ``--theme T`` merges the layers ``themes.toml`` gives theme T (those
@@ -35,6 +36,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from generators.outline import SHAPES as OUTLINE_SHAPES  # noqa: E402
 from generators.topology import draw  # noqa: E402
 from generators.topology.graph import SIZE_CLASSES  # noqa: E402
 from generators.topology.rewrite import BuildContext, TopologyError, grow  # noqa: E402
@@ -42,6 +44,8 @@ from generators.topology.ruleset import (  # noqa: E402
     RuleSet, RuleSetError, ThemeLayer, load_for_theme, load_layer, load_rule_set,
     load_theme_map, merge,
 )
+
+from generators.wall_styles import RECT, WALLS_DIR, load_style, load_styles  # noqa: E402
 
 RULES = ROOT / "rules" / "topology"
 THEMES = "themes.toml"
@@ -60,6 +64,8 @@ def _kind_of(path: Path) -> str:
             data = tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
         return "layer" if path.parent.name == "layers" else "set"   # the loader reports it
+    if "style" in data:
+        return "style"
     return "layer" if "layer" in data else "set"
 
 
@@ -98,6 +104,7 @@ def load_set(name: str, theme: Optional[str]) -> Tuple[RuleSet, RuleSet, List[Th
 def _shipped() -> List[Path]:
     files = sorted(RULES.glob("*.toml"))
     files += sorted((RULES / "layers").glob("*.toml"))
+    files += sorted(WALLS_DIR.glob("*.toml"))
     return files
 
 
@@ -113,6 +120,9 @@ def cmd_check(files: Sequence[str]) -> int:
             if kind == "themes":
                 tm = load_theme_map(p)
                 lines.append(f"ok    {p.name}: theme map, {len(tm.entries)} themes")
+            elif kind == "style":
+                st = load_style(p)
+                lines.append(f"ok    {p.name}: wall style, {st.complex}, {len(st.shapes)} kinds")
             elif kind == "layer":
                 l = load_layer(p)
                 layers[l.name] = (p, l)
@@ -307,6 +317,27 @@ def cmd_draw(name: str, theme: Optional[str], out: Path, example_rooms: int) -> 
     return 0
 
 
+def cmd_draw_walls(out: Path) -> int:
+    box = (-60.0, -45.0, 60.0, 45.0)
+    doors = [("E", -20.0, -2.0), ("N", 15.0, 33.0)]
+    rows = []
+    for name, style in load_styles().items():
+        used = sorted({shape for table in style.shapes.values() for shape in table})
+        samples = []
+        for shape in [s for s in (RECT,) + OUTLINE_SHAPES if s in used]:
+            for seed in (1, 2, 3):
+                outline = style.draw(box, doors, [], shape, 6.0, random.Random(f"{name}{shape}{seed}"))
+                fill = 1.0 if outline is None else outline.fill(box)
+                samples.append((f"{shape}, seed {seed}, fill {fill:.2f}",
+                                draw.outline_svg(outline, box, title=f"{name} {shape} {seed}")))
+        rows.append((name, style.description, samples))
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "walls.html"
+    path.write_text(draw.walls_html(rows), encoding="utf-8")
+    print(f"wrote {path} ({len(rows)} styles)")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -330,6 +361,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     w.add_argument("--out", type=Path, required=True)
     w.add_argument("--example-rooms", type=int, default=15,
                    help="rooms in the example grown graph (0 for none)")
+    v = sub.add_parser("draw-walls", help="write walls.html: sample rooms for each wall style")
+    v.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # the checker's "›"
@@ -339,6 +372,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if a.cmd == "dry-run":
             return cmd_dry_run(a.set, a.theme, a.graphs, a.rooms, a.race_scale, a.zone_type,
                                a.seed)
+        if a.cmd == "draw-walls":
+            return cmd_draw_walls(a.out)
         return cmd_draw(a.set, a.theme, a.out, a.example_rooms)
     except RuleSetError as exc:
         print(f"the rule set failed its checks ({len(exc.errors)} problem(s)):")
