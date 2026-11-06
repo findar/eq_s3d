@@ -1034,9 +1034,8 @@ python scripts/topology_rules.py draw classic_eq --theme temple --out output/rul
       fire in a dry run.
 
 Known limits (follow-ups in the spec's `archive.md`, not failures here):
-rooms all look alike (every room is a rectangle with its zone's textures, so
-Classic and Graph are hard to tell apart in 3D and kinds don't show; room
-shapes are step 8, room contents step 9); description words don't choose a
+Classic rooms all look alike (rectangles with their zone's textures; Graph's room
+shapes came with step 8, room contents are step 9); description words don't choose a
 layout (a description builds Graph with the theme's rule set; words like
 "maze" choosing a rule set are a fast follow); the warren bands rest on one stock zone
 (Blackburrow); and a race with no theme builds fortress rooms (cases e and
@@ -1162,8 +1161,7 @@ them side by side.
       Dramatic ~2.4 s).
 
 Known limits (follow-ups in the spec's `archive.md`, not failures here):
-rooms are still rectangles that all look alike (room shapes are step 8, room
-contents step 9); a dragon's stairs are very long, because risers stay about
+room shapes came after this step (step 8), and room contents are step 9; a dragon's stairs are very long, because risers stay about
 2 u however big the race; an outdoor dungeon almost always has two Levels even
 at Dramatic (of 30 seeds at each size, none reached three at 5 rooms, one at
 8, four at 12); giant and dragon outdoor dungeons drop rooms; stacked floors
@@ -1175,3 +1173,105 @@ a shaft over a tall hall, or a short deck, can read as a chimney or a landing
 
 - [ ] **[DEFERRED]** Walking stairs and bridges in the RoF2 client needs a
       takeover install; it moves to M6's in-engine smoke load.
+
+---
+
+## Step 8 — Room walls
+
+> Roadmap step 8 (`zone-generator-room-walls`). A **Graph** room keeps its Box for
+> placement and corridors, and draws its real walls inside it. **Walls** picks how:
+> **Rough** is a natural cave (irregular walls, a ceiling that rises and falls, a
+> rolling floor, rock on every surface), **Hewn** a man-made cave (a convex room of a few
+> long facets, a floor that's still laid, moving ceilings) and **Built** a masonry dungeon
+> (mostly plain rectangles, some with cut corners, wings or crosses; flat floors and
+> ceilings). **From theme** takes the theme's: Warren is Rough; Mine delve, Lava forge and
+> Ice keep are Hewn; everything else is Built. It follows the theme, not the rule set, so
+> Rule set Warren with no theme is Built. Under a hill, no theme means Rough. Corridors
+> match in the rock styles; stairs and bridges stay square. Classic stays rectangles.
+> Restart the Server on the merged code first and check the side panel shows no
+> stale-code banner.
+
+### Cases
+
+Pin the seed. **Every case is made from the Controls panel alone**; leave the description
+box empty. Layout is Graph (l aside), Size and Locks stay at their defaults, Verticality
+is Moderate unless the row names it, Theme and Race stay None and Rule set From theme
+unless the row names them. Each builds on the first attempt.
+
+| # | Controls | Seed | What it shows (sidecar `layout`) |
+|---|----------|------|-------------------------|
+| a | Dungeon, 12 rooms, Rule set **classic_eq**, Walls **Built** | 10 | `walls: built`; 7 plain, 3 `ell`, 2 `cut`; mean `fill` 0.96 |
+| b | Same, Walls **Hewn** | 10 | `walls: hewn`; 7 `blob`, 3 `cut`, 2 `long`; mean `fill` 0.87 |
+| c | Same, Walls **Rough** | 10 | `walls: rough`; 7 `blob`, 3 `ell`, 2 `long`; mean `fill` 0.75 |
+| d | Dungeon, 12 rooms, Theme **Warren**, Walls From theme | 4 | `walls: rough` |
+| e | Dungeon, 12 rooms, Theme **Mine delve**, Walls From theme | 6 | `walls: hewn`; a bridge; 3 Levels |
+| f | Dungeon, 12 rooms, Theme **Temple**, Walls From theme | 13 | `walls: built`; `nave` applied, its hall `long` |
+| g | Dungeon, 12 rooms, Theme **Ice keep**, Walls **Rough** | 9 | `walls: rough`, but its walls stay ice |
+| h | Dungeon, 12 rooms, Race **Ogre**, Walls **Rough** | 10 | `great_hall` applied; bigger bends for a bigger body; about 14,000 polygons |
+| i | Dungeon, 8 rooms, Race **Dragon**, Walls **Hewn** | 10 | `great_hall` applied; about 19,000 polygons |
+| j | Dungeon, 12 rooms, Rule set **classic_eq**, Walls **Rough** | 11 | Two bridges in a cave, `corr_4` over `room_1` and `corr_10` over `room_6` |
+| k | Outdoor dungeon, 8 rooms, **Dramatic**, Walls From theme, Landscape defaults | 13 | `walls: rough`; two Levels; a bridge; the Tunnel opens into a shaped room |
+| l | Dungeon, 12 rooms, Layout **Classic** | 10 | No `walls`; all rectangles; about 640 polygons |
+
+Cases a, b and c share a seed on purpose, and have the same rooms, Levels and corridor
+routes: only their walls differ. To see what a style draws without building a zone:
+
+```bash
+python scripts/topology_rules.py draw-walls --out output/rules/
+```
+
+### R.1 — The styles
+
+- [ ] **[MUST] Obvious at a glance** — a, b and c look like three different places, not one
+      dungeon with different textures.
+- [ ] **[MUST] Rough reads as a cave** — c and d have no Box left to see: no long straight
+      wall along a room's side, a ceiling that rises and falls, rock underfoot and overhead.
+- [ ] **[MUST] Hewn reads as cut** — b and e have rooms of a few long, straight facets:
+      laid out by someone, not formed by water.
+- [ ] **[MUST] Built reads as masonry** — a and f have square walls and flat floors and
+      ceilings, with cut corners and wings among mostly plain rooms.
+- [ ] **[MUST] Kinds show** — f's nave is long, and hubs and deep rooms differ from side rooms.
+- [ ] **[SHOULD] Themes keep their character** — g's walls are ice, not rock.
+
+### R.2 — Walking them
+
+- [ ] **[MUST] Every room on foot** — In each of a–l, walk from the spawn to every room
+      (case k: in through the mouth, as O.3).
+- [ ] **[MUST] Nothing shows through** — Look along walls, up at ceilings and across floors:
+      no gaps, no seam of void at a wall's foot or head, no see-through at a door.
+- [ ] **[MUST] Floors don't trap or slide** — c's rolling floor walks like a floor: no pits,
+      no slope that stops you, no step you catch on.
+- [ ] **[MUST] Doors** — Each door meets its corridor flush, the floor level across it, with a
+      lintel over it; the room opens out from a straight strip inside it.
+- [ ] **[SHOULD] Headroom** — Ceilings come down, but never so low you stoop or clip them.
+
+### R.3 — Corridors, stairs and bridges
+
+- [ ] **[MUST] Corridors match** — In c, corridors wander a little and their ceilings move;
+      their ends meet the rooms square. In a they stay ruler-straight.
+- [ ] **[MUST] Bridges in a cave** — In j, cross both bridges and look up from below, as V.3:
+      the shaft is closed, and the room's ceiling doesn't move around the slot.
+- [ ] **[MUST] Stairs in a cave** — In c, stairs walk as in V.2. They stay square.
+- [ ] **[SHOULD] Sized for the race** — h's and i's bends are bigger than c's and b's.
+
+### R.4 — Maps, controls and sidecar
+
+- [ ] **[MUST] Map draws walls** — The map (M) draws each room's real shape, and it matches
+      the 3D view. The EQ map layers bend with the walls.
+- [ ] **[MUST] Controls** — Walls shows for Dungeon and Outdoor dungeon under Graph, and hides
+      under Classic and for City and Wilderness. The side panel names a style you pick.
+- [ ] **[MUST] Sidecar** — `layout` has `walls`, and each entry in `layout.rooms` has `shape`,
+      `fill` and `outline` (`null` for a plain room).
+- [ ] **[MUST] Pinned seed repeats; blank seed is fresh** — As in W.4.
+- [ ] **[SHOULD] Snappy** — 14 rooms take about 6 s; 30 Rough rooms about 32 s.
+
+Known limits (follow-ups in the spec's `archive.md`, not failures here): stairs and bridges
+stay square in caves; one style per zone, though stock zones mix them; rough rooms read about
+13% narrower than their Box, hewn 7%, built 4%; Classic stays rectangles; built zones are
+fully flat, a touch flatter than stock; what's inside rooms (pillars, stalactites) is step 9.
+Style measures rest on few built stock zones (Befallen, Kurn's Tower, the Qeynos Catacombs).
+
+### R.5 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Walking shaped rooms in the RoF2 client needs a takeover install; sharp
+      concave corners may snag there. It moves to M6's in-engine smoke load.
