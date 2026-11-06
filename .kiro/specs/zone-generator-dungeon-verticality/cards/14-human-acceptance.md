@@ -6,7 +6,7 @@ Index entry: `tasks.md` task 14. **Type: human. Agents never tick this.**
 Merge task 13; the lead serves master in the browser pane; walk `docs/ACCEPTANCE.md` "Step 7 — Dungeon verticality".
 
 ## Checklist
-- [ ] Walk the acceptance section.
+- [x] Walk the acceptance section.
 
 ## Result
-"Signed off", or findings as bullets, which become new tasks before 15.
+"Signed off" (user, 2026-11-06, master `406292e`).

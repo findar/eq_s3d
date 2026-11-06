@@ -5,7 +5,30 @@ this file to pick up a task; it holds the "why".
 
 ## What landed
 
-Nothing yet. Rows are added at the close step (task 15).
+Signed off 2026-11-06; master `406292e`. Suite 1430 (fast and thorough both
+green). Graph dungeons and outdoor dungeons have Levels; every room-graph build
+is at stock scale.
+
+| Task | What landed |
+|------|-------------|
+| 1 | Stock vertical survey (`scripts/dungeon_vertical_survey.py`), design finding 7: stacked share 0.02–0.36, 2–4 levels, span 1.1–3.7 gaps |
+| 2 | The walk gate learns stairs and bridges before anything builds them: `classify_corridor`, `check_connector`, each failure named |
+| 3 | Planned stairs (`steps = AUTO_STAIRS`, `stair_layout`): risers up to 2 u, treads 3 u, switchbacks with flush landings, U-routes |
+| 4 | Levels from the rules' relations, `may_overlap_in_plan` opened, the Slab (14 u) |
+| 5 | The shared layout steps judge rooms and corridors in 3D on stacked builds; Classic byte-identical |
+| 6 | Vertical rules in the shipped sets; Verticality flat / moderate / dramatic sets stacking and vertical-rule weights |
+| 7 | Outdoor dungeons go down into the hill, the Tunnel entering the top Level |
+| 8 | Sidecar `levels`, `connectors`, `stacked_share`; a map band per stacked Level |
+| 9 | Gate sweep on built zones: stacked builds no worse than flat first try, reproducible |
+| 10 | First look signed off (no findings) |
+| 11 | Bridges: a railed deck over a lower room through a shaft in its ceiling, `bridge_hall` rule |
+| 12 | Third-room stair clips gone, bridges labelled in the sidecar, warren keeps its loops; the gate fails a corridor walled through a room |
+| 13 | `docs/ACCEPTANCE.md` "Step 7", the build-time test (14 rooms: flat 0.3 s, dramatic 2.4 s) |
+| 14 | Human acceptance pass signed off |
+| 16 | Race body heights from `racedata.txt` and stock room sizes, design finding 8 |
+| 17 | Stock scale for both engines: rooms 2.5–10 H tall and 8–20 H across, corridors 3 H wide and 2.5 H tall; `dragon` joins the races |
+| 18 | The gate counts only up-wound faces as floor, so ceilings stop passing as walkable |
+| 19 | Outdoor corridors and stairs stay inside the bowl |
 
 ## Decisions
 
@@ -55,6 +78,8 @@ recommended on all and continue"):
 
 - **Cities now share dungeon geometry** (task 17): with the zone-type floor area no longer sizing rooms, a plain city and a plain classic dungeon on the same seed build the same rooms (materials and lights differ). Cities need their own sizing or layout (streets, plazas) to read as cities.
 - **Dragon stairs are long** (task 17): risers stay 2 u, so a dragon's ~250 u level height is a very long switchback. A race-scaled riser or ramp-and-stair mix for big races is worth a look at the first look.
+- **Dramatic is only somewhat more than Moderate** (task 13): 2.70 Levels against 2.33 at 12 rooms on `classic_eq`, and 19 of 60 seeds stack the same at both. It's a weight on the vertical rules, so a stronger Dramatic would need more of them or a higher weight.
+- **Outdoor dungeons rarely reach three Levels** (task 13): at Dramatic, of 30 seeds each, 0 at 5 rooms, 1 at 8, 4 at 12. The hill's depth limits them. The requirement (more than one Level) holds.
 - **Height bands overlap at the top** (task 17): a human's tallest hall (60 u) is taller than a dragon's lowest room (52.5 u); footprints still separate (120 < 168 u).
 
 - **Giant and dragon outdoor dungeons drop rooms** (task 7): they always plan now, but giants keep every room in only 4-6 of 20 seeds and dragons 10-14 of 20 (5 rooms). A host sized to the race (a taller hill or a pit) would let them fit whole.

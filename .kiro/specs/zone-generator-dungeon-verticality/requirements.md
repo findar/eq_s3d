@@ -1,8 +1,9 @@
 # Requirements Document
 
-> **STATUS: roadmap step 7, ready.** Written 2026-11-04 at master `8edf1df`;
-> the user took the recommended answer to every open question the same day
-> (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 19 tasks).
+> **STATUS: roadmap step 7, DONE.** Written 2026-11-04 at master `8edf1df`,
+> signed off 2026-11-06 (master `406292e`). The user took the recommended answer
+> to every open question on 2026-11-04 (`archive.md` "Decisions"). What landed:
+> `archive.md`. Task index: `tasks.md` (card format, 19 tasks).
 
 ## Introduction
 

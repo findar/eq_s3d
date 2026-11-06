@@ -103,11 +103,11 @@ The design's open questions were answered on 2026-11-04 (`archive.md`
   - Owns: docs/ACCEPTANCE.md, tests/test_vertical_build.py
   - Reqs: 9.4, exit criteria 1–2
 
-- [ ] 14. HUMAN: verticality acceptance pass
+- [x] 14. HUMAN: verticality acceptance pass
   - Card: [cards/14-human-acceptance.md](cards/14-human-acceptance.md)
   - Type: human · Depends: 13
 
-- [ ] 15. Close step 7
+- [x] 15. Close step 7
   - Card: [cards/15-close.md](cards/15-close.md)
   - Type: agent · Size: S · Depends: 14 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-dungeon-verticality/, .kiro/specs/zone-generator/
