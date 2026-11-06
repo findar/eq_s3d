@@ -46,6 +46,8 @@ import numpy as np
 
 from core.pfs import PfsArchive
 from core.ter import FLAG_PASSABLE, TerFile
+from scipy.ndimage import binary_dilation, label
+
 from generators.geometry import (MeshBuilder, _bridge_slots, _door_openings, bridge_layout,
                                  is_auto_stair, stair_layout)
 from generators.routing import Rect, corridor_route, route_footprint
@@ -1171,9 +1173,137 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
     return OutlineResult(room.id, True)
 
 
+# ---- Features (step 9, Requirement 2) --------------------------------------
+#
+# A solid stands on an unbroken floor, so the walk surface alone thinks you can walk through
+# it. These checks read walls from the mesh, not RoomSpec.features, so the gate doesn't
+# take the generator's word: a plan grid over the room, each cell free if it's floor and
+# a body's radius from every wall at body height.
+
+BODY_RADIUS = 2.0     # how far a player's middle stays from a wall (u)
+CLEAR_CELL = 2.0      # the grid's cell (u)
+WALLED_OFF = 36.0     # a pocket of free floor this big, with no door, is walled off (u^2)
+
+
+def _free_cells(surf: WalkSurface, room: RoomSpec, agent: AgentModel):
+    """The room's plan grid: (x positions, y positions, free mask)."""
+    (x0, y0, z0), (x1, y1, _z1) = room.bounds
+    xs = np.arange(x0 + CLEAR_CELL / 2, x1, CLEAR_CELL)
+    ys = np.arange(y0 + CLEAR_CELL / 2, y1, CLEAR_CELL)
+    gx, gy = np.meshgrid(xs, ys, indexing="ij")
+    free = (room.outline.contains(np.c_[gx.ravel(), gy.ravel()]).reshape(gx.shape)
+            if room.outline is not None else np.ones(gx.shape, bool))
+    faces = _room_mesh_faces(surf, room)
+    tri = surf.verts[surf.faces[faces]]
+    nz = np.abs(surf.normals[faces, 2])
+    body = z0 + agent.player_height / 2
+    tall = (nz < 0.7) & (tri[:, :, 2].min(axis=1) <= body) & (tri[:, :, 2].max(axis=1) >= body)
+    for w in tri[tall]:
+        pts = w[:, :2]
+        d = np.linalg.norm(pts[:, None] - pts[None], axis=2)
+        i, j = np.unravel_index(d.argmax(), d.shape)
+        a, b = pts[i], pts[j]
+        ab = b - a
+        t = np.clip(((gx - a[0]) * ab[0] + (gy - a[1]) * ab[1]) / max(float(ab @ ab), 1e-9), 0.0, 1.0)
+        free &= np.hypot(gx - (a[0] + t * ab[0]), gy - (a[1] + t * ab[1])) >= BODY_RADIUS
+    return xs, ys, free
+
+
+def _door_cell(xs, ys, free, room: RoomSpec, door) -> Optional[Tuple[int, int]]:
+    """The free cell nearest the middle of a door, just inside its wall."""
+    side, c0, c1 = door
+    (x0, y0, _), (x1, y1, _) = room.bounds
+    mid = (c0 + c1) / 2
+    px, py = {"N": (mid, y1), "S": (mid, y0), "E": (x1, mid), "W": (x0, mid)}[side]
+    cand = np.argwhere(free)
+    if len(cand) == 0:
+        return None
+    d = np.hypot(xs[cand[:, 0]] - px, ys[cand[:, 1]] - py)
+    k = int(d.argmin())
+    return (int(cand[k, 0]), int(cand[k, 1])) if d[k] <= (c1 - c0) / 2 + 2 * BODY_RADIUS + CLEAR_CELL else None
+
+
+def check_features(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec, agent: AgentModel) -> OutlineResult:
+    """Judge a room holding Features or POIs from the mesh. ``reason`` is "" when it passes, or:
+
+      * ``"door <side> <c0>..<c1> is blocked"``: no free floor at a door
+      * ``"doors <a> and <b> are cut off from each other"``
+      * ``"floor walled off at (x, y)"``: free floor no door can reach
+      * ``"dais <n> can't be walked onto"``
+      * ``"POI <purpose> can't be reached"``
+    """
+    def fail(reason: str) -> OutlineResult:
+        return OutlineResult(room.id, False, reason)
+
+    extra = list(room.outline.extra_doors) if room.outline is not None else []
+    doors = _door_strips(room, spec) + extra
+    xs, ys, free = _free_cells(surf, room, agent)
+    labels, _n = label(free)
+    door_labels = {}
+    for door in doors:
+        cell = _door_cell(xs, ys, free, room, door)
+        side, c0, c1 = door
+        name = f"{side} {c0:.1f}..{c1:.1f}"
+        if cell is None:
+            return fail(f"door {name} is blocked")
+        door_labels[name] = labels[cell]
+    names = sorted(door_labels)
+    for other in names[1:]:
+        if door_labels[other] != door_labels[names[0]]:
+            return fail(f"doors {names[0]} and {other} are cut off from each other")
+    if names:
+        joined = door_labels[names[0]]
+        # Inside a solid is a free pocket too, since the floor runs on under it. A pocket
+        # counts as walled-off floor only if it reaches the room's own edge.
+        room_cells = (room.outline.contains(np.c_[np.repeat(xs, len(ys)), np.tile(ys, len(xs))])
+                      .reshape(len(xs), len(ys)) if room.outline is not None
+                      else np.ones((len(xs), len(ys)), bool))
+        outside = np.pad(~room_cells, 1, constant_values=True)
+        near = binary_dilation(outside, iterations=int(BODY_RADIUS / CLEAR_CELL) + 1)[1:-1, 1:-1]
+        for k in range(1, int(labels.max()) + 1):
+            if k == joined:
+                continue
+            cells = np.argwhere(labels == k)
+            if len(cells) * CLEAR_CELL ** 2 >= WALLED_OFF and near[labels == k].any():
+                x, y = xs[cells[:, 0]].mean(), ys[cells[:, 1]].mean()
+                return fail(f"floor walled off at ({x:.1f}, {y:.1f})")
+
+    # Standing on them: the room's walkable floor, flooded from where the doors are.
+    (x0, y0, z0), (x1, y1, z1) = room.bounds
+    std = np.nonzero(surf.standable)[0]
+    cen = surf.centroids[std]
+    own = std[(cen[:, 0] >= x0) & (cen[:, 0] <= x1) & (cen[:, 1] >= y0) & (cen[:, 1] <= y1)
+              & (cen[:, 2] >= z0 - 1) & (cen[:, 2] <= z1)]
+    if len(own) == 0:
+        return fail("POI can't be reached") if room.pois else OutlineResult(room.id, True)
+    low = own[surf.centroids[own, 2] <= z0 + agent.max_step_up / 2]
+    reached = _flood_subset(_local_adjacency(surf, agent, own), {int(f) for f in low})
+
+    def stands_at(x, y, z) -> bool:
+        for f in reached:
+            tri = surf.verts[surf.faces[f]]
+            if _point_in_tri_xy(x, y, tri) and abs(_plane_z_at(tri, x, y) - z) <= agent.max_step_up:
+                return True
+        return False
+
+    for k, feat in enumerate(room.features):
+        if feat.kind == "dais":
+            pts = np.array(feat.plan)
+            mx, my = pts.mean(axis=0)
+            if not stands_at(mx, my, z0 + feat.height):
+                return fail(f"dais {k} can't be walked onto")
+    for poi in room.pois:
+        if not stands_at(poi.x, poi.y, poi.z):
+            return fail(f"POI {poi.purpose} can't be reached")
+    return OutlineResult(room.id, True)
+
+
 def outline_checks(surf: WalkSurface, spec: ZoneSpec, agent: AgentModel) -> List[OutlineResult]:
-    """Every shaped room's verdict; none for a build of plain Boxes."""
-    return [check_outline(surf, r, spec, agent) for r in spec.rooms if r.outline is not None]
+    """Every shaped room's verdict, and every room holding Features or POIs; none for a
+    build of plain empty Boxes."""
+    out = [check_outline(surf, r, spec, agent) for r in spec.rooms if r.outline is not None]
+    out += [check_features(surf, r, spec, agent) for r in spec.rooms if r.features or r.pois]
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -92,7 +92,7 @@ What this means for the design:
 
 ## Features
 
-`generators/features.py`, data on `RoomSpec.features` (default empty, left out of JSON).
+`generators/room_features.py`, data on `RoomSpec.features` (default empty, left out of JSON).
 
 | Feature | Shape | Top | Style's form |
 |---|---|---|---|

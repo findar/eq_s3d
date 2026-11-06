@@ -32,16 +32,16 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: scripts/room_feature_survey.py, .kiro/specs/zone-generator-room-layouts/design.md (finding 1 only)
   - Reqs: 1
 
-- [ ] 2. The gate learns Features
+- [x] 2. The gate learns Features
   - Card: [cards/02-gate-features.md](cards/02-gate-features.md)
   - Type: agent · Size: M · Depends: —
-  - Owns: analyzer/traverse.py, generators/zone_spec.py (`RoomSpec.features`), generators/features.py (the data type only), tests/test_gate_features.py
+  - Owns: analyzer/traverse.py, generators/zone_spec.py (`RoomSpec.features`), generators/room_features.py (the data type only), tests/test_gate_features.py
   - Reqs: 2
 
 - [ ] 3. Feature meshes
   - Card: [cards/03-feature-mesh.md](cards/03-feature-mesh.md)
   - Type: agent · Size: M · Depends: 2
-  - Owns: generators/features.py, generators/geometry.py, tests/test_feature_mesh.py
+  - Owns: generators/room_features.py, generators/geometry.py, tests/test_feature_mesh.py
   - Reqs: 3
 
 - [ ] 4. Placement and the Spine
@@ -75,7 +75,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
 - [ ] 9. Pieces that suit each style
   - Card: [cards/09-style-pieces.md](cards/09-style-pieces.md)
   - Type: agent · Size: M · Depends: 8
-  - Owns: generators/features.py, rules/rooms/, generators/room_layouts.py, tests/test_feature_mesh.py
+  - Owns: generators/room_features.py, rules/rooms/, generators/room_layouts.py, tests/test_feature_mesh.py
   - Reqs: 3.2
 
 - [ ] 10. Themes and rooms read as themselves
@@ -93,7 +93,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
 - [ ] 12. Tune from the looks
   - Card: [cards/12-tuning.md](cards/12-tuning.md)
   - Type: agent · Size: S · Depends: 11
-  - Owns: rules/rooms/, generators/room_layouts.py, generators/features.py, tests/
+  - Owns: rules/rooms/, generators/room_layouts.py, generators/room_features.py, tests/
 
 - [ ] 13. Acceptance section, thorough run
   - Card: [cards/13-release-prep.md](cards/13-release-prep.md)

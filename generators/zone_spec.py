@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 
+from .room_features import POI, Feature
 from .outline import Outline
 
 from .zone_types import canonical_zone_type, read_zone_type, DEFAULT_ZONE_TYPE
@@ -83,6 +84,11 @@ class RoomSpec:
     # The room's real walls inside its Box (generators/outline.py, step 8).
     # None is a plain Box; left out of the JSON then, so those specs are unchanged.
     outline: Optional[Outline] = None
+
+    # What stands in the room, and its points of interest (generators/features.py, step 9).
+    # Empty on most rooms and left out of the JSON then.
+    features: List[Feature] = field(default_factory=list)
+    pois: List[POI] = field(default_factory=list)
 
     @property
     def bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
@@ -231,7 +237,7 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
     """A room's JSON; ``kind`` and ``outline`` only when set (classic rooms
     carry neither)."""
     d = asdict(room)
-    for key in ("kind", "outline"):
+    for key in ("kind", "outline", "features", "pois"):
         if not d.get(key):
             d.pop(key, None)
     for key in ("lift", "drop", "extra_doors"):     # empty on most rooms
@@ -375,6 +381,8 @@ class ZoneSpec:
             r = dict(r)
             if r.get("outline"):
                 r["outline"] = Outline.from_dict(r["outline"])
+            r["features"] = [Feature.from_dict(x) for x in r.get("features", [])]
+            r["pois"] = [POI.from_dict(x) for x in r.get("pois", [])]
             spec.rooms.append(RoomSpec(**r))
         for c in d.get("corridors", []):
             spec.corridors.append(CorridorSpec(**c))
