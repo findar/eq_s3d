@@ -25,6 +25,7 @@ from .semantics import body_height
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import (RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
                                _type_name, load_theme_map)
+from .textures.recipes import resolve as resolve_recipe
 from .zone_spec import ZoneSpec
 
 WALLS_DIR = Path(__file__).resolve().parent.parent / "rules" / "walls"
@@ -35,6 +36,8 @@ DEFAULT_KIND = "default"
 #: What a style asks the texture layer for: the theme's own look, or rock.
 LOOKS: Tuple[str, ...] = ("theme", "rock")
 SURFACES: Tuple[str, ...] = ("wall", "floor", "ceiling")
+#: The texture families that read as laid stone or carpentry, not rock.
+MASONRY: Tuple[str, ...] = ("dressed_stone", "brick", "flagstone", "cobble", "planks", "plaster")
 Band = Tuple[float, float]
 MIN_HEAD_H = 2.0        # the least headroom, in body heights
 MIN_HEAD = 8.0          # and in u: the player is 6 u tall
@@ -201,6 +204,33 @@ def style_for_theme(theme: str) -> WallStyle:
     return load_styles()[load_theme_map(THEMES_FILE).entry_for(theme or None).walls]
 
 
+def _apply_look(spec: ZoneSpec, style: WallStyle) -> None:
+    """Give each surface the look the style asks for. ``rock`` moves masonry onto a
+    ``<set>_rock_<surface>`` material with the same colour, so a theme's tint carries
+    over; a surface that isn't masonry (a lava forge's basalt, an ice keep's ice) keeps
+    its own character. Materials nothing uses any more go, so they aren't packed."""
+    holders = list(spec.rooms) + list(spec.corridors)
+    for surface in SURFACES:
+        if style.look[surface] != "rock":
+            continue
+        field = f"{surface}_material"
+        for old in sorted({getattr(h, field) for h in holders}):
+            recipe = resolve_recipe(old)
+            if recipe is None or recipe.family not in MASONRY:
+                continue
+            new = f"{old[: -len(surface) - 1]}_rock_{surface}"
+            if new not in spec.materials:
+                m = spec.materials[old]
+                spec.add_material(new, f"{new}.dds", shader=m.shader, color=m.color,
+                                  description=f"rough cave rock {surface}")
+            for h in holders:
+                if getattr(h, field) == old:
+                    setattr(h, field, new)
+    used = {getattr(h, f"{s}_material") for h in holders for s in SURFACES}
+    for name in [n for n in spec.materials if n not in used]:
+        del spec.materials[name]
+
+
 def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
     """Draw each room's Outline, last, once every door is known. Only ``room.outline``
     and the sidecar record change, so a style can't move a layout. Each room draws from
@@ -228,4 +258,5 @@ def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
     for cor in spec.corridors:
         cor.rough = style.corridor_break if cor.steps == 0 and not cor.bridge else 0.0
     spec.layout["walls"] = style.name
+    _apply_look(spec, style)
 
