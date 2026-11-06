@@ -18,6 +18,8 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
 
+from .outline import Outline
+
 from .zone_types import canonical_zone_type, read_zone_type, DEFAULT_ZONE_TYPE
 
 # ---------------------------------------------------------------------------
@@ -77,6 +79,10 @@ class RoomSpec:
     # to semantic types (generators/semantics.py). Left out of the JSON when
     # "" so classic Zone_Spec JSON is unchanged.
     kind: str = ""
+
+    # The room's real walls inside its Box (generators/outline.py, step 8).
+    # None is a plain Box; left out of the JSON then, so those specs are unchanged.
+    outline: Optional[Outline] = None
 
     @property
     def bounds(self) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
@@ -218,10 +224,12 @@ class MaterialSpec:
 
 
 def _room_dict(room: RoomSpec) -> Dict[str, Any]:
-    """A room's JSON; ``kind`` only when set (classic rooms carry none)."""
+    """A room's JSON; ``kind`` and ``outline`` only when set (classic rooms
+    carry neither)."""
     d = asdict(room)
-    if not d.get("kind"):
-        d.pop("kind", None)
+    for key in ("kind", "outline"):
+        if not d.get(key):
+            d.pop(key, None)
     return d
 
 
@@ -357,6 +365,9 @@ class ZoneSpec:
                 mv["color"] = tuple(mv["color"])
             spec.materials[k] = MaterialSpec(**mv)
         for r in d.get("rooms", []):
+            r = dict(r)
+            if r.get("outline"):
+                r["outline"] = Outline.from_dict(r["outline"])
             spec.rooms.append(RoomSpec(**r))
         for c in d.get("corridors", []):
             spec.corridors.append(CorridorSpec(**c))
