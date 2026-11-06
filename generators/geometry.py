@@ -681,15 +681,19 @@ class MeshBuilder:
 
         for cell in outline.cells:
             pts = [outline.verts[i] for i in cell]
+            lifts = [outline.lift_at(i) for i in cell]
+            drops = [outline.drop_at(i) for i in cell]
             cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+            mid_lift, mid_drop = sum(lifts) / len(cell), sum(drops) / len(cell)
             open_above = under_slot(cx, cy)
-            for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
-                f = [vertex(floor_at, x, y, z0, 1, (x * floor_uv, -y * floor_uv))
-                     for x, y in ((cx, cy), (ax, ay), (bx, by))]
+            for k, ((ax, ay), (bx, by)) in enumerate(zip(pts, pts[1:] + pts[:1])):
+                k2 = (k + 1) % len(cell)
+                f = [vertex(floor_at, x, y, z0 + rise, 1, (x * floor_uv, -y * floor_uv))
+                     for x, y, rise in ((cx, cy, mid_lift), (ax, ay, lifts[k]), (bx, by, lifts[k2]))]
                 self.polygons.append(Polygon(f[0], f[1], f[2], floor_mat, 0))
                 if not open_above:
-                    c = [vertex(ceiling_at, x, y, z1, -1, (x * ceiling_uv, y * ceiling_uv))
-                         for x, y in ((bx, by), (ax, ay), (cx, cy))]
+                    c = [vertex(ceiling_at, x, y, z1 - fall, -1, (x * ceiling_uv, y * ceiling_uv))
+                         for x, y, fall in ((bx, by, drops[k2]), (ax, ay, drops[k]), (cx, cy, mid_drop))]
                     self.polygons.append(Polygon(c[0], c[1], c[2], ceiling_mat, 0))
 
         doors = _door_openings(room, spec)
@@ -714,19 +718,25 @@ class MeshBuilder:
         rows = max(1, math.ceil((z1 - z0) / WALL_ROW))
         for loop in outline.wall_loops():
             along = 0.0
-            pts = [outline.verts[i] for i in loop]
-            for a, b in zip(pts, pts[1:] + pts[:1]):
+            for i, i2 in zip(loop, loop[1:] + loop[:1]):
+                a, b = outline.verts[i], outline.verts[i2]
                 run = math.hypot(b[0] - a[0], b[1] - a[1])
                 normal = (-(b[1] - a[1]) / run, (b[0] - a[0]) / run, 0.0)
+                la, lb = z0 + outline.lift_at(i), z0 + outline.lift_at(i2)
+                ha, hb = z1 - outline.drop_at(i), z1 - outline.drop_at(i2)
                 top = door_top(a, b)
-                bands = [(top, z1)] if top is not None else [
-                    (z0 + (z1 - z0) * k / rows, z0 + (z1 - z0) * (k + 1) / rows) for k in range(rows)]
-                for lo, hi in bands:
-                    if hi <= lo:
+                if top is not None:
+                    bands = [(top, ha, top, hb)]
+                else:
+                    bands = [(la + (ha - la) * k / rows, la + (ha - la) * (k + 1) / rows,
+                              lb + (hb - lb) * k / rows, lb + (hb - lb) * (k + 1) / rows)
+                             for k in range(rows)]
+                for lo_a, hi_a, lo_b, hi_b in bands:
+                    if hi_a <= lo_a or hi_b <= lo_b:
                         continue
-                    self._add_face([(a[0], a[1], lo), (a[0], a[1], hi), (b[0], b[1], hi), (b[0], b[1], lo)],
-                                   [(-along * scale, -lo * scale), (-along * scale, -hi * scale),
-                                    (-(along + run) * scale, -hi * scale), (-(along + run) * scale, -lo * scale)],
+                    self._add_face([(a[0], a[1], lo_a), (a[0], a[1], hi_a), (b[0], b[1], hi_b), (b[0], b[1], lo_b)],
+                                   [(-along * scale, -lo_a * scale), (-along * scale, -hi_a * scale),
+                                    (-(along + run) * scale, -hi_b * scale), (-(along + run) * scale, -lo_b * scale)],
                                    normal, wall_mat)
                 along += run
 

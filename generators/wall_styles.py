@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .geometry import _bridge_slots, room_doors
-from .outline import COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, draw_outline
+from .outline import (COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, add_relief,
+                      draw_outline)
 from .semantics import body_height
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import (RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
@@ -35,6 +36,9 @@ DEFAULT_KIND = "default"
 LOOKS: Tuple[str, ...] = ("theme", "rock")
 SURFACES: Tuple[str, ...] = ("wall", "floor", "ceiling")
 Band = Tuple[float, float]
+MIN_HEAD_H = 2.0        # the least headroom, in body heights
+MIN_HEAD = 8.0          # and in u: the player is 6 u tall
+RELIEF_SCALE_H = 5.0    # how far apart a floor's or ceiling's rises and falls are, in H
 
 
 @dataclass(frozen=True)
@@ -58,14 +62,22 @@ class WallStyle:
         return rng.choices(names, weights=[table[n] for n in names])[0]
 
     def draw(self, box: Rect, doors: List[Door], slots: List[Rect], shape: str, body_height: float,
-             rng: random.Random) -> Optional[Outline]:
-        """The room's Outline, or None for a plain Box."""
+             rng: random.Random, room_height: float = 0.0) -> Optional[Outline]:
+        """The room's Outline, or None for a plain Box. With a ``room_height`` its floor
+        and ceiling move as the style says."""
         if shape == RECT:
             return None
-        return draw_outline(box, doors, slots, complex=self.complex,
-                            cell_size=self.cell_size_h * body_height, shape=shape,
-                            fill=rng.uniform(*self.fill), rng=rng,
-                            wobble=self.wobble_h * body_height)
+        outline = draw_outline(box, doors, slots, complex=self.complex,
+                               cell_size=self.cell_size_h * body_height, shape=shape,
+                               fill=rng.uniform(*self.fill), rng=rng,
+                               wobble=self.wobble_h * body_height)
+        if room_height > 0:
+            add_relief(outline, room_height,
+                       floor_rise=rng.uniform(*self.floor_relief_h) * body_height,
+                       ceiling_fall=rng.uniform(*self.ceiling_spread) * room_height,
+                       min_head=max(MIN_HEAD_H * body_height, MIN_HEAD),
+                       scale=RELIEF_SCALE_H * body_height, rng=rng)
+        return outline
 
 
 def _number(chk: _Checker, tbl: Mapping, key: str, where: str, lo: float, hi: float,
@@ -205,7 +217,7 @@ def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
         (x0, y0, _), (x1, y1, _) = room.bounds
         box = (x0, y0, x1, y1)
         room.outline = style.draw(box, room_doors(room, spec), _bridge_slots(room, spec),
-                                  shape, height, rng)
+                                  shape, height, rng, room_height=room.height)
         if records:
             record["shape"] = shape
             record["fill"] = 1.0 if room.outline is None else round(room.outline.fill(box), 3)
