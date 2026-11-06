@@ -25,6 +25,8 @@ def _layout_only(spec):
     for r in d["rooms"]:
         r.pop("outline", None)
     d.pop("layout", None)
+    for c in d["corridors"]:
+        c.pop("rough", None)
     return d
 
 
