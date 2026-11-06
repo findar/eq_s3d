@@ -21,7 +21,7 @@ Index fields: `Type` is `agent` or `human`. `Size` is S (≤ 2 files) / M (≤ 5
 L (split it). `Depends` lists task numbers. `Owns` lists the files and folders
 the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 
-The design's open questions wait on the user. Step 8's human pass is open too (its
+The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's human pass is open too (its
 `tasks.md` task 15), set aside by the user on 2026-11-06.
 
 ## Tasks

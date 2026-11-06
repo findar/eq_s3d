@@ -189,7 +189,7 @@ free-standing Features, added in the map post-pass from `RoomSpec.features` (Ope
 - **Step 8 isn't signed off.** Findings from that pass may move Outlines or relief, so Feature
   placement must read the room's final shape, not assume today's.
 
-## Open questions (with recommended answers)
+## Open questions (answered 2026-11-06: the recommended answers; see `archive.md`)
 
 1. **A Features control?** *Recommended: yes, None/Sparse/Normal/Dense, default Normal, as Trees
    has density.*

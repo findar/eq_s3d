@@ -1,7 +1,7 @@
 # Requirements Document
 
-> **STATUS: roadmap step 9, draft.** Written 2026-11-06 at master `1c69568`. The design's
-> open questions wait on the user. Task index: `tasks.md` (card format, 15 tasks).
+> **STATUS: roadmap step 9, ready.** Written 2026-11-06 at master `1c69568`. The user took
+> the recommended answer to every open question the same day (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 15 tasks).
 > Step 8's acceptance pass and close are still open: the user set them aside on
 > 2026-11-06 and asked to go on, so this step builds on walls not yet signed off.
 
