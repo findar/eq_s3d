@@ -65,7 +65,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, generators/builder.py, generators/mapview.py, tests/test_hygiene.py, tests/test_walls_controls.py
   - Reqs: 11
 
-- [ ] 8. HUMAN: first look at the three styles
+- [x] 8. HUMAN: first look at the three styles
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
   - Type: human · Depends: 6, 7
 
