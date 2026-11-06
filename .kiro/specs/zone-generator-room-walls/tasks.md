@@ -98,7 +98,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Type: agent · Size: S · Depends: 12
   - Owns: rules/walls/, generators/outline.py, generators/geometry.py, tests/
 
-- [ ] 14. Acceptance section, thorough run, timing
+- [x] 14. Acceptance section, thorough run, timing
   - Card: [cards/14-release-prep.md](cards/14-release-prep.md)
   - Type: agent · Size: S · Depends: 13
   - Owns: docs/ACCEPTANCE.md, tests/test_walls_build.py
