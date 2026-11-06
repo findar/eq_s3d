@@ -45,7 +45,10 @@
 
     {"set": "city",          "surface": "wall",    "family": "plaster"},
     {"set": "city",          "surface": "floor",   "family": "cobble",        "params": {"cells": 56}},
-    {"set": "city",          "surface": "ceiling", "family": "sky"}
+    {"set": "city",          "surface": "ceiling", "family": "sky"},
+    {"theme": "rock", "surface": "wall", "family": "cave_rock"},
+    {"theme": "rock", "surface": "floor", "family": "cave_rock", "params": {"scale": 6, "strata": 0.1, "crack": 0.25}},
+    {"theme": "rock", "surface": "ceiling", "family": "cave_rock", "params": {"strata": 0.15}}
   ],
   "fallback": {"wall": "dressed_stone", "floor": "flagstone", "ceiling": "cave_rock"}
 }
