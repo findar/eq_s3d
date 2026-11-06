@@ -23,7 +23,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 
 ## Tasks
 
-- [ ] 1. Measure the stock walls
+- [x] 1. Measure the stock walls
   - Card: [cards/01-wall-survey.md](cards/01-wall-survey.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/wall_survey.py, .kiro/specs/zone-generator-room-walls/design.md (finding 1 only)
