@@ -53,7 +53,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/topology/graph.py, generators/topology/ruleset.py, generators/layout_engine.py, generators/builder.py, generators/semantics.py, rules/topology/, tests/test_outline_build.py
   - Reqs: 6, 2.5, 12.3
 
-- [ ] 6. Floors and ceilings move
+- [x] 6. Floors and ceilings move
   - Card: [cards/06-relief.md](cards/06-relief.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: generators/outline.py, generators/geometry.py, tests/test_relief.py
