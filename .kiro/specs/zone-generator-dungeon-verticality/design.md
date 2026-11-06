@@ -371,7 +371,7 @@ happens to fix it; task 8 measures it.
 - Verticality shows for graph dungeons and outdoor dungeons
   (`CONTROL_ZONE_TYPES` in `web/src/main.ts`; today dungeon and city only).
 - The sidecar's `layout` block gains `levels` (room id → Level),
-  `connectors` (corridor id → kind, rise, risers, switchback) and
+  `connectors` (corridor id → kind, rise, risers, switchback; a bridge also names the room it crosses, `over`) and
   `stacked_share`.
 
 ## Race-sized rooms (Req 10; user, 2026-11-04)

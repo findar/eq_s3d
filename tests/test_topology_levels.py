@@ -546,7 +546,7 @@ def test_v7_flat_is_one_level_and_dramatic_is_more(label):
 # Edge_Fidelity of stacked builds (moderate and dramatic): the bar is the
 # measured mean less 0.03, as step 6's bars (tests/test_topology_embed.py).
 # Measured on this sweep (task 6, with task 18 merged; see its commit).
-STACKED_FIDELITY_MEASURED = {"classic_eq": 0.947, "warren": 0.917, "temple": 0.955}
+STACKED_FIDELITY_MEASURED = {"classic_eq": 0.963, "warren": 0.933, "temple": 0.955}
 
 
 @pytest.mark.parametrize("label", sorted(V7_SETS))

@@ -1300,8 +1300,12 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         # GENUINELY cuts through another room (centreline span > hw -- the same
         # bar the layout splits on, so detection and prevention agree). A mere
         # corner graze is not a crossing and leaves the gap diagnosis in place.
+        # It fails even when the flood found a way round: the corridor's walls
+        # stand inside that room, whatever a stairwell beside the route lets
+        # the flood do (seeds 7 and 8 at 30 rooms before task 12's fix).
         walled = crossed_ids - bridged - set(stacked)
-        if not connected and walled:
+        if walled:
+            connected = False
             reason = f"crosses room {sorted(walled)[0]}"
 
         # A Vertical_Connector (a Staircase, or a Bridge) is walkable only if

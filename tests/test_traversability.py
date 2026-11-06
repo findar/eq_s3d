@@ -359,6 +359,31 @@ class TestCorridorContinuityExamples:
         assert not res.connected, "a corridor cutting through room c must not be connected"
         assert res.reason == "crosses room c", res.reason
 
+    def test_corridor_through_third_room_fails_even_if_the_flood_gets_round(
+            self, tmp_path, monkeypatch):
+        # A stairwell beside the route can give the flood a way round the room
+        # the corridor cuts through (seeds 7 and 8 at 30 rooms before step 7
+        # task 12). The corridor's walls still stand in that room, so it fails.
+        spec = ZoneSpec(name="xround", zone_type="dungeon")
+        for rid, x, walls in (("a", -400, ["E"]), ("c", 0, ["E", "W"]), ("b", 400, ["W"])):
+            room = RoomSpec(rid, center_x=x, center_y=0, floor_z=0.0,
+                            width=200, depth=200, height=100)
+            room.open_walls = walls
+            spec.rooms.append(room)
+        spec.rooms[0].role = "entrance"
+        spec.corridors.append(CorridorSpec(
+            "corr_ab", from_x=-300, from_y=0, to_x=300, to_y=0,
+            from_z=0.0, to_z=0.0, width=200, height=90,
+            from_room="a", to_room="b"))
+        spec.safe_point = (-400.0, 0.0, 5.0)
+        surf = self._walk_surface(spec, tmp_path)
+        # The flood reaches everything it is asked about.
+        everything = type("Everything", (set,), {"__and__": lambda self, other: other})
+        monkeypatch.setattr(T, "_flood_subset", lambda adj, start: everything())
+        res = self._result_for(T.corridor_continuity(surf, spec, AgentModel()), "corr_ab")
+        assert not res.connected
+        assert res.reason == "crosses room c", res.reason
+
     # -- 2. missing floor segment → "gap" -----------------------------------
     def test_corridor_with_missing_floor_reports_gap(self, tmp_path):
         # Two rooms joined by a single over-steep ramp (150u rise over a ~100u
