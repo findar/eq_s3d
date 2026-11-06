@@ -42,8 +42,10 @@ def _solid(mb, mat, x0, y0, x1, y1, top=H):
 
 def _verdict(spec, solids=(), extra=None):
     mb = MeshBuilder()
+    held, spec.rooms[0].features = spec.rooms[0].features, []    # these solids are by hand
     for r in spec.rooms:
         mb.add_room(r, spec)
+    spec.rooms[0].features = held
     for c in spec.corridors:
         mb.add_corridor(c, spec)
     mat = mb.material_id(spec.materials[spec.rooms[0].wall_material])
