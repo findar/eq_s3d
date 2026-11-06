@@ -47,7 +47,8 @@ and the in-client check (M6).
 - **Cell**: one convex piece of floor plan. An Outline is the edge of a
   connected set of Cells.
 - **Cell_Complex**: the Cells a room's Box is divided into, before some are
-  chosen: a Voronoi diagram for caves, a grid for built rooms.
+  chosen: a Voronoi diagram for rough caves, cut corners for hewn rooms, a grid
+  for built rooms.
 - **Core**: the Cells that always stay in, around the Box's centre, so the
   spawn, labels and the gate's room tests still land on floor.
 - **Throat**: the straight strip of floor inside a door, as wide as its

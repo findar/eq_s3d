@@ -133,10 +133,13 @@ nothing else changes byte for byte.
 
 **Cell_Complex:**
 
-- `rough`: Voronoi of jittered seeds over the Box, spacing about 5 H. Irregular,
-  with many bends.
-- `hewn`: Voronoi, spacing about 8 H, after two or three rounds of Lloyd relaxation
-  so facets come out longer, straighter and more even: a room of a few large facets.
+- `rough` (`voronoi`): Voronoi of jittered seeds over the Box, spacing about 4 H. Every
+  wall vertex then wanders inward by up to about 1.3 H (`wobble`), or a room keeps the
+  Box's straight sides with bites out of them, which is how the first drawing looked.
+- `hewn` (`facet`): the Box with each corner cut at an uneven angle, one convex room of
+  a few long facets, as Kaesora and Najena's are. A Throat keeps a stub of a corner
+  piece where a door lands on one. Voronoi didn't suit this: relaxed large cells drew
+  the same bitten rectangles. `shape` sets the cuts' depths (`FACET_CUTS`).
 - `built`: a grid aligned to the Box, module about 4 H, whose corner cells can be cut
   at 45° (a corner cell splits into a kept piece and a dropped triangle). Choosing
   cells gives cut corners, L-shapes, crosses and alcoves. Plain rectangles are the
@@ -153,9 +156,10 @@ corners are real vertices. `built` gets the same from grid lines at the door edg
 **Growth.** Starting from Core and Throats (always connected, because each Throat
 ends in the Core), add neighbouring Cells in seeded random order, weighted by the
 kind's shape, until the Fill target for this room is met. Fill here is true floor
-over Box, not the survey's measure: drawn from the style's band, about 0.80–0.95
-(finding 1), and task 12 checks the result in the survey's measure. **Fill floor
-0.7:** under it, the room has shrunk too far to read as its size class. Holes in the set are filled (a
+over Box, not the survey's measure: about 0.70–0.85 for `rough` once walls wander,
+0.80 up for `built`, and whatever its cuts leave for `hewn` (0.74–0.89 drawn).
+Task 12 checks the result in the survey's measure. **Fill floor 0.65:** under it, the
+room has shrunk too far to read as its size class. Holes in the set are filled (a
 Cell ringed by chosen Cells is chosen), since a column is step 9's job.
 
 **Shapes per kind** (`rules/walls/<style>.toml`, `shape` in rules):
@@ -195,9 +199,9 @@ For a room with an Outline, `add_room` branches to `add_outline_room`:
   texture runs on round a bend (`add_quad` projects each face alone, which would
   jump at every bend). Floors and ceilings stay planar, as today.
 
-Polygon cap: at 12 u edges a shaped human room is roughly 600 triangles, so about
-7,000 for 12 rooms against 3,054 for today's build, and stock zones are well above
-that. The cap is set by task 3 at a measured margin, not a guess.
+Polygon count (task 3, measured): a 120 x 90 x 40 u room is 570–1,070 triangles, about
+10,000 for 12 such rooms against 3,054 today; stock zones are well above that. The
+cap, 3,000 per human room at the largest size, has a test.
 
 ## Relief
 
@@ -233,9 +237,9 @@ validation in step 6).
 ```toml
 # rules/walls/rough.toml
 complex = "voronoi"
-cell_size_h = 5.0
-relax = 0
-fill = [0.80, 0.95]
+cell_size_h = 4.0
+wobble_h = 1.3
+fill = [0.70, 0.85]
 floor_relief_h = [0.0, 0.8]
 ceiling_spread = [0.2, 0.6]
 corridor_break = 0.15
@@ -270,7 +274,7 @@ control's rule while Layout is Graph. `ZonePlan.walls`, `--walls` on the CLI,
 
 | # | Property | Req |
 |---|---|---|
-| W1 | Outline inside its Box, connected, contains the centre, reaches every door, Tunnel and slot; Fill in band or doors need more; never under 0.7 | 2 |
+| W1 | Outline inside its Box, connected, contains the centre, reaches every door, Tunnel and slot; Fill in band or doors need more; never under 0.65 before walls wander | 2 |
 | W2 | Same room, doors, style and seed: same Outline; layout unchanged whatever the style | 2.4, 12.5 |
 | W3 | No Outline: byte-identical build | 2.5, 12.3 |
 | W4 | The gate catches a door with no Throat, a wall across a Throat, an open seam; each named | 3 |

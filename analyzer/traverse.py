@@ -1105,9 +1105,19 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
     def fail(reason: str) -> OutlineResult:
         return OutlineResult(room.id, False, reason)
 
-    def in_core(t: Rect) -> bool:
-        c, tol = outline.core, OUTLINE_TOL
-        return t[0] <= c[2] + tol and t[2] >= c[0] - tol and t[1] <= c[3] + tol and t[3] >= c[1] - tol
+    def touching(a: Rect, b: Rect) -> bool:
+        tol = OUTLINE_TOL
+        return a[0] <= b[2] + tol and a[2] >= b[0] - tol and a[1] <= b[3] + tol and a[3] >= b[1] - tol
+
+    # A Throat reaches the Core directly or through another Throat (an L's two legs).
+    joined = [outline.core]
+    waiting = list(outline.throats)
+    while True:
+        more = [t for t in waiting if any(touching(t, j) for j in joined)]
+        if not more:
+            break
+        joined += more
+        waiting = [t for t in waiting if t not in more]
 
     used = []
     for side, c0, c1 in doors:
@@ -1115,9 +1125,8 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
         if not holding:
             return fail(f"door without a throat at {side} {c0:.1f}..{c1:.1f}")
         used.extend(holding)
-    for t in outline.throats:
-        if not in_core(t):
-            return fail(f"throat {tuple(round(v, 1) for v in t)} does not reach the core")
+    if waiting:
+        return fail(f"throat {tuple(round(v, 1) for v in waiting[0])} does not reach the core")
 
     # A wall across a Throat stands in it at body height. Any near-vertical face counts.
     faces = _room_mesh_faces(surf, room)
