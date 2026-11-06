@@ -81,7 +81,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: generators/textures/, generators/semantics.py, tests/test_wall_textures.py
   - Reqs: 9
 
-- [ ] 11. Outdoor dungeons
+- [x] 11. Outdoor dungeons
   - Card: [cards/11-outdoor.md](cards/11-outdoor.md)
   - Type: agent · Size: S · Depends: 8
   - Owns: generators/outdoor_dungeon.py, rules/topology/themes.toml, tests/test_outdoor_walls.py
