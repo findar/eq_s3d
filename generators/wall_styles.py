@@ -221,5 +221,8 @@ def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int) -> None:
         if records:
             record["shape"] = shape
             record["fill"] = 1.0 if room.outline is None else round(room.outline.fill(box), 3)
+            record["outline"] = None if room.outline is None else [
+                [[round(x, 1), round(y, 1)] for x, y in (room.outline.verts[i] for i in loop)]
+                for loop in room.outline.wall_loops()]
     spec.layout["walls"] = style.name
 

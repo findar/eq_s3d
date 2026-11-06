@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ai.expand import plan_to_spec
 from ai.schema import (
-    LAYOUT_ZONE_TYPES, VALID_LAYOUTS, ZonePlan, available_rule_sets,
+    LAYOUT_ZONE_TYPES, VALID_LAYOUTS, ZonePlan, available_rule_sets, available_wall_styles,
 )
 from core.env import env_value
 from core.paths import (
@@ -173,7 +173,7 @@ def cmd_generate(args) -> None:
     # The layout engine (graph-layout Req 7.1): only named when given; a run
     # without ``--layout`` takes the plan default (graph on a dungeon /
     # outdoor dungeon since task 21; ``--layout classic`` for TinyKeep).
-    for key in ("layout", "rule_set"):
+    for key in ("layout", "rule_set", "walls"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
     plan = ZonePlan.from_controls(controls)
@@ -302,6 +302,8 @@ def main(argv: list[str] | None = None) -> None:
     g.add_argument("--rule-set", dest="rule_set", type=_rule_set_arg, default=None,
                    help="Graph layout base rule set (" + ", ".join(available_rule_sets())
                         + "); default: the dungeon theme's")
+    g.add_argument("--walls", dest="walls", choices=available_wall_styles(), default=None,
+                   help="Graph layout wall style; default: the dungeon theme's")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -327,6 +329,9 @@ def main(argv: list[str] | None = None) -> None:
                          "outdoor_dungeon")
         if getattr(args, "rule_set", None):
             parser.error("--rule-set only applies to --zone-type dungeon or "
+                         "outdoor_dungeon")
+        if getattr(args, "walls", None):
+            parser.error("--walls only applies to --zone-type dungeon or "
                          "outdoor_dungeon")
 
     # Refusal (Req 10.2): right after parsing — before any build or write —
