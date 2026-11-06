@@ -32,59 +32,73 @@ can only make a room smaller.
 
 ## Research findings
 
-### 1. Stock walls (first numbers, 25 zones, at spec time)
+### 1. Stock walls (task 1, `scripts/wall_survey.py`)
 
-A scratch survey over the WLD meshes, using step 6's floor walk and chamber split.
-Task 1 redoes it as a script, adds straight runs and corners, and confirms the
-style labels against plots. The labels below are a first reading of each zone,
-not yet checked. Walls are non-passable faces with `|nz| < 0.7` beside the walked
-floor.
+Per zone, using step 6's floor walk and chamber split. Walls are solid faces with
+`|nz| < 0.7` beside the walked floor. Labels come from each zone's plan plot.
+"Today" is a plain 20-room graph build, measured by the same code.
 
-| Zone | First label | Axis_Share | Plumb (≤ 3°) | Median edge | Fill | Floor Relief (u) | Ceiling spread | Flat floor | Flat ceiling |
+| Zone | Style | Axis_Share | Plumb (≤ 3°) | Median edge | Run p50 | Corners | Fill | Floor Relief (u) | Flat floor | Ceiling spread | Flat ceiling |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| blackburrow | rough | 0.37 | 0.99 | 13.5 | 30.5 | 15 | 0.67 | 5.4 | 0.64 | 0.32 | 0.70 |
+| paw | rough | 0.43 | 0.97 | 14.1 | 22.6 | 15 | 0.69 | 2.0 | 0.63 | 0.49 | 0.37 |
+| crystal | rough | 0.45 | 0.99 | 10.0 | 25.1 | 11.5 | 0.70 | 0.2 | 0.78 | 0.06 | 0.80 |
+| runnyeye | rough | 0.51 | 1.00 | 12.0 | 24.2 | 31 | 0.69 | 0.0 | 0.93 | 0.12 | 0.54 |
+| soldungb | rough | 0.51 | 0.99 | 12.0 | 21.0 | 21 | 0.69 | 1.2 | 0.65 | 0.51 | 0.34 |
+| soldunga | rough | 0.57 | 0.99 | 10.0 | 17.0 | 31 | 0.74 | 1.4 | 0.83 | 0.65 | 0.71 |
+| permafrost | rough | 0.57 | 0.96 | 13.3 | 28.0 | 12 | 0.69 | 0.0 | 0.84 | 0.25 | 0.88 |
+| kaesora | hewn | 0.52 | 1.00 | 7.3 | 32.0 | 20 | 0.70 | 4.9 | 0.75 | 0.54 | 0.54 |
+| guktop | hewn | 0.61 | 1.00 | 12.0 | 28.0 | 30 | 0.70 | 2.0 | 0.67 | 0.51 | 0.50 |
+| najena | hewn | 0.63 | 0.98 | 10.0 | 31.3 | 10 | 0.70 | 0.0 | 0.90 | 0.21 | 0.74 |
+| gukbottom | hewn | 0.64 | 1.00 | 14.0 | 27.8 | 18 | 0.71 | 1.7 | 0.51 | 0.30 | 0.48 |
+| sebilis | hewn | 0.69 | 0.95 | 10.0 | 37.5 | 13 | 0.74 | 1.5 | 0.73 | 0.36 | 0.51 |
+| qcat | built | 0.71 | 0.97 | 14.0 | 28.0 | 14 | 0.71 | 0.0 | 0.99 | 0.08 | 0.96 |
+| befallen | built | 0.77 | 0.99 | 5.0 | 34.0 | 19.5 | 0.75 | 0.0 | 0.84 | 0.00 | 0.87 |
+| kurn | built | 0.96 | 1.00 | 10.0 | 39.0 | 23.5 | 0.74 | 0.5 | 0.99 | 0.27 | 0.97 |
+| *today* | | *1.00* | *1.00* | *23* | *36–39* | *9.5–12* | *0.78–0.81* | *0.0* | *1.00* | *0.00* | *1.00* |
+
+**Bands** (these are W11's bars, in the survey's own measures):
+
+| Style | Axis_Share | Plumb | Median edge | Run p50 | Fill | Floor Relief | Flat floor | Ceiling spread | Flat ceiling |
 |---|---|---|---|---|---|---|---|---|---|
-| blackburrow | rough | 0.37 | 0.99 | 13.5 | 0.67 | 5.4 | 0.32 | 0.64 | 0.70 |
-| paw | rough | 0.43 | 0.97 | 14.1 | 0.69 | 2.0 | 0.49 | 0.63 | 0.37 |
-| crystal | rough | 0.45 | 0.99 | 10.0 | 0.70 | 0.2 | 0.06 | 0.78 | 0.80 |
-| velketor | rough | 0.50 | 0.97 | 9.0 | 0.68 | 2.0 | 0.62 | 0.81 | 0.73 |
-| runnyeye | rough | 0.51 | 1.00 | 12.0 | 0.69 | 0.0 | 0.12 | 0.93 | 0.54 |
-| soldungb | rough | 0.51 | 0.99 | 12.0 | 0.69 | 1.2 | 0.51 | 0.65 | 0.34 |
-| soldunga | rough | 0.57 | 0.99 | 10.0 | 0.74 | 1.4 | 0.65 | 0.83 | 0.71 |
-| permafrost | rough | 0.57 | 0.96 | 13.3 | 0.69 | 0.0 | 0.25 | 0.84 | 0.88 |
-| kaesora | hewn | 0.52 | 1.00 | 7.3 | 0.70 | 4.9 | 0.54 | 0.75 | 0.54 |
-| chardok | hewn | 0.54 | 0.98 | 12.0 | 0.69 | 2.1 | 0.43 | 0.63 | 0.36 |
-| guktop | hewn | 0.61 | 1.00 | 12.0 | 0.70 | 2.0 | 0.51 | 0.67 | 0.50 |
-| najena | hewn | 0.63 | 0.98 | 10.0 | 0.70 | 0.0 | 0.21 | 0.90 | 0.74 |
-| gukbottom | hewn | 0.64 | 1.00 | 14.0 | 0.71 | 1.7 | 0.30 | 0.51 | 0.48 |
-| sebilis | hewn | 0.69 | 0.95 | 10.0 | 0.74 | 1.5 | 0.36 | 0.73 | 0.51 |
-| cazicthule | hewn | 0.69 | 0.86 | 14.0 | 0.72 | 0.0 | 0.02 | 0.78 | 0.77 |
-| mistmoore | built | 0.67 | 0.96 | 6.0 | 0.70 | 4.5 | 0.64 | 0.66 | 0.59 |
-| qcat | built | 0.71 | 0.97 | 14.0 | 0.71 | 0.0 | 0.08 | 0.99 | 0.96 |
-| unrest | built | 0.72 | 0.99 | 6.1 | 0.64 | 2.9 | 0.17 | 0.92 | 0.81 |
-| hole | built | 0.72 | 0.99 | 5.7 | 0.72 | 1.5 | 0.58 | 0.72 | 0.49 |
-| befallen | built | 0.77 | 0.99 | 5.0 | 0.75 | 0.0 | 0.00 | 0.84 | 0.87 |
-| dulak | built | 0.79 | 0.87 | 8.1 | 0.72 | 11.6 | 0.05 | 0.91 | 0.12 |
-| kurn | built | 0.96 | 1.00 | 10.0 | 0.74 | 0.5 | 0.27 | 0.99 | 0.97 |
+| rough | 0.37–0.57 | 0.96–1.00 | 10–14 | 17–31 | 0.67–0.74 | 0–5.4 | 0.63–0.93 | 0.06–0.65 | 0.34–0.88 |
+| hewn | 0.52–0.69 | 0.95–1.00 | 7–14 | 28–38 | 0.70–0.74 | 0–4.9 | 0.51–0.90 | 0.21–0.54 | 0.48–0.74 |
+| built | 0.71–0.96 | 0.97–1.00 | 5–14 | 28–39 | 0.71–0.75 | 0–0.5 | 0.84–0.99 | 0.00–0.27 | 0.87–0.97 |
 
-Left out: kedge (one chamber, mostly water), droga (the split makes 124 chambers),
-crushbone (mostly outdoors). Floor Relief is the chamber's p10–p90 floor height;
-ceiling spread is its p10–p90 headroom over the median.
+**Left out,** on their plots: chardok (built halls and cave tunnels, about half
+each), cazicthule (temple, tunnel maze, pyramid), mistmoore (a castle in open
+grounds), hole (a ruined city inside caves), velketor (large geometric facets, not
+rock and not masonry), unrest (a house in an open yard), dulak (a harbour town,
+mostly open), kedge (one chamber, mostly water), droga (the split makes 124
+chambers), crushbone (mostly outdoors). The `built` band rests on three zones.
 
-What this says:
+What this says, including where it changes the first reading at spec time:
 
-- **Walls are plumb in every style** (0.86–1.00), caves included. That's the
-  decision this design rests on: vertical walls over an Outline. It's why the
-  removed SDF cave pipeline was the wrong tool, not merely a broken one.
-- **Axis_Share separates the styles,** with overlap: rough 0.37–0.57, hewn about
-  0.52–0.69, built 0.67–0.96.
-- **Stock rooms fill about 0.70 of their bounding box in every style** (0.64–0.75).
-  A rectangle fills 1.0, so even "built" stock rooms aren't plain boxes.
-- **Relief doesn't separate styles cleanly.** Caves lean to moving ceilings and
-  non-flat floors, but qcat and kurn are flat and crystal nearly so, while hole and
-  mistmoore have ceiling spreads as high as caves. So Relief varies within a style,
-  and the bands will be wide. Ceilings move far more than floors (spread 0.3–0.6 of
-  the height, floors 0–5 u).
-- **Median edges are 10–14 u in caves and 5–14 u in built zones,** matching the
-  existing "voxel=12" lesson for caves.
+- **Walls are plumb in every style** (0.95–1.00 in kept zones), caves included.
+  This stands, and the design rests on it.
+- **Fill was misread.** The spec's first version said stock rooms fill about 0.70 of
+  their box, so a plain rectangle (1.0) was wrong. Today's all-rectangle builds
+  measure 0.78–0.81 by the same code, because the split keeps door stubs in a
+  chamber and the raster loses its edge. So stock's 0.70 is only about 0.9 of what a
+  rectangle measures. **Outlines take off about 5–20% of the Box, not 30%.**
+- **Built stock rooms are mostly plain rectangles.** Befallen is rectangles joined by
+  short corridors, with some octagons (cut corners) for its large rooms. Plain
+  rectangles stay the commonest `built` shape; cut corners come next; L-shapes and
+  crosses are the rare ones.
+- **Relief does separate the styles** once mixed zones are out. Built floors and
+  ceilings are nearly flat (flat ceiling 0.87–0.97, at spec time this looked
+  otherwise because of hole and mistmoore). Caves move, and the ceiling far more than
+  the floor.
+- **Hewn looks like polygons.** Kaesora and Najena's rooms are convex 6–10-sided
+  shapes, often with 45° cuts, joined by square corridors: rooms look laid out, not
+  formed. A few large relaxed Cells suit that.
+- **Rough walls have longer runs than expected.** Run p50 is 17–31 u (about 3–5 H for
+  a human), so Cell spacing needs to be about 5 H, not the 3 H first proposed.
+- **Whole zones mix styles.** Four of the 25 zones plainly mix built and cave parts,
+  and soldungb and guktop have built wings. One style per zone stays this step's
+  decision, but a mix by district is the natural follow-up.
+- **Corners doesn't separate styles** (door jambs dominate it: rectangles measure
+  9.5–12). It's reported but isn't a bar.
 
 ### 2. What assumes a room is a rectangle
 
@@ -119,15 +133,17 @@ nothing else changes byte for byte.
 
 **Cell_Complex:**
 
-- `rough`: Voronoi of jittered seeds over the Box, spacing about 3 H. Irregular,
+- `rough`: Voronoi of jittered seeds over the Box, spacing about 5 H. Irregular,
   with many bends.
-- `hewn`: Voronoi, spacing about 6 H, after two or three rounds of Lloyd relaxation
-  so facets come out longer, straighter and more even. Reads as cut, not formed.
-- `built`: a grid aligned to the Box, module about 2 H. Choosing cells gives
-  L-shapes, crosses, cut corners and alcoves, with every wall square to the grid.
+- `hewn`: Voronoi, spacing about 8 H, after two or three rounds of Lloyd relaxation
+  so facets come out longer, straighter and more even: a room of a few large facets.
+- `built`: a grid aligned to the Box, module about 4 H, whose corner cells can be cut
+  at 45° (a corner cell splits into a kept piece and a dropped triangle). Choosing
+  cells gives cut corners, L-shapes, crosses and alcoves. Plain rectangles are the
+  commonest choice and carry no Outline at all.
 
 Each is clipped to the Box. Spacing is in H, so an ogre's cave has bigger bends for
-its bigger body. The exact numbers come from task 1.
+its bigger body. Task 12 tunes these to the bands in finding 1.
 
 **Throats first.** A Throat is a rectangle from the door's wall to the Core, as
 wide as the corridor. Mirrored seeds on both sides of a Throat's long edges make
@@ -136,10 +152,10 @@ corners are real vertices. `built` gets the same from grid lines at the door edg
 
 **Growth.** Starting from Core and Throats (always connected, because each Throat
 ends in the Core), add neighbouring Cells in seeded random order, weighted by the
-kind's shape, until the Fill target for this room is met. Fill target: drawn from
-the style's band (about 0.65–0.75 from finding 1; `built` runs higher, because a
-`rect` shape is one of its choices and fills 1.0). **Fill floor 0.5:** under it, the
-room has shrunk too far to read as its size class. Holes in the set are filled (a
+kind's shape, until the Fill target for this room is met. Fill here is true floor
+over Box, not the survey's measure: drawn from the style's band, about 0.80–0.95
+(finding 1), and task 12 checks the result in the survey's measure. **Fill floor
+0.7:** under it, the room has shrunk too far to read as its size class. Holes in the set are filled (a
 Cell ringed by chosen Cells is chosen), since a column is step 9's job.
 
 **Shapes per kind** (`rules/walls/<style>.toml`, `shape` in rules):
@@ -148,6 +164,7 @@ Cell ringed by chosen Cells is chosen), since a column is step 9's job.
 |---|---|
 | `auto` | the default: the style's table picks by room kind |
 | `rect` | the plain Box, no Outline. The existing default keeps its meaning if a rule writes it |
+| `cut` | the Box with its corners cut (`built`'s octagon) |
 | `blob` | growth outward evenly: a rounded chamber |
 | `long` | growth along the Box's long axis: a gallery or nave |
 | `ell` | growth favouring two adjoining arms |
@@ -216,9 +233,9 @@ validation in step 6).
 ```toml
 # rules/walls/rough.toml
 complex = "voronoi"
-cell_size_h = 3.0
+cell_size_h = 5.0
 relax = 0
-fill = [0.62, 0.76]
+fill = [0.80, 0.95]
 floor_relief_h = [0.0, 0.8]
 ceiling_spread = [0.2, 0.6]
 corridor_break = 0.15
@@ -253,7 +270,7 @@ control's rule while Layout is Graph. `ZonePlan.walls`, `--walls` on the CLI,
 
 | # | Property | Req |
 |---|---|---|
-| W1 | Outline inside its Box, connected, contains the centre, reaches every door, Tunnel and slot; Fill in band or doors need more; never under 0.5 | 2 |
+| W1 | Outline inside its Box, connected, contains the centre, reaches every door, Tunnel and slot; Fill in band or doors need more; never under 0.7 | 2 |
 | W2 | Same room, doors, style and seed: same Outline; layout unchanged whatever the style | 2.4, 12.5 |
 | W3 | No Outline: byte-identical build | 2.5, 12.3 |
 | W4 | The gate catches a door with no Throat, a wall across a Throat, an open seam; each named | 3 |
@@ -276,10 +293,9 @@ control's rule while Layout is Graph. `ZonePlan.walls`, `--walls` on the CLI,
   walls and irregular runs, but their rhythm may differ. Task 1's straight-run
   numbers set spacing; the first look (task 8) judges it. If it fails, a Cell_Complex is one
   function and one file to swap.
-- **Rooms read smaller.** Fill 0.7 shrinks a room's effective side by 16%. Step 7's
-  bands are from stock floor area, so stock's sides are floor-based and ours would
-  now be under. Task 12 measures it; if needed the Box grows by `1/sqrt(fill)` for
-  shaped rooms, which moves every layout once. Open question 4.
+- **Rooms read a little smaller.** A true Fill of 0.85 shrinks a room's effective side
+  by about 8%. Task 12 measures it against step 7's bands; if it matters, the Box grows
+  by `1/sqrt(fill)` for shaped rooms, which moves every layout once. Open question 4.
 - **Getting stuck in sharp corners.** A concave corner under the player's radius can
   snag the client. The gate has no radius. Noted for M6; Cell spacing in H keeps
   corners at least a body apart in `rough`, but it isn't proven.
@@ -300,10 +316,11 @@ control's rule while Layout is Graph. `ZonePlan.walls`, `--walls` on the CLI,
 5. **Rough stairs and bridges?** *Recommended: not in this step. Stairs and bridges stay
    square; a stone stair in a cave is plausible, and Blackburrow uses ramps anyway. Look
    at it in the first look.*
-6. **Should `built` rooms change at all?** The roadmap names "dungeon" as a style, and
-   stock built rooms fill about 0.7, so plain boxes aren't right either. *Recommended:
-   yes, built rooms get L-shapes, crosses, alcoves and cut corners, keeping some
-   plain rectangles. Every Graph build changes once, with goldens recaptured.*
+6. **Should `built` rooms change at all?** The roadmap names "dungeon" as a style.
+   *Recommended: yes, built rooms get L-shapes, crosses, alcoves and cut corners, keeping
+   some plain rectangles. Every Graph build changes once, with goldens recaptured.*
+   (Task 1 corrected this question's first reason, that stock built rooms aren't plain
+   boxes: most are. The answer stands, with plain rectangles the commonest shape.)
 
 ## Decisions
 
