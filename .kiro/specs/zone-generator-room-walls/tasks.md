@@ -47,7 +47,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: rules/walls/, generators/wall_styles.py, scripts/topology_rules.py, generators/topology/draw.py, docs/TOPOLOGY_RULES.md, tests/test_wall_styles.py
   - Reqs: 5
 
-- [ ] 5. Rooms get Outlines in graph builds
+- [x] 5. Rooms get Outlines in graph builds
   - Card: [cards/05-styles-in-layout.md](cards/05-styles-in-layout.md)
   - Type: agent · Size: M · Depends: 3, 4
   - Owns: generators/topology/graph.py, generators/topology/ruleset.py, generators/layout_engine.py, generators/builder.py, generators/semantics.py, rules/topology/, tests/test_outline_build.py

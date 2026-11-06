@@ -140,6 +140,11 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     # Record provenance: the measured style-profile name for this zone type
     # (wilderness -> "outdoor"; dungeon/city map to themselves).
     spec.style_profile = STYLE_PROFILE[plan.zone_type]
+
+    # A grown dungeon's rooms draw their real walls, last, when every door is known.
+    if spec.layout is not None and plan.zone_type == "dungeon":
+        from generators.wall_styles import apply_walls, style_for_theme
+        apply_walls(spec, style_for_theme(plan.dungeon_theme), rng_seed)
     return spec
 
 

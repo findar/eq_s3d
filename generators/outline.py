@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from scipy.spatial import Voronoi
+from scipy.spatial import Voronoi, cKDTree
 
 Rect = Tuple[float, float, float, float]    # x0, y0, x1, y1
 
@@ -44,17 +44,19 @@ class Outline:
         a Cell a little off convex."""
         pts = np.asarray(pts, dtype=np.float64)
         verts = np.asarray(self.verts, dtype=np.float64)
-        inside = np.zeros(len(pts), bool)
+        a, b, c = [], [], []
         for cell in self.cells:
             poly = verts[cell]
-            a, b = poly, np.roll(poly, -1, axis=0)
-            c = poly.mean(axis=0)
-            cross = lambda p, q: ((q[:, 0] - p[:, 0]) * (pts[:, 1, None] - p[:, 1])  # noqa: E731
-                                  - (q[:, 1] - p[:, 1]) * (pts[:, 0, None] - p[:, 0]))
-            centre = np.broadcast_to(c, a.shape)
-            hit = (cross(a, b) >= -tol) & (cross(b, centre) >= -tol) & (cross(centre, a) >= -tol)
-            inside |= hit.any(axis=1)
-        return inside
+            a.append(poly)
+            b.append(np.roll(poly, -1, axis=0))
+            c.append(np.broadcast_to(poly.mean(axis=0), poly.shape))
+        a, b, c = np.vstack(a), np.vstack(b), np.vstack(c)
+
+        def left_of(p, q):
+            return ((q[:, 0] - p[:, 0]) * (pts[:, 1, None] - p[:, 1])
+                    - (q[:, 1] - p[:, 1]) * (pts[:, 0, None] - p[:, 0])) >= -tol
+
+        return (left_of(a, b) & left_of(b, c) & left_of(c, a)).any(axis=1)
 
     def fill(self, box: Rect) -> float:
         """The room's floor over its Box."""
@@ -62,19 +64,12 @@ class Outline:
         return area / ((box[2] - box[0]) * (box[3] - box[1]))
 
     def wall_loops(self) -> List[List[int]]:
-        """The walls as closed vertex loops, the floor on the left of each edge.
-        A wall edge belongs to one Cell only. A vertex two rooms' worth of wall
-        pass through (Cells touching at a corner) joins whichever edge comes first."""
-        count: Dict[Tuple[int, int], int] = {}
-        for c in self.cells:
-            for a, b in zip(c, c[1:] + c[:1]):
-                key = (min(a, b), max(a, b))
-                count[key] = count.get(key, 0) + 1
+        """The walls as closed vertex loops, the floor on the left of each edge. A
+        directed edge with its opposite in another Cell is inside the floor; what's
+        left always closes. Cells touching at a corner join whichever edge comes first."""
         nexts: Dict[int, List[int]] = {}
-        for c in self.cells:
-            for a, b in zip(c, c[1:] + c[:1]):
-                if count[(min(a, b), max(a, b))] == 1:
-                    nexts.setdefault(a, []).append(b)
+        for a, b in _wall_edges(self.cells):
+            nexts.setdefault(a, []).append(b)
         loops = []
         for start in sorted(nexts):
             while nexts[start]:
@@ -93,7 +88,8 @@ class Outline:
 # ---------------------------------------------------------------------------
 
 EDGE_MAX = 14.0     # the era's edge: longer Cell edges split (design finding 1)
-PLACES = 3          # vertices weld at this many decimals
+PLACES = 3          # vertices keep this many decimals
+SNAP = 0.01         # points closer than this are one vertex
 FILL_FLOOR = 0.65   # a room's floor never goes under this share of its Box
 SHAPES = ("blob", "long", "cut", "ell", "cross")
 COMPLEXES = ("voronoi", "grid", "facet")
@@ -105,6 +101,32 @@ FACET_CUTS = {"blob": ((0.20, 0.32), None), "cut": ((0.18, 0.28), None),
               "ell": ((0.12, 0.22), (0.42, 0.55))}
 
 Door = Tuple[str, float, float]             # side (N/S/E/W), c0, c1 along that wall
+
+
+def _wall_edges(cells: List[List[int]]) -> List[Tuple[int, int]]:
+    """The directed edges with no opposite: each opposite pair is inside the floor."""
+    left: Dict[Tuple[int, int], int] = {}
+    for c in cells:
+        for a, b in zip(c, c[1:] + c[:1]):
+            if left.get((b, a), 0) > 0:
+                left[(b, a)] -= 1
+            else:
+                left[(a, b)] = left.get((a, b), 0) + 1
+    return [e for e, n in left.items() for _ in range(n)]
+
+
+def _no_spikes(cell: List[int]) -> List[int]:
+    """A cell with its out-and-back runs (a, b, a) taken out: they enclose nothing."""
+    out = list(cell)
+    changed = True
+    while changed and len(out) >= 3:
+        changed = False
+        for k in range(len(out)):
+            if out[k - 1] == out[(k + 1) % len(out)] or out[k] == out[k - 1]:
+                del out[k]
+                changed = True
+                break
+    return out
 
 
 def _area(poly) -> float:
@@ -287,22 +309,43 @@ def _door_throats(box: Rect, door: Door, core: Rect) -> List[Rect]:
 
 def _weld(polys) -> Tuple[list, list]:
     """Polygons to shared vertices: ids per polygon, no T-junctions."""
+    # Points this close are one point. Rounding alone isn't enough: the same corner
+    # worked out from two Cells can round to either side of a thousandth, and the two
+    # copies leave a sliver whose edges read as walls.
+    raw = np.array([p for poly in polys for p in poly], dtype=np.float64)
+    parent = list(range(len(raw)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for a, b in sorted(cKDTree(raw).query_pairs(SNAP)):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
     ids: Dict[Tuple[float, float], int] = {}
+    by_id: List[Tuple[float, float]] = []
     cells = []
+    k = 0
     for poly in polys:
-        # A cut through a corner can leave a piece with no area; its edges lie on
-        # its neighbours' and would read as walls.
-        if _area(poly) < 1e-2:
-            continue
         cell = []
-        for x, y in poly:
+        for _ in poly:
+            x, y = raw[find(k)]
+            k += 1
             key = (round(float(x), PLACES), round(float(y), PLACES))
             i = ids.setdefault(key, len(ids))
+            if i == len(by_id):
+                by_id.append(key)
             if not cell or cell[-1] != i:
                 cell.append(i)
         if len(cell) > 1 and cell[0] == cell[-1]:
             cell.pop()
-        if len(cell) >= 3:
+        # A cut through a corner can leave a piece with no area; its edges lie on
+        # its neighbours' and would read as walls.
+        cell = _no_spikes(cell)
+        if len(cell) >= 3 and _area([by_id[v] for v in cell]) >= 1e-2:
             cells.append(cell)
     verts = list(ids)
     pts = np.array(verts)
@@ -315,7 +358,7 @@ def _weld(polys) -> Tuple[list, list]:
             return []
         t = (pts - p) @ d / length ** 2
         off = np.abs((pts[:, 0] - p[0]) * d[1] - (pts[:, 1] - p[1]) * d[0]) / length
-        hit = np.nonzero((off < 2e-3) & (t > 1e-9) & (t < 1 - 1e-9))[0]
+        hit = np.nonzero((off < SNAP) & (t > 1e-9) & (t < 1 - 1e-9))[0]
         return [int(i) for i in hit[np.argsort(t[hit])]]
 
     return verts, [[i for k, a in enumerate(c)
@@ -323,11 +366,15 @@ def _weld(polys) -> Tuple[list, list]:
 
 
 def _split_long_edges(verts: list, cells: list) -> Tuple[list, list]:
-    """Every edge over ``EDGE_MAX`` cut evenly; both Cells on it get the same vertices."""
+    """Every wall edge over ``EDGE_MAX`` cut evenly. Only walls: edges inside the floor
+    stay whole, since every floor triangle is work for the walk gate."""
     verts = list(verts)
     ids = {v: i for i, v in enumerate(verts)}
+    walls = set(_wall_edges(cells))
 
     def mids(a: int, b: int) -> List[int]:
+        if (a, b) not in walls:
+            return []
         lo, hi = (a, b) if a < b else (b, a)
         p, q = np.array(verts[lo]), np.array(verts[hi])
         n = int(math.ceil(float(np.hypot(*(q - p))) / EDGE_MAX))
@@ -401,14 +448,11 @@ def _wander(verts: list, cells: list, keep_still: List[Rect], wobble: float,
     never so far that a Cell's fan folds over."""
     if wobble <= 0:
         return verts
-    count: Dict[Tuple[int, int], int] = {}
     owners: Dict[int, List[List[int]]] = {}
     for c in cells:
-        for a, b in zip(c, c[1:] + c[:1]):
-            key = (min(a, b), max(a, b))
-            count[key] = count.get(key, 0) + 1
+        for a in c:
             owners.setdefault(a, []).append(c)
-    wall = sorted({i for key, n in count.items() if n == 1 for i in key})
+    wall = sorted({i for edge in _wall_edges(cells) for i in edge})
     moved = list(verts)
     tol = 1e-3
     for i in wall:

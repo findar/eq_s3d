@@ -232,6 +232,7 @@ class ThemeLayer:
 class ThemeEntry:
     base: str
     layers: Tuple[str, ...] = ()
+    walls: str = "built"            # the theme's wall style (rules/walls/, step 8)
 
 
 @dataclass(frozen=True)
@@ -420,10 +421,10 @@ class _Checker:
         elif size not in SIZE_CLASSES:
             self.fail(where, p + "size", size, _one_of(SIZE_CLASSES))
             size = None
-        shape = tbl.get("shape", "rect")
+        shape = tbl.get("shape", "auto")
         if shape not in SHAPES:
             self.fail(where, p + "shape", shape, _one_of(SHAPES))
-            shape = "rect"
+            shape = "auto"
         district = tbl.get("district", 0)
         if not isinstance(district, int) or isinstance(district, bool) or district < 0:
             self.fail(where, p + "district", district, "a whole number 0 or more (a district label)")
@@ -868,13 +869,15 @@ def load_layer(path: Union[str, Path]) -> ThemeLayer:
 
 
 def load_theme_map(path: Union[str, Path]) -> ThemeMap:
-    """Load and check ``themes.toml``: theme -> {base, layers}; ``default`` required."""
+    """Load and check ``themes.toml``: theme -> {base, layers, walls}; ``default`` required."""
     path = Path(path)
     chk = _Checker(path.name)
     data = _read_toml(path, chk)
     chk.raise_if_failed()
     themes = (DEFAULT_THEME,) + tuple(VALID_DUNGEON_THEMES)
     entries: Dict[str, ThemeEntry] = {}
+    # By file, not by loading: a style's own checks run when the style is loaded.
+    styles = tuple(sorted(p.stem for p in (path.parent.parent / "walls").glob("*.toml"))) or ("built",)
     for theme, raw in data.items():
         if theme not in themes:
             chk.fail("top level", theme, "an unknown theme", _one_of(themes), raw=True)
@@ -882,10 +885,14 @@ def load_theme_map(path: Union[str, Path]) -> ThemeMap:
         t = chk.table(raw, theme, "entry", '{ base = "classic_eq", layers = ["temple"] }')
         if t is None:
             continue
-        chk.keys(t, theme, ("base", "layers"), required=("base",))
+        chk.keys(t, theme, ("base", "layers", "walls"), required=("base",))
         base = chk.text(t, "base", theme, required=False)
         layers = chk.names(t["layers"], theme, "layers", "layer") if "layers" in t else ()
-        entries[theme] = ThemeEntry(base, layers)
+        walls = chk.text(t, "walls", theme, required=False, default="built")
+        if walls not in styles:
+            chk.fail(theme, "walls", walls, _one_of(styles))
+            walls = "built"
+        entries[theme] = ThemeEntry(base, layers, walls)
     if DEFAULT_THEME not in data:
         chk.fail("top level", DEFAULT_THEME, _MISSING,
                  'a default entry, e.g. default = { base = "classic_eq" }')

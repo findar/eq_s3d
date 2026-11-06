@@ -251,7 +251,7 @@ SET_CASES = {
         [('{id = "l", kind = "lair", size = "small"}', '{id = "l", kind = "lair", size = "big"}')],
         "rules.grow", "replace[1].size", "tiny, small, medium, large, huge"),
     "unknown shape": (
-        [('{id = "l", kind = "lair", size = "small"}', '{id = "l", kind = "lair", size = "small", shape = "blob"}')],
+        [('{id = "l", kind = "lair", size = "small"}', '{id = "l", kind = "lair", size = "small", shape = "star"}')],
         "rules.grow", "replace[1].shape", "rect"),
     "bad district": (
         [('{id = "l", kind = "lair", size = "small"}', '{id = "l", kind = "lair", size = "small", district = -1}')],

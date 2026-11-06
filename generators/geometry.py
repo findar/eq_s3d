@@ -667,19 +667,30 @@ class MeshBuilder:
 
         floor_uv = self._uv_scale[floor_mat]
         ceiling_uv = self._uv_scale[ceiling_mat]
+        floor_at: Dict[Tuple[float, float], int] = {}
+        ceiling_at: Dict[Tuple[float, float], int] = {}
+
+        def vertex(at, x, y, z, nz, uv):
+            """One vertex per point, so the walk gate sees one welded floor."""
+            k = at.get((x, y))
+            if k is None:
+                k = at[(x, y)] = len(self.vertices)
+                u, v = uv
+                self.vertices.append(Vertex(x=x, y=y, z=z, nx=0, ny=0, nz=nz, u=u, v=v))
+            return k
+
         for cell in outline.cells:
             pts = [outline.verts[i] for i in cell]
             cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+            open_above = under_slot(cx, cy)
             for (ax, ay), (bx, by) in zip(pts, pts[1:] + pts[:1]):
-                tri = [(cx, cy), (ax, ay), (bx, by)]
-                self._add_face([(x, y, z0) for x, y in tri],
-                               [(x * floor_uv, -y * floor_uv) for x, y in tri],
-                               (0, 0, 1), floor_mat)
-                if not under_slot(cx, cy):
-                    tri = tri[::-1]
-                    self._add_face([(x, y, z1) for x, y in tri],
-                                   [(x * ceiling_uv, y * ceiling_uv) for x, y in tri],
-                                   (0, 0, -1), ceiling_mat)
+                f = [vertex(floor_at, x, y, z0, 1, (x * floor_uv, -y * floor_uv))
+                     for x, y in ((cx, cy), (ax, ay), (bx, by))]
+                self.polygons.append(Polygon(f[0], f[1], f[2], floor_mat, 0))
+                if not open_above:
+                    c = [vertex(ceiling_at, x, y, z1, -1, (x * ceiling_uv, y * ceiling_uv))
+                         for x, y in ((bx, by), (ax, ay), (cx, cy))]
+                    self.polygons.append(Polygon(c[0], c[1], c[2], ceiling_mat, 0))
 
         doors = _door_openings(room, spec)
         for side, cuts in (extra_doors or {}).items():

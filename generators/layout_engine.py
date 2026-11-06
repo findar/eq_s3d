@@ -474,7 +474,7 @@ class GraphEngine:
             for r in order:
                 n = graph.node(r)
                 rec["rooms"][rooms[idx[r]].id] = {
-                    "kind": n.kind, "size": n.size, "district": n.district, "node": r}
+                    "kind": n.kind, "size": n.size, "shape": n.shape, "district": n.district, "node": r}
             rec["edges"] = [[rooms[e.i].id, rooms[e.j].id, e.rel] for e in edges]
         return rec
 
