@@ -558,20 +558,12 @@ def test_v7_stacked_fidelity(label):
 
 
 # Req 6.2: the corridors' graph of stacked builds (moderate) keeps step 6's
-# built shape bands. Measured (task 6, with task 18 merged): classic_eq
-# cycles 0.090, dead ends 0.303, deep end 0.362 (in band); warren 0.184,
-# 0.206, 0.265 -- its cycles just under the 0.19 floor. Task 18 changed the
-# gate, not Job B's choices, so the layouts and the numbers are the same as
-# before it. Stacked warrens drop about 11 % of their edges between Levels
-# against 6 % within one, and a dropped stair edge on a ring is a lost loop;
-# raising the grammar's loops instead pushes its n >= 20 cycles over the
-# warren band's 0.29 (tests/test_ruleset_warren.py). Kept as a known gap.
-@pytest.mark.parametrize("label", [
-    "classic_eq",
-    pytest.param("warren", marks=pytest.mark.xfail(
-        strict=False, reason="stacked warren built cycles 0.184 < 0.19: "
-                             "stair edges between Levels are dropped more often")),
-])
+# built shape bands. Measured (task 12): classic_eq cycles 0.104, dead ends
+# 0.296, deep end 0.368; warren 0.194, 0.198, 0.263. Warren's loops come from
+# Job B keeping its edges (doors along the wall for a stair, a dropped edge
+# restored once clear), not the grammar: its n >= 20 cycles are at the warren
+# band's 0.29 already (tests/test_ruleset_warren.py).
+@pytest.mark.parametrize("label", ["classic_eq", "warren"])
 def test_v7_stacked_builds_keep_the_built_shape(label):
     from tests.test_topology_embed import BUILT_BANDS, _built_shape
     rows = [_built_shape(spec, spec.layout) for spec, _m in _v7_sweep(label, "moderate")]

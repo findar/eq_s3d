@@ -133,8 +133,10 @@ def room_levels(spec: ZoneSpec) -> Dict[str, int]:
 
 def connector_record(spec: ZoneSpec) -> Dict[str, dict]:
     """Each corridor as a connector (corridor id -> record): ``kind`` is
-    ``stair`` (``steps`` != 0 with a rise), ``ramp`` (a rise, ``steps`` 0)
-    or ``flat``; ``rise`` the floor-height difference |to_z - from_z|;
+    ``bridge`` (``CorridorSpec.bridge`` set; the record's ``over`` names the
+    lower room it crosses), ``stair`` (``steps`` != 0 with a rise), ``ramp``
+    (a rise, ``steps`` 0) or ``flat``; ``rise`` the floor-height difference
+    |to_z - from_z|;
     ``risers`` the stair's risers (a planned stair's from
     ``geometry.stair_layout``, the builder's own plan; a hand-picked count
     as given; 0 for a ramp or flat corridor); ``switchback`` whether the
@@ -147,7 +149,9 @@ def connector_record(spec: ZoneSpec) -> Dict[str, dict]:
     for c in spec.corridors:
         rise = abs(c.to_z - c.from_z)
         risers, switchback = 0, False
-        if rise <= 0.01:
+        if c.bridge:
+            kind = "bridge"
+        elif rise <= 0.01:
             kind = "flat"
         elif c.steps == 0:
             kind = "ramp"
@@ -161,6 +165,8 @@ def connector_record(spec: ZoneSpec) -> Dict[str, dict]:
                 risers = max(c.steps, 0)
         out[c.id] = {"kind": kind, "rise": round(rise, 2), "risers": risers,
                      "switchback": switchback}
+        if c.bridge:
+            out[c.id]["over"] = c.bridge
     return out
 
 

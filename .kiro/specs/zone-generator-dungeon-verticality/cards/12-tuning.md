@@ -10,15 +10,16 @@ The first look (task 10) had no findings, so this task closes the defects the ag
 3. **Stacked warren's loops** (tasks 6, 17): 0.170 cycles per room against step 6's 0.19 floor, an xfail in `tests/test_topology_embed.py`. Raise them in the rules or the placement so the xfail goes; if that can't hold without breaking warren's other bands, set a stacked-warren band from the survey and say why.
 
 ## Done when
-- [ ] No third-room clip over the 240-build sweep (0 of 240), asserted by a test; seed 7 restored.
-- [ ] A bridge's connector record says `bridge`; the test in `tests/test_level_sidecar_maps.py` or `tests/test_bridges.py` pins it.
-- [ ] The stacked-warren xfail is gone.
+- [x] No third-room clip over the 240-build sweep (0 of 240), asserted by a test; seed 7 restored.
+- [x] A bridge's connector record says `bridge`; the test in `tests/test_level_sidecar_maps.py` or `tests/test_bridges.py` pins it.
+- [x] The stacked-warren xfail is gone.
 - [ ] Any findings from the user's look at bridges are fixed or recorded as follow-ups.
       → verify: `python -m pytest tests/test_vertical_build.py tests/test_topology_levels.py tests/test_corridor_clearance.py tests/test_bridges.py tests/test_topology_embed.py -q`
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 - The route fix must leave classic byte-identical (goldens).
 - A retune of warren must keep tasks 5, 6 and 18's bands.
 
 ## Result
+✔ 9d4466b · 1428 passed; awaiting the user's look at bridges

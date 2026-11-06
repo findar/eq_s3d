@@ -116,6 +116,11 @@ LEVEL_VARIATION = 28.0
 
 # How far a U-route stair's door sits in from the end of its wall.
 U_DOOR_MARGIN = 2.0
+# Where a U-route's doors may stand along their walls once the two ends have
+# been tried (LayoutGenerator._u_cor). A finer grid found no more loops.
+U_DOOR_STOPS = (-1.0, -0.5, 0.0, 0.5, 1.0)
+# A stacked build's rounds of re-judging corridors after a relax moved floors.
+SETTLE_PASSES = 4
 
 
 class _Stack(NamedTuple):
@@ -500,11 +505,23 @@ class LayoutGenerator:
         graph_changed = self._resolve_conflicts(rooms, edges) or graph_changed
         if graph_changed and (elevation or themed):
             from collections import defaultdict
-            adj = defaultdict(list)
-            for i, j in edges:
-                adj[i].append(j)
-                adj[j].append(i)
-            self._relax_elevation(rooms, adj, entrance)
+
+            def relax():
+                adj = defaultdict(list)
+                for i, j in edges:
+                    adj[i].append(j)
+                    adj[j].append(i)
+                self._relax_elevation(rooms, adj, entrance)
+
+            relax()
+            if self._stack is not None:
+                # The relax moved floors, and with them what clears what: judge
+                # the corridors again on the floors they will be built on.
+                for _ in range(SETTLE_PASSES):
+                    self._shapes = {}
+                    if not self._resolve_conflicts(rooms, edges):
+                        break
+                    relax()
 
         if envelope is not None:
             self._fit_floors(rooms, edges, entrance, envelope)
@@ -902,11 +919,9 @@ class LayoutGenerator:
             if c is not None and stacked:
                 # Stacked: a split's halves may each be blocked by the other's
                 # room (a stair round a corner of its own Level), so an edge
-                # is split once; met again it is kept and reported.
+                # is split once; met again it is kept, for _resolve_conflicts
+                # to drop or swap (_clear_blocked).
                 if key in split:
-                    note = f"crosses_room: {rooms[i].id}-{rooms[j].id}"
-                    if note not in self.warnings:
-                        self.warnings.append(note)
                     c = None
                 else:
                     split.add(key)
@@ -1178,13 +1193,64 @@ class LayoutGenerator:
                     return e
             return None
 
+        def clear_blocked() -> bool:
+            """Stacked: an edge a third room still blocks, on every route it
+            has, after its one split (``_resolve_crossings``) can't be built
+            clear: its stub or leg would stand in that room. It goes the way a
+            clash does: a loop edge is dropped, a tree edge swapped for a clear
+            one. Kept and reported (``crosses_room``) only when nothing clear
+            rejoins the graph."""
+            changed = False
+            for k in range(len(edges) - 1, -1, -1):
+                i, j = edges[k]
+                blocked = self._shape(rooms, i, j).blocked
+                if blocked is None or blocked in (i, j):
+                    continue
+                if is_removable(k, edges):
+                    del edges[k]
+                else:
+                    e = substitute(k, edges)
+                    if e is None:
+                        self.warnings.append(
+                            f"crosses_room: {rooms[i].id}-{rooms[j].id}")
+                        continue
+                    edges[k] = e
+                changed = True
+            return changed
+
+        def restore_dropped(before: List[Tuple[int, int]]) -> None:
+            """Stacked: an edge dropped for a clash comes back when it now
+            clears every room and corridor (the corridor it met may have moved
+            or gone too), a stair on any of its routes. A clash drops the
+            first edge of its pair that can go, so this is often a loop that
+            needn't have fallen."""
+            have = {frozenset(e) for e in edges}
+            for e in before:
+                if frozenset(e) in have:
+                    continue
+                edges.append(e)
+                k = len(edges) - 1
+                if self._is_stair(*e):
+                    clear = self._reroute_stair(rooms, edges, (k,))
+                else:
+                    clear = (self._shape(rooms, *e).blocked is None
+                             and not any(self._clash_3d(rooms, e, o)
+                                         for o in edges[:k]))
+                if clear:
+                    have.add(frozenset(e))
+                else:
+                    edges.pop()
+
         # No Z clearance exemption: two corridors whose floors overlap in XY
         # are stacked floors (or intersecting ones) at ANY height difference,
         # and a box build must have one depth band (task 14). Flat floors all
         # sit at 0, so for them this is the same footprint test as before.
         # A conflict between two tree edges (neither can drop) is resolved by
         # swapping one for another edge that rejoins the graph cleanly.
+        before = list(edges)
         removed_any = False
+        if self._stack is not None:
+            removed_any = clear_blocked()
         stuck = set()
         safety = (4 * len(edges) + 8 if self.corridor_clearance
                   else len(edges) + 4)
@@ -1217,6 +1283,8 @@ class LayoutGenerator:
             safety -= 1
             removed_any = True
 
+        if self._stack is not None:
+            restore_dropped(before)
         return removed_any
 
     def _assign_elevation(self, rooms: List[RoomSpec],
@@ -1785,14 +1853,15 @@ class LayoutGenerator:
                             width=self.corridor_width, height=self.corridor_height,
                             steps=steps, from_room=a.id, to_room=b.id)
 
-    def _u_cor(self, a: RoomSpec, b: RoomSpec, side: str, a_far: bool = True,
-               b_far: bool = True) -> Optional[CorridorSpec]:
-        """A stair on a U-route out of the walls of *a* and *b* facing *side*,
-        each door at one end of its wall: the end away from the other room
-        (``*_far``, the middle leg then runs the length of both) or the end
-        toward it (the middle leg stays clear of a corridor leaving the far
-        part of that wall). None when a wall can't hold the door or the middle
-        leg is too short to fold a Switchback."""
+    def _u_cor(self, a: RoomSpec, b: RoomSpec, side: str, a_at: float = -1.0,
+               b_at: float = 1.0) -> Optional[CorridorSpec]:
+        """A stair on a U-route out of the walls of *a* and *b* facing *side*.
+        ``a_at`` and ``b_at`` place each door along its wall, -1 to 1 in the
+        direction from a to b: a's -1 and b's 1 are the ends away from the
+        other room (the middle leg then runs the length of both), a's 1 and
+        b's -1 the ends toward it (the middle leg stays clear of a corridor
+        leaving the far part of that wall). None when a wall can't hold the
+        door or the middle leg is too short to fold a Switchback."""
         hw = self.corridor_width / 2
         inset = 2.0                      # as _wall_point
         exit_x = side in ("E", "W")
@@ -1809,8 +1878,8 @@ class LayoutGenerator:
         if reach_a < 0 or reach_b < 0:
             return None
         sgn = 1.0 if tb >= ta else -1.0
-        da = ta - sgn * reach_a if a_far else ta + sgn * reach_a
-        db = tb + sgn * reach_b if b_far else tb - sgn * reach_b
+        da = ta + sgn * reach_a * a_at
+        db = tb + sgn * reach_b * b_at
         if abs(db - da) < 2 * hw + 2 * MIN_LANE:
             return None
         (fx, fy), (tx, ty) = (((wall(a), da), (wall(b), db)) if exit_x
@@ -1828,7 +1897,9 @@ class LayoutGenerator:
         stand a corridor apart on that axis (as separation leaves two rooms
         on one Level), then U-routes on the four sides, the two across the
         pair's offset first (the longest middle legs), each with its doors at
-        the far ends of the walls, then the near end of one or both."""
+        the far ends of the walls, then the near end of one or both, then
+        along the walls (``U_DOOR_STOPS``), so a stair the ends can't place
+        still has a way past a room's corner or a corridor beside it."""
         a, b = rooms[i], rooms[j]
         out = []
         ex = self._exit_axis_x(a, b)
@@ -1838,9 +1909,12 @@ class LayoutGenerator:
             out.append(self._facing_cor(a, b, AUTO_STAIRS))
         across_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
         sides = ("N", "S", "E", "W") if across_x else ("E", "W", "N", "S")
-        for a_far, b_far in ((True, True), (False, True), (True, False), (False, False)):
+        ends = [(-1.0, 1.0), (1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)]
+        along = [(p, q) for p in U_DOOR_STOPS for q in U_DOOR_STOPS
+                 if abs(p) != 1.0 or abs(q) != 1.0]
+        for a_at, b_at in ends + along:
             for side in sides:
-                cor = self._u_cor(a, b, side, a_far, b_far)
+                cor = self._u_cor(a, b, side, a_at, b_at)
                 if cor is not None:
                     out.append(cor)
         return out
