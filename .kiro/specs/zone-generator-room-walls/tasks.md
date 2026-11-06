@@ -35,7 +35,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: analyzer/traverse.py, generators/zone_spec.py (`RoomSpec.outline`), generators/outline.py (the data type only), tests/test_gate_outlines.py
   - Reqs: 3
 
-- [ ] 3. Outlines and their meshes
+- [x] 3. Outlines and their meshes
   - Card: [cards/03-outline-mesh.md](cards/03-outline-mesh.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/outline.py, generators/geometry.py, analyzer/traverse.py (a Throat's chain), tests/test_outline.py
