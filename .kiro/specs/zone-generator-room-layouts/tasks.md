@@ -154,7 +154,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Card: [cards/22-second-look.md](cards/22-second-look.md)
   - Type: human · Depends: 21
 
-- [ ] 23. Tune from the looks
+- [x] 23. Tune from the looks
   - Card: [cards/23-tuning.md](cards/23-tuning.md)
   - Type: agent · Size: S · Depends: 22
   - Owns: rules/rooms/, rules/walls/, generators/room_layouts.py, generators/room_features.py, generators/room_scales.py, generators/transitions.py, docs/TOPOLOGY_RULES.md, tests/
