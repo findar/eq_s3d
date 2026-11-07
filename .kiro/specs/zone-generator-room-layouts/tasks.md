@@ -150,14 +150,14 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/room_scales.py, ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, tests/test_hygiene.py, tests/test_scale_controls.py
   - Reqs: 15
 
-- [ ] 22. HUMAN: second look, rooms that vary
+- [x] 22. HUMAN: second look, rooms that vary
   - Card: [cards/22-second-look.md](cards/22-second-look.md)
   - Type: human · Depends: 21
 
 - [ ] 23. Tune from the looks
   - Card: [cards/23-tuning.md](cards/23-tuning.md)
   - Type: agent · Size: S · Depends: 22
-  - Owns: rules/rooms/, rules/walls/, generators/room_layouts.py, generators/room_features.py, generators/room_scales.py, generators/transitions.py, tests/
+  - Owns: rules/rooms/, rules/walls/, generators/room_layouts.py, generators/room_features.py, generators/room_scales.py, generators/transitions.py, docs/TOPOLOGY_RULES.md, tests/
 
 - [ ] 24. Acceptance section, thorough run
   - Card: [cards/24-release-prep.md](cards/24-release-prep.md)
