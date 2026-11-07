@@ -108,7 +108,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Card: [cards/15-human-acceptance.md](cards/15-human-acceptance.md)
   - Type: human · Depends: 14
 
-- [ ] 16. Close step 8
+- [x] 16. Close step 8
   - Card: [cards/16-close.md](cards/16-close.md)
   - Type: agent · Size: S · Depends: 15 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-room-walls/, .kiro/specs/zone-generator/

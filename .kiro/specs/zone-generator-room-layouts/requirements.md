@@ -1,9 +1,11 @@
 # Requirements Document
 
-> **STATUS: roadmap step 9, ready.** Written 2026-11-06 at master `1c69568`. The user took
-> the recommended answer to every open question the same day (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 26 tasks). Requirements 10–15 came from the user on the same day, after the first look: what a room is like belongs to the rules, not only to a slider.
-> Step 8's acceptance pass and close are still open: the user set them aside on
-> 2026-11-06 and asked to go on, so this step builds on walls not yet signed off.
+> **STATUS: roadmap step 9, DONE.** Written 2026-11-06 at master `1c69568`,
+> signed off 2026-11-07 (master `e7a5219`). The user took the recommended answer
+> to every open question on 2026-11-06 (`archive.md` "Decisions"). Requirements
+> 10–15 came from the user the same day, after the first look: what a room is
+> like belongs to the rules, not only to a slider. What landed: `archive.md`.
+> Task index: `tasks.md` (card format, 26 tasks).
 
 ## Introduction
 

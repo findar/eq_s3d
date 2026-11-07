@@ -169,7 +169,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Card: [cards/25-human-acceptance.md](cards/25-human-acceptance.md)
   - Type: human · Depends: 24
 
-- [ ] 26. Close step 9
+- [x] 26. Close step 9
   - Card: [cards/26-close.md](cards/26-close.md)
   - Type: agent · Size: S · Depends: 25 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-room-layouts/, .kiro/specs/zone-generator/

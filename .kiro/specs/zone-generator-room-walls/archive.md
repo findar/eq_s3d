@@ -5,7 +5,30 @@ this file to pick up a task; it holds the "why".
 
 ## What landed
 
-Nothing yet. Rows are added at the close step (task 16).
+Signed off 2026-11-07 (with step 9's pass); master `f75cef9`. Built at master
+`1c69568`, suite 1628 (fast and thorough green). Graph rooms take one of three
+wall styles, `built`, `hewn` and `rough`, each an Outline cut from the room's Box.
+
+| Task | What landed |
+|------|-------------|
+| 1 | Stock wall survey: Fill, wander and corner bands per style; Outlines take 5–20% off the Box |
+| 2 | The walk gate judges shaped rooms (Outline floors, Throats kept clear) before anything makes one |
+| 3 | Outlines and their meshes: Cells (Voronoi for `rough`, `facet` for `hewn`, a grid for `built`), plumb walls |
+| 4 | Wall styles as checked TOML data under `rules/`, with check and draw tooling |
+| 5 | Graph dungeons draw each room's Outline; Classic stays rectangles, byte-identical |
+| 6 | Floors and ceilings move with the style, flat at every Throat |
+| 7 | The Walls control, sidecar `walls`, and the style on the maps |
+| 8 | First look signed off (no findings) |
+| 9 | Corridors match their rooms' style |
+| 10 | Textures follow the style |
+| 11 | Outdoor dungeons draw their walls |
+| 12 | Styles tuned to the stock bands; gate sweep; shaped rooms keep their Box (question 4) |
+| 13 | Nothing left to tune |
+| 14 | `docs/ACCEPTANCE.md` "Step 8"; small rooms wander less |
+| 15 | Human acceptance pass signed off with step 9's, on the cases rewritten for step 9's Finish control |
+
+Step 9 task 16 later made a room's style its Finish, drawn from the rules'
+Scales. The page's control is now Finish; a plan's `walls` still pins one style.
 
 ## Decisions
 
