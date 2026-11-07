@@ -104,7 +104,7 @@ the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
   - Owns: docs/ACCEPTANCE.md, tests/test_walls_build.py
   - Reqs: 12.6, exit criteria 1–2
 
-- [ ] 15. HUMAN: room walls acceptance pass
+- [x] 15. HUMAN: room walls acceptance pass
   - Card: [cards/15-human-acceptance.md](cards/15-human-acceptance.md)
   - Type: human · Depends: 14
 
