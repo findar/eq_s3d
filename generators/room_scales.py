@@ -1,7 +1,7 @@
 """Scales (roadmap step 9): what a room is like, as weights in the rules.
 
 Finish, structure and clutter run from 0 to 10. A source of weights is a Layer: the
-default, a race, a theme, an overlay, a room kind or type, and later a rule or a control.
+default, a race, a theme, an overlay, a room kind or type, a rule's wing, and later a control.
 A value's chance is its weight over the sum, and a room's weights are its Layers
 multiplied, so an ogre temple is a real blend and not whichever was named last. Layers
 that disagree never fail a build: when the product is all zeros, the most specific Layer
@@ -70,12 +70,13 @@ class RoomScales:
     overlays: Mapping[str, Layer]
     kinds: Mapping[str, Layer]
     types: Mapping[str, Layer]
+    wings: Mapping[str, Layer] = field(default_factory=dict)
 
     def layers_for(self, race: str = "", theme: str = "", overlay: str = "", kind: str = "",
-                   room_type: str = "") -> Tuple[Layer, ...]:
+                   room_type: str = "", wing: str = "") -> Tuple[Layer, ...]:
         """A room's Layers from the rules, least specific first. A name with no table has none."""
         found = (self.races.get(race), self.themes.get(theme), self.overlays.get(overlay),
-                 self.kinds.get(kind), self.types.get(room_type))
+                 self.kinds.get(kind), self.types.get(room_type), self.wings.get(wing))
         return (self.default,) + tuple(x for x in found if x is not None)
 
 
@@ -95,6 +96,7 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
     the entrance outward, each from its own stream, so this moves nothing about the layout."""
     rules = rules or load_scales()
     records = spec.layout["rooms"]
+    coherence = spec.layout.get("coherence") or {}
     next_door: Dict[str, list] = {room.id: [] for room in spec.rooms}
     for cor in spec.corridors:
         if cor.from_room in next_door and cor.to_room in next_door:
@@ -103,12 +105,15 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
     drawn: Dict[str, Dict[str, int]] = {}
     for room in sorted(spec.rooms, key=lambda r: r.graph_depth):    # stable: the spec's order within a depth
         record = records.setdefault(room.id, {})
+        wing = record.get("wing", "")
         layers = rules.layers_for(spec.dungeon_race, spec.dungeon_theme, overlay, record.get("kind", room.kind),
-                                  room.semantic_type)
+                                  room.semantic_type, wing)
         values = {}
         for scale in SCALES:
-            near = [drawn[n][scale] for n in next_door[room.id] if n in drawn]
-            weights = lean(combine(scale, layers), near, rules.coherence[scale])
+            # A room leans only within its wing: that's what gives a wing its hard edge.
+            near = [drawn[n][scale] for n in next_door[room.id]
+                    if n in drawn and records.get(n, {}).get("wing", "") == wing]
+            weights = lean(combine(scale, layers), near, coherence.get(scale, rules.coherence[scale]))
             rng = random.Random(f"{seed}:{room.id}:{scale}")
             values[scale] = rng.choices(range(VALUES), weights=weights)[0]
         drawn[room.id] = values
@@ -207,7 +212,8 @@ def load_scales(path=SCALES_FILE) -> RoomScales:
     chk = _Checker(path.name)
     data = _read_toml(path, chk)
     chk.raise_if_failed()
-    chk.keys(data, "top level", ("default", "races", "themes", "overlays", "kinds", "types"), required=("default",))
+    chk.keys(data, "top level", ("default", "races", "themes", "overlays", "kinds", "types", "wings"),
+             required=("default",))
     raw_default = data.get("default", {})
     default = _layer(chk, raw_default, "default")
     if isinstance(raw_default, dict):
@@ -224,5 +230,6 @@ def load_scales(path=SCALES_FILE) -> RoomScales:
     overlays = _named(chk, data, "overlays", None)
     kinds = _named(chk, data, "kinds", ROOM_KINDS)
     types = _named(chk, data, "types", sorted(ROOM_TYPES))
+    wings = _named(chk, data, "wings", None)
     chk.raise_if_failed()
-    return RoomScales(default, coherence, races, themes, overlays, kinds, types)
+    return RoomScales(default, coherence, races, themes, overlays, kinds, types, wings)

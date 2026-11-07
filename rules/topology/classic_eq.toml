@@ -189,6 +189,24 @@ replace  = [ {id = "x", kind = "Area"},
 edges    = [ {a = "x", b = "h"}, {a = "h", b = "l", rel = "level"} ]
 reattach = { x = ["x"] }
 
+# A wing: a placeholder off the way that grows as one place, by its own finish, with a hard edge
+# to the rooms around it (rules/rooms/scales.toml). Chardok's plot is the model: a built block,
+# and a cave (design finding 3 of the room layouts spec).
+[rules.cave_wing]
+description = "A wing off the way that grows as raw cave"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "w", kind = "Area", wing = "cave"} ]
+edges    = [ {a = "x", b = "w"} ]
+reattach = { x = ["x"] }
+
+# The same, as dressed stone.
+[rules.masonry_wing]
+description = "A wing off the way that grows as dressed stone"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "w", kind = "Area", wing = "masonry"} ]
+edges    = [ {a = "x", b = "w"} ]
+reattach = { x = ["x"] }
+
 # A fork: a large hub takes the placeholder's place on the way (all its
 # edges), with two new placeholders off it that later stages grow into
 # side ways. Forking keeps the deep end near the survey's third of the rooms;
@@ -320,7 +338,7 @@ share = 0.1
 # Most rooms: forks, short loops and dead ends off the way.
 [[recipe]]
 stage = "Side rooms"
-apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3.5, cavern = 0.3, stair_hall = 5, gallery = 3, bridge_hall = 2, undercroft = 1 }
+apply = { branch = 1, side_wing = 1, crossroads = 3, great_hall = 1, loop = 3.5, cavern = 0.3, stair_hall = 5, gallery = 3, bridge_hall = 2, undercroft = 1, cave_wing = 1, masonry_wing = 1 }
 share = 0.45
 
 # A few more loops, some of them as second routes along the way.

@@ -36,6 +36,7 @@ Decisions the design leaves open (task 4):
   shape and district (a rule that joins two chambers doesn't resize them), and
   a kind change takes the replacement's attributes. Other replacement nodes
   get fresh ids (``n000``, ``n001``, ... from a counter, skipping ids in use).
+  A node with no wing of its own takes the matched nodes' (a wing grows as one).
 - **Reattach.** A removed node's outside edges (to nodes outside the match),
   sorted by the outside neighbour's id, are cut into contiguous chunks, one per
   target in the listed order, earlier targets taking the larger chunks: edge i
@@ -259,16 +260,17 @@ def apply_rule(graph: TopologyGraph, rule: Rule, placement: Sequence[str],
 
     r2g: Dict[str, str] = {}
     new_ids: List[str] = []
+    inherited = next((old[g].wing for g in placement if old[g].wing), "")
     for rn in rule.replace:
         if rn.id in m2g:
             gid = m2g[rn.id]
             prev = old[gid]
             node = prev if prev.kind == rn.kind else Node(gid, rn.kind, rn.size, rn.shape,
-                                                          rn.district)
+                                                          rn.district, rn.wing or prev.wing)
         else:
             gid = fresh()
             new_ids.append(gid)
-            node = Node(gid, rn.kind, rn.size, rn.shape, rn.district)
+            node = Node(gid, rn.kind, rn.size, rn.shape, rn.district, rn.wing or inherited)
         graph.add_node(node)
         r2g[rn.id] = gid
     for e in rule.edges:

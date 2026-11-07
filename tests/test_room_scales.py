@@ -1,6 +1,8 @@
 """Room layouts tasks 13-16 (Requirements 10-12; design F11-F13): weights in the rules."""
 
+import random
 from dataclasses import replace
+from pathlib import Path
 from statistics import median
 
 import pytest
@@ -208,3 +210,79 @@ def test_a_rooms_type_and_race_are_felt_in_its_draw():
     fine = [v for s in range(8) for v in _finishes(_spec(seed=s, dungeon_theme="fortress")).values()]
     raw = [v for s in range(8) for v in _finishes(_spec(seed=s, dungeon_theme="warren")).values()]
     assert median(fine) >= 6 > 3 >= median(raw)
+
+
+def _edges(spec):
+    return [(c.from_room, c.to_room) for c in spec.corridors]
+
+
+def test_a_wing_inherits_as_it_grows_and_sets_its_finish():
+    """F12: rooms grown from a wing's placeholder keep it, and its finish holds."""
+    winged = []
+    for seed in range(20):
+        spec = _spec(seed=seed, rooms=24, rule_set="classic_eq")
+        records = spec.layout["rooms"]
+        winged += [r["scales"][FINISH] for r in records.values() if r["wing"] == "masonry"]
+    assert winged and min(winged) >= 7
+
+
+def test_a_room_does_not_lean_across_a_wings_edge():
+    """At the highest coherence, a plain room beside a masonry wing draws as if it stood alone."""
+    rules = load_scales()
+    rules = replace(rules, coherence={**rules.coherence, FINISH: 10.0})
+    spec = _spec(seed=1, rooms=24, rule_set="classic_eq")
+    records = spec.layout["rooms"]
+    for r in records.values():
+        r["wing"] = "masonry"
+    room = next(r for r in spec.rooms if r.graph_depth > 0)
+    records[room.id]["wing"] = ""
+    draw_room_scales(spec, 7, rules=rules)
+    expected = random.Random(f"7:{room.id}:{FINISH}").choices(
+        range(VALUES), weights=combine(FINISH, rules.layers_for("", "", "", records[room.id]["kind"], room.semantic_type)))[0]
+    assert records[room.id]["scales"][FINISH] == expected
+
+
+def test_stock_shaped_zones():
+    """Req 11.5: drift and breaks in stock's bands, and drift under shuffled, over many zones."""
+    from random import Random
+    rng = Random(0)
+    drifts, shuffled, breaks = [], [], []
+    for seed in range(24):
+        spec = _spec(seed=seed, rooms=24, rule_set="classic_eq")
+        finish = _finishes(spec)
+        edges = [(a, b) for a, b in _edges(spec) if a in finish and b in finish]
+        diffs = [abs(finish[a] - finish[b]) for a, b in edges]
+        drifts.append(median(diffs))
+        breaks.append(sum(d >= 4 for d in diffs) / len(diffs))
+        names, values = list(finish), list(finish.values())
+        rng.shuffle(values)
+        dealt = dict(zip(names, values))
+        shuffled.append(median(abs(dealt[a] - dealt[b]) for a, b in edges))
+    assert 0.1 <= median(drifts) <= 3.3
+    assert median(breaks) <= 0.41 + 0.05
+    assert median(drifts) < median(shuffled)
+
+
+def test_a_rule_set_can_set_its_own_coherence(tmp_path):
+    from generators.topology.ruleset import load_rule_set
+    src = Path(__file__).resolve().parent.parent / "rules" / "topology" / "warren.toml"
+    text = src.read_text(encoding="utf-8").replace('[set]\n', '[set]\ncoherence = { finish = 9 }\n', 1)
+    if 'coherence' not in text:
+        text = src.read_text(encoding="utf-8").replace('[set]\r\n', '[set]\r\ncoherence = { finish = 9 }\r\n', 1)
+    p = tmp_path / "warren.toml"
+    p.write_text(text, encoding="utf-8")
+    assert load_rule_set(p).coherence == {"finish": 9.0}
+    p.write_text(text.replace("finish = 9", "shine = 9"), encoding="utf-8")
+    with pytest.raises(RuleSetError) as exc:
+        load_rule_set(p)
+    assert any(e.field == "coherence.shine" for e in exc.value.errors)
+
+
+def test_a_rule_naming_an_unknown_wing_is_named(tmp_path):
+    from generators.topology.ruleset import load_rule_set
+    src = Path(__file__).resolve().parent.parent / "rules" / "topology" / "classic_eq.toml"
+    p = tmp_path / "classic_eq.toml"
+    p.write_text(src.read_text(encoding="utf-8").replace('wing = "cave"', 'wing = "nope"'), encoding="utf-8")
+    with pytest.raises(RuleSetError) as exc:
+        load_rule_set(p)
+    assert any(e.field.endswith("wing") for e in exc.value.errors), str(exc.value)

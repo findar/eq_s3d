@@ -505,5 +505,18 @@ A room multiplies its layers, least specific first: `default`, `races`, `themes`
 `kinds`, `types`. So layers blend, and a value any of them rules out is out. `override = true`
 replaces everything less specific. If layers disagree so far that every value is 0, the most
 specific layer decides, and the build goes on. `[default]` must name all three scales, and
-`coherence`, 0 to 10, how strongly a room leans toward its neighbours. Check the file with
+`coherence`, 0 to 10, how strongly a room leans toward its neighbours. A base set can change it
+with `[set] coherence = { finish = 7 }`. Check the file with
 `python scripts/topology_rules.py check rules/rooms/scales.toml`.
+
+**Wings** are how rules make a place that hangs together. A node in a rule's `replace` can name a
+table of `[wings]`, and what that placeholder grows into inherits it. Rooms lean only within their
+wing, so the edge stays hard:
+
+```toml
+[rules.masonry_wing]
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "w", kind = "Area", wing = "masonry"} ]
+edges    = [ {a = "x", b = "w"} ]
+reattach = { x = ["x"] }
+```

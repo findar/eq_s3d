@@ -10,7 +10,7 @@
 # or a shorthand, 1 at the peak and falling to 0 just past the spread either side:
 #   finish = { peak = 8, spread = 2 }
 #
-# A room multiplies its layers: default, race, theme, overlay, kind, type. So an ogre temple is a
+# A room multiplies its layers: default, race, theme, overlay, kind, type, wing. So an ogre temple is a
 # blend. `override = true` replaces everything less specific, and if layers disagree so far that
 # every value is 0, the most specific layer decides.
 #
@@ -150,6 +150,22 @@ clutter = { peak = 8, spread = 2, override = true }
 finish = { peak = 3, spread = 2 }
 structure = { peak = 2, spread = 2 }
 clutter = { peak = 8, spread = 2, override = true }
+
+# --- wings, named by topology rules (`wing = "cave"` on a node); what it grows into inherits ---
+# Rooms lean only within their wing, so a wing's edge stays hard (design finding 3).
+
+[wings.cave]
+finish = { peak = 1, spread = 2, override = true }
+clutter = { peak = 5, spread = 3 }
+
+[wings.masonry]
+finish = { peak = 9, spread = 1, override = true }
+clutter = { peak = 2, spread = 2 }
+
+[wings.old_mine]
+finish = { peak = 4, spread = 1, override = true }
+structure = { peak = 3, spread = 2 }
+clutter = { peak = 7, spread = 2, override = true }
 
 # --- what the room is for ---------------------------------------------------------------------
 

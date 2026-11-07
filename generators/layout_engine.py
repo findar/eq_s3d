@@ -466,6 +466,7 @@ class GraphEngine:
             "rule_set": rs.name,
             "layers": list(rs.layers),
             "placement": rs.placement,
+            "coherence": dict(rs.coherence),
             "applied": [[a.stage, a.rule] for a in grown.applied] if grown else [],
             "rooms": {},
             "edges": [],
@@ -474,7 +475,8 @@ class GraphEngine:
             for r in order:
                 n = graph.node(r)
                 rec["rooms"][rooms[idx[r]].id] = {
-                    "kind": n.kind, "size": n.size, "shape": n.shape, "district": n.district, "node": r}
+                    "kind": n.kind, "size": n.size, "shape": n.shape, "district": n.district, "wing": n.wing,
+                    "node": r}
             rec["edges"] = [[rooms[e.i].id, rooms[e.j].id, e.rel] for e in edges]
         return rec
 

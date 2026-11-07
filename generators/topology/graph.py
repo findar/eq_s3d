@@ -53,6 +53,7 @@ class Node:
     size: Optional[str] = None
     shape: str = "auto"
     district: int = 0
+    wing: str = ""       # a table of ``rules/rooms/scales.toml``; what it grows into inherits it
 
     @property
     def is_room(self) -> bool:

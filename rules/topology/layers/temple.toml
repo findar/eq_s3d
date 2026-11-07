@@ -31,6 +31,15 @@ replace  = [ {id = "n",  kind = "hall", size = "large", shape = "long"},
 edges    = [ {a = "n", b = "c1"}, {a = "n", b = "c2"}, {a = "n", b = "x"} ]
 reattach = { x = ["n", "x"] }
 
+# An old mine the temple was dug beside: a wing off the way with its own finish and its own
+# mess (rules/rooms/scales.toml).
+[rules.mine_wing]
+description = "A wing off the way that grows as an old mine"
+match    = [ {id = "x", kind = "Area"} ]
+replace  = [ {id = "x", kind = "Area"}, {id = "w", kind = "Area", wing = "old_mine"} ]
+edges    = [ {a = "x", b = "w"} ]
+reattach = { x = ["x"] }
+
 # A crypt below a hall (a nave, or any hall the base set grew): a vertical
 # rule (step 7), so the Verticality control scales it like the base set's
 # (flat leaves it out). It grows from a finished hall, so it matches after
@@ -59,4 +68,4 @@ share = 0.1        # 0.1 so round(share x n) >= 1 from 5 rooms: a nave in every 
 # crypt. They compete with the base set's side-room rules (weights 0.3 to 5
 # there).
 [stages."Side rooms"]
-apply = { nave = 1, crypt = 1.5 }
+apply = { nave = 1, crypt = 1.5, mine_wing = 1 }
