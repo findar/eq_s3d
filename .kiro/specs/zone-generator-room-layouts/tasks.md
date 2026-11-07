@@ -138,7 +138,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/geometry.py, generators/zone_spec.py, generators/transitions.py, tests/test_transition_mesh.py
   - Reqs: 14.2, 14.6
 
-- [ ] 20. Transitions as data, in builds
+- [x] 20. Transitions as data, in builds
   - Card: [cards/20-transition-rules.md](cards/20-transition-rules.md)
   - Type: agent · Size: M · Depends: 19
   - Owns: generators/transitions.py, rules/rooms/transitions.toml, generators/wall_styles.py, generators/mapview.py, scripts/topology_rules.py, tests/test_transition_rules.py, tests/test_topology_levels.py

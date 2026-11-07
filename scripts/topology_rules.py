@@ -48,6 +48,7 @@ from generators.topology.ruleset import (  # noqa: E402
 
 from generators.room_layouts import LAYOUTS_FILE, load_layouts, place  # noqa: E402
 from generators.room_scales import SCALES_FILE, load_scales  # noqa: E402
+from generators.transitions import TRANSITIONS_FILE, load_transitions  # noqa: E402
 from generators.zone_spec import RoomSpec  # noqa: E402
 from generators.wall_styles import RECT, WALLS_DIR, load_style, load_styles  # noqa: E402
 
@@ -65,6 +66,8 @@ def _kind_of(path: Path) -> str:
         return "themes"
     if path.name == SCALES_FILE.name:
         return "scales"
+    if path.name == TRANSITIONS_FILE.name:
+        return "transitions"
     try:
         with open(path, "rb") as f:
             data = tomllib.load(f)
@@ -115,6 +118,7 @@ def _shipped() -> List[Path]:
     files += sorted(WALLS_DIR.glob("*.toml"))
     files.append(LAYOUTS_FILE)
     files.append(SCALES_FILE)
+    files.append(TRANSITIONS_FILE)
     return files
 
 
@@ -134,6 +138,10 @@ def cmd_check(files: Sequence[str]) -> int:
                 sc = load_scales(p)
                 lines.append(f"ok    {p.name}: scales, {len(sc.races)} races, {len(sc.themes)} themes, "
                              f"{len(sc.overlays)} overlays")
+            elif kind == "transitions":
+                tr = load_transitions(p)
+                lines.append(f"ok    {p.name}: transitions, {len(tr.pairs)} pairs, {len(tr.types)} types, "
+                             f"{len(tr.kinds)} kinds")
             elif kind == "rooms":
                 rl = load_layouts(p)
                 lines.append(f"ok    {p.name}: room layouts, {len(rl.types)} types, {len(rl.kinds)} kinds")

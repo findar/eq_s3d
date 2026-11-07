@@ -527,3 +527,34 @@ replace  = [ {id = "x", kind = "Area"}, {id = "w", kind = "Area", wing = "masonr
 edges    = [ {a = "x", b = "w"} ]
 reattach = { x = ["x"] }
 ```
+
+## Transitions
+
+`rules/rooms/transitions.toml` chooses what stands in a corridor between two rooms' wall styles.
+
+```toml
+[pairs.built_rough]
+forms = { seam = 4, frame = 2, breach = 1, none = 1 }
+
+[pairs.same]
+forms = { none = 9, frame = 1 }
+
+[types.vault]
+forms = { frame = 4, breach = 0.2 }
+```
+
+| Form | What it is |
+|---|---|
+| `none` | a plain opening: the corridor is the rougher room's all the way |
+| `seam` | the corridor's look and walls change at one clean line, on a flat or ramp leg |
+| `frame` | jambs and a lintel of the finer style, at the seam or a door, with a Door_Spot in the sidecar |
+| `breach` | the rougher corridor runs up to the finer room, and the opening is broken |
+
+Every two styles need a pair, written either way round, and `same` covers two rooms of one style.
+`[types.<room type>]` and `[kinds.<room kind>]` multiply in, once for each end room: its type's table
+if it has one, else its kind's.
+
+A form that can't stand gives way, and `layout.transitions` keeps what was `asked`: a frame or breach
+too big for the corridor becomes a seam (or none, between rooms of one style), and a stair or bridge
+has no seam, so its change stands at a door. No door goes in the mesh. A Door_Spot is where the SQL
+export can hang one, and the map draws a bar there.

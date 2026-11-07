@@ -1,0 +1,26 @@
+# What stands in a corridor between two rooms' wall styles (docs/TOPOLOGY_RULES.md, "Transitions").
+#
+# forms is a weight per form; a form's chance is its weight over the sum.
+#   none    a plain opening: the corridor is the rougher room's all the way
+#   seam    the corridor's look and walls change at one clean line
+#   frame   jambs and a lintel of the finer style, with a Door_Spot in the sidecar
+#   breach  the rougher corridor runs up to the finer room, and the opening is broken
+#
+# Every two styles need a pair, either way round. [pairs.same] is two rooms of one style.
+# [types.<room type>] and [kinds.<room kind>] multiply in, once for each end room: a type's table
+# if it has one, else its kind's. A form they don't name stays as it is.
+
+[pairs.built_rough]
+forms = { seam = 4, frame = 2, breach = 1, none = 1 }
+
+[pairs.built_hewn]
+forms = { seam = 3, frame = 2, none = 3 }
+
+[pairs.hewn_rough]
+forms = { seam = 3, none = 3, breach = 1 }
+
+[pairs.same]
+forms = { none = 9, frame = 1 }
+
+[types.vault]
+forms = { frame = 4, breach = 0.2 }

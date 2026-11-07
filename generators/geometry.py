@@ -1210,7 +1210,8 @@ class MeshBuilder:
         run = b_pos - a_pos
         if run < 1e-6:
             return
-        c0, c1 = a[1 - axis] - hw, a[1 - axis] + hw
+        cross = fy if along_x else fx       # the from end's line, as a straight leg runs
+        c0, c1 = cross - hw, cross + hw
         n = max(int(math.ceil(abs(b_z - a_z) / MAX_SEG_RISE)), int(math.ceil(run / ROUGH_SPACING)), 1)
         rng = random.Random(f"{a_pos:.2f},{c0:.2f},{b_pos:.2f}")
         s0, s1, fall = [0.0], [0.0], [0.0]

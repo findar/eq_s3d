@@ -14,7 +14,7 @@ from generators.topology.ruleset import RuleSetError, load_theme_map
 from generators.wall_styles import WALLS_DIR, load_style, load_styles, style_for_finish
 
 #: A plan naming a style, in master's bytes before finish chose a room's style, footer aside.
-NAMED = {"rough": "12d16368c99888d9b738927aa44eb1c63b54fb5d9bedaa0acb09354d917101b8", "hewn": "f001768dff90762e962d25c5f7a4db98f5bbd48f2e2e25d2067b9e3d8932b671", "built": "db8e84d0af396a3fb61afa7b0d9de567ca1ff7cac2e9ca14ea66308979cd4f72"}
+NAMED = {"rough": "62696c76d38f8f26b5a0751d6cb24984a90a607c4ef7e59b8052018c4e92c926", "hewn": "22a685a8791f2ee422ee668229b47373027410dd49c2cd9c9ed81777f9b97735", "built": "21232dbb6603ee17edf2de2a55c83ce50498dc3965bbb66939f102998f5b7267"}
 
 
 def _plan(**fields):
@@ -74,7 +74,7 @@ def test_themes_name_no_style(tmp_path):
         load_theme_map(p)
 
 
-def test_a_zone_mixes_styles_and_a_corridor_is_the_rougher_rooms():
+def test_a_zone_mixes_styles_and_a_corridor_without_a_seam_is_the_rougher_rooms():
     spec = plan_to_spec(_plan(rule_set="classic_eq", room_count=24), seed=4)
     assert len(_styles(spec)) >= 2
     assert spec.layout["walls"] == "rules"
@@ -84,6 +84,8 @@ def test_a_zone_mixes_styles_and_a_corridor_is_the_rougher_rooms():
         if cor.steps or cor.bridge:
             assert cor.rough == 0
             continue
+        if cor.transition is not None and cor.transition.floor_material:
+            continue                # its from_room's up to the line (test_transition_rules)
         ends = sorted(records[r]["style"] for r in (cor.from_room, cor.to_room))
         if ends[0] != ends[1] and "rough" in ends:
             assert cor.rough >= styles["rough"].corridor_break * 0.75

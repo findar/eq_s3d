@@ -114,6 +114,8 @@ def test_schematic_unchanged(spec, size, padding):
 
     Validates: M2 Req 7.2.
     """
+    for cor in spec.corridors:
+        cor.transition = None       # a Frame's Door_Spot is drawn since step 9 (test_transition_rules)
     expected = reference_mapview.render_map_svg(spec, size, padding)
     assert render_map_svg(spec, size, padding) == expected
     assert render_map_svg(spec, size, padding, outline=None) == expected
