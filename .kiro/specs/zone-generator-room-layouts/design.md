@@ -261,7 +261,7 @@ clutter = [0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 2]
 (Finding 3 sets coherence: 4 for finish. Task 13 sets the rest; these show the form.) The shorthand is
 `weight(v) = max(0, 1 - |v - peak| / (spread + 1))`.
 
-**Layers, least specific first:** default, race, theme, Overlay, kind, type, rule, control. All
+**Layers, least specific first:** default, race, theme, Overlay, kind, type, wing, control. All
 multiplied, so an ogre temple is a real blend and not whichever was named last. A product of all
 zeros falls to the most specific Layer with any weight: a control or a room type beats a theme it
 disagrees with, and nothing fails.
@@ -272,9 +272,10 @@ drawn and `sigma = 10 / coherence` (coherence 0: no lean). The stream is
 `Random(f"{seed}:{room.id}:{scale}")`, as `apply_walls` does per room, so nothing in the layout moves.
 
 **Why lean, not pure rewriting:** a wing should hang together, and a rule that grows a graph can
-say so outright. But rules only make some rooms, so the lean covers the rest. **Rule Weights** ride on
-graph nodes as `rule_shape` already does, inherited by what a placeholder grows into, and a room
-leans only on neighbours with the same rule Weights. That gives both things stock seems to show:
+say so outright. But rules only make some rooms, so the lean covers the rest. **A rule names a wing**
+on a graph node (`wing = "masonry"`), a table of Weights in `scales.toml`, not numbers in the rule:
+one file holds all weights. It rides on the node as `shape` does, is inherited by what a placeholder
+grows into, and a room leans only on neighbours in its wing. That gives both things stock shows:
 drift within a wing, and a hard edge between wings. High coherence is a slow change, 0 is the zones
 that are a bit random. Task 12 sets the default from stock.
 

@@ -55,6 +55,7 @@ from generators.topology.graph import (
 )
 from generators.zone_types import DEFINED_ZONE_TYPES
 
+COHERENCE_SCALES: Tuple[str, ...] = ("finish", "structure", "clutter")
 #: Placement names a set may name. Read at check time, so the placement
 #: module can extend it (``ruleset.PLACEMENTS += ("maze",)``).
 PLACEMENTS: Tuple[str, ...] = ("spring",)
@@ -206,6 +207,7 @@ class RuleSet:
     recipe: Tuple[Stage, ...]
     source: str
     layers: Tuple[str, ...] = ()
+    coherence: Mapping[str, float] = field(default_factory=dict)    # scale -> how far rooms lean; else the default's
 
     @property
     def all_kinds(self) -> Tuple[str, ...]:
@@ -328,6 +330,13 @@ def _type_name(v: Any) -> str:
             list: "an array", dict: "a table"}.get(type(v), type(v).__name__)
 
 
+def _known_wings() -> Tuple[str, ...]:
+    """The wings ``rules/rooms/scales.toml`` names. Read directly: that file's loader
+    builds on this one."""
+    with open(Path(__file__).resolve().parents[2] / "rules" / "rooms" / "scales.toml", "rb") as f:
+        return tuple(sorted(tomllib.load(f).get("wings", {})))
+
+
 class _Checker:
     def __init__(self, file: str):
         self.file = file
@@ -400,7 +409,7 @@ class _Checker:
         if tbl is None:
             return None
         p = fld + "."
-        allowed = ("id", "kind") if role == "match" else ("id", "kind", "size", "shape", "district")
+        allowed = ("id", "kind") if role == "match" else ("id", "kind", "size", "shape", "district", "wing")
         self.keys(tbl, where, allowed, prefix=p)
         nid = self.text(tbl, "id", where, prefix=p)
         kind = tbl.get("kind", _MISSING)
@@ -429,7 +438,11 @@ class _Checker:
         if not isinstance(district, int) or isinstance(district, bool) or district < 0:
             self.fail(where, p + "district", district, "a whole number 0 or more (a district label)")
             district = 0
-        return Node(nid, kind, size, shape, district)
+        wing = tbl.get("wing", "")
+        if wing and wing not in _known_wings():
+            self.fail(where, p + "wing", wing, _one_of(_known_wings()))
+            wing = ""
+        return Node(nid, kind, size, shape, district, wing)
 
     def nodes(self, raw: Any, where: str, fld: str, kinds: Sequence[str], role: str,
               lo: int = 1, hi: Optional[int] = None) -> List[Node]:
@@ -788,7 +801,7 @@ def load_rule_set(path: Union[str, Path]) -> RuleSet:
     st = (chk.table(data["set"], "top level", "set", "[set] with name, description, placement")
           if "set" in data else None)
     if st is not None:
-        chk.keys(st, "set", ("name", "description", "placement", "kinds", "start_nodes",
+        chk.keys(st, "set", ("name", "description", "placement", "kinds", "coherence", "start_nodes",
                              "start_edges"),
                  required=("name", "description", "placement", "start_nodes"))
     st = st or {}
@@ -800,6 +813,15 @@ def load_rule_set(path: Union[str, Path]) -> RuleSet:
     if placement is not _MISSING and placement not in PLACEMENTS:
         chk.fail("set", "placement", placement, _one_of(PLACEMENTS))
     kinds = _kinds(chk, st.get("kinds", _MISSING), "set")
+    coherence = {}
+    raw_coh = chk.table(st.get("coherence", {}), "set", "coherence", "{ finish = 4 }") or {}
+    for scale, v in raw_coh.items():
+        if scale not in COHERENCE_SCALES:
+            chk.fail("set", f"coherence.{scale}", "an unknown scale", _one_of(COHERENCE_SCALES), raw=True)
+        elif not _is_number(v) or not 0 <= v <= 10:
+            chk.fail("set", f"coherence.{scale}", v, "a number from 0 to 10")
+        else:
+            coherence[scale] = float(v)
     all_kinds = BASE_KINDS + kinds
     start = chk.nodes(st["start_nodes"], "set", "start_nodes", all_kinds, "start") \
         if "start_nodes" in st else []
@@ -816,7 +838,7 @@ def load_rule_set(path: Union[str, Path]) -> RuleSet:
         chk.check_recipe(recipe, rules)
     chk.raise_if_failed()
     return RuleSet(name, desc, placement, kinds, tuple(start), tuple(start_edges),
-                   rules, tuple(recipe), path.name)
+                   rules, tuple(recipe), path.name, coherence=coherence)
 
 
 def load_layer(path: Union[str, Path]) -> ThemeLayer:
@@ -963,7 +985,7 @@ def merge(base: RuleSet, layers: Sequence[ThemeLayer]) -> RuleSet:
     chk.raise_if_failed()
     return RuleSet(base.name, base.description, base.placement, tuple(kinds),
                    base.start_nodes, base.start_edges, rules, tuple(recipe), source,
-                   base.layers + tuple(l.name for l in layers))
+                   base.layers + tuple(l.name for l in layers), base.coherence)
 
 
 def load_for_theme(rules_dir: Union[str, Path], theme: Optional[str],

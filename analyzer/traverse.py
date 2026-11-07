@@ -46,7 +46,7 @@ import numpy as np
 
 from core.pfs import PfsArchive
 from core.ter import FLAG_PASSABLE, TerFile
-from scipy.ndimage import binary_dilation, label
+from scipy.ndimage import binary_dilation, binary_erosion, label
 
 from generators.geometry import (MeshBuilder, _bridge_slots, _door_openings, bridge_layout,
                                  is_auto_stair, stair_layout)
@@ -1287,11 +1287,16 @@ def check_features(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec, agent: Age
         whole, _m = label(free | (binary_dilation(over, iterations=reach) & room_cells)) if over.any() else (labels, 0)
         open_to_doors = {int(whole[c]) for c in np.argwhere(labels == joined).tolist() and
                          [tuple(np.argwhere(labels == joined)[0])]}
+        # A nook of the room's own walls, too narrow for a body, is no Feature's doing: stock
+        # caves have them. Judge only floor that a body could reach were the solids gone.
+        body = binary_erosion(room_cells, iterations=reach) | free
+        unsolid, _u = label(body)
+        door_side = int(unsolid[tuple(np.argwhere(labels == joined)[0])])
         for k in range(1, int(labels.max()) + 1):
             if k == joined:
                 continue
             cells = np.argwhere(labels == k)
-            if int(whole[tuple(cells[0])]) in open_to_doors:
+            if int(whole[tuple(cells[0])]) in open_to_doors or int(unsolid[tuple(cells[0])]) != door_side:
                 continue
             if len(cells) * CLEAR_CELL ** 2 >= WALLED_OFF and near[labels == k].any():
                 x, y = xs[cells[:, 0]].mean(), ys[cells[:, 1]].mean()

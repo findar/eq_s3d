@@ -74,6 +74,27 @@ class Outline:
     def drop_at(self, i: int) -> float:
         return self.drop[i] if self.drop else 0.0
 
+    def rise_at(self, x: float, y: float) -> float:
+        """The floor's rise at a point, as the mesh's fans have it: each Cell is a fan from
+        its centre, at the mean of its corners. Outside every Cell, the nearest corner's."""
+        if not self.lift:
+            return 0.0
+        for cell in self.cells:
+            pts = [self.verts[i] for i in cell]
+            cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+            mid = sum(self.lift[i] for i in cell) / len(cell)
+            for k, (ax, ay) in enumerate(pts):
+                bx, by = pts[(k + 1) % len(pts)]
+                det = (ax - cx) * (by - cy) - (bx - cx) * (ay - cy)
+                if abs(det) < 1e-9:
+                    continue
+                u = ((x - cx) * (by - cy) - (bx - cx) * (y - cy)) / det
+                v = ((ax - cx) * (y - cy) - (x - cx) * (ay - cy)) / det
+                if u >= -1e-6 and v >= -1e-6 and u + v <= 1 + 1e-6:
+                    return mid + u * (self.lift[cell[k]] - mid) + v * (self.lift[cell[(k + 1) % len(cell)]] - mid)
+        return self.lift[min(range(len(self.verts)),
+                             key=lambda i: (self.verts[i][0] - x) ** 2 + (self.verts[i][1] - y) ** 2)]
+
     def fill(self, box: Rect) -> float:
         """The room's floor over its Box."""
         area = sum(_area([self.verts[i] for i in c]) for c in self.cells)

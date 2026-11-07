@@ -1,8 +1,16 @@
 """Room layouts tasks 13-16 (Requirements 10-12; design F11-F13): weights in the rules."""
 
+import random
+from dataclasses import replace
+from pathlib import Path
+from statistics import median
+
 import pytest
 
-from generators.room_scales import (FINISH, FLAT, SCALES, VALUES, Layer, combine, load_scales, peak_weights)
+from ai.expand import plan_to_spec
+from ai.schema import ZonePlan
+from generators.room_scales import (FINISH, FLAT, SCALES, VALUES, Layer, combine, draw_room_scales, lean, load_scales,
+                                    peak_weights)
 from generators.topology.ruleset import RuleSetError
 
 GOOD = """
@@ -22,6 +30,20 @@ def _load(tmp_path, extra="", base=GOOD):
 
 def _layer(**scales):
     return Layer(scales)
+
+
+def _spec(seed=3, rooms=16, **fields):
+    return plan_to_spec(ZonePlan(name="sc", zone_type="dungeon", room_count=rooms, layout="graph",
+                                 verticality="flat", **fields).validate(), seed=seed)
+
+
+def _finishes(spec):
+    return {r.id: spec.layout["rooms"][r.id]["scales"][FINISH] for r in spec.rooms}
+
+
+def _drift(spec, finish):
+    pairs = [(c.from_room, c.to_room) for c in spec.corridors if c.from_room in finish and c.to_room in finish]
+    return median(abs(finish[a] - finish[b]) for a, b in pairs)
 
 
 def test_the_shipped_file_loads_and_names_every_scale():
@@ -129,3 +151,138 @@ def test_the_default_must_be_whole(tmp_path, old, new, fld):
     with pytest.raises(RuleSetError) as exc:
         _load(tmp_path, base=GOOD.replace(old, new))
     assert any(e.where == "default" and e.field == fld for e in exc.value.errors), str(exc.value)
+
+
+def test_every_room_draws_every_scale_on_the_sidecar():
+    spec = _spec()
+    for room in spec.rooms:
+        values = spec.layout["rooms"][room.id]["scales"]
+        assert set(values) == set(SCALES)
+        assert all(0 <= v <= 10 for v in values.values())
+
+
+def test_a_draw_moves_nothing_and_repeats():
+    """F12: nothing in the layout changes, and the same seed draws the same."""
+    a, b = _spec(), _spec()
+    assert a.to_dict() == b.to_dict()
+    before = a.to_dict()
+    before["layout"]["rooms"] = {k: {f: v for f, v in r.items() if f != "scales"}
+                                 for k, r in before["layout"]["rooms"].items()}
+    draw_room_scales(a, 999)
+    after = a.to_dict()
+    after["layout"]["rooms"] = {k: {f: v for f, v in r.items() if f != "scales"}
+                                for k, r in after["layout"]["rooms"].items()}
+    assert before == after
+
+
+def test_lean_pulls_toward_the_neighbours_and_only_with_coherence():
+    w = FLAT
+    assert lean(w, [8], 0) == w
+    assert lean(w, [], 5) == w
+    leaned = lean(w, [8], 5)
+    assert leaned.index(max(leaned)) == 8
+    assert leaned[8] > leaned[5] > leaned[1]
+
+
+def test_lean_can_rule_nothing_out_entirely():
+    w = (1.0,) + (0.0,) * 10
+    assert lean(w, [10], 10)[0] > 0
+
+
+def test_coherence_0_ignores_neighbours_and_more_means_less_drift():
+    """F12, over many seeds, on the same graphs."""
+    specs = [_spec(seed=s, rooms=24) for s in range(16)]
+    rules = load_scales()
+
+    def mean_drift(coherence):
+        r = replace(rules, coherence={**rules.coherence, FINISH: coherence})
+        total = 0.0
+        for s, spec in enumerate(specs):
+            draw_room_scales(spec, s, rules=r)
+            total += _drift(spec, _finishes(spec))
+        return total / len(specs)
+    free, some, tight = mean_drift(0), mean_drift(4), mean_drift(10)
+    assert free > some > tight
+
+
+def test_a_rooms_type_and_race_are_felt_in_its_draw():
+    """A fortress's throne is finer than a warren's burrow, over seeds."""
+    fine = [v for s in range(8) for v in _finishes(_spec(seed=s, dungeon_theme="fortress")).values()]
+    raw = [v for s in range(8) for v in _finishes(_spec(seed=s, dungeon_theme="warren")).values()]
+    assert median(fine) >= 6 > 3 >= median(raw)
+
+
+def _edges(spec):
+    return [(c.from_room, c.to_room) for c in spec.corridors]
+
+
+def test_a_wing_inherits_as_it_grows_and_sets_its_finish():
+    """F12: rooms grown from a wing's placeholder keep it, and its finish holds."""
+    winged = []
+    for seed in range(20):
+        spec = _spec(seed=seed, rooms=24, rule_set="classic_eq")
+        records = spec.layout["rooms"]
+        winged += [r["scales"][FINISH] for r in records.values() if r["wing"] == "masonry"]
+    assert winged and min(winged) >= 7
+
+
+def test_a_room_does_not_lean_across_a_wings_edge():
+    """At the highest coherence, a plain room beside a masonry wing draws as if it stood alone."""
+    rules = load_scales()
+    rules = replace(rules, coherence={**rules.coherence, FINISH: 10.0})
+    spec = _spec(seed=1, rooms=24, rule_set="classic_eq")
+    records = spec.layout["rooms"]
+    for r in records.values():
+        r["wing"] = "masonry"
+    room = next(r for r in spec.rooms if r.graph_depth > 0)
+    records[room.id]["wing"] = ""
+    draw_room_scales(spec, 7, rules=rules)
+    expected = random.Random(f"7:{room.id}:{FINISH}").choices(
+        range(VALUES), weights=combine(FINISH, rules.layers_for("", "", "", records[room.id]["kind"], room.semantic_type)))[0]
+    assert records[room.id]["scales"][FINISH] == expected
+
+
+def test_stock_shaped_zones():
+    """Req 11.5: drift and breaks in stock's bands, and drift under shuffled, over many zones."""
+    from random import Random
+    rng = Random(0)
+    drifts, shuffled, breaks = [], [], []
+    for seed in range(24):
+        spec = _spec(seed=seed, rooms=24, rule_set="classic_eq")
+        finish = _finishes(spec)
+        edges = [(a, b) for a, b in _edges(spec) if a in finish and b in finish]
+        diffs = [abs(finish[a] - finish[b]) for a, b in edges]
+        drifts.append(median(diffs))
+        breaks.append(sum(d >= 4 for d in diffs) / len(diffs))
+        names, values = list(finish), list(finish.values())
+        rng.shuffle(values)
+        dealt = dict(zip(names, values))
+        shuffled.append(median(abs(dealt[a] - dealt[b]) for a, b in edges))
+    assert 0.1 <= median(drifts) <= 3.3
+    assert median(breaks) <= 0.41 + 0.05
+    assert median(drifts) < median(shuffled)
+
+
+def test_a_rule_set_can_set_its_own_coherence(tmp_path):
+    from generators.topology.ruleset import load_rule_set
+    src = Path(__file__).resolve().parent.parent / "rules" / "topology" / "warren.toml"
+    text = src.read_text(encoding="utf-8").replace('[set]\n', '[set]\ncoherence = { finish = 9 }\n', 1)
+    if 'coherence' not in text:
+        text = src.read_text(encoding="utf-8").replace('[set]\r\n', '[set]\r\ncoherence = { finish = 9 }\r\n', 1)
+    p = tmp_path / "warren.toml"
+    p.write_text(text, encoding="utf-8")
+    assert load_rule_set(p).coherence == {"finish": 9.0}
+    p.write_text(text.replace("finish = 9", "shine = 9"), encoding="utf-8")
+    with pytest.raises(RuleSetError) as exc:
+        load_rule_set(p)
+    assert any(e.field == "coherence.shine" for e in exc.value.errors)
+
+
+def test_a_rule_naming_an_unknown_wing_is_named(tmp_path):
+    from generators.topology.ruleset import load_rule_set
+    src = Path(__file__).resolve().parent.parent / "rules" / "topology" / "classic_eq.toml"
+    p = tmp_path / "classic_eq.toml"
+    p.write_text(src.read_text(encoding="utf-8").replace('wing = "cave"', 'wing = "nope"'), encoding="utf-8")
+    with pytest.raises(RuleSetError) as exc:
+        load_rule_set(p)
+    assert any(e.field.endswith("wing") for e in exc.value.errors), str(exc.value)

@@ -151,3 +151,25 @@ def test_features_round_trip_and_are_absent_when_empty():
     assert "features" not in d["rooms"][1] and "pois" not in d["rooms"][1]
     again = ZoneSpec.from_dict(json.loads(json.dumps(d)))
     assert again.rooms[0].features == spec.rooms[0].features and again.rooms[0].pois == spec.rooms[0].pois
+
+
+def _report(seed, **fields):
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from generators.geometry import build_mesh
+    spec = plan_to_spec(ZonePlan(name="gf", zone_type="dungeon", layout="graph", verticality="moderate",
+                                 **fields).validate(), seed=seed)
+    agent = AgentModel()
+    surf = build_walk_surface(build_mesh(spec).to_ter("gf"), agent, floors_up=True)
+    return [v for v in outline_checks(surf, spec, agent) if not v.ok]
+
+
+def test_a_nook_of_the_rooms_own_walls_is_not_walled_off():
+    """First seen on this temple's climax: a thin spur of a rough Outline, no Feature near it."""
+    assert not _report(1022050301, walls="rough", dungeon_theme="temple", room_count=12)
+
+
+def test_a_poi_stands_at_the_floors_own_height():
+    """First seen on this giant's gatehouse: floors rise across Cells 88 u wide, so a Cell
+    corner's rise can sit more than a step off the floor at the POI."""
+    assert not _report(242886303, walls="hewn", rule_set="classic_eq", dungeon_race="giant", room_count=8)

@@ -243,12 +243,8 @@ def _open_floor_near(grid: RoomGrid, x: float, y: float) -> Optional[Tuple[float
 
 
 def _lift_at(room, x: float, y: float) -> float:
-    """The floor's rise at a point: the nearest Outline vertex's, near enough for a POI."""
-    o = room.outline
-    if o is None or not o.lift:
-        return 0.0
-    v = np.array(o.verts)
-    return float(o.lift[int(np.hypot(v[:, 0] - x, v[:, 1] - y).argmin())])
+    """The floor's rise at a point."""
+    return 0.0 if room.outline is None else float(room.outline.rise_at(x, y))
 
 
 def _local_lift(room, plan) -> float:
