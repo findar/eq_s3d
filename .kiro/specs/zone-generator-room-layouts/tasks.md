@@ -68,7 +68,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, generators/mapview.py, generators/eqmap.py, generators/pipeline.py, tests/test_hygiene.py, tests/test_features_controls.py
   - Reqs: 8, 6.4
 
-- [ ] 8. HUMAN: first look at room layouts
+- [x] 8. HUMAN: first look at room layouts
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
   - Type: human · Depends: 6, 7
 
