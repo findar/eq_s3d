@@ -680,10 +680,12 @@ def add_relief(outline: Outline, height: float, floor_rise: float, ceiling_fall:
     pts = np.array(outline.verts, dtype=np.float64)
 
     def within(rects: List[Rect]) -> np.ndarray:
+        # SNAP, as the mesh merged by: two Throats whose edges differ by less share a
+        # vertex, which must count as in both.
         mask = np.zeros(len(pts), bool)
         for r in rects:
-            mask |= (pts[:, 0] >= r[0] - 1e-3) & (pts[:, 0] <= r[2] + 1e-3) & \
-                    (pts[:, 1] >= r[1] - 1e-3) & (pts[:, 1] <= r[3] + 1e-3)
+            mask |= (pts[:, 0] >= r[0] - SNAP) & (pts[:, 0] <= r[2] + SNAP) & \
+                    (pts[:, 1] >= r[1] - SNAP) & (pts[:, 1] <= r[3] + SNAP)
         return mask
 
     in_throat = within(outline.throats)
