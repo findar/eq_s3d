@@ -90,22 +90,86 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: tests/test_features_sweep.py, rules/rooms/
   - Reqs: 9
 
-- [ ] 12. Tune from the looks
-  - Card: [cards/12-tuning.md](cards/12-tuning.md)
+- [ ] 12. Measure how stock rooms change
+  - Card: [cards/12-scale-survey.md](cards/12-scale-survey.md)
   - Type: agent · Size: S · Depends: 11
-  - Owns: rules/rooms/, generators/room_layouts.py, generators/room_features.py, tests/
+  - Owns: scripts/room_scale_survey.py, .kiro/specs/zone-generator-room-layouts/design.md, .kiro/specs/zone-generator-room-layouts/archive.md
+  - Reqs: 11.5, 14
 
-- [ ] 13. Acceptance section, thorough run
-  - Card: [cards/13-release-prep.md](cards/13-release-prep.md)
-  - Type: agent · Size: S · Depends: 12
+- [ ] 13. Scales as data
+  - Card: [cards/13-scales-data.md](cards/13-scales-data.md)
+  - Type: agent · Size: M · Depends: 12
+  - Owns: generators/room_scales.py, rules/rooms/scales.toml, scripts/topology_rules.py, docs/TOPOLOGY_RULES.md, tests/test_room_scales.py
+  - Reqs: 10
+
+- [ ] 14. Rooms draw their Scales
+  - Card: [cards/14-scale-draw.md](cards/14-scale-draw.md)
+  - Type: agent · Size: S · Depends: 13
+  - Owns: generators/room_scales.py, ai/expand.py, tests/test_room_scales.py, tests/test_topology_levels.py
+  - Reqs: 11.1, 11.2, 11.4
+
+- [ ] 15. Rules set Weights
+  - Card: [cards/15-rule-scales.md](cards/15-rule-scales.md)
+  - Type: agent · Size: M · Depends: 14
+  - Owns: generators/topology/, rules/topology/, generators/room_scales.py, tests/test_room_scales.py
+  - Reqs: 11.3, 11.5
+
+- [ ] 16. A room's finish is its wall style
+  - Card: [cards/16-per-room-style.md](cards/16-per-room-style.md)
+  - Type: agent · Size: M · Depends: 15
+  - Owns: generators/wall_styles.py, rules/walls/, rules/topology/themes.toml, ai/expand.py, tests/test_walls_mixed.py, tests/test_room_scales.py, tests/test_topology_levels.py
+  - Reqs: 12
+
+- [ ] 17. Recipes read the Scales
+  - Card: [cards/17-recipes-read.md](cards/17-recipes-read.md)
+  - Type: agent · Size: S · Depends: 16
+  - Owns: generators/room_layouts.py, rules/rooms/, tests/test_room_layouts.py, tests/test_features_sweep.py, tests/test_topology_levels.py
+  - Reqs: 13
+
+- [ ] 18. The gate learns Transitions
+  - Card: [cards/18-gate-transitions.md](cards/18-gate-transitions.md)
+  - Type: agent · Size: S · Depends: 16
+  - Owns: generators/pipeline.py, analyzer/, tests/test_gate_transitions.py
+  - Reqs: 14.3
+
+- [ ] 19. Transition pieces
+  - Card: [cards/19-transition-mesh.md](cards/19-transition-mesh.md)
+  - Type: agent · Size: M · Depends: 18
+  - Owns: generators/geometry.py, generators/zone_spec.py, generators/transitions.py, tests/test_transition_mesh.py
+  - Reqs: 14.2, 14.6
+
+- [ ] 20. Transitions as data, in builds
+  - Card: [cards/20-transition-rules.md](cards/20-transition-rules.md)
+  - Type: agent · Size: M · Depends: 19
+  - Owns: generators/transitions.py, rules/rooms/transitions.toml, generators/wall_styles.py, generators/mapview.py, scripts/topology_rules.py, tests/test_transition_rules.py, tests/test_topology_levels.py
+  - Reqs: 14.1, 14.4, 14.5
+
+- [ ] 21. Scale controls
+  - Card: [cards/21-scale-controls.md](cards/21-scale-controls.md)
+  - Type: agent · Size: M · Depends: 17, 20
+  - Owns: ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, tests/test_hygiene.py, tests/test_scale_controls.py
+  - Reqs: 15
+
+- [ ] 22. HUMAN: second look, rooms that vary
+  - Card: [cards/22-second-look.md](cards/22-second-look.md)
+  - Type: human · Depends: 21
+
+- [ ] 23. Tune from the looks
+  - Card: [cards/23-tuning.md](cards/23-tuning.md)
+  - Type: agent · Size: S · Depends: 22
+  - Owns: rules/rooms/, rules/walls/, generators/room_layouts.py, generators/room_features.py, generators/room_scales.py, generators/transitions.py, tests/
+
+- [ ] 24. Acceptance section, thorough run
+  - Card: [cards/24-release-prep.md](cards/24-release-prep.md)
+  - Type: agent · Size: S · Depends: 23
   - Owns: docs/ACCEPTANCE.md, tests/test_features_sweep.py
   - Reqs: exit criteria 1–2
 
-- [ ] 14. HUMAN: room layouts acceptance pass
-  - Card: [cards/14-human-acceptance.md](cards/14-human-acceptance.md)
-  - Type: human · Depends: 13
+- [ ] 25. HUMAN: room layouts acceptance pass
+  - Card: [cards/25-human-acceptance.md](cards/25-human-acceptance.md)
+  - Type: human · Depends: 24
 
-- [ ] 15. Close step 9
-  - Card: [cards/15-close.md](cards/15-close.md)
-  - Type: agent · Size: S · Depends: 14 · Where: MAIN checkout
+- [ ] 26. Close step 9
+  - Card: [cards/26-close.md](cards/26-close.md)
+  - Type: agent · Size: S · Depends: 25 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-room-layouts/, .kiro/specs/zone-generator/

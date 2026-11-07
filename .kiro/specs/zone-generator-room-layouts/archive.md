@@ -21,6 +21,9 @@ The design's "Decisions" section stands. The user took the recommended answer to
 
 - **What the survey changed (task 1, 2026-11-06):** free-standing solids are in 0–40% of stock rooms, not most, and placed objects (93–648 per zone) fill the rest. Features stand in for objects until step 11: named rooms always, ordinary rooms mostly bare, a ceiling of 0.6 of rooms at `normal`. The Dais is the first Feature.
 
+- **What a room is like belongs to the rules (user, 2026-11-06, after the first look):** "an ogre race would build rooms differently than a human might"; "an array of weights where the chance for any value 0-10 would be it's weight / sum"; "you might have an ogre cave that a tidier race took over"; "some eq zones are a bit random"; "transitions like doors are something we still would need to address". So: Scales as Weights, Layers multiplied, neighbours leaning by a Coherence, rule-made wings, and Transitions. Requirements 10–15, tasks 12–21.
+- **The door itself stays the SQL export's** (settled call, kept): a Frame in the mesh, a Door_Spot in the sidecar.
+
 ## Follow-ups
 
 - **A sunken court and rock columns wider at the foot** (task 9): question 3 allows a sunken court as a Dais ring, and a rough pillar could flare at its foot. Neither was asked for at the first look.

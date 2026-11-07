@@ -172,6 +172,106 @@ plans load as Normal. Sidecar: `layout.features`, per room `room_layout`, `featu
 `pois`. The map SVG draws Features and POIs from the spec. EQ map files get extra lines for
 free-standing Features, added in the map post-pass from `RoomSpec.features` (Open question 6).
 
+## Scales (Requirements 10–13, added 2026-11-06)
+
+`generators/room_scales.py`, data in `rules/rooms/scales.toml`.
+
+```toml
+[default]
+finish = [1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 2]
+structure = { peak = 5, spread = 3 }
+clutter = { peak = 3, spread = 3 }
+coherence = { finish = 7, structure = 3, clutter = 3 }
+
+[races.ogre]
+finish = { peak = 2, spread = 2 }
+clutter = { peak = 7, spread = 3 }
+
+[themes.temple]
+finish = { peak = 8, spread = 2 }
+clutter = [3, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0]
+
+[themes.mine_delve]
+clutter = { peak = 7, spread = 2 }
+
+[overlays.reclaimed]        # an old cave a tidier race took over
+clutter = { peak = 1, spread = 1, override = true }
+
+[types.collapsed_gallery]
+clutter = [0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 2]
+```
+
+(Numbers to be set by task 12's survey and task 13; these show the form.) The shorthand is
+`weight(v) = max(0, 1 - |v - peak| / (spread + 1))`.
+
+**Layers, least specific first:** default, race, theme, Overlay, kind, type, rule, control. All
+multiplied, so an ogre temple is a real blend and not whichever was named last. A product of all
+zeros falls to the most specific Layer with any weight: a control or a room type beats a theme it
+disagrees with, and nothing fails.
+
+**The draw:** rooms in breadth-first order from the entrance. For each room and Scale, the weights
+times `lean(v) = exp(-((v - m) / sigma)^2 / 2)`, where `m` is the mean of the neighbours already
+drawn and `sigma = 10 / coherence` (coherence 0: no lean). The stream is
+`Random(f"{seed}:{room.id}:{scale}")`, as `apply_walls` does per room, so nothing in the layout moves.
+
+**Why lean, not pure rewriting:** a wing should hang together, and a rule that grows a graph can
+say so outright. But rules only make some rooms, so the lean covers the rest. **Rule Weights** ride on
+graph nodes as `rule_shape` already does, inherited by what a placeholder grows into, and a room
+leans only on neighbours with the same rule Weights. That gives both things stock seems to show:
+drift within a wing, and a hard edge between wings. High coherence is a slow change, 0 is the zones
+that are a bit random. Task 12 sets the default from stock.
+
+**Finish to style:** 0–3 `rough`, 4–6 `hewn`, 7–10 `built`. Each style file gains a `[tune]` table
+saying how its numbers move across its band (a raw 0 wobbles more than a neat 3). The band's middle
+value is the style's numbers as they stand, so a plan naming `walls` is exactly today's bytes
+(Req 12.4). `apply_walls` takes a style per room; `_apply_look` works per holder. `themes.toml`
+loses `walls`, as one source of finish.
+
+**Recipes:** a line gains `by` (structure unless named) and `from` (a threshold):
+`{ kind = "boulder", at = "scatter", count = [2, 4], by = "clutter", from = 5 }`. The value over 5
+multiplies count and chance, as the densities did. Small loose rocks stay step 11's: the sidecar's
+clutter is what step 11 will read.
+
+## Transitions (Requirement 14, added 2026-11-06)
+
+`generators/transitions.py`, data in `rules/rooms/transitions.toml`, drawn after each room's style.
+
+```toml
+[pairs.built_rough]
+forms = { frame = 3, seam = 2, breach = 1, none = 1 }
+[pairs.built_hewn]
+forms = { seam = 2, frame = 2, none = 3 }
+[pairs.hewn_rough]
+forms = { seam = 3, none = 3, breach = 1 }
+[pairs.same]
+forms = { none = 9, frame = 1 }
+
+[types.vault]
+forms = { frame = 4, breach = 0.2 }
+```
+
+| Form | In the mesh | Door_Spot |
+|---|---|---|
+| none | a plain opening; the corridor takes one side's look | no |
+| seam | the corridor splits at a line on a flat or ramp leg: each part takes its side's look and break, with the same section where they meet | no |
+| frame | jambs and a lintel, closed solids of the finer style, at the door or the Seam, flush with the floor | yes |
+| breach | the corridor keeps the rougher look up to the finer room's wall; the opening's jambs are broken and uneven | no |
+
+**Corridors today have one look and one `rough`.** A Seam gives a `CorridorSpec` a second set and
+the line's distance along its route. `_emit_route` confines a rise to one leg, so a Seam splits a
+level leg where it can. Stairs and bridges get no Seam: their change stands at a door (Req 14.6).
+
+**Why a Frame and not a door:** doors are runtime records from the SQL export, a settled call. A
+door must open, so it can't be mesh. A Frame is what stands around it, and the Door_Spot is what
+the export will read. Same-style pairs can take one too, which is how a built zone gets its doors.
+
+**Not here:** the Tunnel's mouth in an outdoor dungeon stays as step 5 built it, since it joins
+terrain and not a style.
+
+**The gate first** (`check_transitions`, task 18): reads the mesh at each recorded Transition. Walks
+the floor through it for a step above the agent's limit, measures clear width and head against the
+corridor's, and looks for open edges where sections meet.
+
 ## Correctness properties
 
 | # | Property | Req |
@@ -186,6 +286,11 @@ free-standing Features, added in the map post-pass from `RoomSpec.features` (Ope
 | F8 | Outdoor and stacked builds hold step 5 and 7's guarantees | 7 |
 | F9 | Built zones in the survey's bands, per style | 9.1 |
 | F10 | Classic, city and wilderness goldens unchanged; `none` matches step 8's walls; first-try rate holds; same inputs same `.eqg`; time within step 8 + 5 s | 9.2–9.4 |
+| F11 | Weights: chance is weight over sum; product by Layer; `override`; all zeros falls to the most specific; every bad value named | 10 |
+| F12 | The draw takes nothing from the layout's rng; coherence 0 ignores neighbours; higher coherence means less drift; rule Weights inherit and don't lean across | 11 |
+| F13 | A named `walls` gives today's bytes; a mixed zone passes every step 8 check | 12 |
+| F14 | A broken Transition of each kind fails, named: a step, a narrow frame, low head, an open seam | 14.3 |
+| F15 | A Frame that can't fit becomes a Seam; every Frame has a Door_Spot; nothing but a Transition's pieces changes in the mesh | 14.4, 14.5 |
 
 ## Risks
 
@@ -199,6 +304,11 @@ free-standing Features, added in the map post-pass from `RoomSpec.features` (Ope
   high drop rate is fine (Req 4.3) but the survey's density bar should be set per size.
 - **The survey's limits** (finding 1): bars rest on a mesh-only count that both over- and
   under-counts, so they stay broad, and the human pass counts for more.
+- **Mixed styles are a bigger change than they look.** Step 8's checks and bands assume one style
+  per zone. Task 16 pins `walls` bytes first, so the old path is safe, but mixed zones will find new
+  seams. Build times may rise with more materials per zone.
+- **A random zone is easy to make and hard to like.** Coherence defaults come from stock, and the
+  human look at task 22 is the real test.
 - **Step 8 isn't signed off.** Findings from that pass may move Outlines or relief, so Feature
   placement must read the room's final shape, not assume today's.
 
@@ -227,3 +337,7 @@ free-standing Features, added in the map post-pass from `RoomSpec.features` (Ope
 2. The way through stays clear by construction, and the gate checks it independently.
 3. Recipes are checked TOML data, chosen by room type, then kind, then a default.
 4. POIs are advisory: sidecar only.
+5. What a room is like lives in the rules as Weights; controls only lean on them.
+6. A room's finish is its style: one source, no separate theme-to-style table.
+7. A door is a Frame in the mesh and a Door_Spot in the sidecar; the door itself stays the SQL
+   export's.

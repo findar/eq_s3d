@@ -1,7 +1,7 @@
 # Requirements Document
 
 > **STATUS: roadmap step 9, ready.** Written 2026-11-06 at master `1c69568`. The user took
-> the recommended answer to every open question the same day (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 15 tasks).
+> the recommended answer to every open question the same day (`archive.md` "Decisions"). Task index: `tasks.md` (card format, 26 tasks). Requirements 10–15 came from the user on the same day, after the first look: what a room is like belongs to the rules, not only to a slider.
 > Step 8's acceptance pass and close are still open: the user set them aside on
 > 2026-11-06 and asked to go on, so this step builds on walls not yet signed off.
 
@@ -33,8 +33,9 @@ below means a requirement of THIS spec unless it says "umbrella".
 
 **Out of step 9:** loose props and decoration, placed as `.mod` objects: crates, bones,
 banners, furniture (step 11, and umbrella Req 32.4 forbids them until then); wilderness POIs
-(step 10); NPC spawns and doors, which belong to the SQL export (M6); the Classic engine; and
-the in-client check (M6).
+(step 10); NPC spawns and door records in the client, which belong to the SQL export (M6): this
+step builds the frame a door hangs in and names the spot; the Classic engine; and the in-client
+check (M6).
 
 ## Glossary
 
@@ -50,6 +51,17 @@ the in-client check (M6).
   door's Throat.
 - **POI**: a named point in a room with a purpose ("boss", "treasure", "altar"). Advisory: it
   rides in the sidecar and never touches geometry.
+- **Scale**: a 0–10 quality of a room: **finish** (raw rock to dressed stone), **structure** (how
+  much is built into it: pillars, plinths, daises), **clutter** (how much lies about: boulders, and
+  step 11's loose objects).
+- **Weights**: eleven numbers, one for each value of a Scale; a value's chance is its weight over
+  the sum.
+- **Layer**: one source of Weights: the default, a race, a theme, an Overlay, a room kind or type,
+  a rule, a control. A room's Weights are its Layers multiplied.
+- **Overlay**: a named history laid over a zone, as a Layer: an ogre cave a tidier race took over.
+- **Coherence**: 0–10, how strongly a room leans toward the rooms next to it.
+- **Transition**: what stands where two wall styles meet: nothing, a Seam, a Frame or a Breach.
+- **Door_Spot**: where a door could hang, in the sidecar: advisory, for the SQL export.
 
 ## Requirements
 
@@ -136,7 +148,8 @@ through or get caught in.
 
 1. A **Features** control (none, sparse, normal, dense; normal by default) SHALL show under
    Graph for dungeons and outdoor dungeons, and reach the CLI and server. `none` SHALL give
-   the same rooms and walls as a build before this step.
+   the same rooms and walls as a build before this step. (Task 21 replaces the control with
+   Req 15's; `none` keeps this meaning as structure and clutter at 0.)
 2. The sidecar's `layout.rooms` SHALL record each room's Room_Layout, Features and drops.
 3. The map (SVG) SHALL draw Features, and the EQ map files SHALL show them where they stand.
 
@@ -150,10 +163,87 @@ through or get caught in.
 3. The same inputs SHALL give byte-identical `.eqg` contents (footer aside).
 4. A 14-room build SHALL take at most step 8's build time plus 5 s.
 
+### Requirement 10: Scales, as weights in the rules
+
+**User Story:** As a rule author, I want to say how an ogre builds, and how a temple differs from
+a fresh dig, so that a zone's rooms come from what they are and not from one slider.
+
+1. Finish, structure and clutter SHALL each be Weights: eleven numbers at least 0, or the shorthand
+   `{ peak, spread }`. A value's chance SHALL be its weight over the sum.
+2. Weights SHALL be TOML under `rules/rooms/`, for the default, each race, each theme, each Overlay,
+   room kinds and room types, checked strictly on load with failures named by file, field and
+   expected value. `topology_rules.py check` SHALL cover them, and `docs/TOPOLOGY_RULES.md` SHALL
+   explain them.
+3. A room's Weights SHALL be its Layers multiplied, value by value. A Layer with `override = true`
+   SHALL replace every less specific Layer.
+4. When the product is all zeros, the most specific Layer with any weight SHALL decide: layers
+   that disagree never fail a build.
+
+### Requirement 11: Rooms vary, and neighbours mostly agree
+
+**User Story:** As a player, I want a zone that changes as I walk it, with wings that belong
+together and the odd room that doesn't.
+
+1. Each room SHALL draw each Scale from its Weights, multiplied by a lean toward the rooms next to
+   it already drawn, in graph order from the entrance.
+2. Coherence SHALL be set per rule set and per Scale; at 0 a room SHALL ignore its neighbours.
+3. Rules that grow the graph MAY set Weights on the rooms they make. Rooms they make later SHALL
+   inherit them, and a room SHALL lean only on neighbours with the same rule Weights, so a rule
+   can make a wing with a hard edge.
+4. The draw SHALL be a pure function of the seed and the room's place in the graph, and SHALL take
+   nothing from the layout's rng. The sidecar SHALL record each room's drawn values.
+5. Generated zones SHALL measure inside the survey's band for how far finish drifts between
+   neighbouring rooms and how often it breaks (task 12).
+
+### Requirement 12: A room's finish is its wall style
+
+1. Finish 0–3 SHALL draw `rough` rooms, 4–6 `hewn` and 7–10 `built`, and a room's value SHALL move
+   its style's numbers within the style, as the style's file says.
+2. Styles and looks SHALL apply per room and per corridor. Every step 8 check SHALL hold on a zone
+   of mixed styles.
+3. `themes.toml` SHALL stop naming a style: there SHALL be one source of a room's finish.
+4. A plan that names `walls` SHALL give every room that style, with the same bytes as before this
+   change.
+
+### Requirement 13: Recipes read the Scales
+
+1. A recipe line SHALL say which Scale scales it (structure unless named), and MAY name a threshold,
+   e.g. boulders only from clutter 5. A value of 5 SHALL mean the recipe as written, 0 nothing, 10
+   twice as much.
+2. A temple SHALL draw low clutter and a fresh dig high, by data alone.
+3. Req 9's bands SHALL hold under default rules. Clutter SHALL be in the sidecar for step 11 to read.
+
+### Requirement 14: Transitions between styles
+
+**User Story:** As a player, I want a masonry hall and a raw cave to meet in a way that looks meant.
+
+1. Where a corridor joins rooms of different styles, a Transition SHALL be chosen from weights in
+   `rules/rooms/transitions.toml`, by the pair of styles, multiplied by each room's type or kind.
+2. A **Seam** SHALL change the corridor's look and walls at one clean line. A **Frame** SHALL set
+   jambs and a lintel of the finer style at the door or the Seam. A **Breach** SHALL leave the finer
+   room's opening broken, with the rougher corridor running up to it. **None** SHALL be a plain opening.
+3. The gate SHALL learn Transitions first: floor flush through it, clear width and headroom held,
+   no gap where sections meet, each failure named and pinned, before any generator places one.
+4. Same-style pairs MAY take a Frame by the same file. A Frame that can't leave the clear width
+   SHALL become a Seam, and the change be recorded; a build SHALL never fail for a Transition.
+5. Every Frame SHALL record a Door_Spot in the sidecar: position, facing, width, height and the two
+   finishes. No door SHALL be baked into the mesh, and the map (SVG) SHALL show them.
+6. Stairs and bridges SHALL stay as built: their Transition stands at a door, not on the flight or span.
+
+### Requirement 15: Controls
+
+1. **Finish**, **Structure** and **Clutter** controls (From rules, or 0–10) and an **Overlay** select
+   SHALL show under Graph, and reach the CLI and server, in place of Walls and Features. A number
+   SHALL multiply in as the most specific Layer: a lean, not a pin.
+2. Old plans SHALL load: `walls` as in Req 12.4, `features = none` as structure and clutter 0, and
+   the other densities as a lean.
+3. Pinning a seed SHALL still give byte-identical `.eqg` contents, footer aside.
+
 ## Exit criteria
 
 1. Every requirement above has a passing test or, where a person must judge it, a step in
    `docs/ACCEPTANCE.md` "Step 9 — Room layouts".
 2. The fast and thorough suites are green; the frontend builds.
 3. The user signs off a human pass: rooms read as what they are (a throne room, a barracks,
-   a cave), they feel designed and not scattered, and you can always walk through.
+   a cave), they feel designed and not scattered, a zone changes as you walk it without feeling
+   random, styles meet in a way that looks meant, and you can always walk through.
