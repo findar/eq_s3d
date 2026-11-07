@@ -108,10 +108,10 @@ def test_a_dais_stands_at_the_far_end_with_steps_toward_the_room():
                    random.Random(1))
     (dais,) = placed.features
     assert np.mean(dais.plan, axis=0)[1] > 20.0, "away from the door"
-    assert dais.steps_side == "S" and dais.height == pytest.approx(4.5)
+    assert dais.steps_side == "S" and dais.height == pytest.approx(5.1)
     assert np.array(dais.plan)[:, 1].max() <= 60.0 - H + 1e-6, "a body's margin from the wall"
     (poi,) = placed.pois
-    assert poi.purpose == "boss" and poi.z == pytest.approx(4.5) and poi.feature == 0
+    assert poi.purpose == "boss" and poi.z == pytest.approx(5.1) and poi.feature == 0
 
 
 def test_a_dais_takes_the_side_furthest_from_the_doors_that_fits():

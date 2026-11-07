@@ -34,6 +34,7 @@ POCKET = 16.0           # free floor this big cut off from the doors is too much
 ARRANGEMENTS: Tuple[str, ...] = ("centre", "far_end", "ring", "rows", "corners", "along_wall",
                                  "scatter", "on_dais")
 MIN_HEAD_H = 2.0        # a dais leaves this much headroom, in H
+DAIS_RISE_H = 0.85      # a dais's rise, in H: stock's is 4-5 u, about two steps
 
 
 @dataclass(frozen=True)
@@ -279,7 +280,7 @@ def _dais(grid: RoomGrid, ask: Ask, form: str, rng: random.Random) -> Optional[F
     fx, fy = _door_side(grid)
     w, d = grid.x1 - grid.x0, grid.y1 - grid.y0
     cx, cy = (grid.x0 + grid.x1) / 2, (grid.y0 + grid.y1) / 2
-    rise = (ask.height_h or 0.75) * grid.h
+    rise = (ask.height_h or DAIS_RISE_H) * grid.h
     margin = WALL_MARGIN_H * grid.h
     door_x = [grid.xs[c[0]] for c in grid.door_cells] or [cx]
     door_y = [grid.ys[c[1]] for c in grid.door_cells] or [cy]

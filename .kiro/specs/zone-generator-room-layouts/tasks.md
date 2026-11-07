@@ -78,13 +78,13 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/room_features.py, rules/rooms/, generators/room_layouts.py, tests/test_feature_mesh.py
   - Reqs: 3.2
 
-- [ ] 10. Themes and rooms read as themselves
+- [x] 10. Themes and rooms read as themselves
   - Card: [cards/10-themes.md](cards/10-themes.md)
   - Type: agent · Size: S · Depends: 8
   - Owns: rules/rooms/, tests/test_room_layouts.py
   - Reqs: 5
 
-- [ ] 11. Gate sweep and stock bands
+- [x] 11. Gate sweep and stock bands
   - Card: [cards/11-sweep-bands.md](cards/11-sweep-bands.md)
   - Type: agent · Size: M · Depends: 9, 10
   - Owns: tests/test_features_sweep.py, rules/rooms/
