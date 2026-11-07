@@ -14,6 +14,7 @@ has to fill a handful of fields) and easy to validate.
 
 from __future__ import annotations
 
+import tomllib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Mapping
@@ -67,6 +68,29 @@ RULES_TOPOLOGY_DIR = Path(__file__).resolve().parent.parent / "rules" / "topolog
 
 
 VALID_FEATURES = ["none", "sparse", "normal", "dense"]
+
+
+SCALE_CONTROLS = ("finish", "structure", "clutter")
+
+
+def scale_control(name: str, value: Any) -> Optional[int]:
+    """A Scale control's value: None for the rules alone ("" reads the same), or a whole 0-10."""
+    if value is None or value == "":
+        return None
+    try:
+        number = int(value) if not isinstance(value, (bool, float)) else None
+    except (TypeError, ValueError):
+        number = None
+    if number is None or not 0 <= number <= 10:
+        raise ValueError(f"{name} {value!r} is not a whole number from 0 to 10 (or \"\" for the rules alone)")
+    return number
+
+
+def available_overlays(scales_file: Optional[Path] = None) -> List[str]:
+    """The overlay names in ``rules/rooms/scales.toml`` (sorted)."""
+    path = scales_file or Path(__file__).resolve().parent.parent / "rules" / "rooms" / "scales.toml"
+    with open(path, "rb") as f:
+        return sorted(tomllib.load(f).get("overlays", {}))
 
 
 def available_wall_styles(rules_dir: Optional[Path] = None) -> List[str]:
@@ -126,6 +150,11 @@ class ZonePlan:
     walls: str = ""                  # "" or one of available_wall_styles()
     # How much stands in a grown dungeon's rooms (rules/rooms/layouts.toml).
     features: str = "normal"         # one of VALID_FEATURES
+    # Leans on each room's draw (rules/rooms/scales.toml): None is the rules alone, 0-10 multiplies in.
+    finish: Optional[int] = None
+    structure: Optional[int] = None
+    clutter: Optional[int] = None
+    overlay: str = ""                # "" or one of available_overlays()
 
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
@@ -188,6 +217,12 @@ class ZonePlan:
             if self.walls not in styles:
                 raise ValueError(f"walls {self.walls!r} is not one of: "
                                  f"{', '.join(styles)} (or \"\" for the theme's style)")
+        for name in SCALE_CONTROLS:
+            setattr(self, name, scale_control(name, getattr(self, name)))
+        self.overlay = str(self.overlay or "").strip().lower()
+        if self.overlay and self.overlay not in available_overlays():
+            raise ValueError(f"overlay {self.overlay!r} is not one of: "
+                             f"{', '.join(available_overlays())} (or \"\" for the rules alone)")
         return self
 
     def to_dict(self) -> Dict[str, Any]:

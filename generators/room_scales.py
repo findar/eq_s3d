@@ -91,10 +91,16 @@ def lean(weights: Weights, neighbours: Sequence[int], coherence: float) -> Weigh
     return leaned if any(leaned) else weights
 
 
-def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomScales] = None) -> None:
+ASKED_SPREAD = 2    # how tightly a control's number holds the rooms to it
+
+
+def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomScales] = None,
+                     asked: Optional[Mapping[str, int]] = None) -> None:
     """Each room's value on each Scale, into ``layout.rooms.<id>.scales``. Rooms draw from
-    the entrance outward, each from its own stream, so this moves nothing about the layout."""
+    the entrance outward, each from its own stream, so this moves nothing about the layout.
+    ``asked`` is Scale -> a control's number: the most specific Layer, a lean and not a pin."""
     rules = rules or load_scales()
+    control = Layer({scale: peak_weights(value, ASKED_SPREAD) for scale, value in (asked or {}).items()})
     records = spec.layout["rooms"]
     coherence = spec.layout.get("coherence") or {}
     next_door: Dict[str, list] = {room.id: [] for room in spec.rooms}
@@ -107,7 +113,7 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
         record = records.setdefault(room.id, {})
         wing = record.get("wing", "")
         layers = rules.layers_for(spec.dungeon_race, spec.dungeon_theme, overlay, record.get("kind", room.kind),
-                                  room.semantic_type, wing)
+                                  room.semantic_type, wing) + (control,)
         values = {}
         for scale in SCALES:
             # A room leans only within its wing: that's what gives a wing its hard edge.

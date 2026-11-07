@@ -19,7 +19,7 @@ from generators.layout import LayoutGenerator
 from generators.layout_engine import GraphEngine
 from generators.zone_spec import ZoneSpec, RegionSpec
 from generators.zone_types import STYLE_PROFILE
-from .schema import ZonePlan, LAYOUT_ZONE_TYPES
+from .schema import SCALE_CONTROLS, ZonePlan, LAYOUT_ZONE_TYPES
 
 # size -> shift of every room's position in its race's bands (step 7 task 17:
 # rooms are sized from the race's body height, so Size moves them within the
@@ -158,7 +158,8 @@ def _dress_rooms(spec, plan: ZonePlan, seed: int, extra_doors=None, overlay: str
     from generators.room_layouts import apply_features
     from generators.room_scales import draw_room_scales
     from generators.wall_styles import apply_walls, apply_walls_by_finish, load_styles
-    draw_room_scales(spec, seed, overlay=overlay)
+    asked = {name: getattr(plan, name) for name in SCALE_CONTROLS if getattr(plan, name) is not None}
+    draw_room_scales(spec, seed, overlay=plan.overlay or overlay, asked=asked)
     if plan.walls:
         apply_walls(spec, load_styles()[plan.walls], seed, extra_doors=extra_doors)
     else:

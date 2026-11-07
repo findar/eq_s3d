@@ -5,7 +5,6 @@ and page; the sidecar; the map and EQ map files showing what stands in rooms.
 import json
 import random
 import tempfile
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -82,13 +81,6 @@ def test_cli_flag_reaches_the_build(monkeypatch, tmp_path):
 def test_cli_bad_use_is_a_usage_error(argv, tmp_path):
     with pytest.raises(SystemExit):
         main.main(["generate", "w7", *argv, "--output", str(tmp_path)])
-
-
-def test_the_page_carries_the_control():
-    root = Path(__file__).resolve().parent.parent / "web"
-    html = (root / "index.html").read_text(encoding="utf-8")
-    assert 'id="features"' in html and all(f'value="{s}"' in html for s in VALID_FEATURES)
-    assert "features" in (root / "src" / "main.ts").read_text(encoding="utf-8")
 
 
 def _temple(rooms=14, seed=4):

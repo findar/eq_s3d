@@ -19,7 +19,8 @@ from pathlib import Path
 
 from ai.expand import plan_to_spec
 from ai.schema import (
-    LAYOUT_ZONE_TYPES, VALID_FEATURES, VALID_LAYOUTS, ZonePlan, available_rule_sets, available_wall_styles,
+    LAYOUT_ZONE_TYPES, SCALE_CONTROLS, VALID_FEATURES, VALID_LAYOUTS, ZonePlan, available_overlays,
+    available_rule_sets, available_wall_styles,
 )
 from core.env import env_value
 from core.paths import (
@@ -173,7 +174,7 @@ def cmd_generate(args) -> None:
     # The layout engine (graph-layout Req 7.1): only named when given; a run
     # without ``--layout`` takes the plan default (graph on a dungeon /
     # outdoor dungeon since task 21; ``--layout classic`` for TinyKeep).
-    for key in ("layout", "rule_set", "walls", "features"):
+    for key in ("layout", "rule_set", "walls", "features", "finish", "structure", "clutter", "overlay"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
     plan = ZonePlan.from_controls(controls)
@@ -306,6 +307,11 @@ def main(argv: list[str] | None = None) -> None:
                    help="Graph layout wall style; default: the dungeon theme's")
     g.add_argument("--features", dest="features", choices=VALID_FEATURES, default=None,
                    help="Graph layout: how much stands in rooms (default normal)")
+    for name in SCALE_CONTROLS:
+        g.add_argument(f"--{name}", dest=name, type=int, choices=range(11), metavar="0-10", default=None,
+                       help=f"Graph layout: lean each room's {name} this way; default: the rules alone")
+    g.add_argument("--overlay", dest="overlay", choices=available_overlays(), default=None,
+                   help="Graph layout: what's happened to the place since, on top of its race and theme")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -338,6 +344,9 @@ def main(argv: list[str] | None = None) -> None:
         if getattr(args, "walls", None):
             parser.error("--walls only applies to --zone-type dungeon or "
                          "outdoor_dungeon")
+        for name in SCALE_CONTROLS + ("overlay",):
+            if getattr(args, name, None) is not None:
+                parser.error(f"--{name} only applies to --zone-type dungeon or outdoor_dungeon")
 
     # Refusal (Req 10.2): right after parsing — before any build or write —
     # refuse an output directory that resolves to, inside, or around the
