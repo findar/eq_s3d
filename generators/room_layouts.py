@@ -398,6 +398,7 @@ def place(room, doors: Sequence, slots: Sequence, asks: Sequence[Ask], body_heig
 # ---------------------------------------------------------------------------
 
 LAYOUTS_FILE = Path(__file__).resolve().parent.parent / "rules" / "rooms" / "layouts.toml"
+AS_MANY_AS_FIT = 24
 POI_PURPOSES: Tuple[str, ...] = ("boss", "treasure", "altar", "guard", "ambush", "view")
 _NUMBERS = {"side_h": (0.5, 8.0), "height_h": (0.0, 4.0), "spacing_h": (2.0, 30.0), "radius": (0.05, 0.5),
             "share": (0.05, 0.5), "chance": (0.0, 1.0)}
@@ -437,7 +438,8 @@ def _asks(chk, raw, where: str) -> Tuple[Ask, ...]:
             chk.fail(where, p + "kind", kind, _one_of(FEATURE_KINDS))
         if at is not None and at not in ARRANGEMENTS:
             chk.fail(where, p + "at", at, _one_of(ARRANGEMENTS))
-        count = t.get("count", 1)
+        # Rows and walls fill their length unless a recipe says how many.
+        count = t.get("count", AS_MANY_AS_FIT if at in ("rows", "along_wall") else 1)
         if isinstance(count, int) and not isinstance(count, bool):
             count = [count, count]
         if not (isinstance(count, list) and len(count) == 2 and all(isinstance(c, int) for c in count)

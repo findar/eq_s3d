@@ -100,3 +100,12 @@ def test_draw_rooms_writes_a_page(tmp_path):
 
 def test_the_file_is_where_the_loader_looks():
     assert LAYOUTS_FILE.is_file() and LAYOUTS_FILE.parent.name == "rooms"
+
+
+def test_rows_with_no_count_fill_their_length():
+    """A throne room's rows came out as one pillar: a recipe gives no count, and it meant 1."""
+    rl = load_layouts()
+    room = RoomSpec("r", 0.0, 0.0, width=200.0, depth=100.0, height=40.0)
+    placed = place(room, [("E", -9.0, 9.0), ("W", -9.0, 9.0)], [], [a for a in rl.types["barracks"]], 6.0, SQUARE,
+                   random.Random(1))
+    assert len(placed.features) >= 4
