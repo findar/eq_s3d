@@ -99,6 +99,17 @@ def test_between_one_style_what_cannot_fit_is_nothing():
     assert rec == {"corridor": "c", "form": "none", "asked": "frame"} and cor.transition is None
 
 
+@pytest.mark.parametrize("form", ["frame", "breach"])
+def test_pieces_that_would_reach_a_room_alongside_become_a_seam(form):
+    """A leg running along a room's wall: a jamb standing in that wall would be loose in the
+    room's mesh (task 23, warren ogre at attempt seed 577090037)."""
+    styles = load_styles()
+    cor, rooms = _corridor()
+    rooms["c"] = RoomSpec("c", 100.0, 9.5 + 20.0, width=90.0, depth=40.0, height=40.0)   # the whole leg long, its wall where a jamb reaches
+    rec = draw_transition(cor, rooms, styles["built"], styles["rough"], [], _Only(form), 1, 6.0)
+    assert rec["form"] == "seam" and rec["asked"] == form
+
+
 def test_a_low_corridor_takes_no_lintel():
     styles = load_styles()
     cor, rooms = _corridor(height=12.0)

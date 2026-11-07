@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .geometry import SEAM_END, MeshBuilder, bridge_layout
+from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout
 from .routing import corridor_route
 from .semantics import ROOM_TYPES, body_height
 from .topology.graph import ROOM_KINDS
@@ -182,6 +182,19 @@ def _door_line(legs, at_from: bool, depth: float) -> Optional[_Line]:
     return _on_leg(ends, z0, z1, along_x, inset / span if at_from else 1.0 - inset / span)
 
 
+def _touches_a_room(cor: CorridorSpec, line: _Line, depth: float, rooms) -> bool:
+    """Would a frame's or breach's pieces reach a room? A leg can run along a room's wall,
+    and a piece standing in that wall would be part of the room's mesh, loose in it."""
+    reach = cor.width / 2 + OPENING_INTO_WALL
+    across, along = (line.y, line.x) if line.along_x else (line.x, line.y)
+    for room in rooms.values():
+        (x0, y0, _), (x1, y1, _) = room.bounds
+        a0, a1, c0, c1 = (x0, x1, y0, y1) if line.along_x else (y0, y1, x0, x1)
+        if along - depth <= a1 and along + depth >= a0 and across - reach <= c1 and across + reach >= c0:
+            return True
+    return False
+
+
 def _fits_width(cor: CorridorSpec, jamb: float, h: float) -> bool:
     return cor.width - 2 * jamb >= CLEAR_H * h
 
@@ -228,6 +241,9 @@ def draw_transition(cor: CorridorSpec, rooms, from_style, to_style, ends: Sequen
         line = _middle_line(legs, depth, rng) or _door_line(legs, finer_is_from, depth)
     if form != NONE and line is None:
         form = NONE
+    if form in (FRAME, BREACH) and _touches_a_room(cor, line, depth, rooms):
+        form = SEAM if differ and plain else NONE
+        line = line if form == SEAM else None
     # On a ramp the floor climbs under a lintel, so it has less to spare there.
     if form == FRAME:
         lintel = _lintel(cor, h, line.grade * depth)

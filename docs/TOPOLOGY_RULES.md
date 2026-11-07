@@ -499,7 +499,7 @@ tendency and rooms still vary.
 
 ```toml
 [races.ogre]
-finish = { peak = 2, spread = 2 }           # the shorthand: 1 at the peak, 0 just past the spread
+finish = { peak = 2, spread = 2 }           # the shorthand: a bell, 1 at the peak, low past the spread
 clutter = [0, 0, 0, 1, 1, 2, 3, 3, 3, 2, 1] # or all eleven weights
 
 [overlays.reclaimed]                        # a tidier race took it over
@@ -507,8 +507,9 @@ clutter = { peak = 1, spread = 1, override = true }
 ```
 
 A room multiplies its layers, least specific first: `default`, `races`, `themes`, `overlays`,
-`kinds`, `types`. So layers blend, and a value any of them rules out is out. `override = true`
-replaces everything less specific. If layers disagree so far that every value is 0, the most
+`kinds`, `types`. So layers blend: two bells meet between their peaks, and a value any layer writes
+as 0 is out. A bell never reaches 0, so only the eleven numbers rule a value out. `override = true`
+replaces everything less specific. If written zeros leave every value at 0, the most
 specific layer decides, and the build goes on. A room's finish is its wall style: each file in
 `rules/walls/` says which band it takes (`finish = [0, 3]`) and how its numbers move across it (`[tune]`).
  `[default]` must name all three scales, and
