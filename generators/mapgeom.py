@@ -24,7 +24,7 @@ Design reference: ``.kiro/specs/zone-generator-m2-true-layout-artifacts/design.m
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -114,6 +114,22 @@ class OutlineSet:
 class FloorSet:
     """The Floor_Region as triangles: ``tris`` is (N, 3, 3) world positions."""
     tris: np.ndarray
+
+
+def with_solids(outline: OutlineSet, spec) -> OutlineSet:
+    """The outline plus a wall loop round each free-standing solid (step 9). A solid stands on
+    unbroken floor, so the floor's edge never finds it; a dais's edge is found already."""
+    extra = []
+    for room in spec.rooms:
+        band = next((b.index for b in outline.bands if b.contains(room.floor_z)), outline.bands[0].index)
+        for feat in room.features:
+            if feat.kind == "dais":
+                continue
+            pts = tuple((float(x), float(y), room.floor_z) for x, y in feat.plan)
+            extra.append(Polyline(pts + pts[:1], "wall", band))
+    if not extra:
+        return outline
+    return replace(outline, polylines=tuple(outline.polylines) + tuple(extra))
 
 
 # ---------------------------------------------------------------------------

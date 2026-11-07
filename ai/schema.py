@@ -66,6 +66,9 @@ LAYOUT_ZONE_TYPES = ("dungeon", "outdoor_dungeon")
 RULES_TOPOLOGY_DIR = Path(__file__).resolve().parent.parent / "rules" / "topology"
 
 
+VALID_FEATURES = ["none", "sparse", "normal", "dense"]
+
+
 def available_wall_styles(rules_dir: Optional[Path] = None) -> List[str]:
     """The wall style names under ``rules/walls/`` (sorted)."""
     folder = rules_dir or Path(__file__).resolve().parent.parent / "rules" / "walls"
@@ -121,6 +124,8 @@ class ZonePlan:
     rule_set: str = ""               # "" or one of available_rule_sets()
     # A grown dungeon's wall style (rules/walls/); "" takes the theme's.
     walls: str = ""                  # "" or one of available_wall_styles()
+    # How much stands in a grown dungeon's rooms (rules/rooms/layouts.toml).
+    features: str = "normal"         # one of VALID_FEATURES
 
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
@@ -174,6 +179,9 @@ class ZonePlan:
             if self.rule_set not in sets:
                 raise ValueError(f"rule_set {self.rule_set!r} is not one of: "
                                  f"{', '.join(sets)} (or \"\" for the theme's set)")
+        self.features = str(self.features or "normal").strip().lower()
+        if self.features not in VALID_FEATURES:
+            raise ValueError(f"features {self.features!r} is not one of: {', '.join(VALID_FEATURES)}")
         self.walls = str(self.walls or "").strip().lower()
         if self.walls:
             styles = available_wall_styles()
