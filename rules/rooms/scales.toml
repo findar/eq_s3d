@@ -1,0 +1,191 @@
+# rules/rooms/scales.toml -- what a room is like (roadmap step 9).
+#
+# Three scales from 0 to 10:
+#   finish     raw rock to dressed stone: 0-3 draws a rough room, 4-6 hewn, 7-10 built
+#   structure  how much is built into it: pillars, plinths, daises (5 = the recipe as written)
+#   clutter    how much lies about: boulders now, loose objects in step 11
+#
+# Weights are eleven numbers, one per value, and a value's chance is its weight over the sum:
+#   finish = [1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 2]
+# or a shorthand, 1 at the peak and falling to 0 just past the spread either side:
+#   finish = { peak = 8, spread = 2 }
+#
+# A room multiplies its layers: default, race, theme, overlay, kind, type. So an ogre temple is a
+# blend. `override = true` replaces everything less specific, and if layers disagree so far that
+# every value is 0, the most specific layer decides.
+#
+# Stock zones rarely hold to one finish (design finding 3): their neighbours mostly agree, and
+# 0-41% of them break. So the default is wide, and coherence, how strongly a room leans toward
+# its neighbours, is modest: a smooth lean can't make a wing's hard edge, and rules do that.
+# Only coherence's finish comes from measuring. The rest is a first judgement, for the looks.
+# The guide is docs/TOPOLOGY_RULES.md, "Scales".
+
+[default]
+finish = [2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2]
+structure = { peak = 5, spread = 3 }
+clutter = { peak = 3, spread = 3 }
+coherence = { finish = 4, structure = 3, clutter = 3 }
+
+# --- who built it, and how they keep it -------------------------------------------------------
+
+[races.goblin]
+finish = { peak = 3, spread = 3 }
+structure = { peak = 3, spread = 3 }
+clutter = { peak = 7, spread = 3 }
+
+[races.kobold]
+finish = { peak = 1, spread = 2 }
+structure = { peak = 2, spread = 2 }
+clutter = { peak = 6, spread = 3 }
+
+[races.gnoll]
+finish = { peak = 3, spread = 3 }
+structure = { peak = 3, spread = 3 }
+clutter = { peak = 6, spread = 3 }
+
+[races.froglok]
+finish = { peak = 6, spread = 3 }
+structure = { peak = 5, spread = 3 }
+clutter = { peak = 4, spread = 3 }
+
+[races.lizardman]
+finish = { peak = 6, spread = 3 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 3, spread = 3 }
+
+[races.sarnak]
+finish = { peak = 5, spread = 5 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 2, spread = 3 }
+
+[races.troll]
+finish = { peak = 3, spread = 3 }
+structure = { peak = 3, spread = 3 }
+clutter = { peak = 7, spread = 3 }
+
+[races.ogre]
+finish = { peak = 2, spread = 2 }
+structure = { peak = 3, spread = 3 }
+clutter = { peak = 7, spread = 3 }
+
+[races.giant]
+finish = { peak = 8, spread = 3 }
+structure = { peak = 7, spread = 3 }
+clutter = { peak = 3, spread = 3 }
+
+[races.dragon]
+finish = { peak = 2, spread = 3 }
+structure = { peak = 2, spread = 2 }
+clutter = { peak = 5, spread = 3 }
+
+# --- what the place is ------------------------------------------------------------------------
+
+[themes.fortress]
+finish = { peak = 8, spread = 2 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 2, spread = 2 }
+
+[themes.war_city]
+finish = { peak = 8, spread = 2 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 3, spread = 3 }
+
+[themes.warren]
+finish = { peak = 1, spread = 2 }
+structure = { peak = 3, spread = 2 }
+clutter = { peak = 6, spread = 3 }
+
+[themes.temple]
+finish = { peak = 8, spread = 2 }
+structure = { peak = 7, spread = 2 }
+clutter = [3, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0]
+
+[themes.tomb]
+finish = { peak = 7, spread = 3 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 3, spread = 2 }
+
+[themes.wizard_lair]
+finish = { peak = 8, spread = 2 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 2, spread = 2 }
+
+[themes.corrupted_sanctum]
+finish = { peak = 6, spread = 3 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 5, spread = 3 }
+
+[themes.mine_delve]
+finish = { peak = 4, spread = 2 }
+structure = { peak = 4, spread = 2 }
+clutter = { peak = 7, spread = 2 }
+
+[themes.sunken_ruin]
+finish = { peak = 6, spread = 4 }
+structure = { peak = 4, spread = 3 }
+clutter = { peak = 7, spread = 3 }
+
+[themes.lava_forge]
+finish = { peak = 5, spread = 2 }
+structure = { peak = 6, spread = 3 }
+clutter = { peak = 4, spread = 3 }
+
+[themes.ice_keep]
+finish = { peak = 5, spread = 2 }
+structure = { peak = 5, spread = 3 }
+clutter = { peak = 2, spread = 2 }
+
+# --- what happened to it since -------------------------------------------------------------------
+
+[overlays.reclaimed]     # a tidier race took it over: the walls stay, the mess goes
+clutter = { peak = 1, spread = 1, override = true }
+structure = { peak = 6, spread = 2 }
+
+[overlays.ruined]        # long abandoned, and falling in
+finish = { peak = 3, spread = 4 }
+structure = { peak = 2, spread = 2 }
+clutter = { peak = 8, spread = 2, override = true }
+
+[overlays.fresh_dig]     # recently excavated: raw walls, loose rock everywhere
+finish = { peak = 3, spread = 2 }
+structure = { peak = 2, spread = 2 }
+clutter = { peak = 8, spread = 2, override = true }
+
+# --- what the room is for ---------------------------------------------------------------------
+
+[kinds.deep]
+structure = { peak = 7, spread = 3 }
+
+[kinds.passage]
+structure = { peak = 2, spread = 2 }
+
+[types.throne]
+finish = { peak = 9, spread = 3 }
+structure = { peak = 8, spread = 2 }
+clutter = [3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[types.inner_sanctum]
+finish = { peak = 9, spread = 3 }
+structure = { peak = 7, spread = 2 }
+clutter = [3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[types.shrine]
+finish = { peak = 8, spread = 3 }
+clutter = [3, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0]
+
+[types.vault]
+finish = { peak = 9, spread = 2 }
+
+[types.storeroom]
+clutter = { peak = 6, spread = 3 }
+
+[types.collapsed_gallery]
+clutter = [0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 2]
+structure = { peak = 2, spread = 2 }
+
+[types.dragon_lair]
+finish = { peak = 1, spread = 2 }
+clutter = { peak = 6, spread = 3 }
+
+[types.prison_cell]
+finish = { peak = 7, spread = 3 }
