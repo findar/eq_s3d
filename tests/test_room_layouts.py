@@ -109,3 +109,69 @@ def test_rows_with_no_count_fill_their_length():
     placed = place(room, [("E", -9.0, 9.0), ("W", -9.0, 9.0)], [], [a for a in rl.types["barracks"]], 6.0, SQUARE,
                    random.Random(1))
     assert len(placed.features) >= 4
+
+
+def _line(**over):
+    from generators.room_layouts import Ask
+    fields = {"kind": "boulder", "at": "scatter", "count": (2, 4), "chance": 0.5, "by": "clutter"}
+    return Ask(**{**fields, **over})
+
+
+def test_a_scale_moves_a_line_from_nothing_to_twice():
+    from generators.room_layouts import _scaled
+    line = _line()
+    assert _scaled([line], "normal", {"clutter": 5})[0] == line
+    assert _scaled([line], "normal", {"clutter": 0})[0].chance == 0
+    twice = _scaled([line], "normal", {"clutter": 10})[0]
+    assert twice.chance == 1.0 and twice.count == (4, 8)
+
+
+def test_a_line_under_its_threshold_is_not_there():
+    from generators.room_layouts import _scaled
+    line = _line(at_least=5)
+    assert _scaled([line], "normal", {"clutter": 4}) == []
+    assert _scaled([line], "normal", {"clutter": 5}) == [line]
+
+
+def test_a_line_with_no_drawn_scale_stands_as_written():
+    from generators.room_layouts import _scaled
+    assert _scaled([_line()], "normal") == [_line()]
+
+
+@pytest.mark.parametrize("field, value", [("by", "shine"), ("from", 11), ("from", True)])
+def test_a_bad_by_or_from_is_named(tmp_path, field, value):
+    from generators.room_layouts import load_layouts
+    from generators.topology.ruleset import RuleSetError
+    src = (Path(__file__).resolve().parent.parent / "rules" / "rooms" / "layouts.toml").read_text(encoding="utf-8")
+    shown = f'"{value}"' if isinstance(value, str) else str(value).lower()
+    a = 'by = "clutter", from = 6 }'
+    assert a in src
+    p = tmp_path / "layouts.toml"
+    p.write_text(src.replace(a, f'by = {shown}, from = 6 }}' if field == "by" else f'by = "clutter", from = {shown} }}'),
+                 encoding="utf-8")
+    with pytest.raises(RuleSetError) as exc:
+        load_layouts(p)
+    assert any(e.field.endswith(field) for e in exc.value.errors), str(exc.value)
+
+
+def _clutter(spec):
+    return sum(f.kind == "boulder" for r in spec.rooms for f in r.features) / len(spec.rooms)
+
+
+def test_a_temple_stands_clear_and_a_mine_is_a_mess():
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+
+    def plan(theme):
+        return ZonePlan(name="rl", zone_type="dungeon", room_count=16, layout="graph", walls="hewn",
+                        dungeon_theme=theme, verticality="flat").validate()
+    temple = sum(_clutter(plan_to_spec(plan("temple"), seed=s)) for s in range(6))
+    mine = sum(_clutter(plan_to_spec(plan("mine_delve"), seed=s)) for s in range(6))
+    assert temple < 0.1 < 0.5 < mine
+
+
+def test_a_rooms_draw_is_on_the_sidecar_for_step_11():
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    spec = plan_to_spec(ZonePlan(name="rl", zone_type="dungeon", room_count=8, layout="graph").validate(), seed=2)
+    assert all("clutter" in spec.layout["rooms"][r.id]["scales"] for r in spec.rooms)

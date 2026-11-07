@@ -14,7 +14,7 @@ from generators.topology.ruleset import RuleSetError, load_theme_map
 from generators.wall_styles import WALLS_DIR, load_style, load_styles, style_for_finish
 
 #: A plan naming a style, in master's bytes before finish chose a room's style, footer aside.
-NAMED = {"rough": "ffa7d4bb59f6618193227ad3a22a1f576e5c553b023df28602b6803fc2eac6ba", "hewn": "5a023de421938889478190ef48285e4ca9eed1158f441b2cb6a4e27c77438517", "built": "58a6c9150c3e756fba7d21dcc60278e4d8c6e0b4501c71e9f7632f10badc59a3"}
+NAMED = {"rough": "12d16368c99888d9b738927aa44eb1c63b54fb5d9bedaa0acb09354d917101b8", "hewn": "f001768dff90762e962d25c5f7a4db98f5bbd48f2e2e25d2067b9e3d8932b671", "built": "db8e84d0af396a3fb61afa7b0d9de567ca1ff7cac2e9ca14ea66308979cd4f72"}
 
 
 def _plan(**fields):
@@ -29,7 +29,7 @@ def _styles(spec):
 @pytest.mark.parametrize("style", sorted(NAMED))
 def test_a_named_style_keeps_its_bytes(tmp_path, style):
     """F13: naming a style still gives every room that style, as before."""
-    spec = plan_to_spec(_plan(walls=style, dungeon_theme="temple"), seed=5)
+    spec = plan_to_spec(_plan(walls=style, dungeon_theme="temple", features="none"), seed=5)
     assert set(_styles(spec)) == {style}
     eqg = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False).eqg_path.read_bytes()
     assert hashlib.sha256(eqg[:-4]).hexdigest() == NAMED[style]

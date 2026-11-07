@@ -120,7 +120,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/wall_styles.py, rules/walls/, rules/topology/themes.toml, ai/expand.py, tests/test_walls_mixed.py, tests/test_room_scales.py, tests/test_topology_levels.py
   - Reqs: 12
 
-- [ ] 17. Recipes read the Scales
+- [x] 17. Recipes read the Scales
   - Card: [cards/17-recipes-read.md](cards/17-recipes-read.md)
   - Type: agent · Size: S · Depends: 16
   - Owns: generators/room_layouts.py, rules/rooms/, tests/test_room_layouts.py, tests/test_features_sweep.py, tests/test_topology_levels.py
