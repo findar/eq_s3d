@@ -49,7 +49,7 @@ def test_no_unused_shared_floor_or_wall_is_packed(tmp_path, prompt, seed):
 
 @pytest.mark.parametrize("kind", ["dungeon", "city"])
 def test_unthemed_builds_keep_the_shared_materials(kind):
-    spec = plan_to_spec(ZonePlan(name="halls", zone_type=kind), seed=7)
+    spec = plan_to_spec(ZonePlan(name="halls", zone_type=kind, walls="built"), seed=7)
     want = {f"{kind}_floor", f"{kind}_wall", f"{kind}_ceiling"}
     assert set(spec.materials) == want
     for part in (*spec.rooms, *spec.corridors):

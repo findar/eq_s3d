@@ -14,7 +14,7 @@ be written by a prompt; a wrong value must say what was expected. The guide is
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -23,8 +23,8 @@ from .outline import (COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, 
                       draw_outline)
 from .semantics import body_height
 from .topology.graph import ROOM_KINDS
-from .topology.ruleset import (RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
-                               _type_name, load_theme_map)
+from .topology.ruleset import (CheckError, RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
+                               _type_name)
 from .textures.recipes import resolve as resolve_recipe
 from .zone_spec import ZoneSpec
 
@@ -36,6 +36,10 @@ DEFAULT_KIND = "default"
 #: What a style asks the texture layer for: the theme's own look, or rock.
 LOOKS: Tuple[str, ...] = ("theme", "rock")
 SURFACES: Tuple[str, ...] = ("wall", "floor", "ceiling")
+FINISH = "finish"       # the Scale a room's style comes from (``room_scales``)
+FINISH_VALUES = range(11)
+#: What ``[tune]`` may move across a style's band of finish.
+TUNABLE: Tuple[str, ...] = ("wobble_h", "fill", "floor_relief_h", "ceiling_spread", "corridor_break")
 #: The texture families that read as laid stone or carpentry, not rock.
 MASONRY: Tuple[str, ...] = ("dressed_stone", "brick", "flagstone", "cobble", "planks", "plaster")
 Band = Tuple[float, float]
@@ -57,6 +61,26 @@ class WallStyle:
     shapes: Mapping[str, Mapping[str, float]]   # kind -> shape -> weight
     look: Mapping[str, str]             # surface -> look
     relief_scale_h: float = 5.0         # how far apart a floor's or ceiling's rises and falls are
+    finish: Tuple[int, int] = (0, 10)   # the rooms of this finish take this style
+    tune: Mapping[str, Tuple[float, float]] = field(default_factory=dict)   # scale at the band's ends
+
+    def at_finish(self, value: int) -> "WallStyle":
+        """This style at one value of its band: ``tune`` scales its numbers, by the first
+        factor at the band's low end and the second at its high end. The middle is the style
+        as it stands."""
+        lo, hi = self.finish
+        t = 0.0 if hi == lo else (value - lo) / (hi - lo)
+
+        def factor(key: str) -> float:
+            low, high = self.tune.get(key, (1.0, 1.0))
+            return low + (1.0 - low) * 2 * t if t <= 0.5 else 1.0 + (high - 1.0) * (t - 0.5) * 2
+
+        return replace(self, wobble_h=self.wobble_h * factor("wobble_h"),
+                       fill=(min(self.fill[0] * factor("fill"), 1.0), min(self.fill[1] * factor("fill"), 1.0)),
+                       floor_relief_h=(self.floor_relief_h[0], self.floor_relief_h[1] * factor("floor_relief_h")),
+                       ceiling_spread=(self.ceiling_spread[0],
+                                       min(self.ceiling_spread[1] * factor("ceiling_spread"), 0.75)),
+                       corridor_break=min(self.corridor_break * factor("corridor_break"), 0.3))
 
     def pick_shape(self, kind: str, rng: random.Random) -> str:
         """A shape for a room of this kind, by the style's weights."""
@@ -108,6 +132,15 @@ def _band(chk: _Checker, tbl: Mapping, key: str, where: str, lo: float, hi: floa
     return (float(v[0]), float(v[1]))
 
 
+def _band_any(chk: _Checker, tbl: Mapping, key: str) -> Band:
+    """Two factors, either way round: a style may calm as it rises, or grow."""
+    v = tbl[key]
+    if not (isinstance(v, list) and len(v) == 2 and all(_is_number(x) and 0.1 <= x <= 3 for x in v)):
+        chk.fail("tune", key, v, "[at the band's low end, at its high end], each from 0.1 to 3")
+        return (1.0, 1.0)
+    return (float(v[0]), float(v[1]))
+
+
 def _shapes(chk: _Checker, raw, kinds: Sequence[str]) -> Dict[str, Dict[str, float]]:
     tbl = chk.table(raw, "top level", "shapes", "[shapes] with default = { blob = 1 }") \
         if raw is not _MISSING else None
@@ -144,12 +177,12 @@ def load_style(path: Union[str, Path]) -> WallStyle:
     chk = _Checker(path.name)
     data = _read_toml(path, chk)
     chk.raise_if_failed()
-    chk.keys(data, "top level", ("style", "shapes", "look"), required=("style", "shapes", "look"))
+    chk.keys(data, "top level", ("style", "shapes", "look", "tune"), required=("style", "shapes", "look"))
     st = chk.table(data.get("style", {}), "top level", "style", "[style] with name, complex") or {}
     chk.keys(st, "style", ("name", "description", "complex", "cell_size_h", "wobble_h", "fill",
-                           "floor_relief_h", "ceiling_spread", "corridor_break", "relief_scale_h"),
+                           "floor_relief_h", "ceiling_spread", "corridor_break", "relief_scale_h", FINISH),
              required=("name", "description", "complex", "floor_relief_h", "ceiling_spread",
-                       "corridor_break"))
+                       "corridor_break", FINISH))
     name = chk.text(st, "name", "style", required=False)
     if name and name != path.stem:
         chk.fail("style", "name", name, f'"{path.stem}" (the file\'s name, so a theme finds it)')
@@ -171,6 +204,13 @@ def load_style(path: Union[str, Path]) -> WallStyle:
     spread = _band(chk, st, "ceiling_spread", "style", 0.0, 0.75)
     broken = _number(chk, st, "corridor_break", "style", 0.0, 0.3)
     relief_scale = _number(chk, st, "relief_scale_h", "style", 1.0, 40.0, default=5.0)
+    band = _band(chk, st, FINISH, "style", 0, 10)
+    tune = {}
+    raw_tune = chk.table(data.get("tune", {}), "top level", "tune", "{ wobble_h = [1.3, 0.7] }") or {}
+    chk.keys(raw_tune, "tune", TUNABLE)
+    for key in raw_tune:
+        if key in TUNABLE:
+            tune[key] = _band_any(chk, raw_tune, key)
     shapes = _shapes(chk, data.get("shapes", _MISSING), ROOM_KINDS)
     lk = chk.table(data.get("look", {}), "top level", "look", "[look] with wall, floor, ceiling") or {}
     chk.keys(lk, "look", SURFACES, required=SURFACES)
@@ -179,7 +219,7 @@ def load_style(path: Union[str, Path]) -> WallStyle:
             chk.fail("look", surface, value, _one_of(LOOKS))
     chk.raise_if_failed()
     return WallStyle(name, desc, complex_, cell, wobble, fill, relief, spread, broken, shapes, dict(lk),
-                     relief_scale)
+                     relief_scale, (int(band[0]), int(band[1])), tune)
 
 
 def load_styles(folder: Union[str, Path] = WALLS_DIR) -> Dict[str, WallStyle]:
@@ -194,30 +234,35 @@ def load_styles(folder: Union[str, Path] = WALLS_DIR) -> Dict[str, WallStyle]:
             errors.extend(exc.errors)
     if errors:
         raise RuleSetError(errors)
+    bands = sorted((s.finish, s.name) for s in styles.values())
+    if bands and [v for (lo, hi), _ in bands for v in range(lo, hi + 1)] != list(FINISH_VALUES):
+        raise RuleSetError([CheckError("walls", "styles", FINISH, str(bands),
+                                       "bands that cover 0 to 10 once each")])
     return styles
 
 
-THEMES_FILE = WALLS_DIR.parent / "topology" / "themes.toml"
 AUTO = "auto"
+PLAN_RULES = "rules"    # ``layout.walls`` when each room's finish chose its style
 
 
-def style_for_theme(theme: str) -> WallStyle:
-    """The wall style ``themes.toml`` gives a dungeon theme."""
-    return load_styles()[load_theme_map(THEMES_FILE).entry_for(theme or None).walls]
+def style_for_finish(value: int, styles: Optional[Mapping[str, WallStyle]] = None) -> WallStyle:
+    """The style of a room of this finish, tuned to it."""
+    for style in (styles or load_styles()).values():
+        if style.finish[0] <= value <= style.finish[1]:
+            return style.at_finish(value)
+    raise ValueError(f"no wall style has finish {value}")
 
 
-def _apply_look(spec: ZoneSpec, style: WallStyle) -> None:
-    """Give each surface the look the style asks for. ``rock`` moves masonry onto a
+def _apply_look(holders: Sequence[Tuple[object, WallStyle]], spec: ZoneSpec) -> None:
+    """Give each surface the look its holder's style asks for. ``rock`` moves masonry onto a
     ``<set>_rock_<surface>`` material with the same colour, so a theme's tint carries
     over; a surface that isn't masonry (a lava forge's basalt, an ice keep's ice) keeps
     its own character. A material replaced everywhere goes, so it isn't packed."""
-    holders = list(spec.rooms) + list(spec.corridors)
     replaced: List[str] = []
     for surface in SURFACES:
-        if style.look[surface] != "rock":
-            continue
-        field = f"{surface}_material"
-        for old in sorted({getattr(h, field) for h in holders}):
+        column = f"{surface}_material"
+        rocky = [h for h, style in holders if style.look[surface] == "rock"]
+        for old in sorted({getattr(h, column) for h in rocky}):
             recipe = resolve_recipe(old)
             if recipe is None or recipe.family not in MASONRY:
                 continue
@@ -226,17 +271,32 @@ def _apply_look(spec: ZoneSpec, style: WallStyle) -> None:
                 m = spec.materials[old]
                 spec.add_material(new, f"{new}.dds", shader=m.shader, color=m.color,
                                   description=f"rough cave rock {surface}")
-            for h in holders:
-                if getattr(h, field) == old:
-                    setattr(h, field, new)
+            for h in rocky:
+                if getattr(h, column) == old:
+                    setattr(h, column, new)
             replaced.append(old)
-    used = {getattr(h, f"{s}_material") for h in holders for s in SURFACES}
+    used = {getattr(h, f"{s}_material") for h, _ in holders for s in SURFACES}
     for name in [n for n in replaced if n not in used]:
         del spec.materials[name]
 
 
 def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int,
                 extra_doors: Optional[Mapping[str, Dict[str, list]]] = None) -> None:
+    """Every room in one style, for a plan that names it."""
+    _draw_rooms(spec, {room.id: style for room in spec.rooms}, seed, extra_doors, style.name)
+
+
+def apply_walls_by_finish(spec: ZoneSpec, seed: int,
+                          extra_doors: Optional[Mapping[str, Dict[str, list]]] = None) -> None:
+    """Each room in the style of the finish it drew (``room_scales.draw_room_scales``)."""
+    styles = load_styles()
+    records = spec.layout["rooms"]
+    _draw_rooms(spec, {room.id: style_for_finish(records[room.id]["scales"][FINISH], styles) for room in spec.rooms},
+                seed, extra_doors, PLAN_RULES)
+
+
+def _draw_rooms(spec: ZoneSpec, styles: Mapping[str, WallStyle], seed: int,
+                extra_doors: Optional[Mapping[str, Dict[str, list]]], name: str) -> None:
     """Draw each room's Outline, last, once every door is known. Only ``room.outline``
     and the sidecar record change, so a style can't move a layout. Each room draws from
     its own stream, so one room's shape can't shift another's. ``extra_doors`` is room id
@@ -244,6 +304,7 @@ def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int,
     height = body_height(spec.dungeon_race)
     records = spec.layout["rooms"]
     for room in spec.rooms:
+        style = styles[room.id]
         rng = random.Random(f"{seed}:{room.id}")
         record = records.get(room.id, {})
         # What the rule asked for: applying a style again chooses afresh.
@@ -259,14 +320,21 @@ def apply_walls(spec: ZoneSpec, style: WallStyle, seed: int,
             room.outline.extra_doors = [(side, c0, c1) for side, cuts in sorted(extra.items())
                                         for c0, c1, _top in cuts]
         if records:
+            record["style"] = style.name
+            record["complex"] = style.complex
             record["shape"] = shape
             record["fill"] = 1.0 if room.outline is None else round(room.outline.fill(box), 3)
             record["outline"] = None if room.outline is None else [
                 [[round(x, 1), round(y, 1)] for x, y in (room.outline.verts[i] for i in loop)]
                 for loop in room.outline.wall_loops()]
-    # Flat and ramp corridors take the style's break; stairs and bridges stay as built.
+    # Flat and ramp corridors take the style's break; stairs and bridges stay as built. Between
+    # two styles a corridor is the rougher room's.
+    corridors = []
     for cor in spec.corridors:
+        ends = [styles[r] for r in (cor.from_room, cor.to_room) if r in styles] or list(styles.values())
+        style = min(ends, key=lambda s: s.finish)
         cor.rough = style.corridor_break if cor.steps == 0 and not cor.bridge else 0.0
-    spec.layout["walls"] = style.name
-    _apply_look(spec, style)
+        corridors.append((cor, style))
+    spec.layout["walls"] = name
+    _apply_look([(room, styles[room.id]) for room in spec.rooms] + corridors, spec)
 

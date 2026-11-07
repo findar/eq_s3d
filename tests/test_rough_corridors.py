@@ -97,11 +97,11 @@ def test_same_corridor_same_mesh():
     assert [(v.x, v.y, v.z) for v in a.vertices] == [(v.x, v.y, v.z) for v in b.vertices]
 
 
-@pytest.mark.parametrize("theme, expected", [("warren", True), ("mine_delve", True), ("", False)])
-def test_styles_set_the_break_and_stairs_and_bridges_stay_square(theme, expected):
-    plan = ZonePlan(name="w9", zone_type="dungeon", room_count=12, layout="graph", dungeon_theme=theme).validate()
+@pytest.mark.parametrize("walls, expected", [("rough", True), ("hewn", True), ("built", False)])
+def test_styles_set_the_break_and_stairs_and_bridges_stay_square(walls, expected):
+    plan = ZonePlan(name="w9", zone_type="dungeon", room_count=12, layout="graph", walls=walls).validate()
     spec = plan_to_spec(plan, seed=11)
-    style = load_styles()[spec.layout["walls"]]
+    style = load_styles()[walls]
     flat = [c for c in spec.corridors if c.steps == 0 and not c.bridge]
     assert flat and all(c.rough == style.corridor_break for c in flat)
     assert all(c.rough == 0 for c in spec.corridors if c.steps != 0 or c.bridge)

@@ -9,6 +9,7 @@
 [style]
 name = "hewn"
 description = "A man-made cave: the Box with its corners cut, a few long facets."
+finish = [4, 6]          # rooms that draw this finish take this style
 complex = "facet"
 floor_relief_h = [0.0, 0.5]
 ceiling_spread = [0.2, 0.5]
@@ -26,3 +27,10 @@ deep = { blob = 1 }
 wall = "rock"
 floor = "theme"
 ceiling = "rock"
+
+# How the numbers move across the band: a factor at its low end, one at its high end. The
+# middle is the style as written above.
+[tune]
+floor_relief_h = [1.3, 0.7]
+ceiling_spread = [1.3, 0.7]
+corridor_break = [1.4, 0.6]

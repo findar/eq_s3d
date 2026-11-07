@@ -534,7 +534,6 @@ def apply_features(spec, complex_name: str, seed: int, density: str = DEFAULT_DE
 
     layouts = load_layouts()
     height = body_height(spec.dungeon_race)
-    form = FORM_OF_COMPLEX[complex_name]
     records = spec.layout["rooms"]
     spec.layout["features"] = density
     if density == "none":
@@ -542,6 +541,7 @@ def apply_features(spec, complex_name: str, seed: int, density: str = DEFAULT_DE
     deepest = max((r.graph_depth for r in spec.rooms if r.role == "deadend"), default=-1)
     for room in spec.rooms:
         record = records.setdefault(room.id, {})
+        form = FORM_OF_COMPLEX[record.get("complex", complex_name)]
         name, asks = layouts.recipe_for(room.semantic_type, record.get("kind", room.kind))
         rng = random.Random(f"{seed}:{room.id}:features")
         doors = room_doors(room, spec, (extra_doors or {}).get(room.id))

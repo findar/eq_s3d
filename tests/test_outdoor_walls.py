@@ -18,9 +18,8 @@ def _plan(rooms=5, walls="", theme="", race="", verticality="moderate", layout="
                     dungeon_theme=theme, dungeon_race=race, verticality=verticality).validate()
 
 
-def test_no_theme_is_a_cave_and_a_theme_keeps_its_style():
-    assert plan_to_spec(_plan(), seed=4).layout["walls"] == "rough"
-    assert plan_to_spec(_plan(theme="temple"), seed=4).layout["walls"] == "built"
+def test_a_named_style_holds_and_otherwise_rooms_draw_theirs():
+    assert plan_to_spec(_plan(), seed=4).layout["walls"] == "rules"
     assert plan_to_spec(_plan(theme="temple", walls="hewn"), seed=4).layout["walls"] == "hewn"
 
 

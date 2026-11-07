@@ -504,7 +504,9 @@ clutter = { peak = 1, spread = 1, override = true }
 A room multiplies its layers, least specific first: `default`, `races`, `themes`, `overlays`,
 `kinds`, `types`. So layers blend, and a value any of them rules out is out. `override = true`
 replaces everything less specific. If layers disagree so far that every value is 0, the most
-specific layer decides, and the build goes on. `[default]` must name all three scales, and
+specific layer decides, and the build goes on. A room's finish is its wall style: each file in
+`rules/walls/` says which band it takes (`finish = [0, 3]`) and how its numbers move across it (`[tune]`).
+ `[default]` must name all three scales, and
 `coherence`, 0 to 10, how strongly a room leans toward its neighbours. A base set can change it
 with `[set] coherence = { finish = 7 }`. Check the file with
 `python scripts/topology_rules.py check rules/rooms/scales.toml`.

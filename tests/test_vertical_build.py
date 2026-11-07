@@ -31,6 +31,7 @@ A passing sweep is necessary, not sufficient: nothing here is looked at in the
 
 import random
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -129,7 +130,7 @@ def test_same_inputs_same_eqg(tmp_path, zone_type, rule_set, theme, race, rooms,
 def _timed_generate(tmp_path, verticality, rooms, seed):
     """Seconds for one full generate on a pinned seed (the server's path, GLB
     and maps included), and how many Levels the plan has."""
-    plan = _plan("dungeon", "classic_eq", "", "", rooms, verticality, name="vtime")
+    plan = replace(_plan("dungeon", "classic_eq", "", "", rooms, verticality, name="vtime"), walls="built")
     t0 = time.perf_counter()
     vb = generate_validated(lambda s: plan_to_spec(plan, seed=s), zone_type="dungeon",
                             zone_id="vtime", seed=seed, output_dir=tmp_path, failure_log=None)

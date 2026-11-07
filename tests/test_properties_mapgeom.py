@@ -81,7 +81,7 @@ _BUILDS: dict = {}
 
 def _plan_spec(zone_type: str, rooms: int, seed: int, verticality: str,
                edges: tuple = ()):
-    plan = ZonePlan(name="mapgeom", zone_type=zone_type, room_count=rooms,
+    plan = ZonePlan(name="mapgeom", zone_type=zone_type, room_count=rooms, walls="built",
                     verticality=verticality, elevation=verticality != "flat")
     return plan_to_spec(plan, seed=seed, edges=dict(edges) or None)
 

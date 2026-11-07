@@ -52,13 +52,13 @@ def test_each_setting_reaches_the_build_through_the_server(client, walls):
         assert (rec["outline"] is None) == (rec["shape"] == "rect")
 
 
-def test_from_theme_is_the_themes_style(client):
+def test_from_theme_is_each_rooms_draw(client):
     r = client.post("/api/generate", json={
         "mode": "controls", "seed": 4,
         "controls": {"zone_type": "dungeon", "room_count": 6, "layout": "graph", "walls": "",
                      "dungeon_theme": "warren"}})
     assert r.status_code == 200, r.text
-    assert _sidecar(r.json())["layout"]["walls"] == "rough"
+    assert _sidecar(r.json())["layout"]["walls"] == "rules"
 
 
 @pytest.mark.parametrize("controls, named", [

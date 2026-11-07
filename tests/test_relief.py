@@ -59,7 +59,8 @@ def test_a_room_with_no_relief_stays_flat():
 
 
 def _plan(theme="warren", rooms=12, rule_set="", verticality="moderate"):
-    return ZonePlan(name="w6", zone_type="dungeon", room_count=rooms, layout="graph", rule_set=rule_set,
+    walls = {"warren": "rough", "mine_delve": "hewn"}.get(theme, "built")
+    return ZonePlan(name="w6", zone_type="dungeon", room_count=rooms, layout="graph", rule_set=rule_set, walls=walls,
                     dungeon_theme=theme, verticality=verticality).validate()
 
 

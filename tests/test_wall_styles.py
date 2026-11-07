@@ -18,6 +18,7 @@ GOOD = """
 [style]
 name = "s"
 description = "d"
+finish = [0, 10]
 complex = "voronoi"
 cell_size_h = 4.0
 wobble_h = 1.0

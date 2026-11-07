@@ -90,6 +90,11 @@ def test_recipe_file_still_parses():
     assert "cave_rock" in load_recipes().families
 
 
-@pytest.mark.parametrize("theme", ["warren", "mine_delve"])
-def test_a_rock_theme_gets_rock_walls_from_theme(theme):
-    assert _families(_spec(theme), "wall") == {"cave_rock"}
+@pytest.mark.parametrize("theme, walls", [("warren", "rough"), ("mine_delve", "hewn")])
+def test_a_rock_style_gets_rock_walls_on_any_theme(theme, walls):
+    assert _families(_spec(theme, walls), "wall") == {"cave_rock"}
+
+
+def test_a_zone_of_mixed_styles_has_rock_and_stone_side_by_side():
+    assert _families(_spec("temple"), "wall") >= {"cave_rock", "dressed_stone"} or \
+        _families(_spec("temple", seed=5), "wall") >= {"cave_rock", "dressed_stone"}
