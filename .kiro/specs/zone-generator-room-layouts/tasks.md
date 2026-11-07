@@ -126,7 +126,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/room_layouts.py, rules/rooms/, tests/test_room_layouts.py, tests/test_features_sweep.py, tests/test_topology_levels.py
   - Reqs: 13
 
-- [ ] 18. The gate learns Transitions
+- [x] 18. The gate learns Transitions
   - Card: [cards/18-gate-transitions.md](cards/18-gate-transitions.md)
   - Type: agent · Size: S · Depends: 16
   - Owns: generators/zone_spec.py, analyzer/, tests/test_gate_transitions.py
