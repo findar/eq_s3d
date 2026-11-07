@@ -111,8 +111,8 @@ through or get caught in.
 2. A Room_Layout SHALL be chosen by room type, then room kind, then a default.
 3. A recipe SHALL name Features and arrangements (`ring`, `rows`, `corners`, `along_wall`,
    `far_end`, `centre`, `scatter`), counts or spacing in H, and POIs.
-4. Every room type in `semantics.ROOM_TYPES` SHALL have a Room_Layout, and its `prop_hints`
-   SHALL stop naming structure that now stands in the room.
+4. Every room type in `semantics.ROOM_TYPES` SHALL have a Room_Layout, and a room's `prop_hints`
+   SHALL stop naming structure that now stands in it (Classic rooms, which stay empty, keep theirs).
 5. `topology_rules.py check` SHALL cover these files, a command SHALL draw sample rooms, and
    `docs/TOPOLOGY_RULES.md` SHALL explain them.
 

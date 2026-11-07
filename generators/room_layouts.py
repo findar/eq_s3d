@@ -14,12 +14,16 @@ import math
 import random
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.ndimage import binary_dilation, label
 
-from .room_features import BOULDER, DAIS, PILLAR, PLINTH, POI, Feature, solid_plan
+from .room_features import BOULDER, DAIS, FEATURE_KINDS, PILLAR, PLINTH, POI, Feature, solid_plan
+from .semantics import ROOM_TYPES
+from .topology.graph import ROOM_KINDS
+from .topology.ruleset import _Checker, _is_number, _one_of, _read_toml
 
 CELL = 2.0              # the plan grid (u)
 SPINE_HALF_H = 1.0      # the Spine's half width, in H: 2 H clear, a corridor's clear width
@@ -353,4 +357,95 @@ def place(room, doors: Sequence, slots: Sequence, asks: Sequence[Ask], body_heig
     return out
 
 
-__all__ = ["ARRANGEMENTS", "Ask", "BOULDER", "PILLAR", "PLINTH", "Placed", "RoomGrid", "place"]
+# ---------------------------------------------------------------------------
+# Recipes as data (rules/rooms/layouts.toml)
+# ---------------------------------------------------------------------------
+
+LAYOUTS_FILE = Path(__file__).resolve().parent.parent / "rules" / "rooms" / "layouts.toml"
+POI_PURPOSES: Tuple[str, ...] = ("boss", "treasure", "altar", "guard", "ambush", "view")
+_NUMBERS = {"side_h": (0.5, 8.0), "height_h": (0.0, 4.0), "spacing_h": (2.0, 30.0), "radius": (0.05, 0.5),
+            "share": (0.05, 0.5), "chance": (0.0, 1.0)}
+
+
+@dataclass(frozen=True)
+class RoomLayouts:
+    types: Dict[str, Tuple[Ask, ...]]
+    kinds: Dict[str, Tuple[Ask, ...]]
+    default: Tuple[Ask, ...]
+
+    def recipe_for(self, semantic_type: str, kind: str) -> Tuple[str, Tuple[Ask, ...]]:
+        """(which recipe, its lines): the room type's, else the kind's, else the default."""
+        if semantic_type in self.types:
+            return f"type:{semantic_type}", self.types[semantic_type]
+        if kind in self.kinds:
+            return f"kind:{kind}", self.kinds[kind]
+        return "default", self.default
+
+
+def _asks(chk, raw, where: str) -> Tuple[Ask, ...]:
+    tbl = chk.table(raw, "recipes", where, "{ features = [ { kind = \"pillar\", at = \"rows\" } ] }")
+    if tbl is None:
+        return ()
+    chk.keys(tbl, where, ("features",), required=("features",))
+    lines = chk.array(tbl.get("features", []), where, "features", "[ { kind = \"pillar\", at = \"rows\" } ]") or []
+    allowed = ("kind", "at", "count", "poi") + tuple(_NUMBERS)
+    out = []
+    for i, line in enumerate(lines):
+        p = f"features[{i}]."
+        t = chk.table(line, where, f"features[{i}]", "{ kind = \"pillar\", at = \"rows\" }")
+        if t is None:
+            continue
+        chk.keys(t, where, allowed, required=("kind", "at"), prefix=p)
+        kind, at = t.get("kind"), t.get("at")
+        if kind is not None and kind not in FEATURE_KINDS:
+            chk.fail(where, p + "kind", kind, _one_of(FEATURE_KINDS))
+        if at is not None and at not in ARRANGEMENTS:
+            chk.fail(where, p + "at", at, _one_of(ARRANGEMENTS))
+        count = t.get("count", 1)
+        if isinstance(count, int) and not isinstance(count, bool):
+            count = [count, count]
+        if not (isinstance(count, list) and len(count) == 2 and all(isinstance(c, int) for c in count)
+                and 0 <= count[0] <= count[1] <= 24):
+            chk.fail(where, p + "count", t.get("count"), "a number or [low, high], from 0 to 24")
+            count = [1, 1]
+        values = {}
+        for key, (lo, hi) in _NUMBERS.items():
+            if key in t:
+                if not _is_number(t[key]) or not lo <= t[key] <= hi:
+                    chk.fail(where, p + key, t[key], f"a number from {lo} to {hi}")
+                else:
+                    values[key] = float(t[key])
+        poi = t.get("poi", "")
+        if poi and poi not in POI_PURPOSES:
+            chk.fail(where, p + "poi", poi, _one_of(POI_PURPOSES))
+        if kind in FEATURE_KINDS and at in ARRANGEMENTS:
+            out.append(Ask(kind, at, count=tuple(count), poi=poi, **values))
+    return tuple(out)
+
+
+def load_layouts(path=LAYOUTS_FILE) -> RoomLayouts:
+    """Load and check the recipes; raises ``RuleSetError`` with every failure."""
+    path = Path(path)
+    chk = _Checker(path.name)
+    data = _read_toml(path, chk)
+    chk.raise_if_failed()
+    chk.keys(data, "top level", ("default", "kinds", "types"), required=("default", "types"))
+    kinds = {}
+    for name, raw in (data.get("kinds") or {}).items():
+        if name not in ROOM_KINDS:
+            chk.fail("kinds", name, "an unknown kind", _one_of(ROOM_KINDS), raw=True)
+        kinds[name] = _asks(chk, raw, f"kinds.{name}")
+    types = {}
+    for name, raw in (data.get("types") or {}).items():
+        if name not in ROOM_TYPES:
+            chk.fail("types", name, "an unknown room type", _one_of(sorted(ROOM_TYPES)), raw=True)
+        types[name] = _asks(chk, raw, f"types.{name}")
+    for name in sorted(set(ROOM_TYPES) - set(types)):
+        chk.fail("types", name, "nothing", "a recipe for every room type (features = [] is one)", raw=True)
+    default = _asks(chk, data.get("default", {}), "default")
+    chk.raise_if_failed()
+    return RoomLayouts(types, kinds, default)
+
+
+__all__ = ["ARRANGEMENTS", "Ask", "BOULDER", "LAYOUTS_FILE", "PILLAR", "PLINTH", "POI_PURPOSES", "Placed",
+           "RoomGrid", "RoomLayouts", "load_layouts", "place"]

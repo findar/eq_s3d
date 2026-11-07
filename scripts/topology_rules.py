@@ -12,6 +12,7 @@ Usage::
     python scripts/topology_rules.py dry-run classic_eq --theme temple --race-scale 1.6
     python scripts/topology_rules.py draw classic_eq --out output/rules/
     python scripts/topology_rules.py draw-walls --out output/rules/   # sample rooms per wall style
+    python scripts/topology_rules.py draw-rooms --out output/rules/   # each room layout, per style
 
 ``<set>`` is a base set name in ``rules/topology/`` or a path to a ``.toml``
 file. ``--theme T`` merges the layers ``themes.toml`` gives theme T (those
@@ -45,6 +46,8 @@ from generators.topology.ruleset import (  # noqa: E402
     load_theme_map, merge,
 )
 
+from generators.room_layouts import LAYOUTS_FILE, load_layouts, place  # noqa: E402
+from generators.zone_spec import RoomSpec  # noqa: E402
 from generators.wall_styles import RECT, WALLS_DIR, load_style, load_styles  # noqa: E402
 
 RULES = ROOT / "rules" / "topology"
@@ -66,6 +69,8 @@ def _kind_of(path: Path) -> str:
         return "layer" if path.parent.name == "layers" else "set"   # the loader reports it
     if "style" in data:
         return "style"
+    if "types" in data:
+        return "rooms"
     return "layer" if "layer" in data else "set"
 
 
@@ -105,6 +110,7 @@ def _shipped() -> List[Path]:
     files = sorted(RULES.glob("*.toml"))
     files += sorted((RULES / "layers").glob("*.toml"))
     files += sorted(WALLS_DIR.glob("*.toml"))
+    files.append(LAYOUTS_FILE)
     return files
 
 
@@ -120,6 +126,9 @@ def cmd_check(files: Sequence[str]) -> int:
             if kind == "themes":
                 tm = load_theme_map(p)
                 lines.append(f"ok    {p.name}: theme map, {len(tm.entries)} themes")
+            elif kind == "rooms":
+                rl = load_layouts(p)
+                lines.append(f"ok    {p.name}: room layouts, {len(rl.types)} types, {len(rl.kinds)} kinds")
             elif kind == "style":
                 st = load_style(p)
                 lines.append(f"ok    {p.name}: wall style, {st.complex}, {len(st.shapes)} kinds")
@@ -338,6 +347,33 @@ def cmd_draw_walls(out: Path) -> int:
     return 0
 
 
+def cmd_draw_rooms(out: Path) -> int:
+    box = (-60.0, -45.0, 60.0, 45.0)
+    doors = [("E", -20.0, -2.0), ("W", 5.0, 23.0)]
+    layouts = load_layouts()
+    recipes = [(f"type {n}", a) for n, a in sorted(layouts.types.items()) if a]
+    recipes += [(f"kind {n}", a) for n, a in sorted(layouts.kinds.items()) if a]
+    forms = {"built": "square", "hewn": "cut", "rough": "rough"}
+    styles = load_styles()
+    rows = []
+    for name, asks in recipes:
+        samples = []
+        for sname, form in forms.items():
+            rng = random.Random(f"{name}{sname}")
+            room = RoomSpec("r", 0.0, 0.0, width=120.0, depth=90.0, height=40.0)
+            room.outline = styles[sname].draw(box, doors, [], "blob" if sname != "built" else "rect", 6.0, rng,
+                                              room_height=40.0)
+            placed = place(room, doors, [], asks, 6.0, form, rng)
+            samples.append((f"{sname}, {len(placed.features)} placed" + (", drops" if placed.dropped else ""),
+                            draw.room_svg(box, room.outline, placed.features, placed.pois, title=f"{name} {sname}")))
+        rows.append((name, samples))
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "rooms.html"
+    path.write_text(draw.rooms_html(rows), encoding="utf-8")
+    print(f"wrote {path} ({len(rows)} recipes)")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -361,6 +397,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     w.add_argument("--out", type=Path, required=True)
     w.add_argument("--example-rooms", type=int, default=15,
                    help="rooms in the example grown graph (0 for none)")
+    o = sub.add_parser("draw-rooms", help="write rooms.html: each room layout, in each wall style")
+    o.add_argument("--out", type=Path, required=True)
     v = sub.add_parser("draw-walls", help="write walls.html: sample rooms for each wall style")
     v.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
@@ -372,6 +410,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if a.cmd == "dry-run":
             return cmd_dry_run(a.set, a.theme, a.graphs, a.rooms, a.race_scale, a.zone_type,
                                a.seed)
+        if a.cmd == "draw-rooms":
+            return cmd_draw_rooms(a.out)
         if a.cmd == "draw-walls":
             return cmd_draw_walls(a.out)
         return cmd_draw(a.set, a.theme, a.out, a.example_rooms)
