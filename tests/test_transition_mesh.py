@@ -72,6 +72,14 @@ def test_a_seam_on_a_ramp_meets_at_the_line():
     assert v.ok, v.reason
 
 
+def test_a_seam_meets_on_a_near_straight_route():
+    """The two doors differ by a little across the corridor, and both parts keep one line."""
+    spec = _spec(_seam(rough=0.2), rough=0.2)
+    spec.corridors[0].to_y = 3.0
+    v = _verdict(spec)
+    assert v.ok, v.reason
+
+
 def test_a_seam_past_a_bend_changes_the_bends_too():
     spec = _spec(Transition("seam", 100.0, 40.0, 0.0, along_x=False, **PAST), route="z")
     v = _verdict(spec)

@@ -997,11 +997,14 @@ class MeshBuilder:
             leg_steps = steps if k == carry else 0
             if k == seam_leg:
                 (sx, sy), past, past_rough = seam
+                # A near-straight route's ends can differ across it. One line for both parts,
+                # or their sections wouldn't meet.
                 sx, sy = (sx, y0) if axes[k] else (x0, sy)
-                sz = zs[k] + (zs[k + 1] - zs[k]) * (abs(sx - x0) + abs(sy - y0)) / (abs(x1 - x0) + abs(y1 - y0))
+                ex, ey = (x1, y0) if axes[k] else (x0, y1)
+                sz = zs[k] + (zs[k + 1] - zs[k]) * (abs(sx - x0) + abs(sy - y0)) / (abs(ex - x0) + abs(ey - y0))
                 self._add_leg(x0, y0, zs[k], sx, sy, sz, axes[k], hw, height, leg_steps, rough,
                               floor_mat, wall_mat, ceiling_mat)
-                self._add_leg(sx, sy, sz, x1, y1, zs[k + 1], axes[k], hw, height, leg_steps, past_rough, *past)
+                self._add_leg(sx, sy, sz, ex, ey, zs[k + 1], axes[k], hw, height, leg_steps, past_rough, *past)
                 continue
             leg_floor, leg_wall, leg_ceiling, leg_rough = look(k)
             self._add_leg(x0, y0, zs[k], x1, y1, zs[k + 1], axes[k], hw, height, leg_steps, leg_rough,
