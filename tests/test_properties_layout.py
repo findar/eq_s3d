@@ -519,6 +519,9 @@ def test_relax_conflict_fallback():
 # -- confirmed against an injected 1.5 u lip, which the probe still flags.
 @settings(deadline=None, max_examples=scaled(50))
 @example(seed=13, zone_type="dungeon", n=13, verticality="dramatic").via("discovered failure")
+# Two Throats 0.002 u apart shared a vertex that add_relief lifted, so a rough floor
+# sloped in a doorway (step 9 task 24's thorough run).
+@example(seed=1140892700, zone_type="dungeon", n=21, verticality="moderate").via("discovered failure")
 @given(
     seed=seeds,
     zone_type=box_zone_types,

@@ -162,7 +162,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
 - [ ] 24. Acceptance section, thorough run
   - Card: [cards/24-release-prep.md](cards/24-release-prep.md)
   - Type: agent · Size: S · Depends: 23
-  - Owns: docs/ACCEPTANCE.md, tests/test_features_sweep.py
+  - Owns: docs/ACCEPTANCE.md, tests/test_features_sweep.py, generators/outline.py, tests/test_properties_layout.py
   - Reqs: exit criteria 1–2
 
 - [ ] 25. HUMAN: room layouts acceptance pass
