@@ -62,7 +62,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: ai/expand.py, generators/room_layouts.py, generators/outdoor_dungeon.py, generators/builder.py, tests/test_features_build.py, tests/ (goldens that change, deliberately)
   - Reqs: 4.4, 6, 7
 
-- [ ] 7. Features control, sidecar and maps
+- [x] 7. Features control, sidecar and maps
   - Card: [cards/07-controls-maps.md](cards/07-controls-maps.md)
   - Type: agent · Size: M · Depends: 6
   - Owns: ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, generators/mapview.py, generators/eqmap.py, generators/pipeline.py, tests/test_hygiene.py, tests/test_features_controls.py

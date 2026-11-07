@@ -45,6 +45,8 @@ def zone_specs(draw) -> ZoneSpec:
     # Rooms as Boxes: the frozen schematic knows no Outlines (test_walls_controls has them).
     for room in spec.rooms:
         room.outline = None
+        room.features = []
+        room.pois = []
     return spec
 
 

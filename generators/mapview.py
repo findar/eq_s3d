@@ -30,6 +30,9 @@ if TYPE_CHECKING:
     from .mapgeom import OutlineSet
 
 
+_FEATURE_FILL = {"dais": "#8a7a4a", "pillar": "#c8ccd0", "plinth": "#b07a4c", "boulder": "#8a8f94"}
+
+
 def _esc(s: str) -> str:
     """Minimal XML-escape for text drawn into the SVG."""
     return (str(s).replace("&", "&amp;").replace("<", "&lt;")
@@ -186,6 +189,14 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
                 f'rx="4" fill="{fill}" fill-opacity="{room_opacity}" stroke="{stroke}" '
                 f'stroke-width="1.5"/>'
             )
+        # What stands in it, and its points of interest (step 9).
+        for f in sorted(r.features, key=lambda f: f.kind != "dais"):
+            pts = " ".join(f"{px(p[0]):.1f},{py(p[1]):.1f}" for p in f.plan)
+            colour = _FEATURE_FILL.get(f.kind, "#6d6d6d")
+            parts.append(f'<polygon class="feature" points="{pts}" fill="{colour}" fill-opacity="0.9"/>')
+        for poi in r.pois:
+            parts.append(f'<circle class="poi" cx="{px(poi.x):.1f}" cy="{py(poi.y):.1f}" r="4" fill="#4aa3ff" '
+                         f'stroke="#0f0f16"><title>{_esc(poi.purpose)}</title></circle>')
         # Depth number in the room centre
         cx, cy = px(r.center_x), py(r.center_y)
         parts.append(

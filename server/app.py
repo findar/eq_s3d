@@ -45,7 +45,7 @@ from ai.planner import make_plan, get_planner
 from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
-    ZonePlan, available_rule_sets, available_wall_styles,
+    VALID_FEATURES, ZonePlan, available_rule_sets, available_wall_styles,
 )
 
 # ---------------------------------------------------------------------------
@@ -393,7 +393,7 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
     400, as ``edges`` / ``trees`` are on a type with no landscape; the default
     ``classic`` / ``""`` is accepted there, since it changes nothing.
     """
-    for key in ("layout", "rule_set", "walls"):
+    for key in ("layout", "rule_set", "walls", "features"):
         if key in c and c[key] is None:
             c.pop(key)
     layout = c.get("layout")
@@ -420,7 +420,15 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
                 400, f"walls must be one of {', '.join(styles)} "
                      "(or \"\" for the theme's style)")
         walls = c["walls"] = walls.strip().lower()
+    features = c.get("features")
+    if features is not None:
+        if not isinstance(features, str) or features.strip().lower() not in VALID_FEATURES:
+            raise HTTPException(400, f"features must be one of {', '.join(VALID_FEATURES)}")
+        features = c["features"] = features.strip().lower()
     if zone_type not in LAYOUT_ZONE_TYPES:
+        if features and features != "normal":
+            raise HTTPException(
+                400, "features only applies to zone_type dungeon or outdoor_dungeon")
         if layout == "graph":
             raise HTTPException(
                 400, "layout only applies to zone_type dungeon or outdoor_dungeon")
@@ -496,7 +504,7 @@ class GenerateRequest(BaseModel):
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
                     "none/sparse/normal/dense), layout (classic/graph) and "
                     "rule_set (a base set, \"\" for the theme's) and walls (a wall style, "
-                    "\"\" for the theme's); dungeon and "
+                    "\"\" for the theme's) and features (none, sparse, normal, dense); dungeon and "
                     "outdoor_dungeon only), dungeon_theme and dungeon_race "
                     "(\"\" for none; dungeon, city and outdoor_dungeon "
                     "only), …",

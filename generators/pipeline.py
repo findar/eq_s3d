@@ -65,7 +65,7 @@ from analyzer.traverse import (
 from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
 from generators.eqmap import build_map_file, write_map_files
-from generators.mapgeom import extract_outline, outline_summary
+from generators.mapgeom import extract_outline, outline_summary, with_solids
 from generators.mapview import render_map_svg
 from generators.outdoor_dungeon import (PLAN_ERRORS, is_outdoor_dungeon,
                                         outdoor_dungeon_report)
@@ -601,7 +601,7 @@ def _write_map_artifacts(root: OutputRoot, result: BuildResult, scratch: Path,
     scratch = scratch.resolve()
     try:
         ter, _ = load_ter_from_eqg(result.eqg_path)
-        outline = extract_outline(ter, spec.safe_point, agent, surface=surface)
+        outline = with_solids(extract_outline(ter, spec.safe_point, agent, surface=surface), spec)
     except Exception as e:                       # EmptyFloorRegion or a bug
         logger.warning("outline extraction failed for %s", name, exc_info=True)
         outline = None
