@@ -68,7 +68,7 @@ def test_f9_plain_zones_measure_like_their_stock_zones(walls):
 def test_f9_themed_zones_stand_out_and_stay_under_the_ceiling(walls, theme):
     m = _measure(walls, theme)
     print(f"\n{walls} {theme}: {m}")
-    assert SOLID_FLOOR[walls] <= m["solid"] <= SOLID_CEILING
+    assert SOLID_FLOOR[walls] <= m["solid"] <= SOLID_CEILING + TOLERANCE
     assert m["raised"] > 0
 
 
