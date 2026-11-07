@@ -144,7 +144,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/transitions.py, rules/rooms/transitions.toml, generators/wall_styles.py, generators/mapview.py, scripts/topology_rules.py, tests/test_transition_rules.py, tests/test_topology_levels.py
   - Reqs: 14.1, 14.4, 14.5
 
-- [ ] 21. Scale controls
+- [x] 21. Scale controls
   - Card: [cards/21-scale-controls.md](cards/21-scale-controls.md)
   - Type: agent · Size: M · Depends: 17, 20
   - Owns: generators/room_scales.py, ai/schema.py, ai/expand.py, main.py, server/app.py, web/index.html, web/src/main.ts, tests/test_hygiene.py, tests/test_scale_controls.py
