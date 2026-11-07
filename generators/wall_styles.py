@@ -26,6 +26,7 @@ from .topology.graph import ROOM_KINDS
 from .topology.ruleset import (CheckError, RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
                                _type_name)
 from .textures.recipes import resolve as resolve_recipe
+from .transitions import draw_transitions, finish_transitions
 from .zone_spec import ZoneSpec
 
 WALLS_DIR = Path(__file__).resolve().parent.parent / "rules" / "walls"
@@ -327,14 +328,8 @@ def _draw_rooms(spec: ZoneSpec, styles: Mapping[str, WallStyle], seed: int,
             record["outline"] = None if room.outline is None else [
                 [[round(x, 1), round(y, 1)] for x, y in (room.outline.verts[i] for i in loop)]
                 for loop in room.outline.wall_loops()]
-    # Flat and ramp corridors take the style's break; stairs and bridges stay as built. Between
-    # two styles a corridor is the rougher room's.
-    corridors = []
-    for cor in spec.corridors:
-        ends = [styles[r] for r in (cor.from_room, cor.to_room) if r in styles] or list(styles.values())
-        style = min(ends, key=lambda s: s.finish)
-        cor.rough = style.corridor_break if cor.steps == 0 and not cor.bridge else 0.0
-        corridors.append((cor, style))
+    corridors = draw_transitions(spec, styles, seed)
     spec.layout["walls"] = name
     _apply_look([(room, styles[room.id]) for room in spec.rooms] + corridors, spec)
+    finish_transitions(spec, styles)
 

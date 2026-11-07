@@ -254,7 +254,18 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         )
 
     # ---- Legend ----
-    parts.append(_legend(w, h, bool(spec.gates), outline is not None))
+    # Where a door could hang: a bar across the corridor at each Frame (step 9).
+    for cor in spec.corridors:
+        t = cor.transition
+        if t is None or t.form != "frame":
+            continue
+        hw = cor.width / 2
+        x0, y0, x1, y1 = (t.x, t.y - hw, t.x, t.y + hw) if t.along_x else (t.x - hw, t.y, t.x + hw, t.y)
+        parts.append(f'<line class="door-spot" x1="{px(x0):.1f}" y1="{py(y0):.1f}" x2="{px(x1):.1f}" '
+                     f'y2="{py(y1):.1f}" stroke="{_DOOR_SPOT}" stroke-width="3"><title>door spot</title></line>')
+
+    has_doors = any(c.transition is not None and c.transition.form == "frame" for c in spec.corridors)
+    parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors))
 
     # ---- Scale bar (world units) ----
     parts.append(_scale_bar(scale, padding, h))
@@ -263,7 +274,10 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     return "".join(parts)
 
 
-def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False) -> str:
+_DOOR_SPOT = "#e0a458"
+
+
+def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_doors: bool = False) -> str:
     items = [
         ("#2e7d32", "entrance"),
         ("#1565c0", "hub"),
@@ -272,6 +286,8 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False) -> s
     ]
     if has_gates:
         items += [("#e53935", "lock"), ("#ffd24a", "key")]
+    if has_doors:
+        items.append((_DOOR_SPOT, "door spot"))
     # Outline entries get a line swatch (solid wall, dashed ledge), not a box.
     lines = [("", "wall"), (' stroke-dasharray="4 3"', "ledge")] if has_outline else []
 

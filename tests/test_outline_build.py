@@ -30,6 +30,7 @@ def _layout_only(spec):
     d.pop("materials", None)
     for c in d["corridors"]:
         c.pop("rough", None)
+        c.pop("transition", None)
     for holder in d["rooms"] + d["corridors"]:
         for surface in ("floor", "wall", "ceiling"):
             holder.pop(f"{surface}_material", None)
