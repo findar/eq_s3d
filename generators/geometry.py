@@ -455,6 +455,7 @@ def _ceiling_cells(x0, y0, x1, y1, holes):
 # UV units per world unit when a material has no texel_density: one texture
 # repeat per 100 u (the box backend's scale before interesting textures).
 DEFAULT_UV_SCALE = 0.01
+SEAM_END = 0.5      # a Seam stands at least this far from either end of its leg (u)
 ROUGH_SPACING = 16.0    # a rough corridor's walls bend about this often (u)
 STEP_WIDTH = 14.0   # a dais's steps are this wide, or most of its side (u)
 WALL_ROW = 14.0     # a shaped room's walls come in rows about this tall (the era's edge)
@@ -874,7 +875,55 @@ class MeshBuilder:
             hw=hw, height=cor.height, steps=cor.steps,
             floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat,
             avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
-            bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough)
+            bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough,
+            seam=self._seam(cor, spec))
+        if cor.transition is not None and cor.transition.material:
+            self._add_opening(cor, spec)
+
+    def _seam(self, cor: CorridorSpec, spec: ZoneSpec):
+        """Where a corridor's look changes: ((x, y), the materials past it, the break past it).
+        A stair or bridge has no Seam: its change stands at a door."""
+        t = cor.transition
+        if t is None or not t.floor_material or cor.steps != 0 or cor.bridge:
+            return None
+        return ((t.x, t.y),
+                tuple(self.material_id(spec.materials[m]) for m in (t.floor_material, t.wall_material,
+                                                                    t.ceiling_material)),
+                t.rough)
+
+    def _add_opening(self, cor: CorridorSpec, spec: ZoneSpec) -> None:
+        """A frame or breach: closed solids across the corridor at the Transition's line. Their
+        feet and heads stand past the floor and ceiling, as a Feature's do, and the floor runs
+        on under them, so it stays flush. A frame's jambs match and carry a lintel. A breach's
+        are broken and uneven, with nothing over them."""
+        t = cor.transition
+        mat = self.material_id(spec.materials[t.material])
+        line, middle = (t.x, t.y) if t.along_x else (t.y, t.x)
+        lo, hi = line - t.depth, line + t.depth
+        hw = cor.width / 2
+        back = hw + 0.5                     # into the wall, so no face lies on it
+
+        def plan(points):
+            """(along, across) to (x, y), the way round ``_add_solid`` expects."""
+            pts = [(u, middle + v) if t.along_x else (middle + v, u) for u, v in points]
+            area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))
+            return pts if area > 0 else pts[::-1]
+
+        foot, head = t.z - t.depth - 1.0, t.z + cor.height + t.depth + 1.0
+        if t.form == "frame":
+            for sign in (-1, 1):
+                inner = sign * (hw - t.jamb)
+                self._add_solid(plan([(lo, inner), (hi, inner), (hi, sign * back), (lo, sign * back)]),
+                                foot, head, mat, mat)
+            self._add_solid(plan([(lo, -back), (hi, -back), (hi, back), (lo, back)]),
+                            t.z + cor.height - t.lintel, head, mat, mat)
+            return
+        rng = random.Random(f"{t.x:.2f},{t.y:.2f}")
+        for sign, reach in ((-1, t.jamb), (1, t.jamb * rng.uniform(0.3, 0.8))):
+            inner = [sign * (hw - reach * rng.uniform(0.4, 1.0)) for _ in range(2)] + [sign * (hw - reach)]
+            self._add_solid(plan([(lo, inner[0]), ((lo + hi) / 2, inner[2]), (hi, inner[1]),
+                                  (hi, sign * back), (lo, sign * back)]),
+                            foot, head, mat, mat)
 
     @staticmethod
     def _seg_len(waypoints, k):
@@ -893,7 +942,7 @@ class MeshBuilder:
         return zs, carry
 
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
-                    steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None, rough=0.0):
+                    steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None, rough=0.0, seam=None):
         """
         Shared multi-segment corridor builder. `waypoints` is an ordered list of
         (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
@@ -913,8 +962,19 @@ class MeshBuilder:
         bend floor and the carry leg's slope runs only between the squares.
         The square is walled on the two sides no leg leaves through: without
         those walls the outer corner of every bend was a hole (task 14).
+
+        ``seam`` is ((x, y), materials, rough): the leg holding that point splits there, and
+        the route takes that look past it. Both parts end square, so their sections meet. A
+        point on no leg (too short a leg, say) leaves the corridor in one look.
         """
         zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
+        seam_leg = self._seam_leg(waypoints, seam, hw, zs) if seam else None
+
+        def look(k):
+            """(floor, wall, ceiling, rough) of leg k, or of the bend starting it."""
+            if seam_leg is not None and k > seam_leg:
+                return (*seam[1], seam[2])
+            return (floor_mat, wall_mat, ceiling_mat, rough)
 
         for k in range(len(waypoints) - 1):
             if (steps < 0 and k == carry
@@ -935,21 +995,52 @@ class MeshBuilder:
                                      floor_mat, wall_mat, ceiling_mat)
                 continue
             leg_steps = steps if k == carry else 0
-            if rough > 0:
-                self._add_rough_leg(x0, y0, zs[k], x1, y1, zs[k + 1], axes[k], hw, height, rough,
-                                    floor_mat, wall_mat, ceiling_mat)
+            if k == seam_leg:
+                (sx, sy), past, past_rough = seam
+                # A near-straight route's ends can differ across it. One line for both parts,
+                # or their sections wouldn't meet.
+                sx, sy = (sx, y0) if axes[k] else (x0, sy)
+                ex, ey = (x1, y0) if axes[k] else (x0, y1)
+                sz = zs[k] + (zs[k + 1] - zs[k]) * (abs(sx - x0) + abs(sy - y0)) / (abs(ex - x0) + abs(ey - y0))
+                self._add_leg(x0, y0, zs[k], sx, sy, sz, axes[k], hw, height, leg_steps, rough,
+                              floor_mat, wall_mat, ceiling_mat)
+                self._add_leg(sx, sy, sz, ex, ey, zs[k + 1], axes[k], hw, height, leg_steps, past_rough, *past)
                 continue
-            self._add_straight_leg(
-                x0, y0, zs[k], x1, y1, zs[k + 1],
-                axes[k], hw, height, leg_steps,
-                floor_mat, wall_mat, ceiling_mat)
+            leg_floor, leg_wall, leg_ceiling, leg_rough = look(k)
+            self._add_leg(x0, y0, zs[k], x1, y1, zs[k + 1], axes[k], hw, height, leg_steps, leg_rough,
+                          leg_floor, leg_wall, leg_ceiling)
 
         # Fill each interior corner flush with the shared floor height there.
         for i in range(1, len(waypoints) - 1):
+            bend_floor, bend_wall, bend_ceiling, _ = look(i)
             self._add_corner_fill(self._bend_square(waypoints, i, hw), zs[i],
-                                  height, floor_mat, ceiling_mat)
+                                  height, bend_floor, bend_ceiling)
             self._add_corner_walls(waypoints, axes, i, zs[i], hw, height,
-                                   wall_mat)
+                                   bend_wall)
+
+    def _add_leg(self, x0, y0, z0, x1, y1, z1, along_x, hw, height, steps, rough,
+                 floor_mat, wall_mat, ceiling_mat):
+        """One leg, or one part of a leg split at a Seam: broken if it has a break."""
+        if rough > 0:
+            self._add_rough_leg(x0, y0, z0, x1, y1, z1, along_x, hw, height, rough,
+                                floor_mat, wall_mat, ceiling_mat)
+        else:
+            self._add_straight_leg(x0, y0, z0, x1, y1, z1, along_x, hw, height, steps,
+                                   floor_mat, wall_mat, ceiling_mat)
+
+    @classmethod
+    def _seam_leg(cls, waypoints, seam, hw, zs):
+        """The leg a Seam's point lies inside, past its ends by more than a sliver; else None."""
+        (sx, sy), _, _ = seam
+        for k in range(len(waypoints) - 1):
+            ends = cls._leg_ends(waypoints, k, hw, zs)
+            if ends is None:
+                continue
+            (x0, y0), (x1, y1) = ends
+            if (min(x0, x1) + SEAM_END <= sx <= max(x0, x1) - SEAM_END and abs(sy - y0) <= hw) or \
+               (min(y0, y1) + SEAM_END <= sy <= max(y0, y1) - SEAM_END and abs(sx - x0) <= hw):
+                return k
+        return None
 
     @staticmethod
     def _leg_ends(waypoints, k, hw, zs):
