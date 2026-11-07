@@ -23,6 +23,8 @@ The design's "Decisions" section stands. The user took the recommended answer to
 
 ## Follow-ups
 
+- **A sunken court and rock columns wider at the foot** (task 9): question 3 allows a sunken court as a Dais ring, and a rough pillar could flare at its foot. Neither was asked for at the first look.
+
 Carried in from earlier steps and relevant here:
 
 - **Step 8's human pass is open** (2026-11-06): the user set it aside and asked to go on. Findings there land first.

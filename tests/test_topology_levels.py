@@ -63,7 +63,7 @@ def _spec_hash(spec) -> str:
 GOLDENS = {
     "classic_eq": (dict(zone_type="dungeon", room_count=12, layout="graph",
                         verticality="flat"), 2,
-                   "884cd8b9f3d3990682edbd6e95f06e05dc4e2faf98da4b60fd472732573d6a21"),
+                   "25dbb4b769f12dee6fd6ba63d19da91e1cfc52d123e395264403f0a06a511f36"),
     "warren": (dict(zone_type="dungeon", room_count=12, layout="graph",
                     rule_set="warren", verticality="flat"), 2,
                "91e98bdf8b04b8cc5a4ac7e16c777d3bac87614a00c914fe0aaf3c981438648b"),

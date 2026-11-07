@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from scipy.ndimage import binary_dilation, label
 
-from .room_features import BOULDER, DAIS, FEATURE_KINDS, PILLAR, PLINTH, POI, Feature, solid_plan
+from .room_features import BOULDER, DAIS, FEATURE_KINDS, PILLAR, PLINTH, POI, Feature, dais_plan, solid_plan
 from .semantics import ROOM_TYPES
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import _Checker, _is_number, _one_of, _read_toml
@@ -273,7 +273,7 @@ def _local_drop(room, plan) -> float:
     return float(np.array(o.drop)[near].max()) if near.any() else 0.0
 
 
-def _dais(grid: RoomGrid, ask: Ask, rng: random.Random) -> Optional[Feature]:
+def _dais(grid: RoomGrid, ask: Ask, form: str, rng: random.Random) -> Optional[Feature]:
     """A raised floor against a wall, its steps toward the room, on the side furthest from the
     doors that it fits. Shrinks to fit."""
     fx, fy = _door_side(grid)
@@ -293,7 +293,7 @@ def _dais(grid: RoomGrid, ask: Ask, rng: random.Random) -> Optional[Feature]:
         return float(min(abs(x - v) for v in door_x))
 
     tries = [(far, inset, scale) for far in sorted("NSEW", key=lambda f: (-clearance(f), f))
-             for inset in (1, 2, 3) for scale in (1.0, 0.8, 0.65, 0.5)]
+             for inset in (1, 2, 3) for scale in (1.0, 0.8, 0.65, 0.5, 0.35)]
     for far, inset, scale in sorted(tries, key=lambda t: t[1]):
         along_x = far in "NS"
         toward = {"N": "S", "S": "N", "E": "W", "W": "E"}[far]
@@ -307,7 +307,7 @@ def _dais(grid: RoomGrid, ask: Ask, rng: random.Random) -> Optional[Feature]:
         else:
             a = grid.x1 - off if far == "E" else grid.x0 + off + deep
             box = (a - deep, cy - run / 2, a, cy + run / 2)
-        plan = [(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])]
+        plan = dais_plan(form, box, toward, rng)
         height = _local_lift(grid.room, plan) + rise
         if grid.room.height - _local_drop(grid.room, plan) - height < MIN_HEAD_H * grid.h:
             continue
@@ -341,7 +341,7 @@ def place(room, doors: Sequence, slots: Sequence, asks: Sequence[Ask], body_heig
         if count <= 0:
             continue
         if ask.kind == DAIS:
-            feat = _dais(grid, ask, rng)
+            feat = _dais(grid, ask, form, rng)
             if feat is None:
                 out.dropped.append(f"{ask.kind} at {ask.at}")
                 continue
