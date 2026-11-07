@@ -132,7 +132,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/zone_spec.py, analyzer/, tests/test_gate_transitions.py
   - Reqs: 14.3
 
-- [ ] 19. Transition pieces
+- [x] 19. Transition pieces
   - Card: [cards/19-transition-mesh.md](cards/19-transition-mesh.md)
   - Type: agent · Size: M · Depends: 18
   - Owns: generators/geometry.py, generators/zone_spec.py, generators/transitions.py, tests/test_transition_mesh.py
