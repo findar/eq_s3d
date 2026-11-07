@@ -47,7 +47,7 @@ def measured():
     for style in BANDS:
         rows = []
         for seed in (2, 4, 7, 10):
-            plan = ZonePlan(name="w12", zone_type="dungeon", room_count=20, layout="graph", walls=style,
+            plan = ZonePlan(name="w12", zone_type="dungeon", room_count=20, layout="graph", walls=style, features="none",
                             verticality="flat").validate()
             r = measure(build_mesh(plan_to_spec(plan, seed=seed)).to_ter("w12"), agent, floors_up=True)
             r["run"] = r["run"][1]
