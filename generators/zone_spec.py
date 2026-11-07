@@ -100,6 +100,17 @@ class RoomSpec:
 
 
 @dataclass
+class Transition:
+    """What stands in a corridor where two wall styles meet (``generators.transitions``)."""
+    form: str           # seam, frame or breach
+    x: float            # the middle of its line across the corridor
+    y: float
+    z: float
+    along_x: bool       # the corridor's way at that line
+    depth: float = 1.0  # how far along the corridor it reaches, each side of the line (u)
+
+
+@dataclass
 class CorridorSpec:
     """
     A straight corridor connecting two rooms (or arbitrary points).
@@ -150,6 +161,9 @@ class CorridorSpec:
     # A corridor in a rock wall style (step 8): how far its walls and ceiling come in,
     # as a share of its width and height. 0 is square; the JSON carries it only when set.
     rough: float = 0.0
+
+    # Where two wall styles meet in this corridor; None for most. The JSON carries it only when set.
+    transition: Optional[Transition] = None
 
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
@@ -247,10 +261,10 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
-    """A corridor's JSON; ``side``, ``bridge`` and ``rough`` only when set (step 6
-    corridors carry none of them)."""
+    """A corridor's JSON; ``side``, ``bridge``, ``rough`` and ``transition`` only when set
+    (step 6 corridors carry none of them)."""
     d = asdict(cor)
-    for key in ("side", "bridge", "rough"):
+    for key in ("side", "bridge", "rough", "transition"):
         if not d.get(key):
             d.pop(key, None)
     return d
@@ -385,6 +399,9 @@ class ZoneSpec:
             r["pois"] = [POI.from_dict(x) for x in r.get("pois", [])]
             spec.rooms.append(RoomSpec(**r))
         for c in d.get("corridors", []):
+            c = dict(c)
+            if c.get("transition"):
+                c["transition"] = Transition(**c["transition"])
             spec.corridors.append(CorridorSpec(**c))
         for l in d.get("lights", []):
             spec.lights.append(LightSpec(**l))

@@ -51,6 +51,7 @@ from scipy.ndimage import binary_dilation, binary_erosion, label
 from generators.geometry import (MeshBuilder, _bridge_slots, _door_openings, bridge_layout,
                                  is_auto_stair, stair_layout)
 from generators.routing import Rect, corridor_route, route_footprint
+from generators.semantics import body_height
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
 
@@ -1184,6 +1185,10 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
 # a body's radius from every wall at body height.
 
 CLEAR_CELL = 2.0      # the grid's cell (u)
+TRANSITION_CLEAR_H = 2.0    # a Transition leaves this much clear width, in body heights
+TRANSITION_HEAD_H = 2.0     # and this much headroom, in body heights
+TRANSITION_HEAD = 8.0       # or in u, if more: the player is 6 u tall
+TRANSITION_MARGIN = 3.0     # the gate walks this far past a Transition each way (u)
 WALLED_OFF = 64.0     # a pocket of free floor this big, with no door, is walled off (u^2)
 
 
@@ -1332,11 +1337,121 @@ def check_features(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec, agent: Age
     return OutlineResult(room.id, True)
 
 
+def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent: AgentModel) -> OutlineResult:
+    """Judge a corridor's Transition from the mesh: walk through it. ``reason`` is "" when
+    it passes, or:
+
+      * ``"no floor through the <form>"``
+      * ``"a step of <n> u through the <form>"``
+      * ``"<form> leaves <n> u clear, under <m> u"``
+      * ``"<form> leaves <n> u of headroom, under <m> u"``
+      * ``"open seam at the <form> at (x, y, z)"``: an edge only one face uses
+    """
+    t = cor.transition
+
+    def fail(reason: str) -> OutlineResult:
+        return OutlineResult(cor.id, False, reason)
+
+    h = body_height(spec.dungeon_race)
+    least_clear, least_head = TRANSITION_CLEAR_H * h, max(TRANSITION_HEAD_H * h, TRANSITION_HEAD)
+    axis, across = (0, 1) if t.along_x else (1, 0)
+    line = (t.x, t.y)[axis]
+    middle = (t.x, t.y)[across]
+    reach = t.depth + TRANSITION_MARGIN
+    half = cor.width / 2 + 1.0
+
+    tri = surf.verts[surf.faces]
+    lo, hi = tri.min(axis=1), tri.max(axis=1)
+    near = ((hi[:, axis] >= line - reach - 1) & (lo[:, axis] <= line + reach + 1)
+            & (hi[:, across] >= middle - half) & (lo[:, across] <= middle + half)
+            & (hi[:, 2] >= t.z - reach) & (lo[:, 2] <= t.z + cor.height + reach))
+    faces = np.nonzero(near)[0]
+    tri, nz = tri[faces], surf.normals[faces, 2]
+    standable = surf.standable[faces]
+
+    def point(s: float) -> Tuple[float, float]:
+        return (line + s, middle) if t.along_x else (middle, line + s)
+
+    # Through it, down the middle: the floor, a step at a time. Floor with a solid's underside
+    # resting on it is inside that solid, so the walker has to climb the solid's top instead.
+    down = nz < -0.1
+    samples = np.arange(-reach, reach + 0.5, 1.0)
+    floor_z = []
+    z = t.z
+    for s in samples:
+        x, y = point(float(s))
+        heights = [_plane_z_at(f, x, y) for f, ok in zip(tri, standable) if ok and _point_in_tri_xy(x, y, f)]
+        under = [_plane_z_at(f, x, y) for f in tri[down] if _point_in_tri_xy(x, y, f)]
+        heights = [v for v in heights if v <= z + cor.height / 2 and not any(abs(u - v) < 0.5 for u in under)]
+        if not heights:
+            return fail(f"no floor through the {t.form}")
+        best = min(heights, key=lambda v: abs(v - z))
+        if abs(best - z) > agent.max_step_up and s > samples[0]:
+            return fail(f"a step of {abs(best - z):.1f} u through the {t.form}")
+        z = best
+        floor_z.append(z)
+
+    # Width and head are the Transition's own, within its depth: past it is the corridor's.
+    own = [(s, z) for s, z in zip(samples, floor_z) if abs(s) <= t.depth + 1e-6] or         [min(zip(samples, floor_z), key=lambda sz: abs(sz[0]))]
+
+    # At body height: how far a line across reaches each way from the middle before a wall.
+    tall = np.abs(nz) < 0.7
+    crossing = []
+    for s, z in own:
+        body = z + agent.player_height / 2
+        ends = []
+        for f in tri[tall & (tri[:, :, 2].min(axis=1) <= body) & (tri[:, :, 2].max(axis=1) >= body)]:
+            pts = []
+            for i in range(3):
+                a, b = f[i], f[(i + 1) % 3]
+                if (a[2] - body) * (b[2] - body) < 0 or a[2] == body:
+                    pts.append(a + (b - a) * ((body - a[2]) / ((b[2] - a[2]) or 1.0)))
+            if len(pts) >= 2:
+                ends.append((pts[0][axis], pts[0][across], pts[1][axis], pts[1][across]))
+        run = line + float(s)
+        hits = []
+        for a0, c0, a1, c1 in ends:
+            if min(a0, a1) - 1e-6 <= run <= max(a0, a1) + 1e-6:
+                hits.append(c0 if abs(a1 - a0) < 1e-9 else c0 + (c1 - c0) * (run - a0) / (a1 - a0))
+                if abs(a1 - a0) < 1e-9:
+                    hits.append(c1)
+        left = max((c for c in hits if c <= middle + 1e-6), default=middle - half)
+        right = min((c for c in hits if c >= middle - 1e-6), default=middle + half)
+        crossing.append(right - left)
+    clear = min(crossing)
+    if clear < least_clear - 0.01:
+        return fail(f"{t.form} leaves {clear:.1f} u clear, under {least_clear:.1f} u")
+
+    # Overhead: the lowest surface over the floor.
+    for s, z in own:
+        x, y = point(float(s))
+        over = [_plane_z_at(f, x, y) for f in tri[down] if _point_in_tri_xy(x, y, f)]
+        over = [v for v in over if v > z + 1.0]
+        if over and min(over) - z < least_head - 0.01:
+            return fail(f"{t.form} leaves {min(over) - z:.1f} u of headroom, under {least_head:.1f} u")
+
+    # Nothing open where the sections meet: an edge lying in the line itself has a face each
+    # side of it. Off the line one-faced edges are normal, as a broken wall's foot on a floor.
+    keys = np.round(tri, 2)
+    count: Dict[tuple, int] = {}
+    for k in keys:
+        for i in range(3):
+            a, b = tuple(k[i]), tuple(k[(i + 1) % 3])
+            key = (a, b) if a < b else (b, a)
+            count[key] = count.get(key, 0) + 1
+    for (a, b), n in sorted(count.items()):
+        if n == 1 and all(abs(p[axis] - line) <= OUTLINE_TOL and abs(p[across] - middle) <= cor.width / 2 + 0.5
+                          for p in (a, b)):
+            return fail(f"open seam at the {t.form} at ({a[0]:.1f}, {a[1]:.1f}, {a[2]:.1f})")
+    return OutlineResult(cor.id, True)
+
+
 def outline_checks(surf: WalkSurface, spec: ZoneSpec, agent: AgentModel) -> List[OutlineResult]:
-    """Every shaped room's verdict, and every room holding Features or POIs; none for a
-    build of plain empty Boxes."""
+    """Every shaped room's verdict, every room holding Features or POIs, and every corridor
+    with a Transition; none for a build of plain empty Boxes."""
     out = [check_outline(surf, r, spec, agent) for r in spec.rooms if r.outline is not None]
     out += [check_features(surf, r, spec, agent) for r in spec.rooms if r.features or r.pois]
+    out += [check_transition(surf, c, spec, agent) for c in spec.corridors if c.transition is not None]
     return out
 
 
