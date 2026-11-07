@@ -1391,10 +1391,13 @@ def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent
         z = best
         floor_z.append(z)
 
+    # Width and head are the Transition's own, within its depth: past it is the corridor's.
+    own = [(s, z) for s, z in zip(samples, floor_z) if abs(s) <= t.depth + 1e-6] or         [min(zip(samples, floor_z), key=lambda sz: abs(sz[0]))]
+
     # At body height: how far a line across reaches each way from the middle before a wall.
     tall = np.abs(nz) < 0.7
     crossing = []
-    for s, z in zip(samples, floor_z):
+    for s, z in own:
         body = z + agent.player_height / 2
         ends = []
         for f in tri[tall & (tri[:, :, 2].min(axis=1) <= body) & (tri[:, :, 2].max(axis=1) >= body)]:
@@ -1420,7 +1423,7 @@ def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent
         return fail(f"{t.form} leaves {clear:.1f} u clear, under {least_clear:.1f} u")
 
     # Overhead: the lowest surface over the floor.
-    for s, z in zip(samples, floor_z):
+    for s, z in own:
         x, y = point(float(s))
         over = [_plane_z_at(f, x, y) for f in tri[down] if _point_in_tri_xy(x, y, f)]
         over = [v for v in over if v > z + 1.0]
