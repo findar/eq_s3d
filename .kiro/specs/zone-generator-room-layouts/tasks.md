@@ -96,7 +96,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: scripts/room_scale_survey.py, .kiro/specs/zone-generator-room-layouts/design.md, .kiro/specs/zone-generator-room-layouts/archive.md
   - Reqs: 11.5, 14
 
-- [ ] 13. Scales as data
+- [x] 13. Scales as data
   - Card: [cards/13-scales-data.md](cards/13-scales-data.md)
   - Type: agent · Size: M · Depends: 12
   - Owns: generators/room_scales.py, rules/rooms/scales.toml, scripts/topology_rules.py, docs/TOPOLOGY_RULES.md, tests/test_room_scales.py
