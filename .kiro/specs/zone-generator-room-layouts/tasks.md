@@ -114,7 +114,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/topology/, rules/topology/, generators/room_scales.py, tests/test_room_scales.py
   - Reqs: 11.3, 11.5
 
-- [ ] 16. A room's finish is its wall style
+- [x] 16. A room's finish is its wall style
   - Card: [cards/16-per-room-style.md](cards/16-per-room-style.md)
   - Type: agent · Size: M · Depends: 15
   - Owns: generators/wall_styles.py, rules/walls/, rules/topology/themes.toml, ai/expand.py, tests/test_walls_mixed.py, tests/test_room_scales.py, tests/test_topology_levels.py

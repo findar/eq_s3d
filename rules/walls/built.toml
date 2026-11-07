@@ -9,6 +9,7 @@
 [style]
 name = "built"
 description = "A dungeon of masonry: mostly rectangles, some cut corners and wings."
+finish = [7, 10]          # rooms that draw this finish take this style
 complex = "grid"
 cell_size_h = 4.0
 fill = [0.80, 0.90]
@@ -26,3 +27,8 @@ deep = { cut = 2, rect = 1 }
 wall = "theme"
 floor = "theme"
 ceiling = "theme"
+
+# How the numbers move across the band: a factor at its low end, one at its high end. The
+# middle is the style as written above.
+[tune]
+fill = [0.97, 1.03]

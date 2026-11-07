@@ -91,19 +91,8 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
             # cave, the Blackburrow it's modelled on.
             if spec.layout is not None:
                 from generators.outdoor_dungeon import tunnel_doors
-                from generators.room_scales import draw_room_scales
-                from generators.wall_styles import apply_walls, load_styles, style_for_theme
-                if plan.walls:
-                    style = load_styles()[plan.walls]
-                elif plan.dungeon_theme:
-                    style = style_for_theme(plan.dungeon_theme)
-                else:
-                    style = load_styles()["rough"]
-                doors = tunnel_doors(spec)
-                draw_room_scales(spec, rng_seed)
-                apply_walls(spec, style, rng_seed, extra_doors=doors)
-                from generators.room_layouts import apply_features
-                apply_features(spec, style.complex, rng_seed, plan.features, extra_doors=doors)
+                _dress_rooms(spec, plan, rng_seed, extra_doors=tunnel_doors(spec),
+                             overlay="" if plan.dungeon_theme else "natural_cave")
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
             spec.wilderness["biome_substitution"] = intent.substitution.to_dict()
@@ -160,14 +149,21 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
 
     # A grown dungeon's rooms draw their real walls, last, when every door is known.
     if spec.layout is not None and plan.zone_type == "dungeon":
-        from generators.wall_styles import apply_walls, load_styles, style_for_theme
-        style = load_styles()[plan.walls] if plan.walls else style_for_theme(plan.dungeon_theme)
-        from generators.room_scales import draw_room_scales
-        draw_room_scales(spec, rng_seed)
-        apply_walls(spec, style, rng_seed)
-        from generators.room_layouts import apply_features
-        apply_features(spec, style.complex, rng_seed, plan.features)
+        _dress_rooms(spec, plan, rng_seed)
     return spec
+
+
+def _dress_rooms(spec, plan: ZonePlan, seed: int, extra_doors=None, overlay: str = "") -> None:
+    """What a grown zone's rooms are like, then their walls, then what stands in them."""
+    from generators.room_layouts import apply_features
+    from generators.room_scales import draw_room_scales
+    from generators.wall_styles import apply_walls, apply_walls_by_finish, load_styles
+    draw_room_scales(spec, seed, overlay=overlay)
+    if plan.walls:
+        apply_walls(spec, load_styles()[plan.walls], seed, extra_doors=extra_doors)
+    else:
+        apply_walls_by_finish(spec, seed, extra_doors=extra_doors)
+    apply_features(spec, "", seed, plan.features, extra_doors=extra_doors)
 
 
 def layout_engine(layout: str, rule_set: str = "", verticality: Optional[str] = None,

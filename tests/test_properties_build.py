@@ -327,6 +327,7 @@ def test_ramp_subdivision(s, zone_type, n, verticality):
     plan = ZonePlan(
         name="rampsub",
         zone_type=zone_type,
+        walls="built",
         room_count=n,
         verticality=verticality,
         elevation=True,

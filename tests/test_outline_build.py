@@ -10,8 +10,7 @@ import pytest
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.pipeline import generate_validated
-from generators.topology.ruleset import load_theme_map
-from generators.wall_styles import THEMES_FILE, apply_walls, load_styles, style_for_theme
+from generators.wall_styles import apply_walls, load_styles
 
 
 def _plan(zone_type="dungeon", layout="graph", rooms=12, theme="", race="", rule_set="",
@@ -52,34 +51,17 @@ def test_w3_classic_and_cities_draw_no_outlines(zone_type, layout):
     assert all(r.outline is None for r in spec.rooms)
 
 
-@pytest.mark.parametrize("theme, style", [("", "built"), ("fortress", "built"), ("temple", "built"),
-                                          ("warren", "rough"), ("mine_delve", "hewn"),
-                                          ("lava_forge", "hewn"), ("ice_keep", "hewn")])
-def test_a_theme_chooses_its_style(theme, style):
-    assert style_for_theme(theme).name == style
-    assert plan_to_spec(_plan(theme=theme), seed=3).layout["walls"] == style
-
-
-def test_themes_file_names_only_real_styles(tmp_path):
-    (tmp_path / "topology").mkdir()
-    (tmp_path / "walls").mkdir()
-    (tmp_path / "walls" / "built.toml").write_text("", encoding="utf-8")
-    p = tmp_path / "topology" / "themes.toml"
-    p.write_text('default = { base = "classic_eq", walls = "marble" }\n', encoding="utf-8")
-    with pytest.raises(ValueError, match="walls: found \"marble\", expected one of built"):
-        load_theme_map(p)
-    assert load_theme_map(THEMES_FILE).entry_for("warren").walls == "rough"
-
-
 def test_kinds_take_the_shapes_their_style_allows():
-    style = style_for_theme("warren")
+    styles = load_styles()
     for seed in range(6):
         spec = plan_to_spec(_plan(theme="warren"), seed=seed)
         for room in spec.rooms:
             rec = spec.layout["rooms"][room.id]
+            style = styles[rec["style"]]
             table = style.shapes.get(rec["kind"], style.shapes["default"])
             assert rec["shape"] in table, (rec, table)
-            assert rec["fill"] == pytest.approx(room.outline.fill(_box(room)), abs=1e-3)
+            if room.outline is not None:
+                assert rec["fill"] == pytest.approx(room.outline.fill(_box(room)), abs=1e-3)
 
 
 def _box(room):
@@ -113,8 +95,9 @@ def test_same_seed_same_outlines():
 
 
 def test_outlines_change_with_the_seed_but_the_stream_is_per_room():
-    style = style_for_theme("warren")
-    spec = plan_to_spec(_plan(theme="warren"), seed=9)
+    style = load_styles()["rough"]
+    spec = plan_to_spec(ZonePlan(name="w5", zone_type="dungeon", room_count=12, layout="graph", walls="rough",
+                                 dungeon_theme="warren", verticality="moderate").validate(), seed=9)
     before = spec.rooms[0].outline
     spec.rooms[-1].outline = None
     apply_walls(spec, style, 9)

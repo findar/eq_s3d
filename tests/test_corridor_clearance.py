@@ -56,7 +56,7 @@ TOUCH = 1e-6
 
 
 def _plan_spec(zone_type, n, verticality, seed):
-    plan = ZonePlan(name="clear", zone_type=zone_type, room_count=n,
+    plan = ZonePlan(name="clear", zone_type=zone_type, room_count=n, walls="built",
                     verticality=verticality, elevation=verticality != "flat")
     return plan_to_spec(plan, seed=seed)
 

@@ -9,6 +9,7 @@
 [style]
 name = "rough"
 description = "A natural cave: Voronoi Cells, walls that wander, a moving ceiling."
+finish = [0, 3]          # rooms that draw this finish take this style
 complex = "voronoi"
 cell_size_h = 4.0
 wobble_h = 1.3            # stock walls keep to no straight side; a Box's would show
@@ -29,3 +30,11 @@ deep = { blob = 1 }
 wall = "rock"
 floor = "rock"
 ceiling = "rock"
+
+# How the numbers move across the band: a factor at its low end, one at its high end. The
+# middle is the style as written above.
+[tune]
+wobble_h = [1.25, 0.75]
+floor_relief_h = [1.2, 0.8]
+ceiling_spread = [1.2, 0.8]
+corridor_break = [1.2, 0.8]
