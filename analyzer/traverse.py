@@ -1427,7 +1427,8 @@ def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent
         if over and min(over) - z < least_head - 0.01:
             return fail(f"{t.form} leaves {min(over) - z:.1f} u of headroom, under {least_head:.1f} u")
 
-    # Nothing open where the sections meet.
+    # Nothing open where the sections meet: an edge lying in the line itself has a face each
+    # side of it. Off the line one-faced edges are normal, as a broken wall's foot on a floor.
     keys = np.round(tri, 2)
     count: Dict[tuple, int] = {}
     for k in keys:
@@ -1435,9 +1436,8 @@ def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent
             a, b = tuple(k[i]), tuple(k[(i + 1) % 3])
             key = (a, b) if a < b else (b, a)
             count[key] = count.get(key, 0) + 1
-    inside = t.depth + 1.0
     for (a, b), n in sorted(count.items()):
-        if n == 1 and all(abs(p[axis] - line) <= inside and abs(p[across] - middle) <= cor.width / 2 + 0.5
+        if n == 1 and all(abs(p[axis] - line) <= OUTLINE_TOL and abs(p[across] - middle) <= cor.width / 2 + 0.5
                           for p in (a, b)):
             return fail(f"open seam at the {t.form} at ({a[0]:.1f}, {a[1]:.1f}, {a[2]:.1f})")
     return OutlineResult(cor.id, True)
