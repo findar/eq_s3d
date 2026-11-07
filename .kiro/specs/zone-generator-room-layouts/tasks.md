@@ -108,7 +108,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/room_scales.py, ai/expand.py, tests/test_room_scales.py, tests/test_topology_levels.py
   - Reqs: 11.1, 11.2, 11.4
 
-- [ ] 15. Rules set Weights
+- [x] 15. Rules set Weights
   - Card: [cards/15-rule-scales.md](cards/15-rule-scales.md)
   - Type: agent · Size: M · Depends: 14
   - Owns: generators/topology/, rules/topology/, generators/room_scales.py, tests/test_room_scales.py
