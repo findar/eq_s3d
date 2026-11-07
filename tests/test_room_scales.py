@@ -9,7 +9,7 @@ import pytest
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
-from generators.room_scales import (FINISH, FLAT, SCALES, VALUES, Layer, combine, draw_room_scales, lean, load_scales,
+from generators.room_scales import (CLUTTER, FINISH, FLAT, SCALES, VALUES, Layer, combine, draw_room_scales, lean, load_scales,
                                     peak_weights)
 from generators.topology.ruleset import RuleSetError
 
@@ -52,17 +52,18 @@ def test_the_shipped_file_loads_and_names_every_scale():
     assert set(rules.coherence) == set(SCALES)
 
 
-def test_shorthand_peaks_and_falls_to_nothing():
+def test_shorthand_is_a_bell_that_never_reaches_nothing():
     w = peak_weights(2, 2)
     assert w[2] == 1.0
-    assert w[0] == w[4] == pytest.approx(1 / 3)
-    assert w[5] == 0.0
-    assert peak_weights(0, 0)[1] == 0.0
+    assert w[0] == w[4] < w[1] == w[3] < 1.0
+    assert 0.0 < w[10] < 0.01
+    assert all(w > 0.0 for w in peak_weights(0, 0))
 
 
 def test_layers_multiply_value_by_value():
     a, b = (1.0, 2.0) + (0.0,) * 9, (3.0, 4.0) + (1.0,) * 9
-    assert combine(FINISH, [_layer(finish=a), _layer(finish=b)])[:3] == (3.0, 8.0, 0.0)
+    got = combine(FINISH, [_layer(finish=a), _layer(finish=b)])
+    assert got[:3] == pytest.approx((3.0 ** 0.5, 8.0 ** 0.5, 0.0))     # the product's square root, for two
 
 
 def test_a_layer_without_the_scale_leaves_it_alone():
@@ -74,12 +75,29 @@ def test_a_layer_without_the_scale_leaves_it_alone():
 def test_override_replaces_everything_less_specific():
     a, b, c = peak_weights(1, 1), peak_weights(9, 1), peak_weights(8, 2)
     got = combine(FINISH, [_layer(finish=a), Layer({FINISH: b}, (FINISH,)), _layer(finish=c)])
-    assert got == tuple(x * y for x, y in zip(b, c))
+    assert got == pytest.approx(tuple((x * y) ** 0.5 for x, y in zip(b, c)))
 
 
-def test_layers_that_disagree_fall_to_the_most_specific():
-    low, high = peak_weights(1, 1), peak_weights(9, 1)
+def test_layers_whose_zeros_leave_nothing_fall_to_the_most_specific():
+    low, high = (1.0,) * 5 + (0.0,) * 6, (0.0,) * 6 + (1.0,) * 5
     assert combine(FINISH, [_layer(finish=low), _layer(finish=high)]) == high
+
+
+def test_bells_that_disagree_meet_between_them():
+    got = combine(FINISH, [_layer(finish=peak_weights(1, 1)), _layer(finish=peak_weights(9, 1))])
+    assert max(range(VALUES), key=got.__getitem__) == 5
+
+
+def test_three_layers_that_half_agree_still_vary():
+    """Default, ogre and fortress pinned every ogre room's clutter at 4 when the shorthand
+    hit 0 (task 23); a blend still spans several values, and a messy race is felt."""
+    rules = load_scales()
+
+    def mean(w):
+        return sum(v * x for v, x in enumerate(w)) / sum(w)
+    got = combine(CLUTTER, rules.layers_for(race="ogre", theme="fortress"))
+    assert len([v for v in range(VALUES) if got[v] >= 0.25 * max(got)]) >= 4
+    assert mean(got) > mean(combine(CLUTTER, rules.layers_for(theme="fortress")))
 
 
 def test_a_race_with_a_theme_is_a_real_blend():

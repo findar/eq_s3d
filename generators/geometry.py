@@ -456,6 +456,7 @@ def _ceiling_cells(x0, y0, x1, y1, holes):
 # repeat per 100 u (the box backend's scale before interesting textures).
 DEFAULT_UV_SCALE = 0.01
 SEAM_END = 0.5      # a Seam stands at least this far from either end of its leg (u)
+OPENING_INTO_WALL = 0.5     # a frame's or breach's pieces reach this far past the corridor's walls (u)
 ROUGH_SPACING = 16.0    # a rough corridor's walls bend about this often (u)
 STEP_WIDTH = 14.0   # a dais's steps are this wide, or most of its side (u)
 WALL_ROW = 14.0     # a shaped room's walls come in rows about this tall (the era's edge)
@@ -901,7 +902,7 @@ class MeshBuilder:
         line, middle = (t.x, t.y) if t.along_x else (t.y, t.x)
         lo, hi = line - t.depth, line + t.depth
         hw = cor.width / 2
-        back = hw + 0.5                     # into the wall, so no face lies on it
+        back = hw + OPENING_INTO_WALL       # into the wall, so no face lies on it
 
         def plan(points):
             """(along, across) to (x, y), the way round ``_add_solid`` expects."""

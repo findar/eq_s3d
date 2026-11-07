@@ -4,8 +4,8 @@ Finish, structure and clutter run from 0 to 10. A source of weights is a Layer: 
 default, a race, a theme, an overlay, a room kind or type, a rule's wing, and later a control.
 A value's chance is its weight over the sum, and a room's weights are its Layers
 multiplied, so an ogre temple is a real blend and not whichever was named last. Layers
-that disagree never fail a build: when the product is all zeros, the most specific Layer
-with any weight decides.
+that disagree never fail a build: when the product is all zeros, which only written zeros
+can do, the most specific Layer with any weight decides.
 
 ``rules/rooms/scales.toml`` holds them, checked like the other rule files. The guide is
 ``docs/TOPOLOGY_RULES.md``.
@@ -33,9 +33,15 @@ FLAT: Tuple[float, ...] = (1.0,) * VALUES
 Weights = Tuple[float, ...]
 
 
+BELL_WIDTH = 2.5    # spread + 1 over this is the bell's standard deviation: a triangle's, near enough
+
+
 def peak_weights(peak: float, spread: float) -> Weights:
-    """The shorthand: 1 at the peak, falling to 0 just past ``spread`` either side."""
-    return tuple(max(0.0, 1.0 - abs(v - peak) / (spread + 1.0)) for v in range(VALUES))
+    """The shorthand: a bell, 1 at the peak and low past ``spread`` either side, but never 0.
+    A triangle that hit 0 left layers that half agree one shared value, as default, ogre
+    and fortress all pinned clutter at 4; bells multiply to a bell between them."""
+    sigma = (spread + 1.0) / BELL_WIDTH
+    return tuple(math.exp(-(((v - peak) / sigma) ** 2) / 2) for v in range(VALUES))
 
 
 @dataclass(frozen=True)
@@ -47,17 +53,24 @@ class Layer:
 
 
 def combine(scale: str, layers: Sequence[Layer]) -> Weights:
-    """A room's weights on one scale, from its Layers, least specific first."""
-    product = FLAT
+    """A room's weights on one scale, from its Layers, least specific first: their product,
+    to the power of one over how many there are. The root keeps a blend as wide as a Layer,
+    where a bare product narrows with every Layer until a room has one value left."""
+    product, n = FLAT, 0
     specific: Optional[Weights] = None
     for layer in layers:
         w = layer.weights.get(scale)
         if w is None:
             continue
         specific = w
-        product = w if scale in layer.overrides else tuple(a * b for a, b in zip(product, w))
-    if any(product) or specific is None:
+        if scale in layer.overrides:
+            product, n = w, 1
+        else:
+            product, n = tuple(a * b for a, b in zip(product, w)), n + 1
+    if specific is None:
         return product
+    if any(product):
+        return tuple(p ** (1.0 / n) for p in product)
     return specific
 
 
@@ -91,16 +104,16 @@ def lean(weights: Weights, neighbours: Sequence[int], coherence: float) -> Weigh
     return leaned if any(leaned) else weights
 
 
-ASKED_SPREAD = 2    # how tightly a control's number holds the rooms to it
+ASKED_SPREAD = 1    # how tightly a control's number holds the rooms to it: a bell this tight outweighs the rules'
 
 
 def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomScales] = None,
                      asked: Optional[Mapping[str, int]] = None) -> None:
     """Each room's value on each Scale, into ``layout.rooms.<id>.scales``. Rooms draw from
     the entrance outward, each from its own stream, so this moves nothing about the layout.
-    ``asked`` is Scale -> a control's number: the most specific Layer, a lean and not a pin."""
+    ``asked`` is Scale -> a control's number: a bell on the rules' blend, a lean and not a pin."""
     rules = rules or load_scales()
-    control = Layer({scale: peak_weights(value, ASKED_SPREAD) for scale, value in (asked or {}).items()})
+    control = {scale: peak_weights(value, ASKED_SPREAD) for scale, value in (asked or {}).items()}
     records = spec.layout["rooms"]
     coherence = spec.layout.get("coherence") or {}
     next_door: Dict[str, list] = {room.id: [] for room in spec.rooms}
@@ -113,13 +126,16 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
         record = records.setdefault(room.id, {})
         wing = record.get("wing", "")
         layers = rules.layers_for(spec.dungeon_race, spec.dungeon_theme, overlay, record.get("kind", room.kind),
-                                  room.semantic_type, wing) + (control,)
+                                  room.semantic_type, wing)
         values = {}
         for scale in SCALES:
             # A room leans only within its wing: that's what gives a wing its hard edge.
             near = [drawn[n][scale] for n in next_door[room.id]
                     if n in drawn and records.get(n, {}).get("wing", "") == wing]
-            weights = lean(combine(scale, layers), near, coherence.get(scale, rules.coherence[scale]))
+            weights = combine(scale, layers)
+            if scale in control:    # on top of the blend, not one more voice in it
+                weights = tuple(w * c for w, c in zip(weights, control[scale]))
+            weights = lean(weights, near, coherence.get(scale, rules.coherence[scale]))
             rng = random.Random(f"{seed}:{room.id}:{scale}")
             values[scale] = rng.choices(range(VALUES), weights=weights)[0]
         drawn[room.id] = values

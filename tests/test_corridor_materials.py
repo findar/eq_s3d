@@ -26,9 +26,9 @@ THEMED = [("a gnoll temple dungeon with 8 rooms", 7),
 def test_corridors_take_their_rooms_theme_material(prompt, seed):
     spec = plan_to_spec(make_plan(prompt, name="halls"), seed=seed)
     rooms = {r.id: r for r in spec.rooms}
+    # Every floor is the theme's; a rough room takes its rock variant (step 8), so there can be two.
     floors = {r.floor_material for r in spec.rooms}
-    assert len(floors) == 1 and not next(iter(floors)).endswith("_dungeon_floor") \
-        and next(iter(floors)) != "dungeon_floor"
+    assert all(not f.endswith("_dungeon_floor") and f != "dungeon_floor" for f in floors), floors
     for cor in spec.corridors:
         ends = [rooms[i] for i in (cor.from_room, cor.to_room) if i in rooms]
         assert any(cor.floor_material == r.floor_material and
