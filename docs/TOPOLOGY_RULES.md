@@ -484,3 +484,26 @@ named ones stand out. To see what a recipe draws, without building a zone:
 python scripts/topology_rules.py check rules/rooms/layouts.toml
 python scripts/topology_rules.py draw-rooms --out output/rules/
 ```
+
+## Scales
+
+`rules/rooms/scales.toml` says what a room is like, on three scales from 0 to 10. **Finish** runs
+from raw rock to dressed stone, **structure** is how much is built into a room, and **clutter** is
+how much lies about. A value's chance is its weight over the sum, so a room type or race gives a
+tendency and rooms still vary.
+
+```toml
+[races.ogre]
+finish = { peak = 2, spread = 2 }           # the shorthand: 1 at the peak, 0 just past the spread
+clutter = [0, 0, 0, 1, 1, 2, 3, 3, 3, 2, 1] # or all eleven weights
+
+[overlays.reclaimed]                        # a tidier race took it over
+clutter = { peak = 1, spread = 1, override = true }
+```
+
+A room multiplies its layers, least specific first: `default`, `races`, `themes`, `overlays`,
+`kinds`, `types`. So layers blend, and a value any of them rules out is out. `override = true`
+replaces everything less specific. If layers disagree so far that every value is 0, the most
+specific layer decides, and the build goes on. `[default]` must name all three scales, and
+`coherence`, 0 to 10, how strongly a room leans toward its neighbours. Check the file with
+`python scripts/topology_rules.py check rules/rooms/scales.toml`.
