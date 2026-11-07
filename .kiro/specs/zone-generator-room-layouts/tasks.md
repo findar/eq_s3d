@@ -129,7 +129,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
 - [ ] 18. The gate learns Transitions
   - Card: [cards/18-gate-transitions.md](cards/18-gate-transitions.md)
   - Type: agent · Size: S · Depends: 16
-  - Owns: generators/pipeline.py, analyzer/, tests/test_gate_transitions.py
+  - Owns: generators/zone_spec.py, analyzer/, tests/test_gate_transitions.py
   - Reqs: 14.3
 
 - [ ] 19. Transition pieces
