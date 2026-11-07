@@ -102,7 +102,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/room_scales.py, rules/rooms/scales.toml, scripts/topology_rules.py, docs/TOPOLOGY_RULES.md, tests/test_room_scales.py
   - Reqs: 10
 
-- [ ] 14. Rooms draw their Scales
+- [x] 14. Rooms draw their Scales
   - Card: [cards/14-scale-draw.md](cards/14-scale-draw.md)
   - Type: agent · Size: S · Depends: 13
   - Owns: generators/room_scales.py, ai/expand.py, tests/test_room_scales.py, tests/test_topology_levels.py
