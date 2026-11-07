@@ -50,7 +50,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: generators/room_layouts.py, tests/test_room_placement.py
   - Reqs: 4
 
-- [ ] 5. Room layouts as data
+- [x] 5. Room layouts as data
   - Card: [cards/05-layout-files.md](cards/05-layout-files.md)
   - Type: agent · Size: M · Depends: 1, 3, 4
   - Owns: rules/rooms/, generators/room_layouts.py, generators/semantics.py (`prop_hints`), scripts/topology_rules.py, generators/topology/draw.py, docs/TOPOLOGY_RULES.md, tests/test_room_layouts.py
