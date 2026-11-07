@@ -72,7 +72,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
   - Type: human · Depends: 6, 7
 
-- [ ] 9. Pieces that suit each style
+- [x] 9. Pieces that suit each style
   - Card: [cards/09-style-pieces.md](cards/09-style-pieces.md)
   - Type: agent · Size: M · Depends: 8
   - Owns: generators/room_features.py, rules/rooms/, generators/room_layouts.py, tests/test_feature_mesh.py
