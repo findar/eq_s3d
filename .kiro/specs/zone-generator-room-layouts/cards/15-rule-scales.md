@@ -8,7 +8,7 @@ A topology rule can set Weights on the rooms it makes, inherited by what they gr
 ## Done when
 - [ ] Rule files accept `scales` on a node, checked strictly; `generators/topology/ruleset.py` names every bad value.
 - [ ] Inherited through rewriting; no lean across different rule Weights (F12).
-- [ ] `rules/topology/` gets at least one rule that uses it, e.g. a mine wing on a temple; `python scripts/topology_rules.py check` passes.
+- [ ] `rules/topology/classic_eq.toml` grows wings with a hard edge, as chardok has (design finding 3), and a mine wing on a temple; `python scripts/topology_rules.py check` passes.
 - [ ] Built zones are inside task 12's band: `python -m pytest tests/test_room_scales.py -q`.
 
 ## Pitfalls

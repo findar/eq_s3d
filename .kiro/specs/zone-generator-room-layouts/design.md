@@ -90,6 +90,63 @@ What this means for the design:
 - `mapgeom.extract_outline` draws where the floor ends, so a solid standing on an unbroken floor
   won't reach the EQ map files by itself (Req 8.3, task 7).
 
+### 3. How stock rooms change (task 12, `scripts/room_scale_survey.py`)
+
+Finish per chamber, from how much of its wall lies on the zone's grid. **Drift** is the median
+finish difference between neighbouring chambers, **shuffled** the same with values dealt at random.
+A **break** is neighbours 4 or more apart. **Wings** are groups joined across anything less.
+**Coherence** is the lean whose simulated drift best matches.
+
+| Zone | Style | Rooms | Finish p10/50/90 | Drift | Shuffled | Break | Wings | Largest | Coherence | Texture changes | At breaks |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| blackburrow | rough | 37 | 0.0/1.8/3.8 | 1.2 | 1.6 | 0.07 | 1 | 0.95 | 3 | 0.42 | 1.00 |
+| paw | rough | 33 | 0.3/1.4/10.0 | 1.0 | 2.2 | 0.12 | 3 | 0.55 | 3 | 0.70 | 1.00 |
+| crystal | rough | 24 | 0.0/2.0/6.1 | 1.6 | 2.3 | 0.09 | 2 | 0.54 | 3 | 0.22 | 0.00 |
+| runnyeye | rough | 18 | 0.3/3.7/8.0 | 2.5 | 3.3 | 0.41 | 5 | 0.44 | 2 | 0.91 | 1.00 |
+| soldungb | rough | 17 | 1.0/2.5/9.9 | 0.9 | 4.4 | 0.24 | 4 | 0.35 | 3 | 0.53 | 0.75 |
+| soldunga | rough | 15 | 3.1/9.9/10.0 | 1.2 | 1.8 | 0.27 | 2 | 0.67 | 2 | 0.53 | 0.75 |
+| permafrost | rough | 32 | 0.2/2.1/8.3 | 2.7 | 2.8 | 0.41 | 7 | 0.25 | 1 | 0.49 | 0.35 |
+| kaesora | hewn | 20 | 0.9/3.5/7.3 | 2.2 | 2.5 | 0.17 | 2 | 0.70 | 1 | 0.57 | 0.50 |
+| guktop | hewn | 17 | 1.7/5.0/9.5 | 1.7 | 3.3 | 0.28 | 5 | 0.41 | 3 | 0.78 | 1.00 |
+| najena | hewn | 25 | 0.0/1.8/10.0 | 2.2 | 3.2 | 0.21 | 4 | 0.44 | 2 | 0.36 | 0.67 |
+| gukbottom | hewn | 11 | 0.7/7.7/10.0 | 2.4 | 3.3 | 0.30 | 2 | 0.55 | 2 | 0.90 | 1.00 |
+| sebilis | hewn | 46 | 0.3/7.1/10.0 | 2.0 | 3.4 | 0.29 | 8 | 0.24 | 2 | 0.73 | 0.86 |
+| qcat | built | 5 | 1.5/3.5/4.5 | 2.0 | 1.8 | 0.00 | 1 | 1.00 | 1 | 0.25 | – |
+| befallen | built | 23 | 2.1/9.1/10.0 | 2.2 | 3.3 | 0.41 | 4 | 0.26 | 2 | 0.50 | 0.56 |
+| kurn | built | 42 | 8.8/10.0/10.0 | 0.1 | 0.2 | 0.00 | 1 | 1.00 | 0 | 0.44 | – |
+| chardok | mixed | 77 | 0.0/3.3/10.0 | 1.8 | 4.5 | 0.29 | 12 | 0.23 | 2 | 0.38 | 0.38 |
+| cazicthule | mixed | 23 | 0.0/5.2/10.0 | 1.0 | 4.8 | 0.21 | 4 | 0.35 | 3 | 0.50 | 0.80 |
+| hole | mixed | 70 | 0.0/5.4/9.8 | 1.8 | 3.6 | 0.20 | 8 | 0.33 | 3 | 0.39 | 0.71 |
+| mistmoore | mixed | 27 | 0.5/5.7/10.0 | 1.4 | 3.9 | 0.28 | 5 | 0.37 | 4 | 0.66 | 0.78 |
+| velketor | mixed | 30 | 0.0/3.8/9.2 | 3.3 | 3.6 | 0.39 | 5 | 0.40 | 0 | 0.71 | 0.67 |
+
+**Bands:** drift 0.1–3.3, break 0.00–0.41, and drift under shuffled in all but one small zone.
+
+What this says:
+
+- **Mixed zones are normal.** Few stock zones hold to one finish: only kurn and blackburrow do
+  closely. Step 8's one style per zone was a simplification, and these zones say so plainly.
+- **Both ideas the user raised are real.** Neighbours agree (chardok drifts 1.8 against 4.5 by
+  chance), and breaks are common. Chardok's plot is the clearest: a built block to the north-west,
+  cave to the south-east, and a few built rooms scattered through the cave.
+- **A lean can't make that alone.** Fitted coherence is low, 0–4, because a wing's hard edge reads
+  as weak agreement to a smooth lean, and a noisy measure pulls it down further. So: a default
+  finish coherence of 4, and wings come from rules. Without wing rules, zones will drift and never
+  have chardok's shape, so task 15 gives `classic_eq` some.
+- **Style changes rarely narrow.** Passage width medians sit near 35 u at breaks and elsewhere, with
+  no steady change either way.
+- **Texture usually changes at a break** (median about 0.75), but changes at 0.22–0.91 of all
+  neighbours, so a texture change alone doesn't mean a style change.
+
+What this means for Transitions: the mesh's usual join is a plain Seam at full width, so Seam takes
+the most weight between styles. Frames can't be measured: door frames are mostly placed objects, and
+doors are server records. Frames stay in on the user's ask and because the door needs one, not on
+stock's numbers. The Seam matters more than this design first assumed.
+
+**What it can't see:** the finish reads how square a chamber is, not what it's made of. Small
+chambers have few walls, so their values are noisy. Long passages (grey in the plots) get no value,
+and a texture index compares only within a zone.
+
 ## Features
 
 `generators/room_features.py`, data on `RoomSpec.features` (default empty, left out of JSON).
@@ -181,7 +238,7 @@ free-standing Features, added in the map post-pass from `RoomSpec.features` (Ope
 finish = [1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 2]
 structure = { peak = 5, spread = 3 }
 clutter = { peak = 3, spread = 3 }
-coherence = { finish = 7, structure = 3, clutter = 3 }
+coherence = { finish = 4, structure = 3, clutter = 3 }
 
 [races.ogre]
 finish = { peak = 2, spread = 2 }
@@ -201,7 +258,7 @@ clutter = { peak = 1, spread = 1, override = true }
 clutter = [0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 2]
 ```
 
-(Numbers to be set by task 12's survey and task 13; these show the form.) The shorthand is
+(Finding 3 sets coherence: 4 for finish. Task 13 sets the rest; these show the form.) The shorthand is
 `weight(v) = max(0, 1 - |v - peak| / (spread + 1))`.
 
 **Layers, least specific first:** default, race, theme, Overlay, kind, type, rule, control. All
@@ -238,9 +295,9 @@ clutter is what step 11 will read.
 
 ```toml
 [pairs.built_rough]
-forms = { frame = 3, seam = 2, breach = 1, none = 1 }
+forms = { seam = 4, frame = 2, breach = 1, none = 1 }
 [pairs.built_hewn]
-forms = { seam = 2, frame = 2, none = 3 }
+forms = { seam = 3, frame = 2, none = 3 }
 [pairs.hewn_rough]
 forms = { seam = 3, none = 3, breach = 1 }
 [pairs.same]

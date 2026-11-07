@@ -90,7 +90,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: tests/test_features_sweep.py, rules/rooms/
   - Reqs: 9
 
-- [ ] 12. Measure how stock rooms change
+- [x] 12. Measure how stock rooms change
   - Card: [cards/12-scale-survey.md](cards/12-scale-survey.md)
   - Type: agent · Size: S · Depends: 11
   - Owns: scripts/room_scale_survey.py, .kiro/specs/zone-generator-room-layouts/design.md, .kiro/specs/zone-generator-room-layouts/archive.md

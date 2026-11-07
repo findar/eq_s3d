@@ -193,7 +193,8 @@ together and the odd room that doesn't.
 4. The draw SHALL be a pure function of the seed and the room's place in the graph, and SHALL take
    nothing from the layout's rng. The sidecar SHALL record each room's drawn values.
 5. Generated zones SHALL measure inside the survey's band for how far finish drifts between
-   neighbouring rooms and how often it breaks (task 12).
+   neighbouring rooms (median 0.1–3.3) and how often it breaks (0–0.41), with drift under what
+   shuffled rooms would give (design finding 3).
 
 ### Requirement 12: A room's finish is its wall style
 
