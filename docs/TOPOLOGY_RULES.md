@@ -474,6 +474,11 @@ features = [ { kind = "dais", at = "far_end", poi = "boss" },
 | `share` | a dais's floor, as a share of the room's |
 | `chance` | how likely this line is at all |
 | `poi` | a point of interest it carries: `boss`, `treasure`, `altar`, `guard`, `ambush`, `view` |
+| `by` | the Scale that moves this line (`structure` unless named, or `clutter`): a room's value of 5 is the line as written, 0 nothing, 10 twice as much |
+| `from` | the line is there only from this value of its Scale up |
+
+Lines in a top-level `[clutter]` table go on every room's recipe. That's how a fresh dig gets loose
+boulders and a temple doesn't, with no change to either's own recipe.
 
 The way through always stays clear. A spot in the way is dropped and recorded in the sidecar, so
 a recipe can ask for more than a small room can hold. Stock rooms are mostly bare of solids, and

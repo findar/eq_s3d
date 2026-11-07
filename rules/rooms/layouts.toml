@@ -12,6 +12,9 @@
 #   share    a dais's floor, as a share of the room's
 #   chance   how likely this line is at all
 #   poi      a point of interest this Feature carries: boss, treasure, altar, guard, ambush, view
+#   by       the Scale that moves this line, structure unless named, or clutter (scales.toml):
+#            a room's value of 5 is the line as written, 0 nothing, 10 twice as much
+#   from     the line is there only from this value of its Scale up
 #
 # What doesn't fit is dropped and recorded: the way through always stays clear. Stock zones
 # keep most rooms bare of solids and put about a quarter of a room's floor up as a low dais
@@ -20,6 +23,10 @@
 
 [default]
 features = []
+
+# Every room takes these after its own recipe: what lies about in a room that's a mess.
+[clutter]
+features = [ { kind = "boulder", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.5, by = "clutter", from = 6 } ]
 
 # --- by kind, for rooms with no room type (a plain dungeon) ---------------------------------
 
@@ -31,7 +38,7 @@ features = [ { kind = "pillar", at = "corners", count = 4, chance = 0.5 } ]
 
 [kinds.lair]
 features = [ { kind = "dais", at = "far_end", chance = 0.25 },
-             { kind = "boulder", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.25 } ]
+             { kind = "boulder", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.25, by = "clutter" } ]
 
 [kinds.deep]
 features = [ { kind = "dais", at = "far_end", poi = "boss" },
@@ -97,7 +104,7 @@ features = [ { kind = "dais", at = "far_end", share = 0.2, chance = 0.4 },
              { kind = "plinth", at = "centre", side_h = 3, height_h = 1, chance = 0.8 } ]
 
 [types.collapsed_gallery]
-features = [ { kind = "boulder", at = "scatter", count = [2, 4], side_h = 2, height_h = 1, chance = 0.6 } ]
+features = [ { kind = "boulder", at = "scatter", count = [2, 4], side_h = 2, height_h = 1, chance = 0.6, by = "clutter" } ]
 
 [types.flooded_gallery]
 features = [ { kind = "dais", at = "far_end", share = 0.2, poi = "treasure" } ]

@@ -50,6 +50,8 @@ class Ask:
     share: float = 0.25             # a dais's floor, as a share of the room's
     chance: float = 1.0             # how likely this line is at all
     poi: str = ""                   # a POI this Feature carries
+    by: str = "structure"           # the Scale that moves this line
+    at_least: int = 0               # the line is there only from this value of it up
 
 
 @dataclass
@@ -406,14 +408,15 @@ class RoomLayouts:
     types: Dict[str, Tuple[Ask, ...]]
     kinds: Dict[str, Tuple[Ask, ...]]
     default: Tuple[Ask, ...]
+    clutter: Tuple[Ask, ...] = ()       # lines every room takes after its own
 
     def recipe_for(self, semantic_type: str, kind: str) -> Tuple[str, Tuple[Ask, ...]]:
         """(which recipe, its lines): the room type's, else the kind's, else the default."""
         if semantic_type in self.types:
-            return f"type:{semantic_type}", self.types[semantic_type]
+            return f"type:{semantic_type}", self.types[semantic_type] + self.clutter
         if kind in self.kinds:
-            return f"kind:{kind}", self.kinds[kind]
-        return "default", self.default
+            return f"kind:{kind}", self.kinds[kind] + self.clutter
+        return "default", self.default + self.clutter
 
 
 def _asks(chk, raw, where: str) -> Tuple[Ask, ...]:
@@ -422,7 +425,7 @@ def _asks(chk, raw, where: str) -> Tuple[Ask, ...]:
         return ()
     chk.keys(tbl, where, ("features",), required=("features",))
     lines = chk.array(tbl.get("features", []), where, "features", "[ { kind = \"pillar\", at = \"rows\" } ]") or []
-    allowed = ("kind", "at", "count", "poi") + tuple(_NUMBERS)
+    allowed = ("kind", "at", "count", "poi", "by", "from") + tuple(_NUMBERS)
     out = []
     for i, line in enumerate(lines):
         p = f"features[{i}]."
@@ -453,8 +456,15 @@ def _asks(chk, raw, where: str) -> Tuple[Ask, ...]:
         poi = t.get("poi", "")
         if poi and poi not in POI_PURPOSES:
             chk.fail(where, p + "poi", poi, _one_of(POI_PURPOSES))
+        by = t.get("by", STRUCTURE)
+        if by not in READ_BY:
+            chk.fail(where, p + "by", by, _one_of(READ_BY))
+        least = t.get("from", 0)
+        if not isinstance(least, int) or isinstance(least, bool) or not 0 <= least <= 10:
+            chk.fail(where, p + "from", least, "a whole number from 0 to 10")
+            least = 0
         if kind in FEATURE_KINDS and at in ARRANGEMENTS:
-            out.append(Ask(kind, at, count=tuple(count), poi=poi, **values))
+            out.append(Ask(kind, at, count=tuple(count), poi=poi, by=by, at_least=least, **values))
     return tuple(out)
 
 
@@ -464,7 +474,7 @@ def load_layouts(path=LAYOUTS_FILE) -> RoomLayouts:
     chk = _Checker(path.name)
     data = _read_toml(path, chk)
     chk.raise_if_failed()
-    chk.keys(data, "top level", ("default", "kinds", "types"), required=("default", "types"))
+    chk.keys(data, "top level", ("default", "kinds", "types", "clutter"), required=("default", "types"))
     kinds = {}
     for name, raw in (data.get("kinds") or {}).items():
         if name not in ROOM_KINDS:
@@ -478,8 +488,9 @@ def load_layouts(path=LAYOUTS_FILE) -> RoomLayouts:
     for name in sorted(set(ROOM_TYPES) - set(types)):
         chk.fail("types", name, "nothing", "a recipe for every room type (features = [] is one)", raw=True)
     default = _asks(chk, data.get("default", {}), "default")
+    clutter = _asks(chk, data["clutter"], "clutter") if "clutter" in data else ()
     chk.raise_if_failed()
-    return RoomLayouts(types, kinds, default)
+    return RoomLayouts(types, kinds, default, clutter)
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +501,9 @@ def load_layouts(path=LAYOUTS_FILE) -> RoomLayouts:
 DENSITIES: Dict[str, Tuple[float, float]] = {"none": (0.0, 0.0), "sparse": (0.5, 0.5), "normal": (1.0, 1.0),
                                              "dense": (1.5, 1.5)}
 DEFAULT_DENSITY = "normal"
+AS_WRITTEN = 5       # the value of a Scale at which a recipe stands as written
+STRUCTURE, CLUTTER = "structure", "clutter"
+READ_BY: Tuple[str, ...] = (STRUCTURE, CLUTTER)
 #: The form a solid takes in each wall style's complex.
 FORM_OF_COMPLEX: Dict[str, str] = {"grid": "square", "facet": "cut", "voronoi": "rough"}
 #: Prop hints that name structure a Feature now stands for.
@@ -497,14 +511,20 @@ STRUCTURAL: Dict[str, Tuple[str, ...]] = {DAIS: ("dais", "platform"), PILLAR: ("
                                           PLINTH: ("altar", "slab", "forge", "sarcophag", "pedestal")}
 
 
-def _scaled(asks: Sequence[Ask], density: str) -> List[Ask]:
+def _scaled(asks: Sequence[Ask], density: str, scales: Optional[Mapping[str, int]] = None) -> List[Ask]:
+    """The recipe for this room: a value of ``AS_WRITTEN`` on a line's Scale is the line as
+    written, 0 nothing, 10 twice as much. A line under its threshold isn't there at all."""
     chance, count = DENSITIES[density]
     out = []
     for a in asks:
+        value = (scales or {}).get(a.by, AS_WRITTEN)
+        if value < a.at_least:
+            continue
+        k = value / AS_WRITTEN
         lo, hi = a.count
-        out.append(replace(a, chance=min(1.0, a.chance * chance),
-                           count=(int(round(lo * count)) if lo > 1 else lo,
-                                  max(1, int(round(hi * count))) if hi else 0)))
+        out.append(replace(a, chance=min(1.0, a.chance * chance * k),
+                           count=(int(round(lo * count * k)) if lo > 1 else lo,
+                                  max(1, int(round(hi * count * k))) if hi else 0)))
     return out
 
 
@@ -545,7 +565,7 @@ def apply_features(spec, complex_name: str, seed: int, density: str = DEFAULT_DE
         name, asks = layouts.recipe_for(room.semantic_type, record.get("kind", room.kind))
         rng = random.Random(f"{seed}:{room.id}:features")
         doors = room_doors(room, spec, (extra_doors or {}).get(room.id))
-        placed = place(room, doors, _bridge_slots(room, spec), _scaled(asks, density), height, form, rng)
+        placed = place(room, doors, _bridge_slots(room, spec), _scaled(asks, density, record.get("scales")), height, form, rng)
         room.features, room.pois = placed.features, placed.pois
         grid = RoomGrid(room, doors, _bridge_slots(room, spec), height)
         want = []
