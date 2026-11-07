@@ -1,8 +1,14 @@
 """Room layouts tasks 13-16 (Requirements 10-12; design F11-F13): weights in the rules."""
 
+from dataclasses import replace
+from statistics import median
+
 import pytest
 
-from generators.room_scales import (FINISH, FLAT, SCALES, VALUES, Layer, combine, load_scales, peak_weights)
+from ai.expand import plan_to_spec
+from ai.schema import ZonePlan
+from generators.room_scales import (FINISH, FLAT, SCALES, VALUES, Layer, combine, draw_room_scales, lean, load_scales,
+                                    peak_weights)
 from generators.topology.ruleset import RuleSetError
 
 GOOD = """
@@ -22,6 +28,20 @@ def _load(tmp_path, extra="", base=GOOD):
 
 def _layer(**scales):
     return Layer(scales)
+
+
+def _spec(seed=3, rooms=16, **fields):
+    return plan_to_spec(ZonePlan(name="sc", zone_type="dungeon", room_count=rooms, layout="graph",
+                                 verticality="flat", **fields).validate(), seed=seed)
+
+
+def _finishes(spec):
+    return {r.id: spec.layout["rooms"][r.id]["scales"][FINISH] for r in spec.rooms}
+
+
+def _drift(spec, finish):
+    pairs = [(c.from_room, c.to_room) for c in spec.corridors if c.from_room in finish and c.to_room in finish]
+    return median(abs(finish[a] - finish[b]) for a, b in pairs)
 
 
 def test_the_shipped_file_loads_and_names_every_scale():
@@ -129,3 +149,62 @@ def test_the_default_must_be_whole(tmp_path, old, new, fld):
     with pytest.raises(RuleSetError) as exc:
         _load(tmp_path, base=GOOD.replace(old, new))
     assert any(e.where == "default" and e.field == fld for e in exc.value.errors), str(exc.value)
+
+
+def test_every_room_draws_every_scale_on_the_sidecar():
+    spec = _spec()
+    for room in spec.rooms:
+        values = spec.layout["rooms"][room.id]["scales"]
+        assert set(values) == set(SCALES)
+        assert all(0 <= v <= 10 for v in values.values())
+
+
+def test_a_draw_moves_nothing_and_repeats():
+    """F12: nothing in the layout changes, and the same seed draws the same."""
+    a, b = _spec(), _spec()
+    assert a.to_dict() == b.to_dict()
+    before = a.to_dict()
+    before["layout"]["rooms"] = {k: {f: v for f, v in r.items() if f != "scales"}
+                                 for k, r in before["layout"]["rooms"].items()}
+    draw_room_scales(a, 999)
+    after = a.to_dict()
+    after["layout"]["rooms"] = {k: {f: v for f, v in r.items() if f != "scales"}
+                                for k, r in after["layout"]["rooms"].items()}
+    assert before == after
+
+
+def test_lean_pulls_toward_the_neighbours_and_only_with_coherence():
+    w = FLAT
+    assert lean(w, [8], 0) == w
+    assert lean(w, [], 5) == w
+    leaned = lean(w, [8], 5)
+    assert leaned.index(max(leaned)) == 8
+    assert leaned[8] > leaned[5] > leaned[1]
+
+
+def test_lean_can_rule_nothing_out_entirely():
+    w = (1.0,) + (0.0,) * 10
+    assert lean(w, [10], 10)[0] > 0
+
+
+def test_coherence_0_ignores_neighbours_and_more_means_less_drift():
+    """F12, over many seeds, on the same graphs."""
+    specs = [_spec(seed=s, rooms=24) for s in range(16)]
+    rules = load_scales()
+
+    def mean_drift(coherence):
+        r = replace(rules, coherence={**rules.coherence, FINISH: coherence})
+        total = 0.0
+        for s, spec in enumerate(specs):
+            draw_room_scales(spec, s, rules=r)
+            total += _drift(spec, _finishes(spec))
+        return total / len(specs)
+    free, some, tight = mean_drift(0), mean_drift(4), mean_drift(10)
+    assert free > some > tight
+
+
+def test_a_rooms_type_and_race_are_felt_in_its_draw():
+    """A fortress's throne is finer than a warren's burrow, over seeds."""
+    fine = [v for s in range(8) for v in _finishes(_spec(seed=s, dungeon_theme="fortress")).values()]
+    raw = [v for s in range(8) for v in _finishes(_spec(seed=s, dungeon_theme="warren")).values()]
+    assert median(fine) >= 6 > 3 >= median(raw)
