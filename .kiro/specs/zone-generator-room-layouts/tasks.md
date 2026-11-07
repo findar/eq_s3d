@@ -165,7 +165,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: docs/ACCEPTANCE.md, tests/test_features_sweep.py, generators/outline.py, tests/test_properties_layout.py
   - Reqs: exit criteria 1–2
 
-- [ ] 25. HUMAN: room layouts acceptance pass
+- [x] 25. HUMAN: room layouts acceptance pass
   - Card: [cards/25-human-acceptance.md](cards/25-human-acceptance.md)
   - Type: human · Depends: 24
 
