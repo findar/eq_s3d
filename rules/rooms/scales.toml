@@ -97,7 +97,7 @@ clutter = { peak = 6, spread = 3 }
 
 [themes.temple]
 finish = { peak = 8, spread = 2 }
-structure = { peak = 7, spread = 2 }
+structure = { peak = 4, spread = 2 }
 clutter = [3, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0]
 
 [themes.tomb]
