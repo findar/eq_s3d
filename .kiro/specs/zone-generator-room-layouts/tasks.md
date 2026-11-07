@@ -84,7 +84,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: rules/rooms/, tests/test_room_layouts.py
   - Reqs: 5
 
-- [ ] 11. Gate sweep and stock bands
+- [x] 11. Gate sweep and stock bands
   - Card: [cards/11-sweep-bands.md](cards/11-sweep-bands.md)
   - Type: agent · Size: M · Depends: 9, 10
   - Owns: tests/test_features_sweep.py, rules/rooms/
