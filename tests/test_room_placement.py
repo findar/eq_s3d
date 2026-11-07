@@ -56,6 +56,8 @@ def test_f4_placement_keeps_the_way_clear_and_never_fails(w, d, complex, seed, p
         assert not (cells & grid.spine).any(), "off the Spine"
         assert (cells <= grid.floor).all(), "on the floor"
         solid |= cells
+        if f.kind == DAIS:
+            grid.raised |= cells
     assert grid.doors_stay_joined(solid), "doors joined, no pocket"
 
 

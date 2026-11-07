@@ -212,3 +212,18 @@ def test_a_slot_stays_floor_and_its_ceiling_stays_open():
     probe = np.array([[31.0, -39.0], [49.0, -21.0], [40.0, -30.0]])
     assert o.contains(probe).all()
     assert slot in o.throats
+
+
+def test_a_wandering_wall_stays_out_of_every_throat():
+    """Step 9 found one on a rough room with doors N and S: an edge between two moved vertices
+    cut across a Throat, a retry in a real build."""
+    from generators.outline import _segment_enters
+    box = (-60.0, -59.4, 60.0, 59.4)
+    for seed in range(60):
+        o = draw_outline(box, [("N", 4.0, 22.0), ("S", 4.0, 22.0)], [], complex="voronoi", cell_size=24.0, fill=0.72,
+                         shape="ell", rng=random.Random(seed), wobble=7.8)
+        for loop in o.wall_loops():
+            pts = [o.verts[i] for i in loop]
+            for a, b in zip(pts, pts[1:] + pts[:1]):
+                for t in o.throats:
+                    assert not _segment_enters(a, b, t, inset=0.5), (seed, a, b, t)

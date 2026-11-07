@@ -56,7 +56,7 @@ The design's open questions were answered on 2026-11-06 (`archive.md`). Step 8's
   - Owns: rules/rooms/, generators/room_layouts.py, generators/semantics.py (`prop_hints`), scripts/topology_rules.py, generators/topology/draw.py, docs/TOPOLOGY_RULES.md, tests/test_room_layouts.py
   - Reqs: 5
 
-- [ ] 6. Rooms get Features in graph builds
+- [x] 6. Rooms get Features in graph builds
   - Card: [cards/06-in-builds.md](cards/06-in-builds.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: ai/expand.py, generators/room_layouts.py, generators/outdoor_dungeon.py, generators/builder.py, tests/test_features_build.py, tests/ (goldens that change, deliberately)

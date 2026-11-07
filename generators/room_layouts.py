@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 import random
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -29,7 +29,8 @@ CELL = 2.0              # the plan grid (u)
 SPINE_HALF_H = 1.0      # the Spine's half width, in H: 2 H clear, a corridor's clear width
 WALL_MARGIN_H = 1.0     # a solid stands this far from a wall, in H, so nothing snags behind it
 BODY_RADIUS = 2.0       # a player's middle stays this far from a solid (u), as the gate has it
-POCKET = 36.0           # free floor this big cut off from the doors is too much (u^2)
+POCKET = 16.0           # free floor this big cut off from the doors is too much (u^2). Smaller than
+                        # the gate's: this reckons a body wider, which shrinks what it sees
 ARRANGEMENTS: Tuple[str, ...] = ("centre", "far_end", "ring", "rows", "corners", "along_wall",
                                  "scatter", "on_dais")
 MIN_HEAD_H = 2.0        # a dais leaves this much headroom, in H
@@ -70,6 +71,7 @@ class RoomGrid:
         self.floor = (room.outline.contains(np.c_[gx.ravel(), gy.ravel()]).reshape(gx.shape)
                       if room.outline is not None else np.ones(gx.shape, bool))
         self.taken = np.zeros(gx.shape, bool)
+        self.raised = np.zeros(gx.shape, bool)      # what's taken by a dais you can walk over
         for s in slots:
             self.taken |= self.rect(s)
         self.door_cells = [self._door_cell(d) for d in doors]
@@ -147,16 +149,24 @@ class RoomGrid:
         inner = ~binary_dilation(np.pad(~self.floor, 1, constant_values=True), iterations=margin)[1:-1, 1:-1]
         return bool((cells <= inner).all() and not (cells & (self.spine | self.taken)).any())
 
-    def doors_stay_joined(self, cells: np.ndarray) -> bool:
-        """With these cells taken too, are the doors joined, and no floor cut off?"""
-        solid = binary_dilation(self.taken | cells, iterations=max(1, int(math.ceil(BODY_RADIUS / CELL))))
-        free = self.floor & ~solid
-        labels, n = label(free)
+    def doors_stay_joined(self, cells: np.ndarray, raised: bool = False) -> bool:
+        """With these cells taken too, are the doors joined, and no floor cut off? As the
+        gate has it: a body's radius from walls and solids. Floor behind a dais isn't cut off,
+        since you can walk over the dais to it."""
+        reach = int(math.ceil(BODY_RADIUS / CELL)) + 1      # a cell stricter than the gate
+        walls = np.pad(~self.floor, 1, constant_values=True)
+        placed = binary_dilation(self.taken | cells, iterations=reach)
+        # The Spine reaches the doors, which stand in the wall's own margin.
+        free = (self.floor & ~placed) & (~binary_dilation(walls, iterations=reach)[1:-1, 1:-1] | self.spine)
+        labels, _n = label(free)
         marks = {int(labels[c]) for c in self.door_cells}
         if len(marks) > 1 or 0 in marks:
             return False
+        over = self.raised | cells if raised else self.raised
+        labels, n = label(free | (binary_dilation(over, iterations=reach) & self.floor) if over.any() else free)
+        marks = {int(labels[c]) for c in self.door_cells}
         joined = next(iter(marks), 0)
-        sizes = np.bincount(labels.ravel(), minlength=n + 1)
+        sizes = np.bincount(labels[free], minlength=n + 1)
         return not any(sizes[k] * CELL * CELL >= POCKET for k in range(1, n + 1) if k != joined)
 
 
@@ -219,6 +229,27 @@ def _spots(grid: RoomGrid, ask: Ask, count: int, rng: random.Random) -> List[Tup
     return [(float(grid.xs[p[0]]), float(grid.ys[p[1]])) for p in picks]
 
 
+def _open_floor_near(grid: RoomGrid, x: float, y: float) -> Optional[Tuple[float, float]]:
+    """The open floor nearest a point, a body's radius from walls and what's placed."""
+    reach = int(math.ceil(BODY_RADIUS / CELL)) + 1
+    walls = binary_dilation(np.pad(~grid.floor, 1, constant_values=True), iterations=reach)[1:-1, 1:-1]
+    free = grid.floor & ~walls & ~binary_dilation(grid.taken, iterations=reach)
+    cand = np.argwhere(free)
+    if len(cand) == 0:
+        return None
+    k = int(np.hypot(grid.xs[cand[:, 0]] - x, grid.ys[cand[:, 1]] - y).argmin())
+    return float(grid.xs[cand[k, 0]]), float(grid.ys[cand[k, 1]])
+
+
+def _lift_at(room, x: float, y: float) -> float:
+    """The floor's rise at a point: the nearest Outline vertex's, near enough for a POI."""
+    o = room.outline
+    if o is None or not o.lift:
+        return 0.0
+    v = np.array(o.verts)
+    return float(o.lift[int(np.hypot(v[:, 0] - x, v[:, 1] - y).argmin())])
+
+
 def _local_lift(room, plan) -> float:
     """The most a moving floor rises under this footprint: a solid's top is measured from there."""
     o = room.outline
@@ -261,31 +292,34 @@ def _dais(grid: RoomGrid, ask: Ask, rng: random.Random) -> Optional[Feature]:
         x = grid.x1 if side == "E" else grid.x0
         return float(min(abs(x - v) for v in door_x))
 
-    for far in sorted("NSEW", key=lambda f: (-clearance(f), f)):
+    tries = [(far, inset, scale) for far in sorted("NSEW", key=lambda f: (-clearance(f), f))
+             for inset in (1, 2, 3) for scale in (1.0, 0.8, 0.65, 0.5)]
+    for far, inset, scale in sorted(tries, key=lambda t: t[1]):
         along_x = far in "NS"
         toward = {"N": "S", "S": "N", "E": "W", "W": "E"}[far]
-        for scale in (1.0, 0.8, 0.65, 0.5):
-            area = ask.share * w * d * scale
-            run = (w if along_x else d) * 0.6 * math.sqrt(scale)
-            deep = area / run
-            if along_x:
-                a = grid.y1 - margin if far == "N" else grid.y0 + margin + deep
-                box = (cx - run / 2, a - deep, cx + run / 2, a)
-            else:
-                a = grid.x1 - margin if far == "E" else grid.x0 + margin + deep
-                box = (a - deep, cy - run / 2, a, cy + run / 2)
-            plan = [(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])]
-            height = _local_lift(grid.room, plan) + rise
-            if grid.room.height - _local_drop(grid.room, plan) - height < MIN_HEAD_H * grid.h:
-                continue
-            # Its steps need floor too: the footprint grows toward the room by their run.
-            run_out = _steps_run(height)
-            grown = (box[0] - (run_out if toward == "W" else 0), box[1] - (run_out if toward == "S" else 0),
-                     box[2] + (run_out if toward == "E" else 0), box[3] + (run_out if toward == "N" else 0))
-            cells = grid.rect(grown)
-            if grid.clear_for(cells) and grid.doors_stay_joined(cells):
-                grid.taken |= cells
-                return Feature(DAIS, plan, height=round(height, 3), steps_side=toward)
+        area = ask.share * w * d * scale
+        run = (w if along_x else d) * 0.6 * math.sqrt(scale)
+        deep = area / run
+        off = margin * inset        # further in if a shaped room's wall is in the way
+        if along_x:
+            a = grid.y1 - off if far == "N" else grid.y0 + off + deep
+            box = (cx - run / 2, a - deep, cx + run / 2, a)
+        else:
+            a = grid.x1 - off if far == "E" else grid.x0 + off + deep
+            box = (a - deep, cy - run / 2, a, cy + run / 2)
+        plan = [(box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3])]
+        height = _local_lift(grid.room, plan) + rise
+        if grid.room.height - _local_drop(grid.room, plan) - height < MIN_HEAD_H * grid.h:
+            continue
+        # Its steps need floor too: the footprint grows toward the room by their run.
+        run_out = _steps_run(height)
+        grown = (box[0] - (run_out if toward == "W" else 0), box[1] - (run_out if toward == "S" else 0),
+                 box[2] + (run_out if toward == "E" else 0), box[3] + (run_out if toward == "N" else 0))
+        cells = grid.rect(grown)
+        if grid.clear_for(cells) and grid.doors_stay_joined(cells, raised=True):
+            grid.taken |= cells
+            grid.raised |= cells
+            return Feature(DAIS, plan, height=round(height, 3), steps_side=toward)
     return None
 
 
@@ -347,11 +381,13 @@ def place(room, doors: Sequence, slots: Sequence, asks: Sequence[Ask], body_heig
             out.features.append(Feature(ask.kind, plan, height=round(height, 3)))
             placed += 1
             if ask.poi:
-                # A solid's top isn't floor: its POI stands on the floor in front of it.
-                fx, fy = _door_side(grid)
-                reach = side / 2 + 2 * BODY_RADIUS
-                out.pois.append(POI(ask.poi, x - fx * reach, y - fy * reach, grid.z0 + _local_lift(room, plan),
-                                    feature=len(out.features) - 1))
+                # A solid's top isn't floor: its POI stands on open floor beside it.
+                beside = _open_floor_near(grid, x, y)
+                if beside is None:
+                    out.dropped.append(f"{ask.poi} POI at {ask.at}")
+                else:
+                    out.pois.append(POI(ask.poi, beside[0], beside[1], grid.z0 + _lift_at(room, *beside),
+                                        feature=len(out.features) - 1))
         if placed < count and ask.at not in ("scatter", "corners", "rows", "along_wall"):
             out.dropped.append(f"{count - placed} {ask.kind} at {ask.at}")
     return out
@@ -447,5 +483,89 @@ def load_layouts(path=LAYOUTS_FILE) -> RoomLayouts:
     return RoomLayouts(types, kinds, default)
 
 
-__all__ = ["ARRANGEMENTS", "Ask", "BOULDER", "LAYOUTS_FILE", "PILLAR", "PLINTH", "POI_PURPOSES", "Placed",
+# ---------------------------------------------------------------------------
+# Standing them in a build
+# ---------------------------------------------------------------------------
+
+#: Features control -> (scale on a line's chance, scale on its count).
+DENSITIES: Dict[str, Tuple[float, float]] = {"none": (0.0, 0.0), "sparse": (0.5, 0.5), "normal": (1.0, 1.0),
+                                             "dense": (1.5, 1.5)}
+DEFAULT_DENSITY = "normal"
+#: The form a solid takes in each wall style's complex.
+FORM_OF_COMPLEX: Dict[str, str] = {"grid": "square", "facet": "cut", "voronoi": "rough"}
+#: Prop hints that name structure a Feature now stands for.
+STRUCTURAL: Dict[str, Tuple[str, ...]] = {DAIS: ("dais", "platform"), PILLAR: ("pillar",),
+                                          PLINTH: ("altar", "slab", "forge", "sarcophag", "pedestal")}
+
+
+def _scaled(asks: Sequence[Ask], density: str) -> List[Ask]:
+    chance, count = DENSITIES[density]
+    out = []
+    for a in asks:
+        lo, hi = a.count
+        out.append(replace(a, chance=min(1.0, a.chance * chance),
+                           count=(int(round(lo * count)) if lo > 1 else lo,
+                                  max(1, int(round(hi * count))) if hi else 0)))
+    return out
+
+
+def _floor_poi(grid: RoomGrid, purpose: str, taken: Sequence[Feature]) -> Optional[POI]:
+    """A POI on open floor, as far from the doors as the room allows."""
+    solid = grid.taken.copy()
+    for f in taken:
+        solid |= grid.footprint(f.plan)
+    free = grid.floor & ~binary_dilation(solid, iterations=max(1, int(math.ceil(BODY_RADIUS / CELL))))
+    cand = np.argwhere(free)
+    if len(cand) == 0:
+        return None
+    door_x = np.array([grid.xs[c[0]] for c in grid.door_cells] or [(grid.x0 + grid.x1) / 2])
+    door_y = np.array([grid.ys[c[1]] for c in grid.door_cells] or [(grid.y0 + grid.y1) / 2])
+    d = np.min(np.hypot(grid.xs[cand[:, 0]][:, None] - door_x, grid.ys[cand[:, 1]][:, None] - door_y), axis=1)
+    x, y = grid.xs[cand[int(d.argmax()), 0]], grid.ys[cand[int(d.argmax()), 1]]
+    return POI(purpose, float(x), float(y), grid.z0 + _lift_at(grid.room, x, y))
+
+
+def apply_features(spec, complex_name: str, seed: int, density: str = DEFAULT_DENSITY,
+                   extra_doors=None) -> None:
+    """Stand each room's recipe in it, last, after its walls. Each room draws from its own
+    stream, so this moves nothing about the layout, and ``none`` adds nothing at all.
+    ``layout.rooms`` records what each room took and what it dropped."""
+    from .geometry import _bridge_slots, room_doors
+    from .semantics import body_height
+
+    layouts = load_layouts()
+    height = body_height(spec.dungeon_race)
+    form = FORM_OF_COMPLEX[complex_name]
+    records = spec.layout["rooms"]
+    spec.layout["features"] = density
+    if density == "none":
+        return
+    deepest = max((r.graph_depth for r in spec.rooms if r.role == "deadend"), default=-1)
+    for room in spec.rooms:
+        record = records.setdefault(room.id, {})
+        name, asks = layouts.recipe_for(room.semantic_type, record.get("kind", room.kind))
+        rng = random.Random(f"{seed}:{room.id}:features")
+        doors = room_doors(room, spec, (extra_doors or {}).get(room.id))
+        placed = place(room, doors, _bridge_slots(room, spec), _scaled(asks, density), height, form, rng)
+        room.features, room.pois = placed.features, placed.pois
+        grid = RoomGrid(room, doors, _bridge_slots(room, spec), height)
+        want = []
+        if room.role == "climax" and not any(p.purpose == "boss" for p in room.pois):
+            want.append("boss")
+        if room.role == "deadend" and room.graph_depth == deepest and deepest >= 0 \
+                and not any(p.purpose == "treasure" for p in room.pois):
+            want.append("treasure")
+        for purpose in want:
+            poi = _floor_poi(grid, purpose, room.features)
+            if poi is not None:
+                room.pois.append(poi)
+        kinds = {f.kind for f in room.features}
+        room.prop_hints = [h for h in room.prop_hints
+                           if not any(w in h for k in kinds for w in STRUCTURAL.get(k, ()))]
+        record.update(room_layout=name, features=[f.kind for f in room.features], dropped=placed.dropped,
+                      pois=[{"purpose": p.purpose, "x": round(p.x, 1), "y": round(p.y, 1), "z": round(p.z, 1),
+                             "feature": p.feature} for p in room.pois])
+
+
+__all__ = ["ARRANGEMENTS", "Ask", "DENSITIES", "DEFAULT_DENSITY", "FORM_OF_COMPLEX", "apply_features", "BOULDER", "LAYOUTS_FILE", "PILLAR", "PLINTH", "POI_PURPOSES", "Placed",
            "RoomGrid", "RoomLayouts", "load_layouts", "place"]

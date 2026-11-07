@@ -259,6 +259,8 @@ def test_bends_walled_on_flat_seed():
     """A flat zone whose walls are complete has no ledge in its outline; the
     open outer corner of each bend used to show up as one."""
     spec = _plan_spec("dungeon", 12, "flat", 1516796975)
+    for room in spec.rooms:
+        room.features = []          # a dais's edge is a real ledge; this is about bends
     led = _ledges(spec)
     assert not led, [(p.points[0], round(p.length, 1)) for p in led[:5]]
 
