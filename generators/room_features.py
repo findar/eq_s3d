@@ -70,3 +70,30 @@ def solid_plan(form: str, cx: float, cy: float, side: float, rng: random.Random
     return [(cx + h * rng.uniform(0.7, 1.0) * math.cos(start + 2 * math.pi * k / n),
              cy + h * rng.uniform(0.7, 1.0) * math.sin(start + 2 * math.pi * k / n)) for k in range(n)]
 
+
+def dais_plan(form: str, box: Tuple[float, float, float, float], steps_side: str, rng: random.Random
+              ) -> List[Tuple[float, float]]:
+    """A dais's footprint in ``box``, by form: ``square`` is the box, ``cut`` has its far corners
+    cut, ``rough`` is an uneven shelf. The side its steps stand on stays straight in every form,
+    so they meet it. Counter-clockwise from above, starting at the south-west corner."""
+    x0, y0, x1, y1 = box
+    w, d = x1 - x0, y1 - y0
+    if form == SQUARE:
+        return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    # Corners going round, and which two lie on the side the steps need straight.
+    corners = {"SW": (x0, y0), "SE": (x1, y0), "NE": (x1, y1), "NW": (x0, y1)}
+    keep = {"S": ("SW", "SE"), "N": ("NE", "NW"), "E": ("SE", "NE"), "W": ("NW", "SW")}.get(steps_side, ())
+    out: List[Tuple[float, float]] = []
+    for name in ("SW", "SE", "NE", "NW"):
+        x, y = corners[name]
+        if name in keep:
+            out.append((x, y))
+            continue
+        sx, sy = (1 if "W" in name else -1), (1 if "S" in name else -1)
+        cx = w * (0.22 if form == CUT else rng.uniform(0.12, 0.34))
+        cy = d * (0.22 if form == CUT else rng.uniform(0.12, 0.34))
+        # Going counter-clockwise, the cut meets one neighbouring side and then the other.
+        first, second = ((x, y + sy * cy), (x + sx * cx, y)) if name in ("SW", "NE") else ((x + sx * cx, y), (x, y + sy * cy))
+        out += [first, second]
+    return out
+

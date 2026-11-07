@@ -12,7 +12,7 @@ from hypothesis import given, settings, strategies as st
 from analyzer.traverse import AgentModel, build_walk_surface, check_features, check_outline
 from generators.geometry import MeshBuilder, _ensure_materials, build_mesh, dais_steps, room_doors, step_plans
 from generators.outline import add_relief, draw_outline
-from generators.room_features import CUT, DAIS, FORMS, PILLAR, PLINTH, ROUGH, SQUARE, Feature, POI, solid_plan
+from generators.room_features import CUT, DAIS, FORMS, PILLAR, PLINTH, ROUGH, SQUARE, Feature, POI, dais_plan, solid_plan
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
 AGENT = AgentModel()
@@ -156,3 +156,26 @@ def test_polygon_cap_and_edge_in_the_era_band():
     tri = np.array(_tris(mb, [p for p in mb.polygons if abs(mb.vertices[p.v1].nz) < 0.5]))
     edges = np.linalg.norm(tri - np.roll(tri, 1, axis=1), axis=2).ravel()
     assert 3.0 <= np.median(edges) <= 15.0, np.median(edges)
+
+
+@pytest.mark.parametrize("form", FORMS)
+@pytest.mark.parametrize("side", ["N", "S", "E", "W"])
+@pytest.mark.parametrize("seed", [1, 2])
+def test_a_dais_keeps_its_steps_side_straight_and_winds_right(form, side, seed):
+    box = (-20.0, 10.0, 20.0, 34.0)
+    plan = dais_plan(form, box, side, random.Random(seed))
+    area = 0.5 * sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(plan, plan[1:] + plan[:1]))
+    assert area > 0, "counter-clockwise"
+    assert area >= 0.6 * 40 * 24
+    axis, at = {"N": (1, 34.0), "S": (1, 10.0), "E": (0, 20.0), "W": (0, -20.0)}[side]
+    on_side = [p for p in plan if abs(p[axis] - at) < 1e-9]
+    span = 40.0 if axis == 1 else 24.0
+    assert len(on_side) == 2 and abs(on_side[0][1 - axis] - on_side[1][1 - axis]) == pytest.approx(span)
+
+
+@pytest.mark.parametrize("form", FORMS)
+def test_every_form_of_dais_walks_and_closes(form):
+    plan = dais_plan(form, (-30.0, 22.0, 10.0, 40.0), "S", random.Random(1))
+    spec = _spec([Feature(DAIS, plan, height=6.0, steps_side="S")], shaped=False)
+    for v in _checks(spec):
+        assert v.ok, v.reason
