@@ -98,7 +98,10 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                     style = style_for_theme(plan.dungeon_theme)
                 else:
                     style = load_styles()["rough"]
-                apply_walls(spec, style, rng_seed, extra_doors=tunnel_doors(spec))
+                doors = tunnel_doors(spec)
+                apply_walls(spec, style, rng_seed, extra_doors=doors)
+                from generators.room_layouts import apply_features
+                apply_features(spec, style.complex, rng_seed, extra_doors=doors)
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
             spec.wilderness["biome_substitution"] = intent.substitution.to_dict()
@@ -158,6 +161,8 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         from generators.wall_styles import apply_walls, load_styles, style_for_theme
         style = load_styles()[plan.walls] if plan.walls else style_for_theme(plan.dungeon_theme)
         apply_walls(spec, style, rng_seed)
+        from generators.room_layouts import apply_features
+        apply_features(spec, style.complex, rng_seed)
     return spec
 
 

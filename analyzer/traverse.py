@@ -1184,7 +1184,7 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
 # a body's radius from every wall at body height.
 
 CLEAR_CELL = 2.0      # the grid's cell (u)
-WALLED_OFF = 36.0     # a pocket of free floor this big, with no door, is walled off (u^2)
+WALLED_OFF = 64.0     # a pocket of free floor this big, with no door, is walled off (u^2)
 
 
 def _free_cells(surf: WalkSurface, room: RoomSpec, agent: AgentModel):
@@ -1216,15 +1216,19 @@ def _free_cells(surf: WalkSurface, room: RoomSpec, agent: AgentModel):
     lifted = max(room.outline.lift) if room.outline is not None and room.outline.lift else 0.0
     raised = flat & (zs.min(axis=1) > z0 + lifted + 0.5) & (zs.max(axis=1) < z1 - 0.5) & (surf.normals[faces, 2] > 0)
     under = flat & (zs.max(axis=1) < z0 + 0.5) & (surf.normals[faces, 2] < 0)
-    for cap in tri[raised | under]:
+    over = np.zeros(gx.shape, bool)     # raised floor: you can walk over it
+    for cap, walkable in zip(tri[raised | under], raised[raised | under]):
         a, b, c = cap[:, :2]
         d0 = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
         if abs(d0) < 1e-9:
             continue
         l0 = ((b[1] - c[1]) * (gx - c[0]) + (c[0] - b[0]) * (gy - c[1])) / d0
         l1 = ((c[1] - a[1]) * (gx - c[0]) + (a[0] - c[0]) * (gy - c[1])) / d0
-        free &= ~((l0 >= 0) & (l1 >= 0) & (l0 + l1 <= 1))
-    return xs, ys, free
+        inside = (l0 >= 0) & (l1 >= 0) & (l0 + l1 <= 1)
+        free &= ~inside
+        if walkable:
+            over |= inside
+    return xs, ys, free, over
 
 
 def _door_cell(xs, ys, free, room: RoomSpec, door) -> Optional[Tuple[int, int]]:
@@ -1255,7 +1259,7 @@ def check_features(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec, agent: Age
 
     extra = list(room.outline.extra_doors) if room.outline is not None else []
     doors = _door_strips(room, spec) + extra
-    xs, ys, free = _free_cells(surf, room, agent)
+    xs, ys, free, over = _free_cells(surf, room, agent)
     labels, _n = label(free)
     door_labels = {}
     for door in doors:
@@ -1278,10 +1282,17 @@ def check_features(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec, agent: Age
                       else np.ones((len(xs), len(ys)), bool))
         outside = np.pad(~room_cells, 1, constant_values=True)
         near = binary_dilation(outside, iterations=int(BODY_RADIUS / CLEAR_CELL) + 1)[1:-1, 1:-1]
+        # Floor behind a dais isn't walled off: you can walk over the dais to it.
+        reach = int(np.ceil(BODY_RADIUS / CLEAR_CELL)) + 1
+        whole, _m = label(free | (binary_dilation(over, iterations=reach) & room_cells)) if over.any() else (labels, 0)
+        open_to_doors = {int(whole[c]) for c in np.argwhere(labels == joined).tolist() and
+                         [tuple(np.argwhere(labels == joined)[0])]}
         for k in range(1, int(labels.max()) + 1):
             if k == joined:
                 continue
             cells = np.argwhere(labels == k)
+            if int(whole[tuple(cells[0])]) in open_to_doors:
+                continue
             if len(cells) * CLEAR_CELL ** 2 >= WALLED_OFF and near[labels == k].any():
                 x, y = xs[cells[:, 0]].mean(), ys[cells[:, 1]].mean()
                 return fail(f"floor walled off at ({x:.1f}, {y:.1f})")
@@ -1455,10 +1466,15 @@ def _local_adjacency(surf: WalkSurface, agent: AgentModel,
 
     lo = np.array([fxy_min[f] for f in subset])
     hi = np.array([fxy_max[f] for f in subset])
+    # Two faces whose heights never come within a step can't meet, wherever they touch.
+    zlo = np.array([tris[f][:, 2].min() for f in subset])
+    zhi = np.array([tris[f][:, 2].max() for f in subset])
+    step = agent.max_step_up
     n = len(subset)
     for i in range(n):
         fi = subset[i]
-        near = ((lo[i + 1:] - eps <= hi[i]) & (hi[i + 1:] + eps >= lo[i])).all(axis=1)
+        near = (((lo[i + 1:] - eps <= hi[i]) & (hi[i + 1:] + eps >= lo[i])).all(axis=1)
+                & (zlo[i + 1:] <= zhi[i] + step) & (zhi[i + 1:] >= zlo[i] - step))
         for j in np.nonzero(near)[0] + i + 1:
             fj = subset[int(j)]
             if find(fi) == find(fj):

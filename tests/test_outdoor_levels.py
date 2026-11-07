@@ -115,7 +115,8 @@ def _boxes(spec):
     """The rooms without what wall styles add (step 8)."""
     rooms = spec.to_dict()["rooms"]
     for r in rooms:
-        for key in ("outline", "floor_material", "wall_material", "ceiling_material"):
+        for key in ("outline", "floor_material", "wall_material", "ceiling_material", "features", "pois",
+                    "prop_hints"):
             r.pop(key, None)
     return rooms
 

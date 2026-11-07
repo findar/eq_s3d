@@ -24,6 +24,9 @@ def _layout_only(spec):
     d = copy.deepcopy(spec.to_dict())
     for r in d["rooms"]:
         r.pop("outline", None)
+        r.pop("features", None)
+        r.pop("pois", None)
+        r.pop("prop_hints", None)
     d.pop("layout", None)
     d.pop("materials", None)
     for c in d["corridors"]:

@@ -458,18 +458,44 @@ def _fans_sound(verts: list, cell: List[int]) -> bool:
                for a, b in zip(pts, pts[1:] + pts[:1]))
 
 
+def _segment_enters(p, q, r: Rect, inset: float = 0.05) -> bool:
+    """Does the plan segment p..q pass through the rect r, past its very edge?"""
+    t0, t1 = 0.0, 1.0
+    for axis, lo, hi in ((0, r[0] + inset, r[2] - inset), (1, r[1] + inset, r[3] - inset)):
+        d = q[axis] - p[axis]
+        if abs(d) < 1e-12:
+            if p[axis] <= lo or p[axis] >= hi:
+                return False
+            continue
+        a, b = (lo - p[axis]) / d, (hi - p[axis]) / d
+        t0, t1 = max(t0, min(a, b)), min(t1, max(a, b))
+        if t0 >= t1:
+            return False
+    return True
+
+
 def _wander(verts: list, cells: list, keep_still: List[Rect], wobble: float,
             rng: random.Random) -> list:
     """Move each wall vertex off every Throat and the Core toward the Cells it
-    belongs to, by up to ``wobble``, never past 45% of the way to their middle and
-    never so far that a Cell's fan folds over."""
+    belongs to, by up to ``wobble``, never past 45% of the way to their middle, never so
+    far that a Cell's fan folds over, and never so that a wall cuts through a Throat."""
     if wobble <= 0:
         return verts
     owners: Dict[int, List[List[int]]] = {}
     for c in cells:
         for a in c:
             owners.setdefault(a, []).append(c)
-    wall = sorted({i for edge in _wall_edges(cells) for i in edge})
+    edges = _wall_edges(cells)
+    wall = sorted({i for edge in edges for i in edge})
+    along: Dict[int, List[int]] = {}
+    for a, b in edges:
+        along.setdefault(a, []).append(b)
+        along.setdefault(b, []).append(a)
+
+    def crosses_throat(i: int) -> bool:
+        """Would a wall from vertex i to a neighbour cut through a Throat or the Core?"""
+        return any(_segment_enters(moved[i], moved[n], r) for n in along[i] for r in keep_still)
+
     moved = list(verts)
     tol = 1e-3
     for i in wall:
@@ -485,7 +511,7 @@ def _wander(verts: list, cells: list, keep_still: List[Rect], wobble: float,
         for scale in (1.0, 0.5, 0.25):
             moved[i] = (round(x + to[0] / dist * step * scale, PLACES),
                         round(y + to[1] / dist * step * scale, PLACES))
-            if all(_fans_sound(moved, c) for c in owners[i]):
+            if all(_fans_sound(moved, c) for c in owners[i]) and not crosses_throat(i):
                 break
         else:
             moved[i] = (x, y)

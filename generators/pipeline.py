@@ -217,11 +217,14 @@ def _plan_failure_report(zone_id: str, error: Exception) -> TraversalReport:
 
 def _failure_reasons(report: TraversalReport) -> List[str]:
     """Per-room failure reasons from the report (only the unreachable rooms)."""
-    return [
+    out = [
         f"{r.room_id} [{r.role}]: {r.reason or 'unreachable'}"
         for r in report.rooms
         if not r.reachable
     ]
+    # A shaped room's or furnished room's own verdict (steps 8 and 9).
+    out += [f"{o.room_id}: {o.reason}" for o in getattr(report, "outlines", ()) if not o.ok]
+    return out
 
 
 def _failed_checks(report: TraversalReport, fmt: FormatReport) -> List[str]:

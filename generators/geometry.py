@@ -684,10 +684,23 @@ class MeshBuilder:
             along += run
         cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
         top_uv = self._uv_scale[top_mat]
+        top_at: Dict[Tuple[float, float], int] = {}
+
+        def top_vertex(x, y):
+            """A walkable top shares its vertices: one floor, with no seams for the gate."""
+            k = top_at.get((x, y))
+            if k is None:
+                k = top_at[(x, y)] = len(self.vertices)
+                self.vertices.append(Vertex(x=x, y=y, z=z1, nx=0, ny=0, nz=1, u=x * top_uv, v=-y * top_uv))
+            return k
+
         for a, b in zip(pts, pts[1:] + pts[:1]):
-            tri = [(cx, cy), a, b] if walkable else [(cx, cy), b, a]
-            self._add_face([(x, y, z1) for x, y in tri], [(x * top_uv, -y * top_uv) for x, y in tri],
-                           (0, 0, 1 if walkable else -1), top_mat)
+            if walkable:
+                self.polygons.append(Polygon(top_vertex(cx, cy), top_vertex(*a), top_vertex(*b), top_mat, 0))
+            else:
+                tri = [(cx, cy), b, a]
+                self._add_face([(x, y, z1) for x, y in tri], [(x * top_uv, -y * top_uv) for x, y in tri],
+                               (0, 0, -1), top_mat)
             tri = [(cx, cy), b, a]
             self._add_face([(x, y, z0) for x, y in tri], [(x * top_uv, -y * top_uv) for x, y in tri],
                            (0, 0, -1), top_mat)
