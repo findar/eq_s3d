@@ -63,16 +63,16 @@ def _spec_hash(spec) -> str:
 GOLDENS = {
     "classic_eq": (dict(zone_type="dungeon", room_count=12, layout="graph",
                         verticality="flat"), 2,
-                   "25dbb4b769f12dee6fd6ba63d19da91e1cfc52d123e395264403f0a06a511f36"),
+                   "9efa97a804f961681cc598b4ffe778cc0309fe66a5a3cb3dded6ef46395ba22a"),
     "warren": (dict(zone_type="dungeon", room_count=12, layout="graph",
                     rule_set="warren", verticality="flat"), 2,
-               "91e98bdf8b04b8cc5a4ac7e16c777d3bac87614a00c914fe0aaf3c981438648b"),
+               "78a3cd042f829442c8dc6d48b00788e8ea244e316368e9ffdfc8c2e85387c2e2"),
     "temple": (dict(zone_type="dungeon", room_count=10, layout="graph",
                     dungeon_theme="temple", verticality="flat"), 3,
-               "4abaae52e939440d88b2540de52324368b7b2a31f03f5a818375ab5319cc85d7"),
+               "aa951be234af03dd758f3783834d17cf942edc05bd1180ecbfc6381d15c4b53a"),
     "ogre": (dict(zone_type="dungeon", room_count=9, layout="graph",
                   dungeon_race="ogre", locks=1, verticality="flat"), 21,
-             "58a7b02a8853ffcebbb447b7ee1bd2291cfface07c1a85582f400bb023256cd9"),
+             "ad0bd6a9ee78b02f7e359a5a18573fe6a857a978c32cf1585a78c75130709875"),
 }
 
 

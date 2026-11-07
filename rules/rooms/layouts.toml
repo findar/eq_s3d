@@ -38,7 +38,8 @@ features = [ { kind = "dais", at = "far_end", poi = "boss" },
              { kind = "pillar", at = "corners", count = 4, chance = 0.5 } ]
 
 [kinds.chamber]
-features = [ { kind = "dais", at = "far_end", chance = 0.25 } ]
+features = [ { kind = "dais", at = "far_end", chance = 0.25 },
+             { kind = "plinth", at = "along_wall", count = 1, side_h = 2, height_h = 1, chance = 0.6 } ]
 
 # --- by room type ----------------------------------------------------------------------------
 
@@ -61,38 +62,42 @@ features = [ { kind = "pillar", at = "rows", spacing_h = 7 } ]
 features = [ { kind = "plinth", at = "along_wall", count = [1, 3], side_h = 2, height_h = 1 } ]
 
 [types.storeroom]
-features = [ { kind = "plinth", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.5 } ]
+features = [ { kind = "dais", at = "far_end", share = 0.2, chance = 0.3 },
+             { kind = "plinth", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.4 } ]
 
 [types.battle_arena]
 features = [ { kind = "pillar", at = "ring", count = [6, 8], radius = 0.42 } ]
 
 [types.shrine]
 features = [ { kind = "dais", at = "far_end" },
-             { kind = "plinth", at = "on_dais", height_h = 0.7, poi = "altar" } ]
+             { kind = "plinth", at = "on_dais", height_h = 0.7, poi = "altar", chance = 0.7 } ]
 
 [types.sacrifice_chamber]
-features = [ { kind = "plinth", at = "centre", side_h = 2, height_h = 0.7, poi = "altar" },
-             { kind = "pillar", at = "corners", count = 4, chance = 0.7 } ]
+features = [ { kind = "plinth", at = "centre", side_h = 2, height_h = 0.7, poi = "altar", chance = 0.8 },
+             { kind = "pillar", at = "corners", count = 4, chance = 0.4 } ]
 
 [types.ritual_chamber]
 features = [ { kind = "dais", at = "far_end", poi = "altar" },
-             { kind = "pillar", at = "ring", count = [4, 6], radius = 0.4 } ]
+             { kind = "pillar", at = "ring", count = [4, 6], radius = 0.4, chance = 0.5 } ]
 
 [types.ossuary]
-features = [ { kind = "plinth", at = "along_wall", count = [2, 4], side_h = 2, height_h = 0.7, spacing_h = 5 } ]
+features = [ { kind = "dais", at = "far_end", share = 0.2, chance = 0.3 },
+             { kind = "plinth", at = "along_wall", count = [2, 4], side_h = 2, height_h = 0.7, spacing_h = 5, chance = 0.7 } ]
 
 [types.laboratory]
-features = [ { kind = "plinth", at = "scatter", count = [1, 2], side_h = 2, height_h = 0.7, chance = 0.7 } ]
+features = [ { kind = "dais", at = "far_end", share = 0.2, chance = 0.3 },
+             { kind = "plinth", at = "scatter", count = [1, 2], side_h = 2, height_h = 0.7, chance = 0.5 } ]
 
 [types.summoning_hall]
 features = [ { kind = "plinth", at = "centre", side_h = 2, height_h = 0.5, poi = "altar" },
              { kind = "pillar", at = "ring", count = [6, 8], radius = 0.38 } ]
 
 [types.forge]
-features = [ { kind = "plinth", at = "centre", side_h = 3, height_h = 1 } ]
+features = [ { kind = "dais", at = "far_end", share = 0.2, chance = 0.4 },
+             { kind = "plinth", at = "centre", side_h = 3, height_h = 1, chance = 0.8 } ]
 
 [types.collapsed_gallery]
-features = [ { kind = "boulder", at = "scatter", count = [2, 4], side_h = 2, height_h = 1 } ]
+features = [ { kind = "boulder", at = "scatter", count = [2, 4], side_h = 2, height_h = 1, chance = 0.6 } ]
 
 [types.flooded_gallery]
 features = [ { kind = "dais", at = "far_end", share = 0.2, poi = "treasure" } ]
