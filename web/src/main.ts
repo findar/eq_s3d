@@ -9,6 +9,9 @@ import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
 import { showArtifacts, loadMapSvg } from "./artifacts";
 
+// How a grown zone's rooms lean: "From rules", or a number or an overlay on top.
+const SCALE_CONTROLS = ["finish", "structure", "clutter", "overlay"];
+
 // The two generation modes, chosen explicitly by which button (or which
 // field's Enter) fired — the server no longer infers it from the body shape.
 type Mode = "prompt" | "controls";
@@ -163,6 +166,8 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
       ["Verticality", p.verticality],
       ...(p.walls ? [["Walls", p.walls] as [string, string]] : []),
       ...(p.features && p.layout === "graph" ? [["Features", p.features] as [string, string]] : []),
+      ...SCALE_CONTROLS.flatMap((id) => p[id] != null && p[id] !== ""
+        ? [[id[0].toUpperCase() + id.slice(1), String(p[id])] as [string, string]] : []),
     ];
     if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
     if (p.mood) rows.push(["Mood", p.mood]);
@@ -326,7 +331,7 @@ function syncControlVisibility(): void {
   }
   // The rule set and wall style only mean something under the graph engine.
   const graphOn = usesControl(zoneType, "layout") && readLayout() === "graph";
-  for (const id of ["rule-set", "walls", "features"]) {
+  for (const id of ["rule-set", ...SCALE_CONTROLS]) {
     const box = $(id).closest("label") as HTMLElement;
     box.hidden = !graphOn;
     box.style.display = graphOn ? "" : "none";
@@ -379,10 +384,10 @@ async function doGenerate(mode: Mode) {
     const layout = usesControl(zoneType, "layout") ? readLayout() : undefined;
     const ruleSet = layout === "graph"
       ? ($("rule-set") as HTMLSelectElement).value : undefined;
-    const walls = layout === "graph"
-      ? ($("walls") as HTMLSelectElement).value : undefined;
-    const features = layout === "graph"
-      ? ($("features") as HTMLSelectElement).value : undefined;
+    // Scale controls: "" is the rules alone. Hidden, they are left out.
+    const scales: Record<string, string> = layout === "graph"
+      ? Object.fromEntries(SCALE_CONTROLS.map((id) => [id, ($(id) as HTMLSelectElement).value]))
+      : {};
     // Theme and race: "" (None) is sent as-is; hidden, they are left out.
     const dungeonTheme = usesControl(zoneType, "dungeon-theme")
       ? ($("dungeon-theme") as HTMLSelectElement).value : undefined;
@@ -396,8 +401,7 @@ async function doGenerate(mode: Mode) {
         ...(trees ? { trees } : {}),
         ...(layout ? { layout } : {}),
         ...(ruleSet !== undefined ? { rule_set: ruleSet } : {}),
-        ...(walls !== undefined ? { walls } : {}),
-        ...(features !== undefined ? { features } : {}),
+        ...scales,
         ...(dungeonTheme !== undefined ? { dungeon_theme: dungeonTheme } : {}),
         ...(dungeonRace !== undefined ? { dungeon_race: dungeonRace } : {}),
       },
@@ -410,8 +414,7 @@ async function doGenerate(mode: Mode) {
       (trees ? ` trees=${trees}` : "") +
       (layout ? ` layout=${layout}` : "") +
       (ruleSet !== undefined ? ` rule_set=${ruleSet || "(theme)"}` : "") +
-      (walls !== undefined ? ` walls=${walls || "(theme)"}` : "") +
-      (features !== undefined ? ` features=${features}` : "") +
+      Object.entries(scales).map(([id, v]) => ` ${id}=${v || "(rules)"}`).join("") +
       (dungeonTheme !== undefined ? ` theme=${dungeonTheme || "(none)"}` : "") +
       (dungeonRace !== undefined ? ` race=${dungeonRace || "(none)"}` : "") + seedNote,
     );
@@ -540,7 +543,7 @@ $("reset-view").addEventListener("click", () => {
 
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees",
-                  "layout", "rule-set", "walls", "features", "dungeon-theme", "dungeon-race"]) {
+                  "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });

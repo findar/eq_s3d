@@ -45,7 +45,8 @@ from ai.planner import make_plan, get_planner
 from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
-    VALID_FEATURES, ZonePlan, available_rule_sets, available_wall_styles,
+    SCALE_CONTROLS, VALID_FEATURES, ZonePlan, available_overlays, available_rule_sets, available_wall_styles,
+    scale_control,
 )
 
 # ---------------------------------------------------------------------------
@@ -393,7 +394,7 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
     400, as ``edges`` / ``trees`` are on a type with no landscape; the default
     ``classic`` / ``""`` is accepted there, since it changes nothing.
     """
-    for key in ("layout", "rule_set", "walls", "features"):
+    for key in ("layout", "rule_set", "walls", "features", "overlay") + SCALE_CONTROLS:
         if key in c and c[key] is None:
             c.pop(key)
     layout = c.get("layout")
@@ -425,7 +426,26 @@ def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
         if not isinstance(features, str) or features.strip().lower() not in VALID_FEATURES:
             raise HTTPException(400, f"features must be one of {', '.join(VALID_FEATURES)}")
         features = c["features"] = features.strip().lower()
+    leans = []
+    for name in SCALE_CONTROLS:
+        if name in c:
+            try:
+                c[name] = scale_control(name, c[name])
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+            if c[name] is not None:
+                leans.append(name)
+    overlay = c.get("overlay")
+    if overlay is not None:
+        overlays = available_overlays()
+        if not isinstance(overlay, str) or (overlay.strip().lower() and overlay.strip().lower() not in overlays):
+            raise HTTPException(400, f"overlay must be one of {', '.join(overlays)} (or \"\" for the rules alone)")
+        overlay = c["overlay"] = overlay.strip().lower()
+        if overlay:
+            leans.append("overlay")
     if zone_type not in LAYOUT_ZONE_TYPES:
+        if leans:
+            raise HTTPException(400, f"{leans[0]} only applies to zone_type dungeon or outdoor_dungeon")
         if features and features != "normal":
             raise HTTPException(
                 400, "features only applies to zone_type dungeon or outdoor_dungeon")
@@ -504,7 +524,8 @@ class GenerateRequest(BaseModel):
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
                     "none/sparse/normal/dense), layout (classic/graph) and "
                     "rule_set (a base set, \"\" for the theme's) and walls (a wall style, "
-                    "\"\" for the theme's) and features (none, sparse, normal, dense); dungeon and "
+                    "\"\" for the theme's) and features (none, sparse, normal, dense), and finish, "
+                    "structure and clutter (0-10, or \"\" for the rules alone) and overlay; dungeon and "
                     "outdoor_dungeon only), dungeon_theme and dungeon_race "
                     "(\"\" for none; dungeon, city and outdoor_dungeon "
                     "only), …",

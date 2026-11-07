@@ -5,7 +5,6 @@ page; the sidecar; the map and EQ map files following shaped rooms.
 import json
 import random
 import tempfile
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -90,13 +89,6 @@ def test_cli_flag_reaches_the_build(monkeypatch, tmp_path):
 def test_cli_bad_use_is_a_usage_error(argv, monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         main.main(["generate", "w7", *argv, "--output", str(tmp_path)])
-
-
-def test_the_page_carries_the_control():
-    root = Path(__file__).resolve().parent.parent / "web"
-    html = (root / "index.html").read_text(encoding="utf-8")
-    assert 'id="walls"' in html and all(f'value="{s}"' in html for s in available_wall_styles())
-    assert 'walls' in (root / "src" / "main.ts").read_text(encoding="utf-8")
 
 
 def _rough(rooms=8):
