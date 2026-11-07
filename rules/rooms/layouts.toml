@@ -1,0 +1,124 @@
+# rules/rooms/layouts.toml -- what stands in a room (roadmap step 9).
+#
+# A room takes its room type's recipe, else its kind's, else the default. Each line of
+# `features` is a Feature and how it's arranged. Lengths are in H, the race's body height.
+#
+#   kind     pillar (floor to ceiling), plinth, boulder or dais (a raised floor you walk onto)
+#   at       centre, far_end, ring, rows, corners, along_wall, scatter, on_dais
+#   count    how many: a number or [low, high]; arrangements may place fewer
+#   side_h   across        height_h  over the floor (a dais: its rise)
+#   spacing_h between neighbours in rows and along walls
+#   radius   a ring, as a share of the room's short side
+#   share    a dais's floor, as a share of the room's
+#   chance   how likely this line is at all
+#   poi      a point of interest this Feature carries: boss, treasure, altar, guard, ambush, view
+#
+# What doesn't fit is dropped and recorded: the way through always stays clear. Stock zones
+# keep most rooms bare of solids and put about a quarter of a room's floor up as a low dais
+# (design finding 1); their furniture is placed objects, which is step 11's.
+# The guide is docs/TOPOLOGY_RULES.md, "Room layouts".
+
+[default]
+features = []
+
+# --- by kind, for rooms with no room type (a plain dungeon) ---------------------------------
+
+[kinds.hall]
+features = [ { kind = "pillar", at = "rows", spacing_h = 7, chance = 0.6 } ]
+
+[kinds.hub]
+features = [ { kind = "pillar", at = "corners", count = 4, chance = 0.5 } ]
+
+[kinds.lair]
+features = [ { kind = "dais", at = "far_end", chance = 0.25 },
+             { kind = "boulder", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.25 } ]
+
+[kinds.deep]
+features = [ { kind = "dais", at = "far_end", poi = "boss" },
+             { kind = "pillar", at = "corners", count = 4, chance = 0.5 } ]
+
+[kinds.chamber]
+features = [ { kind = "dais", at = "far_end", chance = 0.25 } ]
+
+# --- by room type ----------------------------------------------------------------------------
+
+[types.entry_hall]
+features = [ { kind = "pillar", at = "rows", spacing_h = 8, chance = 0.5 } ]
+
+[types.gatehouse]
+features = [ { kind = "plinth", at = "along_wall", count = [1, 2], height_h = 1, poi = "guard", chance = 0.6 } ]
+
+[types.guard_post]
+features = [ { kind = "plinth", at = "along_wall", count = 1, height_h = 1, poi = "guard", chance = 0.4 } ]
+
+[types.warren]
+features = [ { kind = "boulder", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.4 } ]
+
+[types.barracks]
+features = [ { kind = "pillar", at = "rows", spacing_h = 7 } ]
+
+[types.armory]
+features = [ { kind = "plinth", at = "along_wall", count = [1, 3], side_h = 2, height_h = 1 } ]
+
+[types.storeroom]
+features = [ { kind = "plinth", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.5 } ]
+
+[types.battle_arena]
+features = [ { kind = "pillar", at = "ring", count = [6, 8], radius = 0.42 } ]
+
+[types.shrine]
+features = [ { kind = "dais", at = "far_end" },
+             { kind = "plinth", at = "on_dais", height_h = 0.7, poi = "altar" } ]
+
+[types.sacrifice_chamber]
+features = [ { kind = "plinth", at = "centre", side_h = 2, height_h = 0.7, poi = "altar" },
+             { kind = "pillar", at = "corners", count = 4, chance = 0.7 } ]
+
+[types.ritual_chamber]
+features = [ { kind = "dais", at = "far_end", poi = "altar" },
+             { kind = "pillar", at = "ring", count = [4, 6], radius = 0.4 } ]
+
+[types.ossuary]
+features = [ { kind = "plinth", at = "along_wall", count = [2, 4], side_h = 2, height_h = 0.7, spacing_h = 5 } ]
+
+[types.laboratory]
+features = [ { kind = "plinth", at = "scatter", count = [1, 2], side_h = 2, height_h = 0.7, chance = 0.7 } ]
+
+[types.summoning_hall]
+features = [ { kind = "plinth", at = "centre", side_h = 2, height_h = 0.5, poi = "altar" },
+             { kind = "pillar", at = "ring", count = [6, 8], radius = 0.38 } ]
+
+[types.forge]
+features = [ { kind = "plinth", at = "centre", side_h = 3, height_h = 1 } ]
+
+[types.collapsed_gallery]
+features = [ { kind = "boulder", at = "scatter", count = [2, 4], side_h = 2, height_h = 1 } ]
+
+[types.flooded_gallery]
+features = [ { kind = "dais", at = "far_end", share = 0.2, poi = "treasure" } ]
+
+[types.throne]
+features = [ { kind = "dais", at = "far_end", poi = "boss" },
+             { kind = "plinth", at = "on_dais", height_h = 1 },
+             { kind = "pillar", at = "rows", spacing_h = 8 } ]
+
+[types.vault]
+features = [ { kind = "plinth", at = "centre", side_h = 2, height_h = 0.7, poi = "treasure" } ]
+
+[types.inner_sanctum]
+features = [ { kind = "plinth", at = "centre", side_h = 2, height_h = 1, poi = "altar" },
+             { kind = "pillar", at = "ring", count = [6, 8], radius = 0.36 } ]
+
+[types.dragon_lair]
+features = [ { kind = "dais", at = "far_end", share = 0.3, poi = "boss" },
+             { kind = "boulder", at = "scatter", count = [2, 4], side_h = 2, height_h = 1 } ]
+
+# passage, prison_cell and sump stand bare: they're listed so that's a choice, not an omission.
+[types.passage]
+features = []
+
+[types.prison_cell]
+features = []
+
+[types.sump]
+features = []

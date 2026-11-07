@@ -450,3 +450,37 @@ python scripts/topology_rules.py draw-walls --out output/rules/
 
 The numbers behind the shipped styles are in the room walls spec's design, finding 1
 (`scripts/wall_survey.py` measures them).
+
+## Room layouts
+
+The rules decide the rooms and the wall styles their shapes. `rules/rooms/layouts.toml` decides
+what stands in them, checked the same way. A room takes its room type's recipe, else its kind's,
+else the default, and every room type must have one (`features = []` is a recipe).
+
+```toml
+[types.throne]
+features = [ { kind = "dais", at = "far_end", poi = "boss" },
+             { kind = "plinth", at = "on_dais", height_h = 1 },
+             { kind = "pillar", at = "rows", spacing_h = 8 } ]
+```
+
+| Field | Means |
+|---|---|
+| `kind` | `pillar` (floor to ceiling), `plinth`, `boulder`, or `dais` (a raised floor you walk onto) |
+| `at` | `centre`, `far_end`, `ring`, `rows`, `corners`, `along_wall`, `scatter`, `on_dais` |
+| `count` | how many: a number or `[low, high]`; an arrangement may place fewer |
+| `side_h`, `height_h`, `spacing_h` | across, over the floor (a dais: its rise), between neighbours, in body heights |
+| `radius` | a ring, as a share of the room's short side |
+| `share` | a dais's floor, as a share of the room's |
+| `chance` | how likely this line is at all |
+| `poi` | a point of interest it carries: `boss`, `treasure`, `altar`, `guard`, `ambush`, `view` |
+
+The way through always stays clear. A spot in the way is dropped and recorded in the sidecar, so
+a recipe can ask for more than a small room can hold. Stock rooms are mostly bare of solids, and
+their furniture is placed objects, which is a later step's: keep ordinary rooms simple, and let
+named ones stand out. To see what a recipe draws, without building a zone:
+
+```bash
+python scripts/topology_rules.py check rules/rooms/layouts.toml
+python scripts/topology_rules.py draw-rooms --out output/rules/
+```

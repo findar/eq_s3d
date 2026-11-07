@@ -757,3 +757,39 @@ def walls_html(rows) -> str:
             "<p>Sample rooms in plan, 120 x 90 u with two doors, at a human's body height. "
             "Grey is the room's Box, red its walls.</p>" + "".join(body))
 
+
+def room_svg(room_box, outline, features, pois, *, title: str = "", scale: float = 1.3) -> str:
+    """One room in plan with what stands in it: floor grey, solids dark, a dais gold, POIs blue."""
+    x0, y0, x1, y1 = room_box
+    pad = 6.0
+
+    def px(x: float, y: float) -> str:
+        return f"{_f((x - x0 + pad) * scale)},{_f((y1 - y + pad) * scale)}"
+
+    parts = [outline_svg(outline, room_box, title=title, scale=scale).replace("</svg>", "")]
+    colours = {"dais": "#e6c88a", "pillar": "#444", "plinth": "#a0623c", "boulder": "#6d6d6d"}
+    for f in sorted(features, key=lambda f: f.kind != "dais"):
+        pts = " ".join(px(*p) for p in f.plan)
+        parts.append(f'<polygon points="{pts}" fill="{colours[f.kind]}"><title>{_esc(f.kind)}</title></polygon>')
+    for poi in pois:
+        at = px(poi.x, poi.y).split(",")
+        parts.append(f'<circle cx="{at[0]}" cy="{at[1]}" r="4" fill="#2b6fd6">'
+                     f'<title>{_esc(poi.purpose)}</title></circle>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def rooms_html(rows) -> str:
+    """A page of sample rooms. ``rows``: (recipe name, [(caption, svg), ...])."""
+    body = []
+    for name, samples in rows:
+        body.append(f"<h2>{_esc(name)}</h2><div class=row>")
+        for caption, svg in samples:
+            body.append(f"<figure>{svg}<figcaption>{_esc(caption)}</figcaption></figure>")
+        body.append("</div>")
+    return ("<!doctype html><meta charset=utf-8><title>Room layouts</title><style>"
+            "body{font:14px sans-serif;margin:24px;color:#222;background:#fff}"
+            ".row{display:flex;flex-wrap:wrap;gap:12px}figure{margin:0}"
+            "figcaption{text-align:center;color:#555}</style><h1>Room layouts</h1>"
+            "<p>Each recipe in a 120 x 90 u room with two doors, at a human's body height, in each "
+            "wall style. Grey is the Box and floor, red the walls.</p>" + "".join(body))
