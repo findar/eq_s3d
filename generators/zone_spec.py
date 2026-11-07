@@ -109,6 +109,19 @@ class Transition:
     along_x: bool       # the corridor's way at that line
     depth: float = 1.0  # how far along the corridor it reaches, each side of the line (u)
 
+    # A frame's or breach's solids: how far a jamb stands in from its wall, how far a frame's
+    # lintel drops from the ceiling (u), and what they're made of.
+    jamb: float = 0.0
+    lintel: float = 0.0
+    material: str = ""
+
+    # The corridor's look past the line, going from_room to to_room. No floor material means
+    # the corridor keeps one look all the way.
+    floor_material: str = ""
+    wall_material: str = ""
+    ceiling_material: str = ""
+    rough: float = 0.0
+
 
 @dataclass
 class CorridorSpec:
