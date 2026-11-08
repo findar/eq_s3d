@@ -66,7 +66,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
 - [ ] 7. Sites in builds
   - Card: [cards/07-in-builds.md](cards/07-in-builds.md)
   - Type: agent · Size: M · Depends: 2, 3, 4, 6
-  - Owns: generators/builder.py, generators/wilderness/build.py, generators/outdoor_dungeon.py, generators/zone_spec.py, tests/test_site_builds.py, generators/sites/placement.py (its clear width becomes the gate's), generators/pipeline.py (only if the gate's POIs need it)
+  - Owns: generators/builder.py, generators/wilderness/build.py, generators/outdoor_dungeon.py, generators/zone_spec.py, tests/test_site_builds.py, generators/sites/placement.py (its clear width becomes the gate's), generators/pipeline.py (only if the gate's POIs need it), tests/test_wilderness_trees.py + tests/test_gate_footprints.py (tree-only cases set Sites none), tests/test_texture_manifest.py (the `sites` texture mode)
   - Reqs: 4.4, 7, 8.2, 8.4, 9.2, 9.3
 
 - [ ] 8. Sites controls, sidecar and maps
