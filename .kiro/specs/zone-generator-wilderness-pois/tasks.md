@@ -69,7 +69,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: generators/builder.py, generators/wilderness/build.py, generators/outdoor_dungeon.py, generators/zone_spec.py, tests/test_site_builds.py, generators/sites/placement.py (its clear width becomes the gate's), generators/pipeline.py (only if the gate's POIs need it), tests/test_wilderness_trees.py + tests/test_gate_footprints.py (tree-only cases set Sites none), tests/test_texture_manifest.py (the `sites` texture mode)
   - Reqs: 4.4, 7, 8.2, 8.4, 9.2, 9.3
 
-- [ ] 8. Sites controls, sidecar and maps
+- [x] 8. Sites controls, sidecar and maps
   - Card: [cards/08-controls-maps.md](cards/08-controls-maps.md)
   - Type: agent · Size: M · Depends: 7
   - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, generators/eqmap.py, generators/mapview.py, tests/test_site_controls.py, tests/test_hygiene.py (its control-name guard, if the Inhabitant control needs it)
