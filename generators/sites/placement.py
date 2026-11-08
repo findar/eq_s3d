@@ -550,6 +550,15 @@ class _Arranger:
             for _ in range(n):
                 self._record(line, OUTSIDE)
             return
+        # The ring stands a player's way out from whatever holds the middle (a camp's fire):
+        # a ground too small for both drops the line here, named, rather than one by one.
+        mid = [reach(shape, self.cx, self.cy) for s, shape, _ in self.kept
+               if math.hypot(s.x - self.cx, s.y - self.cy) < ring / 2]
+        nearest = ring - (RUN_HALF_THICK if run else r)
+        if mid and nearest < max(mid) + CLEAR_WIDTH - _EPS:
+            for _ in range(n):
+                self._record(line, CROWDED)
+            return
         # Leave the approach's sector empty (and the open side's, when a line holds it).
         gap_half = math.asin(min(1.0, (CLEAR_WIDTH / 2 + half) / ring))
         span = 2 * math.pi - 2 * gap_half
@@ -725,6 +734,27 @@ def sites_seed(seed: int) -> int:
     return _salted_seed(int(seed) & 0x7FFFFFFF, *SITES_SALT)
 
 
+def site_target(rng: random.Random, band: Tuple[float, float], area: float) -> int:
+    """How many Sites to try: a density drawn in ``band`` (Sites per 1e6 u^2) times ``area``,
+    rounded so the expected value is kept: the floor, plus one with the fraction's chance. A
+    small zone (an outdoor dungeon's open ground, ~0.8e6 u^2) then gets a Site on some seeds
+    where plain rounding gave it none."""
+    want = rng.uniform(*band) * area / 1e6
+    whole = int(math.floor(want))
+    return whole + (1 if rng.random() < want - whole else 0)
+
+
+def _redraw_kind(rules: SiteRules, biome: str, inhabitant: str, tried: set,
+                 rng: random.Random) -> Optional[str]:
+    """Another kind for this Inhabitant, drawn by weight from those not yet tried (None when
+    none with a weight is left)."""
+    w = rules.kind_weights(biome, inhabitant)
+    names = [n for n in sorted(w) if n not in tried and w[n] > 0]
+    if not names:
+        return None
+    return rng.choices(names, weights=[w[n] for n in names])[0]
+
+
 def place_sites(land, ter: TerFile, seed: int, biome: str = "plains",
                 control: str = DEFAULT_DENSITY, inhabitant: str = "",
                 rules: Optional[SiteRules] = None,
@@ -748,16 +778,27 @@ def place_sites(land, ter: TerFile, seed: int, biome: str = "plains",
     out = SitePlacement(sites=[], drops=[], target=0, walkable_area=area, control=control, band=band)
     if band[1] <= 0 or area <= 0:
         return out
-    out.target = int(round(rng.uniform(*band) * area / 1e6))
+    out.target = site_target(rng, band, area)
 
     placed: List[Tuple[Site, SiteRecipe]] = []
     for _ in range(out.target):
         who = rules.draw_inhabitant(biome, rng, inhabitant)
         kind = rules.draw_kind(biome, who, rng)
+        first = kind
         recipe = rules.recipe_for(kind, who)
         centre = _choose_centre(t, recipe, placed, rng)
+        tried = {kind}
+        while centre is None:
+            # No ground for this kind: a small open area may still hold a smaller one. Redraw
+            # from the kinds not yet tried, by their weights, before dropping the Site.
+            kind = _redraw_kind(rules, biome, who, tried, rng)
+            if kind is None:
+                break
+            tried.add(kind)
+            recipe = rules.recipe_for(kind, who)
+            centre = _choose_centre(t, recipe, placed, rng)
         if centre is None:
-            out.drops.append(Drop("site", kind, NO_GROUND, who))
+            out.drops.append(Drop("site", first, NO_GROUND, who))
             continue
         cx, cy = centre
         outer = recipe.ground.radius + recipe.ground.margin
@@ -792,4 +833,4 @@ def place_sites(land, ter: TerFile, seed: int, biome: str = "plains",
 
 __all__ = ["APRON_DEPTH", "CLEAR_WIDTH", "ClearArea", "Drop", "POIPoint", "PlacedStructure",
            "RUN_STRUCTURES", "SITES_SALT", "Site", "SitePlacement", "gap", "place_sites", "reach",
-           "sites_seed"]
+           "site_target", "sites_seed"]

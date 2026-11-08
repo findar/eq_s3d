@@ -109,7 +109,7 @@ structures = [
     { kind = "fire_ring", at = "centre" },
     { kind = "tent", count = [2, 4], face = "in" },        # 3-5 Structures (SRO, Oasis zone p50 3)
 ]
-ground = { radius = 36, slope_deg = 8, spacing = 200, margin = 8 }      # radius: SRO 37, Oasis 42
+ground = { radius = 46, slope_deg = 8, spacing = 200, margin = 8 }      # tents ring the fire 32 u out (SRO 37, Oasis 42)
 likes = { clearing = 1 }
 pois = [
     { name = "camp fire", purpose = "Light_Spot", at = "fire_ring" },

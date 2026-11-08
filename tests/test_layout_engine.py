@@ -67,7 +67,7 @@ GOLDENS = {
     "wilderness": (
         dict(zone_type="wilderness"), 4,
         "a948f132378258b14e6606cc06faf248f712cca2b7317e627ce5dda6c56fcc62",
-        "e333b400331b8f699891b024534cac8ec16f82ca95f06a136dbd79c1dd09d196"),
+        "9f55b1c6484aa52a2b2fe2f596c52b71dc60202561ed3db90ea6a3aa8688abb4"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).
