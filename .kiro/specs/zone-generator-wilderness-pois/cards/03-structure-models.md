@@ -14,3 +14,4 @@ Generated low-poly models for hut, tent, lean-to, tower, fire ring, fence run, s
 Follow `generators/vegetation/models.py`: float32-rounded coordinates, no mesh file read (umbrella Req 32.7).
 
 ## Result
+✔ 8998ba0 · 2040 passed
