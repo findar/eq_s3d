@@ -75,7 +75,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, generators/eqmap.py, generators/mapview.py, tests/test_site_controls.py, tests/test_hygiene.py (its control-name guard and allow-lists), web/index.html (the Sites and Inhabitant selects), generators/pipeline.py (`_write_map_artifacts` passes the built Sites to the maps)
   - Reqs: 8.1, 8.3
 
-- [ ] 9. HUMAN: first look at Sites
+- [x] 9. HUMAN: first look at Sites
   - Card: [cards/09-first-look.md](cards/09-first-look.md)
   - Type: human · Depends: 8, 15
 
