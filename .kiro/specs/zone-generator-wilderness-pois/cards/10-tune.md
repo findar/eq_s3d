@@ -13,3 +13,5 @@ Act on task 9's findings. If there were none, say so and close.
 Prefer data changes in `rules/sites/` over code.
 
 ## Result
+
+✔ ba3d886 · 2082 passed
