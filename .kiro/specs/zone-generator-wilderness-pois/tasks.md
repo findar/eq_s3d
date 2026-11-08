@@ -72,12 +72,12 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
 - [ ] 8. Sites controls, sidecar and maps
   - Card: [cards/08-controls-maps.md](cards/08-controls-maps.md)
   - Type: agent · Size: M · Depends: 7
-  - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, generators/eqmap.py, generators/mapview.py, tests/test_site_controls.py
+  - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, generators/eqmap.py, generators/mapview.py, tests/test_site_controls.py, tests/test_hygiene.py (its control-name guard, if the Inhabitant control needs it)
   - Reqs: 8.1, 8.3
 
 - [ ] 9. HUMAN: first look at Sites
   - Card: [cards/09-first-look.md](cards/09-first-look.md)
-  - Type: human · Depends: 8
+  - Type: human · Depends: 8, 15
 
 - [ ] 10. Tune from the first look
   - Card: [cards/10-tune.md](cards/10-tune.md)
@@ -103,3 +103,9 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Card: [cards/14-close.md](cards/14-close.md)
   - Type: agent · Size: S · Depends: 13 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-wilderness-pois/, .kiro/specs/zone-generator/
+
+- [ ] 15. Camps keep their tents; outdoor dungeons get Sites
+  - Card: [cards/15-camps-and-counts.md](cards/15-camps-and-counts.md)
+  - Type: agent · Size: S · Depends: 7
+  - Owns: rules/sites/, generators/sites/placement.py, tests/test_site_placement.py
+  - Reqs: 4, 7
