@@ -30,6 +30,10 @@ Set by the tasks:
    Transition check's headroom; the player is 6 u tall. A model that encloses at least 4 u² of
    free ground is Enterable and needs an 8 u x 8 u way in. Solid parts must be closed and wound
    outward (the gate reads "inside a solid" from the first triangle above facing up).
+10. **Yaw is the way a Structure's front faces** (task 6), radians counter-clockwise from +X;
+    a model's opening faces +X at yaw 0. Fences and ruin walls run across the yaw, their radius
+    the half-length. Placement's own clear width (6 u, `generators/sites/placement.py`) must
+    become the gate's 8 u (`analyzer.footprints.CLEAR_WIDTH`): task 7 lines them up.
 
 ## Follow-ups
 
