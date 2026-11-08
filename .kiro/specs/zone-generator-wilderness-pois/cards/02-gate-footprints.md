@@ -16,3 +16,4 @@ Before any generator places one, the gate judges hand-built zones holding Struct
 Judge from the models, not the generator's record, so the gate doesn't trust the placer. Thin walls must not slip between raster samples (design Risks). Watch the cost: step 8's gate work once took builds from 1 s to 18 s.
 
 ## Result
+✔ 9f9ff29 · 1971 passed

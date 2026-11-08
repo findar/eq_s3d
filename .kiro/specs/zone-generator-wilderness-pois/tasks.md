@@ -33,7 +33,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: scripts/site_survey.py, .kiro/specs/zone-generator-wilderness-pois/design.md (finding 1 only)
   - Reqs: 1
 
-- [ ] 2. The gate learns Structures
+- [x] 2. The gate learns Structures
   - Card: [cards/02-gate-footprints.md](cards/02-gate-footprints.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/wilderness/build.py (`trees_block` and `bowl_report`), analyzer/footprints.py, tests/test_gate_footprints.py

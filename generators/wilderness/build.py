@@ -277,10 +277,19 @@ def build_wilderness_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> Ter
 
 
 def bowl_report(spec: ZoneSpec, ter: TerFile,
-                agent: Optional[AgentModel] = None) -> TraversalReport:
+                agent: Optional[AgentModel] = None, *,
+                zon=None, models: Optional[Mapping[str, TerFile]] = None,
+                pois=None) -> TraversalReport:
     """Run the bowl gate on a built wilderness TER, phrased as a
     ``TraversalReport`` so the pipeline's retry, logging and CLI output work
-    unchanged: the whole bowl is one "room" that passes or fails."""
+    unchanged: the whole bowl is one "room" that passes or fails.
+
+    The placed models are judged by ``analyzer.footprints`` (POIs spec task 2)
+    from their own triangles, placed by the ZON objects the builder writes.
+    ``zon`` and ``models`` (archive filename -> model) give those objects
+    instead (a hand-built zone, or one read back from an archive); ``pois``
+    (``footprints.POI`` items) are the points that must stand on reached
+    ground."""
     agent = agent or AgentModel()
     land = landscape_for(spec)
     res = check_bowl(land.bowl, land.synth, land.matrix, agent=agent, ter=ter)
@@ -291,11 +300,14 @@ def bowl_report(spec: ZoneSpec, ter: TerFile,
     problems.extend(res.notes if not res.passed else [])
     passed = res.passed
     if passed:
-        # Trees (step 2, Req 6): the trunks must not cut anything off.
-        cut = trees_block(spec, ter, vegetation_for(spec, ter).placement.instances, agent)
-        if cut is not None:
+        # Placed models (trees since step 2, Structures in step 10): their
+        # Footprints must not cut anything off; Enterables let a player in;
+        # every POI stands on reached ground.
+        if zon is None:
+            zon, models = _gate_zon(spec, ter)
+        for failure in structure_failures(spec, ter, zon, models or {}, pois or (), agent):
             passed = False
-            problems.append(f"tree trunks cut off {cut} from Spawn")
+            problems.append(failure)
     room = RoomResult(room_id="bowl", role="bowl", reachable=passed,
                       floor_faces=res.playable_faces,
                       reached_faces=res.reachable_faces,
@@ -441,11 +453,104 @@ def _reached_faces(spec: ZoneSpec, ter: TerFile, agent: AgentModel):
     return surf, _flood_excluding(surf, seed, _invisible_wall_faces(surf, land.bowl))
 
 
+def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
+                   step: float = TREE_CHECK_STEP):
+    """The reached ground of the grid TER as a ``footprints.GroundRaster`` at
+    ``step``, or ``None`` when Spawn reaches nothing. Pixel centres over the
+    vertex grid, each mapped to its grid triangle (quad q holds triangles 2q
+    (a-b-c, fx >= fy) and 2q+1 (a-c-d), as ``build_wilderness_ter`` builds)."""
+    from analyzer.footprints import GroundRaster
+
+    land = landscape_for(spec)
+    nx, ny = land.synth.heights.shape
+    res = float(land.synth.resolution)
+    ox, oy = land.synth.origin
+    surf, reached = _reached_faces(spec, ter, agent)
+    if not reached:
+        return None
+    on = np.zeros(len(surf.faces), dtype=bool)
+    on[list(reached)] = True
+
+    x0, y0 = ox + 0.5 * res, oy + 0.5 * res
+    xs = x0 + step * (np.arange(int((nx - 1) * res / step)) + 0.5)
+    ys = y0 + step * (np.arange(int((ny - 1) * res / step)) + 0.5)
+    gx = (xs - x0) / res
+    gy = (ys - y0) / res
+    qi, fx = np.floor(gx).astype(int), gx - np.floor(gx)
+    qj, fy = np.floor(gy).astype(int), gy - np.floor(gy)
+    tri = 2 * (qi[:, None] * (ny - 1) + qj[None, :]) + (fx[:, None] < fy[None, :])
+
+    sx, sy = spec.safe_point[0], spec.safe_point[1]
+    si = min(max(int((sx - x0) / step), 0), len(xs) - 1)
+    sj = min(max(int((sy - y0) / step), 0), len(ys) - 1)
+    return GroundRaster(xs=xs, ys=ys, walk=on[tri], spawn=(si, sj), face_of=tri,
+                        face_verts=surf.verts[surf.faces], cell_origin=(ox, oy),
+                        cell_res=res)
+
+
+def _gate_zon(spec: ZoneSpec, ter: TerFile):
+    """The ZON objects and models the builder would write for this spec and
+    TER: the builder's own ``_build_zon``, so the gate sees what ships. A
+    Vegetation missing a Species' model (hand-built in tests) gets the kit's,
+    the model the builder would pack."""
+    from dataclasses import replace
+
+    from generators.builder import ZoneBuilder
+
+    veg = vegetation_for(spec, ter)
+    missing = sorted({t.species for t in veg.placement.instances} - set(veg.model_index))
+    if missing:
+        from generators.vegetation.kit import load_vegetation_kit
+        from generators.vegetation.models import model_name, tree_model
+
+        biome = (spec.wilderness or {}).get("biome", DEFAULT_BIOME)
+        kit = load_vegetation_kit(load_biome_kit(biome).vegetation_kit)
+        models, index = dict(veg.models), dict(veg.model_index)
+        for name in missing:
+            sp = kit.species[name]
+            index[name] = model_name(sp)
+            models[index[name]] = tree_model(
+                sp, _salted_seed(int(spec.seed) & 0x7FFFFFFF, "vegetation", "model", name))
+        veg = replace(veg, models=models, model_index=index)
+    zon = ZoneBuilder(spec)._build_zon(f"ter_{spec.name.lower()}.ter", veg)
+    return zon, veg.models
+
+
+def structure_failures(spec: ZoneSpec, ter: TerFile, zon, models: Mapping[str, TerFile],
+                       pois=(), agent: Optional[AgentModel] = None) -> List[str]:
+    """The Footprint gate's failures on this TER, phrased for the bowl report
+    (empty when it passes). A cut made by trunks alone reads as step 2's
+    "tree trunks cut off ..."; everything else is ``footprints.GateFailure``."""
+    from analyzer.footprints import check_footprints, placed_from_zon
+
+    placed = placed_from_zon(zon, models)
+    if not placed and not pois:
+        return []
+    agent = agent or AgentModel()
+    ground = _ground_raster(spec, ter, agent)
+    if ground is None:
+        return []
+    by_name = {p.name: p for p in placed}
+    out = []
+    for f in check_footprints(ground, placed, pois, agent).failures:
+        trees = f.subjects and all(by_name[s].model_name.lower().startswith("veg_")
+                                   for s in f.subjects if s in by_name)
+        if f.kind == "footprint_cut" and trees:
+            out.append("tree trunks " + f.detail.replace("cuts off", "cut off", 1))
+        else:
+            out.append(str(f))
+    return out
+
+
 def trees_block(spec: ZoneSpec, ter: TerFile, trees, agent: Optional[AgentModel] = None,
                 step: float = TREE_CHECK_STEP) -> Optional[str]:
-    """Req 6.1: with every Trunk_Disc grown by the player's half-width removed,
-    is every walkable point still connected to Spawn? Returns ``None`` when it
-    is, else names a cut-off fine cell.
+    """Req 6.1 of step 2: with every Trunk_Disc grown by the player's
+    half-width removed, is every walkable point still connected to Spawn?
+    Returns ``None`` when it is, else names a cut-off fine cell.
+
+    No longer on the gate's path: ``bowl_report`` judges trees by their
+    Footprints (``analyzer.footprints``), and this disc check is the reference
+    it's proven against on tree-only zones (POIs spec P2).
 
     The reached faces of the grid TER are rasterised at ``step``; pixels
     connected to Spawn WITHOUT trees must stay connected WITH them (outside the
@@ -457,26 +562,13 @@ def trees_block(spec: ZoneSpec, ter: TerFile, trees, agent: Optional[AgentModel]
         return None
     agent = agent or AgentModel()
     land = landscape_for(spec)
-    nx, ny = land.synth.heights.shape
     res = float(land.synth.resolution)
     ox, oy = land.synth.origin
-    surf, reached = _reached_faces(spec, ter, agent)
-    if not reached:
+    ground = _ground_raster(spec, ter, agent, step)
+    if ground is None:
         return None
-    on = np.zeros(len(surf.faces), dtype=bool)
-    on[list(reached)] = True
-
-    # Pixel centres over the vertex grid, mapped to their grid triangle (quad q
-    # holds triangles 2q (a-b-c, fx >= fy) and 2q+1 (a-c-d), as built above).
+    xs, ys, walk = ground.xs, ground.ys, ground.walk
     x0, y0 = ox + 0.5 * res, oy + 0.5 * res
-    xs = x0 + step * (np.arange(int((nx - 1) * res / step)) + 0.5)
-    ys = y0 + step * (np.arange(int((ny - 1) * res / step)) + 0.5)
-    gx = (xs - x0) / res
-    gy = (ys - y0) / res
-    qi, fx = np.floor(gx).astype(int), gx - np.floor(gx)
-    qj, fy = np.floor(gy).astype(int), gy - np.floor(gy)
-    tri = 2 * (qi[:, None] * (ny - 1) + qj[None, :]) + (fx[:, None] < fy[None, :])
-    walk = on[tri]
 
     covered = np.zeros_like(walk)
     for t in trees:
@@ -491,9 +583,7 @@ def trees_block(spec: ZoneSpec, ter: TerFile, trees, agent: Optional[AgentModel]
         dy = ys[None, j0:j1] - t.y
         covered[i0:i1, j0:j1] |= dx * dx + dy * dy <= r * r
 
-    sx, sy = spec.safe_point[0], spec.safe_point[1]
-    si = min(max(int((sx - x0) / step), 0), len(xs) - 1)
-    sj = min(max(int((sy - y0) / step), 0), len(ys) - 1)
+    si, sj = ground.spawn
 
     def spawn_component(mask):
         labels, _ = label(mask)
