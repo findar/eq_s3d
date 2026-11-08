@@ -13,6 +13,8 @@ Usage::
     python scripts/topology_rules.py draw classic_eq --out output/rules/
     python scripts/topology_rules.py draw-walls --out output/rules/   # sample rooms per wall style
     python scripts/topology_rules.py draw-rooms --out output/rules/   # each room layout, per style
+    python scripts/topology_rules.py check rules/sites                # the Site files, together
+    python scripts/topology_rules.py draw-sites --out output/rules/   # each Site recipe's plan
 
 ``<set>`` is a base set name in ``rules/topology/`` or a path to a ``.toml``
 file. ``--theme T`` merges the layers ``themes.toml`` gives theme T (those
@@ -25,6 +27,7 @@ exits 1 when any graph raised ``TopologyError``.
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import sys
 import tomllib
@@ -48,6 +51,9 @@ from generators.topology.ruleset import (  # noqa: E402
 
 from generators.room_layouts import LAYOUTS_FILE, load_layouts, place  # noqa: E402
 from generators.room_scales import SCALES_FILE, load_scales  # noqa: E402
+from generators.sites.rules import (  # noqa: E402
+    BIOMES_FILE, CENTRE, INHABITANTS_FILE, SITES_DIR, SITES_FILE, SiteRecipe, SiteRules, load_sites,
+)
 from generators.transitions import TRANSITIONS_FILE, load_transitions  # noqa: E402
 from generators.zone_spec import RoomSpec  # noqa: E402
 from generators.wall_styles import RECT, WALLS_DIR, load_style, load_styles  # noqa: E402
@@ -62,6 +68,10 @@ THEMES = "themes.toml"
 
 def _kind_of(path: Path) -> str:
     """'themes', 'layer' or 'set', from the file name and its top-level tables."""
+    if path.is_dir():
+        return "sites" if (path / SITES_FILE).is_file() else "folder"
+    if path.name in (SITES_FILE, INHABITANTS_FILE, BIOMES_FILE) and (path.parent / SITES_FILE).is_file():
+        return "sites"
     if path.name == THEMES:
         return "themes"
     if path.name == SCALES_FILE.name:
@@ -119,11 +129,28 @@ def _shipped() -> List[Path]:
     files.append(LAYOUTS_FILE)
     files.append(SCALES_FILE)
     files.append(TRANSITIONS_FILE)
+    files.append(SITES_DIR)
     return files
 
 
+def _expand(paths: Sequence[Path]) -> List[Path]:
+    """A folder of rule files is its files; the Site files' folder is one set, checked together."""
+    out: List[Path] = []
+    for p in paths:
+        kind = _kind_of(p)
+        if kind == "folder":
+            out += sorted(p.glob("*.toml"))
+        elif kind == "sites":
+            folder = p if p.is_dir() else p.parent
+            if folder not in out:
+                out.append(folder)
+        else:
+            out.append(p)
+    return out
+
+
 def cmd_check(files: Sequence[str]) -> int:
-    paths = [Path(f) for f in files] if files else _shipped()
+    paths = _expand([Path(f) for f in files] if files else _shipped())
     failures = 0
     lines: List[str] = []
     bases = {}
@@ -131,7 +158,11 @@ def cmd_check(files: Sequence[str]) -> int:
     for p in paths:
         kind = _kind_of(p)
         try:
-            if kind == "themes":
+            if kind == "sites":
+                sr = load_sites(p)
+                lines.append(f"ok    {p.name}/: sites, {len(sr.kinds)} kinds, {len(sr.structures)} structures, "
+                             f"{len(sr.inhabitants)} inhabitants, {len(sr.biomes)} biomes")
+            elif kind == "themes":
                 tm = load_theme_map(p)
                 lines.append(f"ok    {p.name}: theme map, {len(tm.entries)} themes")
             elif kind == "scales":
@@ -390,6 +421,144 @@ def cmd_draw_rooms(out: Path) -> int:
     return 0
 
 
+def _site_spots(recipe: SiteRecipe, rules: SiteRules, rng: random.Random):
+    """A schematic plan of a recipe, for review only (placement is generators/sites/placement.py):
+    each line's Structures at its arrangement's ideal spots round the centre, at a drawn count.
+    Yields (structure, x, y, yaw toward the centre or not)."""
+    r = recipe.ground.radius
+    out = []
+    by_at = {}
+    for line in recipe.structures:
+        if line.chance < 1.0 and rng.random() >= line.chance:
+            continue
+        n = rng.randint(*line.count)
+        by_at.setdefault(line.at, []).extend([line] * n)
+    centre_taken = bool(by_at.get(CENTRE))
+    for at, lines in by_at.items():
+        n = len(lines)
+        for k, line in enumerate(lines):
+            if at == CENTRE:
+                x, y = (0.0, 0.0) if n == 1 else (0.25 * r * math.cos(2 * math.pi * k / n),
+                                                  0.25 * r * math.sin(2 * math.pi * k / n))
+            elif at in ("ring", "perimeter"):
+                a = 2 * math.pi * (k + 0.5) / n
+                d = 0.62 * r if at == "ring" else 0.85 * r
+                x, y = d * math.cos(a), d * math.sin(a)
+            elif at == "lone":
+                x, y = ((0.0, 0.0) if n == 1 and not centre_taken else
+                        ((k - (n - 1) / 2) * 0.45 * r, 0.3 * r if centre_taken else 0.0))
+            elif at == "row":
+                y0 = -0.75 * r if line.side == "open" else 0.0
+                x, y = (k - (n - 1) / 2) * 2.1 * rules.structures[line.kind].radius, y0
+            else:   # cluster
+                a = rng.uniform(0, 2 * math.pi)
+                d = rng.uniform(0.25, 0.6) * r
+                x, y = d * math.cos(a), d * math.sin(a) * (0.5 if line.side == "open" else 1.0)
+            out.append((line, x, y))
+    return out
+
+
+def _site_svg(recipe: SiteRecipe, rules: SiteRules, rng: random.Random, title: str, scale: float = 3.0) -> str:
+    from generators.topology.draw import _esc, _f
+    r = recipe.ground.radius + recipe.ground.margin
+    size = 2 * (r + 6) * scale
+
+    def px(x: float, y: float) -> Tuple[str, str]:
+        return _f((x + r + 6) * scale), _f((r + 6 - y) * scale)
+
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_f(size)}" height="{_f(size)}" '
+             f'viewBox="0 0 {_f(size)} {_f(size)}"><title>{_esc(title)}</title>',
+             f'<rect width="100%" height="100%" fill="#f4f1e8"/>']
+    c = px(0, 0)
+    parts.append(f'<circle cx="{c[0]}" cy="{c[1]}" r="{_f(r * scale)}" fill="none" stroke="#9bb07a" '
+                 f'stroke-dasharray="4 3"><title>Site_Clear margin</title></circle>')
+    parts.append(f'<circle cx="{c[0]}" cy="{c[1]}" r="{_f(recipe.ground.radius * scale)}" fill="#e3dcc4" '
+                 f'stroke="#b8ad8a"><title>ground, radius {recipe.ground.radius:g} u</title></circle>')
+    placed = _site_spots(recipe, rules, rng)
+    colours = {"fire_ring": "#d9682b", "altar_stone": "#8a6fb3"}
+    seen = {}
+    for line, x, y in placed:
+        st = rules.structures[line.kind]
+        at = px(x, y)
+        fill = colours.get(line.kind, "#7a5a3a" if st.enterable else "#555")
+        label = line.kind + (f" ({line.variant})" if line.variant else "") + (", enterable" if st.enterable else "")
+        if line.kind in ("fence", "ruin_wall"):
+            a = math.atan2(y, x) + math.pi / 2 if line.at != "row" else 0.0
+            dx, dy = st.radius * math.cos(a), st.radius * math.sin(a)
+            p, q = px(x - dx, y - dy), px(x + dx, y + dy)
+            parts.append(f'<line x1="{p[0]}" y1="{p[1]}" x2="{q[0]}" y2="{q[1]}" stroke="{fill}" '
+                         f'stroke-width="{_f(1.2 * scale)}"><title>{_esc(label)}</title></line>')
+        else:
+            parts.append(f'<circle cx="{at[0]}" cy="{at[1]}" r="{_f(st.radius * scale)}" fill="{fill}" '
+                         f'fill-opacity="0.85"><title>{_esc(label)}</title></circle>')
+            if line.face == "in" and (x or y):
+                d = math.hypot(x, y)
+                q = px(x - x / d * st.radius * 1.4, y - y / d * st.radius * 1.4)
+                parts.append(f'<line x1="{at[0]}" y1="{at[1]}" x2="{q[0]}" y2="{q[1]}" stroke="#fff" '
+                             f'stroke-width="2"><title>opening</title></line>')
+        seen.setdefault(line.kind, (x, y))
+    for poi in recipe.pois:
+        if poi.at in seen:
+            x, y = seen[poi.at]
+        elif poi.at == "entrance":
+            x, y = 0.0, -recipe.ground.radius
+        else:
+            x, y = 0.0, 0.0
+        at = px(x, y + 2.5)
+        colour = "#f2c230" if poi.purpose == "Light_Spot" else "#2b6fd6"
+        parts.append(f'<circle cx="{at[0]}" cy="{at[1]}" r="5" fill="{colour}" stroke="#123"><title>'
+                     f'{_esc(poi.name)}: {_esc(poi.purpose)} at {_esc(poi.at)}</title></circle>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def cmd_draw_sites(out: Path) -> int:
+    """sites.html: each kind's plan as each Inhabitant builds it, and the chances by biome."""
+    from generators.topology.draw import _esc
+    rules = load_sites()
+    body = []
+    for biome in sorted(rules.biomes):
+        mix = rules.inhabitant_chances(biome)
+        kinds = sorted(rules.kinds)
+        head = "".join(f"<th>{_esc(k)}</th>" for k in kinds)
+        rows = []
+        for who in sorted(rules.inhabitants):
+            ch = rules.kind_chances(biome, who)
+            rows.append(f"<tr><th>{_esc(who)} ({mix.get(who, 0):.0%})</th>"
+                        + "".join(f"<td>{ch[k]:.0%}</td>" for k in kinds) + "</tr>")
+        body.append(f"<h2>biome {_esc(biome)}</h2><p>Density {rules.biomes[biome].density[0]:g}-"
+                    f"{rules.biomes[biome].density[1]:g} Sites per 1e6 u&sup2; at Normal. A kind's chance "
+                    f"for each Inhabitant (its share of the mix in brackets): biome x Inhabitant, weight over sum.</p>"
+                    f"<table><tr><th></th>{head}</tr>{''.join(rows)}</table>")
+    for kind, recipe in sorted(rules.kinds.items()):
+        g = recipe.ground
+        likes = ", ".join(f"{k} {v:g}" for k, v in recipe.likes.items()) or "nothing in particular"
+        pois = "; ".join(f"{p.name} ({p.purpose} at {p.at})" for p in recipe.pois)
+        body.append(f"<h2>{_esc(kind)}</h2><p>{_esc(recipe.arrangement)}; ground radius {g.radius:g} u, "
+                    f"slope up to {g.slope_deg:g}&deg;, spacing {g.spacing:g} u, margin {g.margin:g} u; likes "
+                    f"{_esc(likes)}. POIs: {_esc(pois)}.</p><div class=row>")
+        for who in sorted(rules.inhabitants):
+            built = rules.recipe_for(kind, who)
+            for seed in (1, 2):
+                svg = _site_svg(built, rules, random.Random(f"{kind}{who}{seed}"), f"{kind} {who} {seed}")
+                body.append(f"<figure>{svg}<figcaption>{_esc(who)}, seed {seed}</figcaption></figure>")
+        body.append("</div>")
+    page = ("<!doctype html><meta charset=utf-8><title>Site recipes</title><style>"
+            "body{font:14px sans-serif;margin:24px;color:#222;background:#fff}"
+            ".row{display:flex;flex-wrap:wrap;gap:12px}figure{margin:0}"
+            "figcaption{text-align:center;color:#555}table{border-collapse:collapse}"
+            "td,th{border:1px solid #ccc;padding:3px 8px;text-align:right}</style><h1>Site recipes</h1>"
+            "<p>A schematic plan of each recipe as each Inhabitant builds it, at a drawn count: not placement. "
+            "Tan is the Site's ground, the dashed ring its Site_Clear margin; brown Structures are Enterable, "
+            "grey solid, white ticks openings, lines fence and wall runs. Yellow is a Light_Spot POI, blue the "
+            "others. Hover for names.</p>" + "".join(body))
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "sites.html"
+    path.write_text(page, encoding="utf-8")
+    print(f"wrote {path} ({len(rules.kinds)} kinds, {len(rules.inhabitants)} inhabitants)")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -417,6 +586,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     o.add_argument("--out", type=Path, required=True)
     v = sub.add_parser("draw-walls", help="write walls.html: sample rooms for each wall style")
     v.add_argument("--out", type=Path, required=True)
+    t = sub.add_parser("draw-sites", help="write sites.html: each Site recipe's plan, and chances by biome")
+    t.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # the checker's "›"
@@ -430,6 +601,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return cmd_draw_rooms(a.out)
         if a.cmd == "draw-walls":
             return cmd_draw_walls(a.out)
+        if a.cmd == "draw-sites":
+            return cmd_draw_sites(a.out)
         return cmd_draw(a.set, a.theme, a.out, a.example_rooms)
     except RuleSetError as exc:
         print(f"the rule set failed its checks ({len(exc.errors)} problem(s)):")

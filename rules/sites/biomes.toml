@@ -1,0 +1,18 @@
+# rules/sites/biomes.toml -- which Sites a biome holds (roadmap step 10, Req 5).
+#
+# [biomes.<name>]  every biome in styles/biomes.json needs one (only plains exists)
+#   density      [low, high] Sites per 1e6 u^2 of walkable ground at Sites = Normal; the
+#                Sites control scales it (none 0, sparse 0.5, normal 1, dense 2)
+#   inhabitants  the Inhabitant mix: name -> weight, a chance its weight over the sum. The
+#                Inhabitants control can name one instead.
+#   weights      Site kind -> weight: the least specific Layer under Inhabitant and control. A kind
+#                it doesn't name it leaves alone (weight 1); 0 is never.
+#
+# PLACEHOLDERS: the density band, the mix and the weights are first readings of design finding 1's
+# probe (camps the commonest, farms the Karanas' signature, towers and shrines rarer). Task 1's
+# survey sets them.
+
+[biomes.plains]
+density = [0.8, 2.0]
+inhabitants = { human = 4, gnoll = 2, centaur = 2, orc = 1 }
+weights = { camp = 4, hut = 2, farmstead = 2, watchtower = 1.5, shrine = 1.5, ruin = 1 }
