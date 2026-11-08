@@ -27,7 +27,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
 ## Tasks
 
 
-- [ ] 1. Measure the stock Sites
+- [x] 1. Measure the stock Sites
   - Card: [cards/01-site-survey.md](cards/01-site-survey.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/site_survey.py, .kiro/specs/zone-generator-wilderness-pois/design.md (finding 1 only)
