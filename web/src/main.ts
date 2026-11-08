@@ -169,6 +169,10 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
       ...SCALE_CONTROLS.flatMap((id) => p[id] != null && p[id] !== ""
         ? [[id[0].toUpperCase() + id.slice(1), String(p[id])] as [string, string]] : []),
     ];
+    if (usesControl(p.zone_type, "edges") && p.sites) {
+      rows.push(["Sites", p.sites]);
+      rows.push(["Inhabitants", p.inhabitant || "biome's mix"]);
+    }
     if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
     if (p.mood) rows.push(["Mood", p.mood]);
     for (const [k, v] of rows) {
@@ -378,6 +382,9 @@ async function doGenerate(mode: Mode) {
     const landscape = usesControl(zoneType, "edges");
     const edges = landscape ? readEdges() : undefined;
     const trees = landscape ? ($("trees") as HTMLSelectElement).value : undefined;
+    // Sites and who builds them: landscape only; "" is the biome's mix.
+    const sites = landscape ? ($("sites") as HTMLSelectElement).value : undefined;
+    const inhabitant = landscape ? ($("inhabitant") as HTMLSelectElement).value : undefined;
     // Hidden controls are left out (the server's defaults: graph on a
     // dungeon / outdoor dungeon, the theme's set); the rule set rides only
     // with the graph engine.
@@ -399,6 +406,8 @@ async function doGenerate(mode: Mode) {
         zone_type: zoneType, room_count: rooms, size, verticality, locks,
         ...(edges ? { edges } : {}),
         ...(trees ? { trees } : {}),
+        ...(sites ? { sites } : {}),
+        ...(inhabitant !== undefined ? { inhabitant } : {}),
         ...(layout ? { layout } : {}),
         ...(ruleSet !== undefined ? { rule_set: ruleSet } : {}),
         ...scales,
@@ -412,6 +421,8 @@ async function doGenerate(mode: Mode) {
       `verticality=${verticality} locks=${locks}` +
       (edges ? ` edges=${JSON.stringify(edges)}` : "") +
       (trees ? ` trees=${trees}` : "") +
+      (sites ? ` sites=${sites}` : "") +
+      (inhabitant !== undefined ? ` inhabitant=${inhabitant || "(biome)"}` : "") +
       (layout ? ` layout=${layout}` : "") +
       (ruleSet !== undefined ? ` rule_set=${ruleSet || "(theme)"}` : "") +
       Object.entries(scales).map(([id, v]) => ` ${id}=${v || "(rules)"}`).join("") +
@@ -542,7 +553,7 @@ $("reset-view").addEventListener("click", () => {
 });
 
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
-                  "edge-n", "edge-e", "edge-s", "edge-w", "trees",
+                  "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");

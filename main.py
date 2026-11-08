@@ -20,7 +20,7 @@ from pathlib import Path
 from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, SCALE_CONTROLS, VALID_FEATURES, VALID_LAYOUTS, ZonePlan, available_overlays,
-    available_rule_sets, available_wall_styles,
+    available_rule_sets, available_wall_styles, VALID_SITES, available_inhabitants,
 )
 from core.env import env_value
 from core.paths import (
@@ -177,6 +177,13 @@ def cmd_generate(args) -> None:
     for key in ("layout", "rule_set", "walls", "features", "finish", "structure", "clutter", "overlay"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
+    # Sites (wilderness / outdoor dungeon): only named when given, so the
+    # sidecar says who set them.
+    sites_source = None
+    for key in ("sites", "inhabitant"):
+        if getattr(args, key, None) is not None:
+            controls[key] = getattr(args, key)
+            sites_source = "cli"
     plan = ZonePlan.from_controls(controls)
     # The positional is the Build_Name (lower-cased + validated by
     # ``_build_name_arg``); it names every artifact. The zone id — the per-build
@@ -191,7 +198,7 @@ def cmd_generate(args) -> None:
 
     def factory(seed):
         return plan_to_spec(plan, seed=seed, edges=edges, trees=trees,
-                            trees_source="cli")
+                            trees_source="cli", sites_source=sites_source)
 
     # Build through the shared validated pipeline, so the CLI gets the same
     # "every room reachable on foot" guarantee as the server (dungeon/box
@@ -296,6 +303,12 @@ def main(argv: list[str] | None = None) -> None:
                    choices=["none", "sparse", "normal", "dense"],
                    help="Wilderness / outdoor-dungeon tree density "
                         "(default normal)")
+    g.add_argument("--sites", default=None, choices=VALID_SITES,
+                   help="Wilderness / outdoor-dungeon Sites: camps, huts, "
+                        "farmsteads, towers, shrines, ruins (default normal)")
+    g.add_argument("--inhabitant", default=None, choices=available_inhabitants(),
+                   help="Wilderness / outdoor-dungeon: who builds every Site "
+                        "(default: the biome's mix)")
     g.add_argument("--layout", type=_layout_arg, default=None,
                    metavar="{" + ",".join(VALID_LAYOUTS) + "}",
                    help="Layout engine for dungeon / outdoor_dungeon: graph "
@@ -329,6 +342,11 @@ def main(argv: list[str] | None = None) -> None:
             and canonical_zone_type(args.zone_type) not in LANDSCAPE_ZONE_TYPES):
         parser.error("--trees only applies to --zone-type wilderness or "
                      "outdoor_dungeon")
+    for opt in ("sites", "inhabitant"):
+        if (getattr(args, opt, None) is not None
+                and canonical_zone_type(args.zone_type) not in LANDSCAPE_ZONE_TYPES):
+            parser.error(f"--{opt} only applies to --zone-type wilderness or "
+                         "outdoor_dungeon")
     # As --edges / --trees: a graph layout or a rule set on a zone type that
     # doesn't take them is a usage error (the default classic is a no-op).
     if canonical_zone_type(args.zone_type) not in LAYOUT_ZONE_TYPES:

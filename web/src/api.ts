@@ -13,6 +13,10 @@ export interface GenerateControls {
   edges?: Record<string, string>;
   // Wilderness only: tree density, none | sparse | normal | dense.
   trees?: string;
+  // Wilderness / outdoor dungeon only: Sites none | sparse | normal | dense,
+  // and who builds them (human | orc | gnoll | centaur, "" for the biome's mix).
+  sites?: string;
+  inhabitant?: string;
   // Dungeon / outdoor dungeon only: the layout engine, classic | graph.
   layout?: string;
   // Graph layout only: a base rule set, or "" for the theme's set.
@@ -42,6 +46,9 @@ export interface ZonePlan {
   regions: string[];
   mood: string;
   prompt: string;
+  // Sites (wilderness / outdoor dungeon): how many, and who builds them.
+  sites?: string;
+  inhabitant?: string;
 }
 
 // One file of an accepted build (server/app.py ArtifactRef), in panel order:
