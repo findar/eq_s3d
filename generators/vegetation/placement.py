@@ -11,7 +11,9 @@ Tree_Instances that:
 - stand only on Eligible_Ground: TER quads whose two triangles are standable
   and at most 30° steep, whose four corner cells are ``plains`` and not Rim
   seal, and which lie outside Kept_Clear (the Spawn clearing, each zoneline gap
-  plus two cells inward, and a one-cell band beside water, river and lava);
+  plus two cells inward, a one-cell band beside water, river and lava, and,
+  when the caller passes them, every Site's ground and Site_Clear: roadmap
+  step 10, ``keep_clear``);
 - keep every Trunk_Disc at least Tree_Clearance from every other Trunk_Disc and
   from all ineligible ground (Req 4.3). Since eligible ground is walkable,
   that leaves every trunk an island inside walkable ground, so trees can't cut
@@ -30,7 +32,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.ndimage import binary_dilation
@@ -69,6 +71,11 @@ ATTEMPTS_PER_TREE = 30
 CAP_SHARE = 0.75
 
 _BUCKET = 32.0
+
+#: A Kept_Clear shape a caller adds (roadmap step 10: a Site's ground, approach
+#: and aprons): the capsule of radius ``r`` round the segment ``(x0, y0)-(x1, y1)``;
+#: a disc when the two ends coincide.
+ClearShape = Tuple[float, float, float, float, float]
 
 
 @dataclass(frozen=True)
@@ -203,12 +210,76 @@ def eligible_quads(heights: np.ndarray, node_type: np.ndarray, rim_seal: np.ndar
     return ok
 
 
-def ground_for(land, ter: TerFile, spawn_xy: Tuple[float, float]) -> Ground:
-    """The placement ground for a synthesized landscape and its built TER."""
+def shapes_touch_quads(shape: Tuple[int, int], origin: Tuple[float, float], res: float,
+                       shapes: Iterable[ClearShape]) -> np.ndarray:
+    """Per quad (``shape`` is the quad grid's), True where the quad's square comes
+    within ``r`` of a shape's segment, i.e. the quad touches the capsule."""
+    nqx, nqy = shape
+    out = np.zeros(shape, dtype=bool)
+    for x0, y0, x1, y1, r in shapes:
+        lo_x, hi_x = min(x0, x1) - r, max(x0, x1) + r
+        lo_y, hi_y = min(y0, y1) - r, max(y0, y1) + r
+        i0 = max(int(math.floor((lo_x - origin[0]) / res - 0.5)), 0)
+        i1 = min(int(math.floor((hi_x - origin[0]) / res - 0.5)), nqx - 1)
+        j0 = max(int(math.floor((lo_y - origin[1]) / res - 0.5)), 0)
+        j1 = min(int(math.floor((hi_y - origin[1]) / res - 0.5)), nqy - 1)
+        for i in range(i0, i1 + 1):
+            qx0 = origin[0] + (i + 0.5) * res
+            for j in range(j0, j1 + 1):
+                if out[i, j]:
+                    continue
+                qy0 = origin[1] + (j + 0.5) * res
+                if _rect_segment_distance(qx0, qy0, qx0 + res, qy0 + res, x0, y0, x1, y1) < r:
+                    out[i, j] = True
+    return out
+
+
+def _rect_segment_distance(rx0: float, ry0: float, rx1: float, ry1: float,
+                           x0: float, y0: float, x1: float, y1: float) -> float:
+    """Least distance from an axis-aligned rectangle to a segment (0 if they meet)."""
+    def point_rect(px: float, py: float) -> float:
+        dx = max(rx0 - px, 0.0, px - rx1)
+        dy = max(ry0 - py, 0.0, py - ry1)
+        return math.hypot(dx, dy)
+
+    def point_seg(px: float, py: float) -> float:
+        vx, vy = x1 - x0, y1 - y0
+        ll = vx * vx + vy * vy
+        t = 0.0 if ll == 0 else min(max(((px - x0) * vx + (py - y0) * vy) / ll, 0.0), 1.0)
+        return math.hypot(px - (x0 + t * vx), py - (y0 + t * vy))
+
+    # A segment end inside, or the segment crossing an edge: they meet. Else the
+    # least distance is from a segment end to the rectangle or a corner to the segment.
+    best = min(point_rect(x0, y0), point_rect(x1, y1))
+    if best == 0.0:
+        return 0.0
+    corners = ((rx0, ry0), (rx1, ry0), (rx1, ry1), (rx0, ry1))
+    for k in range(4):
+        (ax, ay), (bx, by) = corners[k], corners[(k + 1) % 4]
+        if _segments_cross(ax, ay, bx, by, x0, y0, x1, y1):
+            return 0.0
+    return min(best, min(point_seg(cx, cy) for cx, cy in corners))
+
+
+def _segments_cross(ax: float, ay: float, bx: float, by: float,
+                    cx: float, cy: float, dx: float, dy: float) -> bool:
+    def orient(px, py, qx, qy, rx, ry):
+        return (qx - px) * (ry - py) - (qy - py) * (rx - px)
+    d1, d2 = orient(cx, cy, dx, dy, ax, ay), orient(cx, cy, dx, dy, bx, by)
+    d3, d4 = orient(ax, ay, bx, by, cx, cy), orient(ax, ay, bx, by, dx, dy)
+    return d1 * d2 < 0 and d3 * d4 < 0
+
+
+def ground_for(land, ter: TerFile, spawn_xy: Tuple[float, float],
+               keep_clear: Sequence[ClearShape] = ()) -> Ground:
+    """The placement ground for a synthesized landscape and its built TER.
+    ``keep_clear`` grows Kept_Clear by every quad a shape touches."""
     synth = land.synth
     h = ter_heights(ter, synth.heights.shape)
     res = float(synth.resolution)
     elig = eligible_quads(h, synth.node_type, synth.rim_seal_mask, synth.origin, res, spawn_xy)
+    if keep_clear:
+        elig &= ~shapes_touch_quads(elig.shape, tuple(synth.origin), res, keep_clear)
     return Ground(heights=h, origin=tuple(synth.origin), res=res, eligible=elig)
 
 
@@ -246,13 +317,18 @@ class _Spacing:
 # ---------------------------------------------------------------------------
 
 def place_trees(land, ter: TerFile, kit: Optional[VegetationKit], level: str, seed: int,
-                spawn_xy: Optional[Tuple[float, float]] = None) -> Placement:
-    """The Tree_Instances for one zone (Requirements 4 and 5). Pure."""
+                spawn_xy: Optional[Tuple[float, float]] = None,
+                keep_clear: Sequence[ClearShape] = ()) -> Placement:
+    """The Tree_Instances for one zone (Requirements 4 and 5). Pure.
+
+    ``keep_clear`` (roadmap step 10) adds shapes to Kept_Clear: every Site's
+    ground and Site_Clear (``SitePlacement.clear_shapes()``). Empty, the trees are
+    exactly what they were before Sites existed."""
     if spawn_xy is None:
         from generators.wilderness.bowl import _spawn_world_point
         sx, sy, _ = _spawn_world_point(land.synth, land.matrix, land.bowl.heights)
         spawn_xy = (sx, sy)
-    ground = ground_for(land, ter, spawn_xy)
+    ground = ground_for(land, ter, spawn_xy, tuple(keep_clear))
     area = float(ground.eligible.sum()) * ground.res ** 2
     if kit is None or level == "none" or area <= 0:
         return Placement(instances=[], target=0, eligible_area=area, grove_count=0)

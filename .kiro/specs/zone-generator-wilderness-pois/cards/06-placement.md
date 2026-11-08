@@ -16,3 +16,4 @@ Choose Site centres on eligible ground (playable plains, slope within the recipe
 Salt the seed the way trees do (`_salted_seed`), so the terrain's stream never moves (trees spec Decision 4).
 
 ## Result
+✔ 3bfa78b · 1998 passed
