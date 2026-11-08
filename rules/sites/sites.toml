@@ -121,7 +121,7 @@ pois = [
 arrangement = "lone"
 structures = [
     { kind = "hut", at = "centre", face = "any" },
-    { kind = "fence", count = [0, 2], at = "row", side = "open", chance = 0.5 },   # 1-3: a lone Site
+    { kind = "fence", count = [0, 2], at = "row", side = "open", chance = 0.2 },   # mostly a lone Site (SHAK, HUT1)
 ]
 ground = { radius = 40, slope_deg = 6, spacing = 200, margin = 8 }      # the hut and a fence run
 likes = { clearing = 2 }
@@ -136,9 +136,9 @@ arrangement = "cluster"
 structures = [
     { kind = "hut", face = "any" },
     { kind = "barn", face = "any" },                       # BARN1 x4 to RHOUSE1 x3: one a farm
-    { kind = "fence", count = [4, 6], at = "row", side = "open" },        # the corral (CORRALL 46x43)
+    { kind = "fence", count = [3, 4], at = "row", side = "open" },        # the corral (CORRALL 46x43): 5-6 Structures
 ]
-ground = { radius = 90, slope_deg = 5, spacing = 300, margin = 10 }     # house, barn, corral 60-150 apart
+ground = { radius = 72, slope_deg = 5, spacing = 300, margin = 10 }     # house, barn and corral within 100 u of each other (the survey's gap)
 likes = { low_ground = 3 }
 pois = [
     { name = "farmhouse interior", purpose = "interior", at = "hut" },
