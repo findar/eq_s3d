@@ -39,7 +39,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: generators/wilderness/build.py (`trees_block` and `bowl_report`), analyzer/footprints.py, tests/test_gate_footprints.py
   - Reqs: 2
 
-- [ ] 3. Structure models
+- [x] 3. Structure models
   - Card: [cards/03-structure-models.md](cards/03-structure-models.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/sites/models.py, generators/sites/__init__.py, tests/test_site_models.py, rules/sites/ (replace the placeholders with finding 1's values; task 4's material set names), tests/test_site_rules.py (only the TOML fragments its mutation tests search for), tests/test_site_placement.py (the misfit test picks its own kind)

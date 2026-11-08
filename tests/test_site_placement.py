@@ -165,7 +165,13 @@ def test_misfits_drop_with_reasons_and_never_fail():
     crowded = replace(camp, structures=(camp.structures[0], replace(camp.structures[1], count=(12, 12))))
     shrine = RULES.kinds["shrine"]
     nowhere = replace(shrine, ground=replace(shrine.ground, radius=400.0))
-    rules = replace(RULES, kinds={**RULES.kinds, "camp": crowded, "shrine": nowhere})
+    # The test picks the kinds (camps and shrines only) and the density itself, so it doesn't
+    # hang on the shipped weights or density.
+    plains = RULES.biomes["plains"]
+    only = replace(plains, density=(2.0, 2.0),
+                   weights={k: (1.0 if k in ("camp", "shrine") else 0.0) for k in RULES.kinds})
+    rules = replace(RULES, kinds={**RULES.kinds, "camp": crowded, "shrine": nowhere},
+                    biomes={**RULES.biomes, "plains": only})
     spec, ter, land = _zone(7, 0)
     seen = set()
     for seed in range(6):
