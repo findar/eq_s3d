@@ -38,6 +38,7 @@ LEVELS = ("none", "sparse", "normal", "dense")
 
 def _spec(seed, level=None, edges=EDGES, name="karana"):
     spec = plan_to_spec(ZonePlan(name=name, zone_type="wilderness"), seed=seed, edges=edges)
+    spec.sites = "none"  # step 2's tree properties are about tree-only zones
     if level is not None:
         spec.wilderness["trees"] = level
     return spec

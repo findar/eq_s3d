@@ -301,6 +301,7 @@ def _tree_spec(seed, level, edges):
 ])
 def test_p2_trees_footprints_agree_with_trees_block_on_builds(seed, level, edges):
     spec = _tree_spec(seed, level, edges)
+    spec.sites = "none"  # P2 is about tree-only zones
     ter = wb.build_wilderness_ter(spec, "ter_karana", 2)
     veg = wb.vegetation_for(spec, ter)
     zon, models = wb._gate_zon(spec, ter)

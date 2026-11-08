@@ -41,6 +41,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 from scipy.ndimage import distance_transform_edt, label, uniform_filter
 
+from analyzer.footprints import CLEAR_WIDTH as _GATE_CLEAR_WIDTH
 from core.ter import TerFile
 from generators.sites.rules import (
     CENTRE,
@@ -61,8 +62,9 @@ from generators.vegetation.placement import (
 #: The salt of the Sites' own stream: ``_salted_seed(seed, "sites", "placement")``.
 SITES_SALT: Tuple[str, ...] = ("sites", "placement")
 #: The width a player needs: an approach's width, an apron's, and the least gap between two
-#: Structures (so a player walks between them). The player is 3 u wide (``PLAYER_HALF_WIDTH``).
-CLEAR_WIDTH = 6.0
+#: Structures (so a player walks between them). The gate's own clear width (archive
+#: decision 9: 8 u; the player is 3 u wide), so placement leaves what the gate demands.
+CLEAR_WIDTH = _GATE_CLEAR_WIDTH
 #: How deep the clear apron in front of an Enterable Structure's opening reaches.
 APRON_DEPTH = 8.0
 #: Half the thickness of a run (fence, ruin wall) for spacing and the Site_Clear.

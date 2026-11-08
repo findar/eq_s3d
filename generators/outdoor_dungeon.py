@@ -54,6 +54,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from analyzer.footprints import CLEAR_WIDTH as FOOTPRINT_CLEAR_WIDTH
 from core.ter import MAGIC_TERRAIN, Material, Polygon, TerFile, Vertex
 from generators.envelope import Envelope, EnvelopeFitError
 from generators.geometry import MeshBuilder, _ensure_materials
@@ -921,6 +922,50 @@ def build_outdoor_dungeon_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -
     host = build_wilderness_ter(spec, ter_name, ter_version)
     entrance = Entrance.from_dict(spec.wilderness[DUNGEON_KEY]["entrance"])
     return build_outdoor_ter(spec, host, spec, entrance, ter_name, ter_version)
+
+
+#: Clear width kept round the Apron, Tunnel and Mouth for Sites (POIs spec Req 7):
+#: the gate's clear width (archive decision 9), so a player walks round any Site there.
+SITE_CLEAR = FOOTPRINT_CLEAR_WIDTH
+
+
+def keep_clear_shapes(spec: ZoneSpec) -> Tuple[Tuple[float, float, float, float, float], ...]:
+    """What Sites keep off in an outdoor dungeon (POIs spec Req 7), as capsules
+    ``(x0, y0, x1, y1, r)`` for ``place_sites(..., keep_clear=...)``: the
+    Host_Hill's footprint (``host_footprint``'s disc); the Tunnel, wall to
+    portal; and the Mouth and Apron, from the portal out over the most rows
+    the Apron digs and one row more. The Tunnel's and Apron's capsules are the
+    dug strip's half-width plus ``SITE_CLEAR``. Trees are unchanged by this
+    (they keep step 5's ground)."""
+    land = landscape_for(spec)
+    lf = land.matrix.landform
+    e = Entrance.from_dict(spec.wilderness[DUNGEON_KEY]["entrance"])
+    ox, oy = land.synth.origin
+    res = float(land.synth.resolution)
+    # The rows the Apron digs, on the undug host heights (it never digs near
+    # water, so the water bed's sinking doesn't matter here).
+    grid = _Grid.__new__(_Grid)
+    grid.nx, grid.ny = land.bowl.heights.shape
+    grid.origin, grid.res = (float(ox), float(oy)), res
+    grid.z = np.asarray(land.bowl.heights, dtype=np.float64)
+    dug = np.any(_apron(grid, e)[0] < grid.z - 1e-9, axis=1 - e.axis)
+    rows = [k for k in np.nonzero(dug)[0]]
+    reach = max((abs(int(k) - e.portal) for k in rows), default=1)
+
+    def coord(axis: int, k: float) -> float:
+        return (ox, oy)[axis] + (k + 0.5) * res
+
+    def pt(run: float, cross: float) -> Tuple[float, float]:
+        return (run, cross) if e.axis == 0 else (cross, run)
+
+    mid = (coord(1 - e.axis, e.cross) + coord(1 - e.axis, e.cross + 1)) / 2.0
+    portal = coord(e.axis, e.portal)
+    far = coord(e.axis, e.portal + e.outward * (reach + 1))
+    hill = (lf.centre[0], lf.centre[1], lf.centre[0], lf.centre[1], lf.radius + lf.flank / 2.0)
+    tunnel = (*pt(e.wall, mid), *pt(portal, mid), res / 2.0 + SITE_CLEAR)
+    # The Apron's trench spans the strip's two columns and one either side.
+    apron = (*pt(portal, mid), *pt(far, mid), 2.0 * res + SITE_CLEAR)
+    return (hill, tunnel, apron)
 
 
 def outdoor_dungeon_report(eqg_path, spec: ZoneSpec, agent=None):

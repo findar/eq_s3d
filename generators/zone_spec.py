@@ -346,6 +346,16 @@ class ZoneSpec:
     # builder adds the shape measures when it writes the sidecar.
     layout: Optional[Dict[str, Any]] = None
 
+    # Sites in the wilderness (POIs spec Req 8.1; read by wilderness and
+    # outdoor-dungeon builds only). ``sites`` is the Sites control (none,
+    # sparse, normal, dense); ``inhabitant`` pins one Inhabitant ("" = the
+    # biome's mix); ``sites_source`` says who set the control (default, cli,
+    # prompt, web), as ``trees_source`` does. Left out of ``to_dict()`` at
+    # their defaults, so existing spec JSON is unchanged.
+    sites: str = "normal"
+    inhabitant: str = ""
+    sites_source: str = "default"
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
@@ -370,6 +380,9 @@ class ZoneSpec:
             **({"wilderness": self.wilderness} if self.wilderness is not None else {}),
             **({"water_level": self.water_level} if self.water_level is not None else {}),
             **({"layout": self.layout} if self.layout is not None else {}),
+            **({"sites": self.sites} if self.sites != "normal" else {}),
+            **({"inhabitant": self.inhabitant} if self.inhabitant else {}),
+            **({"sites_source": self.sites_source} if self.sites_source != "default" else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -398,6 +411,9 @@ class ZoneSpec:
             wilderness=d.get("wilderness"),
             water_level=d.get("water_level"),
             layout=d.get("layout"),
+            sites=d.get("sites", "normal"),
+            inhabitant=d.get("inhabitant", ""),
+            sites_source=d.get("sites_source", "default"),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)
