@@ -18,4 +18,4 @@
 [biomes.plains]
 density = [0.3, 0.5]
 inhabitants = { human = 6, gnoll = 2, centaur = 1.5, orc = 0.5 }
-weights = { camp = 3, hut = 3, farmstead = 2, watchtower = 0.5, shrine = 1, ruin = 1 }
+weights = { camp = 1, hut = 9, farmstead = 2, watchtower = 0.5, shrine = 3, ruin = 1 }

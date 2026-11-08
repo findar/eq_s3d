@@ -121,7 +121,7 @@ pois = [
 arrangement = "lone"
 structures = [
     { kind = "hut", at = "centre", face = "any" },
-    { kind = "fence", count = [0, 2], at = "row", side = "open", chance = 0.5 },   # 1-3: a lone Site
+    { kind = "fence", count = [0, 1], at = "row", side = "open", chance = 0.5 },   # mostly alone (SHAK, HUT1)
 ]
 ground = { radius = 40, slope_deg = 6, spacing = 200, margin = 8 }      # the hut and a fence run
 likes = { clearing = 2 }
@@ -136,7 +136,7 @@ arrangement = "cluster"
 structures = [
     { kind = "hut", face = "any" },
     { kind = "barn", face = "any" },                       # BARN1 x4 to RHOUSE1 x3: one a farm
-    { kind = "fence", count = [4, 6], at = "row", side = "open" },        # the corral (CORRALL 46x43)
+    { kind = "fence", count = [3, 4], at = "row", side = "open" },        # the corral (CORRALL 46x43)
 ]
 ground = { radius = 90, slope_deg = 5, spacing = 300, margin = 10 }     # house, barn, corral 60-150 apart
 likes = { low_ground = 3 }
@@ -158,18 +158,18 @@ pois = [
     { name = "tower guard", purpose = "guard", at = "entrance" },
 ]
 
-# Standing stones round an altar stone (finding 1: BURIAL, DWMONU, MONU4, MCIRCLE).
+# Mostly a lone monument (a burial mound, an obelisk), sometimes ringed by standing stones
+# (finding 1: BURIAL, DWMONU, MONU4, MCIRCLE; a lone monument is among stock's commonest Sites).
 [kinds.shrine]
 arrangement = "ring"
 structures = [
-    { kind = "altar_stone", at = "centre" },
-    { kind = "standing_stone", count = [3, 6], face = "in" },     # MCIRCLE, MONU4 x4 in Oasis
-    { kind = "monument", count = [0, 1], at = "lone", chance = 0.3 },
+    { kind = "monument", at = "centre" },
+    { kind = "standing_stone", count = [3, 5], face = "in", chance = 0.25 },   # MCIRCLE, MONU4 x4 in Oasis
 ]
-ground = { radius = 30, slope_deg = 8, spacing = 300, margin = 8 }      # room for a burial mound
+ground = { radius = 34, slope_deg = 8, spacing = 300, margin = 8 }      # stones ring a burial mound
 likes = { high_ground = 3, clearing = 2 }
 pois = [
-    { name = "shrine altar", purpose = "altar", at = "altar_stone" },
+    { name = "shrine altar", purpose = "altar", at = "monument" },
 ]
 
 # Broken wall runs round a court, with gaps for the way in. Stock ruins are mostly in the terrain
@@ -177,8 +177,8 @@ pois = [
 [kinds.ruin]
 arrangement = "perimeter"
 structures = [
-    { kind = "ruin_wall", count = [3, 5], face = "in" },          # COMRUIN 46x35: a court ~40 u
-    { kind = "standing_stone", count = [0, 2], at = "cluster", chance = 0.4 },
+    { kind = "ruin_wall", count = [1, 4], face = "in" },          # a lone wall, or a court ~40 u (COMRUIN 46x35)
+    { kind = "standing_stone", count = [0, 2], at = "cluster", chance = 0.2 },
 ]
 ground = { radius = 32, slope_deg = 10, spacing = 300, margin = 8 }
 likes = { high_ground = 1, clearing = 1 }
