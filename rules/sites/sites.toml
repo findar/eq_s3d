@@ -1,0 +1,179 @@
+# rules/sites/sites.toml -- what a Site is (roadmap step 10, Req 5).
+#
+# Two tables:
+#   [structures.<name>]  each Structure model a Site is built from. The names are the models
+#                        generators/sites/models.py builds (site_<name>.mod); a new name needs a model.
+#   [kinds.<name>]       each Site kind's recipe: its Structures, how they stand, the ground it
+#                        needs and likes, and its POIs. A new kind needs no code.
+#
+# A recipe:
+#   arrangement  how the Structures stand: ring, row, cluster, lone or perimeter. A line's `at`
+#                defaults to it; `at = "centre"` stands a line at the Site's middle.
+#   structures   lines: { kind, count, at, face, side, chance }
+#                  count   a number or [low, high], 0 to 12
+#                  face    where an opening looks: in (toward the centre), out, or any
+#                  side    "open": on the Site's open side, away from the rest (a farm's corral)
+#                  chance  how likely the line is at all, 0 to 1
+#   ground       radius (u, the Site's own ground), slope_deg (the steepest ground it stands on),
+#                spacing (u, the least distance to any other Site's centre), margin (u, the
+#                Site_Clear round its edge)
+#   likes        what scores a candidate centre, 0 to 10 each: near_water, high_ground,
+#                low_ground, by_zoneline, clearing
+#   pois         at least one: { name, purpose, at }. `at` is a Structure in this recipe, "centre"
+#                or "entrance". purpose is one of Light_Spot, interior, altar, lookout, gathering,
+#                guard, treasure; an interior stands in an Enterable Structure.
+#
+# PLACEHOLDERS: every count, radius, slope, spacing and Structure size below is a first guess
+# from design finding 1's probe. Task 1's survey (scripts/site_survey.py) sets them; until it
+# lands, treat the numbers as stand-ins, not measurements.
+#
+# The guide to checking and drawing these files: python scripts/topology_rules.py check rules/sites
+# and python scripts/topology_rules.py draw-sites --out output/rules/
+
+# --- Structures --------------------------------------------------------------------------------
+# radius: the footprint's half-width (u); height: its top (u). PLACEHOLDERS until task 1.
+# enterable: a player walks into it, floored by the ground (archive decision 2: huts, lean-tos,
+# ruins; towers are solid).
+
+[structures.hut]
+radius = 9
+height = 16
+enterable = true
+
+[structures.barn]
+radius = 14
+height = 22
+enterable = false
+
+[structures.tent]
+radius = 6
+height = 10
+enterable = false
+
+[structures.lean_to]
+radius = 6
+height = 9
+enterable = true
+
+[structures.tower]
+radius = 7
+height = 40
+enterable = false
+
+[structures.fire_ring]
+radius = 3
+height = 1
+enterable = false
+
+[structures.fence]
+radius = 10          # a fence run's half-length
+height = 5
+enterable = false
+
+[structures.standing_stone]
+radius = 2
+height = 12
+enterable = false
+
+[structures.altar_stone]
+radius = 3
+height = 4
+enterable = false
+
+[structures.monument]
+radius = 4
+height = 18
+enterable = false
+
+[structures.ruin_wall]
+radius = 10          # a wall run's half-length
+height = 10
+enterable = true     # the ruin's court, inside its broken ring, is walked into
+
+# --- Kinds -------------------------------------------------------------------------------------
+
+# A fire with tents or lean-tos round it, openings in: the commonest stock Site (finding 1:
+# CAMPFIRE with ORCTENT, BTENT, GOBTENT, CENLEANTO in nearly every zone).
+[kinds.camp]
+arrangement = "ring"
+structures = [
+    { kind = "fire_ring", at = "centre" },
+    { kind = "tent", count = [2, 5], face = "in" },        # PLACEHOLDER count
+]
+ground = { radius = 24, slope_deg = 8, spacing = 400, margin = 8 }      # PLACEHOLDER
+likes = { near_water = 4, clearing = 1 }
+pois = [
+    { name = "camp fire", purpose = "Light_Spot", at = "fire_ring" },
+    { name = "camp", purpose = "gathering", at = "centre" },
+]
+
+# One Enterable hut, sometimes a fence run beside it (finding 1: SHAK, HOUSE1).
+[kinds.hut]
+arrangement = "lone"
+structures = [
+    { kind = "hut", at = "centre", face = "any" },
+    { kind = "fence", count = [0, 2], at = "row", side = "open", chance = 0.5 },   # PLACEHOLDER
+]
+ground = { radius = 20, slope_deg = 6, spacing = 350, margin = 8 }      # PLACEHOLDER
+likes = { near_water = 1, clearing = 2 }
+pois = [
+    { name = "hut interior", purpose = "interior", at = "hut" },
+]
+
+# House, barn and a corral on the open side: the Karanas' signature (finding 1: BARN1, RHOUSE1,
+# HOUSE1, CORRALL).
+[kinds.farmstead]
+arrangement = "cluster"
+structures = [
+    { kind = "hut", face = "any" },
+    { kind = "barn", count = [1, 2], face = "any" },       # PLACEHOLDER count
+    { kind = "fence", count = [3, 6], at = "row", side = "open" },        # the corral; PLACEHOLDER
+]
+ground = { radius = 48, slope_deg = 5, spacing = 600, margin = 10 }     # PLACEHOLDER
+likes = { low_ground = 3, near_water = 2 }
+pois = [
+    { name = "farmhouse interior", purpose = "interior", at = "hut" },
+    { name = "yard", purpose = "gathering", at = "centre" },
+]
+
+# One or two solid towers on high ground, looking at a way in (finding 1: DTOW, BTOW, MTOWER).
+[kinds.watchtower]
+arrangement = "lone"
+structures = [
+    { kind = "tower", count = [1, 2] },        # two stand as a pair; PLACEHOLDER count
+]
+ground = { radius = 16, slope_deg = 10, spacing = 500, margin = 8 }     # PLACEHOLDER
+likes = { high_ground = 4, by_zoneline = 3 }
+pois = [
+    { name = "lookout", purpose = "lookout", at = "tower" },
+    { name = "tower guard", purpose = "guard", at = "entrance" },
+]
+
+# Standing stones round an altar stone (finding 1: BURIAL, DWMONU, MONU4, MCIRCLE).
+[kinds.shrine]
+arrangement = "ring"
+structures = [
+    { kind = "altar_stone", at = "centre" },
+    { kind = "standing_stone", count = [4, 8], face = "in" },     # PLACEHOLDER count
+    { kind = "monument", count = [0, 1], at = "lone", chance = 0.3 },
+]
+ground = { radius = 20, slope_deg = 8, spacing = 500, margin = 8 }      # PLACEHOLDER
+likes = { high_ground = 3, clearing = 2 }
+pois = [
+    { name = "shrine altar", purpose = "altar", at = "altar_stone" },
+]
+
+# Broken wall runs round a court, with gaps for the way in. Stock ruins are mostly in the terrain
+# mesh (finding 1 can't see them), so this kind's numbers are the least grounded.
+[kinds.ruin]
+arrangement = "perimeter"
+structures = [
+    { kind = "ruin_wall", count = [3, 6], face = "in" },          # PLACEHOLDER count
+    { kind = "standing_stone", count = [0, 2], at = "cluster", chance = 0.4 },
+]
+ground = { radius = 28, slope_deg = 10, spacing = 500, margin = 8 }     # PLACEHOLDER
+likes = { high_ground = 1, clearing = 1 }
+pois = [
+    { name = "ruin court", purpose = "interior", at = "ruin_wall" },
+    { name = "buried cache", purpose = "treasure", at = "centre" },
+]

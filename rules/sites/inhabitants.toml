@@ -1,0 +1,40 @@
+# rules/sites/inhabitants.toml -- who built a Site (roadmap step 10, Req 5).
+#
+# [inhabitants.<name>]
+#   materials  the material set its Structures are textured with
+#   variants   Structure -> model variant, where this Inhabitant's differs (a hide tent, not canvas)
+#   swap       Structure -> Structure it builds instead (centaurs build lean-tos, not tents)
+#   weights    Site kind -> weight. A kind it doesn't name it leaves alone (weight 1); 0 is never.
+#
+# A Site's kind is drawn from its Layers multiplied: biome x Inhabitant x control, as the room
+# Scales are (rules/rooms/scales.toml); a kind's chance is its weight over the sum.
+#
+# Archive decision 4: human, orc, gnoll, centaur, the Karanas' own. Others come with their biomes.
+#
+# PLACEHOLDERS: every weight below is a first reading of design finding 1's probe (Karana farms
+# are human, South Karana's lean-tos and burial mounds centaur, South Ro's tents orc). Task 1's
+# survey sets them.
+#
+# MATERIAL SET NAMES are plain stand-ins. Task 4 writes the site textures in parallel; task 7
+# reconciles these names with the sets it ships.
+
+[inhabitants.human]
+materials = "human"
+variants = { tent = "canvas", hut = "timber", barn = "timber", fence = "rail", tower = "timber" }
+weights = { camp = 1, hut = 2, farmstead = 3, watchtower = 2, shrine = 0.5, ruin = 1 }
+
+[inhabitants.orc]
+materials = "orc"
+variants = { tent = "hide", tower = "lashed", fence = "stake" }
+weights = { camp = 4, hut = 0, farmstead = 0, watchtower = 1, shrine = 0.5, ruin = 1 }
+
+[inhabitants.gnoll]
+materials = "gnoll"
+variants = { tent = "hide", hut = "wattle", fence = "stake" }
+weights = { camp = 3, hut = 1, farmstead = 0, watchtower = 0.5, shrine = 1, ruin = 1 }
+
+[inhabitants.centaur]
+materials = "centaur"
+variants = { lean_to = "hide", monument = "burial_mound" }
+swap = { tent = "lean_to" }
+weights = { camp = 3, hut = 0, farmstead = 0, watchtower = 0, shrine = 3, ruin = 0.5 }
