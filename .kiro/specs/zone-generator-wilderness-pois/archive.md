@@ -24,6 +24,13 @@ recommendation, master `b3e621f`):
 7. **No roads** in this step.
 8. **No ZON light.** A camp fire is a model, and a `Light_Spot` POI marks it for later.
 
+Set by the tasks:
+
+9. **Clear width 8 u, head height 8 u** (task 2, `analyzer/footprints.py`), matching the
+   Transition check's headroom; the player is 6 u tall. A model that encloses at least 4 u² of
+   free ground is Enterable and needs an 8 u x 8 u way in. Solid parts must be closed and wound
+   outward (the gate reads "inside a solid" from the first triangle above facing up).
+
 ## Follow-ups
 
 Carried in from earlier steps and relevant here:
