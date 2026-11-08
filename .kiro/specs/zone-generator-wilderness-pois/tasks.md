@@ -82,7 +82,8 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
 - [ ] 10. Tune from the first look
   - Card: [cards/10-tune.md](cards/10-tune.md)
   - Type: agent · Size: M · Depends: 9
-  - Owns: rules/sites/, generators/sites/
+  - Owns: rules/sites/, generators/sites/, tests/test_layout_engine.py (the wilderness golden)
+  - Note: no first-look findings; task 11's sweep found Sites too full (stock is half lone Structures), so task 10 tunes that, run in task 11's worktree.
 
 - [ ] 11. Gate sweep and stock bands
   - Card: [cards/11-sweep-bands.md](cards/11-sweep-bands.md)
