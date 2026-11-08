@@ -62,10 +62,12 @@ GOLDENS = {
         dict(zone_type="city", room_count=7), 5,
         "6a22604a597e2b805346bbad1d1dad640c408015592d8e8adb3c0c4c1e7ce170",
         "2467f660f243c0e8061e643049622d3542ab51d891e20019b70e95c840c75ff5"),
+    # Recaptured once, deliberately, by wilderness POIs task 7: the default
+    # (Sites normal) build now packs Site Structures.
     "wilderness": (
         dict(zone_type="wilderness"), 4,
         "a948f132378258b14e6606cc06faf248f712cca2b7317e627ce5dda6c56fcc62",
-        "a2e1c432fcfa542dee2f319204dfff949655736144e41a2fb7f90a59b7ec55a4"),
+        "e333b400331b8f699891b024534cac8ec16f82ca95f06a136dbd79c1dd09d196"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).

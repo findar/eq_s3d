@@ -70,7 +70,7 @@ def test_x6_manifest_lists_every_material_once_with_its_polygons(tmp_path, no_ap
     for e in manifest:
         assert e["texture"] in packed
         assert (e["texture_set"], e["surface"], e["surface_class"]) == surface_of(e["material"])
-        assert e["texture_mode"] in ("placeholder", "procedural", "ai", "vegetation")
+        assert e["texture_mode"] in ("placeholder", "procedural", "ai", "vegetation", "sites")
 
 
 def test_procedural_override_restores_noise_textures(tmp_path, no_api_keys, monkeypatch):

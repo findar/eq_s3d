@@ -289,7 +289,8 @@ def bowl_report(spec: ZoneSpec, ter: TerFile,
     ``zon`` and ``models`` (archive filename -> model) give those objects
     instead (a hand-built zone, or one read back from an archive); ``pois``
     (``footprints.POI`` items) are the points that must stand on reached
-    ground."""
+    ground. With no ``zon`` the gate judges what the builder ships, trees and
+    Sites, and (``pois`` None) every Site's POIs."""
     agent = agent or AgentModel()
     land = landscape_for(spec)
     res = check_bowl(land.bowl, land.synth, land.matrix, agent=agent, ter=ter)
@@ -305,6 +306,8 @@ def bowl_report(spec: ZoneSpec, ter: TerFile,
         # every POI stands on reached ground.
         if zon is None:
             zon, models = _gate_zon(spec, ter)
+            if pois is None:
+                pois = sites_for(spec, ter).pois()
         for failure in structure_failures(spec, ter, zon, models or {}, pois or (), agent):
             passed = False
             problems.append(failure)
@@ -375,24 +378,29 @@ def _ter_fingerprint(ter: TerFile) -> int:
 def vegetation_for(spec: ZoneSpec, ter: TerFile) -> Vegetation:
     """The trees for a wilderness spec and its built TER. Pure; cached on the
     spec's landscape inputs, the Density_Level and the TER's heights, so the
-    builder and the bowl gate share one result."""
+    builder and the bowl gate share one result. Trees keep off every Site's
+    ground and Site_Clear (``sites_for``); with Sites ``none`` there are none
+    and the trees are step 9's."""
     payload = spec.wilderness or {}
     edges = normalise_edges(payload.get("edges"))
     landform, zone_size = _landform_args(payload)
+    keep_clear = sites_for(spec, ter).placement.clear_shapes()
     return _vegetation(int(spec.seed) & 0x7FFFFFFF,
                        tuple((s, edges[s]) for s in DEFAULT_SIDES),
                        payload.get("biome", DEFAULT_BIOME),
                        payload.get("trees", DEFAULT_TREES),
                        payload.get("trees_source", "default"),
                        (float(spec.safe_point[0]), float(spec.safe_point[1])),
-                       _ter_fingerprint(ter), _TerRef(ter), landform, zone_size)
+                       _ter_fingerprint(ter), _TerRef(ter), landform, zone_size,
+                       keep_clear)
 
 
 @lru_cache(maxsize=8)
 def _vegetation(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, level: str,
                 source: str, spawn_xy: Tuple[float, float], _fp: int,
                 ter_ref: _TerRef, landform: Optional[Landform] = None,
-                zone_size: float = DEFAULT_ZONE_SIZE) -> Vegetation:
+                zone_size: float = DEFAULT_ZONE_SIZE,
+                keep_clear: Tuple[Tuple[float, ...], ...] = ()) -> Vegetation:
     from generators.vegetation.kit import load_vegetation_kit
     from generators.vegetation.models import model_name, tree_model
     from generators.vegetation.placement import grove_ratio, place_trees
@@ -407,7 +415,7 @@ def _vegetation(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, level
         warnings.append(f"vegetation_kit_missing:{kit_id}")
     placement = place_trees(land, ter_ref.ter, kit, level,
                             _salted_seed(seed, "vegetation", "placement"),
-                            spawn_xy=spawn_xy)
+                            spawn_xy=spawn_xy, keep_clear=keep_clear)
 
     models: Dict[str, TerFile] = {}
     textures: Dict[str, bytes] = {}
@@ -435,6 +443,113 @@ def _vegetation(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, level
         warnings.append(f"vegetation_capped:{n}/{placement.target}")
     return Vegetation(placement=placement, models=models, textures=textures,
                       model_index=model_index, report=report, warnings=tuple(warnings))
+
+
+# ---------------------------------------------------------------------------
+# Sites (roadmap step 10, spec zone-generator-wilderness-pois)
+# ---------------------------------------------------------------------------
+
+#: The Sites control when the spec doesn't name one (POIs spec Req 8.1).
+DEFAULT_SITES = "normal"
+
+
+@dataclass(frozen=True)
+class Sites:
+    """Everything the build adds for Sites: the placement, one model per
+    (kind, variant, material set) placed (by archive filename), their textures
+    (by filename), each Structure in ZON order with its model, and the sidecar
+    block. Shared through the cache; don't mutate."""
+
+    placement: object                  # generators.sites.placement.SitePlacement
+    models: Mapping[str, TerFile]
+    textures: Mapping[str, bytes]
+    structures: Tuple[Tuple[str, object], ...]   # (model filename, PlacedStructure)
+    report: Mapping[str, object]
+
+    def pois(self):
+        """Every Site's POIs as the gate's ``footprints.POI`` (names
+        ``site<i>:<poi>``), so the gate checks each stands on reached ground."""
+        from analyzer.footprints import POI
+        return tuple(POI(f"site{i}:{p.name}", p.x, p.y)
+                     for i, s in enumerate(self.placement.sites) for p in s.pois)
+
+
+def sites_for(spec: ZoneSpec, ter: TerFile) -> Sites:
+    """The Sites for a wilderness (or outdoor-dungeon) spec and its built TER.
+    Pure; cached on the landscape inputs, the controls and the TER's heights,
+    so the builder, the trees and the gate share one result. An outdoor
+    dungeon's Apron, Tunnel, Mouth and Host_Hill are kept clear."""
+    from generators.sites.rules import DENSITIES
+
+    payload = spec.wilderness or {}
+    control = getattr(spec, "sites", DEFAULT_SITES) or DEFAULT_SITES
+    if control not in DENSITIES:
+        raise ValueError(f"unknown Sites control {control!r}; "
+                         f"expected one of {', '.join(DENSITIES)}")
+    edges = normalise_edges(payload.get("edges"))
+    landform, zone_size = _landform_args(payload)
+    keep_clear: Tuple[Tuple[float, ...], ...] = ()
+    if control != "none" and "dungeon" in payload:
+        from generators.outdoor_dungeon import keep_clear_shapes
+        keep_clear = keep_clear_shapes(spec)
+    return _sites(int(spec.seed) & 0x7FFFFFFF,
+                  tuple((s, edges[s]) for s in DEFAULT_SIDES),
+                  payload.get("biome", DEFAULT_BIOME), control,
+                  getattr(spec, "inhabitant", "") or "",
+                  getattr(spec, "sites_source", "default") or "default",
+                  (float(spec.safe_point[0]), float(spec.safe_point[1])),
+                  _ter_fingerprint(ter), _TerRef(ter), landform, zone_size, keep_clear)
+
+
+@lru_cache(maxsize=8)
+def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: str,
+           inhabitant: str, source: str, spawn_xy: Tuple[float, float], _fp: int,
+           ter_ref: _TerRef, landform: Optional[Landform] = None,
+           zone_size: float = DEFAULT_ZONE_SIZE,
+           keep_clear: Tuple[Tuple[float, ...], ...] = ()) -> Sites:
+    from generators.sites.models import model_name, structure_model
+    from generators.sites.placement import SitePlacement, place_sites
+    from generators.sites.rules import load_sites
+    from generators.textures.sites import site_texture, site_texture_name
+
+    if control == "none":
+        placement = SitePlacement(sites=[], drops=[], target=0, walkable_area=0.0,
+                                  control=control, band=(0.0, 0.0))
+    else:
+        rules = load_sites()
+        if inhabitant and inhabitant not in rules.inhabitants:
+            raise ValueError(f"unknown Inhabitant {inhabitant!r}; "
+                             f"expected one of {', '.join(sorted(rules.inhabitants))}")
+        land = _landscape(seed, edges, biome, landform, zone_size)
+        placement = place_sites(land, ter_ref.ter, seed, biome=biome, control=control,
+                                inhabitant=inhabitant, rules=rules, spawn_xy=spawn_xy,
+                                keep_clear=keep_clear)
+
+    models: Dict[str, TerFile] = {}
+    textures: Dict[str, bytes] = {}
+    structures: List[Tuple[str, object]] = []
+    if placement.sites:
+        rules = load_sites()
+    for site in placement.sites:
+        mset = rules.inhabitants[site.inhabitant].materials
+        for st in site.structures:
+            fname = model_name(st.kind, st.variant, mset)
+            if fname not in models:
+                model = structure_model(st.kind, st.variant, mset,
+                                        _salted_seed(seed, "sites", "model", fname))
+                models[fname] = model.ter
+                for mat in model.ter.materials:
+                    material = mat.name[len("site_"):]
+                    tex = site_texture_name(material)
+                    if tex not in textures:
+                        textures[tex] = site_texture(
+                            material, _salted_seed(seed, "sites", "texture", material))
+            structures.append((fname, st))
+
+    report: Dict[str, object] = {**placement.to_dict(), "control_source": source,
+                                 "inhabitant": inhabitant, "models": sorted(models)}
+    return Sites(placement=placement, models=models, textures=textures,
+                 structures=tuple(structures), report=report)
 
 
 def _reached_faces(spec: ZoneSpec, ter: TerFile, agent: AgentModel):
@@ -512,8 +627,9 @@ def _gate_zon(spec: ZoneSpec, ter: TerFile):
             models[index[name]] = tree_model(
                 sp, _salted_seed(int(spec.seed) & 0x7FFFFFFF, "vegetation", "model", name))
         veg = replace(veg, models=models, model_index=index)
-    zon = ZoneBuilder(spec)._build_zon(f"ter_{spec.name.lower()}.ter", veg)
-    return zon, veg.models
+    sites = sites_for(spec, ter)
+    zon = ZoneBuilder(spec)._build_zon(f"ter_{spec.name.lower()}.ter", veg, sites)
+    return zon, {**veg.models, **sites.models}
 
 
 def structure_failures(spec: ZoneSpec, ter: TerFile, zon, models: Mapping[str, TerFile],

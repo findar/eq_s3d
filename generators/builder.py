@@ -243,11 +243,13 @@ def _diffuse_of(mat) -> Optional[str]:
 
 
 def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None,
-                     dds_by_name: Optional[Dict[str, bytes]] = None) -> List[dict]:
+                     dds_by_name: Optional[Dict[str, bytes]] = None,
+                     sites=None) -> List[dict]:
     """The sidecar's Texture_Manifest (Req 5): one entry per material of the
-    TER and of every packed tree model, sorted by name, with its polygon
-    count and the Texture_Mode that drew its texture (``vegetation`` for the
-    trees' own bark/leaf generator). A texture drawn from a recipe also
+    TER and of every packed tree and Structure model, sorted by name, with its
+    polygon count and the Texture_Mode that drew its texture (``vegetation``
+    for the trees' own bark/leaf generator, ``sites`` for the Structures'
+    materials). A texture drawn from a recipe also
     records its ``texture_family`` and ``look_stats`` (interesting textures
     spec Req 5.2)."""
     entries: Dict[str, dict] = {}
@@ -268,6 +270,9 @@ def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None,
     if veg is not None:
         for fname in sorted(veg.models):
             add(veg.models[fname], lambda n: "vegetation")
+    if sites is not None:
+        for fname in sorted(sites.models):
+            add(sites.models[fname], lambda n: "sites")
 
     if dds_by_name:
         from core.eqg import dds_to_rgb
@@ -319,6 +324,49 @@ def _vegetation_meshes(veg) -> Optional[list]:
         base += len(v)
     return [("vegetation", np.vstack(verts), np.vstack(faces), np.vstack(cols),
              np.vstack(norms))]
+
+
+def _sites_mesh(sites) -> Optional[tuple]:
+    """The GLB ``sites`` mesh: every Structure's model turned by its yaw and
+    moved to its spot, merged, coloured by its materials' base colours.
+    ``None`` when there are no Structures."""
+    if sites is None or not sites.structures:
+        return None
+    import numpy as np
+    from generators.textures.sites import BASE_COLOR
+
+    parts = {}
+    for fname, model in sites.models.items():
+        v = np.array([[p.x, p.y, p.z] for p in model.vertices], dtype=np.float64)
+        n = np.array([[p.nx, p.ny, p.nz] for p in model.vertices], dtype=np.float64)
+        f = np.array([[q.v1, q.v2, q.v3] for q in model.polygons], dtype=np.int64)
+        rgba = {m.index: (*BASE_COLOR.get(m.name[len("site_"):], (128, 128, 128)), 255)
+                for m in model.materials}
+        col = np.full((len(v), 4), 255, dtype=np.uint8)
+        for q in model.polygons:
+            col[[q.v1, q.v2, q.v3]] = rgba[q.material]
+        parts[fname] = (v, n, f, col)
+    verts, norms, faces, cols = [], [], [], []
+    base = 0
+    for fname, st in sites.structures:
+        v, n, f, col = parts[fname]
+        c, s = np.cos(st.yaw), np.sin(st.yaw)
+        rot = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        verts.append(v @ rot.T + (st.x, st.y, st.z))
+        norms.append(n @ rot.T)
+        faces.append(f + base)
+        cols.append(col)
+        base += len(v)
+    return ("sites", np.vstack(verts), np.vstack(faces), np.vstack(cols), np.vstack(norms))
+
+
+def _extra_meshes(veg, sites) -> Optional[list]:
+    """The GLB's meshes beyond the terrain: trees, then Structures."""
+    meshes = list(_vegetation_meshes(veg) or [])
+    site_mesh = _sites_mesh(sites)
+    if site_mesh is not None:
+        meshes.append(site_mesh)
+    return meshes or None
 
 
 class ZoneBuilder:
@@ -381,17 +429,19 @@ class ZoneBuilder:
         if self.spec.wilderness is not None and "dungeon" in self.spec.wilderness:
             warnings.extend(self.spec.wilderness["dungeon"]["warnings"])
 
-        # Trees (wilderness only, step 2): a layer on top of the built TER,
-        # which they never change. Room-graph zones get none (Req 10).
-        veg = None
+        # Sites, then trees (wilderness only, steps 10 and 2): layers on top of
+        # the built TER, which they never change; trees keep off Site ground.
+        # Room-graph zones get neither (Req 10).
+        veg = sites = None
         if self.spec.wilderness is not None:
-            from generators.wilderness.build import vegetation_for
+            from generators.wilderness.build import sites_for, vegetation_for
+            sites = sites_for(self.spec, ter)
             veg = vegetation_for(self.spec, ter)
             warnings.extend(veg.warnings)
 
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
-        zon = self._build_zon(ter_filename, veg)
+        zon = self._build_zon(ter_filename, veg, sites)
 
         # 3. Assemble archive. Store the terrain under its ter_ filename.
         eqg = EqgZone(name)
@@ -424,6 +474,12 @@ class ZoneBuilder:
             for fname, model in veg.models.items():
                 eqg.add_model(fname, model.to_bytes())
             for fname, dds in veg.textures.items():
+                eqg.add_texture(fname, dds)
+        # Structure models and their textures (POIs spec Req 8.4).
+        if sites is not None:
+            for fname, model in sites.models.items():
+                eqg.add_model(fname, model.to_bytes())
+            for fname, dds in sites.textures.items():
                 eqg.add_texture(fname, dds)
 
         # 5. Pack .eqg (confinement-checked through the OutputRoot).
@@ -470,8 +526,11 @@ class ZoneBuilder:
         wild_meta = self._wilderness_sidecar()
         if veg is not None:
             wild_meta["vegetation"] = dict(veg.report)
+        if sites is not None:
+            wild_meta["sites"] = dict(sites.report)
         # The Texture_Manifest rides with every build (Req 5).
-        side_meta = {**wild_meta, "textures": texture_manifest(ter, modes, veg, dds_by_name)}
+        side_meta = {**wild_meta,
+                     "textures": texture_manifest(ter, modes, veg, dds_by_name, sites)}
         # The layout block (graph-layout Req 7.5): engine, rule set, rooms'
         # kinds and sizes, and the built graph's shape, classic or grown.
         layout_meta = layout_sidecar(self.spec)
@@ -491,7 +550,7 @@ class ZoneBuilder:
                                    zone_type=self.spec.zone_type,
                                    extra=side_meta,
                                    root=root,
-                                   extra_meshes=_vegetation_meshes(veg),
+                                   extra_meshes=_extra_meshes(veg, sites),
                                    textures={m.index: dds_by_name[m.name]
                                              for m in ter.materials
                                              if m.name in dds_by_name})
@@ -664,7 +723,7 @@ class ZoneBuilder:
         ter = box.build(self.spec, ter_name, ter_version)
         return ter, box.name, warnings
 
-    def _build_zon(self, ter_filename: str, veg=None) -> ZonFile:
+    def _build_zon(self, ter_filename: str, veg=None, sites=None) -> ZonFile:
         zon = ZonFile()
 
         # The terrain mesh is the ZON's first model (RoF2 convention):
@@ -687,6 +746,20 @@ class ZoneBuilder:
                     model_id=model_id[veg.model_index[tree.species]],
                     x=tree.x, y=tree.y, z=tree.z,
                     yaw=tree.yaw, scale=tree.scale,
+                ))
+
+        # Structures (POIs spec Req 8.4): each packed model once after the
+        # trees', one object per Structure; yaw is the way its front faces
+        # (archive decision 10), Z the surface under its centre.
+        if sites is not None and sites.structures:
+            site_id = {}
+            for fname in sorted(sites.models):
+                site_id[fname] = len(zon.models)
+                zon.models.append(fname)
+            for i, (fname, st) in enumerate(sites.structures):
+                zon.objects.append(ZonObject(
+                    name=f"site_{i:04d}", model_id=site_id[fname],
+                    x=st.x, y=st.y, z=st.z, yaw=st.yaw, scale=1.0,
                 ))
 
         for light in self.spec.lights:
