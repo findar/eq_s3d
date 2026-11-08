@@ -17,3 +17,5 @@ Two defects, fixed before the first look (task 9). Every camp loses all its tent
 Sites `none` must stay step 9's bytes; the Sites stream is its own (`SITES_SALT`). Change values and placement, not the gate.
 
 ## Result
+
+✔ 3db8f9c · 2057 passed

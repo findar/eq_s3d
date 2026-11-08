@@ -104,7 +104,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Type: agent · Size: S · Depends: 13 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-wilderness-pois/, .kiro/specs/zone-generator/
 
-- [ ] 15. Camps keep their tents; outdoor dungeons get Sites
+- [x] 15. Camps keep their tents; outdoor dungeons get Sites
   - Card: [cards/15-camps-and-counts.md](cards/15-camps-and-counts.md)
   - Type: agent · Size: S · Depends: 7
   - Owns: rules/sites/, generators/sites/placement.py, tests/test_site_placement.py, tests/test_layout_engine.py (the wilderness golden), tests/test_site_builds.py (P8's seeds)

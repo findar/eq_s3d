@@ -6,6 +6,7 @@ guarantees and their Apron, Tunnel, Mouth and Host_Hill clear (P8)."""
 
 import hashlib
 import json
+from functools import lru_cache
 
 import pytest
 
@@ -86,12 +87,38 @@ def test_same_inputs_same_eqg(tmp_path):
     assert a.eqg_path.read_bytes()[:-4] == b.eqg_path.read_bytes()[:-4]
 
 
-@pytest.mark.parametrize("seed", [1001, 1002])
-def test_outdoor_dungeons_keep_step5_with_sites(tmp_path, seed):
+OD_SEEDS = range(1000, 1012)
+
+
+@lru_cache(maxsize=1)
+def _od_seeds_with_sites():
+    """The seeds in OD_SEEDS whose outdoor dungeon gets a Site at dense (placement only, no
+    build). Its open ground is small (~0.82e6 u^2), so not every seed draws one."""
+    hits = []
+    for seed in OD_SEEDS:
+        spec = _spec("od", seed, "dense")
+        ter = od.build_outdoor_dungeon_ter(spec, "ter_t.ter", 2)
+        if wb.sites_for(spec, ter).placement.sites:
+            hits.append(seed)
+    return tuple(hits)
+
+
+def test_some_outdoor_dungeons_get_sites():
+    """Req 7.1: outdoor dungeons get Sites on their landscape, on some seeds at least."""
+    assert len(_od_seeds_with_sites()) >= 2, _od_seeds_with_sites()
+
+
+@pytest.mark.parametrize("pick", [0, 1])
+def test_outdoor_dungeons_keep_step5_with_sites(tmp_path, pick):
     """P8: an outdoor dungeon with Sites (dense: its open ground is small)
     keeps every Site off the Apron, Tunnel, Mouth and Host_Hill, its terrain
     is the Sites-none terrain, and step 5's gate holds: the bowl passes, every
-    room is reached from the outdoor Spawn and every corridor is continuous."""
+    room is reached from the outdoor Spawn and every corridor is continuous.
+    The seeds are the first two in OD_SEEDS that get a Site."""
+    seeds = _od_seeds_with_sites()
+    if len(seeds) <= pick:
+        pytest.fail(f"fewer than {pick + 1} seeds in {OD_SEEDS} get a Site: {seeds}")
+    seed = seeds[pick]
     spec = _spec("od", seed, "dense")
     r = _build(tmp_path, spec, "d")
     ter, _ = load_ter_from_eqg(r.eqg_path)
