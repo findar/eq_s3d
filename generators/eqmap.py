@@ -246,11 +246,89 @@ def _map_point(x: float, y: float, z: float) -> tuple[float, float, float]:
     return tuple(v + 0.0 for v in world_to_map(x, y, z))
 
 
-def build_map_file(outline: "OutlineSet", spec: "ZoneSpec", name: str) -> MapFile:
+# ---------------------------------------------------------------------------
+# Sites (wilderness POIs step 10)
+# ---------------------------------------------------------------------------
+
+SITE_COLOUR = (160, 82, 45)   # sienna: Footprint lines and Site labels
+
+
+@dataclass(frozen=True)
+class SiteFootprint:
+    """One placed Structure's Footprint: the plan hull of its collidable
+    triangles as placed in the ZON (what the Footprint gate judged), at the
+    ground height of its ZON object."""
+    name: str                                  # ZON object (site_NNNN)
+    z: float
+    points: tuple[tuple[float, float], ...]    # world plan hull, counter-clockwise
+
+
+@dataclass(frozen=True)
+class SiteLabel:
+    """One Site's label at its centre: ``"<Inhabitant> <kind>"``."""
+    text: str
+    x: float
+    y: float
+    z: float
+
+
+@dataclass(frozen=True)
+class SiteMarks:
+    """What the maps draw for a build's Sites (both the EQ map and the SVG)."""
+    footprints: tuple[SiteFootprint, ...] = ()
+    labels: tuple[SiteLabel, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.footprints or self.labels)
+
+
+def site_marks(eqg_path: Path | str, sidecar: dict) -> Optional[SiteMarks]:
+    """The Sites of a built zone, from what the build wrote: Footprints from
+    the ``.eqg`` (each ``site_*`` ZON object's collidable triangles, placed by
+    ``analyzer.footprints.placed_from_zon``), labels from the sidecar's
+    ``sites`` block. ``None`` when the build has no Sites."""
+    from types import SimpleNamespace
+
+    from analyzer.footprints import _hull, placed_from_zon, world_triangles
+    from core.zon import ZonFile
+
+    block = sidecar.get("sites") or {}
+    sites = block.get("sites") or []
+    if not sites:
+        return None
+    labels = tuple(SiteLabel(f"{s['inhabitant'].capitalize()} {s['kind']}",
+                             float(s["x"]), float(s["y"]), float(s["z"])) for s in sites)
+    arc = PfsArchive.from_file(Path(eqg_path))
+    zon_name = next(f for f in arc.list_files() if f.lower().endswith(".zon"))
+    zon = ZonFile.from_bytes(arc.get(zon_name))
+    objs = [o for o in zon.objects if o.name.lower().startswith("site_")]
+    wanted = {zon.models[o.model_id] for o in objs}
+    models = {f: TerFile.from_bytes(arc.get(f), name=f) for f in wanted}
+    footprints = []
+    for p in placed_from_zon(SimpleNamespace(objects=objs, models=zon.models), models):
+        tri = world_triangles(p)
+        if not len(tri):
+            continue
+        hull = _hull(tri[..., :2].reshape(-1, 2))
+        footprints.append(SiteFootprint(p.name, float(p.z),
+                                        tuple((float(x), float(y)) for x, y in hull)))
+    return SiteMarks(tuple(footprints), labels)
+
+
+def _band_of(bands, z: float) -> int:
+    return next((b.index for b in bands if b.contains(z)), 0)
+
+
+def build_map_file(outline: "OutlineSet", spec: "ZoneSpec", name: str,
+                   sites: Optional[SiteMarks] = None) -> MapFile:
     """The EQ map of ``outline``: layer ``band.index`` per depth band (0 =
     Main_Band), one ``L`` per consecutive polyline point pair in the band's
     colour, plus an ``Entrance`` label for the entrance room and a ``Boss``
-    label per climax room, each in the band holding its room's floor."""
+    label per climax room, each in the band holding its room's floor.
+
+    ``sites`` (wilderness / outdoor dungeon) adds each Structure's Footprint
+    as a closed loop of ``L`` lines and a label at each Site, in
+    ``SITE_COLOUR``, in the band holding their ground."""
     bands = sorted(outline.bands, key=lambda b: b.index)
     layers = {b.index: MapLayer(b.index) for b in bands}
     colour = {b.index: BAND_COLOURS[b.offset] for b in bands}
@@ -271,6 +349,19 @@ def build_map_file(outline: "OutlineSet", spec: "ZoneSpec", name: str) -> MapFil
         band = next((b.index for b in bands if b.contains(z)), 0)
         x, y, mz = _map_point(room.center_x, room.center_y, z + LABEL_LIFT)
         layers[band].labels.append(MapLabel(x, y, mz, *rgb, LABEL_SIZE, text))
+
+    if sites:
+        main = next((b.index for b in bands if b.offset == 0), bands[0].index)
+        for fp in sites.footprints:
+            layer = layers.get(_band_of(bands, fp.z), layers[main])
+            pts = list(fp.points)
+            for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
+                layer.lines.append(MapLine(*_map_point(x0, y0, fp.z),
+                                           *_map_point(x1, y1, fp.z), *SITE_COLOUR))
+        for lab in sites.labels:
+            layer = layers.get(_band_of(bands, lab.z), layers[main])
+            x, y, mz = _map_point(lab.x, lab.y, lab.z + LABEL_LIFT)
+            layer.labels.append(MapLabel(x, y, mz, *SITE_COLOUR, LABEL_SIZE, lab.text))
     return MapFile(name, [layers[b.index] for b in bands])
 
 

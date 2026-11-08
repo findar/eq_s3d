@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import List
 
-from .schema import ZonePlan
+from .schema import DEFAULT_SITES, SITES_ZONE_TYPES, ZonePlan
 
 
 # Keyword → zone_type. Cave-like words fold into the dungeon bucket: the cave
@@ -116,6 +116,31 @@ _RACE_WORDS = {
     "dragon": ["dragon", "dragons", "wyrm", "wurm"],
 }
 
+# Sites (step 10; wilderness / outdoor dungeon only). Whole words or phrases,
+# matched on word boundaries ("orc" must not fire on "torch"). Checked in this
+# order, so "sparsely settled" is sparse and "unsettled" never reads as settled.
+_SITES_WORDS = {
+    "none": ["no camps", "no sites", "no settlements", "no buildings",
+             "empty wilderness", "uninhabited", "deserted", "unsettled",
+             "untouched wilderness"],
+    "sparse": ["few camps", "few sites", "few settlements", "lone camp",
+               "sparsely settled", "thinly settled"],
+    "dense": ["lots of camps", "many camps", "camps everywhere", "lots of sites",
+              "many sites", "many settlements", "settled", "well settled",
+              "populated", "densely settled"],
+}
+
+# Who builds the Sites: one Inhabitant (rules/sites/inhabitants.toml). A
+# farmstead is a human place, so its words name humans; there is no Site-kind
+# control, so they choose nothing else.
+_INHABITANT_WORDS = {
+    "orc": ["orc", "orcs", "orcish"],
+    "gnoll": ["gnoll", "gnolls"],
+    "centaur": ["centaur", "centaurs"],
+    "human": ["human", "humans", "farmstead", "farmsteads", "farms", "farm",
+              "farmers", "farmer", "homestead", "homesteads", "settlers"],
+}
+
 # size → base room count and footprint multiplier
 _SIZE_ROOMS = {"small": 3, "medium": 5, "large": 8, "huge": 14}
 
@@ -144,6 +169,11 @@ class RulePlanner:
         dungeon_race = self._match_one(text, _RACE_WORDS, default="")
         elemental_tint = self._match_tint(regions)
 
+        # Sites (only meaningful for the landscape zone types).
+        landscape = zone_type in SITES_ZONE_TYPES
+        sites = _match_words(text, _SITES_WORDS, DEFAULT_SITES) if landscape else DEFAULT_SITES
+        inhabitant = _match_words(text, _INHABITANT_WORDS, "") if landscape else ""
+
         return ZonePlan(
             name=name,
             zone_type=zone_type,
@@ -156,6 +186,8 @@ class RulePlanner:
             dungeon_theme=dungeon_theme,
             dungeon_race=dungeon_race,
             elemental_tint=elemental_tint,
+            sites=sites,
+            inhabitant=inhabitant,
             mood=mood,
             prompt=prompt or "",
         ).validate()
@@ -257,6 +289,14 @@ _WORD_NUMBERS = {
 }
 
 _COUNT_NOUNS = r"(?:rooms?|chambers?|caverns?|clearings?|halls?|areas?)"
+
+
+def _match_words(text: str, mapping: dict, default: str) -> str:
+    """The first value with a word or phrase in ``text`` on word boundaries."""
+    for value, words in mapping.items():
+        if any(re.search(rf"\b{re.escape(w)}\b", text) for w in words):
+            return value
+    return default
 
 
 def _explicit_count(text: str) -> int:

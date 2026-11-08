@@ -27,6 +27,7 @@ from .routing import corridor_route
 from .zone_spec import ZoneSpec
 
 if TYPE_CHECKING:
+    from .eqmap import SiteMarks
     from .mapgeom import OutlineSet
 
 
@@ -83,8 +84,29 @@ def _outline_group(outline: "OutlineSet", px, py) -> str:
     return "".join(parts)
 
 
+_SITE_STROKE = "#d08850"
+
+
+def _sites_group(sites: "SiteMarks", px, py) -> str:
+    """Each Structure's Footprint as an outline, each Site as a marker and label."""
+    parts = ['<g id="sites">']
+    for fp in sites.footprints:
+        pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in fp.points)
+        parts.append(f'<polygon class="site-footprint" points="{pts}" fill="{_SITE_STROKE}" '
+                     f'fill-opacity="0.25" stroke="{_SITE_STROKE}" stroke-width="1.2"/>')
+    for lab in sites.labels:
+        cx, cy = px(lab.x), py(lab.y)
+        parts.append(f'<circle class="site" cx="{cx:.1f}" cy="{cy:.1f}" r="5" fill="{_SITE_STROKE}" '
+                     f'stroke="#0f0f16"><title>{_esc(lab.text)}</title></circle>')
+        parts.append(f'<text class="site-label" x="{cx:.1f}" y="{cy - 8:.1f}" fill="#f0c090" '
+                     f'font-size="10" font-family="sans-serif" text-anchor="middle">{_esc(lab.text)}</text>')
+    parts.append("</g>")
+    return "".join(parts)
+
+
 def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
-                   outline: Optional["OutlineSet"] = None) -> str:
+                   outline: Optional["OutlineSet"] = None,
+                   sites: Optional["SiteMarks"] = None) -> str:
     """
     Build an SVG top-down map of the zone. `size` is the max pixel dimension;
     the map preserves the zone's aspect ratio and is centred in a square-ish
@@ -94,6 +116,10 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     When given, it is drawn directly over the background, corridors follow
     their `corridor_route` waypoints, room fills are lightened, the legend
     gains `wall`/`ledge`, and the frame also covers `outline.bounds`.
+
+    `sites` (optional, `generators.eqmap.SiteMarks`) draws each Structure's
+    Footprint and a marker and label at each Site, over the outline; the
+    legend gains `site`. Without it the output is unchanged.
     """
     # ---- Gather world-space extents from rooms + corridors ----
     xs: List[float] = []
@@ -108,6 +134,12 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         bx0, by0, _, bx1, by1, _ = outline.bounds
         xs += [bx0, bx1]
         ys += [by0, by1]
+    if sites:
+        for fp in sites.footprints:
+            xs += [p[0] for p in fp.points]
+            ys += [p[1] for p in fp.points]
+        xs += [lab.x for lab in sites.labels]
+        ys += [lab.y for lab in sites.labels]
 
     if not xs or not ys:
         return _empty_svg(size)
@@ -264,8 +296,11 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         parts.append(f'<line class="door-spot" x1="{px(x0):.1f}" y1="{py(y0):.1f}" x2="{px(x1):.1f}" '
                      f'y2="{py(y1):.1f}" stroke="{_DOOR_SPOT}" stroke-width="3"><title>door spot</title></line>')
 
+    if sites:
+        parts.append(_sites_group(sites, px, py))
+
     has_doors = any(c.transition is not None and c.transition.form == "frame" for c in spec.corridors)
-    parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors))
+    parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites)))
 
     # ---- Scale bar (world units) ----
     parts.append(_scale_bar(scale, padding, h))
@@ -277,7 +312,8 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
 _DOOR_SPOT = "#e0a458"
 
 
-def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_doors: bool = False) -> str:
+def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_doors: bool = False,
+            has_sites: bool = False) -> str:
     items = [
         ("#2e7d32", "entrance"),
         ("#1565c0", "hub"),
@@ -288,6 +324,8 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_
         items += [("#e53935", "lock"), ("#ffd24a", "key")]
     if has_doors:
         items.append((_DOOR_SPOT, "door spot"))
+    if has_sites:
+        items.append((_SITE_STROKE, "site"))
     # Outline entries get a line swatch (solid wall, dashed ledge), not a box.
     lines = [("", "wall"), (' stroke-dasharray="4 3"', "ledge")] if has_outline else []
 

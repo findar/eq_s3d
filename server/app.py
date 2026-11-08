@@ -46,7 +46,7 @@ from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
     SCALE_CONTROLS, VALID_FEATURES, ZonePlan, available_overlays, available_rule_sets, available_wall_styles,
-    scale_control,
+    scale_control, VALID_SITES, available_inhabitants,
 )
 
 # ---------------------------------------------------------------------------
@@ -382,6 +382,35 @@ def _require_trees(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]
     return raw
 
 
+def _require_sites(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]:
+    """Validate ``controls.sites`` / ``controls.inhabitant`` (step 10) in place.
+
+    Absent or ``null`` -> the plan default (Sites normal, the biome's mix).
+    Present on a zone type with no landscape, or not an allowed value -> a 400
+    that names the field, before any build or write (as ``trees``). Returns
+    ``"controls"`` when either was given (the sidecar's ``control_source``),
+    else ``None``.
+    """
+    given = None
+    for key, allowed, blank in (("sites", VALID_SITES, ""),
+                                ("inhabitant", available_inhabitants(), " (or \"\" for the biome's mix)")):
+        if key not in c:
+            continue
+        raw = c[key]
+        if raw is None:
+            c.pop(key)
+            continue
+        if zone_type not in LANDSCAPE_ZONE_TYPES:
+            raise HTTPException(
+                400, f"{key} only applies to zone_type wilderness or outdoor_dungeon")
+        value = raw.strip().lower() if isinstance(raw, str) else None
+        if value is None or (value not in allowed and not (blank and value == "")):
+            raise HTTPException(400, f"{key} must be one of {', '.join(allowed)}{blank}")
+        c[key] = value
+        given = "controls"
+    return given
+
+
 def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
     """Validate ``controls.layout`` / ``controls.rule_set`` (graph-layout
     Req 7.1) in place, before any build or write.
@@ -522,7 +551,9 @@ class GenerateRequest(BaseModel):
         description="Controls sub-object: zone_type, room_count, size, "
                     "verticality, locks, edges (wilderness Rim, e.g. "
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
-                    "none/sparse/normal/dense), layout (classic/graph) and "
+                    "none/sparse/normal/dense), sites (none/sparse/normal/dense) "
+                    "and inhabitant (human/orc/gnoll/centaur, \"\" for the "
+                    "biome's mix; wilderness and outdoor_dungeon only), layout (classic/graph) and "
                     "rule_set (a base set, \"\" for the theme's) and walls (a wall style, "
                     "\"\" for the theme's) and features (none, sparse, normal, dense), and finish, "
                     "structure and clutter (0-10, or \"\" for the rules alone) and overlay; dungeon and "
@@ -753,6 +784,7 @@ def generate(req: GenerateRequest):
         # it is taken out (and validated) before from_controls sees the dict.
         edges = _require_edges(c, canonical_zone_type(raw_zone_type))
         trees = _require_trees(c, canonical_zone_type(raw_zone_type))
+        sites_source = _require_sites(c, canonical_zone_type(raw_zone_type))
         _require_layout(c, canonical_zone_type(raw_zone_type))
         _require_content(c, canonical_zone_type(raw_zone_type))
 
@@ -770,7 +802,7 @@ def generate(req: GenerateRequest):
 
         def factory(s: int):
             return plan_to_spec(plan, seed=s, edges=edges, trees=trees,
-                                trees_source="controls")
+                                trees_source="controls", sites_source=sites_source)
 
     # Build + traversability gate. On gated themes a failing dungeon seed is
     # never returned: the pipeline retries on fresh seeds (bounded by attempts +

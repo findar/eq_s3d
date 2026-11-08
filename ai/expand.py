@@ -19,7 +19,7 @@ from generators.layout import LayoutGenerator
 from generators.layout_engine import GraphEngine
 from generators.zone_spec import ZoneSpec, RegionSpec
 from generators.zone_types import STYLE_PROFILE
-from .schema import SCALE_CONTROLS, ZonePlan, LAYOUT_ZONE_TYPES
+from .schema import DEFAULT_SITES, SCALE_CONTROLS, ZonePlan, LAYOUT_ZONE_TYPES
 
 # size -> shift of every room's position in its race's bands (step 7 task 17:
 # rooms are sized from the race's body height, so Size moves them within the
@@ -53,7 +53,8 @@ VERTICAL_RULES = {
 def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                  edges: Optional[Mapping[str, str]] = None,
                  trees: Optional[str] = None,
-                 trees_source: str = "cli") -> ZoneSpec:
+                 trees_source: str = "cli",
+                 sites_source: Optional[str] = None) -> ZoneSpec:
     """Build a ZoneSpec from a validated ZonePlan.
 
     ``edges`` declares the Rim of a wilderness or outdoor-dungeon zone
@@ -61,6 +62,11 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     their Density_Level set by ``trees_source`` (``"controls"`` or ``"cli"``);
     it beats a level the prompt's wording asks for. Both are ignored for
     room-graph zone types.
+
+    The plan's ``sites`` / ``inhabitant`` reach the spec on those two types.
+    ``sites_source`` says who set them (``"controls"`` or ``"cli"``); left
+    ``None`` it is ``"prompt"`` when a prompt plan moved them off their
+    defaults, else ``"default"``.
     """
     plan.validate()
     rng_seed = seed if seed is not None else random.randint(0, 2 ** 31 - 1)
@@ -105,6 +111,11 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         elif intent.trees is not None:
             spec.wilderness["trees"] = intent.trees
             spec.wilderness["trees_source"] = "prompt"
+        spec.sites, spec.inhabitant = plan.sites, plan.inhabitant
+        if sites_source is None:
+            moved = (plan.sites, plan.inhabitant) != (DEFAULT_SITES, "")
+            sites_source = "prompt" if moved and plan.prompt else "default"
+        spec.sites_source = sites_source
         return spec
 
     engine = layout_engine(plan.layout, plan.rule_set, plan.verticality) \

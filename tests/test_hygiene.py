@@ -615,6 +615,9 @@ _ALLOWED_WEB_INPUT_IDS = {
     "prompt", "seed",                                      # description + seed
     "edge-n", "edge-e", "edge-s", "edge-w",  # wilderness map edges (task 3)
     "trees",  # wilderness tree density (trees spec task 9)
+    # Sites and who builds them (wilderness POIs task 8, step 10 decision 6).
+    # The singular "inhabitant" doesn't contain the forbidden plural token.
+    "sites", "inhabitant",
     "layout", "rule-set",  # graph layouts (graph-layout spec task 11)
     "finish", "structure", "clutter", "overlay",  # how rooms lean (room layouts spec task 21)
     "dungeon-theme", "dungeon-race",  # graph-layout spec task 14
@@ -627,6 +630,7 @@ _ALLOWED_CLI_OPTIONS = {
     "--zone-type", "--rooms", "--size", "--verticality", "--locks", "--seed",
     "--edges",  # wilderness Rim declaration (wilderness spec task 2)
     "--trees",  # wilderness tree density (trees spec task 8)
+    "--sites", "--inhabitant",  # Sites (wilderness POIs task 8, step 10 decision 6)
     "--layout", "--rule-set",  # layout engine (graph-layout spec task 10)
     "--walls",  # wall style (room walls spec task 7)
     "--features",  # what stands in rooms (room layouts spec task 7)

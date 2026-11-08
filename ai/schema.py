@@ -72,6 +72,19 @@ VALID_FEATURES = ["none", "sparse", "normal", "dense"]
 
 SCALE_CONTROLS = ("finish", "structure", "clutter")
 
+# Sites in the wilderness (step 10): how many (generators.sites.rules.DENSITIES)
+# and who builds them ("" = the biome's mix). Wilderness and outdoor dungeon only.
+VALID_SITES = ["none", "sparse", "normal", "dense"]
+DEFAULT_SITES = "normal"
+SITES_ZONE_TYPES = ("wilderness", "outdoor_dungeon")
+
+
+def available_inhabitants(inhabitants_file: Optional[Path] = None) -> List[str]:
+    """The Inhabitant names in ``rules/sites/inhabitants.toml`` (sorted)."""
+    path = inhabitants_file or Path(__file__).resolve().parent.parent / "rules" / "sites" / "inhabitants.toml"
+    with open(path, "rb") as f:
+        return sorted(tomllib.load(f).get("inhabitants", {}))
+
 
 def scale_control(name: str, value: Any) -> Optional[int]:
     """A Scale control's value: None for the rules alone ("" reads the same), or a whole 0-10."""
@@ -155,6 +168,9 @@ class ZonePlan:
     structure: Optional[int] = None
     clutter: Optional[int] = None
     overlay: str = ""                # "" or one of available_overlays()
+    # Sites (wilderness / outdoor dungeon only; other types ignore them).
+    sites: str = DEFAULT_SITES       # one of VALID_SITES
+    inhabitant: str = ""             # "" (the biome's mix) or one of available_inhabitants()
 
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
@@ -223,6 +239,13 @@ class ZonePlan:
         if self.overlay and self.overlay not in available_overlays():
             raise ValueError(f"overlay {self.overlay!r} is not one of: "
                              f"{', '.join(available_overlays())} (or \"\" for the rules alone)")
+        self.sites = str(self.sites or DEFAULT_SITES).strip().lower()
+        if self.sites not in VALID_SITES:
+            raise ValueError(f"sites {self.sites!r} is not one of: {', '.join(VALID_SITES)}")
+        self.inhabitant = str(self.inhabitant or "").strip().lower()
+        if self.inhabitant and self.inhabitant not in available_inhabitants():
+            raise ValueError(f"inhabitant {self.inhabitant!r} is not one of: "
+                             f"{', '.join(available_inhabitants())} (or \"\" for the biome's mix)")
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -383,6 +406,19 @@ ZONE_PLAN_JSON_SCHEMA = {
             "enum": VALID_ELEMENTAL_TINTS,
             "description": "Optional elemental overlay: lava, ice, or water "
                            "regions + matching light mood.",
+        },
+        "sites": {
+            "type": "string",
+            "enum": VALID_SITES,
+            "description": "Wilderness / outdoor dungeon: how many Sites (camps, "
+                           "huts, farmsteads, towers, shrines, ruins) stand in "
+                           "the landscape.",
+        },
+        "inhabitant": {
+            "type": "string",
+            "enum": available_inhabitants(),
+            "description": "Wilderness / outdoor dungeon: who builds every Site; "
+                           "omit for the biome's mix.",
         },
     },
     "required": ["zone_type", "room_count", "size"],

@@ -64,7 +64,7 @@ from analyzer.traverse import (
 )
 from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
-from generators.eqmap import build_map_file, write_map_files
+from generators.eqmap import build_map_file, site_marks, write_map_files
 from generators.mapgeom import extract_outline, outline_summary, with_solids
 from generators.mapview import render_map_svg
 from generators.outdoor_dungeon import (PLAN_ERRORS, is_outdoor_dungeon,
@@ -606,8 +606,18 @@ def _write_map_artifacts(root: OutputRoot, result: BuildResult, scratch: Path,
         logger.warning("outline extraction failed for %s", name, exc_info=True)
         outline = None
         warnings.append(f"outline_unavailable:{_cause(e)}")
+    # Sites (wilderness / outdoor dungeon): what this build wrote, Footprints
+    # from the .eqg and labels from the sidecar, never a second placement.
+    sites = None
+    if spec.wilderness is not None and result.sidecar_path is not None:
+        try:
+            sites = site_marks(result.eqg_path,
+                               json.loads(Path(result.sidecar_path).read_text(encoding="utf-8")))
+        except Exception as e:
+            logger.warning("site marks failed for %s", name, exc_info=True)
+            warnings.append(f"sites_unmapped:{_cause(e)}")
     svg_path = root.write_text(str(scratch / f"{name}.map.svg"),
-                               render_map_svg(spec, outline=outline))
+                               render_map_svg(spec, outline=outline, sites=sites))
     result.map_path = svg_path
     map_files = [svg_path.name]
     if outline is None:
@@ -616,7 +626,7 @@ def _write_map_artifacts(root: OutputRoot, result: BuildResult, scratch: Path,
     block = outline_summary(outline)
     maps_dir = scratch / "maps"
     try:
-        mf = build_map_file(outline, spec, name)
+        mf = build_map_file(outline, spec, name, sites=sites)
         written = write_map_files(mf, maps_dir, root)
         files = {l.index: f"maps/{mf.filename(l.index)}" for l in mf.layers}
         map_files += [f"maps/{p.name}" for p in written]
