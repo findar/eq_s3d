@@ -72,7 +72,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
 - [ ] 8. Sites controls, sidecar and maps
   - Card: [cards/08-controls-maps.md](cards/08-controls-maps.md)
   - Type: agent · Size: M · Depends: 7
-  - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, generators/eqmap.py, generators/mapview.py, tests/test_site_controls.py, tests/test_hygiene.py (its control-name guard, if the Inhabitant control needs it)
+  - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, generators/eqmap.py, generators/mapview.py, tests/test_site_controls.py, tests/test_hygiene.py (its control-name guard and allow-lists), web/index.html (the Sites and Inhabitant selects)
   - Reqs: 8.1, 8.3
 
 - [ ] 9. HUMAN: first look at Sites
