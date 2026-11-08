@@ -34,6 +34,11 @@ Set by the tasks:
     a model's opening faces +X at yaw 0. Fences and ruin walls run across the yaw, their radius
     the half-length. Placement's own clear width (6 u, `generators/sites/placement.py`) must
     become the gate's 8 u (`analyzer.footprints.CLEAR_WIDTH`): task 7 lines them up.
+11. **Outdoor dungeons get Sites on some seeds, not most** (task 15): over 38 seeds, 8 at
+    Normal and 15 at Dense. Their open ground is about 0.8e6 u², so the target averages under
+    one, and with the Host_Hill, Tunnel and Mouth kept clear the eligible ground left is often
+    smaller than the smallest recipe (a shrine, 38 u). A kind that finds no ground is redrawn
+    from the others before the Site drops. The first look (task 9) judges whether that's enough.
 
 ## Follow-ups
 
