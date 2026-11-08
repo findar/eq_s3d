@@ -202,10 +202,10 @@ each opening, and a margin). Kinds in v1, from finding 1:
 
 | Kind | Structures | Arrangement | Ground |
 |---|---|---|---|
-| camp | fire ring, 2–5 tents or lean-tos | ring round the fire, openings inward | flat, often near water |
+| camp | fire ring, 2–5 tents or lean-tos | ring round the fire, openings inward | flat (stock camps are not drawn to water, finding 1) |
 | hut | one Enterable hut, maybe a fence run | lone | flat |
 | farmstead | house, barn, corral fence | cluster, corral on the open side | flat, wide, low ground |
-| watchtower | 1–2 solid towers | lone or pair | high ground, a view of a zoneline |
+| watchtower | 1–2 solid towers | lone or pair | high ground; rare in stock (finding 1), so a small Weight |
 | shrine | standing stones or a monument round an altar stone | ring | high ground or a clearing |
 | ruin | broken wall runs round a court | perimeter, gaps for the way in | any |
 

@@ -42,7 +42,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
 - [ ] 3. Structure models
   - Card: [cards/03-structure-models.md](cards/03-structure-models.md)
   - Type: agent · Size: M · Depends: 1
-  - Owns: generators/sites/models.py, generators/sites/__init__.py, tests/test_site_models.py
+  - Owns: generators/sites/models.py, generators/sites/__init__.py, tests/test_site_models.py, rules/sites/ (replace the placeholders with finding 1's values; task 4's material set names)
   - Reqs: 3.1–3.3, 3.5
 
 - [x] 4. Structure textures
