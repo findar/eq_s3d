@@ -161,7 +161,7 @@ and the Footprints.
 - **Placement reads as random.** A camp in the middle of nowhere looks dropped. Likes (water,
   high ground, a zoneline) are what make a place read as chosen.
 
-## Open questions (waiting on the user)
+## Open questions (answered 2026-11-07: every recommendation taken, see `archive.md` "Decisions")
 
 1. **Terrain under a Site: leave it, or flatten a pad?** *Recommended: leave it. Pick ground
    already flat enough and bury a skirt, as stock does; the TER never changes, so every earlier

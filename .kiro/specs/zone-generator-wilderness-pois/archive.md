@@ -9,7 +9,20 @@ Nothing yet. Rows are added at the close step (task 14).
 
 ## Decisions
 
-The design's open questions are waiting on the user.
+The design's eight open questions, answered by the user 2026-11-07 ("Looks good" to every
+recommendation, master `b3e621f`):
+
+1. **Terrain under a Site is unchanged.** Pick ground already flat enough and bury a skirt;
+   no pad is flattened. Flattening is a follow-up only if a look says Sites sit badly.
+2. **Enterable in v1: huts, lean-tos and ruins**, floored by the ground. Towers are solid; no
+   upper floors or ladders.
+3. **Kinds: camp, hut, farmstead, watchtower, shrine, ruin.**
+4. **Inhabitants: human, orc, gnoll, centaur** (plains). Others come with their biomes.
+5. **Step 10 is Structures** (buildings, tents, fire rings, fences, towers, stones). Furniture
+   and loose props, haybales included, are step 11, which can fill a Site's POIs.
+6. **Both controls:** Sites (None, Sparse, Normal, Dense) and Inhabitants.
+7. **No roads** in this step.
+8. **No ZON light.** A camp fire is a model, and a `Light_Spot` POI marks it for later.
 
 ## Follow-ups
 
