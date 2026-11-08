@@ -16,3 +16,4 @@ Wilderness and outdoor-dungeon builds place Sites: one `site_<kind>.mod` per kin
 `generators/pipeline.py` and `builder.py` are cross-branch hotspots: keep edits small. Packing follows the `veg_` path in `builder.py`.
 
 ## Result
+✔ 2fabea3 · 2049 passed

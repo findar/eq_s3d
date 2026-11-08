@@ -63,7 +63,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: generators/sites/placement.py, generators/vegetation/placement.py (Kept_Clear grows by Site ground), tests/test_site_placement.py
   - Reqs: 4, 6
 
-- [ ] 7. Sites in builds
+- [x] 7. Sites in builds
   - Card: [cards/07-in-builds.md](cards/07-in-builds.md)
   - Type: agent · Size: M · Depends: 2, 3, 4, 6
   - Owns: generators/builder.py, generators/wilderness/build.py, generators/outdoor_dungeon.py, generators/zone_spec.py, tests/test_site_builds.py, generators/sites/placement.py (its clear width becomes the gate's), generators/pipeline.py (only if the gate's POIs need it)
