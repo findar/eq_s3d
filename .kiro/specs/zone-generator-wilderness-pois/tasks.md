@@ -51,7 +51,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: generators/textures/ (site materials only), tests/test_site_textures.py
   - Reqs: 3.4
 
-- [ ] 5. Site recipes as data
+- [x] 5. Site recipes as data
   - Card: [cards/05-site-files.md](cards/05-site-files.md)
   - Type: agent · Size: M · Depends: —
   - Owns: rules/sites/, generators/sites/rules.py, scripts/topology_rules.py (a `sites` check and draw), tests/test_site_rules.py

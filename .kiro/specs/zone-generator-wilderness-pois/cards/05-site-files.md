@@ -16,3 +16,4 @@ Index entry: `tasks.md` task 5. Requirements 5.
 Model the loader on step 9's (`generators/room_layouts.py`, `generators/room_scales.py`): same error shape, same Weights rule.
 
 ## Result
+✔ 0f007cd · 38 passed (site rules + rules script); full suite 1985 of 1987, two timing tests failing only under parallel-agent load
