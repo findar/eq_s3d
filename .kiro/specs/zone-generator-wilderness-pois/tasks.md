@@ -45,7 +45,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: generators/sites/models.py, generators/sites/__init__.py, tests/test_site_models.py
   - Reqs: 3.1–3.3, 3.5
 
-- [ ] 4. Structure textures
+- [x] 4. Structure textures
   - Card: [cards/04-structure-textures.md](cards/04-structure-textures.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/textures/ (site materials only), tests/test_site_textures.py
