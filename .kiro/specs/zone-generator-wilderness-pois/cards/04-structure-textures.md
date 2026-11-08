@@ -14,3 +14,4 @@ Procedural timber, thatch, hide, canvas and stone textures for Structures, at th
 Follow the vegetation textures (`generators/vegetation/textures.py`); dungeon and city materials must not change.
 
 ## Result
+✔ bd9104d · 1988 passed (timing test failed under CPU load)
