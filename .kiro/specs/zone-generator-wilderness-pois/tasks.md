@@ -57,7 +57,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: rules/sites/, generators/sites/rules.py, scripts/topology_rules.py (a `sites` check and draw), tests/test_site_rules.py
   - Reqs: 5
 
-- [ ] 6. Site placement
+- [x] 6. Site placement
   - Card: [cards/06-placement.md](cards/06-placement.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: generators/sites/placement.py, generators/vegetation/placement.py (Kept_Clear grows by Site ground), tests/test_site_placement.py
