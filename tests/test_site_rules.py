@@ -1,6 +1,7 @@
 """Wilderness POIs task 5 (Req 5; design P6): Site recipes, Inhabitants and biomes as checked data."""
 
 import random
+import re
 import shutil
 
 import pytest
@@ -10,16 +11,26 @@ from generators.sites.rules import (SITE_KINDS, SITES_DIR, combine_weights, load
 from generators.topology.ruleset import RuleSetError
 
 
+#: Edits that find a value by its place, not its number, so tuning the files doesn't break them.
+DENSITY = re.compile(r"density = \[[\d.]+, [\d.]+\]")
+
+
 def _copy(tmp_path, file="", old="", new=""):
-    """The shipped Site files in a scratch folder, with one edit to one of them."""
+    """The shipped Site files in a scratch folder, with one edit to one of them. ``old`` is text,
+    or a compiled pattern (``new`` then may use its groups)."""
     d = tmp_path / "sites"
     if not d.exists():
         shutil.copytree(SITES_DIR, d)
     if file:
         p = d / file
         text = p.read_text(encoding="utf-8")
-        assert old in text, old
-        p.write_text(text.replace(old, new, 1), encoding="utf-8")
+        if isinstance(old, re.Pattern):
+            assert old.search(text), old.pattern
+            text = old.sub(new, text, count=1)
+        else:
+            assert old in text, old
+            text = text.replace(old, new, 1)
+        p.write_text(text, encoding="utf-8")
     return d
 
 
@@ -43,27 +54,33 @@ def test_the_shipped_files_load_with_a_recipe_for_every_kind():
 
 @pytest.mark.parametrize("file, old, new, where, fld", [
     ("sites.toml", 'arrangement = "ring"', 'arrangement = "spiral"', "kinds.camp", "arrangement"),
-    ("sites.toml", '{ kind = "tent", count = [2, 5]', '{ kind = "yurt", count = [2, 5]', "kinds.camp",
+    ("sites.toml", '{ kind = "tent", ', '{ kind = "yurt", ', "kinds.camp",
      "structures[1].kind"),
-    ("sites.toml", 'count = [2, 5]', 'count = [5, 2]', "kinds.camp", "structures[1].count"),
-    ("sites.toml", 'count = [2, 5], face = "in"', 'count = [2, 5], face = "up"', "kinds.camp", "structures[1].face"),
+    ("sites.toml", re.compile(r'(kind = "tent", count = )\[\d+, \d+\]'), r'\g<1>[5, 2]', "kinds.camp",
+     "structures[1].count"),
+    ("sites.toml", re.compile(r'(kind = "tent", count = \[\d+, \d+\], face = )"in"'), r'\g<1>"up"', "kinds.camp",
+     "structures[1].face"),
     ("sites.toml", 'at = "row", side = "open", chance = 0.5', 'at = "row", side = "open", chance = 2',
      "kinds.hut", "structures[1].chance"),
-    ("sites.toml", 'radius = 24, slope_deg = 8', 'radius = 24, slope_deg = 80', "kinds.camp", "ground.slope_deg"),
-    ("sites.toml", 'radius = 24, slope_deg = 8, spacing = 400, ', 'radius = 24, slope_deg = 8, ', "kinds.camp",
+    ("sites.toml", re.compile(r'(\[kinds\.camp\][\s\S]*?slope_deg = )[\d.]+'), r'\g<1>80', "kinds.camp",
+     "ground.slope_deg"),
+    ("sites.toml", re.compile(r'(\[kinds\.camp\][\s\S]*?)spacing = [\d.]+, '), r'\g<1>', "kinds.camp",
      "ground.spacing"),
-    ("sites.toml", 'likes = { near_water = 4', 'likes = { near_lava = 4', "kinds.camp", "likes.near_lava"),
+    ("sites.toml", re.compile(r'(\[kinds\.camp\][\s\S]*?likes = \{ )\w+'), r'\g<1>near_lava', "kinds.camp",
+     "likes.near_lava"),
     ("sites.toml", 'purpose = "Light_Spot"', 'purpose = "Torch"', "kinds.camp", "pois[0].purpose"),
     ("sites.toml", 'purpose = "Light_Spot", at = "fire_ring"', 'purpose = "Light_Spot", at = "barn"',
      "kinds.camp", "pois[0].at"),
     ("sites.toml", 'purpose = "interior", at = "hut" },\n]', 'purpose = "interior", at = "centre" },\n]',
      "kinds.hut", "pois[0].at"),
-    ("sites.toml", '[structures.tent]\nradius = 6', '[structures.tent]\nradius = -6', "structures.tent", "radius"),
-    ("sites.toml", '[structures.hut]\nradius = 9\nheight = 16\nenterable = true',
-     '[structures.hut]\nradius = 9\nheight = 16\nenterable = "yes"', "structures.hut", "enterable"),
+    ("sites.toml", re.compile(r'(\[structures\.tent\]\nradius = )[\d.]+'), r'\g<1>-6', "structures.tent",
+     "radius"),
+    ("sites.toml", re.compile(r'(\[structures\.hut\]\nradius = [\d.]+\nheight = [\d.]+\nenterable = )true'),
+     r'\g<1>"yes"', "structures.hut", "enterable"),
     ("sites.toml", '[structures.barn]', '[structures.castle]', "structures", "castle"),
     ("sites.toml", '[kinds.ruin]', '[kinds.ruins]', "kinds", "ruin"),
-    ("inhabitants.toml", 'materials = "orc"', 'materials = "Orc Hide"', "inhabitants.orc", "materials"),
+    ("inhabitants.toml", re.compile(r'(\[inhabitants\.orc\]\nmaterials = )"\w+"'), r'\g<1>"Orc Hide"',
+     "inhabitants.orc", "materials"),
     ("inhabitants.toml", 'variants = { tent = "hide", tower', 'variants = { yurt = "hide", tower',
      "inhabitants.orc", "variants.yurt"),
     ("inhabitants.toml", 'swap = { tent = "lean_to" }', 'swap = { hut = "tent" }', "inhabitants.centaur",
@@ -74,9 +91,11 @@ def test_the_shipped_files_load_with_a_recipe_for_every_kind():
      "weights.castle"),
     ("inhabitants.toml", '[inhabitants.orc]\nmaterials', '[inhabitants.orc]\ncolour = 1\nmaterials',
      "inhabitants.orc", "colour"),
-    ("biomes.toml", 'density = [0.8, 2.0]', 'density = [2.0, 0.8]', "biomes.plains", "density"),
-    ("biomes.toml", 'inhabitants = { human = 4', 'inhabitants = { elf = 4', "biomes.plains", "inhabitants.elf"),
-    ("biomes.toml", 'weights = { camp = 4', 'weights = { camp = "lots"', "biomes.plains", "weights.camp"),
+    ("biomes.toml", DENSITY, 'density = [2.0, 0.8]', "biomes.plains", "density"),
+    ("biomes.toml", re.compile(r'inhabitants = \{ human = '), 'inhabitants = { elf = ', "biomes.plains",
+     "inhabitants.elf"),
+    ("biomes.toml", re.compile(r'(\[biomes\.plains\][\s\S]*?weights = \{ camp = )[\d.]+'), r'\g<1>"lots"',
+     "biomes.plains", "weights.camp"),
     ("biomes.toml", '[biomes.plains]', '[biomes.tundra]', "biomes", "tundra"),
 ])
 def test_every_bad_value_is_named_by_file_entry_and_field(tmp_path, file, old, new, where, fld):
@@ -87,7 +106,7 @@ def test_every_bad_value_is_named_by_file_entry_and_field(tmp_path, file, old, n
 
 def test_every_failure_of_all_three_files_comes_at_once(tmp_path):
     d = _copy(tmp_path, "sites.toml", 'arrangement = "ring"', 'arrangement = "spiral"')
-    _copy(tmp_path, "biomes.toml", 'density = [0.8, 2.0]', 'density = 3')
+    _copy(tmp_path, "biomes.toml", DENSITY, 'density = 3')
     files = {e.file for e in _errors(d)}
     assert files == {"sites.toml", "biomes.toml"}
 
@@ -224,7 +243,7 @@ def test_the_rule_tooling_checks_and_draws_the_site_files(tmp_path, capsys):
     tool = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tool)
     assert tool.main(["check", str(SITES_DIR)]) == 0
-    bad = _copy(tmp_path, "biomes.toml", "density = [0.8, 2.0]", "density = 3")
+    bad = _copy(tmp_path, "biomes.toml", DENSITY, "density = 3")
     assert tool.main(["check", str(bad / "biomes.toml")]) == 1
     assert "biomes.toml › biomes.plains › density" in capsys.readouterr().out
     assert tool.main(["draw-sites", "--out", str(tmp_path / "out")]) == 0

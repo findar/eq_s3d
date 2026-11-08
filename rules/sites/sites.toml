@@ -23,71 +23,80 @@
 #                or "entrance". purpose is one of Light_Spot, interior, altar, lookout, gathering,
 #                guard, treasure; an interior stands in an Enterable Structure.
 #
-# PLACEHOLDERS: every count, radius, slope, spacing and Structure size below is a first guess
-# from design finding 1's probe. Task 1's survey (scripts/site_survey.py) sets them; until it
-# lands, treat the numbers as stand-ins, not measurements.
+# Where the numbers come from (design finding 1, task 1's survey of 21 Classic outdoor zones,
+# scripts/site_survey.py): Structure sizes are the generated models' own (generators/sites/
+# models.py, the largest over every variant and seed); a Site's radius sits in the survey's band
+# (zone p50 0-45 u, p90 35-120 u; plains p50 0-93 u); slopes under the survey's p50 (under 8
+# degrees in every zone, plains 0-7.8); spacing in its band (zone p10 130-490 u over all zones,
+# 108-190 u on the plains; the closest pair anywhere 108 u); counts from Structures per Site
+# (zone p50 1-3, p90 2-10 on the plains; 51% of Sites are one Structure, 44% 2-5, 5% 6+).
+# Stock Sites are not drawn to water or zonelines (both 1000 u or more away at the median), so
+# no recipe likes them.
 #
 # The guide to checking and drawing these files: python scripts/topology_rules.py check rules/sites
 # and python scripts/topology_rules.py draw-sites --out output/rules/
 
 # --- Structures --------------------------------------------------------------------------------
-# radius: the footprint's half-width (u); height: its top (u). PLACEHOLDERS until task 1.
+# radius: the model's plan reach from its origin (u); height: its top (u). Both are the largest
+# over every variant and seed of generators/sites/models.py, rounded up. Fence and ruin_wall are
+# runs: their radius is the run's half-length (generators/sites/models.RUN_HALF_LENGTH), the run
+# laid across its yaw, 1 u thick each side (generators/sites/placement.py).
 # enterable: a player walks into it, floored by the ground (archive decision 2: huts, lean-tos,
 # ruins; towers are solid).
 
 [structures.hut]
-radius = 9
-height = 16
+radius = 23
+height = 31
 enterable = true
 
 [structures.barn]
-radius = 14
-height = 22
+radius = 38
+height = 52
 enterable = false
 
 [structures.tent]
-radius = 6
-height = 10
+radius = 14
+height = 23
 enterable = false
 
 [structures.lean_to]
-radius = 6
-height = 9
+radius = 14
+height = 18
 enterable = true
 
 [structures.tower]
-radius = 7
-height = 40
+radius = 18
+height = 69
 enterable = false
 
 [structures.fire_ring]
-radius = 3
-height = 1
+radius = 5.5
+height = 3
 enterable = false
 
 [structures.fence]
-radius = 10          # a fence run's half-length
-height = 5
+radius = 10          # a run's half-length
+height = 13
 enterable = false
 
 [structures.standing_stone]
-radius = 2
-height = 12
+radius = 3
+height = 15
 enterable = false
 
 [structures.altar_stone]
-radius = 3
-height = 4
+radius = 5
+height = 5
 enterable = false
 
 [structures.monument]
-radius = 4
-height = 18
+radius = 14.5        # the burial mound's; the obelisk's is 6
+height = 27
 enterable = false
 
 [structures.ruin_wall]
-radius = 10          # a wall run's half-length
-height = 10
+radius = 10          # a run's half-length
+height = 13.5
 enterable = true     # the ruin's court, inside its broken ring, is walked into
 
 # --- Kinds -------------------------------------------------------------------------------------
@@ -98,10 +107,10 @@ enterable = true     # the ruin's court, inside its broken ring, is walked into
 arrangement = "ring"
 structures = [
     { kind = "fire_ring", at = "centre" },
-    { kind = "tent", count = [2, 5], face = "in" },        # PLACEHOLDER count
+    { kind = "tent", count = [2, 4], face = "in" },        # 3-5 Structures (SRO, Oasis zone p50 3)
 ]
-ground = { radius = 24, slope_deg = 8, spacing = 400, margin = 8 }      # PLACEHOLDER
-likes = { near_water = 4, clearing = 1 }
+ground = { radius = 36, slope_deg = 8, spacing = 200, margin = 8 }      # radius: SRO 37, Oasis 42
+likes = { clearing = 1 }
 pois = [
     { name = "camp fire", purpose = "Light_Spot", at = "fire_ring" },
     { name = "camp", purpose = "gathering", at = "centre" },
@@ -112,10 +121,10 @@ pois = [
 arrangement = "lone"
 structures = [
     { kind = "hut", at = "centre", face = "any" },
-    { kind = "fence", count = [0, 2], at = "row", side = "open", chance = 0.5 },   # PLACEHOLDER
+    { kind = "fence", count = [0, 2], at = "row", side = "open", chance = 0.5 },   # 1-3: a lone Site
 ]
-ground = { radius = 20, slope_deg = 6, spacing = 350, margin = 8 }      # PLACEHOLDER
-likes = { near_water = 1, clearing = 2 }
+ground = { radius = 40, slope_deg = 6, spacing = 200, margin = 8 }      # the hut and a fence run
+likes = { clearing = 2 }
 pois = [
     { name = "hut interior", purpose = "interior", at = "hut" },
 ]
@@ -126,11 +135,11 @@ pois = [
 arrangement = "cluster"
 structures = [
     { kind = "hut", face = "any" },
-    { kind = "barn", count = [1, 2], face = "any" },       # PLACEHOLDER count
-    { kind = "fence", count = [3, 6], at = "row", side = "open" },        # the corral; PLACEHOLDER
+    { kind = "barn", face = "any" },                       # BARN1 x4 to RHOUSE1 x3: one a farm
+    { kind = "fence", count = [4, 6], at = "row", side = "open" },        # the corral (CORRALL 46x43)
 ]
-ground = { radius = 48, slope_deg = 5, spacing = 600, margin = 10 }     # PLACEHOLDER
-likes = { low_ground = 3, near_water = 2 }
+ground = { radius = 90, slope_deg = 5, spacing = 300, margin = 10 }     # house, barn, corral 60-150 apart
+likes = { low_ground = 3 }
 pois = [
     { name = "farmhouse interior", purpose = "interior", at = "hut" },
     { name = "yard", purpose = "gathering", at = "centre" },
@@ -140,10 +149,10 @@ pois = [
 [kinds.watchtower]
 arrangement = "lone"
 structures = [
-    { kind = "tower", count = [1, 2] },        # two stand as a pair; PLACEHOLDER count
+    { kind = "tower", count = [1, 2] },        # two stand as a pair (EKTOWER, ELFTOWER, MTOWER)
 ]
-ground = { radius = 16, slope_deg = 10, spacing = 500, margin = 8 }     # PLACEHOLDER
-likes = { high_ground = 4, by_zoneline = 3 }
+ground = { radius = 40, slope_deg = 10, spacing = 400, margin = 8 }     # a pair 40-50 u apart
+likes = { high_ground = 4 }
 pois = [
     { name = "lookout", purpose = "lookout", at = "tower" },
     { name = "tower guard", purpose = "guard", at = "entrance" },
@@ -154,10 +163,10 @@ pois = [
 arrangement = "ring"
 structures = [
     { kind = "altar_stone", at = "centre" },
-    { kind = "standing_stone", count = [4, 8], face = "in" },     # PLACEHOLDER count
+    { kind = "standing_stone", count = [3, 6], face = "in" },     # MCIRCLE, MONU4 x4 in Oasis
     { kind = "monument", count = [0, 1], at = "lone", chance = 0.3 },
 ]
-ground = { radius = 20, slope_deg = 8, spacing = 500, margin = 8 }      # PLACEHOLDER
+ground = { radius = 30, slope_deg = 8, spacing = 300, margin = 8 }      # room for a burial mound
 likes = { high_ground = 3, clearing = 2 }
 pois = [
     { name = "shrine altar", purpose = "altar", at = "altar_stone" },
@@ -168,10 +177,10 @@ pois = [
 [kinds.ruin]
 arrangement = "perimeter"
 structures = [
-    { kind = "ruin_wall", count = [3, 6], face = "in" },          # PLACEHOLDER count
+    { kind = "ruin_wall", count = [3, 5], face = "in" },          # COMRUIN 46x35: a court ~40 u
     { kind = "standing_stone", count = [0, 2], at = "cluster", chance = 0.4 },
 ]
-ground = { radius = 28, slope_deg = 10, spacing = 500, margin = 8 }     # PLACEHOLDER
+ground = { radius = 32, slope_deg = 10, spacing = 300, margin = 8 }
 likes = { high_ground = 1, clearing = 1 }
 pois = [
     { name = "ruin court", purpose = "interior", at = "ruin_wall" },

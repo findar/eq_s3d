@@ -8,11 +8,14 @@
 #   weights      Site kind -> weight: the least specific Layer under Inhabitant and control. A kind
 #                it doesn't name it leaves alone (weight 1); 0 is never.
 #
-# PLACEHOLDERS: the density band, the mix and the weights are first readings of design finding 1's
-# probe (camps the commonest, farms the Karanas' signature, towers and shrines rarer). Task 1's
-# survey sets them.
+# From design finding 1 (task 1's survey). Density: the plains (the Karanas, Qeynos Hills) hold
+# 0.1-0.5 Sites per 1e6 u^2; Normal aims at 0.3-0.5, so Dense (x2) lands at 0.6-1.0, round the
+# all-zone median 0.8, and Sparse (x0.5) at 0.15-0.25. Mix: of the plains' 91 Sites, South
+# Karana's 8 are centaur and the rest the Karanas' farms, houses and camps (human); gnolls camp
+# in the hills; orcs are rare there. Weights: half of all stock Sites are one Structure (a hut,
+# a lone stone), camps are the commonest group, towers rare (none on the plains).
 
 [biomes.plains]
-density = [0.8, 2.0]
-inhabitants = { human = 4, gnoll = 2, centaur = 2, orc = 1 }
-weights = { camp = 4, hut = 2, farmstead = 2, watchtower = 1.5, shrine = 1.5, ruin = 1 }
+density = [0.3, 0.5]
+inhabitants = { human = 6, gnoll = 2, centaur = 1.5, orc = 0.5 }
+weights = { camp = 3, hut = 3, farmstead = 2, watchtower = 0.5, shrine = 1, ruin = 1 }
