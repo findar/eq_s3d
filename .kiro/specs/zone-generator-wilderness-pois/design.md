@@ -27,11 +27,11 @@ moves and `none` is exactly the step 9 build (Req 4.4, 9.2).
 
 ## Research findings
 
-### 1. Stock wilderness places (probe at design time; task 1 makes it a survey)
+### 1. Stock wilderness places (task 1's survey: `scripts/site_survey.py`)
 
 The placed objects (`objects.wld` instance fragments, 0x15) of 14 Classic outdoor zones,
-read with `scripts/room_feature_survey.placed_objects`. Commonest objects per zone, trees
-first:
+read with `scripts/room_feature_survey.placed_objects`. The design-time probe, commonest
+objects per zone, trees first (DTOW and BTOW turned out to be rock, see below):
 
 | Zone | Objects | Trees and plants (by name) | What makes the places |
 |---|---|---|---|
@@ -65,6 +65,121 @@ What it says:
   is step 11.
 - What the probe can't see: places in the terrain mesh (walls, ruins, a hut built into the
   zone), and which object belongs to which Site. Task 1 clusters the objects and plots them.
+
+**The survey.** `python scripts/site_survey.py --eq-path F:\everquest_rof2` reads 24 Classic
+outdoor zones (West Karana is `qey2hh1`). It names each object by pattern (`kind_of`): tree,
+rock, a Structure kind (fire, lean-to, tent, tower, hut, house, ruin, fence, stone, dock), or
+prop. A **Site** is a single-linkage cluster of Structures and props no more than 100 u apart
+(`cluster`), holding at least one Structure. Ground is the walkable network's dry plan area on
+a 16 u raster; lake and sea beds are walkable but left out. Zonelines and water are the zone's
+`DRNTP` and `WT` BSP regions. `--plots DIR` draws each zone. Task 11 imports `kind_of`,
+`cluster`, `site_measures` and `measure_model`.
+
+Per zone (p50/p90 unless marked; ground in 1e6 u^2; distances in u; slope in degrees):
+
+| Zone | Ground | Sites | Per 1e6 | Structs | Radius p50 | Spacing p50/p10 | Zoneline | Water | Slope |
+|---|---|---|---|---|---|---|---|---|---|
+| qeytoqrg | 15.4 | 6 | 0.4 | 1/2 | 6 | 896/173 | 1462 | 1417 | 7.8/20.2 |
+| qey2hh1 | 114.3 | 43 | 0.4 | 2/4 | 0 | 192/108 | 4800 | 1338 | 3.5/7.2 |
+| northkarana | 50.9 | 17 | 0.3 | 1/2 | 0 | 671/181 | 2115 | 1824 | 0.0/4.5 |
+| eastkarana | 36.3 | 17 | 0.5 | 1/4 | 41 | 196/160 | 3911 | 984 | 1.0/14.4 |
+| southkarana | 90.3 | 8 | 0.1 | 3/10 | 93 | 222/191 | 4359 | 2058 | 0.9/4.7 |
+| lakerathe | 17.4 | 36 | 2.1 | 1/4 | 21 | 201/132 | - | - | 12.6/34.1 |
+| rathemtn | 65.1 | 30 | 0.5 | 1/5 | 22 | 697/128 | - | - | 3.5/10.9 |
+| ecommons | 17.5 | 18 | 1.0 | 2/4 | 50 | 626/288 | 1131 | - | 0.0/10.0 |
+| nro | 16.1 | 17 | 1.1 | 1/3 | 0 | 434/256 | 1104 | 1291 | 2.3/27.3 |
+| sro | 11.4 | 20 | 1.8 | 3/5 | 37 | 615/448 | 1410 | - | 0.4/6.8 |
+| oasis | 11.0 | 16 | 1.5 | 3/6 | 42 | 488/233 | 1112 | 343 | 1.1/49.9 |
+| tox | 11.5 | 12 | 1.0 | 1/3 | 44 | 602/417 | 3433 | 504 | 7.1/15.7 |
+| steamfont | 14.6 | 11 | 0.8 | 2/6 | 34 | 414/182 | - | - | 0.8/6.0 |
+| lfaydark | 17.3 | 15 | 0.9 | 3/5 | 43 | 791/481 | 1954 | - | 0.7/2.9 |
+| kithicor | 16.5 | 17 | 1.0 | 1/2 | 26 | 531/226 | - | - | 5.6/11.0 |
+| nektulos | 11.2 | 7 | 0.6 | 1/2 | 0 | 1046/607 | - | 560 | 8.5/22.9 |
+| innothule | 10.1 | 10 | 1.0 | 1/3 | 4 | 188/140 | - | 345 | 8.1/22.8 |
+| feerrott | 17.8 | 34 | 1.9 | 2/5 | 36 | 264/148 | - | - | 4.4/11.6 |
+| everfrost | 39.4 | 29 | 0.7 | 1/3 | 0 | 305/197 | - | - | 0.1/17.0 |
+| cauldron | 9.7 | 4 | 0.4 | 2/2 | 24 | 1282/1232 | - | - | 5.6/11.8 |
+| beholder | 1.5 | 0 | 0.0 | - | - | - | - | - | - |
+| *butcher* | 21.3 | 34 | 1.6 | 2/5 | 38 | 718/251 | 4685 | 2419 | 1.3/12.0 |
+| *gfaydark* | 23.3 | 21 | 0.9 | 3/8 | 68 | 226/104 | 899 | - | 11.1/34.4 |
+| *erudsxing* | 0.5 | 9 | 17.4 | 1/3 | 0 | 196/150 | - | 5 | 10.2/15.2 |
+
+Italic zones are towns (Kaladim's and Kelethin's halls, Kelethin's platforms, a ferry island)
+and stay out of the bands. "-" means none: 11 zones have no `DRNTP` region (their zonelines
+are server-side only), and many have no water region.
+
+**Bands** (over the 21 kept zones, p10-p90 of the per-zone values):
+
+| Measure | All 21 zones | Plains (North, East, South and West Karana, Qeynos Hills) |
+|---|---|---|
+| Sites per 1e6 u^2 | 0.3-1.8, median 0.8 | 0.1-0.5 |
+| Structures per Site, zone p50 | 1-3 | 1-3 |
+| Structures per Site, zone p90 | 1.8-5.6 | 2-10 |
+| Spacing, zone p50 | 195-910 | 190-900 |
+| Spacing, zone p10 | 130-490 (closest pair anywhere 108) | 108-190 |
+| Site radius, zone p50 / p90 | 0-45 / 35-120 | 0-93 / - |
+| Slope under a Site, p50 / p90 | 0.1-8.1 / 4.7-28 | 0-7.8 / 4.5-20 |
+| To water, zone p50 | 345-1850 | 980-2060 |
+
+Of 367 Sites, 51% are one Structure, 44% are 2-5 and 5% are 6 or more. Plains are the
+sparsest ground: about one Site per 2.5e6 u^2, where lake and desert zones hold two or three
+times that. Step 10 builds plains only, so task 5's Normal should aim at 0.3-0.5 and Dense at
+the all-zone median, about 0.8. Sites sit on gentle ground (slope p50 under 8 degrees in every
+zone) and are not drawn to zonelines or water: both are 1000 u or more away at the median.
+
+**What the plots changed.**
+
+- **DTOW and BTOW are rock spires, not towers.** The models are 230-450 u across and 300 u
+  tall, and they line the Ro deserts' and Butcherblock's edges. They're scenery now. Real
+  towers are rare: EKTOWER, ELFTOWER and MTOWER, 21 placed in all, none on the plains. So
+  the watchtower kind is weakly supported by stock; task 5 should give it a small Weight.
+- **HALMOUND is a snow mound** (4 u tall, all passable), not a halfling house: scenery.
+  PERBRICK is rubble round Permafrost's door: a ruin.
+- **The gap is 100 u.** At 60 u a farmstead split in three: a house, barn and corral stand
+  60-150 u apart, origin to origin. At 150 u neighbouring camps joined.
+- The centaur camp in South Karana is one Site of 10 Structures; most others are 1-5.
+
+**Stock Structure models** (from `<zone>_obj.s3d`, at the commonest placed scale; size in u;
+"solid" is the collidable share of area; "walk-in" is reached floor under a roof or inside
+walls, at least 25 u^2):
+
+| Kind | Models | Tris | Plan (w x d) | Height | Solid | Walk-in |
+|---|---|---|---|---|---|---|
+| fire ring | CAMPFIRE, CAMPFIRE2, CENTFIRE | 44-80 | 6x6 to 10x12 | 5-7 | 33-64% | no |
+| tent | BTENT1, ORCTENT, ORCTENT1, GOBTENT, LIZTENT, GTENT1-3, DESTENT | 20-110 | 14x11 to 58x35 | 18-27 | 96-100% | yes, all |
+| lean-to | LEANTO, LEANTO3/5/6, CENLEANTO, TRLEANTO | 32-60 | 15x14, 23x20 | 11-17 | 0-100% | yes, all |
+| hut | HUT1/2/4/5/6, SHAK, IGLOO | 48-92 | 21x21 to 52x38 | 18-32 | 100% | yes, but SHAK |
+| house | HOUSE1/2, RHOUSE1, COMHOUSE, KIHOUSE, KALHSE1, OGHOUSE, ERHOUSE | 80-219 | 40x27 to 120x118 | 23-52 | 100% | about half |
+| barn | BARN1 | 72 | 92x69 | 65 | 100% | yes |
+| tower | EKTOWER, ELFTOWER, MTOWER | 42-254 | 40x40 to 62x62 | 66-106 | 100% | no |
+| fence | CORRALL (a ring), WOODSUPPORT, POST | 12-288 | 46x43 ring; posts 3x3 | 7; posts 19 | 0-100% | no (WOODSUPPORT's beam reads as a roof) |
+| standing stone | MONU1/4/6, DWMONU, ORCTOTEM, TIKI, MILESTONE3 | 28-52 | 2x2 to 15x15, MONU6 6x37 | 9-45 | 0-100% | no |
+| monument | MONU3, MONU7, CAZMON1/2, DOLMEN | 39-216 | 20x20 to 98x89 | 34-125 | 100% | MONU3, DOLMEN |
+| burial mound | BURIAL, BURIAL1/2 | 60-72 | 13x9 to 28x21 | 10-16 | 100% | BURIAL, BURIAL1 |
+| ruin | COMRUIN, KIHRUIN | 52-70 | 46x35, 130x127 | 26-37 | 100% | COMRUIN |
+
+Every Structure is under 400 triangles; most are 30-220. Tents and huts are about 30 u
+across and 20-30 u tall; a house about 50x35 and 35 u tall. Some sit deep: the dock, HUT2,
+QOUTPOST and the elf towers go 29-50 u below their origin. Two things to know for task 3:
+
+- **Stock flags are loose.** LEANTO, LEANTO3 and TRLEANTO are all passable (0% solid);
+  LEANTO5 is 93% solid. TIKI and POST are passable too. Ours will be solid where it stands
+  in the way (Req 3.2), so they'll block more than stock does.
+- **Many stock houses are closed shells** (HOUSE1/2, COMHOUSE, KIHOUSE, KINN): no gap a player
+  fits through. Their doors are server-side door records. Huts, tents, lean-tos, barns and
+  RHOUSE are open.
+
+**What the survey can't see.**
+
+- **Spawn.** Stock safe points live in the server's database, not the client files. Zonelines
+  stand in for arrival, and only where the zone has `DRNTP` regions (13 of 24).
+- **Places in the terrain mesh.** Walls, ruins and halls built into the zone (Kelethin's
+  platforms, Kaladim's gate, Halas's walls) aren't objects, so they're not Sites. Beholder's
+  gorge has none at all.
+- **Objects it can't name**: FAYBAR1/2 (Kelethin), CAULCOL1-3 and CAULROOF (Dagnor's
+  Cauldron's columns). They join Sites as props. Animated objects (flags, with no static
+  mesh) are props and aren't modelled.
+- Doors: they're server records, so a closed house's way in doesn't show.
 
 ### 2. What the code already offers
 
