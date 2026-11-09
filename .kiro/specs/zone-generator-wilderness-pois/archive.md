@@ -5,7 +5,25 @@ this file to pick up a task; it holds the "why".
 
 ## What landed
 
-Nothing yet. Rows are added at the close step (task 14).
+| Task | What landed | Commits |
+|---|---|---|
+| 1 | `scripts/site_survey.py`: 24 Classic outdoor zones, 367 stock Sites; bands for Sites per area, Structures per Site and spacing; stock Structure sizes; DTOW/BTOW are rock spires, Sites aren't drawn to water | `73929ec` |
+| 2 | The gate judges placed models from their own collidable triangles (`analyzer/footprints.py`); the Footprint check replaces `trees_block` and agrees with it on tree-only zones | `9f9ff29` |
+| 3 | 11 Structure kinds in 18 variants (`generators/sites/models.py`), front facing +X; the survey's values in `rules/sites/` | `5e0dd5e`, `8998ba0` |
+| 4 | Timber, crude timber, thatch, hide, canvas and stone at 31.2 u a tile; four material sets (`generators/textures/sites.py`) | `bd9104d` |
+| 5 | `rules/sites/` (sites, inhabitants, biomes) and its strict loader; `topology_rules.py check rules/sites` and `draw-sites` | `0f007cd` |
+| 6 | Site placement on its own stream (`generators/sites/placement.py`); trees keep off Site ground | `3bfa78b` |
+| 7 | Sites in wilderness and outdoor-dungeon builds: models, ZON objects, the gate on every build, the sidecar `sites` block; `none` is step 9's bytes | `2fabea3` |
+| 8 | Sites and Inhabitant controls on the plan, CLI and page; prompt words; Footprints and labels on both maps, read from the built `.eqg` | `2bd2fdd` |
+| 9 | First look signed off ("Looks good", 2026-11-08) | `66cf655` |
+| 10 | Tuned to stock's mix: 48% of Sites are one Structure (stock 51%) | `ba3d886` |
+| 11 | `tests/test_site_bands.py`: Normal builds inside the stock bands with the survey's own code; Clark–Evans R in place of raw spacing p50; gate 40/40; Sites cost 0.64 s | `d90b81c` |
+| 12 | `docs/ACCEPTANCE.md` "Step 10 — Wilderness POIs", 21 pinned cases; thorough 2078 passed, 4 failed (3 pre-step-10, 1 timing) | `5603f25` |
+| 13 | Acceptance pass signed off ("Yes, signed off", 2026-11-08) | — |
+| 14 | Closed on the trackers | this commit |
+| 15 | Camps keep 2–4 tents (ground 36 → 46 u); targets round to keep their mean; a kind with no ground is redrawn | `3db8f9c` |
+
+56 commits from the spec draft (`b3e621f`) to the close.
 
 ## Decisions
 
@@ -41,6 +59,11 @@ Set by the tasks:
     from the others before the Site drops. The first look (task 9) judges whether that's enough.
 
 ## Follow-ups
+
+Found in step 10:
+
+- **Wilderness size** (user, 2026-11-08): every wilderness is 2400 u square and outdoor dungeons 1200 u. The Size control could pick a range measured from stock outdoor zones, random when unset, maybe non-square; content already scales by area. Later, by the user's word.
+- **Three dungeon and outline failures under the thorough profile** (task 12; they fail at `0f007cd^` too) and the mapgeom face-order bug: proposed as one separate fix.
 
 Carried in from earlier steps and relevant here:
 

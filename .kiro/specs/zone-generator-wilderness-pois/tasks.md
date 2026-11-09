@@ -96,11 +96,11 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Type: agent · Size: S · Depends: 11
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 13. HUMAN: wilderness POIs acceptance pass
+- [x] 13. HUMAN: wilderness POIs acceptance pass
   - Card: [cards/13-human-acceptance.md](cards/13-human-acceptance.md)
   - Type: human · Depends: 12
 
-- [ ] 14. Close step 10
+- [x] 14. Close step 10
   - Card: [cards/14-close.md](cards/14-close.md)
   - Type: agent · Size: S · Depends: 13 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-wilderness-pois/, .kiro/specs/zone-generator/

@@ -651,6 +651,8 @@ the requirements.
 
 > **Refined by step 2** (design decision 22): 32.4 holds for room-graph builds; a wilderness build may pack generated tree models (`veg_<species>.mod`), their textures, and one ZON object per tree. Every model is still generated from the Zone_Spec (32.7).
 
+> **Refined by step 10** (design decision 30): wilderness and outdoor-dungeon builds may also pack generated Structure models (`site_<kind>_<variant>_<set>.mod`), their textures, and one ZON object per Structure. Every model is still generated from the Zone_Spec (32.7).
+
 ## Delivery Model (process constraints)
 
 These govern how the system is built, not how it behaves.

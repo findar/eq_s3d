@@ -8,7 +8,8 @@ Merge what it depends on; the lead serves master in the browser pane.
 Walk the acceptance section.
 
 ## Checklist
-- [ ] Walk the acceptance section.
+- [x] Walk the acceptance section.
 
 ## Result
-"Signed off", or findings as bullets, which become new tasks.
+
+Signed off: "Yes, signed off" (user, 2026-11-08, master `6c721bf`, served on 5180).

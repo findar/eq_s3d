@@ -1,8 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 10, ready.** Written 2026-11-07 at master `28b6781`. The design's
-> open questions were answered the same day (every recommendation taken; `archive.md`
-> "Decisions"). Task index: `tasks.md` (card format, 14 tasks).
+> **STATUS: roadmap step 10, DONE.** Signed off 2026-11-08 (acceptance pass, task 13);
+> closed at master after `6c721bf`. What landed and the decisions: `archive.md`. Task index:
+> `tasks.md` (card format, 15 tasks).
 
 ## Introduction
 
