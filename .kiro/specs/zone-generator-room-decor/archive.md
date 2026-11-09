@@ -47,6 +47,21 @@ Added after the answers:
     with one contract test keeping the corpus honest (Req 13, task 18). The world -> Socket
     stage is roadmap step 12, its own spec.
 
+From task 7 (decor recipes, `192400c`):
+
+16. **Unmet recipe lines don't fail `check rules/decor`**; they're reported `unmet`, and fail
+    only with `--strict` (run after the tag review). At build time an unmet line drops.
+17. **A recipe line asks for a kind or alternatives, best first** (`["throne", "chair"]`); its
+    Mount comes from `at` (`on_wall`/`wall` → wall, `ceiling`, `stack` → raised, else floor;
+    a raised slot also takes a floor model).
+18. **Weights by Layer are per-Category multipliers** blended by `room_scales.combine`
+    (geometric mean); the Decor control multiplies on top; `bare` (0.26) is the chance a room
+    takes only its Dressing; Clutter moves debris and Structure furniture (value/5). Task 8
+    draws counts with `DecorRules.factor` / `draw_count`.
+19. **Lookup is room type, else kind, else default, plus `[every]`**; a Site takes
+    `[sites.<kind>]` only. **Sets:** race, then theme, then zone type, then neutral; two
+    cultures share a room only where `[allows]` names the pair.
+
 ## Follow-ups
 
 Carried in from earlier steps and relevant here:
