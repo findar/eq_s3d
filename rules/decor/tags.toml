@@ -1,0 +1,28 @@
+# Reviewed Tags of the stock model catalogue (roadmap step 11, task 4: the user's review).
+#
+# One line per reviewed model, keyed by its catalogue entry (NAME, or NAME@zone for a
+# variant). A field given here wins over the auto-tagger's proposal in catalogue.json;
+# fields left out keep the proposal. Rebuilding or re-tagging the catalogue never writes
+# this file, so a review is never lost. Only `use = "yes"` lets a model into builds.
+#
+# The review sheet (python scripts/prop_catalogue.py sheet --eq-path F:\everquest_rof2)
+# gives the exact line for each model; paste it under [models] and correct what's wrong.
+#
+#   category  light, container, furniture, hanging, structure, debris, plant, other
+#   kind      a kind of generators/decor/catalogue.py KINDS (it brings its category),
+#             or one declared below in `kinds`
+#   mount     floor, wall, ceiling, raised
+#   set       a culture of SETS (neutral, gnoll, goblin, ...), or one declared in `sets`
+#   era       classic, kunark, velious, luclin, pop, later
+#   collision solid, partial, passable (stock's own flags; a model that blocks wrongly
+#             is use = "no", not edited)
+#   suits     zone types, room kinds and types, dungeon themes
+#   use       yes, no, review
+#   note      free text
+#
+# Every value is checked when the catalogue loads; a bad one is named by entry and field.
+
+# kinds = { lever = "other" }   # kinds beyond the built-in ones, with their Category
+# sets = ["centaur"]            # Sets beyond the built-in ones
+
+[models]
