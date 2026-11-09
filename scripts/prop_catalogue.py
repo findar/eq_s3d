@@ -22,7 +22,9 @@ Each entry holds:
 - ``placed``: how often each zone's ``objects.wld`` places it (the client joins a
   placement to a model by name within the zone's own archives, design finding 0).
 
-Task 2 adds ``observed``, task 3 ``tags``; ``build`` keeps both when it rebuilds.
+Task 2 adds ``observed`` (``put_observed``, from ``decor_survey.py --write``: how stock
+places the model, over every zone that places it), task 3 ``tags``; ``build`` keeps both
+when it rebuilds.
 
 The file is metadata only (no mesh or texture bytes) and stable: sorted keys, one model
 per line, rounded floats, so rebuilds diff cleanly. Actors that don't parse, placed
@@ -479,6 +481,24 @@ def write(cat: dict, out: Path) -> None:
     lines += [" }", "}"]
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+
+
+def load(path: Path = OUT) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def put_observed(cat: dict, observed: dict, out: Path = OUT) -> None:
+    """Replace every entry's ``observed`` (task 2, ``decor_survey.observe_all``) and
+    write the file; an entry nothing places has none. Every other field is kept."""
+    unknown = sorted(set(observed) - set(cat["models"]))
+    if unknown:
+        raise KeyError(f"observed fields for models not in the catalogue: {unknown[:5]}")
+    for key, entry in cat["models"].items():
+        if key in observed:
+            entry["observed"] = observed[key]
+        else:
+            entry.pop("observed", None)
+    write(cat, out)
 
 
 def report(cat: dict) -> None:

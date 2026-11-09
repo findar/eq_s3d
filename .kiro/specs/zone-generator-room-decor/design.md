@@ -73,72 +73,160 @@ Paineel-style names (`PALAMP102R`...) that its only object archive, `hole_2_obj.
 (there's no `hole_obj.s3d`), and 10 `YKCVDRP400` in `mmcb`. Eight archives' zones have no
 `<zone>.s3d` (grobb, lavastorm, nurga, potimea, uqua, chardokb, global, backup_stonebrunt).
 
-### 1. What fills stock rooms (design-time probe; task 1's survey refines it)
+### 1. What fills stock rooms (task 2's survey, `scripts/decor_survey.py`)
 
-The placed objects (`objects.wld` instance fragments, 0x15) of step 9's 15 dungeons and 15
-cities, read with `scripts/room_feature_survey.placed_objects`, named by pattern (digits
-stripped). The commonest per zone:
+The placed objects (`objects.wld` instance fragments, 0x15: position, yaw, scale) of step 9's
+15 dungeons and 15 cities. The commonest per zone, named by pattern (digits stripped):
 
-| Zone | Objects | Rooms | Commonest |
-|---|---|---|---|
-| blackburrow | 283 | 36 | TORCH ×78, BONES ×40, BLOODYPUNGEE ×28, BARREL ×13, PAWTABLE ×5 |
-| paw | 344 | 32 | TORCH ×99, PAWROCK ×89, PAWBRICK ×48, PAWBARREL ×25, PAWPAL ×24, PAWHOOK ×23, PAWTABLE ×14 |
-| crystal | 447 | 21 | CCROCK ×172, VELIUMCRYSTALS ×164, CCTORCH ×13, MISTWEBS ×10, CCBRAZ ×9 |
-| runnyeye | 648 | 17 | TORCHPOINT ×225, SLIMEPILE ×44, BARREL ×42, CHAIR ×26, PAWTABLE ×15, URN ×14 |
-| soldungb | 337 | 18 | TORCHPOINT ×59, STEAM ×47, FURPILE ×36, WEB ×27, KEG ×13, BRAZIER ×11, CANDELABRA ×8 |
-| soldunga | 461 | 15 | TORCHPOINT ×129, TORCH ×87, BENCH ×21, CRATEA ×19, KEG ×15, DARKTABLE ×13, GOBDIVAN ×10 |
-| permafrost | 502 | 29 | PERROCK ×255, PERTORCH ×119, PERBRICK ×21, PERSTAL ×17, PAWHOOK ×15 |
-| kaesora | 396 | 20 | KSROCK ×202, KSTIKI ×39, KSLIGHT ×23, KSBOKPILE ×20, KSBOOK ×14, KSPEW ×14, KSSTATUE ×11 |
-| guktop | 395 | 13 | OGGLANTERN ×107, MUSHROOM ×73, GUKBRAZIER ×26, GUKCHAIR ×25, GUKPLNK ×25, GUKTABLE ×15 |
-| najena | 414 | 22 | BONEPILE ×77, PAWHOOK ×72, BONES ×48, STONEBENCH ×26, HPCHAIN ×21, PALLET ×11 |
-| gukbottom | 482 | 10 | OGGLANTERN ×209, MUSHROOM ×64, GUKBRAZIER ×31, LADDER ×16, GROBCAGE ×13 |
-| sebilis | 501 | 44 | CBTORCH ×121, CBTIKI ×69, SBROCK ×68, SBSHAKLE ×32, CBPILLAR ×24, SBTABLE ×18, SBBOOK ×13 |
-| qcat | 93 | 5 | TORCHPOINT ×48, BONES ×14, BOOKCASE ×6, CHAIR ×4, RECTTABLE ×4, CANDLE ×4 |
-| befallen | 346 | 24 | BHROCK ×112, BONEPILE ×84, STONEBENCH ×30, URN ×29, PAWHOOK ×20, BOOKCASE ×4 |
-| kurn | 267 | 40 | KNTORCH ×53, CBTORCH ×45, CBCRATE ×40, CBBARREL ×26, VEBRAZ ×19, DNBUNK ×16 |
-| qeynos2 | 480 | – | TREE ×160, TORCHPOINT ×46, HLAMP ×36, CHAIR ×33, LIGHTPOLE ×23, CRATEA ×19 |
-| qeynos | 476 | – | LIGHTPOLE ×51, HLAMP ×46, CHAIR ×39, BED ×31, RUG ×26, BARSTOOL ×17 |
-| freportw | 758 | – | HLAMP ×146, LIGHTPOLE ×86, CHAIR ×51, BARREL ×38, BOOKCASE ×20, DRAWER ×19, BED ×19 |
-| freportn | 556 | – | HLAMP ×120, BED ×51, CHAIR ×46, BENCH ×25, DRAWER ×21, DRESSER ×14 |
-| neriaka / neriakb | 525 / 387 | – | HLAMP ×97, TORCH ×66, CHAIR ×36, BARSTOOL ×29, BED ×20, DARKTABLE ×24 |
-| halas | 445 | – | HALMOUND ×61, HLAMP ×40, FURRUG ×24, BARREL ×21, HBOX ×20, TABAC ×17 |
-| rivervale | 531 | – | HLAMP ×123, LIGHTPOLE ×49, CHAIR ×48, BENCH ×29, BARSTOOL ×24, PALLET ×21 |
-| kaladima | 266 | – | KALLAMP ×62, LAMP ×43, KALBRAZ ×14, KEG ×14, BOOKCASE ×10, MISTCOUCH ×7 |
-| akanon | 452 | – | AKALIGHT ×170, RUG ×55, AKASTACK ×44, AKAWORKBENCH ×37, AKAWALLGIZ ×28 |
-| erudnext, felwithea | 165, 213 | – | ERLANT ×154, BARSTOOL ×14, BED ×17, FELCHAIR ×10 |
-| oggok | 370 | – | OGGLANTERN ×213, OGGRUG ×27, OGGCHAIR ×17, URN ×15 |
-| cabeast | 430 | – | CBROCK ×112, CBRUG ×54, CBTORCH ×52, CBBARREL ×28, CBCRATE ×25, IKCHAIR ×21 |
-| paineel | 531 | – | PALAMP ×198, PAFLAG ×108, PACHAIR ×37, PATABLE ×22, PABOOK ×12 |
+| Zone | Objects | Commonest |
+|---|---|---|
+| blackburrow | 283 | TORCH ×78, BONES ×40, BLOODYPUNGEE ×28, BARREL ×13, PAWTABLE ×5 |
+| paw | 344 | TORCH ×99, PAWROCK ×89, PAWBRICK ×48, PAWBARREL ×25, PAWPAL ×24, PAWHOOK ×23, PAWTABLE ×14 |
+| crystal | 447 | CCROCK ×172, VELIUMCRYSTALS ×164, CCTORCH ×13, MISTWEBS ×10, CCBRAZ ×9 |
+| runnyeye | 648 | TORCHPOINT ×225, SLIMEPILE ×44, BARREL ×42, CHAIR ×26, PAWTABLE ×15, URN ×14 |
+| soldungb | 337 | TORCHPOINT ×59, STEAM ×47, FURPILE ×36, WEB ×27, KEG ×13, BRAZIER ×11, CANDELABRA ×8 |
+| soldunga | 461 | TORCHPOINT ×129, TORCH ×87, BENCH ×21, CRATEA ×19, KEG ×15, DARKTABLE ×13, GOBDIVAN ×10 |
+| permafrost | 502 | PERROCK ×255, PERTORCH ×119, PERBRICK ×21, PERSTAL ×17, PAWHOOK ×15 |
+| kaesora | 396 | KSROCK ×202, KSTIKI ×39, KSLIGHT ×23, KSBOKPILE ×20, KSBOOK ×14, KSPEW ×14, KSSTATUE ×11 |
+| guktop | 395 | OGGLANTERN ×107, MUSHROOM ×73, GUKBRAZIER ×26, GUKCHAIR ×25, GUKPLNK ×25, GUKTABLE ×15 |
+| najena | 414 | BONEPILE ×77, PAWHOOK ×72, BONES ×48, STONEBENCH ×26, HPCHAIN ×21, PALLET ×11 |
+| gukbottom | 482 | OGGLANTERN ×209, MUSHROOM ×64, GUKBRAZIER ×31, LADDER ×16, GROBCAGE ×13 |
+| sebilis | 501 | CBTORCH ×121, CBTIKI ×69, SBROCK ×68, SBSHAKLE ×32, CBPILLAR ×24, SBTABLE ×18, SBBOOK ×13 |
+| qcat | 93 | TORCHPOINT ×48, BONES ×14, BOOKCASE ×6, CHAIR ×4, RECTTABLE ×4, CANDLE ×4 |
+| befallen | 346 | BHROCK ×112, BONEPILE ×84, STONEBENCH ×30, URN ×29, PAWHOOK ×20, BOOKCASE ×4 |
+| kurn | 267 | KNTORCH ×53, CBTORCH ×45, CBCRATE ×40, CBBARREL ×26, VEBRAZ ×19, DNBUNK ×16 |
+| qeynos2 | 480 | TREE ×160, TORCHPOINT ×46, HLAMP ×36, CHAIR ×33, LIGHTPOLE ×23, CRATEA ×19 |
+| qeynos | 476 | LIGHTPOLE ×51, HLAMP ×46, CHAIR ×39, BED ×31, RUG ×26, BARSTOOL ×17 |
+| freportw | 758 | HLAMP ×146, LIGHTPOLE ×86, CHAIR ×51, BARREL ×38, BOOKCASE ×20, DRAWER ×19, BED ×19 |
+| freportn | 556 | HLAMP ×120, BED ×51, CHAIR ×46, BENCH ×25, DRAWER ×21, DRESSER ×14 |
+| neriaka / neriakb | 525 / 387 | HLAMP ×97, TORCH ×66, CHAIR ×36, BARSTOOL ×29, BED ×20, DARKTABLE ×24 |
+| halas | 445 | HALMOUND ×61, HLAMP ×40, FURRUG ×24, BARREL ×21, HBOX ×20, TABAC ×17 |
+| rivervale | 531 | HLAMP ×123, LIGHTPOLE ×49, CHAIR ×48, BENCH ×29, BARSTOOL ×24, PALLET ×21 |
+| kaladima | 266 | KALLAMP ×62, LAMP ×43, KALBRAZ ×14, KEG ×14, BOOKCASE ×10, MISTCOUCH ×7 |
+| akanon | 452 | AKALIGHT ×170, RUG ×55, AKASTACK ×44, AKAWORKBENCH ×37, AKAWALLGIZ ×28 |
+| erudnext, felwithea | 165, 213 | ERLANT ×154, BARSTOOL ×14, BED ×17, FELCHAIR ×10 |
+| oggok | 370 | OGGLANTERN ×213, OGGRUG ×27, OGGCHAIR ×17, URN ×15 |
+| cabeast | 430 | CBROCK ×112, CBRUG ×54, CBTORCH ×52, CBBARREL ×28, CBCRATE ×25, IKCHAIR ×21 |
+| paineel | 531 | PALAMP ×198, PAFLAG ×108, PACHAIR ×37, PATABLE ×22, PABOOK ×12 |
 
-(Rooms: step 9's chamber split. Grobb has no `.s3d` in this install.)
+(Grobb has no `.s3d` in this install.)
 
-By Category, sorted by name pattern (task 1 checks the leftovers by hand):
+**How the survey reads them.** Each object joins the walked floor node nearest it (within
+14 u, at the height of the floor under it), and so a room or a corridor of step 9's chamber
+split. Rooms are chambers at least 50 u a side; the split's passage and smaller chambers are
+corridor. In a city a room is a chamber with a ceiling over half its floor (a building); the
+rest is open ground, counted as corridor. Step 6's `Floor` keeps only the largest walked
+piece, which lost Kaesora's temple, Guk's halls past the water and most of South Qeynos;
+the survey builds one per piece of at least 150 nodes, so room counts are higher than step
+9's (Kaesora 36, not 20), and under 1% of objects (8% in Ak'Anon) stand off the walked floor.
+Floor, walls and ceiling come from the zone mesh: the floor under an object is the highest
+solid upward face at or just over its origin, the wall distance is to the nearest sampled
+wall face (3 u grid), and the ceiling is the lowest solid downward face 4–250 u over the
+floor (Crushbone's sky shell is 620 u up).
 
-| | Objects | Debris | Light | Furniture | Container | Hanging | Plant | Other |
+**Mount**, first match: **floor** when the model's bottom or origin is within 1.5 u of the
+floor; **raised** when its bottom sits on another object's top (a stacked crate, a candle on a
+table); **wall** when its origin is within 3.5 u of a wall; **ceiling** when its top is within
+3 u of the ceiling or through it (hooks, chains); else **raised** (a ledge the ray missed).
+Checked by name: TORCHPOINT 97% wall, HLAMP 99% wall, PAWHOOK 82% ceiling, CHAIR 98% floor.
+
+**Category** comes from the name (`decor_survey.category`, first matching pattern: light,
+container, furniture, hanging, structure, debris, plant). It's rough until task 3's tags:
+2.5% of the 12,501 objects match nothing (STEAM ×107, AKASTACK ×44 and Ak'Anon's machinery
+make most of it), and a hand check of the commonest 45 names per Category found few
+misfilings but some judgement calls: mushrooms, webs, books, meat and tools are **debris**;
+tiki torches are lights; ladders, carts, cages, cells and tents are **structure**.
+
+Per zone type (p25–p50–p75 over the zones, min–max in brackets):
+
+| | 15 dungeons | 15 cities |
+|---|---|---|
+| Objects in rooms (share) | 0.30–0.37–0.42 (0.09–0.76) | 0.16–0.24–0.35 (0.06–0.81) |
+| **Props per room**, mean | 2.9–4.2–6.8 (0.9–11.5) | 4.0–9.4–12.5 (1.9–17.4) |
+| Props per room, p50 over rooms | 1–2–5.5 (0–8) | 2–6–10 (0–19) |
+| Empty rooms | 0.13–0.26–0.38 (0.04–0.78) | 0–0.20–0.40 (0–0.50) |
+| **Per 1000 u²** of room floor | 0.45–0.54–0.96 (0.21–2.38) | 0.39–1.47–2.17 (0.18–4.31) |
+| Per 1000 u² of corridor | 0.53–0.72–1.04 (0.31–1.64) | 0.26–0.40–1.04 (0.02–1.37) |
+
+| **Category** | Light | Container | Furniture | Hanging | Structure | Debris | Plant | Other |
 |---|---|---|---|---|---|---|---|---|
-| 15 dungeons | 5916 | 36% | 29% | 10% | 9% | 5% | 4% | 6% |
-| 15 cities | 6585 | 5% | 37% | 23% | 14% | 9% | 9% | 4% |
+| Dungeons p50 (p25–p75) | .34 (.21–.45) | .08 (.03–.11) | .14 (.09–.15) | .01 (0–.04) | .02 (.01–.04) | .30 (.20–.56) | 0 | 0 (0–.03) |
+| Dungeons pooled | .31 | .08 | .11 | .04 | .04 | .39 | .01 | .02 |
+| Cities p50 (p25–p75) | .39 (.24–.45) | .12 (.10–.15) | .28 (.23–.34) | 0 (0–.02) | .01 (.01–.03) | .02 (0–.07) | .03 (0–.08) | .01 (0–.02) |
+| Cities pooled | .38 | .12 | .29 | .03 | .02 | .06 | .08 | .03 |
+
+| **Mount** | Floor | Wall | Ceiling | Raised |
+|---|---|---|---|---|
+| Dungeons p50 (p25–p75) | .56 (.51–.66) | .31 (.26–.38) | .01 (0–.09) | .05 (.04–.07) |
+| Cities p50 (p25–p75) | .72 (.65–.77) | .23 (.18–.31) | 0 (0–.02) | .04 (.03–.05) |
+
+By room style (the 15 dungeons; min–max over the zones):
+
+| Style | Zones | Props per room, mean | Per 1000 u² | Light | Debris | Furniture | Floor | Wall | Ceiling |
+|---|---|---|---|---|---|---|---|---|---|
+| rough | 7 | 2.8–11.5 | 0.44–2.38 | .05–.48 | .04–.90 | .01–.20 | .47–.71 | .21–.48 | 0–.13 |
+| hewn | 5 | 2.8–8.0 | 0.40–1.36 | .10–.53 | .18–.66 | .08–.15 | .51–.70 | .10–.47 | 0–.23 |
+| built | 3 | 0.9–11.0 | 0.21–1.25 | .01–.59 | .06–.68 | .14–.15 | .41–.84 | .03–.53 | 0–.10 |
+
+Style barely separates; the zone's people do (Befallen's dead keep a built zone at 1% light
+and 68% debris, Kurn's living keep another at 51% light). **Task 14's bands are the dungeon
+and city p25–p75 above**, by zone type, with the min–max as the hard edge.
+
+The rest, from the per-zone printout:
+
+- **Lights' spacing**: a wall light's nearest wall light is 33–38–45 u away in dungeons
+  (p25–p50–p75 over zones; Najena 76, Befallen's few 196) and 21–26–32 u in cities. Of all
+  lights, 52–74–89% are on walls in dungeons and 49–59–70% in cities.
+- **Groups**: where a zone has tables and chairs, 0.46–1.0 of its tables have a chair within
+  12 u, 1.1–2.7 chairs each; Paw's 14 tables have none (its gnolls sit on PAWPALs). Beds
+  stand in rows (another bed within 16 u) for 50–100% of beds in the barracks dungeons (Paw,
+  Sol A, Sol B, Kurn's bunks) and 0–56% in cities.
+- **By doors** (where a room's floor meets another room or a corridor): 16–23–26% of dungeon
+  doors and 39–56–71% of city doors have a light within 16 u. The inhabited dungeons light
+  half or more (Sol A 71%, Runnyeye 62%), the dead ones almost none (Befallen 1%, Crystal
+  3%). What stands by a door is the zone's mix, with lights over-represented.
 
 What it says:
 
-- **Rooms are full.** Dungeons hold 7–48 objects a room (zone-wide, corridors included),
-  median about 19. A room with nothing in it is the exception in stock and the rule here.
-- **Lights are the backbone.** Nearly a third of everything is a torch, lantern, lamp or
-  brazier, every zone has them, and most hang on walls (TORCHPOINT, TORCH). A room without
-  them reads unlit whatever the ZON says.
-- **Debris is the dungeon's texture**: rocks, bones, webs, mushrooms, crystals, slime. It's a
-  third of a dungeon's objects and a twentieth of a city's: that's Clutter.
-- **Furniture marks who lives there.** Inhabited dungeons (Paw, Guk, Sol A, Kurn, Runnyeye)
-  have tables, chairs, benches, bunks and pallets; cities have beds, dressers, drawers and
-  bookcases. Dead places (Crystal, Befallen, Kaesora) have almost none.
+- **Rooms are emptier than the probe said.** Two thirds of a dungeon's objects stand outside
+  the split's rooms: in corridors, alcoves and the passage round a room's edge. A dungeon room
+  holds about 4 objects (mean; median 2), a quarter of rooms hold none, and corridors are as
+  dense per u² as rooms. The probe's "7–48 a room" divided the whole zone by the room count.
+- **Lights are the backbone**: a third of a dungeon's objects and two fifths of a city's,
+  three quarters of them on walls, about 38 u apart (26 u in cities).
+- **Debris is the dungeon's texture**: rocks, bones, webs, mushrooms, crystals. A third of a
+  dungeon (90% of Crystal), a twentieth of a city: that's Clutter.
+- **Furniture marks who lives there**: 14% in dungeons, 28% in cities; inhabited dungeons seat
+  their tables and row their beds.
+- **Ceiling Mounts are rare and a dungeon thing** (hooks and chains in Najena, Paw, Befallen;
+  1% median). Raised objects (stacks, things on tables) are about 5% everywhere.
 - **Each race has its own set**: PAW-, GUK-, KS-, SB-, CB-, AKA-, OGG-, PA- prefixes. Shape is
   shared (a table is a table); material and detail differ. That's the Material_Set.
 - **Some objects are structure**: CBPILLAR, KSSTATUE, ladders, cages. Step 9's Features already
   cover pillars and plinths; ladders and cages are out (Req intro).
 
-What the probe can't see, and task 1 measures: which room each object stands in, floor vs
-wall vs ceiling, how close to a wall, Groups, lights' spacing, and the stock models' sizes and
-triangle counts (from `<zone>_obj.s3d`).
+**The catalogue's observed fields** (`decor_survey.py --write`, through
+`prop_catalogue.put_observed`): for each of the 4,192 placed models, over the 246 zones that
+place them (111 dungeon, 106 outdoor, 29 city; dungeon when a ceiling covers half the zone's
+floor), its height over the floor and distance to a wall (p10/p50/p90), share under a ceiling,
+scale (min/p50/max), Mount shares, zone types, the three names standing nearest, and per zone
+the count, type, medians and commonest Mount. Over all 246 zones' placements: floor 74%,
+wall 6%, ceiling 4%, raised 8%, and 7% `unknown`, where no solid floor face lies under the
+object at all (mostly outdoor: a third of the East Wastes').
+
+What the survey can't see:
+
+- **Rooms the split joined or cut.** Room counts and sizes are the split's, not a person's:
+  a big hall can be one room or several, alcoves and room edges fall to corridor, and a city's
+  rooms are only its roofed chambers. Props per room is a bar for our own rooms measured by
+  the same code (task 14), not a count a person would make.
+- **Objects off the walked floor** (under 1%, 8% in Ak'Anon).
+- **Real Categories.** Names are rough (2.5% unmatched, a few calls arguable); task 3's tags
+  replace them.
+- **Objects on objects** only by stacking geometry (a bottom on another's top within 1.5 u);
+  a rug under a table, or a candle on a shelf the stacking misses, reads by its own height.
+- **Orientation**: yaw is read but not judged (whether a wall Prop faces out from its wall).
+- **The ZON's own lights**: only placed models count; `lights.wld` point lights aren't read.
 
 ### 2. What the code already offers
 
