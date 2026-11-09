@@ -16,6 +16,11 @@ Nothing yet. Rows are added at the close step (task 17).
    catalogued and tagged; builds copy the ones they use, unchanged. Amends umbrella Req 32.7 for
    Props only.
 
+2. **Its two consequences are accepted** (user, 2026-11-08: "i agree with those consequences"):
+   builds with Props need the install (`EQ_PATH`), falling back to Decor `none` with a warning
+   without it; and a built `.eqg` holds copies of the client's models and textures, for the
+   user's own client and server, not to be shared as standalone files.
+
 The design's other open questions (2-13) are answered here next.
 
 ## Follow-ups
