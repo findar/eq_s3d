@@ -26,3 +26,4 @@
 # sets = ["centaur"]            # Sets beyond the built-in ones
 
 [models]
+"TABAC" = { kind = "pillar" }
