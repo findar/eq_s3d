@@ -40,7 +40,7 @@ import math
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -53,6 +53,9 @@ from generators.geometry import (MeshBuilder, _bridge_slots, _door_openings, bri
 from generators.routing import Rect, corridor_route, route_footprint
 from generators.semantics import body_height
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
+
+if TYPE_CHECKING:
+    from analyzer.footprints import Placed
 
 
 # ---------------------------------------------------------------------------
@@ -430,6 +433,26 @@ def load_ter_from_eqg(eqg_path: str | Path) -> Tuple[TerFile, str]:
 
     ter = TerFile.from_bytes(ter_data, name=zone_name)
     return ter, zone_name
+
+
+def placed_models(eqg_path: str | Path) -> List["Placed"]:
+    """Every ZON object the ``.eqg`` places with the model it places
+    (``analyzer.footprints.placed_from_zon``), the terrain's own object left
+    out. Empty when the archive has no ZON or the ZON places only terrain."""
+    from analyzer.footprints import placed_from_zon
+    from core.zon import ZonFile
+
+    arc = PfsArchive.from_file(Path(eqg_path))
+    zon_name = next((f for f in arc.list_files() if f.lower().endswith(".zon")), None)
+    if zon_name is None:
+        return []
+    zon = ZonFile.from_bytes(arc.get(zon_name))
+    wanted = {zon.models[o.model_id] for o in zon.objects}
+    wanted = {f for f in wanted if not f.lower().endswith(".ter")}
+    if not wanted:
+        return []
+    models = {f: TerFile.from_bytes(arc.get(f), name=f) for f in wanted if arc.get(f) is not None}
+    return placed_from_zon(zon, models)
 
 
 # ---------------------------------------------------------------------------
@@ -2798,7 +2821,8 @@ def validate(eqg_path: str | Path,
              agent: Optional[AgentModel] = None,
              check_corridors: bool = False,
              *,
-             bowl: Optional[BowlGateParams] = None) -> TraversalReport:
+             bowl: Optional[BowlGateParams] = None,
+             placed: Optional[Sequence["Placed"]] = None) -> TraversalReport:
     """
     Load the mesh and room graph, walk the mesh from the safe point, and report
     per-room reachability.
@@ -2819,6 +2843,13 @@ def validate(eqg_path: str | Path,
     override that the bowl invariant (task 10.2) consumes; task 10.1 only threads
     the parameters through (flood seed + the reachable set are exposed on the
     report for 10.2 to test) and does not yet compute a bowl pass/fail verdict.
+
+    Placed models (room-decor task 5): the ZON objects the ``.eqg`` places, or
+    ``placed`` when given, are judged from their own collidable triangles as
+    obstacles beside the mesh's (``analyzer.footprints.check_room_props``).
+    Each failure is one more failed entry in ``report.outlines``, its
+    ``room_id`` the room it's in. With no placed model in the room graph the
+    report is exactly what it was without this check.
     """
     agent = agent or AgentModel()
     ter, zone_name = load_ter_from_eqg(eqg_path)
@@ -2908,6 +2939,14 @@ def validate(eqg_path: str | Path,
             report.reachable_rooms += 1
 
     report.outlines = outline_checks(surf, spec, agent)
+    if placed is None:
+        placed = placed_models(eqg_path)
+    if placed:
+        from analyzer.footprints import check_room_props, collidable_triangles
+
+        for f in check_room_props(surf, reachable, spec, placed, collidable_triangles(ter),
+                                  seed_face, agent):
+            report.outlines.append(OutlineResult(f.where or "props", False, str(f)))
 
     if check_corridors:
         report.checked_corridors = True

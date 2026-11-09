@@ -62,6 +62,17 @@ nothing, so neither is; anything that does enclose ground must let a player in.
 
 Entry points: :func:`placed_from_zon`, :class:`GroundRaster`,
 :func:`check_footprints`.
+
+The room gate
+~~~~~~~~~~~~~
+Room-graph builds (dungeon, city, an outdoor dungeon's rooms) judge placed
+models too (room-decor spec task 5), through :func:`check_room_props`, which
+``analyzer.traverse.validate`` runs on every ``.eqg`` whose ZON places a model
+in the room graph. Its floor is the mesh's own reached faces, sampled on every
+Level at once; its obstacles are the models' collidable triangles beside the
+mesh's walls, open shells and odd winding included (no "inside a solid" rule).
+Its failures are ``footprint_cut``, ``throat_narrow`` and ``poi_unreached``;
+see the section at the end of this module.
 """
 
 from __future__ import annotations
@@ -526,11 +537,13 @@ def measure_opening(local: np.ndarray, scale: float = 1.0,
 @dataclass(frozen=True)
 class GateFailure:
     """One named failure: ``kind`` (see the module docstring), the objects or
-    POI it names (``subjects``), and where."""
+    POI it names (``subjects``), and where. ``where`` is the room (or
+    corridor) the room gate found it in; "" on the wilderness gate."""
 
     kind: str
     subjects: Tuple[str, ...]
     detail: str
+    where: str = ""
 
     def __str__(self) -> str:
         names = ", ".join(self.subjects[:3])
@@ -670,3 +683,489 @@ def check_footprints(ground: GroundRaster, placed: Sequence[Placed],
                                             f"at ({poi.x:.0f}, {poi.y:.0f}) is not on "
                                             f"reached ground"))
     return FootprintReport(failures=failures, covered=covered, reached=after)
+
+
+# ---------------------------------------------------------------------------
+# The room gate (room-decor spec task 5, Requirement 2)
+# ---------------------------------------------------------------------------
+#
+# Room-graph builds (dungeon, city, an outdoor dungeon's rooms) have no ground
+# raster: their floor is the mesh's own reached faces, on any number of Levels
+# at one XY. So the room gate samples the reached faces at points (a 2.5D
+# raster: each sample keeps its own floor height, and two samples join when
+# they are 4-neighbours within a step of each other in height). The placed
+# models' collidable triangles are obstacles beside the mesh's own walls, by
+# the "near a triangle" rule above. There is no "inside a solid" rule here:
+# stock models are open shells wound any way, so a solid's inside is told by
+# its plan instead (a cut-off piece inside one model's plan hull is that
+# model's inside, not floor anyone lost).
+#
+# Every verdict compares the floor with the models to the floor without them,
+# on the same samples and the same mesh walls, so the raster's own artefacts
+# (a narrow nook, a seam) never fail a build: only what the models change can.
+
+#: Sample step of the room gate's clear-width check (u): an opening at least
+#: CLEAR_WIDTH wide always passes, one under CLEAR_WIDTH - 2 x step / sqrt 2
+#: (6.6 u) always fails.
+ROOM_WIDE_STEP = 1.0
+#: How far round a placed model the room gate reads the mesh's own walls (u).
+ROOM_WINDOW = CLEAR_WIDTH + 2 * GATE_STEP
+#: How far off a room's floor height a door or core sample may stand (u).
+FLOOR_LEVEL_TOL = 4.0
+#: Floor samples at one XY closer than this in height are one sample (u).
+_SAME_FLOOR = 0.5
+
+
+@dataclass
+class FloorSamples:
+    """Points on a mesh's floor faces: pixel ``(i, j)`` of a grid at ``step``
+    from ``(x0, y0)``, its floor height ``z`` and the ``face`` it lies on,
+    sorted by ``key`` (``i * ny + j``). One XY may hold several samples, one per
+    Level."""
+
+    x0: float
+    y0: float
+    step: float
+    ny: int
+    i: np.ndarray
+    j: np.ndarray
+    z: np.ndarray
+    face: np.ndarray
+    key: np.ndarray
+
+    @property
+    def x(self) -> np.ndarray:
+        return self.x0 + (self.i + 0.5) * self.step
+
+    @property
+    def y(self) -> np.ndarray:
+        return self.y0 + (self.j + 0.5) * self.step
+
+    def __len__(self) -> int:
+        return len(self.z)
+
+    def lookup(self, keys: np.ndarray):
+        """For each key: the first sample holding it, and how many do."""
+        lo = np.searchsorted(self.key, keys, side="left")
+        hi = np.searchsorted(self.key, keys, side="right")
+        return lo, hi - lo
+
+
+def floor_samples(tris: np.ndarray, faces: np.ndarray, step: float,
+                  box: Optional[Tuple[float, float, float, float]] = None) -> FloorSamples:
+    """Sample the floor triangles ``tris`` (F, 3, 3), whose face ids are
+    ``faces``, at ``step``, inside the plan ``box`` (x0, y0, x1, y1) if given.
+    The grid is anchored at a multiple of ``step``."""
+    if box is None and len(tris):
+        lo, hi = tris.reshape(-1, 3).min(axis=0), tris.reshape(-1, 3).max(axis=0)
+        box = (float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1]))
+    elif box is None:
+        box = (0.0, 0.0, 0.0, 0.0)
+    gx0 = math.floor(box[0] / step) * step - step
+    gy0 = math.floor(box[1] / step) * step - step
+    ni = int(math.ceil((box[2] - gx0) / step)) + 2
+    ny = int(math.ceil((box[3] - gy0) / step)) + 2
+    ints = np.zeros(0, np.int64)
+    empty = FloorSamples(gx0, gy0, step, ny, ints, ints, np.zeros(0), ints, ints)
+    if len(tris) == 0:
+        return empty
+    lo, hi = tris.min(axis=1), tris.max(axis=1)
+
+    def span(a, b, origin, n):
+        k0 = np.clip(np.ceil((a - origin) / step - 0.5), 0, n).astype(np.int64)
+        k1 = np.clip(np.floor((b - origin) / step - 0.5) + 1, 0, n).astype(np.int64)
+        return k0, k1
+
+    i0, i1 = span(np.maximum(lo[:, 0], box[0]), np.minimum(hi[:, 0], box[2]), gx0, ni)
+    j0, j1 = span(np.maximum(lo[:, 1], box[1]), np.minimum(hi[:, 1], box[3]), gy0, ny)
+    counts = np.maximum(i1 - i0, 0) * np.maximum(j1 - j0, 0)
+    out_i, out_j, out_z, out_f = [], [], [], []
+    for a, b in _batches(counts):
+        row, ii, jj = _pairs(i0[a:b], i1[a:b], j0[a:b], j1[a:b])
+        if len(row) == 0:
+            continue
+        t = tris[row + a]
+        px, py = gx0 + (ii + 0.5) * step, gy0 + (jj + 0.5) * step
+        e = [(t[:, (k + 1) % 3, :2] - t[:, k, :2]) for k in range(3)]
+        w = [e[k][:, 0] * (py - t[:, k, 1]) - e[k][:, 1] * (px - t[:, k, 0]) for k in range(3)]
+        inside = (((w[0] >= -1e-9) & (w[1] >= -1e-9) & (w[2] >= -1e-9))
+                  | ((w[0] <= 1e-9) & (w[1] <= 1e-9) & (w[2] <= 1e-9)))
+        if not inside.any():
+            continue
+        out_i.append(ii[inside])
+        out_j.append(jj[inside])
+        out_z.append(_plane_z(t[inside], px[inside], py[inside]))
+        out_f.append(faces[row[inside] + a])
+    if not out_i:
+        return empty
+    i, j = np.concatenate(out_i), np.concatenate(out_j)
+    z, f = np.concatenate(out_z), np.concatenate(out_f)
+    key = i * ny + j
+    order = np.lexsort((z, key))
+    i, j, z, f, key = i[order], j[order], z[order], f[order], key[order]
+    new = np.r_[True, (key[1:] != key[:-1]) | (z[1:] - z[:-1] > _SAME_FLOOR)]
+    return FloorSamples(gx0, gy0, step, ny, i[new], j[new], z[new], f[new], key[new])
+
+
+def _expand(first: np.ndarray, count: np.ndarray):
+    """(which row, which index) for rows each naming ``count`` consecutive
+    indices from ``first``."""
+    total = int(count.sum())
+    row = np.repeat(np.arange(len(count)), count)
+    return row, np.repeat(first, count) + (np.arange(total) - np.repeat(np.cumsum(count) - count, count))
+
+
+def _sample_edges(fs: FloorSamples, step_up: float):
+    """4-neighbour sample pairs (a, b) whose floors are within ``step_up``."""
+    aa, bb = [], []
+    for dk in (fs.ny, 1):
+        first, count = fs.lookup(fs.key + dk)
+        a, b = _expand(first, count)
+        ok = np.abs(fs.z[a] - fs.z[b]) <= step_up
+        aa.append(a[ok])
+        bb.append(b[ok])
+    return np.concatenate(aa), np.concatenate(bb)
+
+
+def _sample_labels(n: int, edges, free: np.ndarray) -> np.ndarray:
+    """Component label of each free sample (-1 for the rest)."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    a, b = edges
+    m = free[a] & free[b]
+    g = coo_matrix((np.ones(int(m.sum()), np.int8), (a[m], b[m])), shape=(n, n))
+    _, lab = connected_components(g, directed=False)
+    return np.where(free, lab, -1)
+
+
+def cover_samples(fs: FloorSamples, tris: np.ndarray, owners: np.ndarray,
+                  radius: float, low: float, high: float) -> Coverage:
+    """:func:`coverage`'s "near a triangle" rule on floor samples: a sample
+    (floor ``g``) is covered when a triangle, clipped to ``[g + low, g + high]``,
+    comes within ``radius`` of it in plan. ``Coverage`` arrays are per sample."""
+    n = len(fs)
+    covered = np.zeros(n, dtype=bool)
+    owner = np.full(n, -1, dtype=np.int32)
+    if n == 0 or len(tris) == 0:
+        return Coverage(covered, owner)
+    s = fs.step
+    ni = int(fs.i.max()) + 1
+    lo, hi = tris.min(axis=1), tris.max(axis=1)
+
+    def span(a, b, origin, m):
+        k0 = np.clip(np.ceil((a - origin) / s - 0.5), 0, m).astype(np.int64)
+        k1 = np.clip(np.floor((b - origin) / s - 0.5) + 1, 0, m).astype(np.int64)
+        return k0, k1
+
+    i0, i1 = span(lo[:, 0] - radius, hi[:, 0] + radius, fs.x0, ni)
+    j0, j1 = span(lo[:, 1] - radius, hi[:, 1] + radius, fs.y0, fs.ny)
+    counts = np.maximum(i1 - i0, 0) * np.maximum(j1 - j0, 0)
+    for a, b in _batches(counts):
+        row, ii, jj = _pairs(i0[a:b], i1[a:b], j0[a:b], j1[a:b])
+        if len(row) == 0:
+            continue
+        first, count = fs.lookup(ii * fs.ny + jj)
+        k, p = _expand(first, count)
+        row = row[k] + a
+        g = fs.z[p]
+        # Quick reject: the triangle lies wholly under or over the band.
+        keep = (hi[row, 2] >= g + low) & (lo[row, 2] <= g + high)
+        row, p, g = row[keep], p[keep], g[keep]
+        if len(row) == 0:
+            continue
+        poly, ok1 = _clip(tris[row], 1.0, g + low)
+        poly, ok2 = _clip(poly, -1.0, g + high)
+        ok = ok1 & ok2
+        if not ok.any():
+            continue
+        d = _dist_to_polygon(poly[ok], fs.x[p[ok]], fs.y[p[ok]])
+        hit = d <= radius
+        covered[p[ok][hit]] = True
+        owner[p[ok][hit]] = owners[row[ok][hit]]
+    return Coverage(covered, owner)
+
+
+def _boxes_hit(lo: np.ndarray, hi: np.ndarray, boxes: np.ndarray) -> np.ndarray:
+    """Which 3D boxes ``lo``..``hi`` (N, 3) meet any of ``boxes`` (M, 6:
+    x0 y0 z0 x1 y1 z1)."""
+    out = np.zeros(len(lo), dtype=bool)
+    for k in range(0, len(boxes), 64):
+        b = boxes[k:k + 64]
+        m = ((lo[:, None, 0] <= b[None, :, 3]) & (hi[:, None, 0] >= b[None, :, 0])
+             & (lo[:, None, 1] <= b[None, :, 4]) & (hi[:, None, 1] >= b[None, :, 1])
+             & (lo[:, None, 2] <= b[None, :, 5]) & (hi[:, None, 2] >= b[None, :, 2]))
+        out |= m.any(axis=1)
+    return out
+
+
+def _region_boxes(spec) -> np.ndarray:
+    """The room graph's 3D boxes: each room's, and each corridor leg's from its
+    lower floor to its ceiling. A placed model meeting none (an outdoor
+    dungeon's trees) is the wilderness gate's, not the room gate's."""
+    from generators.routing import corridor_route, route_footprint
+
+    rooms = {r.id: r for r in spec.rooms}
+    out = []
+    for r in spec.rooms:
+        (x0, y0, z0), (x1, y1, z1) = r.bounds
+        out.append((x0, y0, z0 - 1.0, x1, y1, z1))
+    for c in spec.corridors:
+        if c.from_room not in rooms or c.to_room not in rooms:
+            continue
+        z0 = min(c.from_z, c.to_z) - 1.0
+        z1 = max(c.from_z, c.to_z) + c.height
+        for x0, y0, x1, y1 in route_footprint(corridor_route(c, rooms), c.width / 2):
+            out.append((x0, y0, z0, x1, y1, z1))
+    return np.array(out, dtype=np.float64).reshape(-1, 6)
+
+
+def _where(spec, x: float, y: float, z: float) -> str:
+    """The room whose Box holds (x, y, z), else the nearest one."""
+    best, dist = "", math.inf
+    for r in spec.rooms:
+        (x0, y0, z0), (x1, y1, z1) = r.bounds
+        if x0 <= x <= x1 and y0 <= y <= y1 and z0 - 1.0 <= z <= z1:
+            return r.id
+        d = math.hypot(max(x0 - x, 0.0, x - x1), max(y0 - y, 0.0, y - y1)) + abs(z - z0)
+        if d < dist:
+            best, dist = r.id, d
+    return best
+
+
+def _nearest(fs: FloorSamples, mask: np.ndarray, x: float, y: float, z: float,
+             limit: float = math.inf) -> int:
+    """The masked sample nearest (x, y) in plan within ``limit``, preferring
+    those within FLOOR_LEVEL_TOL of ``z``; -1 when there is none."""
+    idx = np.nonzero(mask)[0]
+    if len(idx) == 0:
+        return -1
+    d = np.hypot(fs.x[idx] - x, fs.y[idx] - y)
+    dz = np.abs(fs.z[idx] - z)
+    k = int(np.argmin(d + np.where(dz <= FLOOR_LEVEL_TOL, 0.0, 1e6 + dz)))
+    return int(idx[k]) if d[k] <= limit else -1
+
+
+#: How far into its room a door's way runs, for the clear-width check (u).
+DOOR_WAY = 2 * CLEAR_WIDTH
+
+
+def _door_way(room, door, margin: float) -> Tuple[float, float, float, float]:
+    """The plan rect a door's way into ``room`` takes: the door's strip,
+    ``margin`` wider each side, DOOR_WAY deep."""
+    (x0, y0, _), (x1, y1, _) = room.bounds
+    side, c0, c1 = door
+    a, b = c0 - margin, c1 + margin
+    return {"S": (a, y0, b, y0 + DOOR_WAY), "N": (a, y1 - DOOR_WAY, b, y1),
+            "W": (x0, a, x0 + DOOR_WAY, b), "E": (x1 - DOOR_WAY, a, x1, b)}[side]
+
+
+def _in_doorway(fs: FloorSamples, room, side: str, c0: float, c1: float,
+                depth: float) -> np.ndarray:
+    """Samples in a door's strip, at most ``depth`` into the room."""
+    (x0, y0, _), (x1, y1, _) = room.bounds
+    along, d = {"S": (fs.x, fs.y - y0), "N": (fs.x, y1 - fs.y),
+                "W": (fs.y, fs.x - x0), "E": (fs.y, x1 - fs.x)}[side]
+    return (along >= c0) & (along <= c1) & (d >= -ROOM_WIDE_STEP) & (d <= depth)
+
+
+def _in_room_graph(placed: Sequence[Placed], spec):
+    """The placed models standing in the room graph: (their indices, their
+    world triangles, each triangle's owner)."""
+    grown = _region_boxes(spec) + np.array(
+        [-ROOM_WINDOW, -ROOM_WINDOW, 0.0, ROOM_WINDOW, ROOM_WINDOW, 0.0])
+    locals_: Dict[int, np.ndarray] = {}
+    kept, parts, owners = [], [], []
+    for k, p in enumerate(placed):
+        loc = locals_.get(id(p.model))
+        if loc is None:
+            loc = locals_[id(p.model)] = collidable_triangles(p.model)
+        if not len(loc):
+            continue
+        w = world_triangles(p, loc)
+        if not _boxes_hit(w.min(axis=(0, 1))[None], w.max(axis=(0, 1))[None], grown)[0]:
+            continue
+        kept.append(k)
+        parts.append(w)
+        owners.append(np.full(len(w), k, dtype=np.int32))
+    if not parts:
+        return kept, np.zeros((0, 3, 3)), np.zeros(0, np.int32)
+    return kept, np.concatenate(parts), np.concatenate(owners)
+
+
+def check_room_props(surf, reached, spec, placed: Sequence[Placed], mesh: np.ndarray,
+                     seed_face: Optional[int],
+                     agent: Optional[AgentModel] = None) -> List[GateFailure]:
+    """The room gate's verdict on placed models (Requirement 2): every
+    failure, named, its ``where`` the room it's in. Empty when no placed
+    model stands in the room graph, whatever else the zone holds.
+
+    ``surf`` and ``reached`` are the walk surface and the faces reached from
+    the entrance (``analyzer.traverse``), ``mesh`` the mesh's own collidable
+    triangles (T, 3, 3), ``seed_face`` the face the walk starts on.
+
+    ``footprint_cut``
+        Floor joined to the entrance without the models is cut off with them:
+        at least ``WALLED_OFF`` u^2 of it (step 9's walled-off pocket), not
+        inside one model's plan.
+    ``throat_narrow``
+        A door's way to its room's Core (its Throat, and the Spine on) let a
+        body CLEAR_WIDTH wide through without the models and doesn't with them.
+    ``poi_unreached``
+        A POI on reached floor without the models isn't with them.
+    """
+    from analyzer.traverse import WALLED_OFF, _door_strips, _faces_in_room
+
+    agent = agent or AgentModel()
+    low, high = agent.max_step_up, HEAD_HEIGHT
+    if not placed or seed_face is None:
+        return []
+    kept, props, own = _in_room_graph(placed, spec)
+    if not kept:
+        return []
+    names = {k: placed[k].name for k in kept}
+    plo, phi = props.min(axis=1), props.max(axis=1)
+    mlo, mhi = mesh.min(axis=1), mesh.max(axis=1)
+
+    # The reached floor, sampled; the mesh's own walls read round each model.
+    faces = np.array(sorted(int(f) for f in reached), dtype=np.int64)
+    fs = floor_samples(surf.verts[surf.faces[faces]], faces, GATE_STEP)
+    if len(fs) == 0:
+        return []
+    windows = []
+    for k in kept:
+        m = own == k
+        a, b = plo[m].min(axis=0), phi[m].max(axis=0)
+        windows.append((a[0] - ROOM_WINDOW, a[1] - ROOM_WINDOW, a[2] - HEAD_HEIGHT,
+                        b[0] + ROOM_WINDOW, b[1] + ROOM_WINDOW, b[2] + HEAD_HEIGHT))
+    windows = np.array(windows)
+    near = mesh[_boxes_hit(mlo, mhi, windows)]
+    walls = cover_samples(fs, near, np.zeros(len(near), np.int32), PLAYER_HALF_WIDTH, low, high)
+    cov = cover_samples(fs, props, own, PLAYER_HALF_WIDTH, low, high)
+    edges = _sample_edges(fs, agent.max_step_up)
+    before = _sample_labels(len(fs), edges, ~walls.covered)
+    after = _sample_labels(len(fs), edges, ~walls.covered & ~cov.covered)
+
+    # The entrance: the free sample nearest the safe point on the seed face.
+    safe = np.asarray(spec.safe_point, dtype=np.float64)
+    on_seed = (fs.face == seed_face) & (before >= 0)
+    if on_seed.any():
+        s0 = _nearest(fs, on_seed, safe[0], safe[1], float(np.median(fs.z[on_seed])))
+    else:
+        seed_z = float(surf.centroids[seed_face, 2])
+        s0 = _nearest(fs, before >= 0, safe[0], safe[1], seed_z)
+    if s0 < 0:
+        return []
+    joined_before = before == before[s0]
+    a0 = _nearest(fs, (after >= 0) & joined_before, fs.x[s0], fs.y[s0], fs.z[s0], POI_REACH)
+    joined_after = (after == after[a0]) if a0 >= 0 else np.zeros(len(fs), bool)
+
+    failures: List[GateFailure] = []
+
+    # Footprint cut: reached floor the models cut off.
+    cut = joined_before & ~cov.covered & ~joined_after
+    if cut.any():
+        ea, eb = edges
+        hulls: Dict[int, np.ndarray] = {}
+        for lab in np.unique(after[cut]):
+            piece = cut & (after == lab)
+            n = int(piece.sum())
+            area = n * fs.step ** 2
+            if area < WALLED_OFF:
+                continue
+            px, py = fs.x[piece], fs.y[piece]
+            inside_one = False
+            for k in kept:
+                if k not in hulls:
+                    pts = props[own == k][..., :2].reshape(-1, 2)
+                    hulls[k] = _hull(pts) if len(pts) >= 3 else np.zeros((0, 2))
+                if len(hulls[k]) >= 3 and _in_hull(hulls[k], px, py).all():
+                    inside_one = True
+                    break
+            if inside_one:
+                continue
+            ring = np.r_[eb[piece[ea]], ea[piece[eb]]]
+            who = sorted({names[o] for o in np.unique(cov.owner[ring]) if o >= 0})
+            k0 = int(np.nonzero(piece)[0][0])
+            x, y, z = float(fs.x[k0]), float(fs.y[k0]), float(fs.z[k0])
+            first = next((placed[k] for k in kept if placed[k].name in who), None)
+            room = _where(spec, first.x, first.y, first.z) if first else _where(spec, x, y, z)
+            failures.append(GateFailure(
+                "footprint_cut", tuple(who),
+                f"cuts {area:.0f} u^2 of floor at ({x:.0f}, {y:.0f}, {z:.0f}) in "
+                f"{_where(spec, x, y, z)} off from the entrance", where=room))
+
+    # POIs: on reached floor without the models, so on it with them.
+    def stands(mask, poi) -> bool:
+        d = np.hypot(fs.x - poi.x, fs.y - poi.y)
+        return bool((mask & (d <= POI_REACH) & (np.abs(fs.z - poi.z) <= agent.max_step_up)).any())
+
+    for room in spec.rooms:
+        for poi in room.pois:
+            if stands(joined_before, poi) and not stands(joined_after, poi):
+                failures.append(GateFailure(
+                    "poi_unreached", (f"{poi.purpose}",),
+                    f"the {poi.purpose} POI at ({poi.x:.0f}, {poi.y:.0f}, {poi.z:.0f}) "
+                    f"is not on reached floor", where=room.id))
+
+    # Clear width: each door's way to its room's Core, for a body CLEAR_WIDTH
+    # wide. Only models near a door's way (its first DOOR_WAY u in, or its
+    # Throat) can narrow it, so only rooms holding one are sampled.
+    radius = CLEAR_WIDTH / 2 - ROOM_WIDE_STEP / math.sqrt(2.0)
+    reach = radius + ROOM_WIDE_STEP
+    for room in spec.rooms:
+        (x0, y0, z0), (x1, y1, z1) = room.bounds
+        extra = list(room.outline.extra_doors) if room.outline is not None else []
+        doors = _door_strips(room, spec) + extra
+        if not doors:
+            continue
+        zones = [_door_way(room, d, reach) for d in doors]
+        throats = list(room.outline.throats) if room.outline is not None else []
+        areas = zones + [(t[0] - reach, t[1] - reach, t[2] + reach, t[3] + reach) for t in throats]
+        boxes = np.array([(a, b, z0 - 1.0, c, d, z1) for a, b, c, d in areas])
+        grown = boxes + np.array([-radius, -radius, 0.0, radius, radius, 0.0])
+        mine = _boxes_hit(plo, phi, grown)
+        if not mine.any():
+            continue
+        rf = np.array([int(f) for f in _faces_in_room(surf, room, spec.rooms) if int(f) in reached],
+                      dtype=np.int64)
+        if not len(rf):
+            continue
+        rs = floor_samples(surf.verts[surf.faces[rf]], rf, ROOM_WIDE_STEP, (x0, y0, x1, y1))
+        if not len(rs):
+            continue
+        # The room's walls round those models (far from them, nothing changes).
+        win = np.r_[plo[mine].min(axis=0) - ROOM_WINDOW, phi[mine].max(axis=0) + ROOM_WINDOW]
+        win[2], win[5] = z0 - HEAD_HEIGHT, z1 + HEAD_HEIGHT
+        win = win.reshape(1, 6)
+        rmesh = mesh[_boxes_hit(mlo, mhi, win)]
+        rwalls = cover_samples(rs, rmesh, np.zeros(len(rmesh), np.int32), radius, low, high)
+        rcov = cover_samples(rs, props[mine], own[mine], radius, low, high)
+        redges = _sample_edges(rs, agent.max_step_up)
+        wide_before = _sample_labels(len(rs), redges, ~rwalls.covered)
+        wide_after = _sample_labels(len(rs), redges, ~rwalls.covered & ~rcov.covered)
+        if room.outline is not None:
+            c = room.outline.core
+            core = ((c[0] + c[2]) / 2, (c[1] + c[3]) / 2)
+        else:
+            core = (room.center_x, room.center_y)
+        cb = _nearest(rs, wide_before >= 0, core[0], core[1], z0)
+        if cb < 0:
+            continue
+        ca = _nearest(rs, wide_after >= 0, core[0], core[1], z0)
+        for (side, c0, c1), zone in zip(doors, zones):
+            at = _in_doorway(rs, room, side, c0, c1, 1.5 * ROOM_WIDE_STEP)
+            if not (at & (wide_before == wide_before[cb])).any():
+                continue        # no way CLEAR_WIDTH wide without the models either
+            if ca >= 0 and (at & (wide_after == wide_after[ca])).any():
+                continue
+            here = ((rs.x >= zone[0]) & (rs.x <= zone[2]) & (rs.y >= zone[1]) & (rs.y <= zone[3]))
+            for t in throats:
+                here |= (rs.x >= t[0]) & (rs.x <= t[2]) & (rs.y >= t[1]) & (rs.y <= t[3])
+            lost = (wide_before >= 0) & rcov.covered & here
+            who = sorted({names[o] for o in np.unique(rcov.owner[lost]) if o >= 0})
+            failures.append(GateFailure(
+                "throat_narrow", tuple(who),
+                f"the way from door {side} {c0:.1f}..{c1:.1f} to the core is under the "
+                f"{CLEAR_WIDTH:g} u clear width", where=room.id))
+    return failures
