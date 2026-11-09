@@ -1390,3 +1390,108 @@ control's number leans the rooms and doesn't pin them: a wing's written edge win
 
 - [ ] **[DEFERRED]** Walking Features and Transitions in the RoF2 client needs a takeover
       install. It moves to M6's in-engine smoke load.
+
+## Step 10 — Wilderness POIs
+
+> Roadmap step 10 (`zone-generator-wilderness-pois`). Wilderness and outdoor-dungeon
+> landscapes now hold **Sites**: a **camp** (a fire ring and tents, or lean-tos), a **hut**,
+> a **farmstead** (hut, barn and a corral), a **watchtower**, a **shrine** (a monument,
+> sometimes ringed by standing stones) and a **ruin** (broken walls round a court). Each is
+> built from **Structures**, generated models placed as ZON objects like trees. Who built a
+> Site, its **Inhabitant** (human, orc, gnoll, centaur), weights its kind and sets its
+> material set and variants (an orc tent is hide, a centaur builds lean-tos). Huts, lean-tos
+> and ruins are walked into through an opening at least 8 u wide and 8 u high; towers are
+> solid. Each Site names its POIs (camp fire, hut interior, lookout ...) in the sidecar only.
+> The **Sites** (None, Sparse, Normal, Dense) and **Inhabitants** (biome's mix, or one)
+> selects sit beside Trees in the Wilderness box, for Wilderness and Outdoor dungeon. Restart
+> the Server on the merged code first and check the side panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. Leave the description box empty unless the row is a prompt. Wilderness with
+the default edges (all mountain), Trees normal and Rooms 5; Sites Normal and Inhabitants
+biome's mix unless the row names them. Each builds on the first attempt (checked through
+`main.py`'s path). A Site reads `<Inhabitant> <kind>`, its Structures from
+`sites.sites[].structures`; a model file is `site_<structure>_<variant>_<material set>.mod`.
+
+| # | Controls | Seed | What it shows |
+|---|----------|------|---------------|
+| a | Defaults | 7 | Gnoll camp: a fire ring and 4 hide tents facing it; a centaur shrine (a lone burial mound) |
+| b | Defaults | 19 | One human hut (timber) with a rail fence run: walk in |
+| c | Defaults | 9 | Human farmstead: hut, barn, and a corral of 4 rail fences on its open side |
+| d | Defaults | 1 | Gnoll watchtower (one stone tower); a human ruin (one wall) |
+| e | Defaults | 5 | Human shrine: an obelisk ringed by 3 standing stones; a human hut |
+| f | Defaults | 13 | Human ruin of 3 walls round a court; a farmstead; a gnoll wattle hut and stake fence |
+| g | Defaults | 18 | Centaur camp: a fire ring and 2 hide lean-tos (walk in); a human hut |
+| h | Inhabitants **human** | 7 | A farmstead (hut and 4 fences; its barn dropped, "in its Site_Clear") and a hut; `timber_thatch` |
+| i | Inhabitants **orc** | 7 | Two orc camps (4 and 3 tents), `site_tent_hide_hide.mod` |
+| j | Inhabitants **gnoll** | 7 | i's two camps in `crude_timber` |
+| k | Inhabitants **centaur** | 7 | i's two camps with lean-tos for tents (`hide_canvas`), each walked into |
+| l | Sites **None** | 1955208177 | No Sites, `models` empty; step 9's bytes (below) |
+| m | Sites **Sparse** | 1955208177 | One human farmstead (hut, barn, 3 fences) |
+| n | Sites **Normal** | 1955208177 | m, and a human ruin of 3 walls |
+| o | Sites **Dense** | 1955208177 | n, and a gnoll wattle hut |
+| p | Outdoor dungeon, Sites **Dense** | 1 | Gnoll watchtower pair: two stone towers |
+| q | Outdoor dungeon, Sites **Dense** | 4 | Human ruin of 3 walls |
+| r | Outdoor dungeon, Sites **Dense** | 6 | Human watchtower, one timber tower |
+| s | Outdoor dungeon, Sites **Dense** | 2 | None: the shrine drops, "no eligible ground" (a known limit) |
+| t | Prompt `orc camp on the plains` | 7 | i, with `control_source` `prompt` |
+| u | Prompt `empty wilderness` | 7 | Sites none, `control_source` `prompt` |
+
+a, h, i, j and k share a seed: compare who builds. l to o share a seed and ground: each step
+keeps the last one's Sites and adds one. From the command line:
+
+```bash
+python main.py generate sites_a --zone-type wilderness --seed 7
+python main.py generate sites_i --zone-type wilderness --seed 7 --inhabitant orc
+python main.py generate b1955208177 --zone-type wilderness --seed 1955208177 --sites none
+python main.py generate sites_p --zone-type outdoor_dungeon --seed 1 --sites dense
+```
+
+The name `b1955208177` in l matters: built so, its `.eqg` less the 4-byte footer has
+sha256 `8aaf8daf…`, the step 9 build `tests/test_site_builds.py` pins. A build from the page
+has another name and so other bytes; on the page, check l has no Structures and its trees and
+ground look like step 9's.
+
+### P.1 — Sites read as what they are
+
+- [ ] **[MUST] Each kind** — a's camp, b's hut, c's farmstead, d's tower, e's shrine and f's
+      ruin each read as that place, and look Classic-era next to the trees.
+- [ ] **[MUST] Inhabitants differ** — h to k on one seed: h builds farms in timber and thatch,
+      i and j camps in hide and crude timber, k lean-tos; the four look apart.
+- [ ] **[MUST] Where a builder would** — Every Site stands on flat ground, off the Rim and
+      out of water, clear of Spawn and zonelines; nothing floats or sinks to its roof.
+- [ ] **[SHOULD] Not too many, not too few** — l to o step none, one, two, three; Normal reads
+      as a Karana with a few places, not a town.
+
+### P.2 — The way stays open
+
+- [ ] **[MUST] Walk in** — In b walk into the hut, in g and k into a lean-to, in f into the
+      ruin's court: the opening takes you without a snag (8 u wide, 8 u high) and the floor is
+      the ground.
+- [ ] **[MUST] Never in the way** — In a, c and o, walk round every Site: no fence, tent or
+      wall shuts off ground, and trees keep out of each Site's ground.
+- [ ] **[MUST] Outdoor dungeons hold** — In p, q and r the Site keeps off the Host_Hill, the
+      Tunnel and the Mouth; the dungeon walk is as in step 5.
+
+### P.3 — Maps, controls and sidecar
+
+- [ ] **[MUST] Controls** — Sites and Inhabitants show beside Trees for Wilderness and Outdoor
+      dungeon, and hide for Dungeon and City.
+- [ ] **[MUST] Maps** — The map (M) and `<name>.map.svg` draw each Structure's Footprint and a
+      marker and label (`Gnoll camp`) at each Site; `maps/<name>.txt` has a sienna loop per
+      Footprint and a `P` label (`Gnoll_camp`) per Site.
+- [ ] **[MUST] Sidecar** — `<name>.zone.json` has a `sites` block: `control`,
+      `control_source`, `inhabitant`, `target`, `band`, `models`, `drops`, and per Site its
+      `kind`, `inhabitant`, centre, `structures` (kind, variant, yaw, `enterable`) and `pois`.
+- [ ] **[MUST] Prompt words** — t builds orc camps; u builds none.
+- [ ] **[MUST] Pinned seed repeats; blank seed is fresh** — As in W.4.
+
+Known limits (not failures here): outdoor dungeons get Sites on only some seeds (s; archive
+decision 11). Sites spread at random where stock plains cluster. A farmstead often loses its
+barn to its own Site_Clear (h). Sites are bare: furniture and loose props are step 11's.
+
+### P.4 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Walking into huts and lean-tos and round Sites in the RoF2 client needs a
+      takeover install. It moves to M6's in-engine smoke load.
