@@ -1,6 +1,6 @@
-# 13 — Acceptance section, thorough run
+# 15 — Acceptance section, thorough run
 
-Index entry: `tasks.md` task 13.
+Index entry: `tasks.md` task 15.
 
 ## Goal
 A "Step 11 — Decorating rooms" section in `docs/ACCEPTANCE.md`: pinned cases (seeds and controls) for room types, races and themes, cities, outdoor dungeons, Sites, Decor densities and a decor reroll, with checks; a thorough run; the frontend builds.
