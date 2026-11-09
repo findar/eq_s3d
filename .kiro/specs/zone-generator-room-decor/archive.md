@@ -62,6 +62,19 @@ From task 7 (decor recipes, `192400c`):
     `[sites.<kind>]` only. **Sets:** race, then theme, then zone type, then neutral; two
     cultures share a room only where `[allows]` names the pair.
 
+From task 8 (placement, `2bc13ad`):
+
+20. **`place(context, rules, catalogue, control, decor_seed)` → `Decorated`** (props, drops,
+    bare); `check(context, decorated)` is decor's own room check; `Prop.to_dict()` is the
+    sidecar row. Each room's stream is keyed `decor/<seed>/<source>/<id>`.
+21. **Yaw: a model's front is +X at yaw 0**; a wall Prop faces its wall's into-room normal
+    (TORCHPOINT agrees over 177 stock placements; along-wall floor models are a guess).
+22. **Dressing may stand in a Throat**, never on the Spine or a door's clear zone (else 24 of
+    104 corpus POIs went undressed). Corridor contexts (`source = "corridor"`) get wall lights
+    every 38 u (26 u in cities); task 9 must make them.
+23. **Vertex-animated models stay out even when reviewed yes** (decision 13): 15 banners of
+    review batch 1 were set back to `use = "no"` with a note.
+
 ## Follow-ups
 
 Carried in from earlier steps and relevant here:
