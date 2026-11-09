@@ -120,7 +120,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Type: agent · Size: S · Depends: 16 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-room-decor/, .kiro/specs/zone-generator/
 
-- [ ] 18. RoomContext and the room corpus
+- [x] 18. RoomContext and the room corpus
   - Card: [cards/18-room-context.md](cards/18-room-context.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/room_context.py, generators/room_layouts.py (export what a context needs, no behaviour change), generators/sites/placement.py (a Site's context, no behaviour change), scripts/record_rooms.py, tests/fixtures/rooms/, tests/test_room_context.py
