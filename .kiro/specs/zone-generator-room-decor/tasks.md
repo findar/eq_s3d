@@ -39,7 +39,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: scripts/decor_survey.py, scripts/prop_catalogue.py (the observed fields only), rules/decor/catalogue.json, .kiro/specs/zone-generator-room-decor/design.md (finding 1 only)
   - Reqs: 1.3, 1.4
 
-- [ ] 3. Auto-tags and the review sheet
+- [x] 3. Auto-tags and the review sheet
   - Card: [cards/03-tags-sheet.md](cards/03-tags-sheet.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: scripts/prop_catalogue.py (`tag` and `sheet`), rules/decor/catalogue.json, rules/decor/tags.toml, generators/decor/__init__.py, generators/decor/catalogue.py, tests/test_prop_catalogue.py
