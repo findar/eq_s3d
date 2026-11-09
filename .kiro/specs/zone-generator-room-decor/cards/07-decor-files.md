@@ -15,4 +15,5 @@ Index entry: `tasks.md` task 7. Requirements 5, 7.
 Follow `generators/sites/rules.py` and step 9's Layer arithmetic (`generators/room_scales.py`). Until task 4's review lands, test against fixture tags; the real check runs after it.
 
 ## Result
+✔ 192400c · 2229 passed
 
