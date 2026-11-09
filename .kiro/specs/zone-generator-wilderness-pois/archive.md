@@ -48,5 +48,6 @@ Carried in from earlier steps and relevant here:
 - **Wilderness ground, water and tree textures and normal maps** (step 4, umbrella Req 16): still deferred.
 - **Sites spread at random where stock plains cluster** (task 11): Clark–Evans R pooled 1.45, inside the all-zone stock band 0.64–1.64 but above plains alone (0.50–0.95). A soft "near another Site" like would pull them together.
 - **The survey splits a farmstead in two** on seeds 1001 and 1004 (hut and fences more than 100 u apart); a smaller farmstead loses its barn.
+- **A farmstead often loses its barn** (task 12): dropped "in its Site_Clear" on 5 of 20 seeds at Normal.
 - **`altar_stone` is built but no recipe places it** since task 10's shrine.
 - **Shoreline below water level on some seeds** (`synth.py`): a Site that likes water will find it.
