@@ -129,15 +129,20 @@ class RoomGrid:
             spine[int(mid[0]), int(mid[1])] = True
         reach = max(1, int(round(SPINE_HALF_H * self.h / CELL)))
         spine = binary_dilation(spine, iterations=reach)
-        for side, c0, c1 in doors:
-            depth = 2 * self.h + 2.0
-            if side in "NS":
-                y = self.y1 - depth if side == "N" else self.y0
-                spine |= self.rect((c0, y, c1, y + depth))
-            else:
-                x = self.x1 - depth if side == "E" else self.x0
-                spine |= self.rect((x, c0, x + depth, c1))
+        for door in doors:
+            spine |= self.rect(self.door_clear(door))
         return spine & self.floor
+
+    def door_clear(self, door) -> Tuple[float, float, float, float]:
+        """A door's own strip going in, (x0, y0, x1, y1): the door's width, two bodies and a
+        step deep. Part of the Spine."""
+        side, c0, c1 = door
+        depth = 2 * self.h + 2.0
+        if side in "NS":
+            y = self.y1 - depth if side == "N" else self.y0
+            return (c0, y, c1, y + depth)
+        x = self.x1 - depth if side == "E" else self.x0
+        return (x, c0, x + depth, c1)
 
     def footprint(self, plan) -> np.ndarray:
         pts = np.array(plan)
