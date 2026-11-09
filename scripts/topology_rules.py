@@ -15,13 +15,18 @@ Usage::
     python scripts/topology_rules.py draw-rooms --out output/rules/   # each room layout, per style
     python scripts/topology_rules.py check rules/sites                # the Site files, together
     python scripts/topology_rules.py draw-sites --out output/rules/   # each Site recipe's plan
+    python scripts/topology_rules.py check rules/decor                # the decor files, with unmet Tags
+    python scripts/topology_rules.py check rules/decor --strict       # ... failing on unmet Tags
+    python scripts/topology_rules.py draw-decor --out output/rules/   # each decor recipe's plan
 
 ``<set>`` is a base set name in ``rules/topology/`` or a path to a ``.toml``
 file. ``--theme T`` merges the layers ``themes.toml`` gives theme T (those
 that fit the set).
 
 ``check`` exits 1 with the full report when any file fails; ``dry-run``
-exits 1 when any graph raised ``TopologyError``.
+exits 1 when any graph raised ``TopologyError``. A decor recipe line whose
+Tags have no ``use = "yes"`` model is reported as ``unmet``; it fails the
+check only with ``--strict`` (until the tag review, every line is unmet).
 """
 
 from __future__ import annotations
@@ -54,6 +59,12 @@ from generators.room_scales import SCALES_FILE, load_scales  # noqa: E402
 from generators.sites.rules import (  # noqa: E402
     BIOMES_FILE, CENTRE, INHABITANTS_FILE, SITES_DIR, SITES_FILE, SiteRecipe, SiteRules, load_sites,
 )
+from generators.decor import catalogue as decor_catalogue  # noqa: E402
+from generators.decor.rules import (  # noqa: E402
+    BARE, ROOMS_FILE as DECOR_ROOMS_FILE, SETS_FILE as DECOR_SETS_FILE, DecorRules, asks, draw_count, load_decor,
+    unmet,
+)
+from generators.semantics import ROOM_TYPES  # noqa: E402
 from generators.transitions import TRANSITIONS_FILE, load_transitions  # noqa: E402
 from generators.zone_spec import RoomSpec  # noqa: E402
 from generators.wall_styles import RECT, WALLS_DIR, load_style, load_styles  # noqa: E402
@@ -69,7 +80,12 @@ THEMES = "themes.toml"
 def _kind_of(path: Path) -> str:
     """'themes', 'layer' or 'set', from the file name and its top-level tables."""
     if path.is_dir():
+        if (path / DECOR_ROOMS_FILE).is_file():
+            return "decor"
         return "sites" if (path / SITES_FILE).is_file() else "folder"
+    if (path.name in (DECOR_ROOMS_FILE, DECOR_SETS_FILE, decor_catalogue.TAGS_FILE, decor_catalogue.CATALOGUE_FILE)
+            and (path.parent / DECOR_ROOMS_FILE).is_file()):
+        return "decor"
     if path.name in (SITES_FILE, INHABITANTS_FILE, BIOMES_FILE) and (path.parent / SITES_FILE).is_file():
         return "sites"
     if path.name == THEMES:
@@ -130,6 +146,7 @@ def _shipped() -> List[Path]:
     files.append(SCALES_FILE)
     files.append(TRANSITIONS_FILE)
     files.append(SITES_DIR)
+    files.append(decor_catalogue.DECOR_DIR)
     return files
 
 
@@ -140,7 +157,7 @@ def _expand(paths: Sequence[Path]) -> List[Path]:
         kind = _kind_of(p)
         if kind == "folder":
             out += sorted(p.glob("*.toml"))
-        elif kind == "sites":
+        elif kind in ("sites", "decor"):
             folder = p if p.is_dir() else p.parent
             if folder not in out:
                 out.append(folder)
@@ -149,7 +166,43 @@ def _expand(paths: Sequence[Path]) -> List[Path]:
     return out
 
 
-def cmd_check(files: Sequence[str]) -> int:
+def _decor_catalogue(folder: Path):
+    """The catalogue a decor folder's recipes are checked against: the folder's own
+    ``catalogue.json`` and ``tags.toml`` where it has them, else the shipped ones."""
+    def pick(name: str) -> Path:
+        own = folder / name
+        return own if own.is_file() else decor_catalogue.DECOR_DIR / name
+    return decor_catalogue.load(pick(decor_catalogue.CATALOGUE_FILE), pick(decor_catalogue.TAGS_FILE))
+
+
+def check_decor(folder: Path, strict: bool = False) -> Tuple[int, List[str]]:
+    """(failures, report lines) for a decor folder: its files checked, which recipe each
+    room type takes, and every recipe line with no usable model (a failure only when ``strict``)."""
+    out: List[str] = []
+    tags = folder / decor_catalogue.TAGS_FILE
+    rules = load_decor(folder, tags if tags.is_file() else None)
+    falls = sorted(t for t in ROOM_TYPES if t not in rules.types)
+    out.append(f"ok    {folder.name}/: decor, {len(rules.types)} type, {len(rules.kinds)} kind and "
+               f"{len(rules.sites)} Site recipes, {len(rules.groups)} groups, Dressing for "
+               f"{len(rules.dressing)} POI purposes; {len(ROOM_TYPES) - len(falls)} of {len(ROOM_TYPES)} room "
+               f"types have their own recipe" + (f", {', '.join(falls)} fall back to their kind's or the default"
+                                                  if falls else ""))
+    cat = _decor_catalogue(folder)
+    missing = unmet(rules, cat)
+    asked = sum(1 for _ in asks(rules))
+    usable = len(cat.usable())
+    if missing:
+        label = "FAIL " if strict else "unmet"
+        out.append(f"{label} {folder.name}/: {len(missing)} of {asked} recipe lines and Group members ask for "
+                   f"Tags no use = \"yes\" model has ({usable} of {len(cat.models)} models usable; "
+                   f"the tag review, task 4, sets use)")
+        out.extend(f"      {e}" for e in missing)
+    else:
+        out.append(f"ok    {folder.name}/: every Tag asked for has a usable model ({usable} usable)")
+    return (1 if missing and strict else 0), out
+
+
+def cmd_check(files: Sequence[str], strict: bool = False) -> int:
     paths = _expand([Path(f) for f in files] if files else _shipped())
     failures = 0
     lines: List[str] = []
@@ -158,7 +211,11 @@ def cmd_check(files: Sequence[str]) -> int:
     for p in paths:
         kind = _kind_of(p)
         try:
-            if kind == "sites":
+            if kind == "decor":
+                failed, report = check_decor(p if p.is_dir() else p.parent, strict)
+                failures += failed
+                lines.extend(report)
+            elif kind == "sites":
                 sr = load_sites(p)
                 lines.append(f"ok    {p.name}/: sites, {len(sr.kinds)} kinds, {len(sr.structures)} structures, "
                              f"{len(sr.inhabitants)} inhabitants, {len(sr.biomes)} biomes")
@@ -559,6 +616,154 @@ def cmd_draw_sites(out: Path) -> int:
     return 0
 
 
+DECOR_COLOURS = {"light": "#f2a230", "container": "#8a5a2b", "furniture": "#6a8f3a", "hanging": "#8a6fb3",
+                 "structure": "#555", "debris": "#9a9a9a", "plant": "#2f8f5a", "other": "#c44"}
+_DECOR_BOX = (-60.0, -45.0, 60.0, 45.0)
+
+
+def _decor_spots(at: str, n: int, rng: random.Random) -> List[Tuple[float, float]]:
+    """A schematic spot for each of ``n`` Props at ``at`` in the 120 x 90 u sample room, for review
+    only (placement is generators/decor/placement.py). The doors are on the west wall."""
+    x0, y0, x1, y1 = _DECOR_BOX
+    out = []
+    for k in range(n):
+        t = (k + 0.5) / n
+        if at == "on_wall":
+            out.append((x0 + 10 + t * (x1 - x0 - 20), y1 - 1.5))
+        elif at == "along_wall":
+            out.append((x0 + 16 + t * (x1 - x0 - 26), y0 + 6))
+        elif at == "corners":
+            out.append([(x0 + 8, y0 + 8), (x1 - 8, y1 - 8), (x1 - 8, y0 + 8), (x0 + 8, y1 - 8)][k % 4])
+        elif at == "centre":
+            out.append((rng.uniform(-8, 8), rng.uniform(-6, 6)))
+        elif at in ("far_end", "on_dais"):
+            out.append((x1 - 14, (t - 0.5) * 40))
+        elif at == "rows":
+            out.append((-30 + 60 * ((k // 2 + 0.5) / max(1, (n + 1) // 2)), -14 if k % 2 else 14))
+        elif at == "by_door":
+            out.append((x0 + 7, (-8, 28)[k % 2]))
+        elif at == "ceiling":
+            out.append((rng.uniform(-30, 30), rng.uniform(-20, 20)))
+        else:   # scatter
+            out.append((rng.uniform(x0 + 8, x1 - 8), rng.uniform(y0 + 8, y1 - 8)))
+    return out
+
+
+def _decor_svg(rules: DecorRules, recipes, weights, rng: random.Random, title: str, scale: float = 2.2) -> str:
+    """A sample room with each line's Props at a drawn count, coloured by Category."""
+    from generators.topology.draw import _esc, _f
+    x0, y0, x1, y1 = _DECOR_BOX
+    pad = 6.0
+
+    def px(x: float, y: float) -> Tuple[float, float]:
+        return (x - x0 + pad) * scale, (y1 - y + pad) * scale
+
+    w, h = (x1 - x0 + 2 * pad) * scale, (y1 - y0 + 2 * pad) * scale
+    a, b = px(x0, y1)
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{_f(w)}" height="{_f(h)}" viewBox="0 0 {_f(w)} '
+             f'{_f(h)}"><title>{_esc(title)}</title><rect width="100%" height="100%" fill="#fff"/>',
+             f'<rect x="{_f(a)}" y="{_f(b)}" width="{_f((x1 - x0) * scale)}" height="{_f((y1 - y0) * scale)}" '
+             f'fill="#eee" stroke="#a33" stroke-width="2"/>']
+    for dy in (-8.0, 28.0):
+        p, q = px(x0, dy + 5), px(x0, dy - 5)
+        parts.append(f'<line x1="{_f(p[0])}" y1="{_f(p[1])}" x2="{_f(q[0])}" y2="{_f(q[1])}" stroke="#eee" '
+                     f'stroke-width="4"><title>door</title></line>')
+    for recipe in recipes:
+        for line in recipe.lines:
+            n = draw_count(line, rules.factor(line, weights), rng)
+            for x, y in _decor_spots(line.at, n, rng):
+                if line.group:
+                    items = [(m.kinds, m.category, x + 7 * j, y + (3.5 if m.at == "stack" else 0.0))
+                             for j, m in enumerate(rules.groups[line.group].members)]
+                else:
+                    items = [(line.kinds, line.category, x, y)]
+                for kinds, cat, gx, gy in items:
+                    cx, cy = px(gx, gy)
+                    label = f"{recipe.name}: {' or '.join(kinds)} ({line.at}{', ' + line.group if line.group else ''})"
+                    if line.mount == "wall":
+                        parts.append(f'<rect x="{_f(cx - 4)}" y="{_f(cy - 3)}" width="8" height="6" '
+                                     f'fill="{DECOR_COLOURS[cat]}"><title>{_esc(label)}</title></rect>')
+                    else:
+                        dash = ' stroke="#333" stroke-dasharray="2 2"' if line.mount == "ceiling" else ""
+                        parts.append(f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="4.5" fill="{DECOR_COLOURS[cat]}"{dash}>'
+                                     f'<title>{_esc(label)}</title></circle>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _decor_row(rules: DecorRules, label: str, **room) -> str:
+    from generators.topology.draw import _esc
+    e = rules.expected(**room)
+    total = sum(e.values())
+    weights = rules.weights_for(**room)
+    cells = "".join(f"<td>{e[c] / total:.0%}</td>" if total else "<td>-</td>" for c in decor_catalogue.CATEGORIES)
+    return f"<tr><th>{_esc(label)}</th><td>{total:.1f}</td><td>{weights[BARE]:.0%}</td>{cells}</tr>"
+
+
+def cmd_draw_decor(out: Path) -> int:
+    """decor.html: Props per room by zone type, race and theme; each recipe's sample plan; the
+    Dressing, the Sets, and the lines no usable model meets yet."""
+    from generators.topology.draw import _esc
+    rules = load_decor()
+    head = ("<tr><th></th><th>Props a room</th><th>bare</th>"
+            + "".join(f"<th>{_esc(c)}</th>" for c in decor_catalogue.CATEGORIES) + "</tr>")
+    body = ["<h2>Props per room</h2><p>The mean a room takes (Dressing aside) and its Category shares, with the "
+            "default recipe and every room's lines, Scales at 5, Decor Normal. Design finding 1's dungeon rooms "
+            "hold 2.9-4.2-6.8 a room (p25-p50-p75 over zones), cities 4.0-9.4-12.5.</p><table>" + head]
+    for zt in ("dungeon", "city", "outdoor_dungeon"):
+        body.append(_decor_row(rules, f"zone type {zt}", zone_type=zt))
+    for race in sorted(rules.weights["races"]):
+        body.append(_decor_row(rules, f"race {race}", zone_type="dungeon", race=race))
+    for theme in sorted(rules.weights["themes"]):
+        body.append(_decor_row(rules, f"theme {theme}", zone_type="dungeon", theme=theme))
+    for control in ("sparse", "dense"):
+        body.append(_decor_row(rules, f"Decor {control}", zone_type="dungeon", control=control))
+    body.append("</table><h2>By recipe</h2><table>" + head)
+    recipes = ([("default", "", "")] + [(f"kinds.{k}", "", k) for k in sorted(rules.kinds)]
+               + [(f"types.{t}", t, "") for t in sorted(ROOM_TYPES)])
+    for label, rtype, kind in recipes:
+        body.append(_decor_row(rules, f"{label} (takes {rules.which_recipe(rtype, kind)})", zone_type="dungeon",
+                               room_type=rtype, kind=kind))
+    body.append("</table>")
+    for label, rtype, kind in recipes:
+        own = rules.recipe_for(rtype, kind)
+        body.append(f"<h2>{_esc(label)}</h2><div class=row>")
+        for zt in ("dungeon", "city"):
+            weights = rules.weights_for(zone_type=zt, room_type=rtype, kind=kind)
+            for seed in (1, 2):
+                svg = _decor_svg(rules, own, weights, random.Random(f"{label}{zt}{seed}"), f"{label} {zt} {seed}")
+                body.append(f"<figure>{svg}<figcaption>{_esc(zt)}, seed {seed}</figcaption></figure>")
+        body.append("</div>")
+    body.append("<h2>Dressing</h2><ul>")
+    for purpose, lines in sorted(rules.dressing.items()):
+        text = "; ".join(f"{' or '.join(ln.kinds) or ln.group} {ln.at} x{ln.count[0]}-{ln.count[1]}"
+                         + (f" ({ln.chance:.0%})" if ln.chance < 1 else "") for ln in lines)
+        body.append(f"<li><b>{_esc(purpose)}</b>: {_esc(text)}</li>")
+    body.append("</ul><h2>Sets</h2><table><tr><th>race</th><th>its Sets, best first, as a dungeon room</th></tr>")
+    for race in sorted(rules.sets.races):
+        body.append(f"<tr><th>{_esc(race)}</th><td style='text-align:left'>"
+                    f"{_esc(', '.join(rules.sets.sets_for('dungeon', race)))}</td></tr>")
+    body.append("</table>")
+    missing = unmet(rules, _decor_catalogue(decor_catalogue.DECOR_DIR))
+    body.append(f"<h2>Unmet ({len(missing)})</h2><p>Lines with no use = \"yes\" model yet (the tag review sets "
+                "use); at build time they drop.</p><ul>" + "".join(f"<li>{_esc(e)}</li>" for e in missing) + "</ul>")
+    page = ("<!doctype html><meta charset=utf-8><title>Decor recipes</title><style>"
+            "body{font:14px sans-serif;margin:24px;color:#222;background:#fff}"
+            ".row{display:flex;flex-wrap:wrap;gap:12px}figure{margin:0}"
+            "figcaption{text-align:center;color:#555}table{border-collapse:collapse}"
+            "td,th{border:1px solid #ccc;padding:3px 8px;text-align:right}</style><h1>Decor recipes</h1>"
+            "<p>A schematic plan of each recipe in a 120 x 90 u room with its doors on the west wall, at a drawn "
+            "count: not placement. Colour is the Category: "
+            + ", ".join(f"<span style='color:{c}'>{_esc(k)}</span>" for k, c in DECOR_COLOURS.items())
+            + ". Squares are wall Props, dashed circles ceiling ones; a Group stands in a line. Hover for names.</p>"
+            + "".join(body))
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "decor.html"
+    path.write_text(page, encoding="utf-8")
+    print(f"wrote {path} ({len(recipes)} recipes, {len(missing)} unmet lines)")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -568,6 +773,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("check", help="check rule files (default: every shipped file)")
     c.add_argument("files", nargs="*")
+    c.add_argument("--strict", action="store_true", help="fail on decor Tags with no usable model")
     d = sub.add_parser("dry-run", help="grow graphs and report stages, rules and shape")
     d.add_argument("set")
     d.add_argument("--theme")
@@ -588,12 +794,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     v.add_argument("--out", type=Path, required=True)
     t = sub.add_parser("draw-sites", help="write sites.html: each Site recipe's plan, and chances by biome")
     t.add_argument("--out", type=Path, required=True)
+    e = sub.add_parser("draw-decor", help="write decor.html: each decor recipe's plan, and Props per room")
+    e.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # the checker's "›"
     try:
         if a.cmd == "check":
-            return cmd_check(a.files)
+            return cmd_check(a.files, a.strict)
         if a.cmd == "dry-run":
             return cmd_dry_run(a.set, a.theme, a.graphs, a.rooms, a.race_scale, a.zone_type,
                                a.seed)
@@ -603,6 +811,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return cmd_draw_walls(a.out)
         if a.cmd == "draw-sites":
             return cmd_draw_sites(a.out)
+        if a.cmd == "draw-decor":
+            return cmd_draw_decor(a.out)
         return cmd_draw(a.set, a.theme, a.out, a.example_rooms)
     except RuleSetError as exc:
         print(f"the rule set failed its checks ({len(exc.errors)} problem(s)):")

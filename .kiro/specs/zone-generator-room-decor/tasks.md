@@ -61,7 +61,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: generators/decor/stock.py, tests/test_prop_import.py
   - Reqs: 4
 
-- [ ] 7. Decor recipes as data
+- [x] 7. Decor recipes as data
   - Card: [cards/07-decor-files.md](cards/07-decor-files.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: rules/decor/rooms.toml, rules/decor/sets.toml, generators/decor/rules.py, scripts/topology_rules.py (a `decor` check and draw), tests/test_decor_rules.py

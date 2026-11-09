@@ -1,0 +1,43 @@
+# rules/decor/sets.toml -- which culture's models furnish a room (roadmap step 11, Req 5).
+#
+# A Set is a Tag of every catalogue model (generators/decor/catalogue.py SETS, or tags.toml's
+# `sets`). A room takes its Sets best first: its race's, then its theme's, then its zone type's,
+# and neutral last, which fills any room. A room keeps to one culture: Props of two Sets share
+# a room only when `allows` names the pair (either way round), or one of them is neutral.
+#
+# Design finding 1: each race has its own set (Paw's hooks and tables, Guk's lanterns and
+# planks, Sebilis's shackles, Kurn's bunks and crates); shape is shared, material differs.
+# A name left out, or an empty list, takes neutral models only.
+
+[races]
+goblin = ["goblin"]
+kobold = ["kobold"]
+gnoll = ["gnoll"]
+froglok = ["froglok"]
+lizardman = ["iksar"]           # Kunark's reptile culture: Cabilis and Kurn's CB- models
+sarnak = ["iksar"]
+troll = ["troll"]
+ogre = ["ogre"]
+giant = ["giant"]
+dragon = ["dragon"]
+human = ["human"]               # Site Inhabitants (rules/sites/inhabitants.toml)
+orc = []
+centaur = []
+
+[themes]
+tomb = ["undead"]
+wizard_lair = ["erudite"]
+corrupted_sanctum = ["dark_elf"]
+ice_keep = ["coldain"]
+mine_delve = ["dwarf"]
+lava_forge = ["dwarf"]
+
+[zone_types]
+city = ["human"]
+
+# Pairs that may share a room. Sebilis keeps the iksar's torches beside the frogloks' own;
+# the dead lie in any culture's tomb.
+[allows]
+iksar = ["froglok"]
+undead = ["dark_elf", "erudite", "human", "goblin", "kobold", "gnoll", "ogre", "troll"]
+dwarf = ["gnome", "coldain"]
