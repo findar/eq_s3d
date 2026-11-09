@@ -14,7 +14,8 @@ pitfalls. Decisions later tasks rely on are in `archive.md`.
 4. Every commit carries the trailer `Task: zone-generator-room-decor/<n>`.
 5. When every "Done when" box passes, write the card's one-line Result and tick
    the box here. **Never tick a `Type: human` task.**
-6. Run the full Python suite before ticking, even for a frontend-only task,
+6. Iterate on your task's own tests and `python -m pytest tests/ -q -m "not slow"`;
+   run the full Python suite once before ticking, even for a frontend-only task,
    and don't commit while it runs (a server-staleness test notices).
 
 Index fields: `Type` is `agent` or `human`. `Size` is S (≤ 2 files) / M (≤ 5) /
@@ -68,9 +69,9 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 
 - [ ] 8. Decor placement in rooms
   - Card: [cards/08-placement.md](cards/08-placement.md)
-  - Type: agent · Size: M · Depends: 7
-  - Owns: generators/decor/placement.py, tests/test_decor_placement.py, generators/room_layouts.py (expose the plan grid and wall faces, no behaviour change)
-  - Reqs: 5, 6, 8
+  - Type: agent · Size: M · Depends: 7, 18
+  - Owns: generators/decor/placement.py, tests/test_decor_placement.py, scripts/decor_room.py
+  - Reqs: 5, 6, 8, 13.4, 13.5
 
 - [ ] 9. Decor in builds
   - Card: [cards/09-in-builds.md](cards/09-in-builds.md)
@@ -86,7 +87,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 
 - [ ] 11. Site Props
   - Card: [cards/11-site-props.md](cards/11-site-props.md)
-  - Type: agent · Size: M · Depends: 9
+  - Type: agent · Size: M · Depends: 9, 18
   - Owns: rules/decor/rooms.toml (Site recipes only), generators/decor/placement.py (Site POIs), generators/sites/placement.py (hand Site POIs to decor), tests/test_site_props.py, tests/test_site_builds.py (its Decor `none` cases)
   - Reqs: 11
 
@@ -118,3 +119,9 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Card: [cards/17-close.md](cards/17-close.md)
   - Type: agent · Size: S · Depends: 16 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-room-decor/, .kiro/specs/zone-generator/
+
+- [ ] 18. RoomContext and the room corpus
+  - Card: [cards/18-room-context.md](cards/18-room-context.md)
+  - Type: agent · Size: M · Depends: —
+  - Owns: generators/room_context.py, generators/room_layouts.py (export what a context needs, no behaviour change), generators/sites/placement.py (a Site's context, no behaviour change), scripts/record_rooms.py, tests/fixtures/rooms/, tests/test_room_context.py
+  - Reqs: 13.1–13.3

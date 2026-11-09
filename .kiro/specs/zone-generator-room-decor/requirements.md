@@ -3,7 +3,7 @@
 > **STATUS: roadmap step 11, ready.** Written 2026-11-08 at master `e50ecfc`; revised the same
 > day for the user's direction to use the client's own models, catalogued and tagged (design
 > decision 1). Every open question answered the same day (`archive.md` "Decisions"). Task index:
-> `tasks.md` (card format, 17 tasks).
+> `tasks.md` (card format, 18 tasks).
 
 ## Introduction
 
@@ -67,6 +67,10 @@ geometry; and the in-client check (M6).
 - **Set**: the culture a model belongs to (gnoll, goblin, dark elf, human city, neutral),
   from its name prefix, its zones and review.
 - **Group**: Props placed together as one: a table with chairs, a row of bunks, a crate pile.
+- **RoomContext**: everything decor needs about one room, and nothing else, as a saved file:
+  its floor grid and heights, ceiling heights, wall faces, doors and their clear zones, the
+  Spine, Features, POIs, room type, kind, race, theme, Scales and a seed.
+- **Room corpus**: RoomContexts recorded from pinned seeds, kept as test fixtures.
 - **Decor_Recipe**: the data saying which Props and Groups a room gets, by Tag, and how they're
   arranged, by room type, kind, race and theme.
 - **Dressing**: Props a POI asks for: a throne at a boss POI, candles at an altar.
@@ -194,6 +198,21 @@ checked by a person, so that a chair is used as a chair.
    SHALL hold.
 3. The same inputs and install SHALL give byte-identical `.eqg` contents (footer aside).
 4. A build SHALL take at most step 10's time plus 5 s.
+
+### Requirement 13: Decor stands on its own
+
+**User Story:** As the project owner, I want room generation and model placement to be
+separate stages, so that each can be built, tested and later driven on its own.
+
+1. The room stage SHALL produce one RoomContext per room (and per Site), JSON-serialisable,
+   and decor placement SHALL read nothing else: no ZoneSpec, mesh or zone.
+2. A recorder SHALL save a room corpus covering every room type, wall style and race from
+   pinned seeds; decor tests SHALL run on the corpus without building a zone.
+3. One contract test SHALL check that the corpus still matches what room generation
+   produces; when room generation changes on purpose, the corpus is re-recorded.
+4. Decor SHALL check its own result against its RoomContext (reached floor joined, doors and
+   POIs reached), with the whole-zone gate kept for a few integration tests.
+5. A command SHALL decorate one RoomContext and write a GLB of just that room in seconds.
 
 ## Exit criteria
 

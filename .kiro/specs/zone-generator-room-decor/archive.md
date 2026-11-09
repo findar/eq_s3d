@@ -39,6 +39,14 @@ recommendation, master `510a406`). Decision N answers design question N - 1:
 13. **Static models only**; animated ones are recorded in the catalogue for later.
 14. **No generated Props in this step**; a recipe line with no usable model drops.
 
+Added after the answers:
+
+15. **Decor stands on its own** (user, 2026-11-08, "soounds good lets do that", to the proposal
+    of stages with saved hand-offs): the room stage writes one RoomContext per room and Site;
+    placement reads only that; decor tests run on a recorded room corpus without zone builds,
+    with one contract test keeping the corpus honest (Req 13, task 18). The world -> Socket
+    stage is roadmap step 12, its own spec.
+
 ## Follow-ups
 
 Carried in from earlier steps and relevant here:

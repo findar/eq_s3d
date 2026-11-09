@@ -186,6 +186,40 @@ assumes closed, outward-wound solids (step 10 decision 9). Task 2 makes the gate
 rule work for open stock meshes (a solid triangle's projection under head height blocks,
 whether or not the mesh is closed).
 
+## Stages and the RoomContext
+
+The user's longer aim (decision 15) is three stages, each handing the next a small saved
+file: **world -> Sockets** (points something can attach to), **Socket -> rooms ->
+RoomContexts**, and **RoomContext -> Props**. Sockets are their own roadmap step (12); this
+step builds the second hand-off, so decor never reaches back into the zone.
+
+```
+room stage (steps 6-9 + the built mesh) ── room_context.contexts(spec, mesh) ──> RoomContext[]
+                                                                                  │
+tests/fixtures/rooms/*.json  <── scripts/record_rooms.py (pinned seeds) ─────────┤
+                                                                                  │
+decor: place(context, catalogue, recipes, stream) ──> Props + its own room check ─┘
+```
+
+A **RoomContext** (`generators/room_context.py`) is a dataclass with a JSON form and a
+version. It holds the floor grid (cell size, heights, reached mask), ceiling heights per
+cell, wall faces sampled from the built wall mesh (point, outward normal, bottom and top),
+doors with their Throats and clear zones, the Spine, Features with footprints, POIs, the
+room's type, kind, race, theme, zone type and Scales, and a seed. A Site's context is the
+same shape: its ground under the Site_Clear, its Structures as Features, its POIs, no walls
+or ceiling.
+
+**Tests in layers.** Decor tests run on the recorded room corpus (a few hundred rooms over
+every room type, wall style and race) and on hand-built contexts: no zone build, so they're
+milliseconds and carry no `slow` mark. One `slow` contract test regenerates a sample of the
+corpus and compares. Decor's own room check (reached floor stays joined, doors and POIs
+reached) runs on the context; the whole-zone gate stays in task 9's few integration builds.
+Agents iterate on `-m "not slow"` and their task's tests, and run the full suite once
+before ticking.
+
+**Looking at one room.** `scripts/decor_room.py <context.json>` decorates one context and
+writes a GLB of that room alone, for a look loop of seconds instead of a zone build.
+
 ## Placement
 
 Per room, after step 9's plan: **Dressing** first (each POI's asks, round the POI, never on
@@ -249,6 +283,7 @@ lists a room's Props in the side panel.
 | P10 | A decor seed changes only Props | 10.2 |
 | P11 | Sites keep every step 10 guarantee with Props | 11 |
 | P12 | Built rooms in the survey's bands; same inputs same `.eqg`; time within step 10 + 5 s | 12 |
+| P13 | Placement reads only a RoomContext; the corpus matches room generation; decor's room check agrees with the zone gate on the integration builds | 13 |
 
 ## Risks
 
@@ -320,3 +355,6 @@ every recommendation taken (`archive.md` decisions 3-14).
    exist and tag appropriately"). This amends umbrella Req 32.7 for Props: a build may copy
    catalogued models from the user's install, unchanged. Terrain, rooms, trees and Structures
    are still generated.
+15. **Decor stands on its own** (user, 2026-11-08, "soounds good lets do that"): room generation
+    hands decor a saved RoomContext per room and decor reads nothing else; decor tests run on a
+    recorded room corpus. Sockets (world points rooms attach to) become roadmap step 12.

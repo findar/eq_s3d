@@ -95,6 +95,10 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
 10. **Interesting wilderness POIs** — huts / camps, shrines, etc. Spec: `.kiro/specs/zone-generator-wilderness-pois/`.
    *(DONE — signed off 2026-11-08; see the Done table)*
 11. **Decorating rooms.** Spec: `.kiro/specs/zone-generator-room-decor/`.
+12. **World Sockets** — the world offers attach points (a dungeon mouth, a Site, a building),
+   and dungeons, rooms and Sites build off a Socket, so world, rooms and decor are separate
+   stages with saved hand-offs (user, 2026-11-08). Step 11 builds the rooms -> decor hand-off
+   (the RoomContext). No spec yet.
 
 **Where the old `zone-generator-followup` runway goes (dispersed, not dropped).** Its three pieces are now prerequisites pulled into the steps that actually need them, rather than a milestone of their own: the **3D `Envelope` + gate-learns-connectors (staircase/bridge)** land with **step 5/7** (outdoor dungeon carved into terrain, and multi-level verticality); the pluggable **`LayoutEngine` seam** lands with **step 6** (graph-replacement dungeon gen). The existing specs are re-scoped to match: `.kiro/specs/zone-generator-wilderness/` is the basis for step 1 (expanded from its lean landmark-first v1 to Karanas with water/lava/cliffs/deformation); `.kiro/specs/zone-generator-followup/` is retired as a standalone milestone (its tasks survive as the step-5/6/7 prerequisite work). Each step gets its own spec authored when it starts.
 

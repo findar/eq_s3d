@@ -3,7 +3,7 @@
 Index entry: `tasks.md` task 9. Requirements 6.4, 9, 10.3, 10.5, 10.6, 12.2, 12.3.
 
 ## Goal
-Dungeon, city and outdoor-dungeon builds place Props: each model in use imported once and packed, one ZON object per Prop, one ZON light per light-bearing Prop, the GLB `decor` mesh, the sidecar's `props`, `dressing` and `decor_drops`, the gate on every build, and Decor `none` with a warning when the install is missing.
+Dungeon, city and outdoor-dungeon builds place Props: each model in use imported once and packed, one ZON object per Prop, one ZON light per light-bearing Prop, the GLB `decor` mesh, the sidecar's `props`, `dressing` and `decor_drops`, the gate on every build (P13: decor's own room check agrees with it on these builds), contexts built by `room_context.contexts`, and Decor `none` with a warning when the install is missing.
 
 ## Done when
 - [ ] Builds pass the gate with Props; Decor `none` is step 10's bytes for every zone type; same inputs same `.eqg`.
