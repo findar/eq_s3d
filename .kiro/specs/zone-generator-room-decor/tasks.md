@@ -33,7 +33,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: scripts/prop_catalogue.py, rules/decor/catalogue.json, .kiro/specs/zone-generator-room-decor/design.md (finding 0 only)
   - Reqs: 1.1, 1.2, 1.5
 
-- [ ] 2. Measure what fills stock rooms
+- [x] 2. Measure what fills stock rooms
   - Card: [cards/02-decor-survey.md](cards/02-decor-survey.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: scripts/decor_survey.py, scripts/prop_catalogue.py (the observed fields only), rules/decor/catalogue.json, .kiro/specs/zone-generator-room-decor/design.md (finding 1 only)
