@@ -35,6 +35,13 @@ Usage::
 
     python scripts/prop_catalogue.py build --eq-path F:\everquest_rof2
     python scripts/prop_catalogue.py build --eq-path F:\everquest_rof2 --archives befallen
+    python scripts/prop_catalogue.py tag
+    python scripts/prop_catalogue.py sheet --eq-path F:\everquest_rof2 --out output/prop_sheet
+
+``tag`` (task 3) proposes every entry's Tags with a confidence and a reason (``auto_tags``);
+reviewed Tags live in ``rules/decor/tags.toml`` and win when ``generators/decor/catalogue.py``
+loads the two. ``sheet`` writes a local HTML contact sheet for the review: it shows the
+client's art, so it lives under ``output/`` and is never committed or published.
 """
 
 from __future__ import annotations
@@ -177,9 +184,9 @@ class _Wld:
 
     # --- textures ---
 
-    def textures(self, mesh_b: int, files: dict) -> list:
-        """The mesh's material list as [{name, w, h, format, frames}], one per material
-        that has a bitmap (invisible materials have none)."""
+    def material_bitmaps(self, mesh_b: int) -> list:
+        """The mesh's material list, one per material index: its bitmap names (a frame
+        each), or None for a material without a bitmap (invisible)."""
         (mat_list,) = self.i32(mesh_b + 8)
         if mat_list <= 0:
             return []
@@ -190,6 +197,7 @@ class _Wld:
             _f, mb, _s = self.frag(mref, 0x30)
             (bref,) = self.i32(mb + 24)
             if bref <= 0:
+                out.append(None)
                 continue
             _f, rb, _s = self.frag(bref, 0x05)
             (info,) = self.i32(rb + 4)
@@ -204,6 +212,16 @@ class _Wld:
             for nref in self.i32(pos, count):
                 _f, nb, _s = self.frag(nref, 0x03)
                 names.append(self._bitmap_name(nb))
+            out.append(names)
+        return out
+
+    def textures(self, mesh_b: int, files: dict) -> list:
+        """The mesh's material list as [{name, w, h, format, frames}], one per material
+        that has a bitmap (invisible materials have none)."""
+        out = []
+        for names in self.material_bitmaps(mesh_b):
+            if names is None:
+                continue
             first = names[0] if names else ""
             fmt, w, h = _image_size(files.get(first.lower(), b""))
             if first.lower() not in files:
@@ -257,6 +275,7 @@ def _record(wld: _Wld, b: int, name: str, arc_name: str, wname: str, files: dict
     h = hashlib.sha1()
     verts, faces, passable, textures, mesh_names = [], [], [], [], []
     off = 0
+    uvs = True
     for ref in refs:
         _f, mb, size = wld.frags[ref]
         h.update(wld.data[mb + 24:mb + size])
@@ -269,6 +288,7 @@ def _record(wld: _Wld, b: int, name: str, arc_name: str, wname: str, files: dict
         mesh_names.append(wld.name(mb))
         if not m.polygons:
             continue
+        uvs = uvs and bool(m.uvs)
         v = np.array(m.vertices, float)
         pol = np.array([p[:3] for p in m.polygons], int)
         ok = (pol < len(v)).all(1)
@@ -298,6 +318,7 @@ def _record(wld: _Wld, b: int, name: str, arc_name: str, wname: str, files: dict
             "solid_share": round(meas["solid_share"], 3),
             "footprint": _r(meas["footprint"], 1),
             "walk_in": meas["walk_in"], "walk_in_area": _r(meas["walk_in_area"], 1),
+            "uvs": uvs,
         },
     }
 
@@ -501,6 +522,731 @@ def put_observed(cat: dict, observed: dict, out: Path = OUT) -> None:
     write(cat, out)
 
 
+# --- tag: the auto-tagger (task 3) ---------------------------------------------------------------
+#
+# Every Tag of every entry, from its name, its geometry and where stock placed it, each with a
+# confidence (0-1) and a short reason. Placements are the strongest evidence for Mount and
+# suits; a name prefix and the zones a model is placed in give the Set. ``use`` is ``review``
+# except clear rejects; only a review in rules/decor/tags.toml makes it ``yes``.
+
+#: Kinds by name, first match wins, over the name with its digits, a trailing variant letter
+#: and any ``@zone`` stripped. Specific patterns come before the words they contain.
+KIND_RULES = [(k, re.compile(p)) for k, p in (
+    ("glow", r"GLOW"), ("light_pole", r"LIGHTPOLE"), ("bones", r"RIBCAGE"),
+    ("bone_pile", r"BONEPILE"), ("tool", r"FISHPOLE"), ("bench", r"STONEBENCH"),
+    ("workbench", r"WORKBENCH|SHARPEN"), ("bookcase", r"BOOKCASE|BOOKSHELF"),
+    ("book", r"BOOK|BOKPILE|SCROLL|PAPER"), ("candelabra", r"CANDELABRA|CANDEL"),
+    ("candle", r"CANDL"), ("chandelier", r"CHANDEL"), ("lantern", r"LANTERN|LANTRN|(?<!P)LANT$"),
+    ("lamp", r"LAMP"), ("torch", r"TORCH"), ("tiki", r"TIKI"), ("brazier", r"BRAZ"),
+    ("fire", r"FIRE|FLAME|BURNER"), ("light", r"LIGHT|SCONCE"),
+    ("barrel", r"BARREL|BARL"), ("keg", r"KEG|^TAP$"), ("crate", r"CRATE|AKASTACK"),
+    ("chest", r"CHEST|TRUNK"), ("urn", r"URN"), ("vase", r"VASE"), ("jar", r"JAR"),
+    ("bucket", r"BUCKET"), ("sack", r"SACK|BAG$"), ("basket", r"BASKET"),
+    ("box", r"BOX"), ("pot", r"^POT$"),
+    ("fur_stack", r"FURSTACK"), ("rug", r"RUG|CARPET|MAT$"), ("bed", r"BED|BUNK|PALLET|PAWPAL|COT$|FURPILE"),
+    ("throne", r"THRONE"), ("desk", r"DESK"), ("table", r"TABLE|TABL|COUNTER"),
+    ("stool", r"STOOL"), ("chair", r"CHAIR|SEAT"), ("bench", r"BENCH|PEW"),
+    ("couch", r"COUCH|DIVAN|SOFA"), ("shelf", r"SHELF"), ("dresser", r"DRESSER|DRAWER|CABINET|WARDROBE"),
+    ("anvil", r"ANVIL"), ("forge", r"FORGE"), ("loom", r"LOOM"), ("altar", r"ALTAR"),
+    ("podium", r"PODIUM|LECTERN"), ("rack", r"RACK"),
+    ("banner", r"BANNER|BANN|PENN|FLAG|TAPEST|DRAPE|CURTAIN"), ("sign", r"SIGN"),
+    ("hook", r"HOOK"), ("chain", r"CHAIN"), ("shackle", r"SHAKLE|SHACKLE|MANACLE"),
+    ("rope", r"ROPE|NET$"), ("wall_gizmo", r"WALLGIZ|CORNERGIZ"),
+    ("spike", r"HEADSTAKE|SPIKEHEAD|PUNGEE|SPIKE|STAKE|SPEARDOWN"),
+    ("trophy", r"HEAD$|CLAW"), ("statue", r"STATUE|STATU$|DRAGSTAT|STONEMAN|ININICE|INICE$"),
+    ("pillar", r"PILLAR|PILLR|PILL$|COLUMN|COLL$"), ("ladder", r"LADDER"),
+    ("cage", r"CAGE|CELL$"), ("door", r"DOOR|GATE$"), ("plank", r"PLANK|PLNK|BOARD"),
+    ("beam", r"BEAM"), ("fountain", r"FOUNT|WELL$"), ("stair", r"STAIR"),
+    ("stocks", r"STOCKS"), ("gallows", r"GALLOWS"), ("tent", r"TENT|LEAN|CANOPY|HUT$"),
+    ("cart", r"CART|WAGON"), ("boat", r"BOAT|SHIP$"), ("fence", r"FENCE|RAIL"),
+    ("post", r"POST$|POLE$"), ("building", r"HOUSE|TEMPLE|TOWER"),
+    ("machine", r"GEAR|VENT$|CLOCK|BALLIST"), ("lever", r"LEVER|LEVBASE|TOGGLE"),
+    ("grate", r"GRATE"), ("effect", r"STEAM|SMOKE|MIST$"),
+    ("corpse", r"CORPSE|BODY|SKELET|CARCASS|DEAD[A-Z]+O?CK|WRAPPED|BURIAL"),
+    ("bones", r"BONE|RIBS"), ("skull", r"SKULL|SCULL"), ("web", r"WEB"),
+    ("mushroom", r"MUSHROOM|SHROOM"), ("crystal", r"CRYSTAL|CRYS|VELIUMCHIPS"),
+    ("gem", r"GEM|RUBY|EMERALD|JEWEL"), ("stalactite", r"STAL"), ("slime", r"SLIME"),
+    ("food", r"MEAT|HAUNCH|FOOD|JERKY|BREAD|FISH$"),
+    ("tableware", r"BOWL|DISH|PLATE|CUP|MUG|BOTTLE|GOBLET|^PAN$"),
+    ("tool", r"PICK|SHOVEL|SAW$|RAKE|TOOL|CHISEL|SLEDGE|HAMMER|FISHPOLE"),
+    ("weapon", r"SWORD|SHIELD|ARMOR|HELM|AXE$|SPEAR"), ("hay", r"HAY"),
+    ("log", r"LOG$|LOGS|STUMP|WOOD$"), ("mound", r"MOUND|DIRT|MUD$"),
+    ("terrain", r"DUNE|GROUND$"), ("brick", r"BRICK"), ("ice", r"ICE$"),
+    ("rock", r"ROCK|BOULDER|STONE|RUBBLE|BLOCK"),
+    ("tree", r"TREE|PINE|CEDAR|OAK$|PALM"), ("bush", r"BUSH|SHRUB|HEDGE"),
+    ("vine", r"VINE|IVY"), ("grass", r"GRASS"), ("reed", r"REED|CATTAIL"), ("root", r"ROOT"),
+    ("cactus", r"CACTUS"), ("plant", r"PLANT|FLOWER|FERN|LILY|WEED|KELP|CORAL|DILL"),
+    ("creature", r"^DCAT$|^DRAGON$"),
+)]
+#: Short words that also turn up inside longer names: a match on one is less sure.
+LOOSE = {"keg", "pot", "jar", "rope", "ice", "log", "tableware", "post", "box", "rug", "light",
+         "trophy", "statue", "plant", "terrain", "effect", "mound"}
+
+#: A name prefix gives the Set when what follows it names a kind (PALLET isn't Paineel's).
+SET_PREFIXES = (
+    ("PAW", "gnoll"), ("GUK", "froglok"), ("OGG", "ogre"), ("OG", "ogre"), ("GROB", "troll"),
+    ("CB", "iksar"), ("KS", "iksar"), ("SB", "iksar"), ("KN", "iksar"), ("IK", "iksar"),
+    ("KUR", "iksar"), ("AKA", "gnome"), ("PA", "erudite"), ("ER", "erudite"),
+    ("FEL", "high_elf"), ("KAL", "dwarf"), ("HAL", "barbarian"), ("NER", "dark_elf"),
+    ("DARK", "dark_elf"), ("GOB", "goblin"), ("PER", "goblin"), ("CC", "coldain"),
+    ("BH", "undead"), ("QEY", "human"), ("FRE", "human"), ("FREEPORT", "human"),
+    ("GIANT", "giant"),
+)
+#: The culture of a zone's people, for the Set a model's placements suggest.
+ZONE_SETS = {
+    "gnoll": "paw blackburrow", "goblin": "runnyeye soldunga permafrost",
+    "kobold": "soldungb", "froglok": "guktop gukbottom guka gukb gukc gukd guke gukf gukg gukh",
+    "iksar": "cabeast cabwest kaesora sebilis kurn karnor dalnir charasis",
+    "ogre": "oggok feerrott", "troll": "grobb innothule", "dark_elf": "neriaka neriakb neriakc",
+    "high_elf": "felwithea felwitheb", "wood_elf": "gfaydark", "dwarf": "kaladima kaladimb",
+    "gnome": "akanon steamfont", "halfling": "rivervale", "barbarian": "halas everfrost",
+    "erudite": "erudnext erudnint paineel", "human": "qeynos qeynos2 qrg freportw freportn freporte",
+    "undead": "befallen unrest", "coldain": "thurgadina thurgadinb crystal",
+    "vah_shir": "sharvahl", "giant": "kael",
+    "planar": "airplane fearplane hateplaneb growthplane mischiefplane bothunder codecay hohonora "
+              "hohonorb nightmareb poair podisease poeartha poearthb pofire poinnovation pojustice "
+              "poknowledge ponightmare postorms potactics potimea potimeb potorment potranquility "
+              "povalor powater solrotower",
+}
+ZONE_SET = {z: s for s, zs in ZONE_SETS.items() for z in zs.split()}
+#: The expansion each archive's zone shipped with; anything else is ``later``.
+ZONE_ERAS = {
+    "classic": "akanon arena befallen beholder blackburrow butcher cauldron cazicthule crushbone "
+               "eastkarana ecommons erudnext erudnint erudsxing everfrost fearplane feerrott "
+               "felwithea felwitheb freporte freportn freportw gfaydark grobb gukbottom guktop halas "
+               "hateplaneb highkeep hole innothule kaladima kaladimb kedge kithicor lakerathe "
+               "lavastorm lfaydark mistmoore najena nektulos neriaka neriakb neriakc northkarana nro "
+               "oasis oggok oot paineel paw permafrost qcat qey2hh1 qeynos qeynos2 qeytoqrg qrg "
+               "rathemtn rivervale runnyeye soldunga soldungb soltemple southkarana sro steamfont "
+               "tox unrest airplane",
+    "kunark": "burningwood cabeast cabwest charasis chardok chardokb citymist dalnir dreadlands "
+              "droga emeraldjungle fieldofbone firiona frontiermtns kaesora karnor kurn "
+              "lakeofillomen nurga overthere sebilis skyfire swampofnohope timorous trakanon "
+              "veeshan warslikswood kerraridge stonebrunt warrens",
+    "velious": "cobaltscar crystal eastwastes frozenshadow greatdivide growthplane iceclad kael "
+               "mischiefplane necropolis sirens skyshrine sleeper templeveeshan thurgadina "
+               "thurgadinb velketor wakening westwastes",
+    "luclin": "acrylia akheva dawnshroud echo fungusgrove griegsend grimling hollowshade katta "
+              "letalis maiden mseru netherbian nexus paludal scarlet shadeweaver shadowhaven "
+              "sharvahl sseru ssratemple tenebrous thedeep thegrey umbral twilight vexthal",
+    "pop": "bothunder codecay hohonora hohonorb nightmareb poair podisease poeartha poearthb pofire "
+           "poinnovation pojustice poknowledge ponightmare postorms potactics potimea potimeb "
+           "potorment potranquility povalor powater solrotower jaggedpine",
+}
+ZONE_ERA = {z: e for e, zs in ZONE_ERAS.items() for z in zs.split()}
+#: Where a kind attaches when nothing better says (placements win).
+KIND_MOUNT = {
+    "torch": "wall", "lamp": "wall", "sign": "wall", "banner": "wall", "shackle": "wall",
+    "trophy": "wall", "wall_gizmo": "wall", "hook": "ceiling", "chain": "ceiling",
+    "chandelier": "ceiling", "glow": None, "lantern": None, "web": None, "stalactite": None,
+    "root": None, "effect": None,
+}
+#: Room types (and themes) a kind suits, before any review.
+KIND_SUITS = {
+    "bed": ("barracks",), "fur_stack": ("barracks", "warren"),
+    "table": ("barracks", "guard_post"), "chair": ("barracks", "guard_post", "throne"),
+    "stool": ("barracks", "guard_post"), "bench": ("barracks", "guard_post", "shrine"),
+    "couch": ("throne",), "throne": ("throne", "inner_sanctum"), "rug": ("throne", "entry_hall"),
+    "altar": ("shrine", "ritual_chamber", "inner_sanctum", "sacrifice_chamber", "temple"),
+    "candle": ("shrine", "ritual_chamber", "inner_sanctum"),
+    "candelabra": ("shrine", "ritual_chamber", "inner_sanctum", "throne"),
+    "brazier": ("shrine", "ritual_chamber", "summoning_hall", "throne"),
+    "chandelier": ("throne", "entry_hall"),
+    "bookcase": ("laboratory", "wizard_lair"), "book": ("laboratory", "wizard_lair"),
+    "podium": ("shrine", "laboratory"), "desk": ("laboratory",), "jar": ("laboratory",),
+    "shelf": ("laboratory", "storeroom"),
+    "barrel": ("storeroom",), "keg": ("storeroom",), "crate": ("storeroom",),
+    "box": ("storeroom",), "sack": ("storeroom",), "basket": ("storeroom",),
+    "chest": ("vault", "storeroom"), "gem": ("vault",), "urn": ("ossuary", "shrine", "tomb"),
+    "anvil": ("forge", "lava_forge"), "forge": ("forge", "lava_forge"), "workbench": ("forge",),
+    "tool": ("forge", "mine_delve"), "rack": ("armory",), "weapon": ("armory",),
+    "shackle": ("prison_cell",), "cage": ("prison_cell",), "stocks": ("prison_cell",),
+    "chain": ("prison_cell",), "hook": ("prison_cell", "sacrifice_chamber"),
+    "spike": ("sacrifice_chamber", "gatehouse"),
+    "bones": ("ossuary", "tomb", "dragon_lair"), "bone_pile": ("ossuary", "tomb", "dragon_lair"),
+    "skull": ("ossuary", "tomb"), "corpse": ("ossuary", "tomb", "sacrifice_chamber"),
+    "web": ("collapsed_gallery", "tomb"), "rock": ("collapsed_gallery", "warren"),
+    "crystal": ("collapsed_gallery", "ice_keep"), "mushroom": ("warren", "sump"),
+    "slime": ("sump",), "food": ("storeroom", "barracks"), "torch": ("passage", "entry_hall", "gatehouse"),
+    "lamp": ("passage", "entry_hall"), "lantern": ("passage", "entry_hall"),
+    "tiki": ("entry_hall", "shrine"), "banner": ("throne", "entry_hall", "gatehouse"),
+    "statue": ("shrine", "entry_hall", "temple"), "trophy": ("throne", "barracks"),
+    "fire": ("warren", "barracks"),
+}
+HUGE = 100.0      # a model past this (u, plan or height at stock's median scale) is no Prop
+TERRAIN = 400.0   # u² one can walk inside: a model that big is ground, not a Prop
+SOLID, PASSABLE = 0.95, 0.05
+
+
+def _base(name: str) -> str:
+    return re.sub(r"\d+[A-Z]?$", "", name.upper().split("@")[0])
+
+
+def _set_prefix(base: str):
+    """(set, rest) when the name starts with a culture's prefix and the rest names a kind."""
+    for pre, s in sorted(SET_PREFIXES, key=lambda p: -len(p[0])):
+        rest = base[len(pre):]
+        if base.startswith(pre) and len(rest) >= 3 and any(rx.search(rest) for _k, rx in KIND_RULES):
+            return s, rest
+    return None, base
+
+
+def _kind(base: str):
+    """(kind, confidence, reason) from the name."""
+    from generators.decor.catalogue import KINDS
+    _s, rest = _set_prefix(base)
+    for kind, rx in KIND_RULES:
+        m = rx.search(rest) or rx.search(base)
+        if not m:
+            continue
+        word = rest if rx.search(rest) else base
+        left = len(word) - (m.end() - m.start())
+        conf = 0.85 if left == 0 else 0.75 if left <= 3 else 0.6
+        if kind in LOOSE:
+            conf -= 0.15
+        assert kind in KINDS, kind
+        return kind, conf, f"name {m.group(0) or word}"
+    return None, 0.0, "name matches no kind"
+
+
+def _obs_mount(obs):
+    """(mount, share, n) from the placements, unknown Mounts left out."""
+    if not obs:
+        return None, 0.0, 0
+    shares = {m: s for m, s in obs.get("mount", {}).items() if m != "unknown"}
+    if not shares:
+        return None, 0.0, 0
+    n = round(obs["n"] * sum(shares.values()))
+    top = max(shares, key=shares.get)
+    return top, shares[top] / sum(shares.values()), n
+
+
+def _mount(kind, obs, meas):
+    top, share, n = _obs_mount(obs)
+    prior = KIND_MOUNT.get(kind, "floor") if kind else None
+    if top is None and prior is None:
+        h, below = meas.get("h", 0.0), meas.get("below", 0.0)
+        if below > 0.6 * max(h + below, 1e-6):
+            return "ceiling", 0.35, "hangs below its origin"
+        return "floor", 0.3, "stands on its origin"
+    if top is None:
+        return prior, 0.45, f"usual for a {kind}"
+    c = share * n / (n + 2)
+    if prior is None or prior == top:
+        conf = 1 - (1 - c) * (0.6 if prior == top else 1.0)
+        return top, round(conf, 2), f"placed {share:.0%} {top} (n={n})"
+    if c >= 0.5:
+        return top, round(c * 0.9, 2), f"placed {share:.0%} {top} (n={n}); a {kind} is usually {prior}"
+    return prior, 0.4, f"a {kind} is usually {prior}; placed {share:.0%} {top} (n={n})"
+
+
+def _set(base, entry):
+    pre, _rest = _set_prefix(base)
+    zones = entry["placed"]["zones"]
+    total = sum(zones.values())
+    by_set = Counter()
+    for z, n in zones.items():
+        by_set[ZONE_SET.get(z)] += n
+    mapped = {s: n for s, n in by_set.items() if s}
+    top = max(mapped, key=mapped.get) if mapped else None
+    if pre:
+        share = by_set.get(pre, 0) / total if total else 0.0
+        if not total:
+            return pre, 0.7, f"prefix {base[:len(base) - len(_rest)]}"
+        if share >= 0.3:
+            return pre, 0.9, f"prefix, and {share:.0%} placed in {pre} zones"
+        return pre, 0.55, f"prefix; but placed {share:.0%} in {pre} zones"
+    if not total:
+        zs = {_zone_of(a) for a in entry["archives"]}
+        sets = {ZONE_SET.get(z) for z in zs}
+        if len(zs) == 1 and None not in sets:
+            return sets.pop(), 0.3, "unplaced; only in a culture's archive"
+        return "neutral", 0.3, "unplaced, no prefix"
+    cultures = len([s for s in by_set if s]) + (1 if None in by_set else 0)
+    if len(zones) >= 4 or cultures >= 3:
+        return "neutral", 0.8, f"placed in {len(zones)} zones of {cultures} peoples"
+    if top and mapped[top] / total >= 0.9:
+        return top, 0.5, f"placed only in {top} zones ({len(zones)})"
+    return "neutral", 0.5, f"placed in {len(zones)} zones, no single people"
+
+
+def _era(entry):
+    eras = {ZONE_ERA.get(_zone_of(a), "later") for a in entry["archives"]}
+    from generators.decor.catalogue import ERAS
+    first = min(eras, key=ERAS.index)
+    conf = 0.9 if len(eras) == 1 else 0.75
+    if first == "later":
+        conf = 0.5
+    return first, conf, "archives of " + ", ".join(sorted(eras, key=ERAS.index))
+
+
+def _collision(meas):
+    s = meas.get("solid_share", 0.0)
+    if s >= SOLID:
+        return "solid", 1.0, f"{s:.0%} of its surface solid"
+    if s <= PASSABLE:
+        return "passable", 1.0, f"{s:.0%} of its surface solid"
+    return "partial", 1.0, f"{s:.0%} of its surface solid"
+
+
+def _suits(kind, obs):
+    from generators.decor.catalogue import SUITS
+    out, why = [], []
+    if obs and obs.get("types"):
+        n = sum(obs["types"].values())
+        zt = [t for t, c in obs["types"].items() if c >= 2 or c / n >= 0.2]
+        out += zt
+        why.append("placed in " + "/".join(zt))
+    for s in KIND_SUITS.get(kind, ()):
+        if s in SUITS and s not in out:
+            out.append(s)
+    if kind in KIND_SUITS:
+        why.append(f"a {kind}")
+    n = obs["n"] if obs else 0
+    conf = 0.35 + 0.2 * (kind in KIND_SUITS) + (0.25 if n >= 20 else 0.2 if n >= 5 else 0.1 if n else 0)
+    return out, round(conf, 2), "; ".join(why) or "nothing to go on"
+
+
+def _use(entry, kind):
+    meas = entry["measured"]
+    obs = entry.get("observed") or {}
+    scale = (obs.get("scale") or [1, 1, 1])[1] or 1.0
+    size = max(meas.get("w", 0), meas.get("d", 0), meas.get("h", 0) + meas.get("below", 0)) * scale
+    if entry["animation"] != "static":
+        return "no", 1.0, f"animated ({entry['animation']}); static models only"
+    if meas.get("uvs") is False:
+        return "no", 1.0, "a mesh without UVs (the import refuses it)"
+    if not entry["placed"]["total"]:
+        return "no", 0.8, "stock never places it"
+    if kind == "terrain" or (meas.get("walk_in_area") or 0) > TERRAIN:
+        return "no", 0.8, "walk-in or terrain (a building, tent or ground, not a Prop)"
+    if size > HUGE:
+        return "no", 0.8, f"huge ({size:.0f} u at stock's scale)"
+    return "review", 0.5, "awaits review"
+
+
+def auto_tags(key: str, entry: dict) -> dict:
+    """The proposed Tags of one catalogue entry: values, ``conf`` and ``why`` per Tag."""
+    from decor_survey import category as name_category
+    from generators.decor.catalogue import KINDS
+    base = _base(key)
+    obs = entry.get("observed")
+    meas = entry["measured"]
+    kind, kconf, kwhy = _kind(base)
+    survey_cat = name_category(key)
+    if kind is None:
+        kind, kconf, kwhy = survey_cat, 0.2, f"no kind in the name; Category {survey_cat} by name"
+    cat = KINDS[kind]
+    cconf = min(1.0, max(kconf, 0.2) + (0.1 if cat == survey_cat else -0.1))
+    cwhy = f"the kind {kind}" + ("" if cat == survey_cat else f" (the survey's name pattern says {survey_cat})")
+    vals = {
+        "category": (cat, cconf, cwhy), "kind": (kind, kconf, kwhy),
+        "mount": _mount(kind, obs, meas), "set": _set(base, entry), "era": _era(entry),
+        "collision": _collision(meas), "suits": _suits(kind, obs), "use": _use(entry, kind),
+    }
+    tags = {f: v[0] for f, v in vals.items()}
+    tags["conf"] = {f: round(float(v[1]), 2) for f, v in vals.items()}
+    tags["why"] = {f: v[2] for f, v in vals.items()}
+    return tags
+
+
+def tag(cat: dict, out: Path | None = OUT) -> dict:
+    """Propose every entry's Tags and write the catalogue (when ``out``)."""
+    for key, entry in cat["models"].items():
+        entry["tags"] = auto_tags(key, entry)
+    if out is not None:
+        write(cat, out)
+    return cat
+
+
+def tag_report(cat: dict) -> None:
+    from generators.decor.catalogue import TAG_FIELDS
+    models = cat["models"]
+    print(f"tagged {len(models)} models")
+    bands = Counter()
+    for m in models.values():
+        low = min(m["tags"]["conf"][f] for f in TAG_FIELDS if f != "use")
+        bands["<0.4" if low < 0.4 else "0.4-0.6" if low < 0.6 else "0.6-0.8" if low < 0.8 else ">=0.8"] += 1
+    print("  lowest Tag confidence: " + ", ".join(f"{b} {bands[b]}" for b in
+                                                    ("<0.4", "0.4-0.6", "0.6-0.8", ">=0.8")))
+    for f in ("category", "mount", "set", "use"):
+        c = Counter(m["tags"][f] for m in models.values())
+        print(f"  {f}: " + ", ".join(f"{k} {v}" for k, v in c.most_common()))
+    why = Counter(m["tags"]["why"]["use"].split(" (")[0] for m in models.values() if m["tags"]["use"] == "no")
+    print("  use = no: " + ", ".join(f"{k} {v}" for k, v in why.most_common()))
+
+
+# --- sheet: the local review sheet (task 3) --------------------------------------------------------
+#
+# One card per model: a textured thumbnail (top and side views, from a small numpy rasteriser),
+# its measures, where stock placed it, its Tags with confidence and reason, and the tags.toml
+# line that sets them. Grouped by proposed kind, lowest confidence first. It shows the client's
+# art: it's written under output/ and never committed or published.
+
+THUMB = 150           # each view's side (px); drawn at twice that and shrunk
+LIGHT_DIR = np.array([0.4, -0.5, 0.75]) / np.linalg.norm([0.4, -0.5, 0.75])
+
+
+def load_model(files: dict, wld: "_Wld", name: str):
+    """(vertices, triangles, uvs per triangle corner, texture name per triangle) of the
+    actor ``name`` in a parsed WLD. Skeletal meshes come in their bones' own frames
+    (unposed)."""
+    for fid, b, _size in wld.frags[1:]:
+        if fid == 0x14 and wld.name(b).upper().replace("_ACTORDEF", "") == name:
+            break
+    else:
+        raise KeyError(f"{name}: no actor")
+    refs, _anim = wld.actor_meshes(b)
+    verts, faces, uvs, texs = [], [], [], []
+    off = 0
+    for ref in refs:
+        _f, mb, size = wld.frags[ref]
+        m = _parse_mesh(wld.data, mb, mb + size, wld.old)
+        if m is None or not m.polygons:
+            continue
+        v = np.array(m.vertices, float)
+        pol = np.array([p[:3] for p in m.polygons], int)
+        uv = np.array(m.uvs, float) if m.uvs else np.zeros((len(v), 2))
+        mats = wld.material_bitmaps(mb)
+        pt = m.polygon_textures or [0] * len(pol)
+        for t in pt:
+            names = mats[t] if 0 <= t < len(mats) else None
+            texs.append(names[0].lower() if names else None)
+        verts.append(v)
+        faces.append(pol + off)
+        uvs.append(uv)
+        off += len(v)
+    if not faces:
+        raise ValueError(f"{name}: no triangles")
+    v = np.concatenate(verts)
+    f = np.concatenate(faces)
+    return v, f, np.concatenate(uvs)[f], texs
+
+
+def _image(data: bytes):
+    """A texture file as an RGBA array (BMP or DDS, whatever its extension says), or None."""
+    from io import BytesIO
+    from PIL import Image
+    try:
+        im = Image.open(BytesIO(data))
+        return np.asarray(im.convert("RGBA"))
+    except Exception:  # noqa: BLE001 - an unreadable texture draws grey
+        return None
+
+
+def _view(name: str) -> np.ndarray:
+    """Rows: screen right, screen up, towards the viewer (EQ is Z up)."""
+    if name == "top":
+        return np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]])
+    az, el = np.radians(-35.0), np.radians(18.0)
+    right = np.array([np.cos(az), np.sin(az), 0.0])
+    fwd = np.array([-np.sin(az), np.cos(az), 0.0])       # into the screen, level
+    toward = -(np.cos(el) * fwd) + np.array([0, 0, np.sin(el)])
+    up = np.cross(toward, right)
+    return np.array([right, up, toward])
+
+
+def rasterise(verts, faces, uvs, texs, images: dict, view: str, size: int = THUMB):
+    """An RGBA image (``size`` square) of the model from ``view`` (``top`` or ``side``):
+    orthographic, z-buffered, textured (nearest texel, alpha-tested), lit by its normal from
+    both sides (stock meshes are open and wound either way)."""
+    from PIL import Image
+    big = size * 2
+    rot = _view(view)
+    p = verts @ rot.T
+    lo, hi = p[:, :2].min(0), p[:, :2].max(0)
+    span = max(float((hi - lo).max()), 1e-6)
+    scale = (big - 8) / span
+    sx = (p[:, 0] - (lo[0] + hi[0]) / 2) * scale + big / 2
+    sy = big / 2 - (p[:, 1] - (lo[1] + hi[1]) / 2) * scale
+    depth = p[:, 2]
+    col = np.zeros((big, big, 4), np.uint8)
+    zbuf = np.full((big, big), -np.inf)
+    tri = verts[faces]
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    nn = np.linalg.norm(n, axis=1)
+    shade = 0.45 + 0.55 * np.abs((n / np.maximum(nn, 1e-12)[:, None]) @ LIGHT_DIR)
+    order = np.argsort(depth[faces].mean(1))   # far first: fewer overwrites
+    for i in order:
+        if nn[i] < 1e-12:
+            continue
+        tex = texs[i]
+        if tex is None:
+            continue   # an invisible material
+        img = images.get(tex)
+        a, b, c = faces[i]
+        x = np.array([sx[a], sx[b], sx[c]])
+        y = np.array([sy[a], sy[b], sy[c]])
+        x0, x1 = max(int(np.floor(x.min())), 0), min(int(np.ceil(x.max())), big - 1)
+        y0, y1 = max(int(np.floor(y.min())), 0), min(int(np.ceil(y.max())), big - 1)
+        if x1 < x0 or y1 < y0:
+            continue
+        den = (y[1] - y[2]) * (x[0] - x[2]) + (x[2] - x[1]) * (y[0] - y[2])
+        if abs(den) < 1e-9:
+            continue
+        gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+        w0 = ((y[1] - y[2]) * (gx - x[2]) + (x[2] - x[1]) * (gy - y[2])) / den
+        w1 = ((y[2] - y[0]) * (gx - x[2]) + (x[0] - x[2]) * (gy - y[2])) / den
+        w2 = 1 - w0 - w1
+        inside = (w0 >= -1e-6) & (w1 >= -1e-6) & (w2 >= -1e-6)
+        if not inside.any():
+            continue
+        z = w0 * depth[a] + w1 * depth[b] + w2 * depth[c]
+        zb = zbuf[y0:y1 + 1, x0:x1 + 1]
+        draw = inside & (z > zb)
+        if not draw.any():
+            continue
+        if img is None:
+            rgba = np.broadcast_to(np.array([150, 150, 150, 255], np.uint8), draw.shape + (4,))
+        else:
+            u = w0 * uvs[i, 0, 0] + w1 * uvs[i, 1, 0] + w2 * uvs[i, 2, 0]
+            v = w0 * uvs[i, 0, 1] + w1 * uvs[i, 1, 1] + w2 * uvs[i, 2, 1]
+            th, tw = img.shape[:2]
+            tx = (np.floor(u * tw).astype(np.int64)) % tw
+            ty = (np.floor(v * th).astype(np.int64)) % th
+            rgba = img[ty, tx]
+            draw &= rgba[..., 3] >= 128
+        if not draw.any():
+            continue
+        lit = np.clip(rgba[..., :3].astype(float) * shade[i], 0, 255).astype(np.uint8)
+        block = col[y0:y1 + 1, x0:x1 + 1]
+        block[draw, :3] = lit[draw]
+        block[draw, 3] = 255
+        zb[draw] = z[draw]
+    return Image.fromarray(col, "RGBA").resize((size, size), Image.LANCZOS)
+
+
+def _thumb_name(key: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", key) + ".png"
+
+
+def render_archive(args):
+    """Render every wanted model of one archive: [(key, file or None, error or None)]."""
+    from PIL import Image
+    path, wanted, out_dir = args      # wanted: [(key, name, wld)]
+    done = []
+    try:
+        arc = PfsArchive.from_file(path)
+    except Exception as e:  # noqa: BLE001
+        return [(k, None, f"archive: {e}") for k, _n, _w in wanted]
+    files = {f.name.lower(): f.data for f in arc.files}
+    wlds = {}
+    for key, name, wname in wanted:
+        try:
+            if wname not in wlds:
+                wlds[wname] = _Wld(files[wname])
+            v, f, uv, texs = load_model(files, wlds[wname], name)
+            images = {t: _image(files[t]) for t in set(texs) if t and t in files}
+            top = rasterise(v, f, uv, texs, images, "top")
+            side = rasterise(v, f, uv, texs, images, "side")
+            both = Image.new("RGBA", (THUMB * 2 + 6, THUMB), (0, 0, 0, 0))
+            both.paste(top, (0, 0))
+            both.paste(side, (THUMB + 6, 0))
+            fname = _thumb_name(key)
+            both.save(out_dir / fname, optimize=True)
+            done.append((key, fname, None))
+        except Exception as e:  # noqa: BLE001 - one bad model doesn't stop the sheet
+            done.append((key, None, str(e)))
+    return done
+
+
+def sheet_keys(cat: dict, everything: bool = False) -> list:
+    """The entries the sheet shows: those placed in finding 1's dungeons and cities (archive
+    decision 4: 581 names), or every placed one."""
+    from decor_survey import CITIES
+    from wall_survey import STYLES
+    zones = set(STYLES) | set(CITIES)
+    return sorted(k for k, m in cat["models"].items()
+                  if m["placed"]["total"] and (everything or set(m["placed"]["zones"]) & zones))
+
+
+def _card(key: str, raw: dict, model, thumb, error) -> dict:
+    from generators.decor.catalogue import TAG_FIELDS, review_line
+    t = model.tags
+    values = {f: (list(getattr(t, f)) if f == "suits" else getattr(t, f)) for f in TAG_FIELDS}
+    obs = raw.get("observed") or {}
+    zones = sorted((obs.get("zones") or {}).items(), key=lambda kv: -kv[1]["n"])
+    return {
+        "key": key, "name": raw["name"], "thumb": thumb, "error": error,
+        "anim": raw["animation"], "m": raw["measured"],
+        "tex": [f'{x["name"]} {x["w"]}x{x["h"]}' + (f' ({x["frames"]} frames)' if x["frames"] > 1 else "")
+                for x in raw["textures"]],
+        "archives": len(raw["archives"]), "texsets": raw.get("texture_sets", 1),
+        "placed": raw["placed"]["total"],
+        "obs": {k: obs.get(k) for k in ("n", "types", "over", "wall", "under", "scale", "mount", "near")},
+        "zones": [[z, v["n"], v["type"], v["mount"], v.get("over"), v.get("wall")] for z, v in zones[:8]],
+        "more_zones": max(len(zones) - 8, 0),
+        "tags": values, "conf": dict(t.confidence), "why": dict(t.why),
+        "reviewed": list(t.reviewed), "note": t.note, "low": round(t.lowest, 2),
+        "line": review_line(key, values),
+    }
+
+
+def write_sheet(eq_path: Path, out: Path, catalogue: Path = OUT, tags: Path | None = None,
+                everything: bool = False, jobs: int | None = None) -> Path:
+    """Render the thumbnails and write ``out/index.html``; returns its path."""
+    from generators.decor import catalogue as dc
+    tags = tags or catalogue.parent / dc.TAGS_FILE
+    merged = dc.load(catalogue, tags)
+    cat = load(catalogue)
+    keys = sheet_keys(cat, everything)
+    img_dir = out / "img"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    by_arc = defaultdict(list)
+    for k in keys:
+        m = cat["models"][k]
+        by_arc[m["source"]["archive"]].append((k, m["name"], m["source"]["wld"]))
+    jobs_in = [(eq_path / a, w, img_dir) for a, w in sorted(by_arc.items())]
+    rendered = {}
+    with ProcessPoolExecutor(jobs) as pool:
+        for rows in pool.map(render_archive, jobs_in, chunksize=1):
+            for k, fname, err in rows:
+                rendered[k] = (fname, err)
+    cards = [_card(k, cat["models"][k], merged.models[k], *rendered.get(k, (None, "not rendered")))
+             for k in keys]
+    meta = {"kinds": dict(sorted(merged.kinds.items())), "sets": list(merged.sets),
+            "fields": list(dc.TAG_FIELDS), "count": len(cards),
+            "names": len({c["name"] for c in cards}),
+            "failed": sum(1 for c in cards if not c["thumb"])}
+    page = out / "index.html"
+    blob = json.dumps({"meta": meta, "cards": cards}, ensure_ascii=False, separators=(",", ":"))
+    page.write_text(SHEET_HTML.replace("__DATA__", blob.replace("</", "<\\/")), encoding="utf-8")
+    print(f"{len(cards)} entries ({meta['names']} names), {meta['failed']} without a thumbnail")
+    for c in cards:
+        if c["error"]:
+            print(f"  {c['key']}: {c['error']}")
+    return page
+
+
+SHEET_HTML = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prop review sheet</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#e2e0da;--accent:#2f6fb0;
+--lo:#c0392b;--mid:#d68910;--hi:#1e8449;--chip:#efeee9;--code:#f1f0ec;--thumb:#2a2b30}
+@media (prefers-color-scheme:dark){:root{--bg:#17181b;--card:#202226;--ink:#e8e6e1;--mute:#9a988f;
+--line:#33353a;--accent:#6aa5e0;--lo:#e2685a;--mid:#e8a33c;--hi:#52be80;--chip:#2b2d32;--code:#1a1b1e;--thumb:#111214}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 16px}
+h1{font-size:17px;margin:0 0 6px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bar input,.bar select{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+.bar input[type=search]{min-width:200px;flex:1;max-width:340px}
+.stat{color:var(--mute);font-size:13px}
+main{padding:12px 16px 120px}
+h2{font-size:15px;margin:22px 0 8px;display:flex;gap:10px;align-items:baseline}
+h2 small{color:var(--mute);font-weight:normal}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px}
+.card.rev{border-color:var(--hi)}
+.thumb{background:var(--thumb);border-radius:6px;display:flex;justify-content:center;min-height:80px}
+.thumb img{max-width:100%;image-rendering:auto}
+.thumb .err{color:#ccc;padding:20px;font-size:12px}
+.title{display:flex;justify-content:space-between;gap:6px;align-items:baseline}
+.title b{font-size:15px;word-break:break-all}
+.badge{font-size:11px;padding:1px 6px;border-radius:9px;background:var(--chip);color:var(--mute);white-space:nowrap}
+.badge.no{background:var(--lo);color:#fff}.badge.yes{background:var(--hi);color:#fff}
+.meas,.obs{font-size:12px;color:var(--mute)}
+table.tags{width:100%;border-collapse:collapse;font-size:12.5px}
+table.tags td{padding:2px 4px;border-top:1px solid var(--line);vertical-align:top}
+table.tags td:first-child{color:var(--mute);width:62px}
+table.tags td.v{font-weight:600;width:110px;word-break:break-word}
+table.tags td.why{color:var(--mute);font-size:11.5px}
+.conf{display:inline-block;width:30px;text-align:right;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600}
+.c-lo{color:var(--lo)}.c-mid{color:var(--mid)}.c-hi{color:var(--hi)}
+.rv{color:var(--hi);font-size:11px}
+code.line{display:block;background:var(--code);border-radius:5px;padding:5px 6px;font-size:11px;word-break:break-all;white-space:pre-wrap}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+button{font:inherit;font-size:12.5px;padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.yes{border-color:var(--hi)}button.no{border-color:var(--lo)}
+details summary{cursor:pointer;color:var(--mute);font-size:12px}
+#tray{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:8px 16px;z-index:6;max-height:40vh;display:flex;flex-direction:column;gap:6px}
+#tray textarea{width:100%;min-height:52px;max-height:28vh;font:11.5px ui-monospace,Consolas,monospace;background:var(--code);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px}
+#tray .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hidden{display:none}
+@media (max-width:600px),(max-height:600px){header{position:static}#tray{max-height:30vh}}
+@media (max-width:420px){.grid{grid-template-columns:1fr}}
+#tray.min textarea{display:none}
+</style></head><body>
+<header>
+<h1>Prop review sheet <span class="stat" id="stat"></span></h1>
+<div class="bar">
+<input type="search" id="q" placeholder="Search name, kind, zone, reason...">
+<select id="fkind"><option value="">every kind</option></select>
+<select id="fset"><option value="">every Set</option></select>
+<select id="fcat"><option value="">every Category</option></select>
+<select id="fuse"><option value="">any use</option><option>review</option><option>yes</option><option>no</option></select>
+<select id="frev"><option value="">reviewed or not</option><option value="0">not reviewed</option><option value="1">reviewed</option></select>
+<select id="sort"><option value="conf">lowest confidence first</option><option value="use">by use</option><option value="placed">most placed first</option><option value="name">by name</option></select>
+</div>
+</header>
+<main id="main"></main>
+<div id="tray"><div class="row"><b>Lines for rules/decor/tags.toml</b><span class="stat">paste under <code>[models]</code></span>
+<button id="copyall">Copy all</button><button id="clear">Clear</button><button id="fold">Hide</button><span class="stat" id="traystat"></span></div>
+<textarea id="lines" spellcheck="false" placeholder="Press yes / no on a card (or edit its line) to collect it here."></textarea></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const D=JSON.parse(document.getElementById('data').textContent);
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:v}catch(e){return d}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+const cls=c=>c<0.45?'c-lo':c<0.7?'c-mid':'c-hi';
+const fmt=v=>v==null?'-':Array.isArray(v)?v.join(' / '):v;
+function fill(sel,vals){for(const v of vals){const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o)}}
+const kinds=[...new Set(D.cards.map(c=>c.tags.kind))].sort(), sets=[...new Set(D.cards.map(c=>c.tags.set))].sort(),
+cats=[...new Set(D.cards.map(c=>c.tags.category))].sort();
+fill($('fkind'),kinds);fill($('fset'),sets);fill($('fcat'),cats);
+for(const id of ['q','fkind','fset','fcat','fuse','frev','sort']){const el=$(id);el.value=store.get('ps.'+id,el.value);el.addEventListener('input',()=>{store.set('ps.'+id,el.value);draw()})}
+$('lines').value=store.get('ps.lines','');
+function trayStat(){const n=$('lines').value.split('\n').filter(l=>l.trim()).length;$('traystat').textContent=n+' line'+(n==1?'':'s');store.set('ps.lines',$('lines').value)}
+$('lines').addEventListener('input',trayStat);trayStat();
+function addLine(key,line){const ls=$('lines').value.split('\n').filter(l=>l.trim()&&!l.startsWith(JSON.stringify(key)+' ='));ls.push(line);$('lines').value=ls.join('\n')+'\n';trayStat()}
+const fold=v=>{$('tray').classList.toggle('min',v);$('fold').textContent=v?'Show':'Hide';store.set('ps.fold',v?'1':'')};
+$('fold').onclick=()=>fold(!$('tray').classList.contains('min'));fold(store.get('ps.fold','')=='1');
+$('copyall').onclick=()=>{navigator.clipboard&&navigator.clipboard.writeText($('lines').value)};
+$('clear').onclick=()=>{if(confirm('Clear the collected lines?')){$('lines').value='';trayStat()}};
+function text(c){return [c.key,c.name,c.tags.kind,c.tags.category,c.tags.set,c.tags.mount,c.tags.suits.join(' '),Object.values(c.why).join(' '),c.zones.map(z=>z[0]).join(' '),c.note].join(' ').toLowerCase()}
+D.cards.forEach(c=>c._t=text(c));
+function card(c){
+ const m=c.m,o=c.obs;
+ const rows=D.meta.fields.map(f=>`<tr><td>${f}</td><td class="v">${esc(fmt(c.tags[f]))}${c.reviewed.includes(f)?' <span class="rv">reviewed</span>':''}</td><td><span class="conf ${cls(c.conf[f])}">${c.conf[f].toFixed(2)}</span></td><td class="why">${esc(c.why[f]||'')}</td></tr>`).join('');
+ const mounts=o.mount?Object.entries(o.mount).map(([k,v])=>k+' '+Math.round(v*100)+'%').join(', '):'';
+ const zones=c.zones.map(z=>`${z[0]} ${z[1]} (${z[2]}, ${z[3]}${z[4]!=null?', over '+z[4]:''}${z[5]!=null?', wall '+z[5]:''})`).join('; ')+(c.more_zones?`; +${c.more_zones} more zones`:'');
+ return `<div class="card${c.reviewed.length?' rev':''}" data-key="${esc(c.key)}">
+ <div class="thumb">${c.thumb?`<img loading="lazy" src="img/${esc(c.thumb)}" alt="${esc(c.key)}: top and side views" title="top | side">`:`<div class="err">no thumbnail: ${esc(c.error)}</div>`}</div>
+ <div class="title"><b>${esc(c.key)}</b><span><span class="badge ${c.tags.use}">use ${c.tags.use}</span> <span class="badge">low ${c.low.toFixed(2)}</span></span></div>
+ <div class="meas">${m.w} x ${m.d} x ${m.h} u (below ${m.below}) · ${m.tris} tris · solid ${Math.round(m.solid_share*100)}%${m.walk_in?' · walk-in '+m.walk_in_area+' u²':''} · ${c.anim}${c.archives>1?' · in '+c.archives+' archives, '+c.texsets+' texture sets':''}</div>
+ <div class="obs">placed ${c.placed}${o.n?` · ${mounts} · over floor ${fmt(o.over)} · wall ${fmt(o.wall)} · under ceiling ${Math.round((o.under||0)*100)}% · scale ${fmt(o.scale)}`:''}${o.near&&o.near.length?' · near '+o.near.join(', '):''}</div>
+ <details><summary>zones and textures</summary><div class="obs">${esc(zones)}</div><div class="obs">${esc(c.tex.join(', '))}</div></details>
+ <table class="tags">${rows}</table>
+ ${c.note?`<div class="obs">note: ${esc(c.note)}</div>`:''}
+ <code class="line" contenteditable="true" spellcheck="false">${esc(c.line)}</code>
+ <div class="acts"><button class="yes" data-use="yes">yes</button><button class="no" data-use="no">no</button><button data-use="">add as edited</button><button data-copy="1">copy</button></div>
+ </div>`}
+function draw(){
+ const q=$('q').value.trim().toLowerCase().split(/\s+/).filter(Boolean),fk=$('fkind').value,fs=$('fset').value,fc=$('fcat').value,fu=$('fuse').value,fr=$('frev').value,sort=$('sort').value;
+ const shown=D.cards.filter(c=>(!fk||c.tags.kind==fk)&&(!fs||c.tags.set==fs)&&(!fc||c.tags.category==fc)&&(!fu||c.tags.use==fu)&&(!fr||(c.reviewed.length>0)==(fr=='1'))&&q.every(w=>c._t.includes(w)));
+ const useOrd={review:0,yes:1,no:2};
+ const cmp={conf:(a,b)=>a.low-b.low||b.placed-a.placed,use:(a,b)=>useOrd[a.tags.use]-useOrd[b.tags.use]||a.low-b.low,placed:(a,b)=>b.placed-a.placed,name:(a,b)=>a.key<b.key?-1:1}[sort];
+ const groups={};for(const c of shown)(groups[c.tags.kind]=groups[c.tags.kind]||[]).push(c);
+ const order=Object.entries(groups).map(([k,cs])=>[k,cs.sort(cmp)]);
+ order.sort(sort=='name'?((a,b)=>a[0]<b[0]?-1:1):sort=='placed'?((a,b)=>b[1].reduce((s,c)=>s+c.placed,0)-a[1].reduce((s,c)=>s+c.placed,0)):((a,b)=>cmp(a[1][0],b[1][0])));
+ $('main').innerHTML=order.map(([k,cs])=>`<h2>${esc(k)} <small>${esc(D.meta.kinds[k]||'')} · ${cs.length} model${cs.length==1?'':'s'}</small></h2><div class="grid">${cs.map(card).join('')}</div>`).join('')||'<p class="stat">Nothing matches.</p>';
+ const rev=D.cards.filter(c=>c.reviewed.length).length;
+ $('stat').textContent=`${shown.length} of ${D.meta.count} entries (${D.meta.names} names) · ${rev} reviewed`;
+}
+$('main').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const el=b.closest('.card'),c=D.cards.find(x=>x.key==el.dataset.key),code=el.querySelector('code.line');
+ if(b.dataset.copy){navigator.clipboard&&navigator.clipboard.writeText(code.textContent);return}
+ let line=code.textContent.trim();if(b.dataset.use){line=line.replace(/use = "[a-z]+"/,'use = "'+b.dataset.use+'"');code.textContent=line}
+ addLine(c.key,line);b.textContent='added';setTimeout(()=>{b.textContent=b.dataset.use||'add as edited'},900)});
+draw();
+</script></body></html>
+"""
+
+
 def report(cat: dict) -> None:
     c = cat["counts"]
     print(f"{c['archives']} archives, {c['actors']} actors ({c['actors_read']} read), "
@@ -534,11 +1280,28 @@ def main(argv=None) -> int:
     b.add_argument("--out", type=Path, default=OUT)
     b.add_argument("--archives", help="regex: only these archives (a partial catalogue)")
     b.add_argument("--jobs", type=int, default=None)
+    t = sub.add_parser("tag", help="propose every entry's Tags into the catalogue")
+    t.add_argument("--catalogue", type=Path, default=OUT)
+    sh = sub.add_parser("sheet", help="write the local HTML review sheet")
+    sh.add_argument("--eq-path", type=Path, required=True)
+    sh.add_argument("--out", type=Path, default=ROOT / "output" / "prop_sheet")
+    sh.add_argument("--catalogue", type=Path, default=OUT)
+    sh.add_argument("--tags", type=Path, default=OUT.parent / "tags.toml")
+    sh.add_argument("--all", action="store_true",
+                    help="every placed model, not only finding 1's dungeons and cities")
+    sh.add_argument("--jobs", type=int, default=None)
     args = ap.parse_args(argv)
     if args.cmd == "build":
         cat = build(args.eq_path, args.out, args.archives, args.jobs)
         report(cat)
         print(f"wrote {args.out}")
+    elif args.cmd == "tag":
+        cat = tag(load(args.catalogue), args.catalogue)
+        tag_report(cat)
+        print(f"wrote {args.catalogue}")
+    elif args.cmd == "sheet":
+        page = write_sheet(args.eq_path, args.out, args.catalogue, args.tags, args.all, args.jobs)
+        print(f"wrote {page}")
     return 0
 
 
