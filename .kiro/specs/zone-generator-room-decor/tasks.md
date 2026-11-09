@@ -67,7 +67,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: rules/decor/rooms.toml, rules/decor/sets.toml, generators/decor/rules.py, scripts/topology_rules.py (a `decor` check and draw), tests/test_decor_rules.py
   - Reqs: 5, 7
 
-- [ ] 8. Decor placement in rooms
+- [x] 8. Decor placement in rooms
   - Card: [cards/08-placement.md](cards/08-placement.md)
   - Type: agent · Size: M · Depends: 7, 18
   - Owns: generators/decor/placement.py, tests/test_decor_placement.py, scripts/decor_room.py
