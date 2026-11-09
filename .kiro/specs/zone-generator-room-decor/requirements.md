@@ -12,11 +12,12 @@ Roadmap step 11: **decorating rooms.** A generated room today has a shape (step 
 advisory POIs. Nothing is placed in it. Its `prop_hints` ("raised throne dais", "weapon racks")
 are words in the side panel.
 
-Stock rooms are full. A probe of the placed objects of 15 Classic dungeons and 15 cities
-(design finding 1) counts 12,501 objects: 7–48 per room in dungeons, median about 19. In
-dungeons a third are debris (rocks, bones, webs, mushrooms) and nearly a third are lights
-(torches, lanterns, braziers); furniture and containers are a tenth each. Cities hold more
-furniture (23%) and more lights (37%). Each culture has its own set: Paw's hooks and tables,
+Stock zones are furnished. The 15 Classic dungeons and 15 cities of design finding 1 place
+12,501 objects. A dungeon room holds about 4 on average (zone p25–p75 3–7) and a city room
+about 9, with as many again in corridors, alcoves and room edges; about a quarter of
+dungeon rooms are empty. In dungeons a third are lights (torches, lanterns, braziers) and
+nearly a third debris (rocks, bones, webs, mushrooms); cities hold more furniture (28%) and
+lights (39%), and almost no debris. Each culture has its own set: Paw's hooks and tables,
 Guk's lanterns and planks, Sebilis's shackles, Kurn's bunks and crates.
 
 **The models come from the client** (design decision 1). Generated props would be hard to keep
