@@ -438,10 +438,13 @@ def load_ter_from_eqg(eqg_path: str | Path) -> Tuple[TerFile, str]:
 def placed_models(eqg_path: str | Path) -> List["Placed"]:
     """Every ZON object the ``.eqg`` places with the model it places
     (``analyzer.footprints.placed_from_zon``), the terrain's own object left
-    out. Empty when the archive has no ZON or the ZON places only terrain."""
+    out. Empty when there is no archive at ``eqg_path`` (a test handing
+    ``validate`` its own mesh), it has no ZON, or the ZON places only terrain."""
     from analyzer.footprints import placed_from_zon
     from core.zon import ZonFile
 
+    if not Path(eqg_path).is_file():
+        return []
     arc = PfsArchive.from_file(Path(eqg_path))
     zon_name = next((f for f in arc.list_files() if f.lower().endswith(".zon")), None)
     if zon_name is None:
