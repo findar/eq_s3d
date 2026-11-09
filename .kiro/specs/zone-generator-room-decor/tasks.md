@@ -48,7 +48,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Card: [cards/04-tag-review.md](cards/04-tag-review.md)
   - Type: human · Depends: 3
 
-- [ ] 5. The room gate learns placed models
+- [x] 5. The room gate learns placed models
   - Card: [cards/05-gate-props.md](cards/05-gate-props.md)
   - Type: agent · Size: M · Depends: —
   - Owns: analyzer/traverse.py, analyzer/footprints.py, generators/pipeline.py (the room gate's call only), tests/test_gate_props.py
