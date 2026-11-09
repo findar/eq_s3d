@@ -1,8 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 11, DRAFT.** Written 2026-11-08 at master `e50ecfc`; revised the same
+> **STATUS: roadmap step 11, ready.** Written 2026-11-08 at master `e50ecfc`; revised the same
 > day for the user's direction to use the client's own models, catalogued and tagged (design
-> decision 1). The design's other open questions wait for the user's answers. Task index:
+> decision 1). Every open question answered the same day (`archive.md` "Decisions"). Task index:
 > `tasks.md` (card format, 17 tasks).
 
 ## Introduction

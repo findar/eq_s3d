@@ -277,7 +277,8 @@ lists a room's Props in the side panel.
 
 ## Open questions
 
-Question 1 was answered by the user's direction (decision 1). The rest wait.
+Question 1 was answered by the user's direction (decision 1); the rest were answered 2026-11-08,
+every recommendation taken (`archive.md` decisions 3-14).
 
 2. **Which archives in v1?** *Recommended: the 293 `_obj*.s3d` archives (4,408 models), the
    Classic–PoP look this project defaults to. `.eqg` `.mod` models (later eras) are a
