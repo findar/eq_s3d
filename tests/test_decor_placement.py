@@ -502,3 +502,18 @@ def test_a_decorated_room_is_plain_data(decorated):
     assert back["room"] == d.room and len(back["props"]) == len(d.props)
     assert isinstance(d, Decorated)
 
+
+# --- Req 13.5: one room to a GLB --------------------------------------------------------------------
+
+def test_decor_room_writes_a_glb_of_one_room(tmp_path, capsys):
+    """The look command, drawing Props as boxes so it needs no install."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("decor_room", ROOT / "scripts" / "decor_room.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    path = FIXTURES / "war_city_troll.json"
+    assert mod.main([str(path), "--room", "room_6", "--out", str(tmp_path), "--boxes", "--any-use"]) == 0
+    glb = tmp_path / "war_city_troll_room_6.glb"
+    assert glb.read_bytes()[:4] == b"glTF"
+    assert (tmp_path / "war_city_troll_room_6.decor.json").is_file()
+    assert "drawn as boxes" in capsys.readouterr().out
