@@ -91,7 +91,7 @@ The design's open questions are answered (2026-11-07); the answers are in `archi
   - Owns: tests/test_site_bands.py
   - Reqs: 9.1, 9.4
 
-- [ ] 12. Acceptance section, thorough run
+- [x] 12. Acceptance section, thorough run
   - Card: [cards/12-acceptance.md](cards/12-acceptance.md)
   - Type: agent · Size: S · Depends: 11
   - Owns: docs/ACCEPTANCE.md
