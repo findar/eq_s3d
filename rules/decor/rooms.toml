@@ -1,0 +1,416 @@
+# rules/decor/rooms.toml -- what furnishes a room (roadmap step 11).
+#
+# A room takes its room type's recipe, else its kind's, else the default, then the `every` lines.
+# A Site takes its Site kind's recipe (`[sites.<kind>]`, task 11) and no `every` lines. POIs take
+# their Dressing first. Each line asks for Props by Tag: a catalogue kind (or a list of kinds,
+# best first) or a Group of them, and only models with `use = "yes"` fill it (tags.toml).
+#
+#   kind     a kind of generators/decor/catalogue.py KINDS, or ["throne", "chair"]: best first
+#   group    a Group below, placed whole or not at all, instead of a kind
+#   at       where it stands, which sets the Mount it asks for:
+#              on_wall (wall), ceiling (ceiling); along_wall (back to a wall), corners, centre,
+#              far_end, scatter, rows, by_door, on_dais (floor)
+#            and for Dressing, round its POI: beside, behind, flank, round (floor); wall (the
+#            wall nearest the POI)
+#   count    how many: a number or [low, high]
+#   chance   how likely this line is at all
+#   by       the Scale that moves this line (scales.toml): finish, structure or clutter. Left out,
+#            a line takes its Category's from `moves`. 5 is the line as written, 0 nothing, 10
+#            twice as much
+#   from     the line is there only from this value of its Scale up
+#
+# Design finding 1 sets the figures: a stock dungeon room holds about 4 Props (zone p25-p75 of
+# 2.9-6.8 a room), about a quarter hold none; a third are lights, three quarters of those on
+# walls; nearly a third debris; 14% furniture and 8% containers. A city room holds about 9:
+# 39% lights, 28% furniture, 12% containers, almost no debris. `python scripts/topology_rules.py
+# draw-decor` shows what each recipe gives, by zone type, race and theme, and `check rules/decor`
+# names every line no `use = "yes"` model meets yet (such a line drops at build time).
+
+# Clutter moves debris; Structure moves furniture lines (design "Decor recipes as data").
+moves = { debris = "clutter", furniture = "structure" }
+
+# --- Weights by Layer -----------------------------------------------------------------------
+#
+# Each is a multiplier on the recipes' counts, by Category (light, container, furniture,
+# hanging, structure, debris, plant, other). A room's Layers are default, zone type, race,
+# theme, room kind, room type; its weight is the geometric mean of the Layers that name the
+# Category, as step 9's Scales blend (so 4 next to the default's 1 gives 2: write the number
+# you'd want alone, squared). `{ value = 3, override = true }` replaces every less specific
+# Layer. `bare` is the chance a room takes only its Dressing. The Decor control multiplies on top.
+
+[weights.default]
+light = 1
+container = 1
+furniture = 1
+hanging = 1
+structure = 1
+debris = 1
+plant = 1
+other = 1
+bare = 0.26
+
+[weights.controls.none]
+light = 0
+container = 0
+furniture = 0
+hanging = 0
+structure = 0
+debris = 0
+plant = 0
+other = 0
+
+[weights.controls.sparse]
+light = 0.6
+container = 0.5
+furniture = 0.5
+hanging = 0.5
+structure = 0.5
+debris = 0.4
+plant = 0.5
+other = 0.5
+
+[weights.controls.normal]
+
+[weights.controls.dense]
+light = 1.4
+container = 1.8
+furniture = 1.8
+hanging = 1.8
+structure = 1.8
+debris = 2
+plant = 1.8
+other = 1.8
+
+# Cities: more furniture and lights, almost no debris (finding 1). Written as the city's own,
+# not blended with the dungeon default.
+[weights.zone_types.city]
+light = { value = 2.1, override = true }
+container = { value = 2.8, override = true }
+furniture = { value = 4, override = true }
+debris = { value = 0.15, override = true }
+bare = { value = 0.2, override = true }
+
+# A natural cave: fewer lights, more lying about.
+[weights.zone_types.outdoor_dungeon]
+light = 0.6
+debris = 1.7
+furniture = 0.5
+bare = 0.3
+
+# --- who lives there (squared: see above) --------------------------------------------------------
+
+[weights.races.goblin]          # Runnyeye: barrels, chairs, torches everywhere
+light = 1.6
+container = 1.6
+debris = 1.6
+
+[weights.races.kobold]
+furniture = 0.4
+debris = 2
+
+[weights.races.gnoll]           # Paw: tables, barrels, hooks, rock
+container = 1.8
+furniture = 1.5
+hanging = 2.5
+
+[weights.races.froglok]         # Guk: lanterns and braziers, chairs and tables, mushrooms
+light = 2
+furniture = 1.5
+
+[weights.races.lizardman]
+debris = 1.5
+furniture = 0.7
+
+[weights.races.sarnak]
+furniture = 1.6
+debris = 0.5
+
+[weights.races.troll]
+light = 0.7
+debris = 2
+
+[weights.races.ogre]
+furniture = 0.6
+debris = 1.8
+
+[weights.races.giant]
+furniture = 1.8
+container = 1.6
+
+[weights.races.dragon]          # a hoard, not a household
+light = 0.2
+furniture = 0.05
+container = 2
+debris = 2
+
+[weights.races.human]
+furniture = 2
+light = 1.6
+
+[weights.races.orc]             # Crushbone: tents and barrels, little sitting
+container = 1.6
+debris = 1.5
+
+# --- what the place is ----------------------------------------------------------------------
+
+[weights.themes.tomb]           # Befallen: 1% light, 68% debris
+light = 0.1
+furniture = 0.4
+debris = 2.5
+hanging = 2
+
+[weights.themes.temple]
+light = 1.8
+debris = 0.2
+
+[weights.themes.fortress]
+furniture = 1.6
+container = 1.6
+debris = 0.4
+
+[weights.themes.war_city]
+furniture = 2
+light = 1.6
+debris = 0.5
+
+[weights.themes.warren]
+debris = 2
+furniture = 0.6
+
+[weights.themes.wizard_lair]
+furniture = 1.6
+light = 1.6
+debris = 0.6
+
+[weights.themes.corrupted_sanctum]
+light = 0.6
+debris = 1.6
+
+[weights.themes.mine_delve]
+container = 2
+debris = 2
+
+[weights.themes.sunken_ruin]
+light = 0.2
+furniture = 0.4
+debris = 2.5
+
+[weights.themes.lava_forge]
+light = 1.6
+
+[weights.themes.ice_keep]
+light = 0.8
+debris = 0.8
+
+# --- what the room is for (its recipe says most of it) --------------------------------------------
+
+[weights.kinds.passage]
+furniture = 0.3
+container = 0.5
+
+[weights.types.prison_cell]
+light = 0.4
+bare = 0.4
+
+[weights.types.collapsed_gallery]
+light = 0.3
+furniture = { value = 0, override = true }
+debris = 3
+
+[weights.types.vault]
+light = 0.6
+debris = 0.2
+
+[weights.types.sump]
+light = 0.3
+bare = 0.5
+
+# --- Groups ------------------------------------------------------------------------------------
+# Placed together, whole or not at all. The first member is the anchor; the rest stand round it,
+# in a row with it, beside it, or on it (`stack`, a raised Mount).
+
+[groups.table_set]              # finding 1: 1.1-2.7 chairs to a seated table
+members = [ { kind = ["table", "desk"], at = "anchor" },
+            { kind = ["chair", "stool", "bench"], at = "round", count = [1, 3] } ]
+
+[groups.bunks]                  # beds in rows in the barracks dungeons
+members = [ { kind = "bed", at = "anchor" },
+            { kind = "bed", at = "row", count = [1, 3] } ]
+
+[groups.crate_pile]
+members = [ { kind = ["crate", "box"], at = "anchor" },
+            { kind = ["crate", "barrel", "box"], at = "beside", count = [1, 2] },
+            { kind = ["crate", "box"], at = "stack", count = [0, 1] } ]
+
+[groups.forge_set]
+members = [ { kind = "forge", at = "anchor" },
+            { kind = "anvil", at = "beside" },
+            { kind = ["barrel", "bucket"], at = "beside", count = [0, 1] } ]
+
+[groups.reading_desk]
+members = [ { kind = ["desk", "table"], at = "anchor" },
+            { kind = ["chair", "stool"], at = "beside" },
+            { kind = ["book", "candle"], at = "stack", count = [0, 2] } ]
+
+# --- every room, after its own recipe: the backbone and the mess -----------------------------------
+
+[every]
+props = [ { kind = ["torch", "lantern", "lamp"], at = "on_wall", count = [1, 2] },
+          { kind = ["brazier", "tiki"], at = "corners", count = [1, 2], chance = 0.25 },
+          { kind = ["rock", "bones", "bone_pile"], at = "scatter", count = [1, 3] },
+          { kind = ["web", "mushroom", "skull"], at = "corners", count = [1, 2], chance = 0.3, from = 5 },
+          { kind = ["chain", "hook"], at = "ceiling", count = [1, 2], chance = 0.08 } ]
+
+# --- the default and kinds, for rooms with no room type (a plain dungeon) -------------------------
+
+[default]
+props = [ { kind = ["barrel", "crate", "box"], at = "along_wall", count = [1, 2], chance = 0.3 },
+          { group = "table_set", at = "centre", chance = 0.25 } ]
+
+[kinds.entrance]
+props = [ { kind = ["brazier", "torch"], at = "by_door", count = [1, 2], chance = 0.5 },
+          { kind = ["barrel", "crate"], at = "along_wall", count = [1, 2], chance = 0.3 } ]
+
+[kinds.chamber]
+props = [ { group = "table_set", at = "centre", chance = 0.35 },
+          { kind = ["barrel", "crate", "chest"], at = "along_wall", count = [1, 2], chance = 0.35 } ]
+
+[kinds.passage]
+props = []
+
+[kinds.hub]
+props = [ { kind = ["brazier", "fire"], at = "centre", chance = 0.4 },
+          { kind = ["bench", "stool"], at = "along_wall", count = [1, 2], chance = 0.3 } ]
+
+[kinds.lair]
+props = [ { kind = ["fur_stack", "rug", "bed"], at = "far_end", count = [1, 2], chance = 0.5 },
+          { kind = ["bone_pile", "bones"], at = "scatter", count = [1, 2], chance = 0.5 } ]
+
+[kinds.hall]
+props = [ { kind = ["bench", "table"], at = "rows", count = [2, 4], chance = 0.4 },
+          { kind = "banner", at = "on_wall", count = [1, 2], chance = 0.4 } ]
+
+[kinds.deep]
+props = [ { kind = ["brazier", "candelabra"], at = "corners", count = [2, 4], chance = 0.6 },
+          { kind = "banner", at = "on_wall", count = [1, 2], chance = 0.3 } ]
+
+# --- by room type ----------------------------------------------------------------------------
+
+[types.entry_hall]
+props = [ { kind = ["brazier", "torch"], at = "by_door", count = [1, 2], chance = 0.6 },
+          { kind = "banner", at = "on_wall", count = [1, 2], chance = 0.4 },
+          { kind = "bench", at = "along_wall", count = [1, 2], chance = 0.3 } ]
+
+[types.gatehouse]
+props = [ { kind = ["rack", "weapon"], at = "along_wall", count = [1, 2], chance = 0.6 },
+          { kind = ["brazier", "torch"], at = "by_door", count = [1, 2], chance = 0.6 } ]
+
+[types.guard_post]
+props = [ { group = "table_set", at = "centre", chance = 0.5 },
+          { kind = ["rack", "weapon"], at = "along_wall", chance = 0.4 } ]
+
+[types.warren]
+props = [ { kind = ["fur_stack", "rug", "bed"], at = "scatter", count = [1, 3], chance = 0.7 },
+          { kind = ["sack", "basket", "barrel"], at = "along_wall", count = [1, 2], chance = 0.4 } ]
+
+[types.barracks]
+props = [ { group = "bunks", at = "rows", count = [1, 2] },
+          { kind = ["chest", "box"], at = "along_wall", count = [1, 2], chance = 0.6 },
+          { group = "table_set", at = "centre", chance = 0.3 } ]
+
+[types.armory]
+props = [ { kind = "rack", at = "along_wall", count = [2, 4] },
+          { kind = ["weapon", "tool"], at = "scatter", count = [1, 2], chance = 0.5 },
+          { kind = ["crate", "chest"], at = "along_wall", count = [1, 2], chance = 0.5 } ]
+
+[types.storeroom]
+props = [ { group = "crate_pile", at = "along_wall", count = [1, 2] },
+          { kind = ["barrel", "keg", "sack"], at = "along_wall", count = [1, 3] },
+          { kind = ["shelf", "rack"], at = "along_wall", chance = 0.3 } ]
+
+[types.battle_arena]
+props = [ { kind = ["rack", "weapon"], at = "along_wall", count = [1, 2], chance = 0.5 },
+          { kind = "banner", at = "on_wall", count = [2, 4], chance = 0.5 } ]
+
+[types.shrine]
+props = [ { kind = ["candle", "candelabra"], at = "on_dais", count = [1, 2], chance = 0.6 },
+          { kind = ["banner", "sign"], at = "on_wall", count = [1, 2], chance = 0.4 },
+          { kind = ["urn", "vase"], at = "corners", count = [1, 2], chance = 0.4 } ]
+
+[types.sacrifice_chamber]
+props = [ { kind = ["brazier", "candelabra"], at = "corners", count = [2, 4] },
+          { kind = ["shackle", "chain"], at = "on_wall", count = [1, 2], chance = 0.5 },
+          { kind = ["bones", "bone_pile", "skull"], at = "scatter", count = [1, 3], by = "clutter" } ]
+
+[types.ritual_chamber]
+props = [ { kind = ["candle", "candelabra", "brazier"], at = "corners", count = [2, 4] },
+          { kind = ["book", "urn"], at = "scatter", count = [1, 2], chance = 0.4 } ]
+
+[types.ossuary]
+props = [ { kind = ["bone_pile", "bones", "skull"], at = "scatter", count = [2, 4] },
+          { kind = ["urn", "vase"], at = "along_wall", count = [1, 3], chance = 0.6 } ]
+
+[types.laboratory]
+props = [ { group = "reading_desk", at = "along_wall" },
+          { kind = ["bookcase", "shelf"], at = "along_wall", count = [1, 2], chance = 0.7 },
+          { kind = ["jar", "pot", "book"], at = "scatter", count = [1, 2], chance = 0.5 } ]
+
+[types.summoning_hall]
+props = [ { kind = ["brazier", "candelabra"], at = "corners", count = [2, 4] },
+          { kind = ["banner", "sign"], at = "on_wall", count = [1, 2], chance = 0.3 } ]
+
+[types.forge]
+props = [ { group = "forge_set", at = "far_end" },
+          { kind = ["barrel", "crate"], at = "along_wall", count = [1, 2], chance = 0.6 },
+          { kind = ["tool", "weapon"], at = "scatter", count = [1, 2], chance = 0.4 } ]
+
+[types.collapsed_gallery]
+props = [ { kind = ["rock", "log"], at = "scatter", count = [2, 4] } ]
+
+[types.flooded_gallery]
+props = [ { kind = ["rock", "log", "slime"], at = "scatter", count = [1, 2], chance = 0.5 } ]
+
+[types.throne]
+props = [ { kind = "banner", at = "on_wall", count = [2, 4] },
+          { kind = ["brazier", "candelabra"], at = "rows", count = [2, 4], chance = 0.7 },
+          { kind = "rug", at = "centre", chance = 0.5 } ]
+
+[types.vault]
+props = [ { kind = ["chest", "urn"], at = "along_wall", count = [1, 3] },
+          { kind = ["gem", "trophy"], at = "scatter", count = [1, 2], chance = 0.4 } ]
+
+[types.inner_sanctum]
+props = [ { kind = ["candelabra", "candle", "brazier"], at = "corners", count = [2, 4] },
+          { kind = ["banner", "sign"], at = "on_wall", count = [1, 2], chance = 0.5 } ]
+
+[types.dragon_lair]
+props = [ { kind = ["bone_pile", "bones", "skull"], at = "scatter", count = [2, 4] },
+          { kind = ["chest", "gem"], at = "far_end", count = [1, 3], chance = 0.7 } ]
+
+[types.prison_cell]
+props = [ { kind = ["shackle", "chain"], at = "on_wall", count = [1, 2], chance = 0.7 },
+          { kind = ["bucket", "bones"], at = "corners", chance = 0.5 } ]
+
+[types.sump]
+props = [ { kind = ["slime", "mushroom"], at = "scatter", count = [1, 2], chance = 0.6 } ]
+
+# passage stands as its kind's: bare but for every room's lights and mess.
+[types.passage]
+props = []
+
+# --- Dressing, by POI purpose (Req 8.1): placed first, round the POI, never on its spot -----------
+
+[dressing.boss]
+props = [ { kind = ["throne", "chair", "couch", "bench"], at = "behind" },
+          { kind = ["brazier", "candelabra"], at = "flank", count = 2, chance = 0.6 } ]
+
+[dressing.altar]
+props = [ { kind = ["candle", "candelabra", "brazier"], at = "flank", count = 2 } ]
+
+[dressing.treasure]
+props = [ { kind = "chest", at = "beside", count = [1, 2] },
+          { kind = ["urn", "vase", "gem"], at = "round", count = [1, 2], chance = 0.4 } ]
+
+[dressing.guard]
+props = [ { kind = ["stool", "chair", "bench"], at = "beside" },
+          { kind = ["torch", "lantern"], at = "wall" } ]
