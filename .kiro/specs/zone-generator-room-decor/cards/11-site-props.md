@@ -11,7 +11,7 @@ A Site's POIs are dressed from the catalogue by the same path, from the Site's R
 - [ ] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
-Sites `none` and Decor `none` must each still give their old bytes.
+The corpus task 18 recorded has no farmstead Site (camp, hut, ruin, shrine, watchtower only): add a pinned recording with one. Sites `none` and Decor `none` must each still give their old bytes.
 
 ## Result
 

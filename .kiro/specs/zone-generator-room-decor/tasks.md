@@ -88,7 +88,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 - [ ] 11. Site Props
   - Card: [cards/11-site-props.md](cards/11-site-props.md)
   - Type: agent · Size: M · Depends: 9, 18
-  - Owns: rules/decor/rooms.toml (Site recipes only), generators/decor/placement.py (Site POIs), generators/sites/placement.py (hand Site POIs to decor), tests/test_site_props.py, tests/test_site_builds.py (its Decor `none` cases)
+  - Owns: rules/decor/rooms.toml (Site recipes only), generators/decor/placement.py (Site POIs), generators/sites/placement.py (hand Site POIs to decor), tests/test_site_props.py, tests/test_site_builds.py (its Decor `none` cases), scripts/record_rooms.py + tests/fixtures/rooms/ (add a farmstead recording)
   - Reqs: 11
 
 - [ ] 12. HUMAN: first look at decorated rooms
