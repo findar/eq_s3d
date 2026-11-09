@@ -55,7 +55,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: analyzer/traverse.py, analyzer/footprints.py, generators/pipeline.py (the room gate's call only), tests/test_gate_props.py
   - Reqs: 2
 
-- [ ] 6. Import a catalogued model
+- [x] 6. Import a catalogued model
   - Card: [cards/06-import.md](cards/06-import.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/decor/stock.py, tests/test_prop_import.py
