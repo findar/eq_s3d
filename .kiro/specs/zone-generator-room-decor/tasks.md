@@ -27,7 +27,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 
 ## Tasks
 
-- [ ] 1. Catalogue every stock model
+- [x] 1. Catalogue every stock model
   - Card: [cards/01-catalogue.md](cards/01-catalogue.md)
   - Type: agent · Size: M · Depends: —
   - Owns: scripts/prop_catalogue.py, rules/decor/catalogue.json, .kiro/specs/zone-generator-room-decor/design.md (finding 0 only)

@@ -59,6 +59,20 @@ actor names**, the Classic–PoP look's models. The 855 `.eqg` files with `.mod`
 38,583 names, mostly later-era zones and equipment (1,043 in `*equip*`, `*_chr*` and `global*`
 archives); they're out of v1 (open question 2).
 
+**The built catalogue** (task 1, `scripts/prop_catalogue.py build`): the 293 archives hold
+12,320 actors under those 4,408 names, and every one parses (**0 failures**). Deduped by name
+and mesh they are **4,651 models**: 227 names have more than one mesh, giving **243 variants**
+(`NAME@zone`) beyond the first; 711 models share one mesh but ship different texture bytes in
+different zones. **378 are animated** (229 skeletal, 149 vertex-animated: flags, pennants,
+reeds) and 258 carry an animated texture (fire, smoke, shine; the mesh itself static). 10
+sky domes, backdrops and ships (over 1e6 u² of surface) have no footprint or walk-in measured.
+The 247 zones with an `objects.wld` place 313,012 objects; 311,557 resolve to a model in the
+zone's own archives (`_obj`, `_obj2`, then `_2_obj`, which serves the zone too), and 4,192
+models are placed somewhere. The 1,455 that don't: 1,445 in `hole`, whose `hole.s3d` places
+Paineel-style names (`PALAMP102R`...) that its only object archive, `hole_2_obj.s3d`, lacks
+(there's no `hole_obj.s3d`), and 10 `YKCVDRP400` in `mmcb`. Eight archives' zones have no
+`<zone>.s3d` (grobb, lavastorm, nurga, potimea, uqua, chardokb, global, backup_stonebrunt).
+
 ### 1. What fills stock rooms (design-time probe; task 1's survey refines it)
 
 The placed objects (`objects.wld` instance fragments, 0x15) of step 9's 15 dungeons and 15
