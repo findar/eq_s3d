@@ -128,6 +128,16 @@ From task 10 (controls and maps, `bc541b4`–`999ee63`):
     floor Footprints as purple loops on the EQ map, dots for wall/raised/ceiling on the web
     map; drawn only over a traced outline.
 
+From task 11 (Site Props, `1e3a6cb`):
+
+35. **Every Site kind has a `[sites.<kind>]` recipe**; Sites go through the same `place()`.
+    At Sites, Props stay inside the ground minus `SITE_MARGIN = 10`, keep `SITE_GAP = 6` from
+    Structures and each other (closer walls off pockets), and Group members touch within
+    `SITE_TOUCH = 2` or stand 6 u apart. Many stock models are open shells the wilderness gate
+    rejects (533 refused); task 20 makes that screen catalogue data and wires Site Props into
+    builds, which task 11 couldn't (`decor_for` skips roomless zones). The Decor control will
+    cover wilderness.
+
 ## Follow-ups
 
 - **Corridor lights:** placement lights `source = "corridor"` contexts, but `room_context`

@@ -93,7 +93,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 
 - [ ] 12. HUMAN: first look at decorated rooms
   - Card: [cards/12-first-look.md](cards/12-first-look.md)
-  - Type: human · Depends: 10, 11
+  - Type: human · Depends: 10, 11, 20
 
 - [ ] 13. Tune from the first look
   - Card: [cards/13-tune.md](cards/13-tune.md)
@@ -131,3 +131,9 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/decor/catalogue.py, generators/decor/placement.py (the condition rule only), scripts/prop_catalogue.py, rules/decor/catalogue.json, rules/decor/tags.toml, tests/test_prop_catalogue.py, tests/test_decor_placement.py
   - Reqs: 3, 5
+
+- [ ] 20. Site Props in builds
+  - Card: [cards/20-site-props-builds.md](cards/20-site-props-builds.md)
+  - Type: agent · Size: M · Depends: 11
+  - Owns: generators/builder.py (`decor_for` takes Site contexts), generators/wilderness/build.py (the gate ZON carries Props), scripts/prop_catalogue.py + rules/decor/catalogue.json + generators/decor/catalogue.py (the open-ground screen), generators/decor/placement.py (honour the screen at Sites), ai/schema.py + web/src/ (Decor shown for wilderness), tests/test_site_props.py, tests/test_site_decor_builds.py
+  - Reqs: 10.1, 11
