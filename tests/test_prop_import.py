@@ -183,6 +183,16 @@ def test_animated_model_is_refused_named(importer: Importer):
         importer.get(key)
 
 
+def test_vertex_animated_model_imports_frozen(importer: Importer):
+    """A waving banner imports in its rest pose and round-trips (archive decision 24)."""
+    key = "PAFLAG101"
+    assert importer.catalogue[key]["animation"] == "vertex"
+    model = importer.get(key)
+    assert model.ter.vertices and model.ter.polygons
+    raw = model.ter.to_bytes()
+    assert TerFile.from_bytes(raw, name=model.ter.name).to_bytes() == raw
+
+
 def test_masked_bmp_index_zero_is_clear():
     """An 8-bit BMP under a masked material: palette index 0 is clear, the rest as is
     (no static Prop in the install has one; this pins the rule)."""

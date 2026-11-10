@@ -29,7 +29,9 @@ turns the model into an ``EQGM`` ``.mod`` plus its textures as DDS:
   A8R8G8B8 (``generators.textures.dds``), RGB unchanged. A texture's file name carries a hash
   of its bytes, because the same name ships different art in different zones (711 models).
 
-Animated models (skeletal, vertex-animated) are refused, named (archive decision 13), as is
+A vertex-animated model (a waving banner) imports frozen in its rest pose, the mesh's own
+vertices with its animation track ignored (archive decision 24). Skeletal models are
+refused, named (archive decision 13), as is
 a model whose mesh in the install no longer matches the catalogue's hash.
 
 :class:`Importer` caches each import by (mesh hash, source archive), and each archive it
@@ -325,8 +327,8 @@ class Importer:
         entry = self.catalogue.get(key)
         if entry is None:
             raise NotImportable(f"{key}: not in the catalogue")
-        if entry.get("animation", "static") != "static":
-            raise NotImportable(f"{key}: animated ({entry['animation']}), static models only")
+        if entry.get("animation", "static") == "skeletal":
+            raise NotImportable(f"{key}: animated (skeletal), static models only")
         archive, wld = entry["source"]["archive"], entry["source"]["wld"]
         cache = (entry["mesh_hash"], archive)
         hit = self._models.get(cache)
@@ -362,9 +364,6 @@ class Importer:
         mat_of: Dict[Tuple[str, str], int] = {}   # (texture file, shader) -> material index
         for ref in refs:
             _f, mb, size = wld.frags[ref]
-            (anim,) = wld.i32(mb + 12)
-            if anim > 0:
-                raise NotImportable(f"{key}: vertex-animated mesh, static models only")
             mesh = _parse_mesh(wld.data, mb, mb + size, wld.old)
             if mesh is None:
                 raise NotImportable(f"{key}: mesh {wld.name(mb)} does not parse")

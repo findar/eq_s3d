@@ -202,7 +202,8 @@ def test_committed_files_load():
         assert all(0.0 <= t.confidence[f] <= 1.0 for f in dc.TAG_FIELDS)
         # nothing becomes yes without the review (archive decisions 4 and 5)
         assert t.use != "yes" or "use" in t.reviewed, m.key
-        if m.animation != "static" or not m.placed_total:
+        # skeletal stays out; a vertex-animated model is in only by review, frozen (decision 24)
+        if m.animation == "skeletal" or not m.placed_total:
             assert t.use == "no", m.key
 
 

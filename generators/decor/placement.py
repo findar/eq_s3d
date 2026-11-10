@@ -449,7 +449,7 @@ class _Chooser:
         for key in sorted(catalogue.models):
             m = catalogue.models[key]
             t = m.tags
-            if t.use != "yes" or m.animation != "static" or t.set not in self.sets:
+            if t.use != "yes" or m.animation == "skeletal" or t.set not in self.sets:
                 continue
             self.by.setdefault((t.kind, t.mount, t.set), []).append(m)
 

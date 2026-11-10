@@ -72,8 +72,12 @@ From task 8 (placement, `2bc13ad`):
 22. **Dressing may stand in a Throat**, never on the Spine or a door's clear zone (else 24 of
     104 corpus POIs went undressed). Corridor contexts (`source = "corridor"`) get wall lights
     every 38 u (26 u in cities); task 9 must make them.
-23. **Vertex-animated models stay out even when reviewed yes** (decision 13): 15 banners of
-    review batch 1 were set back to `use = "no"` with a note.
+23. *(Superseded by 24.)* Vertex-animated models were first kept out even when reviewed yes:
+    15 banners of review batch 1 were set back to `use = "no"`.
+24. **Vertex-animated models are frozen in their rest pose and used** (user, 2026-11-10:
+    "Freeze and use them", amending decision 13): the import takes the mesh's own vertices and
+    ignores its animation track; such a model still enters builds only by review. Skeletal
+    models stay out. The 15 banners are `use = "yes"` again.
 
 ## Follow-ups
 
