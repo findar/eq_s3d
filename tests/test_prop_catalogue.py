@@ -197,14 +197,62 @@ def test_review_line_round_trips(small, tmp_path):
 def test_committed_files_load():
     cat = dc.load()
     assert len(cat.models) == 4651
+    assert cat.accept == "proposed"
     for m in cat.models.values():
         t = m.tags
         assert all(0.0 <= t.confidence[f] <= 1.0 for f in dc.TAG_FIELDS)
-        # nothing becomes yes without the review (archive decisions 4 and 5)
-        assert t.use != "yes" or "use" in t.reviewed, m.key
-        # skeletal stays out; a vertex-animated model is in only by review, frozen (decision 24)
-        if m.animation == "skeletal" or not m.placed_total:
+        assert t.condition in dc.CONDITIONS
+        # yes comes from tags.toml or from accepting the proposal (archive decision 25)
+        assert t.use != "yes" or "use" in t.reviewed or t.why["use"] == dc.ACCEPTED_WHY, m.key
+        # skeletal and never-placed models, and doorway gates, stay out; a vertex-animated
+        # model is in, frozen (decision 24)
+        if m.animation == "skeletal" or not m.placed_total or t.kind == "door":
             assert t.use == "no", m.key
+    for key in ("DOOR1", "DOOR620X20", "GRATE", "KSDOOR101", "KSDOOR102R"):
+        assert (cat.models[key].tags.kind, cat.models[key].tags.use) == ("door", "no"), key
+    assert cat.models["CBBARREL103"].tags.use == "no"         # reviewed no wins
+    assert cat.models["PENNANT3"].tags.use == "yes"           # vertex-animated, reviewed yes
+
+
+# --- accepted by default (archive decision 25) -------------------------------------------------------
+
+
+def test_proposed_tags_accepted_by_default(small, tmp_path):
+    raw = pc.load(small)["models"]
+    assert {k for k, m in raw.items() if m["tags"]["use"] == "review"} >= {"CHAIR", "HLAMP", "BHROCK1"}
+    body = 'accept = "proposed"\n' + REVIEW.replace('"BHROCK1" = { use = "no" }', '"BHROCK1" = { use = "no" }\n'
+                                                     '"HLAMP" = { kind = "lantern" }')
+    cat = dc.load(small, _tags(tmp_path, body))
+    assert cat.accept == "proposed"
+    for key in ("CHAIR", "HLAMP"):                          # proposed review, use not set: yes
+        t = cat.models[key].tags
+        assert t.use == "yes" and "use" not in t.reviewed and t.why["use"] == dc.ACCEPTED_WHY, key
+    assert cat.models["HLAMP"].tags.kind == "lantern"       # its other lines still apply
+    assert cat.models["BHROCK1"].tags.use == "no"           # a use in tags.toml wins
+    assert cat.models["TORCHPOINT"].tags.use == "yes" and "use" in cat.models["TORCHPOINT"].tags.reviewed
+    proposed_no = {k for k, m in raw.items() if m["tags"]["use"] == "no"}
+    assert not proposed_no & set(cat.usable())               # a proposed no stays out
+    assert set(cat.usable()) == {k for k, m in raw.items() if m["tags"]["use"] == "review"} - {"BHROCK1"} \
+        | {"TORCHPOINT"}
+    # without the setting (or with "reviewed"), only tags.toml lets a model in
+    for head in ("", 'accept = "reviewed"\n'):
+        assert set(dc.load(small, _tags(tmp_path, head + REVIEW)).usable()) == {"TORCHPOINT"}
+
+
+def test_condition_is_a_checked_tag(small, tmp_path):
+    cat = dc.load(small, _tags(tmp_path, '[models]\n"CHAIR" = { condition = "ruined" }\n'))
+    assert cat.models["CHAIR"].tags.condition == "ruined" and "condition" in cat.models["CHAIR"].tags.reviewed
+    assert cat.models["HLAMP"].tags.condition == "unknown"
+    with pytest.raises(RuleSetError) as e:
+        dc.load(small, _tags(tmp_path, 'accept = "everything"\n[models]\n"CHAIR" = { condition = "broken" }\n'))
+    got = {(err.where, err.field) for err in e.value.errors}
+    assert {("accept", "accept"), ("models.CHAIR", "condition")} <= got
+    raw = pc.load(small)
+    raw["models"]["HLAMP"]["tags"]["condition"] = "shiny"
+    pc.write(raw, small)
+    with pytest.raises(RuleSetError) as e:
+        dc.load(small, _tags(tmp_path, "[models]\n"))
+    assert ("catalogue.json", "HLAMP", "tags.condition") in {(x.file, x.where, x.field) for x in e.value.errors}
 
 
 def test_known_names_tagged(committed):
@@ -226,11 +274,18 @@ def test_known_names_tagged(committed):
 def test_rejects(committed):
     m = copy.deepcopy(committed["models"]["CHAIR"])
     assert pc.auto_tags("CHAIR", m)["use"] == "review"
+    assert pc.auto_tags("CHAIR", m)["condition"] == "unknown"
     for change, why in ((("animation", "skeletal"), "animated"), (("placed", {"total": 0, "zones": {}}), "never"),):
         e = copy.deepcopy(m)
         e[change[0]] = change[1]
         t = pc.auto_tags("CHAIR", e)
         assert t["use"] == "no" and why in t["why"]["use"]
+    e = copy.deepcopy(m)
+    e["animation"] = "vertex"                       # imports frozen (decision 24)
+    assert pc.auto_tags("CHAIR", e)["use"] == "review"
+    for key in ("GRATE", "KSDOOR102R"):              # doorway gates (decision 25)
+        t = pc.auto_tags(key, committed["models"][key])
+        assert (t["kind"], t["use"]) == ("door", "no") and "doorway gate" in t["why"]["use"]
     e = copy.deepcopy(m)
     e["measured"]["h"] = 400.0
     assert "huge" in pc.auto_tags("CHAIR", e)["why"]["use"]

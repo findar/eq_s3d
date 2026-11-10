@@ -12,10 +12,14 @@ Two files, loaded and checked together:
 
 Every Tag value is checked strictly, in both files; every bad value is named by file, entry
 and field (``RuleSetError``, as step 9's loaders). A model enters builds only with
-``use = "yes"`` (Req 3.4), which only a review sets (archive decisions 4 and 5).
+``use = "yes"`` (Req 3.4). With ``accept = "proposed"`` in ``tags.toml`` (archive decision 25)
+every entry proposed ``use = "review"`` whose ``use`` the file doesn't set counts as ``yes``
+("accepted by default"); a ``use`` in the file always wins. Without it only the file sets
+``yes`` (archive decisions 4 and 5).
 
 ``tags.toml``::
 
+    accept = "proposed"              # optional: "proposed" or "reviewed" (the default)
     kinds = { lever = "other" }      # optional: kinds beyond KINDS, with their Category
     sets = ["centaur"]               # optional: Sets beyond SETS
 
@@ -42,7 +46,8 @@ DECOR_DIR = Path(__file__).resolve().parents[2] / "rules" / "decor"
 CATALOGUE_FILE, TAGS_FILE = "catalogue.json", "tags.toml"
 
 #: The Tags of every entry, in the order the sheet and the review line show them.
-TAG_FIELDS: Tuple[str, ...] = ("category", "kind", "mount", "set", "era", "collision", "suits", "use")
+TAG_FIELDS: Tuple[str, ...] = ("category", "kind", "mount", "set", "era", "collision", "suits", "condition",
+                               "use")
 #: Design finding 1's Categories (``scripts/decor_survey.CATEGORY_NAMES``).
 CATEGORIES: Tuple[str, ...] = ("light", "container", "furniture", "hanging", "structure", "debris",
                                "plant", "other")
@@ -103,6 +108,19 @@ ZONE_TYPES: Tuple[str, ...] = ("dungeon", "city", "outdoor")
 SUITS: Tuple[str, ...] = tuple(dict.fromkeys(ZONE_TYPES + tuple(ROOM_KINDS) + tuple(sorted(ROOM_TYPES))
                                              + tuple(VALID_DUNGEON_THEMES)))
 USES: Tuple[str, ...] = ("yes", "no", "review")
+#: A model's state (archive decision 25): a room's Props never mix ``ruined`` and ``pristine``;
+#: ``unknown`` (the auto-tagger's proposal: names say nothing of it) goes with either.
+CONDITIONS: Tuple[str, ...] = ("pristine", "ruined", "unknown")
+UNKNOWN = "unknown"
+#: ``tags.toml``'s ``accept``: ``proposed`` lets every entry the auto-tagger left at
+#: ``use = "review"`` into builds unless ``tags.toml`` sets its ``use`` (archive decision 25);
+#: ``reviewed`` (the default) lets in only what ``tags.toml`` sets to ``yes``.
+ACCEPTS: Tuple[str, ...] = ("proposed", "reviewed")
+ACCEPTED_WHY = 'accepted by default (tags.toml accept = "proposed")'
+#: Tags that are a default rather than a claim, left out of an entry's confidence.
+_DEFAULTS = ("condition", "use")
+#: Proposed Tags a catalogue tagged before they existed may lack, with the value they take.
+_OPTIONAL = {"condition": UNKNOWN}
 
 _KIND_NAME = re.compile(r"[a-z][a-z0-9_]*")
 _MISSING = object()
@@ -121,6 +139,7 @@ class Tags:
     collision: str
     suits: Tuple[str, ...]
     use: str
+    condition: str = UNKNOWN
     confidence: Mapping[str, float] = field(default_factory=dict)
     why: Mapping[str, str] = field(default_factory=dict)
     reviewed: Tuple[str, ...] = ()
@@ -128,9 +147,9 @@ class Tags:
 
     @property
     def lowest(self) -> float:
-        """The entry's confidence: its least sure Tag (``use`` aside: ``review`` is a
-        default, not a claim)."""
-        return min((self.confidence.get(f, 0.0) for f in TAG_FIELDS if f != "use"), default=0.0)
+        """The entry's confidence: its least sure Tag (``use`` and ``condition`` aside: their
+        proposals are defaults, not claims)."""
+        return min((self.confidence.get(f, 0.0) for f in TAG_FIELDS if f not in _DEFAULTS), default=0.0)
 
 
 @dataclass(frozen=True)
@@ -156,9 +175,11 @@ class Catalogue:
     models: Mapping[str, Model]
     kinds: Mapping[str, str]
     sets: Tuple[str, ...]
+    accept: str = "reviewed"
 
     def usable(self) -> Dict[str, Model]:
-        """The models that may enter builds (``use = "yes"``, Req 3.4)."""
+        """The models that may enter builds (``use = "yes"``, Req 3.4: set in ``tags.toml``,
+        or accepted by default)."""
         return {k: m for k, m in self.models.items() if m.tags.use == "yes"}
 
     def find(self, use: Optional[str] = "yes", **want: str) -> Dict[str, Model]:
@@ -194,7 +215,7 @@ def _check_value(chk: _Checker, where: str, fld: str, v: Any, kinds: Mapping[str
     if label:
         chk = _Relabel(chk, label)
     allowed = {"category": CATEGORIES, "mount": MOUNTS, "set": sets, "era": ERAS,
-               "collision": COLLISIONS, "use": USES}
+               "collision": COLLISIONS, "condition": CONDITIONS, "use": USES}
     if fld == "kind":
         if isinstance(v, str) and v in kinds:
             return v
@@ -227,14 +248,25 @@ def read_reviews(path: Path, keys=None, chk: Optional[_Checker] = None):
     """``tags.toml`` as ({key: {field: value}}, kinds, sets), checked; ``keys`` is the
     catalogue's entries (a review naming another entry fails). Raises ``RuleSetError``
     unless ``chk`` is given to collect into."""
+    return read_tags(path, keys, chk)[:3]
+
+
+def read_tags(path: Path, keys=None, chk: Optional[_Checker] = None):
+    """``read_reviews`` plus the file's ``accept`` setting (``reviewed`` when it has none)."""
     own = chk is None
     chk = chk or _Checker(TAGS_FILE)
     data = _read_toml(Path(path), chk)
     reviews: Dict[str, Dict[str, Any]] = {}
     kinds = dict(KINDS)
     sets = SETS
+    accept = "reviewed"
     if data is not None:
-        chk.keys(data, "top level", ("kinds", "sets", "models"))
+        chk.keys(data, "top level", ("accept", "kinds", "sets", "models"))
+        if "accept" in data:
+            if isinstance(data["accept"], str) and data["accept"] in ACCEPTS:
+                accept = data["accept"]
+            else:
+                chk.fail("accept", "accept", data["accept"], _one_of(ACCEPTS))
         extra = data.get("kinds", {})
         if not isinstance(extra, dict):
             chk.fail("kinds", "kinds", extra, 'a table like { lever = "other" }')
@@ -283,7 +315,7 @@ def read_reviews(path: Path, keys=None, chk: Optional[_Checker] = None):
             reviews[key] = got
     if own:
         chk.raise_if_failed()
-    return reviews, kinds, sets
+    return reviews, kinds, sets, accept
 
 
 def _proposed(chk: _Checker, key: str, entry: Mapping[str, Any], kinds, sets) -> Optional[Dict[str, Any]]:
@@ -295,6 +327,9 @@ def _proposed(chk: _Checker, key: str, entry: Mapping[str, Any], kinds, sets) ->
     out = {}
     for fld in TAG_FIELDS:
         if fld not in tags:
+            if fld in _OPTIONAL:
+                out[fld] = _OPTIONAL[fld]
+                continue
             chk.fail(key, f"tags.{fld}", _MISSING, "a proposed value (run scripts/prop_catalogue.py tag)")
             continue
         v = _check_value(chk, key, fld, tags[fld], kinds, sets, label=f"tags.{fld}")
@@ -302,25 +337,31 @@ def _proposed(chk: _Checker, key: str, entry: Mapping[str, Any], kinds, sets) ->
             out[fld] = v
     conf = tags.get("conf", {})
     if not isinstance(conf, dict) or any(not isinstance(conf.get(f), (int, float)) or not 0 <= conf[f] <= 1
-                                         for f in TAG_FIELDS):
+                                         for f in TAG_FIELDS if f in tags or f not in _OPTIONAL):
         chk.fail(key, "tags.conf", conf, "a confidence from 0 to 1 for every Tag")
     out["conf"] = conf if isinstance(conf, dict) else {}
     out["why"] = tags.get("why", {}) if isinstance(tags.get("why", {}), dict) else {}
     return out if len(out) == len(TAG_FIELDS) + 2 else None
 
 
-def merge(proposed: Mapping[str, Any], review: Mapping[str, Any], kinds: Mapping[str, str]) -> Tags:
-    """One entry's Tags: the review's fields win; a reviewed kind brings its Category."""
+def merge(proposed: Mapping[str, Any], review: Mapping[str, Any], kinds: Mapping[str, str],
+          accept: str = "reviewed") -> Tags:
+    """One entry's Tags: the review's fields win; a reviewed kind brings its Category. With
+    ``accept = "proposed"`` a proposed ``use = "review"`` the review leaves alone is ``yes``."""
     vals = {f: proposed[f] for f in TAG_FIELDS}
     vals.update({f: v for f, v in review.items() if f in TAG_FIELDS})
     reviewed = [f for f in TAG_FIELDS if f in review]
     if "kind" in review and "category" not in review:
         vals["category"] = kinds[review["kind"]]
         reviewed.append("category")
+    why = dict(proposed.get("why", {}))
+    if accept == "proposed" and "use" not in review and vals["use"] == "review":
+        vals["use"] = "yes"
+        why["use"] = ACCEPTED_WHY
     conf = {f: (1.0 if f in reviewed else float(proposed["conf"].get(f, 0.0))) for f in TAG_FIELDS}
     return Tags(category=vals["category"], kind=vals["kind"], mount=vals["mount"], set=vals["set"],
                 era=vals["era"], collision=vals["collision"], suits=tuple(vals["suits"]), use=vals["use"],
-                confidence=conf, why=dict(proposed.get("why", {})),
+                condition=vals["condition"], confidence=conf, why=why,
                 reviewed=tuple(f for f in TAG_FIELDS if f in reviewed), note=review.get("note", ""))
 
 
@@ -337,7 +378,7 @@ def load(catalogue: Path = DECOR_DIR / CATALOGUE_FILE, tags: Path = DECOR_DIR / 
         c_chk.fail("file", "json", str(exc), "valid JSON")
         raise RuleSetError(c_chk.errors)
     entries = cat.get("models", {}) if isinstance(cat, dict) else {}
-    reviews, kinds, sets = read_reviews(Path(tags), set(entries), t_chk)
+    reviews, kinds, sets, accept = read_tags(Path(tags), set(entries), t_chk)
     models = {}
     for key, e in entries.items():
         prop = _proposed(c_chk, key, e, kinds, sets)
@@ -350,11 +391,11 @@ def load(catalogue: Path = DECOR_DIR / CATALOGUE_FILE, tags: Path = DECOR_DIR / 
             measured=e.get("measured", {}), observed=e.get("observed"),
             placed=dict(e.get("placed", {}).get("zones", {})),
             textures=tuple(e.get("textures", ())),
-            tags=merge(prop, reviews.get(key, {}), kinds))
+            tags=merge(prop, reviews.get(key, {}), kinds, accept))
     errors: list[CheckError] = c_chk.errors + t_chk.errors
     if errors:
         raise RuleSetError(errors)
-    return Catalogue(models=models, kinds=kinds, sets=sets)
+    return Catalogue(models=models, kinds=kinds, sets=sets, accept=accept)
 
 
 # --- the line a review pastes ----------------------------------------------------------------------
