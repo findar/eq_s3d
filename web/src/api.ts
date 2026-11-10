@@ -25,6 +25,10 @@ export interface GenerateControls {
   // VALID_DUNGEON_RACES, or "" for none.
   dungeon_theme?: string;
   dungeon_race?: string;
+  // Dungeon / city / outdoor dungeon only: the Decor control (a value from
+  // /api/controls) and the decor seed that rerolls the Props alone.
+  decor?: string;
+  decor_seed?: number;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:
@@ -35,6 +39,8 @@ export interface GenerateParams {
   prompt?: string;
   controls?: GenerateControls;
   seed?: number;
+  // Rerolls the Props alone, in either mode ("Reroll decor").
+  decor_seed?: number;
 }
 
 export interface ZonePlan {
@@ -49,6 +55,9 @@ export interface ZonePlan {
   // Sites (wilderness / outdoor dungeon): how many, and who builds them.
   sites?: string;
   inhabitant?: string;
+  // Decor ("" = the default) and the decor seed (null = the zone's).
+  decor?: string;
+  decor_seed?: number | null;
 }
 
 // One file of an accepted build (server/app.py ArtifactRef), in panel order:
@@ -127,6 +136,58 @@ export interface ZoneRoom {
   prop_hints?: string[];
   encounter_intent?: string;
   boss?: boolean;
+  // Props (room-decor; only when the build placed any): each Prop, its
+  // Dressing by POI, and what dropped and why.
+  props?: ZoneProp[];
+  dressing?: { poi: number; purpose: string; name: string; props: string[]; dropped: string[] }[];
+  decor_drops?: { step: string; line: string; what: string; reason: string; poi: number | null }[];
+  bare?: boolean;
+}
+
+// One placed Prop (generators/decor/placement.py Prop.to_dict).
+export interface ZoneProp {
+  key: string;
+  kind: string;
+  category: string;
+  mount: string;               // floor | wall | ceiling | raised
+  set: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  scale: number;
+  step: string;
+}
+
+// The sidecar's top-level decor block (generators/builder.py DecorBuild.summary).
+export interface ZoneDecor {
+  control: string;
+  seed: number;
+  props: number;
+  lights: number;
+  models: number;
+  rooms: number;
+  bare: number;
+  drops: number;
+  check: string[];
+}
+
+// One control's list (/api/controls): its values in order, the default and
+// the zone types it applies to.
+export interface ControlListing {
+  values: string[];
+  default: string;
+  zone_types: string[];
+}
+
+export interface ControlsListing {
+  decor?: ControlListing;
+}
+
+export async function fetchControls(): Promise<ControlsListing> {
+  const res = await fetch("/api/controls");
+  if (!res.ok) throw new Error(`controls fetch failed (${res.status})`);
+  return res.json();
 }
 
 // Content / semantic layer (field names unchanged — dungeon_theme etc.).
@@ -157,6 +218,8 @@ export interface ZoneSidecar {
   // used `theme` for the same data, so the reader falls back to it.
   content?: ZoneContent;
   theme?: ZoneContent;
+  // Props (room-decor): present only when the build placed Props.
+  decor?: ZoneDecor;
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {

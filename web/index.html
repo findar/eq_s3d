@@ -97,6 +97,17 @@
             <option value="dragon">Dragon</option>
           </select>
         </label>
+        <!-- Dungeon, city and outdoor dungeon only: how many Props (stock
+             furniture, lights, clutter) stand in the rooms, and the decor seed
+             that rerolls them alone. The Decor values come from /api/controls
+             on load; until then (or without it) the list is empty and the
+             server builds its default. A blank decor seed uses the zone's. -->
+        <label title="Furniture, lights and clutter in the rooms (needs the EQ install on the server)">Decor
+          <select id="decor"></select>
+        </label>
+        <label title="Rerolls the Props alone; blank uses the zone's seed">Decor seed
+          <input type="number" id="decor-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
+        </label>
         <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
              only) the topology rule set. "From theme" lets the dungeon theme
              pick its base set; the others are the shipped base sets under
@@ -216,6 +227,10 @@
     <div class="row"><span>Lights</span><span id="m-lights">—</span></div>
     <div class="row"><span>Regions</span><span id="m-regions">—</span></div>
     <div class="row"><span>Gates</span><span id="m-gates">—</span></div>
+
+    <h3>Props</h3>
+    <div class="row"><span>Decor</span><span class="seed-row"><span id="m-decor">—</span><button id="reroll-decor" class="seed-btn" title="Rebuild this zone with a fresh decor seed: same zone, new Props" disabled>⟳ reroll decor</button></span></div>
+    <div id="m-props"><span style="color:#555;font-size:11px">—</span></div>
 
     <h3>Bounds (u)</h3>
     <div class="row"><span>Width X</span><span id="m-wx">—</span></div>
