@@ -449,8 +449,8 @@ def test_pois_stay_on_reached_floor(decorated):
         room = Room(c)
         for p in d.props:
             if p.blocks:
-                room.blocked[room.rect_cells(p.x, p.y, p.yaw, p.w, p.d, PLAYER_HALF_WIDTH, clip=True)] = True
-        after = room._joined(room.blocked)
+                room.blocked[0][room.rect_cells(p.x, p.y, p.yaw, p.w, p.d, PLAYER_HALF_WIDTH, clip=True)] = True
+        after = room._joined(room.blocked[0])
         for poi in c.pois:
             near = np.hypot(room.gx - poi["x"], room.gy - poi["y"]) <= POI_REACH + c.cell / 2
             if (near & room.before).any():
