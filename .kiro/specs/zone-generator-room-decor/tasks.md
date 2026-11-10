@@ -126,7 +126,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: generators/room_context.py, generators/room_layouts.py (export what a context needs, no behaviour change), generators/sites/placement.py (a Site's context, no behaviour change), scripts/record_rooms.py, tests/fixtures/rooms/, tests/test_room_context.py
   - Reqs: 13.1–13.3
 
-- [ ] 19. Accept the proposed tags; condition and feedback
+- [x] 19. Accept the proposed tags; condition and feedback
   - Card: [cards/19-accept-tags.md](cards/19-accept-tags.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/decor/catalogue.py, generators/decor/placement.py (the condition rule only), scripts/prop_catalogue.py, rules/decor/catalogue.json, rules/decor/tags.toml, tests/test_prop_catalogue.py, tests/test_decor_placement.py

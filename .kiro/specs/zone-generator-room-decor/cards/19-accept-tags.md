@@ -36,3 +36,5 @@ The user's reviewed lines in `tags.toml` (batches 1–4, the frozen banners, CBB
 survive unchanged. Don't commit while the full suite runs.
 
 ## Result
+
+✔ e3d4b8a · 2256 passed

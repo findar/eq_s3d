@@ -527,7 +527,9 @@ def put_observed(cat: dict, observed: dict, out: Path = OUT) -> None:
 # Every Tag of every entry, from its name, its geometry and where stock placed it, each with a
 # confidence (0-1) and a short reason. Placements are the strongest evidence for Mount and
 # suits; a name prefix and the zones a model is placed in give the Set. ``use`` is ``review``
-# except clear rejects; only a review in rules/decor/tags.toml makes it ``yes``.
+# except clear rejects (skeletal, doorway gates, never placed, terrain, huge); tags.toml's
+# ``accept = "proposed"`` lets the ``review`` ones in (decision 25), and its lines correct them.
+# ``condition`` is ``unknown``: only feedback sets ``pristine`` or ``ruined``.
 
 #: Kinds by name, first match wins, over the name with its digits, a trailing variant letter
 #: and any ``@zone`` stripped. Specific patterns come before the words they contain.
@@ -578,6 +580,10 @@ KIND_RULES = [(k, re.compile(p)) for k, p in (
     ("cactus", r"CACTUS"), ("plant", r"PLANT|FLOWER|FERN|LILY|WEED|KELP|CORAL|DILL"),
     ("creature", r"^DCAT$|^DRAGON$"),
 )]
+#: Doorway gates whose name the door pattern misses (the user's list, decision 25: DOOR1,
+#: DOOR620X20, GRATE, KSDOOR101, KSDOOR102R). Kind ``door`` is proposed ``use = "no"``: doors
+#: are runtime records (M6). Add any the user names.
+DOOR_NAMES = {"GRATE"}
 #: Short words that also turn up inside longer names: a match on one is less sure.
 LOOSE = {"keg", "pot", "jar", "rope", "ice", "log", "tableware", "post", "box", "rug", "light",
          "trophy", "statue", "plant", "terrain", "effect", "mound"}
@@ -812,8 +818,10 @@ def _use(entry, kind):
     obs = entry.get("observed") or {}
     scale = (obs.get("scale") or [1, 1, 1])[1] or 1.0
     size = max(meas.get("w", 0), meas.get("d", 0), meas.get("h", 0) + meas.get("below", 0)) * scale
-    if entry["animation"] != "static":
-        return "no", 1.0, f"animated ({entry['animation']}); static models only"
+    if entry["animation"] == "skeletal":
+        return "no", 1.0, "animated (skeletal); the import refuses skeletal models"
+    if kind == "door":
+        return "no", 0.9, "a doorway gate; doors are runtime records (M6)"
     if meas.get("uvs") is False:
         return "no", 1.0, "a mesh without UVs (the import refuses it)"
     if not entry["placed"]["total"]:
@@ -822,7 +830,15 @@ def _use(entry, kind):
         return "no", 0.8, "walk-in or terrain (a building, tent or ground, not a Prop)"
     if size > HUGE:
         return "no", 0.8, f"huge ({size:.0f} u at stock's scale)"
+    if entry["animation"] == "vertex":
+        return "review", 0.5, "awaits review (vertex-animated: imports frozen in its rest pose)"
     return "review", 0.5, "awaits review"
+
+
+def _condition():
+    """Proposed ``unknown``: no stock name marks a ruined or pristine version (decision 25's
+    probe); feedback sets it."""
+    return "unknown", 0.5, "names say nothing of it; set by feedback"
 
 
 def auto_tags(key: str, entry: dict) -> dict:
@@ -833,6 +849,8 @@ def auto_tags(key: str, entry: dict) -> dict:
     obs = entry.get("observed")
     meas = entry["measured"]
     kind, kconf, kwhy = _kind(base)
+    if key.split("@")[0].upper() in DOOR_NAMES and kind != "door":
+        kind, kconf, kwhy = "door", 0.9, "a doorway gate by name (decision 25)"
     survey_cat = name_category(key)
     if kind is None:
         kind, kconf, kwhy = survey_cat, 0.2, f"no kind in the name; Category {survey_cat} by name"
@@ -842,7 +860,8 @@ def auto_tags(key: str, entry: dict) -> dict:
     vals = {
         "category": (cat, cconf, cwhy), "kind": (kind, kconf, kwhy),
         "mount": _mount(kind, obs, meas), "set": _set(base, entry), "era": _era(entry),
-        "collision": _collision(meas), "suits": _suits(kind, obs), "use": _use(entry, kind),
+        "collision": _collision(meas), "suits": _suits(kind, obs), "condition": _condition(),
+        "use": _use(entry, kind),
     }
     tags = {f: v[0] for f, v in vals.items()}
     tags["conf"] = {f: round(float(v[1]), 2) for f, v in vals.items()}
@@ -865,7 +884,7 @@ def tag_report(cat: dict) -> None:
     print(f"tagged {len(models)} models")
     bands = Counter()
     for m in models.values():
-        low = min(m["tags"]["conf"][f] for f in TAG_FIELDS if f != "use")
+        low = min(m["tags"]["conf"][f] for f in TAG_FIELDS if f not in ("use", "condition"))
         bands["<0.4" if low < 0.4 else "0.4-0.6" if low < 0.6 else "0.6-0.8" if low < 0.8 else ">=0.8"] += 1
     print("  lowest Tag confidence: " + ", ".join(f"{b} {bands[b]}" for b in
                                                     ("<0.4", "0.4-0.6", "0.6-0.8", ">=0.8")))

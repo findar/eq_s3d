@@ -66,7 +66,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
-from generators.decor.catalogue import Catalogue, Model
+from generators.decor.catalogue import UNKNOWN, Catalogue, Model
 from generators.decor.rules import (BARE, DEFAULT_CONTROL, MOUNTS_FILLING, NEUTRAL, DecorRules, Group, Line,
                                     draw_count)
 from generators.room_context import STEP_UP, RoomContext, WallFace
@@ -438,13 +438,19 @@ class Room:
 # ---------------------------------------------------------------------------
 
 class _Chooser:
-    """Models by (kind, Mount filled, Set), and the room's culture as it binds."""
+    """Models by (kind, Mount filled, Set), and the room's culture and condition as they bind.
+
+    **Condition** (archive decision 25): a room's Props never mix ``ruined`` and ``pristine``.
+    The first Prop placed with either binds the room to it, so the choice falls on the room's
+    own stream with no draw of its own; ``unknown`` goes with either. With every model
+    ``unknown`` nothing is filtered and the draws are the same as without the rule."""
 
     def __init__(self, catalogue: Catalogue, rules: DecorRules, ctx: RoomContext, rng: random.Random):
         self.rules = rules
         self.rng = rng
         self.sets = rules.sets.sets_for(ctx.zone_type, ctx.race, ctx.theme)
         self.used: List[str] = []
+        self.condition: Optional[str] = None
         self.by: Dict[Tuple[str, str, str], List[Model]] = {}
         for key in sorted(catalogue.models):
             m = catalogue.models[key]
@@ -456,12 +462,18 @@ class _Chooser:
     def fits(self, s: str) -> bool:
         return all(self.rules.sets.may_share(s, u) for u in self.used)
 
+    def suits(self, m: Model) -> bool:
+        """The model's condition goes with the room's (``unknown`` with any)."""
+        c = m.tags.condition
+        return c == UNKNOWN or self.condition is None or c == self.condition
+
     def choose(self, kinds: Sequence[str], mount: str) -> Optional[Model]:
         for kind in kinds:
             for s in self.sets:
                 if not self.fits(s):
                     continue
-                pool = [m for mt in MOUNTS_FILLING[mount] for m in self.by.get((kind, mt, s), ())]
+                pool = [m for mt in MOUNTS_FILLING[mount] for m in self.by.get((kind, mt, s), ())
+                        if self.suits(m)]
                 if pool:
                     wts = [1.0 + math.log1p(m.placed_total) for m in pool]
                     return self.rng.choices(pool, weights=wts)[0]
@@ -477,7 +489,7 @@ class _Chooser:
         out = []
         for kind in kinds:
             pool = [m for s in self.sets if self.fits(s) for mt in MOUNTS_FILLING[mount]
-                    for m in self.by.get((kind, mt, s), ()) if area(m) < limit - 1e-9]
+                    for m in self.by.get((kind, mt, s), ()) if area(m) < limit - 1e-9 and self.suits(m)]
             if pool:
                 out.append(min(pool, key=lambda m: (area(m), m.key)))
         return out[:FALLBACKS]
@@ -486,6 +498,8 @@ class _Chooser:
         s = model.tags.set
         if s != NEUTRAL and s not in self.used:
             self.used.append(s)
+        if self.condition is None and model.tags.condition != UNKNOWN:
+            self.condition = model.tags.condition
 
 
 # ---------------------------------------------------------------------------
@@ -520,12 +534,13 @@ class _Placer:
     def _save(self):
         r = self.room
         return (r.occupied.copy(), r.blocked.copy(), list(r.wall_props), list(r.ceiling_props),
-                list(self.chooser.used), len(self.out.props))
+                list(self.chooser.used), len(self.out.props), self.chooser.condition)
 
     def _restore(self, s) -> None:
         r = self.room
         r.occupied, r.blocked = s[0].copy(), s[1].copy()
         r.wall_props, r.ceiling_props, self.chooser.used, n = list(s[2]), list(s[3]), list(s[4]), s[5]
+        self.chooser.condition = s[6]
         del self.out.props[n:]
 
     def _prop(self, model: Model, sz: Size, x, y, z, yaw, mount, blocks, step, line: Line, at: str,

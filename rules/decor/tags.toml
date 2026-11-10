@@ -1,9 +1,36 @@
-# Reviewed Tags of the stock model catalogue (roadmap step 11, task 4: the user's review).
+# Tags of the stock model catalogue: the user's review and feedback (roadmap step 11,
+# tasks 4 and 19).
 #
-# One line per reviewed model, keyed by its catalogue entry (NAME, or NAME@zone for a
-# variant). A field given here wins over the auto-tagger's proposal in catalogue.json;
-# fields left out keep the proposal. Rebuilding or re-tagging the catalogue never writes
-# this file, so a review is never lost. Only `use = "yes"` lets a model into builds.
+# One line per model, keyed by its catalogue entry (NAME, or NAME@zone for a variant).
+# A field given here wins over the auto-tagger's proposal in catalogue.json; fields left
+# out keep the proposal. Rebuilding or re-tagging the catalogue never writes this file,
+# so a line here is never lost.
+#
+# Accepted by default (archive decision 25). With `accept = "proposed"` (below) every model
+# the auto-tagger proposed `use = "review"` enters builds as if it were `use = "yes"` (its
+# reason reads "accepted by default"). A `use` set here, yes or no, always wins. The
+# auto-tagger proposes `no` only for clear rejects: skeletal models, doorway gates, models
+# stock never places, walk-in or terrain models, huge ones and meshes without UVs.
+# Vertex-animated models are proposed `review` (they import frozen in their rest pose,
+# decision 24). Remove the `accept` line and only `use = "yes"` here lets a model in.
+#
+# Feedback. The user removes or corrects models by saying so (or pastes a line from the
+# sheet); the lead writes it here as one line under [models], giving only what changes:
+#
+#   "NAME" = { use = "no", note = "user: <what they said>" }      # take a model out
+#   "NAME" = { kind = "stool", mount = "floor" }                  # correct its Tags
+#   "NAME" = { condition = "ruined" }                             # ruined or pristine
+#   "NAME" = { use = "no", note = "part of <KEY>" }                # a part of an assembly
+#
+# - Doorway gates stay out: kind `door` (DOOR1, DOOR620X20, GRATE, KSDOOR101, KSDOOR102R
+#   and any other whose name says door or gate) is proposed `no`, "a doorway gate; doors
+#   are runtime records (M6)". Recipes never ask for doors. Name another gate and the lead
+#   adds a `use = "no"` line (or the name to scripts/prop_catalogue.py DOOR_NAMES).
+# - Parts of an assembly (pieces stock always places together, like a table's top and its
+#   legs) are `use = "no", note = "part of <KEY>"`, where <KEY> is the piece that stays.
+#   Placing assemblies whole is a follow-up.
+# - Ruined or pristine: set `condition`. A room's Props never mix `ruined` and `pristine`;
+#   `unknown` (the proposal for every model: names say nothing of it) goes with either.
 #
 # The review sheet (python scripts/prop_catalogue.py sheet --eq-path F:\everquest_rof2)
 # gives the exact line for each model; paste it under [models] and correct what's wrong.
@@ -17,10 +44,13 @@
 #   collision solid, partial, passable (stock's own flags; a model that blocks wrongly
 #             is use = "no", not edited)
 #   suits     zone types, room kinds and types, dungeon themes
+#   condition pristine, ruined, unknown
 #   use       yes, no, review
 #   note      free text
 #
 # Every value is checked when the catalogue loads; a bad one is named by entry and field.
+
+accept = "proposed"             # or "reviewed": only use = "yes" here enters builds
 
 # kinds = { lever = "other" }   # kinds beyond the built-in ones, with their Category
 # sets = ["centaur"]            # Sets beyond the built-in ones
