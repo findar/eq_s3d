@@ -27,6 +27,16 @@ STEP9 = {
 }
 
 
+# .eqg[:-4] sha256 of Sites builds at step 10 (room-decor task 11): Decor ``none``
+# (and Decor left unset, which the builder takes as none) must still give these, Site
+# Props or not (room-decor Req 12.2, P11).
+STEP10 = {
+    ("wild", 1955208177, "normal"): "b6a10e08f3aa3ebd2a00d75c9804354a59df8c905f429e946b5890e1b1dc693e",
+    ("wild", 31337, "dense"): "b06f419e5aad0fbe66067c95c247fdf789bceeb33c2bc0e5f5fd89ec270e699c",
+    ("od", 1001, "dense"): "f069b1a816e1a5fe700f9380f6d355fa9a33a09caa9ce9f9287d5e4fb4e3e88e",
+}
+
+
 def _spec(kind, seed, sites="normal"):
     spec = (wb.wilderness_spec(f"b{seed}", seed) if kind == "wild"
             else od.outdoor_dungeon_spec(f"b{seed}", seed))
@@ -49,6 +59,17 @@ def test_sites_none_is_step9_bytes(tmp_path, kind, seed):
     assert hashlib.sha256(r.eqg_path.read_bytes()[:-4]).hexdigest() == STEP9[(kind, seed)]
     side = json.loads(r.sidecar_path.read_text(encoding="utf-8"))["sites"]
     assert side["control"] == "none" and side["sites"] == [] and side["models"] == []
+
+
+@pytest.mark.parametrize("kind, seed, sites", sorted(STEP10))
+@pytest.mark.parametrize("decor", [None, "none"])
+def test_sites_with_decor_none_are_step10_bytes(tmp_path, kind, seed, sites, decor):
+    spec = _spec(kind, seed, sites)
+    spec.decor = decor
+    r = _build(tmp_path, spec, "dn")
+    assert hashlib.sha256(r.eqg_path.read_bytes()[:-4]).hexdigest() == STEP10[(kind, seed, sites)]
+    side = json.loads(r.sidecar_path.read_text(encoding="utf-8"))
+    assert side["sites"]["sites"] and "decor" not in side
 
 
 @pytest.mark.parametrize("seed, sites", [(1955208177, "normal"), (31337, "dense"), (4, "normal")])

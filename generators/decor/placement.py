@@ -305,6 +305,110 @@ def _edge_distance(ctx: RoomContext, ok: np.ndarray) -> np.ndarray:
     return distance_transform_edt(~padded)[1:-1, 1:-1] * ctx.cell
 
 
+def _in_capsule(gx, gy, x0, y0, x1, y1, r) -> np.ndarray:
+    dx, dy = x1 - x0, y1 - y0
+    n = dx * dx + dy * dy
+    t = np.zeros(gx.shape) if n == 0 else np.clip(((gx - x0) * dx + (gy - y0) * dy) / n, 0.0, 1.0)
+    return np.hypot(gx - x0 - t * dx, gy - y0 - t * dy) <= r
+
+
+#: How far inside the edge of a Site's ``ground`` piece its own ground ends: the largest
+#: ``ground.margin`` a Sites recipe gives (``rules/sites/sites.toml``: 8-10 u; a test keeps
+#: this honest). Props stand inside it, so the margin, part of the Site_Clear, stays free.
+SITE_MARGIN = 10.0
+#: The least plan gap between a Site's Prop and any Structure or other Prop (u; a Group's
+#: members may stand closer to one another). The gate covers ground
+#: within the player's half-width of either, and keeps a free strip joined on its 2 u raster
+#: only from 2.83 u wide: 2 x 1.5 + 2.83 rounded up. Decor's own grid can't see that strip
+#: (it erodes floor beside a Structure away), so without the gap a Prop could close a pocket
+#: against a Structure that the gate counts as ground cut off.
+SITE_GAP = 6.0
+#: A Group's members at a Site stand within this of one another (u), so the gate covers the
+#: ground between them whole, or ``SITE_GAP`` apart: a gap between leaves a strip the gate's
+#: raster can read as a pocket cut off.
+SITE_TOUCH = 2.0
+
+
+class _SiteBounds:
+    """A Site's Site_Clear and Structures exactly, for a floor Prop's plan (the grid's cells
+    only see cell middles): the plan stays inside the Site's own ground (the ``ground``
+    piece's reach less ``SITE_MARGIN``), off the approach and every apron, and ``SITE_GAP``
+    from every Structure."""
+
+    def __init__(self, ctx: RoomContext):
+        self.inner: List[Tuple[float, float, float]] = []
+        self.out: List[Tuple[float, float, float, float, float]] = []
+        for c in ctx.clear:
+            if c.get("what") == "ground":
+                self.inner.append((c["x0"], c["y0"], c["r"] - SITE_MARGIN))
+            elif c.get("what") in ("approach", "apron"):
+                self.out.append((c["x0"], c["y0"], c["x1"], c["y1"], c["r"]))
+        self.plans = [np.asarray(f["plan"], dtype=np.float64) for f in ctx.features
+                      if len(f.get("plan") or ()) >= 3]
+        #: The floor Props placed so far: (plan corners, Group or None).
+        self.props: List[Tuple[np.ndarray, Optional[int]]] = []
+
+    @staticmethod
+    def corners(x: float, y: float, yaw: float, w: float, d: float) -> np.ndarray:
+        c, s = math.cos(yaw), math.sin(yaw)
+        return np.array([(x + c * a - s * b, y + s * a + c * b)
+                         for a, b in ((-w / 2, -d / 2), (w / 2, -d / 2), (w / 2, d / 2), (-w / 2, d / 2))])
+
+    def add(self, x: float, y: float, yaw: float, w: float, d: float, group: Optional[int]) -> None:
+        self.props.append((self.corners(x, y, yaw, w, d), group))
+
+    def fits(self, x: float, y: float, yaw: float, w: float, d: float, group: Optional[int] = None) -> bool:
+        """``group``: a Group's members may stand closer to one another than ``SITE_GAP``."""
+        c, s = math.cos(yaw), math.sin(yaw)
+        n = max(2, int(math.ceil(max(w, d) / 0.5)) + 1)
+        t = np.linspace(-0.5, 0.5, n)
+        a = np.concatenate([t * w, t * w, np.full(n, -w / 2), np.full(n, w / 2), [0.0]])
+        b = np.concatenate([np.full(n, -d / 2), np.full(n, d / 2), t * d, t * d, [0.0]])
+        px, py = x + c * a - s * b, y + s * a + c * b
+        for cx, cy, r in self.inner:
+            if (np.hypot(px - cx, py - cy) > r).any():
+                return False
+        for x0, y0, x1, y1, r in self.out:
+            if _in_capsule(px, py, x0, y0, x1, y1, r).any():
+                return False
+            # a capsule wholly inside the plan: its ends
+            lx = np.array([x0, x1]) - x
+            ly = np.array([y0, y1]) - y
+            if ((np.abs(c * lx + s * ly) <= w / 2) & (np.abs(-s * lx + c * ly) <= d / 2)).any():
+                return False
+        others = self.plans + [poly for poly, g in self.props if group is None or g != group]
+        for plan in others:
+            if (_polygon_distance(px, py, plan) < SITE_GAP).any():
+                return False
+            # a plan wholly inside this one: its corners
+            lx, ly = plan[:, 0] - x, plan[:, 1] - y
+            if ((np.abs(c * lx + s * ly) <= w / 2) & (np.abs(-s * lx + c * ly) <= d / 2)).any():
+                return False
+        for poly, g in self.props:      # a Group's own members: touching, or a way apart
+            if group is not None and g == group:
+                gap = float(_polygon_distance(px, py, poly).min())
+                if SITE_TOUCH < gap < SITE_GAP:
+                    return False
+        return True
+
+
+def _site_clear(ctx: RoomContext, gx: np.ndarray, gy: np.ndarray) -> np.ndarray:
+    """A Site's Site_Clear on its grid (step 10, design "Sites"): its approach and each
+    opening's apron, and the margin round its own ground (the ``ground`` piece's reach less
+    ``SITE_MARGIN``). Grown by half a cell, so no Prop's plan reaches into it from a cell
+    whose middle lies just outside. Trees stand beyond the margin, so a Prop inside it is at
+    least the margin from any trunk."""
+    half = float(ctx.cell) / 2
+    out = np.zeros(gx.shape, bool)
+    for c in ctx.clear:
+        what = c.get("what")
+        if what == "ground":
+            out |= ~_in_capsule(gx, gy, c["x0"], c["y0"], c["x1"], c["y1"], c["r"] - SITE_MARGIN - half)
+        elif what in ("approach", "apron"):
+            out |= _in_capsule(gx, gy, c["x0"], c["y0"], c["x1"], c["y1"], c["r"] + half)
+    return out
+
+
 class Room:
     """One context's grid, masks and walls, and what's been placed on them so far."""
 
@@ -347,8 +451,11 @@ class Room:
                 door_cells |= _in_rect(self.gx, self.gy, d.clear)
         #: Kept clear of every floor Prop: the Spine, the Throats and the doors' clear zones;
         #: of Dressing, the Spine and the clear zones (a POI at a Throat's end is dressed there).
-        self.keep = ctx.spine | throats | door_cells
-        self.keep_dressing = ctx.spine | door_cells
+        #: A Site's Props keep off its Site_Clear too, Dressing included (Req 11, P11).
+        site_clear = _site_clear(ctx, self.gx, self.gy) if ctx.source == "site" else np.zeros(self.shape, bool)
+        self.site = _SiteBounds(ctx) if ctx.source == "site" else None
+        self.keep = ctx.spine | throats | door_cells | site_clear
+        self.keep_dressing = ctx.spine | door_cells | site_clear
         self.feature = np.zeros(self.shape, bool)
         self.dais = np.zeros(self.shape, bool)
         self.feature_masks: List[np.ndarray] = []
@@ -696,7 +803,8 @@ class _Placer:
     def _save(self):
         r = self.room
         return (r.occupied.copy(), r.blocked.copy(), list(r.wall_props), list(r.ceiling_props),
-                list(self.chooser.used), len(self.out.props), self.chooser.condition)
+                list(self.chooser.used), len(self.out.props), self.chooser.condition,
+                len(r.site.props) if r.site is not None else 0)
 
     def _restore(self, s) -> None:
         r = self.room
@@ -704,6 +812,8 @@ class _Placer:
         r.wall_props, r.ceiling_props, self.chooser.used, n = list(s[2]), list(s[3]), list(s[4]), s[5]
         self.chooser.condition = s[6]
         del self.out.props[n:]
+        if r.site is not None:
+            del r.site.props[s[7]:]
 
     def _prop(self, model: Model, sz: Size, x, y, z, yaw, mount, blocks, step, line: Line, at: str,
               poi=None, group=None) -> Prop:
@@ -718,7 +828,7 @@ class _Placer:
     # -- floor ------------------------------------------------------------------
 
     def _floor_ok(self, model: Model, sz: Size, x, y, yaw, allow: Optional[np.ndarray] = None,
-                  dressing: bool = False):
+                  dressing: bool = False, group: Optional[int] = None):
         """(cells, z, blocked mask, blocks) if the model can stand here, else None. ``allow``: Feature
         cells it may stand on (a dais); ``dressing``: it may stand in a Throat."""
         r = self.room
@@ -732,6 +842,8 @@ class _Placer:
         if allow is not None:
             off = keep[cells] | (r.feature[cells] & ~allow[cells])
         if off.any():
+            return None
+        if r.site is not None and not r.site.fits(x, y, yaw, sz.w, sz.d, group):
             return None
         fl = r.floor[cells]
         if float(fl.max() - fl.min()) > FLAT:
@@ -764,11 +876,13 @@ class _Placer:
     def _put_floor(self, model, sz, spots, step, line, at, allow=None, poi=None, group=None,
                    mount="floor") -> Optional[Prop]:
         for x, y, yaw in spots:
-            got = self._floor_ok(model, sz, x, y, yaw, allow, step == "dressing")
+            got = self._floor_ok(model, sz, x, y, yaw, allow, step == "dressing", group)
             if got is None:
                 continue
             cells, z, blocked, blocks = got
             self.room.occupied[cells] = True
+            if self.room.site is not None:
+                self.room.site.add(x, y, yaw, sz.w, sz.d, group)
             self.room.blocked = blocked
             return self._prop(model, sz, x, y, z, yaw, mount, blocks, step, line, at, poi, group)
         return None
@@ -1198,4 +1312,4 @@ def check(context: RoomContext, decorated: Decorated) -> List[str]:
 
 
 __all__ = ["CORRIDOR", "Decorated", "Drop", "FRAME", "HEAD_HEIGHT", "LIGHT_SPACING", "PLAYER_HALF_WIDTH",
-           "POI_REACH", "Prop", "Room", "STEPS", "Size", "check", "place", "size_of", "stream"]
+           "POI_REACH", "Prop", "Room", "SITE_MARGIN", "STEPS", "Size", "check", "place", "size_of", "stream"]

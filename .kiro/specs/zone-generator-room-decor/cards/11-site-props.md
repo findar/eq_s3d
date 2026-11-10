@@ -14,4 +14,4 @@ A Site's POIs are dressed from the catalogue by the same path, from the Site's R
 The corpus task 18 recorded has no farmstead Site (camp, hut, ruin, shrine, watchtower only): add a pinned recording with one. Sites `none` and Decor `none` must each still give their old bytes.
 
 ## Result
-
+✔ 1e3a6cb · 2304 passed (Site Props not yet in built zones: builder wiring is outside Owns)

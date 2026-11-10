@@ -85,7 +85,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, web/index.html, generators/eqmap.py, generators/mapview.py, tests/test_decor_controls.py, tests/test_hygiene.py (its control-name guard and allow-lists), generators/pipeline.py (`_write_map_artifacts` passes the built Props)
   - Reqs: 10.1–10.4
 
-- [ ] 11. Site Props
+- [x] 11. Site Props
   - Card: [cards/11-site-props.md](cards/11-site-props.md)
   - Type: agent · Size: M · Depends: 9, 18
   - Owns: rules/decor/rooms.toml (Site recipes only), generators/decor/placement.py (Site POIs), generators/sites/placement.py (hand Site POIs to decor), tests/test_site_props.py, tests/test_site_builds.py (its Decor `none` cases), scripts/record_rooms.py + tests/fixtures/rooms/ (add a farmstead recording)

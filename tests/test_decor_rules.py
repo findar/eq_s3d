@@ -107,12 +107,9 @@ def test_every_room_type_in_layouts_has_a_recipe_or_falls_back(rules):
 
 
 def test_a_site_takes_its_kind_recipe_and_no_every_lines(tmp_path, rules):
-    assert rules.recipe_for("camp", source="site") == ()
-    d = _copy(tmp_path, ROOMS_FILE, "[dressing.boss]",
-              '[sites.camp]\nprops = [ { kind = ["crate", "barrel"], at = "scatter", count = [1, 3] } ]\n\n'
-              '[dressing.boss]')
-    got = load_decor(d).recipe_for("camp", source="site")
-    assert [r.name for r in got] == ["sites.camp"]
+    # The shipped rules have a recipe for every Site kind since task 11.
+    assert [r.name for r in rules.recipe_for("camp", source="site")] == ["sites.camp"]
+    assert rules.recipe_for("no_such_kind", source="site") == ()
     errs = _errors(_copy(tmp_path, ROOMS_FILE, "[sites.camp]", "[sites.castle]"))
     assert [(e.file, e.where, e.field) for e in errs] == [(ROOMS_FILE, "sites", "castle")]
 
