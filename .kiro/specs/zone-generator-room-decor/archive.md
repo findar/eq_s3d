@@ -89,6 +89,16 @@ From task 8 (placement, `2bc13ad`):
     (and those noisy), so: doors stay out by kind, `condition` is a new Tag set by feedback, and
     parts are `use = no` by feedback (task 19).
 
+From task 19 (accept by default, `e3d4b8a`):
+
+26. **`tags.toml` `accept = "proposed"`** lets every `use = review` model in: 3,247 usable
+    (544 of the 583 dungeon/city sheet models); a `use` line always wins. Accepted models have
+    `why["use"] = "accepted by default"`, `"use"` not in `reviewed`. Doors (kind `door`; more
+    names go in `DOOR_NAMES`) are proposed `no`.
+27. **`condition` is a Tag** (`pristine`, `ruined`, `unknown`); the first ruined or pristine
+    Prop placed sets the room's, as the first culture sets its Set; all-unknown output is
+    unchanged.
+
 ## Follow-ups
 
 - **Doorway gates as doors** at room openings (with the EQEmu `doors` records, M6).
