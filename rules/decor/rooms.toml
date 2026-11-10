@@ -398,6 +398,43 @@ props = [ { kind = ["slime", "mushroom"], at = "scatter", count = [1, 2], chance
 [types.passage]
 props = []
 
+# --- Sites (task 11, Req 11): a Site kind's own Props, on its ground ------------------------------
+#
+# A Site has no walls or ceiling, so its lines stand on the floor: scatter, centre (near the Site's
+# middle, where its Structure or fire is) or far_end (away from its way in). Props keep off the
+# Site_Clear (the approach, each opening's apron, the margin round its ground) and stand at least
+# 6 u off every Structure (generators/decor/placement.py SITE_GAP), so "centre" round a big
+# monument finds little room: a shrine's offerings scatter.
+
+[sites.camp]                    # crates, barrels and sacks about the fire (Crushbone, the Karanas)
+props = [ { group = "crate_pile", at = "scatter", chance = 0.5 },
+          { kind = ["crate", "barrel", "sack"], at = "scatter", count = [1, 3] },
+          { kind = ["fur_stack", "log"], at = "far_end", chance = 0.4 },
+          { kind = ["bones", "rock"], at = "scatter", count = [0, 2], chance = 0.4 } ]
+
+[sites.hut]
+props = [ { kind = ["barrel", "sack", "basket"], at = "scatter", count = [1, 2] },
+          { kind = ["log", "stool"], at = "scatter", chance = 0.4 },
+          { kind = ["tool", "bucket"], at = "scatter", chance = 0.3 } ]
+
+[sites.farmstead]               # haybales and a cart in the yard (the Karanas' farms)
+props = [ { kind = "hay", at = "scatter", count = [2, 4] },
+          { kind = "cart", at = "scatter", chance = 0.8 },
+          { kind = ["barrel", "sack", "crate"], at = "scatter", count = [1, 3] },
+          { kind = ["tool", "bucket"], at = "scatter", count = [0, 2] } ]
+
+[sites.watchtower]
+props = [ { kind = ["crate", "barrel"], at = "scatter", count = [0, 2] },
+          { kind = ["weapon", "rack"], at = "scatter", chance = 0.4 } ]
+
+[sites.shrine]                  # offerings about the monument
+props = [ { kind = ["urn", "vase", "food"], at = "scatter", count = [1, 3] },
+          { kind = ["skull", "bones"], at = "scatter", chance = 0.3 } ]
+
+[sites.ruin]
+props = [ { kind = ["rock", "brick", "debris"], at = "scatter", count = [2, 4] },
+          { kind = ["bones", "skull"], at = "scatter", chance = 0.3 } ]
+
 # --- Dressing, by POI purpose (Req 8.1): placed first, round the POI, never on its spot -----------
 
 [dressing.boss]
@@ -414,3 +451,13 @@ props = [ { kind = "chest", at = "beside", count = [1, 2] },
 [dressing.guard]
 props = [ { kind = ["stool", "chair", "bench"], at = "beside" },
           { kind = ["torch", "lantern"], at = "wall" } ]
+
+# Site POIs only (task 11): a camp's fire, a Site's gathering place, a tower's lookout.
+[dressing.Light_Spot]
+props = [ { kind = ["log", "stool", "bench"], at = "round", count = [1, 3] } ]
+
+[dressing.gathering]
+props = [ { kind = ["bench", "stool", "log"], at = "round", count = [1, 2] } ]
+
+[dressing.lookout]
+props = [ { kind = ["crate", "barrel"], at = "beside" } ]
