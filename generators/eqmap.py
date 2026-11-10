@@ -315,12 +315,100 @@ def site_marks(eqg_path: Path | str, sidecar: dict) -> Optional[SiteMarks]:
     return SiteMarks(tuple(footprints), labels)
 
 
+# ---------------------------------------------------------------------------
+# Props (room-decor step 11, Req 10.4)
+# ---------------------------------------------------------------------------
+
+PROP_COLOUR = (120, 80, 150)  # muted purple: floor Props' Footprint lines
+#: How far (u) a ZON object may sit from its sidecar row and still be that Prop
+#: (the ZON stores float32; the sidecar rounds to 3 decimals).
+PROP_MATCH = 0.05
+
+
+@dataclass(frozen=True)
+class PropFootprint:
+    """One floor Prop's Footprint: the plan hull of its model's triangles as
+    placed in the ZON, at the height of its ZON object."""
+    name: str                                  # ZON object (decor_NNNN)
+    kind: str
+    z: float
+    points: tuple[tuple[float, float], ...]    # world plan hull, counter-clockwise
+
+
+@dataclass(frozen=True)
+class PropMarks:
+    """What the maps draw for a build's Props: floor Props' Footprints, and
+    every Prop's plan position and Mount (the web map's dots)."""
+    footprints: tuple[PropFootprint, ...] = ()
+    points: tuple[tuple[float, float, float, str], ...] = ()   # (x, y, z, mount)
+
+    def __bool__(self) -> bool:
+        return bool(self.footprints or self.points)
+
+
+def _sidecar_props(sidecar: dict) -> list:
+    rows = []
+    for room in sidecar.get("rooms") or []:
+        rows.extend(room.get("props") or [])
+    return rows
+
+
+def prop_marks(eqg_path: Path | str, sidecar: dict) -> Optional[PropMarks]:
+    """The Props of a built zone, from what the build wrote: each ``decor_*``
+    ZON object in the ``.eqg``, its Mount and kind from the sidecar row at its
+    position (rooms' ``props``). Floor Props get a Footprint, the plan hull of
+    their model's triangles placed as the client places them. ``None`` when
+    the build has no Props."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from analyzer.footprints import _hull, placed_from_zon, world_triangles
+    from core.zon import ZonFile
+
+    rows = _sidecar_props(sidecar)
+    if not rows:
+        return None
+    at = np.array([[float(r["x"]), float(r["y"]), float(r["z"])] for r in rows], dtype=np.float64)
+    arc = PfsArchive.from_file(Path(eqg_path))
+    zon_name = next(f for f in arc.list_files() if f.lower().endswith(".zon"))
+    zon = ZonFile.from_bytes(arc.get(zon_name))
+    objs = [o for o in zon.objects if o.name.lower().startswith("decor_")]
+    if not objs:
+        return None
+    wanted = {zon.models[o.model_id] for o in objs}
+    models = {f: TerFile.from_bytes(arc.get(f), name=f) for f in wanted}
+    footprints, points = [], []
+    for p in placed_from_zon(SimpleNamespace(objects=objs, models=zon.models), models):
+        d = np.abs(at - (p.x, p.y, p.z)).max(axis=1)
+        k = int(d.argmin())
+        if d[k] > PROP_MATCH:
+            continue                                  # not a Prop the sidecar lists
+        row = rows[k]
+        mount = str(row.get("mount", ""))
+        points.append((float(p.x), float(p.y), float(p.z), mount))
+        if mount != "floor":
+            continue
+        v = np.array([[q.x, q.y, q.z] for q in p.model.vertices], dtype=np.float64).reshape(-1, 3)
+        f = np.array([[q.v1, q.v2, q.v3] for q in p.model.polygons], dtype=np.int64).reshape(-1, 3)
+        tri = world_triangles(p, v[f])
+        if not len(tri):
+            continue
+        hull = _hull(tri[..., :2].reshape(-1, 2))
+        if len(hull) < 3:
+            continue
+        footprints.append(PropFootprint(p.name, str(row.get("kind", "")), float(p.z),
+                                        tuple((float(x), float(y)) for x, y in hull)))
+    return PropMarks(tuple(footprints), tuple(points))
+
+
 def _band_of(bands, z: float) -> int:
     return next((b.index for b in bands if b.contains(z)), 0)
 
 
 def build_map_file(outline: "OutlineSet", spec: "ZoneSpec", name: str,
-                   sites: Optional[SiteMarks] = None) -> MapFile:
+                   sites: Optional[SiteMarks] = None,
+                   props: Optional[PropMarks] = None) -> MapFile:
     """The EQ map of ``outline``: layer ``band.index`` per depth band (0 =
     Main_Band), one ``L`` per consecutive polyline point pair in the band's
     colour, plus an ``Entrance`` label for the entrance room and a ``Boss``
@@ -328,7 +416,10 @@ def build_map_file(outline: "OutlineSet", spec: "ZoneSpec", name: str,
 
     ``sites`` (wilderness / outdoor dungeon) adds each Structure's Footprint
     as a closed loop of ``L`` lines and a label at each Site, in
-    ``SITE_COLOUR``, in the band holding their ground."""
+    ``SITE_COLOUR``, in the band holding their ground.
+
+    ``props`` (room-decor Req 10.4) adds each floor Prop's Footprint as a
+    closed loop of ``L`` lines in ``PROP_COLOUR``, in the band holding it."""
     bands = sorted(outline.bands, key=lambda b: b.index)
     layers = {b.index: MapLayer(b.index) for b in bands}
     colour = {b.index: BAND_COLOURS[b.offset] for b in bands}
@@ -362,6 +453,14 @@ def build_map_file(outline: "OutlineSet", spec: "ZoneSpec", name: str,
             layer = layers.get(_band_of(bands, lab.z), layers[main])
             x, y, mz = _map_point(lab.x, lab.y, lab.z + LABEL_LIFT)
             layer.labels.append(MapLabel(x, y, mz, *SITE_COLOUR, LABEL_SIZE, lab.text))
+    if props:
+        main = next((b.index for b in bands if b.offset == 0), bands[0].index)
+        for fp in props.footprints:
+            layer = layers.get(_band_of(bands, fp.z), layers[main])
+            pts = list(fp.points)
+            for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]):
+                layer.lines.append(MapLine(*_map_point(x0, y0, fp.z),
+                                           *_map_point(x1, y1, fp.z), *PROP_COLOUR))
     return MapFile(name, [layers[b.index] for b in bands])
 
 

@@ -27,7 +27,7 @@ from .routing import corridor_route
 from .zone_spec import ZoneSpec
 
 if TYPE_CHECKING:
-    from .eqmap import SiteMarks
+    from .eqmap import PropMarks, SiteMarks
     from .mapgeom import OutlineSet
 
 
@@ -104,9 +104,31 @@ def _sites_group(sites: "SiteMarks", px, py) -> str:
     return "".join(parts)
 
 
+_PROP_FILL = "#b48ad8"
+
+
+def _props_group(props: "PropMarks", px, py) -> str:
+    """Each floor Prop's Footprint as a small filled outline (its kind as the
+    tooltip), every other Prop (wall, raised, ceiling) as a dot."""
+    parts = ['<g id="props">']
+    for fp in props.footprints:
+        pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in fp.points)
+        parts.append(f'<polygon class="prop-footprint" points="{pts}" fill="{_PROP_FILL}" '
+                     f'fill-opacity="0.55" stroke="{_PROP_FILL}" stroke-width="0.8">'
+                     f'<title>{_esc(fp.kind)}</title></polygon>')
+    for x, y, _z, mount in props.points:
+        if mount == "floor":
+            continue
+        parts.append(f'<circle class="prop" cx="{px(x):.1f}" cy="{py(y):.1f}" r="1.8" '
+                     f'fill="{_PROP_FILL}"><title>{_esc(mount)}</title></circle>')
+    parts.append("</g>")
+    return "".join(parts)
+
+
 def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
                    outline: Optional["OutlineSet"] = None,
-                   sites: Optional["SiteMarks"] = None) -> str:
+                   sites: Optional["SiteMarks"] = None,
+                   props: Optional["PropMarks"] = None) -> str:
     """
     Build an SVG top-down map of the zone. `size` is the max pixel dimension;
     the map preserves the zone's aspect ratio and is centred in a square-ish
@@ -120,6 +142,10 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     `sites` (optional, `generators.eqmap.SiteMarks`) draws each Structure's
     Footprint and a marker and label at each Site, over the outline; the
     legend gains `site`. Without it the output is unchanged.
+
+    `props` (optional, `generators.eqmap.PropMarks`, room-decor Req 10.4)
+    draws each floor Prop's Footprint and a dot at every other Prop, over the
+    rooms; the legend gains `prop`. Without it the output is unchanged.
     """
     # ---- Gather world-space extents from rooms + corridors ----
     xs: List[float] = []
@@ -296,11 +322,14 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         parts.append(f'<line class="door-spot" x1="{px(x0):.1f}" y1="{py(y0):.1f}" x2="{px(x1):.1f}" '
                      f'y2="{py(y1):.1f}" stroke="{_DOOR_SPOT}" stroke-width="3"><title>door spot</title></line>')
 
+    if props:
+        parts.append(_props_group(props, px, py))
     if sites:
         parts.append(_sites_group(sites, px, py))
 
     has_doors = any(c.transition is not None and c.transition.form == "frame" for c in spec.corridors)
-    parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites)))
+    parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites),
+                         bool(props)))
 
     # ---- Scale bar (world units) ----
     parts.append(_scale_bar(scale, padding, h))
@@ -313,7 +342,7 @@ _DOOR_SPOT = "#e0a458"
 
 
 def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_doors: bool = False,
-            has_sites: bool = False) -> str:
+            has_sites: bool = False, has_props: bool = False) -> str:
     items = [
         ("#2e7d32", "entrance"),
         ("#1565c0", "hub"),
@@ -326,6 +355,8 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_
         items.append((_DOOR_SPOT, "door spot"))
     if has_sites:
         items.append((_SITE_STROKE, "site"))
+    if has_props:
+        items.append((_PROP_FILL, "prop"))
     # Outline entries get a line swatch (solid wall, dashed ledge), not a box.
     lines = [("", "wall"), (' stroke-dasharray="4 3"', "ledge")] if has_outline else []
 
