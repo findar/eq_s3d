@@ -244,12 +244,12 @@ def _diffuse_of(mat) -> Optional[str]:
 
 def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None,
                      dds_by_name: Optional[Dict[str, bytes]] = None,
-                     sites=None) -> List[dict]:
+                     sites=None, decor=None) -> List[dict]:
     """The sidecar's Texture_Manifest (Req 5): one entry per material of the
-    TER and of every packed tree and Structure model, sorted by name, with its
+    TER and of every packed tree, Structure and Prop model, sorted by name, with its
     polygon count and the Texture_Mode that drew its texture (``vegetation``
     for the trees' own bark/leaf generator, ``sites`` for the Structures'
-    materials). A texture drawn from a recipe also
+    materials, ``decor`` for the Props' stock textures). A texture drawn from a recipe also
     records its ``texture_family`` and ``look_stats`` (interesting textures
     spec Req 5.2)."""
     entries: Dict[str, dict] = {}
@@ -273,6 +273,9 @@ def texture_manifest(ter: TerFile, modes: Dict[str, str], veg=None,
     if sites is not None:
         for fname in sorted(sites.models):
             add(sites.models[fname], lambda n: "sites")
+    if decor is not None:
+        for fname in sorted(decor.models):
+            add(decor.models[fname], lambda n: "decor")
 
     if dds_by_name:
         from core.eqg import dds_to_rgb
@@ -360,13 +363,229 @@ def _sites_mesh(sites) -> Optional[tuple]:
     return ("sites", np.vstack(verts), np.vstack(faces), np.vstack(cols), np.vstack(norms))
 
 
-def _extra_meshes(veg, sites) -> Optional[list]:
-    """The GLB's meshes beyond the terrain: trees, then Structures."""
+def _extra_meshes(veg, sites, decor=None) -> Optional[list]:
+    """The GLB's meshes beyond the terrain: trees, then Structures, then Props."""
     meshes = list(_vegetation_meshes(veg) or [])
     site_mesh = _sites_mesh(sites)
     if site_mesh is not None:
         meshes.append(site_mesh)
+    if decor is not None and decor.placed:
+        meshes.append(decor.mesh())
     return meshes or None
+
+
+# ---------------------------------------------------------------------------
+# Decor: Props in rooms (room-decor spec task 9, Reqs 9, 10.3, 10.5, 10.6)
+# ---------------------------------------------------------------------------
+
+#: A light-bearing Prop's ZON light: warm, a torch's reach (Req 9.1).
+PROP_LIGHT_RGB = (1.0, 0.6, 0.25)
+PROP_LIGHT_RADIUS = 30.0
+#: The warning a build gives when it wanted Props but has no install to copy them from.
+NO_INSTALL = "decor_none:no_install (EQ_PATH unset or missing), built with Decor none"
+
+
+def _decor_data():
+    """The decor rules and the catalogue, loaded once per process."""
+    global _DECOR_DATA
+    if _DECOR_DATA is None:
+        from generators.decor.catalogue import load
+        from generators.decor.rules import load_decor
+        _DECOR_DATA = (load_decor(), load())
+    return _DECOR_DATA
+
+
+_DECOR_DATA = None
+_IMPORTERS: Dict[str, object] = {}
+
+
+def _importer(eq_path):
+    """One ``Importer`` per install per process: it caches the archives and models it read."""
+    from generators.decor.stock import Importer
+    key = str(eq_path)
+    if key not in _IMPORTERS:
+        _IMPORTERS[key] = Importer(eq_path)
+    return _IMPORTERS[key]
+
+
+def _plan_centre(model: TerFile) -> Tuple[float, float]:
+    """The middle of a model's plan (its bounding box in X and Y), model space.
+    Stock models aren't centred on their origin (a chest's runs from its back)."""
+    xs = [p.x for p in model.vertices]
+    ys = [p.y for p in model.vertices]
+    return (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+
+
+def _at_origin(prop, model: TerFile):
+    """The Prop moved from the middle of the plan placement reserved for it to
+    where the model's origin goes so its plan fills that footprint. Placement
+    reserves a footprint of the measured plan centred on (x, y); a wall Prop's
+    (x, y) is already its origin (stock's distance of the origin off the wall)."""
+    import math
+    from dataclasses import replace
+
+    if prop.mount == "wall":
+        return prop
+    cx, cy = _plan_centre(model)
+    c, s = math.cos(prop.yaw), math.sin(prop.yaw)
+    return replace(prop, x=prop.x - (c * cx - s * cy) * prop.scale,
+                   y=prop.y - (s * cx + c * cy) * prop.scale)
+
+
+def _flame(model: TerFile) -> Tuple[float, float, float]:
+    """Where a light-bearing model's flame is, model space: the middle of its
+    blended (``Alpha``-shaded: flame, glow) triangles, else the top of its
+    bounding box over its middle."""
+    import numpy as np
+    from core.ter import SHADER_ALPHA
+
+    v = np.array([[p.x, p.y, p.z] for p in model.vertices], dtype=np.float64)
+    glow = {m.index for m in model.materials if m.shader == SHADER_ALPHA}
+    idx = sorted({i for q in model.polygons if q.material in glow for i in (q.v1, q.v2, q.v3)})
+    if idx:
+        return tuple(float(c) for c in v[idx].mean(axis=0))
+    lo, hi = v.min(axis=0), v.max(axis=0)
+    return (float(lo[0] + hi[0]) / 2, float(lo[1] + hi[1]) / 2, float(hi[2]))
+
+
+class DecorBuild:
+    """A build's Props: each room's placement, each model in use imported once
+    (``models``/``textures``, packed as the ``site_`` path packs Structures)
+    and ``placed`` as (model file, Prop) in ZON order."""
+
+    def __init__(self, control: str, seed: int):
+        self.control = control
+        self.seed = seed
+        self.rooms: list = []           # (RoomContext, Decorated, check problems)
+        self.models: Dict[str, TerFile] = {}
+        self.textures: Dict[str, bytes] = {}
+        self.placed: list = []
+
+    def lights(self) -> List[ZonLight]:
+        """One ZON point light per light-bearing Prop, at its flame (Req 9.1)."""
+        import math
+        out = []
+        for k, (fname, p) in enumerate(f for f in self.placed if f[1].light):
+            fx, fy, fz = _flame(self.models[fname])
+            c, s = math.cos(p.yaw), math.sin(p.yaw)
+            out.append(ZonLight(
+                name=f"decor_light_{k:04d}",
+                x=p.x + (c * fx - s * fy) * p.scale, y=p.y + (s * fx + c * fy) * p.scale,
+                z=p.z + fz * p.scale, r=PROP_LIGHT_RGB[0], g=PROP_LIGHT_RGB[1],
+                b=PROP_LIGHT_RGB[2], radius=PROP_LIGHT_RADIUS))
+        return out
+
+    def room_records(self) -> Dict[str, dict]:
+        """The sidecar's per-room ``props``, ``dressing`` (by POI) and
+        ``decor_drops`` (Req 10.3), by room id."""
+        out = {}
+        for ctx, d, _ in self.rooms:
+            dressing = []
+            for k, poi in enumerate(ctx.pois):
+                mine = [p.key for p in d.props if p.poi == k]
+                dropped = [x.reason for x in d.drops if x.poi == k]
+                if mine or dropped:
+                    dressing.append({"poi": k, "purpose": poi.get("purpose", ""),
+                                     "name": poi.get("name", ""), "props": mine,
+                                     "dropped": dropped})
+            out[ctx.id] = {"props": [p.to_dict() for p in d.props], "dressing": dressing,
+                           "decor_drops": [x.to_dict() for x in d.drops], "bare": d.bare}
+        return out
+
+    def summary(self) -> dict:
+        """The sidecar's ``decor`` block."""
+        return {"control": self.control, "seed": self.seed, "props": len(self.placed),
+                "lights": sum(1 for _, p in self.placed if p.light),
+                "models": len(self.models), "rooms": len(self.rooms),
+                "bare": sum(1 for _, d, _ in self.rooms if d.bare),
+                "drops": sum(len(d.drops) for _, d, _ in self.rooms),
+                "check": [f"{ctx.id}: {why}" for ctx, _, probs in self.rooms for why in probs]}
+
+    def mesh(self) -> tuple:
+        """The GLB ``decor`` mesh: every Prop's model scaled, turned and moved,
+        merged, each texture's mean colour on its triangles."""
+        import numpy as np
+        from core.eqg import dds_to_rgb
+
+        rgb_of: Dict[str, Tuple[int, int, int]] = {}
+        parts = {}
+        for fname, model in self.models.items():
+            v = np.array([[p.x, p.y, p.z] for p in model.vertices], dtype=np.float64)
+            n = np.array([[p.nx, p.ny, p.nz] for p in model.vertices], dtype=np.float64)
+            f = np.array([[q.v1, q.v2, q.v3] for q in model.polygons], dtype=np.int64)
+            col = np.full((len(v), 4), 200, dtype=np.uint8)
+            col[:, 3] = 255
+            for mat in model.materials:
+                tex = _diffuse_of(mat)
+                if tex not in self.textures:
+                    continue
+                if tex not in rgb_of:
+                    img = dds_to_rgb(self.textures[tex]).reshape(-1, 3)
+                    rgb_of[tex] = tuple(int(c) for c in img.mean(axis=0))
+                sel = f[[q.material == mat.index for q in model.polygons]]
+                col[sel.ravel(), :3] = rgb_of[tex]
+            parts[fname] = (v, n, f, col)
+        verts, norms, faces, cols = [], [], [], []
+        base = 0
+        for fname, p in self.placed:
+            v, n, f, col = parts[fname]
+            c, s = np.cos(p.yaw), np.sin(p.yaw)
+            rot = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+            verts.append(v @ rot.T * p.scale + (p.x, p.y, p.z))
+            norms.append(n @ rot.T)
+            faces.append(f + base)
+            cols.append(col)
+            base += len(v)
+        return ("decor", np.vstack(verts), np.vstack(faces), np.vstack(cols), np.vstack(norms))
+
+
+def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
+              eq_path=None) -> Optional[DecorBuild]:
+    """Props for a built room-graph zone (dungeon, city, outdoor dungeon), or
+    ``None`` with Decor ``none``, a zone with no rooms, or no install (then
+    with a warning, Req 10.6). Contexts come from ``room_context.contexts``;
+    each room is placed on its own stream, so the geometry is the same
+    whatever the Props (Req 6.4). A Prop whose model can't be imported drops,
+    recorded as ``not importable``."""
+    from dataclasses import replace
+    from generators.decor.placement import Drop, check, place
+    from generators.decor.stock import NotImportable, eq_path_from_env
+    from generators.room_context import contexts
+
+    control = spec.decor or "none"
+    if control == "none" or not spec.rooms:
+        return None
+    eq = eq_path if eq_path is not None else eq_path_from_env()
+    if eq is None:
+        warnings.append(NO_INSTALL)
+        return None
+    rules, catalogue = _decor_data()
+    importer = _importer(eq)
+    seed = spec.decor_seed if spec.decor_seed is not None else int(spec.seed or 0)
+    out = DecorBuild(control, seed)
+    for ctx in contexts(spec, ter):
+        d = place(ctx, rules, catalogue, control, spec.decor_seed)
+        kept, files = [], []
+        for p in d.props:
+            try:
+                stock = importer.get(p.key)
+            except NotImportable as e:
+                d.drops.append(Drop(p.step, p.line, p.key, f"not importable: {e}"[:200], p.poi))
+                continue
+            out.models.setdefault(stock.model_file, stock.ter)
+            out.textures.update(stock.textures)
+            kept.append(p)
+            files.append(stock.model_file)
+        d = replace(d, props=kept)
+        problems = check(ctx, d)            # on the footprints placement reserved
+        d = replace(d, props=[_at_origin(p, out.models[f]) for p, f in zip(kept, files)])
+        out.placed.extend(zip(files, d.props))
+        out.rooms.append((ctx, d, problems))
+    # Keep the imported models for the next build, not the archives they came
+    # from (a few MB each; a long-lived Server would gather them all).
+    importer._files.clear()
+    importer._wlds.clear()
+    return out
 
 
 class ZoneBuilder:
@@ -438,10 +657,12 @@ class ZoneBuilder:
             sites = sites_for(self.spec, ter)
             veg = vegetation_for(self.spec, ter)
             warnings.extend(veg.warnings)
+        # Props in rooms (room-decor task 9): on top of the built TER too.
+        decor = decor_for(self.spec, ter, warnings)
 
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
-        zon = self._build_zon(ter_filename, veg, sites)
+        zon = self._build_zon(ter_filename, veg, sites, decor)
 
         # 3. Assemble archive. Store the terrain under its ter_ filename.
         eqg = EqgZone(name)
@@ -481,6 +702,12 @@ class ZoneBuilder:
                 eqg.add_model(fname, model.to_bytes())
             for fname, dds in sites.textures.items():
                 eqg.add_texture(fname, dds)
+        # Stock models in use and their textures, copied from the install (Req 10.5).
+        if decor is not None:
+            for fname in sorted(decor.models):
+                eqg.add_model(fname, decor.models[fname].to_bytes())
+            for fname in sorted(decor.textures):
+                eqg.add_texture(fname, decor.textures[fname])
 
         # 5. Pack .eqg (confinement-checked through the OutputRoot).
         eqg_path = out_dir / f"{name}.eqg"
@@ -504,6 +731,10 @@ class ZoneBuilder:
             }
             for r in self.spec.rooms
         ]
+        if decor is not None:
+            records = decor.room_records()
+            for entry in room_pacing:
+                entry.update(records.get(entry["id"], {}))
         gates = [
             {
                 "id": g.id,
@@ -530,7 +761,9 @@ class ZoneBuilder:
             wild_meta["sites"] = dict(sites.report)
         # The Texture_Manifest rides with every build (Req 5).
         side_meta = {**wild_meta,
-                     "textures": texture_manifest(ter, modes, veg, dds_by_name, sites)}
+                     "textures": texture_manifest(ter, modes, veg, dds_by_name, sites, decor)}
+        if decor is not None:
+            side_meta["decor"] = decor.summary()
         # The layout block (graph-layout Req 7.5): engine, rule set, rooms'
         # kinds and sizes, and the built graph's shape, classic or grown.
         layout_meta = layout_sidecar(self.spec)
@@ -550,7 +783,7 @@ class ZoneBuilder:
                                    zone_type=self.spec.zone_type,
                                    extra=side_meta,
                                    root=root,
-                                   extra_meshes=_extra_meshes(veg, sites),
+                                   extra_meshes=_extra_meshes(veg, sites, decor),
                                    textures={m.index: dds_by_name[m.name]
                                              for m in ter.materials
                                              if m.name in dds_by_name})
@@ -723,7 +956,7 @@ class ZoneBuilder:
         ter = box.build(self.spec, ter_name, ter_version)
         return ter, box.name, warnings
 
-    def _build_zon(self, ter_filename: str, veg=None, sites=None) -> ZonFile:
+    def _build_zon(self, ter_filename: str, veg=None, sites=None, decor=None) -> ZonFile:
         zon = ZonFile()
 
         # The terrain mesh is the ZON's first model (RoF2 convention):
@@ -762,6 +995,19 @@ class ZoneBuilder:
                     x=st.x, y=st.y, z=st.z, yaw=st.yaw, scale=1.0,
                 ))
 
+        # Props (room-decor Req 10.5): each stock model in use once after the
+        # Structures', one object per Prop at its scale.
+        if decor is not None and decor.placed:
+            prop_id = {}
+            for fname in sorted(decor.models):
+                prop_id[fname] = len(zon.models)
+                zon.models.append(fname)
+            for i, (fname, p) in enumerate(decor.placed):
+                zon.objects.append(ZonObject(
+                    name=f"decor_{i:04d}", model_id=prop_id[fname],
+                    x=p.x, y=p.y, z=p.z, yaw=p.yaw, scale=p.scale,
+                ))
+
         for light in self.spec.lights:
             zon.lights.append(ZonLight(
                 name=light.id,
@@ -769,6 +1015,9 @@ class ZoneBuilder:
                 r=light.r, g=light.g, b=light.b,
                 radius=light.radius,
             ))
+        # One more per light-bearing Prop; the room's own light stays (Req 9.1).
+        if decor is not None:
+            zon.lights.extend(decor.lights())
 
         for region in self.spec.regions:
             prefix = _REGION_PREFIX.get(region.kind, "APV")

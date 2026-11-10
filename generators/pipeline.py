@@ -372,6 +372,16 @@ def _remove_scratch(root: OutputRoot, output_dir: Path, zone_id: str,
 # The pipeline
 # ---------------------------------------------------------------------------
 
+def _with_decor(spec: ZoneSpec) -> ZoneSpec:
+    """The spec with its Decor control resolved: one nobody chose takes the
+    default (room-decor Req 10.1, ``generators.decor.rules.DEFAULT_CONTROL``).
+    ``ZoneBuilder`` alone treats an unset control as ``none``."""
+    if spec.decor is None:
+        from generators.decor.rules import DEFAULT_CONTROL
+        spec.decor = DEFAULT_CONTROL
+    return spec
+
+
 def generate_validated(
     spec_factory: SpecFactory,
     *,
@@ -454,7 +464,7 @@ def generate_validated(
         use_seed = seed if pinned else _fresh_seed(rng)
         scratch = _scratch_dir(output_dir, zone_id, 1)
         try:
-            spec = spec_factory(use_seed)
+            spec = _with_decor(spec_factory(use_seed))
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
             )
@@ -501,11 +511,11 @@ def generate_validated(
         use_seed = seed if pinned else _fresh_seed(rng)
         scratch = _scratch_dir(output_dir, zone_id, attempt)
         try:
-            spec = spec_factory(use_seed)
+            spec = _with_decor(spec_factory(use_seed))
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
             )
-            report = _traversal_report(result.eqg_path, spec, agent)
+            report =_traversal_report(result.eqg_path, spec, agent)
             fmt = check_eqg(result.eqg_path, spec,
                             sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
                             agent=agent)
