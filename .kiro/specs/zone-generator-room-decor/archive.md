@@ -79,7 +79,20 @@ From task 8 (placement, `2bc13ad`):
     ignores its animation track; such a model still enters builds only by review. Skeletal
     models stay out. The 15 banners are `use = "yes"` again.
 
+25. **Proposed tags are accepted by default; the user corrects by feedback** (user, 2026-11-10:
+    "instead of me reviewing all these, let's add them and then have support so i can remove as
+    needed in the future or give feedback"), amending decisions 4 and 5 after four reviewed
+    batches. Every `use = review` model enters builds; `tags.toml` lines (written by the user or
+    by the lead from what the user says) remove or correct. The user also flagged doorway gates,
+    parts used together, and ruined vs pristine versions. A probe of the 583 sheet models found
+    only 5 door-like names, no name marking a ruined version, and few models sharing an origin
+    (and those noisy), so: doors stay out by kind, `condition` is a new Tag set by feedback, and
+    parts are `use = no` by feedback (task 19).
+
 ## Follow-ups
+
+- **Doorway gates as doors** at room openings (with the EQEmu `doors` records, M6).
+- **Assemblies placed whole**: pieces stock always places together, as Groups copying stock's offsets.
 
 Carried in from earlier steps and relevant here:
 

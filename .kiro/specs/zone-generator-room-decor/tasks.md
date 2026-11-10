@@ -45,7 +45,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: scripts/prop_catalogue.py (`tag` and `sheet`), rules/decor/catalogue.json, rules/decor/tags.toml, generators/decor/__init__.py, generators/decor/catalogue.py, tests/test_prop_catalogue.py
   - Reqs: 3
 
-- [ ] 4. HUMAN: review the tags
+- [x] 4. HUMAN: review the tags
   - Card: [cards/04-tag-review.md](cards/04-tag-review.md)
   - Type: human · Depends: 3
 
@@ -75,7 +75,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 
 - [ ] 9. Decor in builds
   - Card: [cards/09-in-builds.md](cards/09-in-builds.md)
-  - Type: agent · Size: M · Depends: 4, 5, 6, 8
+  - Type: agent · Size: M · Depends: 4, 5, 6, 8, 19
   - Owns: generators/builder.py, generators/pipeline.py, generators/zone_spec.py, generators/outdoor_dungeon.py, tests/test_decor_builds.py, tests/test_texture_manifest.py (the `decor` texture mode)
   - Reqs: 6.4, 9, 10.3, 10.5, 10.6, 12.2, 12.3
 
@@ -125,3 +125,9 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Type: agent · Size: M · Depends: —
   - Owns: generators/room_context.py, generators/room_layouts.py (export what a context needs, no behaviour change), generators/sites/placement.py (a Site's context, no behaviour change), scripts/record_rooms.py, tests/fixtures/rooms/, tests/test_room_context.py
   - Reqs: 13.1–13.3
+
+- [ ] 19. Accept the proposed tags; condition and feedback
+  - Card: [cards/19-accept-tags.md](cards/19-accept-tags.md)
+  - Type: agent · Size: M · Depends: 4
+  - Owns: generators/decor/catalogue.py, generators/decor/placement.py (the condition rule only), scripts/prop_catalogue.py, rules/decor/catalogue.json, rules/decor/tags.toml, tests/test_prop_catalogue.py, tests/test_decor_placement.py
+  - Reqs: 3, 5
