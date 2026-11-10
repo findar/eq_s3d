@@ -77,6 +77,9 @@ RECORDINGS: List[Dict] = [
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "gnoll"}},
     {"name": "wilderness_centaur", "seed": 120,
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "centaur"}},
+    # Farmsteads are human only; seed 127 gives two, with a hut, a shrine and a ruin (task 11).
+    {"name": "wilderness_farmstead", "seed": 127,
+     "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "human"}},
 ]
 DEFAULTS = {"room_count": 8, "size": "small"}
 
@@ -126,13 +129,16 @@ def coverage(rooms: Sequence[RoomContext]) -> Dict[str, set]:
 
 
 def missing(rooms: Sequence[RoomContext]) -> Dict[str, List[str]]:
-    """Every room type, wall style and race the contexts lack ("" is the default race)."""
+    """Every room type, wall style, race and Site kind the contexts lack ("" is the default
+    race)."""
     from ai.schema import VALID_DUNGEON_RACES
     from generators.semantics import ROOM_TYPES
+    from generators.sites.rules import load_sites
     from generators.wall_styles import load_styles
 
     have = coverage(rooms)
-    want = {"room_type": set(ROOM_TYPES), "style": set(load_styles()), "race": set(VALID_DUNGEON_RACES) | {""}}
+    want = {"room_type": set(ROOM_TYPES), "style": set(load_styles()), "race": set(VALID_DUNGEON_RACES) | {""},
+            "site": set(load_sites().kinds)}
     return {k: sorted(want[k] - have[k]) for k in want if want[k] - have[k]}
 
 
