@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import {
-  generateZone, fetchSidecar, fetchVersion, fetchZoneTypes,
+  generateZone, fetchControls, fetchSidecar, fetchVersion, fetchZoneTypes,
   type GenerateParams, type GenerateResult, type ZoneSidecar,
 } from "./api";
 import { ZoneScene } from "./scene";
@@ -25,11 +25,16 @@ const genCtrlBtn = $("generate-controls") as HTMLButtonElement;
 const hintOverlay = $("hint-overlay");
 const seedInput = $("seed") as HTMLInputElement;
 const reproduceBtn = $("reproduce") as HTMLButtonElement;
+const rerollDecorBtn = $("reroll-decor") as HTMLButtonElement;
 
 // Latest generated map URL, shown by the Map modal.
 let currentMapUrl: string | null = null;
 // Seed of the last successful generation, for the "reproduce" affordance.
 let lastSeed: number | null = null;
+// The request and result of the last successful generation, for "Reroll
+// decor": the same request with its seed pinned and a fresh decor seed.
+let lastParams: GenerateParams | null = null;
+let lastResult: GenerateResult | null = null;
 
 // ---- Scene + controls ----
 const zoneScene = new ZoneScene(canvas);
@@ -173,6 +178,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
       rows.push(["Sites", p.sites]);
       rows.push(["Inhabitants", p.inhabitant || "biome's mix"]);
     }
+    if (usesControl(p.zone_type, "decor") && p.decor) rows.push(["Decor", p.decor]);
     if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
     if (p.mood) rows.push(["Mood", p.mood]);
     for (const [k, v] of rows) {
@@ -194,6 +200,8 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   $("m-wx").textContent = wx;
   $("m-wy").textContent = wy;
   $("m-wz").textContent = wz;
+
+  updatePropsPanel(result, sidecar);
 
   // Pacing: role counts + max depth
   const pacing = $("m-pacing");
@@ -273,6 +281,61 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   }
 }
 
+// Props: the sidecar's decor block (control, decor seed, counts) and the
+// placed Props by Category and by kind, read from the build. A zone type
+// without rooms (wilderness) has none; a room-graph build without the
+// install on the server has none either, with a warning.
+function addRow(parent: HTMLElement, k: string, v: string, title = ""): void {
+  const div = document.createElement("div");
+  div.className = "row";
+  const a = document.createElement("span");
+  a.textContent = k;
+  const b = document.createElement("span");
+  b.textContent = v;
+  if (title) div.title = title;
+  div.append(a, b);
+  parent.appendChild(div);
+}
+
+function updatePropsPanel(result: GenerateResult, sidecar: ZoneSidecar): void {
+  const decorEl = $("m-decor");
+  const list = $("m-props");
+  list.innerHTML = "";
+  const rooms = usesControl(result.zone_type, "decor");
+  rerollDecorBtn.disabled = !rooms;
+  const d = sidecar.decor;
+  if (!d) {
+    decorEl.textContent = rooms ? "none" : "—";
+    list.innerHTML = `<span style="color:#555;font-size:11px">${rooms ? "no Props" : "no rooms"}</span>`;
+    return;
+  }
+  decorEl.textContent = `${d.control} · seed ${d.seed}`;
+  addRow(list, "Props", String(d.props));
+  addRow(list, "Lights", String(d.lights));
+  addRow(list, "Models", String(d.models));
+  addRow(list, "Bare rooms", `${d.bare} / ${d.rooms}`);
+  addRow(list, "Dropped", String(d.drops), "Recipe lines that found no model or no spot");
+  if (d.check.length) addRow(list, "Check", String(d.check.length), d.check.join("\n"));
+  const byCat: Record<string, number> = {};
+  const byKind: Record<string, number> = {};
+  for (const r of sidecar.rooms ?? []) {
+    for (const p of r.props ?? []) {
+      byCat[p.category] = (byCat[p.category] || 0) + 1;
+      byKind[p.kind] = (byKind[p.kind] || 0) + 1;
+    }
+  }
+  const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
+  if (cats.length) {
+    const note = document.createElement("div");
+    note.style.cssText = "font-size:10px;color:#8aa;margin-top:4px;line-height:1.4";
+    const kinds = Object.entries(byKind).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    note.textContent =
+      cats.map(([c, n]) => `${c} ${n}`).join(" · ") + " — " +
+      kinds.map(([k, n]) => `${k} ${n}`).join(", ");
+    list.appendChild(note);
+  }
+}
+
 // ---- Generate ----
 // The seed box feeds both modes. Blank or non-numeric → omit (the server picks
 // a fresh random seed, the default "identical inputs still vary" behaviour). A
@@ -305,6 +368,9 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   layout: ["dungeon", "outdoor_dungeon"],
   "dungeon-theme": ["dungeon", "city", "outdoor_dungeon"],
   "dungeon-race": ["dungeon", "city", "outdoor_dungeon"],
+  // Replaced by /api/controls' decor.zone_types on load (refreshControls).
+  decor: ["dungeon", "city", "outdoor_dungeon"],
+  "decor-seed": ["dungeon", "city", "outdoor_dungeon"],
 };
 
 function usesControl(zoneType: string, control: string): boolean {
@@ -400,6 +466,11 @@ async function doGenerate(mode: Mode) {
       ? ($("dungeon-theme") as HTMLSelectElement).value : undefined;
     const dungeonRace = usesControl(zoneType, "dungeon-race")
       ? ($("dungeon-race") as HTMLSelectElement).value : undefined;
+    // Decor and its seed: room-graph types only. An empty list (no
+    // /api/controls) or a blank seed is left out: the server's defaults.
+    const decor = usesControl(zoneType, "decor")
+      ? ($("decor") as HTMLSelectElement).value || undefined : undefined;
+    const decorSeed = usesControl(zoneType, "decor-seed") ? readDecorSeed() : undefined;
     params = {
       mode,
       controls: {
@@ -413,6 +484,8 @@ async function doGenerate(mode: Mode) {
         ...scales,
         ...(dungeonTheme !== undefined ? { dungeon_theme: dungeonTheme } : {}),
         ...(dungeonRace !== undefined ? { dungeon_race: dungeonRace } : {}),
+        ...(decor !== undefined ? { decor } : {}),
+        ...(decorSeed !== undefined ? { decor_seed: decorSeed } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
     };
@@ -427,12 +500,19 @@ async function doGenerate(mode: Mode) {
       (ruleSet !== undefined ? ` rule_set=${ruleSet || "(theme)"}` : "") +
       Object.entries(scales).map(([id, v]) => ` ${id}=${v || "(rules)"}`).join("") +
       (dungeonTheme !== undefined ? ` theme=${dungeonTheme || "(none)"}` : "") +
-      (dungeonRace !== undefined ? ` race=${dungeonRace || "(none)"}` : "") + seedNote,
+      (dungeonRace !== undefined ? ` race=${dungeonRace || "(none)"}` : "") +
+      (decor !== undefined ? ` decor=${decor}` : "") +
+      (decorSeed !== undefined ? ` decor_seed=${decorSeed}` : "") + seedNote,
     );
   }
+  await runGenerate(params);
+}
 
+// Send one generate request and show what it built.
+async function runGenerate(params: GenerateParams): Promise<void> {
   genDescBtn.disabled = true;
   genCtrlBtn.disabled = true;
+  rerollDecorBtn.disabled = true;
   statusEl.textContent = "generating…";
 
   // Cheap re-check so a stale-server warning shows exactly when it matters.
@@ -447,6 +527,8 @@ async function doGenerate(mode: Mode) {
     mapDownload.download = `${result.id}.map.svg`;
     if (!mapModal.classList.contains("hidden")) openMap();
     lastSeed = result.seed;
+    lastParams = params;
+    lastResult = result;
     reproduceBtn.disabled = false;
     statusEl.textContent = "loading…";
 
@@ -484,7 +566,62 @@ async function doGenerate(mode: Mode) {
   } finally {
     genDescBtn.disabled = false;
     genCtrlBtn.disabled = false;
+    rerollDecorBtn.disabled = !(lastResult && usesControl(lastResult.zone_type, "decor"));
   }
+}
+
+// The decor seed box: blank or non-numeric -> undefined (the zone's seed).
+function readDecorSeed(): number | undefined {
+  const raw = ($("decor-seed") as HTMLInputElement).value.trim();
+  if (raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.min(2147483647, Math.abs(Math.trunc(n))) : undefined;
+}
+
+// Reroll decor: the last request again, its zone seed pinned to what it built
+// and a fresh decor seed, so only the Props change (room-decor Req 10.2).
+// A controls.decor_seed would win over the top-level one, so it is dropped.
+rerollDecorBtn.addEventListener("click", () => {
+  if (!lastParams || !lastResult) return;
+  const decorSeed = Math.floor(Math.random() * 2147483648);
+  const controls = lastParams.controls ? { ...lastParams.controls } : undefined;
+  if (controls) delete controls.decor_seed;
+  const params: GenerateParams = {
+    ...lastParams,
+    ...(controls ? { controls } : {}),
+    seed: lastResult.seed,
+    decor_seed: decorSeed,
+  };
+  console.log(`[input] reroll decor: seed=${lastResult.seed} decor_seed=${decorSeed}`);
+  runGenerate(params);
+});
+
+// Fill the Decor list from the server (/api/controls), keeping the user's
+// choice when it survives, else the server's default; the zone types it
+// applies to come from there too.
+async function refreshControls(): Promise<void> {
+  try {
+    const listing = await fetchControls();
+    const decor = listing.decor;
+    if (!decor?.values?.length) return;
+    const sel = $("decor") as HTMLSelectElement;
+    const prev = sel.value;
+    sel.innerHTML = "";
+    for (const v of decor.values) {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v.charAt(0).toUpperCase() + v.slice(1);
+      sel.appendChild(opt);
+    }
+    sel.value = decor.values.includes(prev) ? prev : decor.default;
+    if (decor.zone_types?.length) {
+      CONTROL_ZONE_TYPES.decor = decor.zone_types;
+      CONTROL_ZONE_TYPES["decor-seed"] = decor.zone_types;
+    }
+  } catch (err) {
+    console.warn("[controls]", err);    // empty list: the server's default
+  }
+  syncControlVisibility();
 }
 
 // Populate the zone-type dropdown from the server's single source of truth.
@@ -554,7 +691,8 @@ $("reset-view").addEventListener("click", () => {
 
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
-                  "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race"]) {
+                  "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
+                  "decor", "decor-seed"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });
@@ -644,4 +782,4 @@ animate();
 
 // Populate zone types, then generate one on load (controls mode) so the
 // viewport isn't empty.
-refreshZoneTypes().finally(() => doGenerate("controls"));
+Promise.all([refreshZoneTypes(), refreshControls()]).finally(() => doGenerate("controls"));

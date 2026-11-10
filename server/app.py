@@ -47,6 +47,7 @@ from ai.schema import (
     LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
     SCALE_CONTROLS, VALID_FEATURES, ZonePlan, available_overlays, available_rule_sets, available_wall_styles,
     scale_control, VALID_SITES, available_inhabitants,
+    DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR, decor_seed,
 )
 
 # ---------------------------------------------------------------------------
@@ -291,7 +292,7 @@ async def _validation_to_400(request: Request, exc: RequestValidationError):
         field = str(loc[-1]) if loc else "body"
         # The StrictInt fields (seed, rooms) read most clearly as "must be an
         # integer"; everything else keeps the validator's own message.
-        if field in ("seed", "rooms", "room_count", "locks"):
+        if field in ("seed", "decor_seed", "rooms", "room_count", "locks"):
             detail = f"{field} must be an integer"
         else:
             detail = f"{field}: {err.get('msg', 'invalid value')}"
@@ -409,6 +410,41 @@ def _require_sites(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]
         c[key] = value
         given = "controls"
     return given
+
+
+def _require_decor(c: dict[str, Any], zone_type: Optional[str],
+                   top_seed: Optional[int] = None) -> None:
+    """Validate ``controls.decor`` / ``controls.decor_seed`` (room-decor
+    Req 10.1, 10.2) in place, before any build or write.
+
+    Absent, ``null`` or ``decor: ""`` -> the default (normal; the zone's seed
+    salts the Props). The request's top-level ``decor_seed`` (what "Reroll
+    decor" sends, in either mode) fills a ``controls.decor_seed`` that isn't
+    given. A value outside ``VALID_DECOR`` or a seed outside 0..2^31-1 is a 400
+    naming the field; either on a zone type without rooms (wilderness) is a
+    400, as ``sites`` is on a type without a landscape.
+    """
+    if c.get("decor_seed") is None and top_seed is not None:
+        c["decor_seed"] = top_seed
+    for key in ("decor", "decor_seed"):
+        if key in c and c[key] is None:
+            c.pop(key)
+    if "decor" in c:
+        raw = c["decor"]
+        value = raw.strip().lower() if isinstance(raw, str) else None
+        if value is None or (value and value not in VALID_DECOR):
+            raise HTTPException(400, f"decor must be one of {', '.join(VALID_DECOR)} "
+                                     f"(or \"\" for the default, {DEFAULT_DECOR})")
+        c["decor"] = value
+    if "decor_seed" in c:
+        try:
+            c["decor_seed"] = decor_seed(c["decor_seed"])
+        except ValueError:
+            raise HTTPException(400, f"decor_seed must be an integer between {SEED_MIN} and {SEED_MAX}")
+    if zone_type not in DECOR_ZONE_TYPES:
+        for key in ("decor", "decor_seed"):
+            if c.get(key) not in (None, ""):
+                raise HTTPException(400, f"{key} only applies to zone_type dungeon, city or outdoor_dungeon")
 
 
 def _require_layout(c: dict[str, Any], zone_type: Optional[str]) -> None:
@@ -559,12 +595,17 @@ class GenerateRequest(BaseModel):
                     "structure and clutter (0-10, or \"\" for the rules alone) and overlay; dungeon and "
                     "outdoor_dungeon only), dungeon_theme and dungeon_race "
                     "(\"\" for none; dungeon, city and outdoor_dungeon "
-                    "only), …",
+                    "only), decor (none/sparse/normal/dense, \"\" for normal) and "
+                    "decor_seed (dungeon, city and outdoor_dungeon only), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.
     seed: Optional[StrictInt] = Field(
         default=None, description="Pin a seed (omit for random)")
+    # Rerolls the Props alone (room-decor Req 10.2), in either mode: "Reroll
+    # decor" resends the last request with ``seed`` pinned and a fresh one.
+    decor_seed: Optional[StrictInt] = Field(
+        default=None, description="Decor seed: reroll the Props alone (omit for the zone's seed)")
 
     # Legacy flat fields (mode absent -> inferred), kept for back-compat with
     # pre-mode clients. ``zone_type`` is preferred over the legacy ``theme``;
@@ -665,6 +706,17 @@ def list_themes():
     return _zone_type_listing()
 
 
+@app.get("/api/controls")
+def list_controls():
+    """The values the page's control lists offer, from the code that checks
+    them, so the page hard-codes none (room-decor Req 10.1). Each entry:
+    ``values`` in order, the ``default`` and the ``zone_types`` it applies to."""
+    return {
+        "decor": {"values": list(VALID_DECOR), "default": DEFAULT_DECOR,
+                  "zone_types": list(DECOR_ZONE_TYPES)},
+    }
+
+
 def _resolve_mode(req: GenerateRequest) -> str:
     """Resolve the request's mode BEFORE any build or write (Req 1.1, 1.3).
 
@@ -696,6 +748,9 @@ def generate(req: GenerateRequest):
     if req.seed is not None and not (SEED_MIN <= req.seed <= SEED_MAX):
         raise HTTPException(
             400, f"seed must be between {SEED_MIN} and {SEED_MAX}")
+    if req.decor_seed is not None and not (SEED_MIN <= req.decor_seed <= SEED_MAX):
+        raise HTTPException(
+            400, f"decor_seed must be between {SEED_MIN} and {SEED_MAX}")
 
     plan_dict = None
     planner_name = None
@@ -738,6 +793,10 @@ def generate(req: GenerateRequest):
             # member of the Enabled set.
             plan.zone_type = canonical_zone_type(plan.zone_type)
 
+        # A decor seed rerolls the Props of whatever the prompt planned (a
+        # wilderness has none, so it changes nothing there).
+        if req.decor_seed is not None:
+            plan.decor_seed = req.decor_seed
         plan_dict = plan.to_dict()
         zone_type = plan.zone_type
         rooms = plan.room_count
@@ -787,6 +846,7 @@ def generate(req: GenerateRequest):
         sites_source = _require_sites(c, canonical_zone_type(raw_zone_type))
         _require_layout(c, canonical_zone_type(raw_zone_type))
         _require_content(c, canonical_zone_type(raw_zone_type))
+        _require_decor(c, canonical_zone_type(raw_zone_type), req.decor_seed)
 
         # Proven equal to the legacy LayoutGenerator path by the 17.4 golden test.
         # ``validate()`` raises ValueError on a value it refuses (an unknown

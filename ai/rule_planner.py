@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from typing import List
 
-from .schema import DEFAULT_SITES, SITES_ZONE_TYPES, ZonePlan
+from .schema import DECOR_ZONE_TYPES, DEFAULT_SITES, SITES_ZONE_TYPES, ZonePlan
 
 
 # Keyword → zone_type. Cave-like words fold into the dungeon bucket: the cave
@@ -141,6 +141,20 @@ _INHABITANT_WORDS = {
               "farmers", "farmer", "homestead", "homesteads", "settlers"],
 }
 
+# Decor (room-decor step 11; dungeon, city, outdoor dungeon): how much stands
+# in the rooms. Whole words or phrases, in this order, so "unfurnished" and
+# "sparsely furnished" never read as furnished. No word leaves it unchosen
+# (the default, normal).
+_DECOR_WORDS = {
+    "none": ["no props", "no decor", "no furniture", "unfurnished", "empty rooms",
+             "stripped bare", "nothing in the rooms"],
+    "sparse": ["bare", "bare rooms", "sparsely furnished", "sparse rooms", "spartan",
+               "austere", "barren", "few props", "little furniture"],
+    "dense": ["cluttered", "furnished", "well furnished", "richly furnished",
+              "lavish", "lavishly", "crowded", "full of stuff", "lots of props",
+              "lots of furniture"],
+}
+
 # size → base room count and footprint multiplier
 _SIZE_ROOMS = {"small": 3, "medium": 5, "large": 8, "huge": 14}
 
@@ -173,6 +187,8 @@ class RulePlanner:
         landscape = zone_type in SITES_ZONE_TYPES
         sites = _match_words(text, _SITES_WORDS, DEFAULT_SITES) if landscape else DEFAULT_SITES
         inhabitant = _match_words(text, _INHABITANT_WORDS, "") if landscape else ""
+        # Decor (only meaningful for the room-graph zone types).
+        decor = _match_words(text, _DECOR_WORDS, "") if zone_type in DECOR_ZONE_TYPES else ""
 
         return ZonePlan(
             name=name,
@@ -188,6 +204,7 @@ class RulePlanner:
             elemental_tint=elemental_tint,
             sites=sites,
             inhabitant=inhabitant,
+            decor=decor,
             mood=mood,
             prompt=prompt or "",
         ).validate()

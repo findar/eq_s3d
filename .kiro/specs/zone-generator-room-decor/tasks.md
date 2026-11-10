@@ -79,7 +79,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: generators/builder.py, generators/pipeline.py, generators/zone_spec.py, generators/outdoor_dungeon.py, tests/test_decor_builds.py, tests/test_texture_manifest.py (the `decor` texture mode), generators/decor/placement.py, tests/test_decor_placement.py (walkable floor matches the gate), generators/room_context.py (speed only: `contexts`)
   - Reqs: 6.4, 9, 10.3, 10.5, 10.6, 12.2, 12.3
 
-- [ ] 10. Decor controls, decor seed, sidecar and maps
+- [x] 10. Decor controls, decor seed, sidecar and maps
   - Card: [cards/10-controls-maps.md](cards/10-controls-maps.md)
   - Type: agent · Size: M · Depends: 9
   - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, main.py, server/app.py, web/src/, web/index.html, generators/eqmap.py, generators/mapview.py, tests/test_decor_controls.py, tests/test_hygiene.py (its control-name guard and allow-lists), generators/pipeline.py (`_write_map_artifacts` passes the built Props)

@@ -21,6 +21,7 @@ from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, SCALE_CONTROLS, VALID_FEATURES, VALID_LAYOUTS, ZonePlan, available_overlays,
     available_rule_sets, available_wall_styles, VALID_SITES, available_inhabitants,
+    DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR,
 )
 from core.env import env_value
 from core.paths import (
@@ -112,6 +113,7 @@ def _int_in_range(name: str, lo: int, hi: int):
 _rooms_arg = _int_in_range("--rooms", 1, 30)
 _locks_arg = _int_in_range("--locks", 0, 5)
 _seed_arg = _int_in_range("--seed", 0, 2_147_483_647)
+_decor_seed_arg = _int_in_range("--decor-seed", 0, 2_147_483_647)
 
 
 def _edges_arg(value: str) -> dict:
@@ -174,7 +176,8 @@ def cmd_generate(args) -> None:
     # The layout engine (graph-layout Req 7.1): only named when given; a run
     # without ``--layout`` takes the plan default (graph on a dungeon /
     # outdoor dungeon since task 21; ``--layout classic`` for TinyKeep).
-    for key in ("layout", "rule_set", "walls", "features", "finish", "structure", "clutter", "overlay"):
+    for key in ("layout", "rule_set", "walls", "features", "finish", "structure", "clutter", "overlay",
+                "decor", "decor_seed"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
     # Sites (wilderness / outdoor dungeon): only named when given, so the
@@ -325,6 +328,11 @@ def main(argv: list[str] | None = None) -> None:
                        help=f"Graph layout: lean each room's {name} this way; default: the rules alone")
     g.add_argument("--overlay", dest="overlay", choices=available_overlays(), default=None,
                    help="Graph layout: what's happened to the place since, on top of its race and theme")
+    g.add_argument("--decor", dest="decor", choices=VALID_DECOR, default=None,
+                   help="Dungeon, city or outdoor dungeon: how many Props (furniture, lights, "
+                        f"clutter) stand in the rooms (default {DEFAULT_DECOR}; needs EQ_PATH)")
+    g.add_argument("--decor-seed", dest="decor_seed", type=_decor_seed_arg, default=None,
+                   help="Reroll the Props alone (0-2147483647); default: the zone's seed")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -347,6 +355,11 @@ def main(argv: list[str] | None = None) -> None:
                 and canonical_zone_type(args.zone_type) not in LANDSCAPE_ZONE_TYPES):
             parser.error(f"--{opt} only applies to --zone-type wilderness or "
                          "outdoor_dungeon")
+    for opt in ("decor", "decor_seed"):
+        if (getattr(args, opt, None) is not None
+                and canonical_zone_type(args.zone_type) not in DECOR_ZONE_TYPES):
+            parser.error(f"--{opt.replace('_', '-')} only applies to --zone-type "
+                         "dungeon, city or outdoor_dungeon")
     # As --edges / --trees: a graph layout or a rule set on a zone type that
     # doesn't take them is a usage error (the default classic is a no-op).
     if canonical_zone_type(args.zone_type) not in LAYOUT_ZONE_TYPES:
