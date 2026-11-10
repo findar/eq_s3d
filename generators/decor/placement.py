@@ -241,6 +241,32 @@ def _in_polygon(gx, gy, plan) -> np.ndarray:
     return inside
 
 
+def _near_rise(ctx: RoomContext, ok: np.ndarray) -> np.ndarray:
+    """Cells within the player's half-width of something he can't walk into, as the
+    gate's walls cover floor (``analyzer.footprints.cover_samples``): a wall (no floor; a
+    Site's ground has no walls, so not there), a solid Feature (floor not reached), or
+    floor more than ``STEP_UP`` above the cell. With cells ``CELL`` (2 u) across, any of
+    those in the 8 cells round a cell lies within 1.5 u of its middle, or near it."""
+    floor = ctx.floor
+    nx, ny = floor.shape
+    reach = max(1, int(math.ceil((PLAYER_HALF_WIDTH - ctx.cell / 2) / ctx.cell + 0.5)))
+    wall = np.isnan(floor) if ctx.source != "site" else np.zeros(floor.shape, bool)
+    solid = ~np.isnan(floor) & ~ok
+    pad = reach
+    edge = np.pad(wall | solid, pad, constant_values=ctx.source != "site")
+    hi = np.pad(np.where(np.isnan(floor), -np.inf, floor), pad, constant_values=-np.inf)
+    out = np.zeros(floor.shape, bool)
+    base = np.where(np.isnan(floor), np.inf, floor)
+    for di in range(-reach, reach + 1):
+        for dj in range(-reach, reach + 1):
+            if di == 0 and dj == 0:
+                continue
+            e = edge[pad + di:pad + di + nx, pad + dj:pad + dj + ny]
+            h = hi[pad + di:pad + di + nx, pad + dj:pad + dj + ny]
+            out |= e | (h > base + STEP_UP)
+    return out
+
+
 class Room:
     """One context's grid, masks and walls, and what's been placed on them so far."""
 
@@ -254,6 +280,15 @@ class Room:
         self.gx, self.gy = np.meshgrid(self.xs, self.ys, indexing="ij")
         self.floor = ctx.floor
         self.ok = ctx.reached & ~np.isnan(ctx.floor)
+        #: Where a player's middle can be: reached floor at least the player's half-width
+        #: from a wall and from the foot of a rise he can't step (a dais's side, a solid
+        #: Feature), as the gate reads it. Props stand on ``ok``; the room's connectivity
+        #: (``problems``, ``check``) is judged on ``walk``.
+        self.walk = self.ok & ~_near_rise(ctx, self.ok)
+        #: How far a blocking Prop's plan is grown to take the floor it shuts: the player's
+        #: half-width, and half a cell more, since the gate samples floor on its own 2 u grid,
+        #: not this one, and a gap open on one can be shut on the other.
+        self.grow = PLAYER_HALF_WIDTH + self.cell / 2
         self.ceiling = ctx.ceiling
         door_cells = np.zeros(self.shape, bool)
         throats = np.zeros(self.shape, bool)
@@ -294,39 +329,39 @@ class Room:
     def _graph(self) -> None:
         nx, ny = self.shape
         idx = np.arange(nx * ny).reshape(nx, ny)
-        f = np.where(self.ok, self.floor, np.nan)
+        f = np.where(self.walk, self.floor, np.nan)
         a, b = [], []
         with np.errstate(invalid="ignore"):
-            right = self.ok[:-1, :] & self.ok[1:, :] & (np.abs(f[:-1, :] - f[1:, :]) <= STEP_UP)
-            up = self.ok[:, :-1] & self.ok[:, 1:] & (np.abs(f[:, :-1] - f[:, 1:]) <= STEP_UP)
+            right = self.walk[:-1, :] & self.walk[1:, :] & (np.abs(f[:-1, :] - f[1:, :]) <= STEP_UP)
+            up = self.walk[:, :-1] & self.walk[:, 1:] & (np.abs(f[:, :-1] - f[:, 1:]) <= STEP_UP)
         a.append(idx[:-1, :][right]); b.append(idx[1:, :][right])
         a.append(idx[:, :-1][up]); b.append(idx[:, 1:][up])
         self._ea = np.concatenate(a)
         self._eb = np.concatenate(b)
 
     def _starts(self, door_cells: np.ndarray) -> np.ndarray:
-        s = door_cells & self.ok
+        s = door_cells & self.walk
         if s.any():
             return s
         for c in self.ctx.clear:            # a Site: reached from its approach's far end
             if c.get("what") == "approach":
-                pts = np.argwhere(self.ok)
+                pts = np.argwhere(self.walk)
                 if len(pts):
                     d = np.hypot(self.xs[pts[:, 0]] - c["x1"], self.ys[pts[:, 1]] - c["y1"])
                     out = np.zeros(self.shape, bool)
                     out[tuple(pts[int(d.argmin())])] = True
                     return out
-        if not self.ok.any():
-            return self.ok.copy()
+        if not self.walk.any():
+            return self.walk.copy()
         # No door and no approach: the largest reached piece.
         n, lab = self._components(np.zeros(self.shape, bool))
         lab = lab.reshape(self.shape)
-        counts = np.bincount(lab[self.ok])
-        return self.ok & (lab == int(counts.argmax()))
+        counts = np.bincount(lab[self.walk])
+        return self.walk & (lab == int(counts.argmax()))
 
     def _components(self, blocked: np.ndarray):
         nx, ny = self.shape
-        free = (self.ok & ~blocked).ravel()
+        free = (self.walk & ~blocked).ravel()
         keep = free[self._ea] & free[self._eb]
         m = csr_matrix((np.ones(int(keep.sum()), np.int8), (self._ea[keep], self._eb[keep])),
                        shape=(nx * ny, nx * ny))
@@ -336,7 +371,7 @@ class Room:
         """Reached floor not blocked and joined to a door (or a Site's approach)."""
         _n, lab = self._components(blocked)
         lab = lab.reshape(self.shape)
-        free = self.ok & ~blocked
+        free = self.walk & ~blocked
         good = np.unique(lab[self.starts & free])
         return free & np.isin(lab, good)
 
@@ -557,7 +592,7 @@ class _Placer:
 
     def _floor_ok(self, model: Model, sz: Size, x, y, yaw, allow: Optional[np.ndarray] = None,
                   dressing: bool = False):
-        """(cells, z, blocked mask) if the model can stand here, else None. ``allow``: Feature
+        """(cells, z, blocked mask, blocks) if the model can stand here, else None. ``allow``: Feature
         cells it may stand on (a dais); ``dressing``: it may stand in a Throat."""
         r = self.room
         cells = r.rect_cells(x, y, yaw, sz.w, sz.d, 0.25)
@@ -580,15 +615,21 @@ class _Placer:
             ce = ce[~np.isnan(ce)]
             if len(ce) and float(ce.min()) < z + sz.h + 0.5:
                 return None
-        grown = r.rect_cells(x, y, yaw, sz.w, sz.d, PLAYER_HALF_WIDTH, clip=True)
+        grown = r.rect_cells(x, y, yaw, sz.w, sz.d, r.grow, clip=True)
         if r.poi_spot[grown].any():
             return None
+        # It's in the way where its top stands more than a step over the floor round it
+        # (the gate's band, read from the floor the player stands on, not the Prop's).
+        ground = r.floor[grown]
+        ground = ground[~np.isnan(ground)]
+        low = float(ground.min()) if len(ground) else z
+        blocks = _blocking(model) and z + sz.h > low + STEP_UP
         blocked = r.blocked
-        if _blocking(model) and sz.h > STEP_UP:
+        if blocks:
             blocked = r.blocked | r.mask_of(grown)
             if r.problems(blocked):
                 return None
-        return cells, z, blocked
+        return cells, z, blocked, blocks
 
     def _put_floor(self, model, sz, spots, step, line, at, allow=None, poi=None, group=None,
                    mount="floor") -> Optional[Prop]:
@@ -596,11 +637,10 @@ class _Placer:
             got = self._floor_ok(model, sz, x, y, yaw, allow, step == "dressing")
             if got is None:
                 continue
-            cells, z, blocked = got
+            cells, z, blocked, blocks = got
             self.room.occupied[cells] = True
             self.room.blocked = blocked
-            return self._prop(model, sz, x, y, z, yaw, mount,
-                              _blocking(model) and sz.h > STEP_UP, step, line, at, poi, group)
+            return self._prop(model, sz, x, y, z, yaw, mount, blocks, step, line, at, poi, group)
         return None
 
     # -- spots ---------------------------------------------------------------------
@@ -703,7 +743,7 @@ class _Placer:
             blocks = _blocking(model) and z - sz.below < f.floor + HEAD_HEIGHT and z + sz.h > f.floor + STEP_UP
             blocked = r.blocked
             if blocks:
-                grown = r.rect_cells(x, y, yaw, sz.w, sz.d, PLAYER_HALF_WIDTH, clip=True)
+                grown = r.rect_cells(x, y, yaw, sz.w, sz.d, r.grow, clip=True)
                 if grown is None or r.poi_spot[grown].any():
                     continue
                 blocked = r.blocked | r.mask_of(grown)
@@ -1020,7 +1060,7 @@ def check(context: RoomContext, decorated: Decorated) -> List[str]:
     for p in decorated.props:
         if not p.blocks:
             continue
-        cells = room.rect_cells(p.x, p.y, p.yaw, p.w, p.d, PLAYER_HALF_WIDTH, clip=True)
+        cells = room.rect_cells(p.x, p.y, p.yaw, p.w, p.d, room.grow, clip=True)
         if cells is None:
             return [f"{p.key} at ({p.x:.0f}, {p.y:.0f}) stands outside the room"]
         blocked[cells] = True
