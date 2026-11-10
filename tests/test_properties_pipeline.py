@@ -1248,6 +1248,7 @@ def test_writes_confined(zone_type, seed, rooms, pinned, k):
 # ---------------------------------------------------------------------------
 
 import json as _json_m2  # noqa: E402
+from generators.eqmap import prop_marks  # noqa: E402
 
 from analyzer.traverse import load_ter_from_eqg  # noqa: E402
 from generators.eqmap import build_map_file, format_map_layer  # noqa: E402
@@ -1327,9 +1328,11 @@ def test_map_artifacts_only_for_accepted(zone_type, seed, rooms, k):
 
         ter, _ = load_ter_from_eqg(vb.result.eqg_path)
         outline = extract_outline(ter, vb.spec.safe_point)
+        side = _json_m2.loads((bd / f"{name}.zone.json").read_text())
+        props = prop_marks(vb.result.eqg_path, side) if side.get("decor") else None
         expected = {f"{name}.map.svg":
-                    render_map_svg(vb.spec, outline=outline).encode("utf-8")}
-        mf = build_map_file(outline, vb.spec, name)
+                    render_map_svg(vb.spec, outline=outline, props=props).encode("utf-8")}
+        mf = build_map_file(outline, vb.spec, name, props=props)
         for layer in mf.layers:
             expected[f"maps/{mf.filename(layer.index)}"] = \
                 format_map_layer(layer).encode("ascii")
