@@ -56,6 +56,6 @@
 "BARREL4" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
 "CBBARREL101" = { category = "container", kind = "barrel", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
 "PAWBARREL" = { category = "container", kind = "barrel", mount = "floor", set = "gnoll", era = "classic", collision = "solid", suits = ["city", "dungeon", "storeroom"], use = "yes" }
-"CBBARREL103" = { category = "container", kind = "barrel", mount = "raised", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
+"CBBARREL103" = { category = "container", kind = "barrel", mount = "raised", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "no", note = "skeletal-animated; the import refuses skeletal models (decision 13)" }
 "BARREL3" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
 "CBBARREL102" = { category = "container", kind = "barrel", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["dungeon", "outdoor", "storeroom"], use = "yes" }
