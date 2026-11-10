@@ -293,36 +293,56 @@ class _Mesh:
 
 def _sample(tris: np.ndarray, xs: np.ndarray, ys: np.ndarray, pick: str) -> np.ndarray:
     """Each grid cell's middle dropped onto ``tris``: the highest (``pick="max"``) or lowest
-    surface over it, NaN where none is."""
+    surface over it, NaN where none is. Every triangle against the cells under its plan box
+    at once, in batches; the same sums as one triangle at a time, so the same heights."""
     out = np.full((len(xs), len(ys)), np.nan)
-    if len(xs) == 0 or len(ys) == 0:
+    if len(xs) == 0 or len(ys) == 0 or len(tris) == 0:
         return out
     cell = xs[1] - xs[0] if len(xs) > 1 else (ys[1] - ys[0] if len(ys) > 1 else 1.0)
-    for t in tris:
-        (ax, ay, az), (bx, by, bz), (cx, cy, cz) = t
-        det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
-        if abs(det) < 1e-12:
-            continue
-        i0 = max(0, int(math.floor((min(ax, bx, cx) - xs[0]) / cell)))
-        i1 = min(len(xs) - 1, int(math.ceil((max(ax, bx, cx) - xs[0]) / cell)))
-        j0 = max(0, int(math.floor((min(ay, by, cy) - ys[0]) / cell)))
-        j1 = min(len(ys) - 1, int(math.ceil((max(ay, by, cy) - ys[0]) / cell)))
-        if i1 < i0 or j1 < j0:
-            continue
-        gx, gy = np.meshgrid(xs[i0:i1 + 1], ys[j0:j1 + 1], indexing="ij")
-        l1 = ((by - cy) * (gx - cx) + (cx - bx) * (gy - cy)) / det
-        l2 = ((cy - ay) * (gx - cx) + (ax - cx) * (gy - cy)) / det
+    t = np.asarray(tris, dtype=np.float64)
+    ax, ay, az = t[:, 0, 0], t[:, 0, 1], t[:, 0, 2]
+    bx, by, bz = t[:, 1, 0], t[:, 1, 1], t[:, 1, 2]
+    cx, cy, cz = t[:, 2, 0], t[:, 2, 1], t[:, 2, 2]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+        i0 = np.maximum(0, np.floor((np.minimum(np.minimum(ax, bx), cx) - xs[0]) / cell))
+        i1 = np.minimum(len(xs) - 1, np.ceil((np.maximum(np.maximum(ax, bx), cx) - xs[0]) / cell))
+        j0 = np.maximum(0, np.floor((np.minimum(np.minimum(ay, by), cy) - ys[0]) / cell))
+        j1 = np.minimum(len(ys) - 1, np.ceil((np.maximum(np.maximum(ay, by), cy) - ys[0]) / cell))
+    ok = (np.abs(det) >= 1e-12) & (i1 >= i0) & (j1 >= j0)
+    k = np.nonzero(ok)[0]
+    if not len(k):
+        return out
+    i0, i1, j0, j1 = (v[k].astype(np.int64) for v in (i0, i1, j0, j1))
+    ni, nj = i1 - i0 + 1, j1 - j0 + 1
+    counts = ni * nj
+    best = np.full(out.size, -np.inf if pick == "max" else np.inf)
+    reduce = np.maximum if pick == "max" else np.minimum
+    starts = np.concatenate([[0], np.cumsum(counts)])
+    lo = 0
+    while lo < len(k):
+        hi = int(np.searchsorted(starts, starts[lo] + 2_000_000, side="right")) - 1
+        hi = max(hi, lo + 1)
+        hi = min(hi, len(k))
+        c = counts[lo:hi]
+        row = np.repeat(np.arange(lo, hi), c)
+        off = np.arange(int(c.sum())) - np.repeat(starts[lo:hi] - starts[lo], c)
+        ii = i0[row] + off // nj[row]
+        jj = j0[row] + off % nj[row]
+        tk = k[row]
+        gx, gy = xs[ii], ys[jj]
+        a_x, a_y, b_x, b_y, c_x, c_y = ax[tk], ay[tk], bx[tk], by[tk], cx[tk], cy[tk]
+        d = det[tk]
+        l1 = ((b_y - c_y) * (gx - c_x) + (c_x - b_x) * (gy - c_y)) / d
+        l2 = ((c_y - a_y) * (gx - c_x) + (a_x - c_x) * (gy - c_y)) / d
         l3 = 1.0 - l1 - l2
         inside = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
-        if not inside.any():
-            continue
-        z = l1 * az + l2 * bz + l3 * cz
-        block = out[i0:i1 + 1, j0:j1 + 1]
-        if pick == "max":
-            better = inside & (np.isnan(block) | (z > block))
-        else:
-            better = inside & (np.isnan(block) | (z < block))
-        block[better] = z[better]
+        z = l1 * az[tk] + l2 * bz[tk] + l3 * cz[tk]
+        reduce.at(best, (ii * len(ys) + jj)[inside], z[inside])
+        lo = hi
+    best = best.reshape(out.shape)
+    hit = np.isfinite(best)
+    out[hit] = best[hit]
     return out
 
 
@@ -349,13 +369,22 @@ def _walls(mesh: _Mesh, room, pick: np.ndarray) -> List[WallFace]:
     belongs to, sampled every ``WALL_STEP`` along it."""
     lines = _wall_lines(room)
     pieces: Dict[tuple, dict] = {}
+    # The wall lines each foot lies on, once per foot (wall triangles share their corners).
+    on: Dict[tuple, frozenset] = {}
+
+    def lines_at(pt) -> frozenset:
+        got = on.get(pt)
+        if got is None:
+            got = on[pt] = frozenset(i for i, ln in enumerate(lines) if _on_segment(*pt, *ln))
+        return got
+
     for k in np.nonzero(pick)[0]:
         t = mesh.tri[k]
         pts = sorted({(round(float(x), 3), round(float(y), 3)) for x, y, _z in t})
         if len(pts) != 2:
             continue
         a, b = pts
-        if not any(_on_segment(*a, *ln) and _on_segment(*b, *ln) for ln in lines):
+        if not lines_at(a) & lines_at(b):
             continue
         piece = pieces.setdefault((a, b), {"z": {a: [], b: []}, "n": []})
         for x, y, z in t:

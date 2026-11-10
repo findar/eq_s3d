@@ -76,7 +76,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 - [ ] 9. Decor in builds
   - Card: [cards/09-in-builds.md](cards/09-in-builds.md)
   - Type: agent · Size: M · Depends: 4, 5, 6, 8, 19
-  - Owns: generators/builder.py, generators/pipeline.py, generators/zone_spec.py, generators/outdoor_dungeon.py, tests/test_decor_builds.py, tests/test_texture_manifest.py (the `decor` texture mode), generators/decor/placement.py, tests/test_decor_placement.py (walkable floor matches the gate)
+  - Owns: generators/builder.py, generators/pipeline.py, generators/zone_spec.py, generators/outdoor_dungeon.py, tests/test_decor_builds.py, tests/test_texture_manifest.py (the `decor` texture mode), generators/decor/placement.py, tests/test_decor_placement.py (walkable floor matches the gate), generators/room_context.py (speed only: `contexts`)
   - Reqs: 6.4, 9, 10.3, 10.5, 10.6, 12.2, 12.3
 
 - [ ] 10. Decor controls, decor seed, sidecar and maps
