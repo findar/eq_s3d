@@ -50,3 +50,12 @@
 "PAFLAG102" = { category = "hanging", kind = "banner", mount = "wall", set = "erudite", era = "classic", collision = "passable", suits = ["city", "throne", "entry_hall", "gatehouse"], use = "yes", note = "vertex-animated; frozen in its rest pose (decision 24)" }
 "PAFLAG101" = { category = "hanging", kind = "banner", mount = "wall", set = "erudite", era = "classic", collision = "passable", suits = ["city", "throne", "entry_hall", "gatehouse"], use = "yes", note = "vertex-animated; frozen in its rest pose (decision 24)" }
 "PAFLAG104" = { category = "hanging", kind = "banner", mount = "wall", set = "erudite", era = "classic", collision = "passable", suits = ["city", "throne", "entry_hall", "gatehouse"], use = "yes", note = "vertex-animated; frozen in its rest pose (decision 24)" }
+"RAINBARREL1" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "outdoor", "storeroom"], use = "yes" }
+"RAINBARREL" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "outdoor", "storeroom"], use = "yes" }
+"BARRELONSIDE" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
+"BARREL4" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
+"CBBARREL101" = { category = "container", kind = "barrel", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
+"PAWBARREL" = { category = "container", kind = "barrel", mount = "floor", set = "gnoll", era = "classic", collision = "solid", suits = ["city", "dungeon", "storeroom"], use = "yes" }
+"CBBARREL103" = { category = "container", kind = "barrel", mount = "raised", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
+"BARREL3" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
+"CBBARREL102" = { category = "container", kind = "barrel", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["dungeon", "outdoor", "storeroom"], use = "yes" }
