@@ -363,6 +363,26 @@ def test_two_cultures_share_a_room_only_where_allowed(rules, fixture):
     assert rules.sets.may_share("goblin", "undead") and not rules.sets.may_share("froglok", "undead")
 
 
+def test_a_room_never_mixes_ruined_and_pristine(rules, fixture):
+    """Archive decision 25: every model also comes ruined and pristine; a room's Props keep
+    to one of the two, chosen on its own stream, with ``unknown`` ones alongside either."""
+    from dataclasses import replace
+    models = dict(fixture.models)
+    for key, m in fixture.models.items():
+        for cond in ("ruined", "pristine"):
+            k = f"{key}_{cond.upper()}"
+            models[k] = replace(m, key=k, name=k, tags=replace(m.tags, condition=cond))
+    cat = Catalogue(models=models, kinds=fixture.kinds, sets=fixture.sets)
+    seen = set()
+    for c in CORPUS[::3]:
+        for seed in range(2):
+            d = place(c, rules, cat, "dense", decor_seed=seed)
+            conds = {models[p.key].tags.condition for p in d.props}
+            assert not {"ruined", "pristine"} <= conds, (c.id, seed)
+            seen.add(frozenset(conds - {"unknown"}))
+    assert {frozenset({"ruined"}), frozenset({"pristine"})} <= seen
+
+
 # --- P8: POIs are dressed ----------------------------------------------------------------------------
 
 def test_dressing_at_every_poi_that_asks(decorated, hand, rules):
