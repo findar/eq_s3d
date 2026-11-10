@@ -225,6 +225,38 @@ def test_every_room_passes_its_own_check(decorated, hand):
     assert sum(len(d.props) for _, d, _ in decorated) > 4 * len(decorated)
 
 
+def test_walkable_floor_keeps_the_players_half_width_off_walls_and_rises():
+    """P13 (room-decor task 9): the room check reads floor as the gate does. Floor within
+    the player's half-width of a wall or the foot of a rise he can't step is not walkable;
+    the top of the rise is."""
+    c = box_room(w=40.0, d=30.0)
+    floor = c.floor.copy()
+    floor[8:12, 8:12] = 10.0                     # a 8 x 8 block 10 u high
+    c.floor = floor
+    r = Room(c)
+    assert r.ok[0, 5] and not r.walk[0, 5]       # by the west wall
+    assert r.walk[4, 5]
+    assert not r.walk[7, 9] and not r.walk[12, 9]  # at the block's foot
+    assert r.walk[8, 9] and r.walk[11, 9]        # on its top, at its edge
+    assert r.walk[5, 9]
+
+
+def test_a_gap_narrower_than_the_gate_allows_reads_shut():
+    """A blocking Prop that leaves a 4 u gap by a wall shuts the room beyond it (the gate's
+    player is 3 u wide and its floor samples don't line up with this grid, so placement
+    errs shut); a 12 u gap leaves it open."""
+    from generators.decor.placement import Prop
+
+    def barrier(gap):
+        w = 40.0 - gap
+        return Decorated("hand", props=[Prop("WALL", "crate", "container", "floor", NEUTRAL, w / 2, 20.0, 0.0, 0.0,
+                                             1.0, w, 2.0, 6.0, 0.0, True, "prop", "test", "scatter")])
+
+    c = box_room(w=40.0, d=30.0)
+    assert any("cuts off" in why for why in check(c, barrier(4.0)))
+    assert check(c, barrier(12.0)) == []
+
+
 def test_floor_props_stand_on_reached_floor_off_spine_throats_and_features(decorated, hand):
     from generators.decor.placement import _in_polygon
     n = 0
@@ -417,8 +449,8 @@ def test_pois_stay_on_reached_floor(decorated):
         room = Room(c)
         for p in d.props:
             if p.blocks:
-                room.blocked[room.rect_cells(p.x, p.y, p.yaw, p.w, p.d, PLAYER_HALF_WIDTH, clip=True)] = True
-        after = room._joined(room.blocked)
+                room.blocked[0][room.rect_cells(p.x, p.y, p.yaw, p.w, p.d, PLAYER_HALF_WIDTH, clip=True)] = True
+        after = room._joined(room.blocked[0])
         for poi in c.pois:
             near = np.hypot(room.gx - poi["x"], room.gy - poi["y"]) <= POI_REACH + c.cell / 2
             if (near & room.before).any():

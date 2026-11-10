@@ -356,6 +356,15 @@ class ZoneSpec:
     inhabitant: str = ""
     sites_source: str = "default"
 
+    # Props in rooms (room-decor spec Req 10; dungeon, city and outdoor-dungeon
+    # builds). ``decor`` is the Decor control (none, sparse, normal, dense);
+    # ``None`` means nobody chose one: ``ZoneBuilder`` then places nothing and
+    # ``generate_validated`` (the CLI and Server path) resolves it to the
+    # default control. ``decor_seed`` salts the Props' own streams (``None``:
+    # the zone's seed). Left out of ``to_dict()`` while unset.
+    decor: Optional[str] = None
+    decor_seed: Optional[int] = None
+
     # ------------------------------------------------------------------
     # Serialisation
     # ------------------------------------------------------------------
@@ -383,6 +392,8 @@ class ZoneSpec:
             **({"sites": self.sites} if self.sites != "normal" else {}),
             **({"inhabitant": self.inhabitant} if self.inhabitant else {}),
             **({"sites_source": self.sites_source} if self.sites_source != "default" else {}),
+            **({"decor": self.decor} if self.decor is not None else {}),
+            **({"decor_seed": self.decor_seed} if self.decor_seed is not None else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -414,6 +425,8 @@ class ZoneSpec:
             sites=d.get("sites", "normal"),
             inhabitant=d.get("inhabitant", ""),
             sites_source=d.get("sites_source", "default"),
+            decor=d.get("decor"),
+            decor_seed=d.get("decor_seed"),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)

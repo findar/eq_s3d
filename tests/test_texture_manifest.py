@@ -70,7 +70,41 @@ def test_x6_manifest_lists_every_material_once_with_its_polygons(tmp_path, no_ap
     for e in manifest:
         assert e["texture"] in packed
         assert (e["texture_set"], e["surface"], e["surface_class"]) == surface_of(e["material"])
-        assert e["texture_mode"] in ("placeholder", "procedural", "ai", "vegetation", "sites")
+        assert e["texture_mode"] in ("placeholder", "procedural", "ai", "vegetation", "sites",
+                                     "decor")
+
+
+@pytest.mark.slow
+def test_decor_textures_are_listed_as_decor(tmp_path, no_api_keys, monkeypatch):
+    """Room-decor task 9: a decorated build's stock models are in the manifest,
+    their materials' Texture_Mode ``decor``, each texture packed, and the
+    polygons still add up (needs the install; skips without it)."""
+    from generators.decor.stock import eq_path_from_env
+
+    eq = eq_path_from_env()
+    if eq is None:
+        pytest.skip("EQ_PATH is not set (no EQ install to read)")
+    monkeypatch.setenv("EQ_PATH", str(eq))
+    spec = SPECS["dungeon"]()
+    spec.decor = "normal"
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+    arc = PfsArchive.from_file(result.eqg_path)
+    manifest = json.loads(result.sidecar_path.read_text(encoding="utf-8"))["textures"]
+    stock = [n for n in arc.list_files() if n.startswith("stock_") and n.endswith(".mod")]
+    assert stock
+    names = set()
+    expected = Counter()
+    for n in stock:
+        model = TerFile.from_bytes(arc.get(n))
+        counts = Counter(p.material for p in model.polygons)
+        for mat in model.materials:
+            names.add(mat.name)
+            expected[mat.name] += counts.get(mat.index, 0)
+    decor = {e["material"]: e for e in manifest if e["texture_mode"] == "decor"}
+    assert set(decor) == names
+    assert {k: e["polygons"] for k, e in decor.items()} == dict(expected)
+    packed = set(arc.list_files())
+    assert all(e["texture"] in packed for e in decor.values())
 
 
 def test_procedural_override_restores_noise_textures(tmp_path, no_api_keys, monkeypatch):
