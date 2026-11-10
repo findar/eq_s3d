@@ -99,7 +99,27 @@ From task 19 (accept by default, `e3d4b8a`):
     Prop placed sets the room's, as the first culture sets its Set; all-unknown output is
     unchanged.
 
+From task 9 (decor in builds, `9f75d97`–`acc21e3`):
+
+28. **`ZoneSpec.decor` / `decor_seed`**, in the spec JSON only when set. `ZoneBuilder` treats
+    an unset `decor` as none (golden bytes); the pipeline's `_with_decor` defaults it to
+    normal. No install: no Props, warning `NO_INSTALL`, Decor-none bytes.
+29. **ZON:** each model in use listed once after the Structures; objects `decor_NNNN`; lights
+    `decor_light_NNNN` at the model's blended (flame) triangles, warm, radius 30, after the
+    rooms' own lights. Floor, raised and ceiling Props are shifted so the model's plan lands
+    on its footprint (`_at_origin`); wall Props keep stock's origin.
+30. **Sidecar:** per room `props`, `dressing`, `decor_drops`; top-level `decor` = {control,
+    seed, props, lights, models, rooms, bare, drops, check}. Texture manifest mode `decor`.
+31. **Placement reads rooms as the gate does** (P13): walkable floor eroded by the player's
+    half-width (plus 1 u at solid Features), Props about a step tall count, connectivity on
+    both walkable and all reached floor, POI reach at the POI's level, and an 8 u clear way
+    from each door to the room's middle. With that the gate's first try is 20/20 per zone type
+    and the settle pass was removed. Build time +0.5 s (dungeon), w12 budget 9.1 of 10 s.
+
 ## Follow-ups
+
+- **Corridor lights:** placement lights `source = "corridor"` contexts, but `room_context`
+  builds none yet (task 13 or later).
 
 - **Doorway gates as doors** at room openings (with the EQEmu `doors` records, M6).
 - **Assemblies placed whole**: pieces stock always places together, as Groups copying stock's offsets.
