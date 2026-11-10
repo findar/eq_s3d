@@ -59,3 +59,35 @@
 "CBBARREL103" = { category = "container", kind = "barrel", mount = "raised", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "no", note = "skeletal-animated; the import refuses skeletal models (decision 13)" }
 "BARREL3" = { category = "container", kind = "barrel", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "storeroom"], use = "yes" }
 "CBBARREL102" = { category = "container", kind = "barrel", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["dungeon", "outdoor", "storeroom"], use = "yes" }
+"GUKPALLET" = { category = "furniture", kind = "bed", mount = "floor", set = "froglok", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"GROBBEDA" = { category = "furniture", kind = "bed", mount = "floor", set = "troll", era = "classic", collision = "solid", suits = ["dungeon", "barracks"], use = "yes" }
+"BUNK1" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"BED8" = { category = "furniture", kind = "bed", mount = "floor", set = "ogre", era = "classic", collision = "solid", suits = ["city", "barracks"], use = "yes" }
+"BED6" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["dungeon", "barracks"], use = "yes" }
+"HHBED" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "barracks"], use = "yes" }
+"MISTBED" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"FURPILE1" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "passable", suits = ["dungeon", "barracks"], use = "yes" }
+"FURPILE2" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "passable", suits = ["city", "dungeon", "barracks"], use = "yes" }
+"IKBED102R" = { category = "furniture", kind = "bed", mount = "floor", set = "iksar", era = "kunark", collision = "partial", suits = ["dungeon", "outdoor", "barracks"], use = "yes" }
+"BED3" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "outdoor", "barracks"], use = "yes" }
+"PALLET" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "barracks"], use = "yes" }
+"ERBED" = { category = "furniture", kind = "bed", mount = "floor", set = "erudite", era = "classic", collision = "solid", suits = ["city", "outdoor", "barracks"], use = "yes" }
+"IKBED102" = { category = "furniture", kind = "bed", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"PABED101" = { category = "furniture", kind = "bed", mount = "floor", set = "erudite", era = "classic", collision = "solid", suits = ["city", "barracks"], use = "yes" }
+"IKBED101R" = { category = "furniture", kind = "bed", mount = "floor", set = "iksar", era = "kunark", collision = "partial", suits = ["city", "outdoor", "barracks"], use = "yes" }
+"FELBED" = { category = "furniture", kind = "bed", mount = "floor", set = "high_elf", era = "classic", collision = "solid", suits = ["city", "barracks"], use = "yes" }
+"OGBED" = { category = "furniture", kind = "bed", mount = "floor", set = "ogre", era = "classic", collision = "solid", suits = ["city", "outdoor", "barracks"], use = "yes" }
+"IKBED101" = { category = "furniture", kind = "bed", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"BED5" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"BED4" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"BED1" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks"], use = "yes" }
+"BED2" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "outdoor", "barracks"], use = "yes" }
+"DNBUNK101" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "kunark", collision = "solid", suits = ["dungeon", "outdoor", "barracks"], use = "yes" }
+"PAWPAL" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["dungeon", "barracks"], use = "yes" }
+"BED7" = { category = "furniture", kind = "bed", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["dungeon", "outdoor", "barracks"], use = "yes" }
+"BENCH" = { category = "furniture", kind = "bench", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks", "guard_post", "shrine"], use = "yes" }
+"GUKBENCH" = { category = "furniture", kind = "bench", mount = "floor", set = "froglok", era = "classic", collision = "solid", suits = ["dungeon", "barracks", "guard_post", "shrine"], use = "yes" }
+"KSPEW101R" = { category = "furniture", kind = "bench", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["dungeon", "barracks", "guard_post", "shrine"], use = "yes" }
+"STONEBENCH" = { category = "furniture", kind = "bench", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks", "guard_post", "shrine"], use = "yes" }
+"BENCH2" = { category = "furniture", kind = "bench", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks", "guard_post", "shrine"], use = "yes" }
+"KSPEW101" = { category = "furniture", kind = "bench", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["dungeon", "barracks", "guard_post", "shrine"], use = "yes" }
