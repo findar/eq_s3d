@@ -382,6 +382,19 @@ def _with_decor(spec: ZoneSpec) -> ZoneSpec:
     return spec
 
 
+#: The room gate's failures on placed models (``analyzer.footprints.check_room_props``).
+PROP_FAILURES = ("footprint_cut:", "throat_narrow:", "poi_unreached:")
+
+
+def _props_only_failure(spec: ZoneSpec, report: TraversalReport, fmt: FormatReport) -> bool:
+    """Did a decorated build fail the gate on its Props and nothing else?"""
+    if (spec.decor or "none") == "none" or report.passed or not fmt.passed:
+        return False
+    failed = [o for o in report.outlines if not o.ok]
+    return (report.reachable_rooms == report.total_rooms and report.corridors_passed
+            and bool(failed) and all(o.reason.startswith(PROP_FAILURES) for o in failed))
+
+
 def generate_validated(
     spec_factory: SpecFactory,
     *,
@@ -512,13 +525,20 @@ def generate_validated(
         scratch = _scratch_dir(output_dir, zone_id, attempt)
         try:
             spec = _with_decor(spec_factory(use_seed))
-            result = ZoneBuilder(spec).build(
-                output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
-            )
-            report =_traversal_report(result.eqg_path, spec, agent)
-            fmt = check_eqg(result.eqg_path, spec,
-                            sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
-                            agent=agent)
+            for settle in (False, True):
+                # Props are placed without the gate's own check first; only
+                # when the gate fails on Props alone is the build made again
+                # with it, dropping them (room-decor Req 6.3).
+                result = ZoneBuilder(spec).build(
+                    output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
+                    settle=settle,
+                )
+                report = _traversal_report(result.eqg_path, spec, agent)
+                fmt = check_eqg(result.eqg_path, spec,
+                                sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
+                                agent=agent)
+                if not _props_only_failure(spec, report, fmt):
+                    break
             passed = report.passed and report.corridors_passed and fmt.passed
 
             if passed:

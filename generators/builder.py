@@ -544,13 +544,15 @@ class DecorBuild:
 
 
 def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
-              eq_path=None) -> Optional[DecorBuild]:
+              eq_path=None, settle: bool = True) -> Optional[DecorBuild]:
     """Props for a built room-graph zone (dungeon, city, outdoor dungeon), or
     ``None`` with Decor ``none``, a zone with no rooms, or no install (then
     with a warning, Req 10.6). Contexts come from ``room_context.contexts``;
     each room is placed on its own stream, so the geometry is the same
     whatever the Props (Req 6.4). A Prop whose model can't be imported drops,
-    recorded as ``not importable``."""
+    recorded as ``not importable``. ``settle``: drop the Props the gate's own
+    check fails (:func:`_settle`; it walks the whole mesh, so the pipeline
+    asks for it only when the gate has failed on Props)."""
     from dataclasses import replace
     from generators.decor.placement import Drop, check, place
     from generators.decor.stock import NotImportable, eq_path_from_env
@@ -586,12 +588,18 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
         out.placed.extend(zip(files, d.props))
         out.room_of.extend([len(out.rooms)] * len(files))
         out.rooms.append((ctx, d, problems))
-    # Keep the imported models for the next build, not the archives they came
-    # from (a few MB each; a long-lived Server would gather them all).
-    importer._files.clear()
-    importer._wlds.clear()
-    _settle(spec, ter, out)
+    # Keep the imported models for the next build, and a few archives (a few MB
+    # each; a long-lived Server would otherwise gather them all).
+    if len(importer._files) > ARCHIVES_KEPT:
+        importer._files.clear()
+        importer._wlds.clear()
+    if settle:
+        _settle(spec, ter, out)
     return out
+
+
+#: Archives the shared importer keeps between builds before it lets them go.
+ARCHIVES_KEPT = 32
 
 
 #: Rounds of the gate's own Prop check the builder runs before it gives up on
@@ -697,7 +705,8 @@ class ZoneBuilder:
     def build(self,
               output_dir: str | Path = "output",
               write_glb: bool = True,
-              ter_version: int = 2) -> "BuildResult":
+              ter_version: int = 2,
+              settle: bool = True) -> "BuildResult":
         # Build_Name gate (Req 8.2): validate BEFORE any mkdir / write, so an
         # invalid name produces no partial output. The Build_Name is the one
         # stem every artifact is named by.
@@ -741,7 +750,7 @@ class ZoneBuilder:
             veg = vegetation_for(self.spec, ter)
             warnings.extend(veg.warnings)
         # Props in rooms (room-decor task 9): on top of the built TER too.
-        decor = decor_for(self.spec, ter, warnings)
+        decor = decor_for(self.spec, ter, warnings, settle=settle)
 
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
