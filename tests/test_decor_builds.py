@@ -200,6 +200,25 @@ def test_props_pass_the_gate_and_decor_agrees(decorated, label):
     failures = [o.reason for o in report.outlines if not o.ok]
     assert report.passed and report.corridors_passed and not failures, failures
     assert side["decor"]["check"] == []
+    assert side["decor"]["gate_drops"] == 0, "the gate dropped Props decor's check kept"
+
+
+@pytest.mark.slow
+@needs_install
+def test_props_the_gate_fails_drop_and_the_build_passes(tmp_path):
+    """Req 6.3: a Prop decor's check kept but the gate fails (dungeon seed 101:
+    a chest shuts a treasure POI in a corner) drops, recorded, and the build
+    passes the gate."""
+    from generators.pipeline import _traversal_report
+
+    spec = _spec(dict(zone_type="dungeon"), 101, "normal")
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+    side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+    assert side["decor"]["gate_drops"] >= 1
+    drops = [d for r in side["rooms"] for d in r["decor_drops"] if d["reason"].startswith("gate:")]
+    assert len(drops) == side["decor"]["gate_drops"]
+    report = _traversal_report(result.eqg_path, spec, None)
+    assert report.passed and not [o for o in report.outlines if not o.ok]
 
 
 @pytest.mark.slow
