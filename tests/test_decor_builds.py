@@ -200,25 +200,26 @@ def test_props_pass_the_gate_and_decor_agrees(decorated, label):
     failures = [o.reason for o in report.outlines if not o.ok]
     assert report.passed and report.corridors_passed and not failures, failures
     assert side["decor"]["check"] == []
-    assert side["decor"]["gate_drops"] == 0, "the gate dropped Props decor's check kept"
 
 
 @pytest.mark.slow
 @needs_install
-def test_props_the_gate_fails_drop_and_the_build_passes(tmp_path):
-    """Req 6.3: a Prop decor's check kept but the gate fails (dungeon seed 101:
-    a chest shuts a treasure POI in a corner) drops, recorded, and the build
-    passes the gate."""
+@pytest.mark.parametrize("label, seed", [("dungeon", 101), ("dungeon", 105), ("outdoor_dungeon", 119),
+                                         ("outdoor_dungeon", 4)])
+def test_decor_agrees_with_the_gate_where_it_once_didnt(tmp_path, label, seed):
+    """P13: seeds where placement once kept Props the gate failed (a chest shutting a
+    treasure POI in a corner, floor by a wall read as walkable, a 2.97 u chest on floor
+    sloping away read as one step) now pass both."""
     from generators.pipeline import _traversal_report
 
-    spec = _spec(dict(zone_type="dungeon"), 101, "normal")
+    fields = dict(zone_type=label, **({"room_count": 5} if label == "outdoor_dungeon" else {}))
+    spec = _spec(fields, seed, "normal")
     result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
     side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
-    assert side["decor"]["gate_drops"] >= 1
-    drops = [d for r in side["rooms"] for d in r["decor_drops"] if d["reason"].startswith("gate:")]
-    assert len(drops) == side["decor"]["gate_drops"]
+    assert side["decor"]["props"] > 0 and side["decor"]["check"] == []
     report = _traversal_report(result.eqg_path, spec, None)
-    assert report.passed and not [o for o in report.outlines if not o.ok]
+    failures = [o.reason for o in report.outlines if not o.ok]
+    assert report.passed and not failures, failures
 
 
 @pytest.mark.slow

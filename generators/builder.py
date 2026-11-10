@@ -460,7 +460,6 @@ class DecorBuild:
         self.models: Dict[str, TerFile] = {}
         self.textures: Dict[str, bytes] = {}
         self.placed: list = []
-        self.room_of: List[int] = []    # each placed Prop's index in ``rooms``
 
     def lights(self) -> List[ZonLight]:
         """One ZON point light per light-bearing Prop, at its flame (Req 9.1)."""
@@ -500,9 +499,6 @@ class DecorBuild:
                 "models": len(self.models), "rooms": len(self.rooms),
                 "bare": sum(1 for _, d, _ in self.rooms if d.bare),
                 "drops": sum(len(d.drops) for _, d, _ in self.rooms),
-                # Props the gate's own check dropped that decor's passed (P13).
-                "gate_drops": sum(1 for _, d, _ in self.rooms for x in d.drops
-                                  if x.reason.startswith("gate:")),
                 "check": [f"{ctx.id}: {why}" for ctx, _, probs in self.rooms for why in probs]}
 
     def mesh(self) -> tuple:
@@ -544,15 +540,13 @@ class DecorBuild:
 
 
 def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
-              eq_path=None, settle: bool = True) -> Optional[DecorBuild]:
+              eq_path=None) -> Optional[DecorBuild]:
     """Props for a built room-graph zone (dungeon, city, outdoor dungeon), or
     ``None`` with Decor ``none``, a zone with no rooms, or no install (then
     with a warning, Req 10.6). Contexts come from ``room_context.contexts``;
     each room is placed on its own stream, so the geometry is the same
     whatever the Props (Req 6.4). A Prop whose model can't be imported drops,
-    recorded as ``not importable``. ``settle``: drop the Props the gate's own
-    check fails (:func:`_settle`; it walks the whole mesh, so the pipeline
-    asks for it only when the gate has failed on Props)."""
+    recorded as ``not importable``."""
     from dataclasses import replace
     from generators.decor.placement import Drop, check, place
     from generators.decor.stock import NotImportable, eq_path_from_env
@@ -586,97 +580,17 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
         problems = check(ctx, d)            # on the footprints placement reserved
         d = replace(d, props=[_at_origin(p, out.models[f]) for p, f in zip(kept, files)])
         out.placed.extend(zip(files, d.props))
-        out.room_of.extend([len(out.rooms)] * len(files))
         out.rooms.append((ctx, d, problems))
     # Keep the imported models for the next build, and a few archives (a few MB
     # each; a long-lived Server would otherwise gather them all).
     if len(importer._files) > ARCHIVES_KEPT:
         importer._files.clear()
         importer._wlds.clear()
-    if settle:
-        _settle(spec, ter, out)
     return out
 
 
 #: Archives the shared importer keeps between builds before it lets them go.
 ARCHIVES_KEPT = 32
-
-
-#: Rounds of the gate's own Prop check the builder runs before it gives up on
-#: a room's blocking Props altogether.
-SETTLE_ROUNDS = 4
-
-
-def _settle(spec: ZoneSpec, ter: TerFile, out: DecorBuild) -> None:
-    """Run the room gate's own Prop check (``analyzer.footprints.
-    check_room_props``, on the TER as the archive will hold it, from the same
-    start) and drop the Props it fails, so a Prop that can't fit drops and
-    never fails the build (Req 6.3). A failure naming Props drops them; a POI
-    left unreached drops the room's blocking Props nearest it; a round that
-    finds nothing to name drops the failing room's blocking Props. Each drop
-    is recorded (``gate: <kind>``), so where decor's own check and the gate
-    disagree stays visible."""
-    import math
-    import numpy as np
-    from dataclasses import replace
-    from analyzer.footprints import Placed, check_room_props, collidable_triangles
-    from analyzer.traverse import (AgentModel, _nearest_standable_face, build_walk_surface,
-                                   flood_reachable)
-    from generators.decor.placement import Drop
-
-    if not out.placed:
-        return
-    agent = AgentModel()
-    shipped = TerFile.from_bytes(ter.to_bytes(), name=ter.name)
-    surf = build_walk_surface(shipped, agent)
-    seed_face = _nearest_standable_face(surf, np.array(spec.safe_point, dtype=np.float64),
-                                        xy_radius=400.0)
-    if seed_face is None:
-        return
-    reached = flood_reachable(surf, seed_face)
-    mesh = collidable_triangles(shipped)
-    room_index = {ctx.id: k for k, (ctx, _, _) in enumerate(out.rooms)}
-    for rnd in range(SETTLE_ROUNDS + 1):
-        placed = [Placed(f"decor_{i:04d}", f, out.models[f], p.x, p.y, p.z, p.yaw, 0.0, 0.0, p.scale)
-                  for i, (f, p) in enumerate(out.placed)]
-        fails = check_room_props(surf, reached, spec, placed, mesh, seed_face, agent)
-        if not fails:
-            return
-        drop: Dict[int, str] = {}
-        for g in fails:
-            named = [int(s[6:]) for s in g.subjects if s.startswith("decor_") and s[6:].isdigit()]
-            room = room_index.get(g.where)
-            mine = [i for i, r in enumerate(out.room_of) if r == room and out.placed[i][1].blocks]
-            if named:
-                pick = named
-            elif g.kind == "poi_unreached" and room is not None and rnd < SETTLE_ROUNDS:
-                ctx = out.rooms[room][0]
-                pois = [p for p in ctx.pois if p.get("purpose") in g.subjects] or ctx.pois
-                near = [(min(math.hypot(out.placed[i][1].x - q["x"], out.placed[i][1].y - q["y"])
-                             for q in pois), i) for i in mine]
-                pick = [min(near)[1]] if near else []
-            else:
-                pick = mine
-            for i in pick:
-                drop.setdefault(i, g.kind)
-        if not drop:
-            return                       # nothing of decor's left to drop
-        keep = [i for i in range(len(out.placed)) if i not in drop]
-        for i, kind in sorted(drop.items()):
-            p = out.placed[i][1]
-            ctx, d, probs = out.rooms[out.room_of[i]]
-            d.drops.append(Drop(p.step, p.line, p.key, f"gate: {kind}", p.poi))
-        for k, (ctx, d, probs) in enumerate(out.rooms):
-            gone = {id(out.placed[i][1]) for i in drop if out.room_of[i] == k}
-            if gone:
-                out.rooms[k] = (ctx, replace(d, props=[p for p in d.props if id(p) not in gone]), probs)
-        out.placed = [out.placed[i] for i in keep]
-        out.room_of = [out.room_of[i] for i in keep]
-        # Pack only the models (and their textures) still placed.
-        used = {f for f, _ in out.placed}
-        out.models = {f: m for f, m in out.models.items() if f in used}
-        named = {_diffuse_of(mat) for m in out.models.values() for mat in m.materials}
-        out.textures = {t: b for t, b in out.textures.items() if t in named}
 
 
 class ZoneBuilder:
@@ -705,8 +619,7 @@ class ZoneBuilder:
     def build(self,
               output_dir: str | Path = "output",
               write_glb: bool = True,
-              ter_version: int = 2,
-              settle: bool = True) -> "BuildResult":
+              ter_version: int = 2) -> "BuildResult":
         # Build_Name gate (Req 8.2): validate BEFORE any mkdir / write, so an
         # invalid name produces no partial output. The Build_Name is the one
         # stem every artifact is named by.
@@ -750,7 +663,7 @@ class ZoneBuilder:
             veg = vegetation_for(self.spec, ter)
             warnings.extend(veg.warnings)
         # Props in rooms (room-decor task 9): on top of the built TER too.
-        decor = decor_for(self.spec, ter, warnings, settle=settle)
+        decor = decor_for(self.spec, ter, warnings)
 
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
