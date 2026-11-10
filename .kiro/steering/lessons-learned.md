@@ -174,6 +174,14 @@ read before touching the relevant area so it isn't rediscovered.
   pytest` processes (`Get-CimInstance Win32_Process` filtered on the command
   line) and run it again.
 
+- **Worktree agents leak edits into the MAIN checkout.** Twice in step 11 (tasks 19
+  and 10) an agent working in `..\eq_s3d-worktrees\<scope>` also left an uncommitted
+  edit to a file in `F:\Dev Projects\eq_s3d` (an early draft of its own change), which
+  then blocked the merge. Before merging a branch, run `git status` in the main checkout;
+  if a modified file also changed on the branch, compare it with the branch's version
+  (`git show <branch>:<file> | diff - <file>`) and discard the stray copy only when the
+  branch has it. Brief agents to use absolute worktree paths for every edit.
+
 ## Design calls already settled (don't relitigate)
 
 - **Tracker writes are single-writer, and that rule is UNCONDITIONAL — do not

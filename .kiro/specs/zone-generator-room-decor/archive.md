@@ -116,6 +116,18 @@ From task 9 (decor in builds, `9f75d97`–`acc21e3`):
     from each door to the room's middle. With that the gate's first try is 20/20 per zone type
     and the settle pass was removed. Build time +0.5 s (dungeon), w12 budget 9.1 of 10 s.
 
+From task 10 (controls and maps, `bc541b4`–`999ee63`):
+
+32. **Plan `decor: ""` means not chosen**; `plan_to_spec` sets `spec.decor`/`decor_seed` only
+    when chosen (goldens unchanged). `VALID_DECOR` is written out in `ai/schema.py` (a test
+    keeps it equal to `decor.rules.CONTROLS`). Prompt words: cluttered/furnished/lavish ->
+    dense, bare/spartan -> sparse, unfurnished/empty rooms -> none.
+33. **`GET /api/controls`** serves the page's lists (only `decor` so far). Reroll sends a
+    top-level `decor_seed` with `seed` pinned; a reroll that fails the gate returns 503.
+34. **Map Props come from the built `.eqg` plus the sidecar**, matched by position (0.05 u);
+    floor Footprints as purple loops on the EQ map, dots for wall/raised/ceiling on the web
+    map; drawn only over a traced outline.
+
 ## Follow-ups
 
 - **Corridor lights:** placement lights `source = "corridor"` contexts, but `room_context`
