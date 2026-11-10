@@ -621,6 +621,7 @@ _ALLOWED_WEB_INPUT_IDS = {
     "layout", "rule-set",  # graph layouts (graph-layout spec task 11)
     "finish", "structure", "clutter", "overlay",  # how rooms lean (room layouts spec task 21)
     "dungeon-theme", "dungeon-race",  # graph-layout spec task 14
+    "decor", "decor-seed",  # Props in rooms (room-decor spec task 10)
 }
 
 # The CLI ``generate`` option/flag names the geometry slice is allowed to add,
@@ -635,6 +636,7 @@ _ALLOWED_CLI_OPTIONS = {
     "--walls",  # wall style (room walls spec task 7)
     "--features",  # what stands in rooms (room layouts spec task 7)
     "--finish", "--structure", "--clutter", "--overlay",  # how rooms lean (room layouts spec task 21)
+    "--decor", "--decor-seed",  # Props in rooms (room-decor spec task 10)
     # housekeeping the task allows
     "--output", "--ter-version", "--no-validate",
     # deprecated aliases that share a dest (still a legacy input surface)

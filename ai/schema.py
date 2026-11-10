@@ -78,6 +78,26 @@ VALID_SITES = ["none", "sparse", "normal", "dense"]
 DEFAULT_SITES = "normal"
 SITES_ZONE_TYPES = ("wilderness", "outdoor_dungeon")
 
+# Props in rooms (room-decor step 11, Req 10.1, 10.2): the Decor control
+# (generators.decor.rules.CONTROLS; that module imports this one, so the list
+# is written out here and a test keeps the two equal) and a decor seed. A plan
+# decor of "" is not chosen: the pipeline builds the default, normal
+# (generators.pipeline._with_decor). The room-graph zone types only.
+VALID_DECOR = ["none", "sparse", "normal", "dense"]
+DEFAULT_DECOR = "normal"
+DECOR_ZONE_TYPES = ("dungeon", "city", "outdoor_dungeon")
+SEED_MAX = 2_147_483_647
+
+
+def decor_seed(value: Any) -> Optional[int]:
+    """A decor seed: None (the zone's seed salts the Props), or a whole 0..2^31-1."""
+    if value is None or value == "":
+        return None
+    number = value if isinstance(value, int) and not isinstance(value, bool) else None
+    if number is None or not 0 <= number <= SEED_MAX:
+        raise ValueError(f"decor_seed {value!r} is not a whole number from 0 to {SEED_MAX}")
+    return number
+
 
 def available_inhabitants(inhabitants_file: Optional[Path] = None) -> List[str]:
     """The Inhabitant names in ``rules/sites/inhabitants.toml`` (sorted)."""
@@ -171,6 +191,9 @@ class ZonePlan:
     # Sites (wilderness / outdoor dungeon only; other types ignore them).
     sites: str = DEFAULT_SITES       # one of VALID_SITES
     inhabitant: str = ""             # "" (the biome's mix) or one of available_inhabitants()
+    # Props in rooms (dungeon, city, outdoor dungeon; wilderness ignores them).
+    decor: str = ""                  # "" (the default, normal) or one of VALID_DECOR
+    decor_seed: Optional[int] = None # None: the zone's seed salts them; else rerolls the Props alone
 
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
@@ -246,6 +269,11 @@ class ZonePlan:
         if self.inhabitant and self.inhabitant not in available_inhabitants():
             raise ValueError(f"inhabitant {self.inhabitant!r} is not one of: "
                              f"{', '.join(available_inhabitants())} (or \"\" for the biome's mix)")
+        self.decor = str(self.decor or "").strip().lower()
+        if self.decor and self.decor not in VALID_DECOR:
+            raise ValueError(f"decor {self.decor!r} is not one of: {', '.join(VALID_DECOR)} "
+                             f"(or \"\" for the default, {DEFAULT_DECOR})")
+        self.decor_seed = decor_seed(self.decor_seed)
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -419,6 +447,14 @@ ZONE_PLAN_JSON_SCHEMA = {
             "enum": available_inhabitants(),
             "description": "Wilderness / outdoor dungeon: who builds every Site; "
                            "omit for the biome's mix.",
+        },
+        "decor": {
+            "type": "string",
+            "enum": VALID_DECOR,
+            "description": "Dungeon, city or outdoor dungeon: how much furniture, "
+                           "lights and clutter stand in the rooms (bare rooms: "
+                           "sparse; cluttered or richly furnished: dense); omit "
+                           "for normal.",
         },
     },
     "required": ["zone_type", "room_count", "size"],

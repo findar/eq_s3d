@@ -63,7 +63,8 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     it beats a level the prompt's wording asks for. Both are ignored for
     room-graph zone types.
 
-    The plan's ``sites`` / ``inhabitant`` reach the spec on those two types.
+    The plan's ``sites`` / ``inhabitant`` reach the spec on those two types;
+    its ``decor`` / ``decor_seed`` reach any spec when chosen.
     ``sites_source`` says who set them (``"controls"`` or ``"cli"``); left
     ``None`` it is ``"prompt"`` when a prompt plan moved them off their
     defaults, else ``"default"``.
@@ -116,7 +117,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
             moved = (plan.sites, plan.inhabitant) != (DEFAULT_SITES, "")
             sites_source = "prompt" if moved and plan.prompt else "default"
         spec.sites_source = sites_source
-        return spec
+        return _decor(spec, plan)
 
     engine = layout_engine(plan.layout, plan.rule_set, plan.verticality) \
         if plan.zone_type in LAYOUT_ZONE_TYPES else None
@@ -161,6 +162,18 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     # A grown dungeon's rooms draw their real walls, last, when every door is known.
     if spec.layout is not None and plan.zone_type == "dungeon":
         _dress_rooms(spec, plan, rng_seed)
+    return _decor(spec, plan)
+
+
+def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:
+    """The plan's Decor control and decor seed on the spec, only when chosen:
+    an unset control is built at the default by the pipeline and as none by a
+    bare ``ZoneBuilder`` (room-decor decision 28), so a plan naming neither
+    gives the spec it always did."""
+    if plan.decor:
+        spec.decor = plan.decor
+    if plan.decor_seed is not None:
+        spec.decor_seed = plan.decor_seed
     return spec
 
 
