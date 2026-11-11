@@ -44,6 +44,10 @@ matches), and per Group member.
 is to the wall: stock's own wall torches agree (TORCHPOINT in Qeynos catacombs and Sol A stand
 with the wall at local -X and the flame 2.3 u off it).
 
+**Floor and raised** Props stand on their bottom (``measured.below`` under the origin, which
+some models draw far from: GENMETCRATE700's mesh lies wholly under its origin), ``LIFT`` over
+the lowest floor under their footprint or the top of what they stack on.
+
 **The room check** (Req 13.4): decor checks its own result against the context, by the gate's
 rules (``analyzer/footprints.py``, mirrored here, not imported): a Prop blocks where it is
 collidable between ``STEP_UP`` and ``HEAD_HEIGHT`` over the floor, grown by the player's
@@ -92,6 +96,8 @@ DEFAULT_LIGHT_SPACING = 38.0
 ROOM_LIGHT_GAP = 0.8
 #: The most a floor Prop's ground may rise across its footprint (u).
 FLAT = 2.0
+#: A floor or raised Prop's bottom stands this far over what it stands on (u).
+LIFT = 0.05
 #: Spots tried per item before it drops; anchor spots tried per Group.
 TRIES = 24
 GROUP_TRIES = 8
@@ -188,22 +194,29 @@ class Decorated:
 class Size:
     w: float                # along the model's X (its front), scaled
     d: float                # along its Y
-    h: float
-    below: float
+    h: float                # its top over its origin, scaled (below it when negative)
+    below: float            # its bottom under its origin, scaled (over it when negative)
     scale: float
     over: Optional[float]   # stock's height over the floor (p50), scaled with the room: as stock
     wall: Optional[float]   # stock's distance off the wall (p50)
 
 
 def size_of(model: Model) -> Size:
+    """A model's measured size at the scale stock gives it. ``h`` and ``below`` are the mesh's
+    own top and bottom about its origin, so a model drawn under its origin (GENMETCRATE700:
+    -22.8 to -4.6) keeps that and stands on its bottom, not its origin."""
     m = model.measured or {}
     obs = model.observed or {}
     sc = obs.get("scale") or [1.0, 1.0, 1.0]
     s = float(min(2.0, max(0.5, sc[1] if len(sc) > 1 else 1.0)))
     over = obs.get("over")
     wall = obs.get("wall")
+    top = float(m.get("h", 2.0))
+    bottom = float(m.get("below", 0.0))
+    if top + bottom < 0.1:                  # flat (a rug): a sliver of height, over its bottom
+        top = 0.1 - bottom
     return Size(w=max(0.2, float(m.get("w", 2.0))) * s, d=max(0.2, float(m.get("d", 2.0))) * s,
-                h=max(0.1, float(m.get("h", 2.0))) * s, below=max(0.0, float(m.get("below", 0.0))) * s,
+                h=top * s, below=bottom * s,
                 scale=s, over=float(over[1]) if over and len(over) > 1 else None,
                 wall=float(wall[1]) if wall and len(wall) > 1 else None)
 
@@ -853,7 +866,12 @@ class _Placer:
         fl = r.floor[cells]
         if float(fl.max() - fl.min()) > FLAT:
             return None
-        z = float(fl.min())
+        # Its bottom on the lowest floor under its plan (just over it: a flat rug would
+        # flicker in it), not under the margin round it: that would sink it.
+        under = r.rect_cells(x, y, yaw, sz.w, sz.d)
+        under = r.floor[under] if under is not None else fl
+        under = under[~np.isnan(under)]
+        z = float(under.min() if len(under) else fl.min()) + sz.below + LIFT
         if r.ceiling is not None:
             ce = r.ceiling[cells]
             ce = ce[~np.isnan(ce)]
@@ -1144,7 +1162,7 @@ class _Placer:
     def _stack(self, a: Prop, model: Model, sz: Size, step, line, gid) -> Optional[Prop]:
         if sz.w > a.w + 0.01 or sz.d > a.d + 0.01:
             return None
-        z = a.z + a.h
+        z = a.z + a.h + sz.below + LIFT     # its bottom on the anchor's top
         r = self.room
         if r.ceiling is not None:
             i = int(round((a.x - r.xs[0]) / r.cell))

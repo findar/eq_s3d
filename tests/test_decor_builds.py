@@ -268,8 +268,77 @@ def test_light_one_zon_light_per_light_bearing_prop(decorated, label):
     extra = [l for l in zon.lights if l.name.startswith("decor_light_")]
     assert len(extra) == len(lit) == side["decor"]["lights"]
     for light, p in zip(extra, lit):
-        reach = max(p["w"], p["d"], p["h"] + p["below"]) * 1.5 + 1.0
+        # (a model may be drawn wholly over its origin: GENTORCH700 from 12 to 17.4 u up)
+        reach = max(p["w"], p["d"], abs(p["h"]), abs(p["below"])) * 1.5 + 1.0
         assert math.dist((light.x, light.y, light.z), (p["x"], p["y"], p["z"])) <= reach
+
+
+# ---------------------------------------------------------------------------
+# Task 13: the first look's findings, on the built zone itself
+# ---------------------------------------------------------------------------
+
+def _placed(result):
+    """(sidecar row, world vertices (V, 3), the terrain's triangles (T, 3, 3) and their
+    declared normals (T, 3)) for every Prop of a built zone, read from the ``.eqg``."""
+    import numpy as np
+    from core.ter import TerFile
+
+    arc, zon, side = _loaded(result)
+    ter = TerFile.from_bytes(arc.get(next(f for f in arc.list_files() if f.startswith("ter_"))))
+    v = np.array([(p.x, p.y, p.z) for p in ter.vertices])
+    vn = np.array([(p.nx, p.ny, p.nz) for p in ter.vertices])
+    idx = np.array([(p.v1, p.v2, p.v3) for p in ter.polygons])
+    rows = ([p for r in side["rooms"] for p in r.get("props", [])]
+            + [p for s in side.get("sites", {}).get("sites", []) for p in s.get("props", [])])
+    objs = [o for o in zon.objects if o.name.startswith("decor_")]
+    models = {}
+    out = []
+    for o, p in zip(objs, rows):
+        f = zon.models[o.model_id]
+        if f not in models:
+            m = TerFile.from_bytes(arc.get(f))
+            models[f] = np.array([(q.x, q.y, q.z) for q in m.vertices])
+        c, s = math.cos(o.yaw), math.sin(o.yaw)
+        rot = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+        out.append((p, models[f] @ rot.T * o.scale + (o.x, o.y, o.z)))
+    return out, v[idx], vn[idx].mean(axis=1)
+
+
+@pytest.mark.slow
+@needs_install
+@pytest.mark.parametrize("label", sorted(DECORATED))
+def test_floor_props_stand_on_the_floor_under_them(decorated, label):
+    """Task 13 finding 3 (a box below the world): every floor and raised Prop's model, as
+    the ``.eqg`` places it, has its bottom no lower than the lowest floor of the built mesh
+    under its plan and its top over the highest."""
+    import numpy as np
+    from generators.room_context import _sample
+
+    _spec_, result = decorated[label, "normal"]
+    props, tri, normal = _placed(result)
+    up = tri[normal[:, 2] > 0.5]
+    n = 0
+    for p, w in props:
+        if p["mount"] not in ("floor", "raised"):
+            continue
+        lo, hi = w.min(axis=0), w.max(axis=0)
+        near = up[(up[:, :, 2].max(axis=1) <= hi[2]) & (up[:, :, 2].min(axis=1) >= lo[2] - 20.0)]
+        xs, ys = np.arange(lo[0], hi[0] + 0.01, 0.5), np.arange(lo[1], hi[1] + 0.01, 0.5)
+        floor = _sample(near, xs, ys, "max")
+        # the points under its plan (the model's own extent, turned with it)
+        gx, gy = np.meshgrid(xs, ys, indexing="ij")
+        c, s = math.cos(p["yaw"]), math.sin(p["yaw"])
+        mid = (lo + hi) / 2
+        lx = c * (gx - mid[0]) + s * (gy - mid[1])
+        ly = -s * (gx - mid[0]) + c * (gy - mid[1])
+        inside = (np.abs(lx) <= p["w"] / 2) & (np.abs(ly) <= p["d"] / 2) & ~np.isnan(floor)
+        if not inside.any():
+            continue
+        n += 1
+        under = floor[inside]
+        assert lo[2] >= under.min() - 0.01, (p["key"], lo[2], under.min())
+        assert hi[2] > under.max(), (p["key"], hi[2], under.max())
+    assert n > 3
 
 
 @pytest.mark.slow

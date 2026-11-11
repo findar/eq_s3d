@@ -301,6 +301,43 @@ def test_wall_props_hang_on_a_wall_clear_of_doors_at_stock_height(decorated, han
     assert n > 100
 
 
+def test_floor_and_raised_props_stand_on_their_bottom(decorated, hand):
+    """Task 13 finding 3 (a box below the world): a floor Prop's bottom (``z - below``) stands
+    just over the lowest floor under its plan, never under it; a stacked Prop's on the top of
+    what it stands on."""
+    from generators.decor.placement import LIFT
+    n = stacked = 0
+    for c, d, _ in decorated + hand:
+        for p in d.props:
+            if p.mount == "floor":
+                n += 1
+                low = min(c.floor[i, j] for i, j in _footprint(c, p))
+                assert p.z - p.below == pytest.approx(low + LIFT, abs=1e-6), (c.id, p)
+            elif p.mount == "raised":
+                stacked += 1
+                under = [q for q in d.props if q.group == p.group and q.mount == "floor"]
+                assert any(p.z - p.below == pytest.approx(q.z + q.h + LIFT, abs=1e-6) for q in under), (c.id, p)
+    assert n > 500 and stacked > 10
+
+
+def test_a_model_drawn_under_its_origin_stands_on_its_bottom(rules, fixture):
+    """GENMETCRATE700's mesh runs from 22.8 to 4.6 u UNDER its origin: stood on its origin it
+    was a box below the world (task 13 finding 3). It stands on its bottom."""
+    from dataclasses import replace
+    from generators.decor.placement import LIFT
+    models = {k: (replace(m, measured={"w": 17.7, "d": 22.8, "h": -4.59, "below": 22.77},
+                          observed={"scale": [0.25, 0.25, 1.2]}) if m.tags.kind == "crate" else m)
+              for k, m in fixture.models.items()}
+    cat = Catalogue(models=models, kinds=fixture.kinds, sets=fixture.sets)
+    crates = [p for seed in range(6) for p in place(box_room(room_type="storeroom", w=80.0, d=70.0), rules, cat,
+                                                    "dense", decor_seed=seed).props
+              if p.kind == "crate" and p.mount == "floor"]
+    assert crates
+    for p in crates:
+        assert p.z - p.below == pytest.approx(LIFT, abs=1e-6) and p.z + p.h > 0.0, p
+        assert p.z > 0.0                    # its origin over its mesh, as stock draws it
+
+
 def test_wall_lights_keep_their_spacing(decorated):
     from generators.decor.placement import ROOM_LIGHT_GAP, _spacing
     for c, d, _ in decorated:
