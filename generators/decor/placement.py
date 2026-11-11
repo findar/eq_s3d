@@ -112,6 +112,14 @@ WALL_GAP = 0.5
 GAP = 1.0
 #: A wall Prop's back stands this far off its wall (u).
 WALL_FLUSH = 0.05
+#: How near (u) a wall sample turned from a wall Prop's own face must be to its plan's corner
+#: to stop it there: about the samples' spacing.
+WALL_TURN_NEAR = 3.0
+#: A wall model whose own reach to its wall side is more than this past stock's standoff (model
+#: units) has a part stock sinks into the wall (DNTORCH101: reach 5.14, stock's origin 2.89 off);
+#: hung flush it stands that much further out than stock ever shows it, so a wall line takes
+#: such a model only when its kind has nothing stock hangs flush (task 14).
+WALL_EMBED = 1.5
 #: Defaults for a model the survey never saw placed: height of a wall Prop over the floor.
 WALL_HEIGHT = {"light": 5.5, "hanging": 8.0}
 DEFAULT_WALL_HEIGHT = 6.0
@@ -233,6 +241,12 @@ def size_of(model: Model) -> Size:
                 h=top * s, below=bottom * s,
                 scale=s, over=float(over[1]) if over and len(over) > 1 else None,
                 wall=float(wall[1]) if wall and len(wall) > 1 else None, side=side, back=back)
+
+
+def _sunk(model: Model) -> bool:
+    """Whether stock hangs this wall model with part of it inside the wall (``WALL_EMBED``)."""
+    ws = model.wall_side or {}
+    return ws.get("standoff") is not None and float(ws["back"]) - float(ws["standoff"]) > WALL_EMBED
 
 
 def _blocking(model: Model) -> bool:
@@ -504,6 +518,10 @@ class Room:
         #: Blocking Props' plans grown by ``grow`` (layer 0), by ``grow_wide`` (layer 1) and by
         #: the least the gate's clear width may take (layer 2).
         self.blocked = np.zeros((3,) + self.shape, bool)
+        #: The same, as ``check`` reads them back: a wall Prop's plan about its origin, not its
+        #: middle (the Prop doesn't record its reach off the wall). Placement keeps both clear,
+        #: so its own room check can't find what placement let through (task 14).
+        self.as_read = np.zeros((3,) + self.shape, bool)
         self.wall_props: List[Tuple[float, float, float, bool]] = []     # x, y, half-span, light
         self.ceiling_props: List[Tuple[float, float]] = []
         self._ea, self._eb = self._graph(self.walk)
@@ -519,6 +537,8 @@ class Room:
         self.door_masks = [_in_rect(self.gx, self.gy, d.clear) for d in ctx.doors if d.clear]
         self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
         self.faces = self._faces()
+        self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
+        self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
 
     # -- connectivity (the gate's "reached floor stays joined") ----------------
 
@@ -713,6 +733,27 @@ class Room:
                 return float(self.floor[i, j])
         return None
 
+    def into_a_wall(self, w: WallFace, across: float, half: float) -> bool:
+        """A wall Prop's plan on face ``w`` (``across`` off it, ``half`` either way along it)
+        crosses another wall turned from it: at an inside corner its side would stand in the
+        wall beside it (task 14: a torch 0.68 u into the next wall)."""
+        if not len(self.wall_xy):
+            return False
+        n = np.array([w.nx, w.ny])
+        t = np.array([-w.ny, w.nx])
+        o = np.array([w.x, w.y])
+        corners = np.array([o + n * a + t * s for a in (0.0, across) for s in (-half, half)])
+        reach = half + across + WALL_TURN_NEAR
+        near = (np.hypot(*(self.wall_xy - o).T) <= reach) & (self.wall_n @ n < 0.5)
+        if not near.any():
+            return False
+        q, m = self.wall_xy[near], self.wall_n[near]
+        # each corner against each turned face near it (within the samples' step of it)
+        rel = corners[:, None, :] - q[None, :, :]
+        close = np.hypot(rel[..., 0], rel[..., 1]) <= WALL_TURN_NEAR
+        behind = np.einsum("cqk,qk->cq", rel, m) < -WALL_FLUSH
+        return bool((close & behind).any())
+
     def _faces(self) -> List[_Face]:
         walls = self.ctx.walls
         if not walls:
@@ -778,6 +819,8 @@ class _Chooser:
                     continue
                 pool = [m for mt in MOUNTS_FILLING[mount] for m in self.by.get((kind, mt, s), ())
                         if self.suits(m)]
+                if mount == "wall":
+                    pool = [m for m in pool if not _sunk(m)] or pool
                 if pool:
                     wts = [1.0 + math.log1p(m.placed_total) for m in pool]
                     return self.rng.choices(pool, weights=wts)[0]
@@ -839,11 +882,11 @@ class _Placer:
         r = self.room
         return (r.occupied.copy(), r.blocked.copy(), list(r.wall_props), list(r.ceiling_props),
                 list(self.chooser.used), len(self.out.props), self.chooser.condition,
-                len(r.site.props) if r.site is not None else 0)
+                len(r.site.props) if r.site is not None else 0, r.as_read.copy())
 
     def _restore(self, s) -> None:
         r = self.room
-        r.occupied, r.blocked = s[0].copy(), s[1].copy()
+        r.occupied, r.blocked, r.as_read = s[0].copy(), s[1].copy(), s[8].copy()
         r.wall_props, r.ceiling_props, self.chooser.used, n = list(s[2]), list(s[3]), list(s[4]), s[5]
         self.chooser.condition = s[6]
         del self.out.props[n:]
@@ -913,12 +956,12 @@ class _Placer:
                 z + sz.h - float(ground.max()) < STEP_UP + SITE_STEP_SLACK and \
                 z + sz.h - low > STEP_UP - SITE_STEP_SLACK:
             return None
-        blocked = r.blocked
+        blocked, as_read = r.blocked, r.as_read
         if blocks:
-            blocked = r.blocked | mask
-            if r.problems(blocked):
+            blocked, as_read = r.blocked | mask, r.as_read | mask
+            if r.problems(blocked) or r.problems(as_read):
                 return None
-        return cells, z, blocked, blocks
+        return cells, z, (blocked, as_read), blocks
 
     def _put_floor(self, model, sz, spots, step, line, at, allow=None, poi=None, group=None,
                    mount="floor") -> Optional[Prop]:
@@ -930,7 +973,7 @@ class _Placer:
             self.room.occupied[cells] = True
             if self.room.site is not None:
                 self.room.site.add(x, y, yaw, sz.w, sz.d, group)
-            self.room.blocked = blocked
+            self.room.blocked, self.room.as_read = blocked
             return self._prop(model, sz, x, y, z, yaw, mount, blocks, step, line, at, poi, group)
         return None
 
@@ -1033,23 +1076,32 @@ class _Placer:
             z = f.floor + over
             if z + sz.h > w.top - 0.25 or z - sz.below < w.bottom - 0.01:
                 continue
+            if r.into_a_wall(w, across, half):
+                continue
             x, y = w.x + w.nx * off, w.y + w.ny * off
             if any(math.hypot(x - px, y - py) < (spacing if light and plight else half + ph + GAP)
                    for px, py, ph, plight in r.wall_props):
                 continue
             yaw = math.atan2(w.ny, w.nx) + turn
             blocks = _blocking(model) and z - sz.below < f.floor + HEAD_HEIGHT and z + sz.h > f.floor + STEP_UP
-            blocked = r.blocked
+            blocked, as_read = r.blocked, r.as_read
             if blocks:
                 # Its plan about its middle: a model's depth off the wall from its back.
                 mid = across / 2 - off
                 foot = r.footprint(x + w.nx * mid, y + w.ny * mid, yaw, sz.w, sz.d)
-                if foot is None or r.poi_spot[foot[0]].any():
+                seen = r.footprint(x, y, yaw, sz.w, sz.d)
+                if foot is None or seen is None or r.poi_spot[foot[0]].any():
                     continue
-                blocked = r.blocked | foot[1]
-                if r.problems(blocked):
+                # Not across a lane of floor the strict reading doesn't join (walk, not in
+                # ``before``): whether it is a way through only the gate's own samples tell.
+                # A torch over a 3 u gutter between a dais and its wall cut the gutter off
+                # (task 14, dungeon seed 11).
+                if (foot[1][0] & r.walk & ~r.before).any():
                     continue
-            r.blocked = blocked
+                blocked, as_read = r.blocked | foot[1], r.as_read | seen[1]
+                if r.problems(blocked) or r.problems(as_read):
+                    continue
+            r.blocked, r.as_read = blocked, as_read
             r.wall_props.append((x, y, half, light))
             return self._prop(model, sz, x, y, z, yaw, "wall", blocks, step, line, at, poi)
         return None
@@ -1162,7 +1214,13 @@ class _Placer:
             sz = size_of(model)
             for k in range(n):
                 if m.at == "stack":
-                    got = self._stack(a, model, sz, step, line, gid)
+                    # On the anchor's top: a smaller model of the kinds when this one overhangs
+                    # it, and none when nothing fits (a laid table may stand bare; task 14).
+                    for pick in [model] + self.chooser.smaller(m.kinds, m.mount, model):
+                        got = self._stack(a, pick, size_of(pick), step, line, gid)
+                        if got is not None:
+                            break
+                    continue
                 elif m.at == "row":
                     got = self._put_floor(model, sz, self.row_spots(prev, sz), step, line, "row", group=gid)
                     prev = got or prev
@@ -1317,10 +1375,14 @@ def stream(ctx: RoomContext, decor_seed: Optional[int] = None) -> random.Random:
 
 
 def place(context: RoomContext, rules: Optional[DecorRules] = None, catalogue: Optional[Catalogue] = None,
-          control: str = DEFAULT_CONTROL, decor_seed: Optional[int] = None) -> Decorated:
+          control: str = DEFAULT_CONTROL, decor_seed: Optional[int] = None,
+          may_be_bare: bool = True) -> Decorated:
     """Decorate one room (or Site, or corridor) from its context alone. ``rules`` and
     ``catalogue`` default to the shipped ones; ``control`` is the Decor control (``none``
-    places nothing); ``decor_seed`` salts the stream (default: the context's seed)."""
+    places nothing); ``decor_seed`` salts the stream (default: the context's seed).
+    ``may_be_bare=False`` places the room in full even when it draws ``bare`` (the draw is
+    still made, so the rest of the stream is the same): the build's cap on a zone's bare rooms
+    (``generators.builder.decor_for``)."""
     if rules is None:
         from generators.decor.rules import load_decor
         rules = load_decor()
@@ -1337,10 +1399,10 @@ def place(context: RoomContext, rules: Optional[DecorRules] = None, catalogue: O
         p.corridor(weights.get("light", 1.0))
         return p.out
     p.dressing()
-    p.out.bare = rng.random() < weights[BARE]
+    p.out.bare = rng.random() < weights[BARE] and may_be_bare
     if p.out.bare:
         return p.out
-    lines = [ln for recipe in rules.recipe_for(context.room_type, context.kind, context.source)
+    lines = [ln for recipe in rules.recipe_for(context.room_type, context.kind, context.source, context.zone_type)
              for ln in recipe.lines]
     groups = [ln for ln in lines if ln.group]
     debris = [ln for ln in lines if not ln.group and ln.category == "debris"]

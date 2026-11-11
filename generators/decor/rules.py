@@ -9,8 +9,9 @@
 - ``sets.toml``: which Sets a room takes, by race, theme and zone type, and which Sets may
   share a room.
 
-**Lookup** is step 9's: a room takes its room type's recipe, else its kind's, else the
-default (``recipe_for``), then the ``every`` lines. A Site takes its Site kind's recipe, or
+**Lookup** is step 9's: a room takes its room type's recipe, else its kind's, else its zone
+type's (``[zones.<zone type>]``: a city's rooms have neither type nor kind), else the default
+(``recipe_for``), then the ``every`` lines. A Site takes its Site kind's recipe, or
 nothing, and no ``every`` lines.
 
 **Mount** comes from where a line stands (``at``): ``on_wall`` and ``wall`` ask for wall
@@ -172,21 +173,25 @@ class DecorRules:
     controls: Mapping[str, Mapping[str, float]]
     moves: Mapping[str, str]            # Category -> the Scale that moves its lines
     sets: SetRules
+    #: A zone type's own recipe for its rooms with no room type or kind (``[zones.<zone type>]``:
+    #: a city's rooms, which have neither), in place of the default.
+    zones: Mapping[str, Recipe] = field(default_factory=dict)
 
     # -- lookup ---------------------------------------------------------------
 
-    def recipe_for(self, room_type: str = "", kind: str = "", source: str = "room") -> Tuple[Recipe, ...]:
+    def recipe_for(self, room_type: str = "", kind: str = "", source: str = "room",
+                   zone_type: str = "") -> Tuple[Recipe, ...]:
         """A room's recipes, in the order they're placed: its room type's, else its kind's, else
-        the default, then ``every``. A Site's: its Site kind's, or none."""
+        its zone type's, else the default, then ``every``. A Site's: its Site kind's, or none."""
         if source == "site":
             return (self.sites[room_type],) if room_type in self.sites else ()
-        own = self.types.get(room_type) or self.kinds.get(kind) or self.default
+        own = self.types.get(room_type) or self.kinds.get(kind) or self.zones.get(zone_type) or self.default
         return (own, self.every)
 
-    def which_recipe(self, room_type: str = "", kind: str = "") -> str:
-        """The name of the recipe a room of this type and kind takes (``types.X``, ``kinds.X``
-        or ``default``): what a room type without one falls back to."""
-        return self.recipe_for(room_type, kind)[0].name
+    def which_recipe(self, room_type: str = "", kind: str = "", zone_type: str = "") -> str:
+        """The name of the recipe a room of this type and kind takes (``types.X``, ``kinds.X``,
+        ``zones.X`` or ``default``): what a room type without one falls back to."""
+        return self.recipe_for(room_type, kind, zone_type=zone_type)[0].name
 
     def dressing_for(self, purpose: str) -> Tuple[Line, ...]:
         return self.dressing.get(purpose, ())
@@ -238,7 +243,7 @@ class DecorRules:
         what design finding 1's bands are checked against."""
         weights = self.weights_for(zone_type, race, theme, kind, room_type, control)
         out = {c: 0.0 for c in CATEGORIES}
-        for recipe in self.recipe_for(room_type, kind, source):
+        for recipe in self.recipe_for(room_type, kind, source, zone_type):
             for line in recipe.lines:
                 mean = line.chance * (line.count[0] + line.count[1]) / 2 * self.factor(line, weights, scales)
                 if line.group:
@@ -253,7 +258,8 @@ class DecorRules:
 
     def lines(self) -> Iterator[Line]:
         """Every recipe and Dressing line."""
-        for recipe in (self.default, *self.kinds.values(), *self.types.values(), *self.sites.values(), self.every):
+        for recipe in (self.default, *self.kinds.values(), *self.types.values(), *self.zones.values(),
+                       *self.sites.values(), self.every):
             yield from recipe.lines
         for lines in self.dressing.values():
             yield from lines
@@ -572,8 +578,8 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
 
     # rooms.toml
     chk = r_chk
-    chk.keys(rooms, "top level", ("default", "every", "kinds", "types", "sites", "groups", "dressing", "weights",
-                                  "moves"),
+    chk.keys(rooms, "top level", ("default", "every", "kinds", "types", "zones", "sites", "groups", "dressing",
+                                  "weights", "moves"),
              required=("default", "every", "dressing", "weights"))
     raw_groups = chk.table(rooms.get("groups", {}), "top level", "groups", "[groups.<name>]") or {}
     groups: Dict[str, Any] = {}
@@ -585,7 +591,8 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
                                        ROOMS_FILE))
     every = Recipe("every", _lines(chk, rooms.get("every", {}), "every", ARRANGEMENTS, kinds, groups, ROOMS_FILE))
     named: Dict[str, Dict[str, Recipe]] = {}
-    for section, known in (("kinds", ROOM_KINDS), ("types", sorted(ROOM_TYPES)), ("sites", _site_kinds())):
+    for section, known in (("kinds", ROOM_KINDS), ("types", sorted(ROOM_TYPES)), ("zones", VALID_ZONE_TYPES),
+                           ("sites", _site_kinds())):
         tbl = chk.table(rooms.get(section, {}), "top level", section, f"[{section}.<name>]") or {}
         out = {}
         for name, body in tbl.items():
@@ -615,7 +622,7 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
     raise_all()
     return DecorRules(default, named["kinds"], named["types"], named["sites"], every,
                       {k: g for k, g in groups.items() if isinstance(g, Group)}, dressing, weights, controls, moves,
-                      set_rules)
+                      set_rules, named["zones"])
 
 
 # ---------------------------------------------------------------------------
