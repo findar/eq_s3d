@@ -15,3 +15,4 @@ Task 14 proved the gate's first try at Normal only. Task 15 found a 16-room Grap
 Don't make Dense sparser to pass: fix where placement and the gate disagree. Timing tests fail under parallel load: rerun alone.
 
 ## Result
+✔ 958e029 · 2375 passed

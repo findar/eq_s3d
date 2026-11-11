@@ -138,7 +138,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: generators/builder.py (`decor_for` takes Site contexts), generators/wilderness/build.py (the gate ZON carries Props), scripts/prop_catalogue.py + rules/decor/catalogue.json + generators/decor/catalogue.py (the open-ground screen), generators/decor/placement.py (honour the screen at Sites), ai/schema.py + web/src/ (Decor shown for wilderness), tests/test_site_props.py, tests/test_site_decor_builds.py
   - Reqs: 10.1, 11
 
-- [ ] 21. Dense passes the gate first try
+- [x] 21. Dense passes the gate first try
   - Card: [cards/21-dense-first-try.md](cards/21-dense-first-try.md)
   - Type: agent · Size: M · Depends: 14, 15
   - Owns: generators/decor/, generators/builder.py (the decor functions), rules/decor/rooms.toml, tests/test_decor_bands.py, tests/test_decor_placement.py, tests/test_decor_builds.py, docs/ACCEPTANCE.md (the step 11 known-issue line only)
