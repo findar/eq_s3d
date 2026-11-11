@@ -282,9 +282,9 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
 }
 
 // Props: the sidecar's decor block (control, decor seed, counts) and the
-// placed Props by Category and by kind, read from the build. A zone type
-// without rooms (wilderness) has none; a room-graph build without the
-// install on the server has none either, with a warning.
+// placed Props by Category and by kind, read from the build: the rooms' and
+// (wilderness, outdoor dungeon) the Sites'. A build without the install on
+// the server has none, with a warning.
 function addRow(parent: HTMLElement, k: string, v: string, title = ""): void {
   const div = document.createElement("div");
   div.className = "row";
@@ -306,19 +306,19 @@ function updatePropsPanel(result: GenerateResult, sidecar: ZoneSidecar): void {
   const d = sidecar.decor;
   if (!d) {
     decorEl.textContent = rooms ? "none" : "—";
-    list.innerHTML = `<span style="color:#555;font-size:11px">${rooms ? "no Props" : "no rooms"}</span>`;
+    list.innerHTML = `<span style="color:#555;font-size:11px">${rooms ? "no Props" : "no rooms or Sites"}</span>`;
     return;
   }
   decorEl.textContent = `${d.control} · seed ${d.seed}`;
   addRow(list, "Props", String(d.props));
   addRow(list, "Lights", String(d.lights));
   addRow(list, "Models", String(d.models));
-  addRow(list, "Bare rooms", `${d.bare} / ${d.rooms}`);
+  addRow(list, d.sites ? "Bare rooms + Sites" : "Bare rooms", `${d.bare} / ${d.rooms + (d.sites ?? 0)}`);
   addRow(list, "Dropped", String(d.drops), "Recipe lines that found no model or no spot");
   if (d.check.length) addRow(list, "Check", String(d.check.length), d.check.join("\n"));
   const byCat: Record<string, number> = {};
   const byKind: Record<string, number> = {};
-  for (const r of sidecar.rooms ?? []) {
+  for (const r of [...(sidecar.rooms ?? []), ...(sidecar.sites?.sites ?? [])]) {
     for (const p of r.props ?? []) {
       byCat[p.category] = (byCat[p.category] || 0) + 1;
       byKind[p.kind] = (byKind[p.kind] || 0) + 1;
@@ -369,8 +369,8 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   "dungeon-theme": ["dungeon", "city", "outdoor_dungeon"],
   "dungeon-race": ["dungeon", "city", "outdoor_dungeon"],
   // Replaced by /api/controls' decor.zone_types on load (refreshControls).
-  decor: ["dungeon", "city", "outdoor_dungeon"],
-  "decor-seed": ["dungeon", "city", "outdoor_dungeon"],
+  decor: ["dungeon", "city", "wilderness", "outdoor_dungeon"],
+  "decor-seed": ["dungeon", "city", "wilderness", "outdoor_dungeon"],
 };
 
 function usesControl(zoneType: string, control: string): boolean {

@@ -82,10 +82,11 @@ SITES_ZONE_TYPES = ("wilderness", "outdoor_dungeon")
 # (generators.decor.rules.CONTROLS; that module imports this one, so the list
 # is written out here and a test keeps the two equal) and a decor seed. A plan
 # decor of "" is not chosen: the pipeline builds the default, normal
-# (generators.pipeline._with_decor). The room-graph zone types only.
+# (generators.pipeline._with_decor). The room-graph zone types, and the
+# wilderness for its Sites' Props (room-decor task 20).
 VALID_DECOR = ["none", "sparse", "normal", "dense"]
 DEFAULT_DECOR = "normal"
-DECOR_ZONE_TYPES = ("dungeon", "city", "outdoor_dungeon")
+DECOR_ZONE_TYPES = ("dungeon", "city", "wilderness", "outdoor_dungeon")
 SEED_MAX = 2_147_483_647
 
 
@@ -451,8 +452,8 @@ ZONE_PLAN_JSON_SCHEMA = {
         "decor": {
             "type": "string",
             "enum": VALID_DECOR,
-            "description": "Dungeon, city or outdoor dungeon: how much furniture, "
-                           "lights and clutter stand in the rooms (bare rooms: "
+            "description": "How much furniture, lights and clutter stand in the "
+                           "rooms and at the Sites (bare rooms: "
                            "sparse; cluttered or richly furnished: dense); omit "
                            "for normal.",
         },
