@@ -36,11 +36,14 @@ Usage::
     python scripts/prop_catalogue.py build --eq-path F:\everquest_rof2
     python scripts/prop_catalogue.py build --eq-path F:\everquest_rof2 --archives befallen
     python scripts/prop_catalogue.py tag
+    python scripts/prop_catalogue.py screen --eq-path F:\everquest_rof2
     python scripts/prop_catalogue.py sheet --eq-path F:\everquest_rof2 --out output/prop_sheet
 
 ``tag`` (task 3) proposes every entry's Tags with a confidence and a reason (``auto_tags``);
 reviewed Tags live in ``rules/decor/tags.toml`` and win when ``generators/decor/catalogue.py``
-loads the two. ``sheet`` writes a local HTML contact sheet for the review: it shows the
+loads the two. ``screen`` (room-decor task 20) judges which floor and raised models the
+wilderness Footprint gate takes on open ground and writes each one's ``open_ground``, the only
+field it touches (``build`` keeps it). ``sheet`` writes a local HTML contact sheet for the review: it shows the
 client's art, so it lives under ``output/`` and is never committed or published.
 """
 
@@ -70,7 +73,7 @@ from site_survey import WLD_PASSABLE, _frags, _name, measure_model  # noqa: E402
 OUT = ROOT / "rules" / "decor" / "catalogue.json"
 FORMAT = 1
 #: Fields later tasks own; a rebuild carries them over by key.
-KEPT = ("observed", "tags")
+KEPT = ("observed", "tags", "open_ground")
 #: ``<zone>_obj.s3d``, ``<zone>_obj2.s3d`` and ``<zone>_2_obj.s3d`` all serve ``<zone>``.
 OBJ_ARCHIVE = re.compile(r"(.+?)(_2)?_obj(\d*)\.s3d", re.IGNORECASE)
 MAX_AREA = 1.0e6     # u^2 of surface past which the footprint raster isn't drawn
@@ -520,6 +523,144 @@ def put_observed(cat: dict, observed: dict, out: Path = OUT) -> None:
         else:
             entry.pop("observed", None)
     write(cat, out)
+
+
+# --- screen: the open-ground screen (room-decor task 20) -----------------------------------------
+#
+# Many stock models are open shells wound any way: the wilderness Footprint gate (which reads a
+# solid by its winding, with no room gate's "inside one model's plan is its inside" rule) takes
+# them as Enterables with no opening, or as ground cut off from Spawn (most carts, a third of the
+# rocks). ``screen`` judges every floor and raised model once, at the scale placement gives it,
+# and writes ``open_ground`` (true: the gate takes it on open ground; false: it doesn't). Wall,
+# ceiling and skeletal models get none. Placement puts at a Site only models screened true.
+
+#: The fine raster a model is judged on alone (u), and how far it reaches past the model.
+JUDGE_STEP = 0.5
+JUDGE_PAD = 12.0
+#: The Mounts a Site's Props take; only these are screened.
+SCREENED_MOUNTS = ("floor", "raised")
+
+
+def open_ground(ter, scale: float) -> bool:
+    """Whether the wilderness Footprint gate takes this model (its TER, model space) at
+    ``scale`` on open ground, whatever its yaw or the raster's offset.
+
+    Judged on a fine raster: the ground a player (half-width 1.5 u) stands on beside it must
+    all lie within reach of open ground a body twice as wide (3 u: a strip the gate's 2 u
+    raster always keeps joined, at any angle) reaches from outside; a pocket fails. And the
+    gate's own opening measure must not find it Enterable. A Prop stands at the lowest of its
+    ground, so it may sit up to ``placement.FLAT`` below the ground round it, which moves
+    the gate's band up its model: the ground stood on is read with the band's least (its
+    floor raised by ``FLAT``), the way out with its most (its head raised by ``FLAT``), and
+    the opening at both heights."""
+    from scipy.ndimage import binary_dilation, label
+
+    from analyzer.footprints import (PLAYER_HALF_WIDTH, HEAD_HEIGHT, collidable_triangles,
+                                     coverage, flat_raster, measure_opening)
+    from analyzer.traverse import AgentModel
+    from generators.decor.placement import FLAT
+
+    local = collidable_triangles(ter)
+    if not len(local):
+        return True
+    tris = local * scale
+    low = AgentModel().max_step_up
+    # Where the band's floor or head crosses a corner of the model as it sinks, and between.
+    zs = np.unique(np.round(tris[:, :, 2], 2))
+    events = {round(z - edge + d, 2) for z in zs for edge in (low, HEAD_HEIGHT) for d in (-0.02, 0.02)}
+    sinks = sorted({0.0, FLAT / 2, FLAT} | {e for e in events if 0.0 < e < FLAT})
+    for dz in (0.0, FLAT / 2, FLAT):
+        if measure_opening(local - np.array([0.0, 0.0, dz / scale]), scale).enterable:
+            return False
+    reach = float(np.abs(tris[:, :, :2]).max()) + JUDGE_PAD
+    ground = flat_raster(-reach, -reach, reach, reach, JUDGE_STEP)
+    owners = np.zeros(len(tris), dtype=np.int32)
+    grow = int(np.ceil((PLAYER_HALF_WIDTH + JUDGE_STEP) / JUDGE_STEP))
+    for dz in sinks:
+        def free(radius):
+            return ~coverage(ground, tris, owners, radius, low + dz, HEAD_HEIGHT + dz).covered
+        stand, wide = free(PLAYER_HALF_WIDTH), free(2 * PLAYER_HALF_WIDTH)
+        labels, _ = label(wide)
+        border = set(np.unique(np.r_[labels[0], labels[-1], labels[:, 0], labels[:, -1]])) - {0}
+        near = binary_dilation(np.isin(labels, list(border)), iterations=grow)
+        if (stand & ~near).any():
+            return False
+    return True
+
+
+_SCREEN = {}
+
+
+def _screen_init(eq_path: str) -> None:
+    from generators.decor.catalogue import load as load_merged
+    from generators.decor.stock import Importer
+
+    _SCREEN["models"] = load_merged().models
+    _SCREEN["importer"] = Importer(eq_path)
+
+
+def _screen_keys(keys) -> dict:
+    """``open_ground`` for these keys (one source archive's), in a worker."""
+    from generators.decor.placement import size_of
+    from generators.decor.stock import NotImportable
+
+    models, importer = _SCREEN["models"], _SCREEN["importer"]
+    out = {}
+    for key in keys:
+        try:
+            ter = importer.get(key).ter
+        except NotImportable:
+            out[key] = False
+            continue
+        out[key] = open_ground(ter, size_of(models[key]).scale)
+    importer._files.clear()
+    importer._wlds.clear()
+    importer._models.clear()
+    return out
+
+
+def screen_keys(cat: dict) -> list:
+    """The entries ``screen`` judges: every model (whatever its ``use``) whose Mount, after
+    ``tags.toml``, is a Site's (floor or raised), skeletal ones aside."""
+    from generators.decor.catalogue import load as load_merged
+
+    merged = load_merged().models
+    return sorted(k for k in cat["models"] if k in merged and merged[k].animation != "skeletal"
+                  and merged[k].tags.mount in SCREENED_MOUNTS)
+
+
+def screen(cat: dict, eq_path: Path, out: Path | None = OUT, jobs: int | None = None,
+           keys=None) -> dict:
+    """Judge ``keys`` (default ``screen_keys``) and write each entry's ``open_ground``; every
+    other entry loses its own. Only that field changes."""
+    keys = screen_keys(cat) if keys is None else sorted(keys)
+    by_archive = defaultdict(list)
+    for k in keys:
+        by_archive[cat["models"][k]["source"]["archive"]].append(k)
+    chunks = sorted(by_archive.values(), key=len, reverse=True)
+    flags = {}
+    with ProcessPoolExecutor(jobs, initializer=_screen_init, initargs=(str(eq_path),)) as pool:
+        for got in pool.map(_screen_keys, chunks):
+            flags.update(got)
+    for key, entry in cat["models"].items():
+        if key in flags:
+            entry["open_ground"] = flags[key]
+        else:
+            entry.pop("open_ground", None)
+    if out is not None:
+        write(cat, out)
+    return cat
+
+
+def screen_report(cat: dict) -> None:
+    from generators.decor.catalogue import load as load_merged
+
+    merged = load_merged().models
+    flags = {k: e["open_ground"] for k, e in cat["models"].items() if "open_ground" in e}
+    usable = {k: v for k, v in flags.items() if merged[k].tags.use == "yes"}
+    print(f"screened {len(flags)}: open ground {sum(flags.values())}, refused "
+          f"{len(flags) - sum(flags.values())}; of them usable {len(usable)}: open ground "
+          f"{sum(usable.values())}, refused {len(usable) - sum(usable.values())}")
 
 
 # --- tag: the auto-tagger (task 3) ---------------------------------------------------------------
@@ -1301,6 +1442,11 @@ def main(argv=None) -> int:
     b.add_argument("--jobs", type=int, default=None)
     t = sub.add_parser("tag", help="propose every entry's Tags into the catalogue")
     t.add_argument("--catalogue", type=Path, default=OUT)
+    sc = sub.add_parser("screen", help="judge which floor models the wilderness gate takes on "
+                                       "open ground (writes only open_ground)")
+    sc.add_argument("--eq-path", type=Path, required=True)
+    sc.add_argument("--catalogue", type=Path, default=OUT)
+    sc.add_argument("--jobs", type=int, default=None)
     sh = sub.add_parser("sheet", help="write the local HTML review sheet")
     sh.add_argument("--eq-path", type=Path, required=True)
     sh.add_argument("--out", type=Path, default=ROOT / "output" / "prop_sheet")
@@ -1317,6 +1463,10 @@ def main(argv=None) -> int:
     elif args.cmd == "tag":
         cat = tag(load(args.catalogue), args.catalogue)
         tag_report(cat)
+        print(f"wrote {args.catalogue}")
+    elif args.cmd == "screen":
+        cat = screen(load(args.catalogue), args.eq_path, args.catalogue, args.jobs)
+        screen_report(cat)
         print(f"wrote {args.catalogue}")
     elif args.cmd == "sheet":
         page = write_sheet(args.eq_path, args.out, args.catalogue, args.tags, args.all, args.jobs)
