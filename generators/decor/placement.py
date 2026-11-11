@@ -71,7 +71,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-from scipy.ndimage import binary_dilation, distance_transform_edt
+from scipy.ndimage import binary_dilation, distance_transform_edt, label
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
@@ -91,6 +91,11 @@ WIDE_RADIUS = CLEAR_WIDTH / 2 - 1.0 / math.sqrt(2.0)
 #: The gate's band starts AT a step over the floor (a triangle touching it counts), and a
 #: model's measured height is rounded: a floor Prop this near a step tall is in the way.
 BAND_SLACK = 0.1
+#: The gate's walled-off pocket (``analyzer.traverse.WALLED_OFF``): free floor this big (u^2)
+#: cut off and not inside one model's plan fails ``footprint_cut``.
+WALLED_OFF = 64.0
+#: Layers of a blocked mask (``Room.footprint``).
+LAYERS = 4
 #: A wall is kept clear this far each side of a door's clear zone (u): the opening's frame.
 FRAME = 3.0
 #: Wall lights' spacing (finding 1: a wall light's nearest wall light, p50 over zones).
@@ -110,9 +115,13 @@ FALLBACKS = 2
 #: Gap between a Prop's back and its wall (u), and between neighbours in a row or Group.
 WALL_GAP = 0.5
 GAP = 1.0
-#: The gap after a blocking Prop in a row: the gate leaves any gap from 5.83 u open
-#: (``analyzer.footprints``: 2 x the half-width plus a raster step's diagonal).
-ROW_GAP_BLOCKING = 6.0
+#: The gap the gate surely leaves open between two blocking Props' plans: any gap from 5.83 u
+#: (``analyzer.footprints``: 2 x the half-width plus a raster step's diagonal). A nearer gap
+#: can be shut or open on the gate's raster, so the floor behind it (by a wall) can be a pocket
+#: the gate cuts off that decor's grid reads as blocked (task 21: two rocks 2.5 u apart by a
+#: wall, 64 u^2): ``Room.spaced``. The gap after a blocking Prop in a row.
+BLOCKING_GAP = 6.0
+ROW_GAP_BLOCKING = BLOCKING_GAP
 #: Cells (2 u each) round a lane of floor the strict reading doesn't join that a blocking Prop
 #: keeps off: 6 u, about the gate's clear width less a cell.
 LANE_NEAR = 3
@@ -311,6 +320,28 @@ def _polygon_distance(gx, gy, plan) -> np.ndarray:
     return np.where(_in_polygon(gx, gy, plan), 0.0, d)
 
 
+def _hull(points: np.ndarray) -> np.ndarray:
+    """The convex hull of plan points, counter-clockwise (Andrew's monotone chain)."""
+    pts = sorted(set(map(tuple, np.round(np.asarray(points, dtype=np.float64), 6))))
+    if len(pts) < 3:
+        return np.array(pts, dtype=np.float64)
+
+    def turn(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: list = []
+    for p in pts:
+        while len(lower) >= 2 and turn(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper: list = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and turn(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return np.array(lower[:-1] + upper[:-1], dtype=np.float64)
+
+
 def _near_rise(ctx: RoomContext, ok: np.ndarray) -> np.ndarray:
     """Cells within the player's half-width of something he can't walk into, as the
     gate's walls cover floor (``analyzer.footprints.cover_samples``): a wall (no floor; a
@@ -337,10 +368,13 @@ def _near_rise(ctx: RoomContext, ok: np.ndarray) -> np.ndarray:
     return out
 
 
-def _edge_distance(ctx: RoomContext, ok: np.ndarray) -> np.ndarray:
+def _edge_distance(ctx: RoomContext, ok: np.ndarray, reach: float = 0.0) -> np.ndarray:
     """Each cell's distance (u, middle to middle) to the nearest cell a body can't stand
     in: a wall (no floor; not round a Site), a solid Feature, or the foot of a rise more
-    than ``STEP_UP``."""
+    than ``STEP_UP``. Within ``reach`` it is also the distance to any floor more than
+    ``STEP_UP`` over the cell's own, as the gate reads it (``cover_samples``: anything a step
+    to a head over a sample, within the radius): a stair or ramp rises past a step a few cells
+    off, with no one rise of a cell more than a step (task 21: the foot of a dais's stair)."""
     floor = ctx.floor
     site = ctx.source == "site"
     edge = (np.isnan(floor) & (not site)) | (~np.isnan(floor) & ~ok)
@@ -351,7 +385,22 @@ def _edge_distance(ctx: RoomContext, ok: np.ndarray) -> np.ndarray:
         edge[:, :-1] |= f[:, 1:] > f[:, :-1] + STEP_UP
         edge[:, 1:] |= f[:, :-1] > f[:, 1:] + STEP_UP
     padded = np.pad(edge, 1, constant_values=not site)
-    return distance_transform_edt(~padded)[1:-1, 1:-1] * ctx.cell
+    out = distance_transform_edt(~padded)[1:-1, 1:-1] * ctx.cell
+    n = int(math.floor(reach / ctx.cell))
+    if n < 1:
+        return out
+    nx, ny = floor.shape
+    hi = np.pad(f, n, constant_values=-np.inf)
+    base = np.where(np.isnan(floor), np.inf, floor)
+    for di in range(-n, n + 1):
+        for dj in range(-n, n + 1):
+            d = math.hypot(di, dj) * ctx.cell
+            if (di == 0 and dj == 0) or d > reach:
+                continue
+            h = hi[n + di:n + di + nx, n + dj:n + dj + ny]
+            with np.errstate(invalid="ignore"):
+                out = np.where(h > base + STEP_UP, np.minimum(out, d), out)
+    return out
 
 
 def _in_capsule(gx, gy, x0, y0, x1, y1, r) -> np.ndarray:
@@ -491,7 +540,8 @@ class Room:
         #: Where the middle of a body ``CLEAR_WIDTH`` wide can be (a wall stands about half a
         #: cell short of the middle of the cell beyond it), and how far a blocking Prop's plan
         #: is grown to take it (the gate's 1 u samples read within half a cell).
-        self.wide = self.ok & (_edge_distance(ctx, self.ok) >= WIDE_RADIUS + self.cell / 2)
+        self.wide = self.ok & (_edge_distance(ctx, self.ok, WIDE_RADIUS + self.cell / 2)
+                               >= WIDE_RADIUS + self.cell / 2)
         self.grow_wide = WIDE_RADIUS + self.cell / 2
         self.ceiling = ctx.ceiling
         door_cells = np.zeros(self.shape, bool)
@@ -518,25 +568,43 @@ class Room:
             if f.get("kind") == "dais":
                 self.dais |= m
             self.feature |= m
+        #: The floor round the daises (the gate reads it under them too), and the dais cells a
+        #: head or more over it (under those, it's floor a player stands on in the gate's view).
+        self.under_dais: Optional[float] = None
+        self.tall_dais = np.zeros(self.shape, bool)
+        if self.dais.any():
+            ring = binary_dilation(self.dais, np.ones((3, 3), bool), iterations=2) & self.ok & ~self.feature
+            if ring.any():
+                self.under_dais = float(np.nanmin(self.floor[ring]))
+                with np.errstate(invalid="ignore"):
+                    self.tall_dais = self.dais & (self.floor >= self.under_dais + HEAD_HEIGHT)
         # POIs' own spots: no footprint (grown by the player) covers one.
         self.poi_spot = np.zeros(self.shape, bool)
         for p in ctx.pois:
             self.poi_spot |= np.hypot(self.gx - p["x"], self.gy - p["y"]) <= self.cell * 0.75
         self.occupied = np.zeros(self.shape, bool)
-        #: Blocking Props' plans grown by ``grow`` (layer 0), by ``grow_wide`` (layer 1) and by
-        #: the least the gate's clear width may take (layer 2).
-        self.blocked = np.zeros((3,) + self.shape, bool)
+        #: Blocking Props' plans grown by ``grow`` (layer 0), by ``grow_wide`` (layer 1), by
+        #: the least the gate's clear width may take (layer 2), and not grown (layer 3).
+        self.blocked = np.zeros((LAYERS,) + self.shape, bool)
         #: The same, as ``check`` reads them back: a wall Prop's plan about its origin, not its
         #: middle (the Prop doesn't record its reach off the wall). Placement keeps both clear,
         #: so its own room check can't find what placement let through (task 14).
-        self.as_read = np.zeros((3,) + self.shape, bool)
+        self.as_read = np.zeros((LAYERS,) + self.shape, bool)
         self.wall_props: List[Tuple[float, float, float, bool]] = []     # x, y, half-span, light
         self.ceiling_props: List[Tuple[float, float]] = []
+        #: Blocking floor Props' plans (corners) and Groups, for ``BLOCKING_GAP``.
+        self.plans: List[Tuple[np.ndarray, Optional[int]]] = []
         self._ea, self._eb = self._graph(self.walk)
         self.starts = self._starts(door_cells, self.walk, self._ea, self._eb)
         #: Where the way in is, for aiming Props: the doors' reached floor (else the starts).
         self.entry = door_cells & self.ok if (door_cells & self.ok).any() else self.starts
         self.before = self._joined(np.zeros(self.shape, bool))
+        #: Reached floor beside the joined floor, and reached floor with no wall (or solid
+        #: Feature) side by side with it: the gate's walls cover floor within the half-width of
+        #: them, so a cell beside one may be covered, and one clear of them is free (``_pockets``).
+        self.near_before = binary_dilation(self.before, np.ones((3, 3), bool))
+        bad = np.pad(~self.ok, 1, constant_values=True)
+        self.open = self.ok & ~(bad[:-2, 1:-1] | bad[2:, 1:-1] | bad[1:-1, :-2] | bad[1:-1, 2:])
         #: The same on all reached floor, uneroded: a neck ``walk`` reads shut can be open
         #: on the gate's own samples, so floor beyond it must stay joined on this one too.
         self._loose = (self.ok,) + self._graph(self.ok)
@@ -655,27 +723,50 @@ class Room:
         return out
 
     def footprint(self, x, y, yaw, w, d):
-        """A blocking Prop's grown plan: (the cells grown by ``grow``, the three-layer mask of
-        it, of the plan grown by ``grow_wide`` and of it grown the least the gate's clear
-        width may take); None when its middle is off the grid."""
+        """A blocking Prop's grown plan: (the cells grown by ``grow``, the ``LAYERS``-layer mask
+        of it, of the plan grown by ``grow_wide``, of it grown the least the gate's clear width
+        may take, and of the bare plan); None when its middle is off the grid."""
         # The yaw as the Prop records it, so ``check`` reads the same cells: a plan edge on a
         # cell's middle flips with the last bit of cos/sin (task 14).
         yaw = float(yaw) % (2 * math.pi)
         grown = self.rect_cells(x, y, yaw, w, d, self.grow, clip=True)
         wide = self.rect_cells(x, y, yaw, w, d, self.grow_wide, clip=True)
         least = self.rect_cells(x, y, yaw, w, d, max(0.0, WIDE_RADIUS - self.cell / 2), clip=True)
-        if grown is None or wide is None or least is None:
+        bare = self.rect_cells(x, y, yaw, w, d, 0.0, clip=True)
+        if grown is None or wide is None or least is None or bare is None:
             return None
-        m = np.zeros((3,) + self.shape, bool)
+        m = np.zeros((LAYERS,) + self.shape, bool)
         m[0][grown] = True
         m[1][wide] = True
         m[2][least] = True
+        m[3][bare] = True
         return grown, m
 
+    def _pockets(self, plans: np.ndarray) -> np.ndarray:
+        """Reached floor outside every blocking Prop's plan that was beside the floor joined to
+        the doors and, with the bare plans in the way, no longer is, where some of it is clear
+        of the walls (no wall beside it) and it and the plans it lies against make
+        ``WALLED_OFF`` or more. The gate reads a model only where it stands in its band, so
+        floor under an overhang can join such a strip into a pocket no one model's plan holds,
+        while the grown plans read the strip as blocked (task 21: a brazier's bowl over the
+        strip between it and a notch in the wall, 64 u^2)."""
+        ring = np.ones((3, 3), bool)
+        pocket = self.loose_before & self.near_before & ~plans & \
+            ~binary_dilation(self._joined(plans), ring)
+        if not (pocket & self.open).any():
+            return np.zeros(self.shape, bool)
+        lab, _n = label(pocket | plans)
+        out = np.zeros(self.shape, bool)
+        for k in np.unique(lab[pocket & self.open]):
+            piece = lab == k
+            if piece.sum() * self.cell ** 2 >= WALLED_OFF:
+                out |= piece & pocket
+        return out
+
     def problems(self, blocked: np.ndarray) -> List[str]:
-        """What a blocked mask (three layers, as ``self.blocked``) breaks: floor cut off, a door
-        or a POI no longer reached, a door's way narrower than ``CLEAR_WIDTH``."""
-        wide_blocked, maybe = blocked[1], blocked[2]
+        """What a blocked mask (``LAYERS`` layers, as ``self.blocked``) breaks: floor cut off, a
+        door or a POI no longer reached, a door's way narrower than ``CLEAR_WIDTH``."""
+        wide_blocked, maybe, plans = blocked[1], blocked[2], blocked[3]
         blocked = blocked[0]
         after = self._joined(blocked)
         out = []
@@ -685,6 +776,8 @@ class Room:
             cut = self.loose_before & self.walk & ~blocked & ~loose_after
         if not cut.any():
             cut = self.gentle_before & ~blocked & ~self._joined(blocked, graph=self._gentle)
+        if not cut.any() and plans.any():
+            cut = self._pockets(plans)
         if cut.any():
             i, j = (int(v[0]) for v in np.nonzero(cut))
             out.append(f"cuts off {int(cut.sum())} floor cells at ({self.xs[i]:.0f}, {self.ys[j]:.0f})")
@@ -782,6 +875,33 @@ class Room:
         close = np.hypot(rel[..., 0], rel[..., 1]) <= WALL_TURN_NEAR
         behind = np.einsum("cqk,qk->cq", rel, m) < -WALL_FLUSH
         return bool((close & behind).any())
+
+    def spaced(self, x: float, y: float, yaw: float, w: float, d: float, group: Optional[int],
+               plans: np.ndarray) -> bool:
+        """A blocking floor Prop's plan keeps ``BLOCKING_GAP`` off every other blocking floor
+        Prop's plan (its own Group's members excepted), or the gaps nearer shut no pocket: with
+        them closed (each pair's hull in the way, on top of ``plans``, every blocking plan with
+        this one) ``_pockets`` finds none. Plans that nearly touch are no exception: a model's
+        body can stand well inside its plan (task 21: two rocks' plans 1.2 u apart, their
+        bodies further, by a wall). Plans never overlap (``occupied``), so a gap is the least
+        distance from a corner of one to the other."""
+        if not self.plans:
+            return True
+        mine = _SiteBounds.corners(x, y, float(yaw) % (2 * math.pi), w, d)
+        seams = []
+        for plan, g in self.plans:
+            if group is not None and g == group:
+                continue
+            gap = min(float(_polygon_distance(mine[:, 0], mine[:, 1], plan).min()),
+                      float(_polygon_distance(plan[:, 0], plan[:, 1], mine).min()))
+            if gap < BLOCKING_GAP - 0.01:
+                seams.append(plan)
+        if not seams:
+            return True
+        shut = plans.copy()
+        for plan in seams:
+            shut |= _in_polygon(self.gx, self.gy, _hull(np.vstack([mine, plan])))
+        return not self._pockets(shut).any()
 
     def _faces(self) -> List[_Face]:
         walls = self.ctx.walls
@@ -911,11 +1031,12 @@ class _Placer:
         r = self.room
         return (r.occupied.copy(), r.blocked.copy(), list(r.wall_props), list(r.ceiling_props),
                 list(self.chooser.used), len(self.out.props), self.chooser.condition,
-                len(r.site.props) if r.site is not None else 0, r.as_read.copy())
+                len(r.site.props) if r.site is not None else 0, r.as_read.copy(), len(r.plans))
 
     def _restore(self, s) -> None:
         r = self.room
         r.occupied, r.blocked, r.as_read = s[0].copy(), s[1].copy(), s[8].copy()
+        del r.plans[s[9]:]
         r.wall_props, r.ceiling_props, self.chooser.used, n = list(s[2]), list(s[3]), list(s[4]), s[5]
         self.chooser.condition = s[6]
         del self.out.props[n:]
@@ -972,6 +1093,13 @@ class _Placer:
         grown, mask = foot
         if r.poi_spot[grown].any():
             return None
+        # Over a dais a head or more tall the gate reads the room's floor under it too, open
+        # where a stair's lowest steps are under the band: a model sunk into the dais's edge
+        # (on a stair's top step) stands in that floor's band and cuts it (task 21: a throne,
+        # 192 u^2). Its bottom stays a head over the floor under the dais.
+        if _blocking(model) and r.under_dais is not None and \
+                r.tall_dais[grown].any() and z - sz.below < r.under_dais + HEAD_HEIGHT + BAND_SLACK:
+            return None
         # It's in the way where its top stands more than a step over the floor round it
         # (the gate's band, read from the floor the player stands on, not the Prop's).
         ground = r.floor[grown]
@@ -989,6 +1117,8 @@ class _Placer:
         if blocks:
             if not dressing and (mask[0] & r.by_lane).any():     # a POI's own dressing may
                 return None
+            if not r.spaced(x, y, yaw, sz.w, sz.d, group, r.blocked[3] | mask[3]):
+                return None
             blocked, as_read = r.blocked | mask, r.as_read | mask
             if r.problems(blocked) or r.problems(as_read):
                 return None
@@ -1005,6 +1135,8 @@ class _Placer:
             if self.room.site is not None:
                 self.room.site.add(x, y, yaw, sz.w, sz.d, group)
             self.room.blocked, self.room.as_read = blocked
+            if blocks:
+                self.room.plans.append((_SiteBounds.corners(x, y, float(yaw) % (2 * math.pi), sz.w, sz.d), group))
             return self._prop(model, sz, x, y, z, yaw, mount, blocks, step, line, at, poi, group)
         return None
 
@@ -1298,8 +1430,30 @@ class _Placer:
         jx = self.rng.uniform(-1, 1) * (a.w - sz.w) / 2
         jy = self.rng.uniform(-1, 1) * (a.d - sz.d) / 2
         c, s = math.cos(a.yaw), math.sin(a.yaw)
-        return self._prop(model, sz, a.x + c * jx - s * jy, a.y + s * jx + c * jy, z,
-                          a.yaw + self.rng.uniform(-0.4, 0.4), "raised", False, step, line, "stack", group=gid)
+        x, y = a.x + c * jx - s * jy, a.y + s * jx + c * jy
+        yaw = a.yaw + self.rng.uniform(-0.4, 0.4)
+        # On a low anchor (a table under a step tall) a stacked model can stand in the gate's
+        # band, a step to a head over the floor round it: then it's in the way as a floor Prop
+        # is (task 21: a candle on a table narrowed a door's way under the clear width).
+        blocks = False
+        if _blocking(model):
+            foot = r.footprint(x, y, yaw, sz.w, sz.d)
+            if foot is None:
+                return None
+            grown, mask = foot
+            ground = r.floor[grown]
+            ground = ground[~np.isnan(ground)]
+            lo = float(ground.min()) if len(ground) else a.z - a.below
+            hi = float(ground.max()) if len(ground) else lo
+            blocks = z - sz.below < hi + HEAD_HEIGHT and z + sz.h >= lo + STEP_UP - BAND_SLACK
+            if blocks:
+                if r.poi_spot[grown].any() or (step != "dressing" and (mask[0] & r.by_lane).any()):
+                    return None
+                blocked, as_read = r.blocked | mask, r.as_read | mask
+                if r.problems(blocked) or r.problems(as_read):
+                    return None
+                r.blocked, r.as_read = blocked, as_read
+        return self._prop(model, sz, x, y, z, yaw, "raised", blocks, step, line, "stack", group=gid)
 
     # -- Dressing -------------------------------------------------------------------
 
@@ -1452,7 +1606,7 @@ def check(context: RoomContext, decorated: Decorated) -> List[str]:
     footprint (grown by the player's half-width) taken out, reached floor stays joined to the
     doors, each door is reached and each POI keeps reached floor near it. [] when it holds."""
     room = Room(context)
-    blocked = np.zeros((3,) + room.shape, bool)
+    blocked = np.zeros((LAYERS,) + room.shape, bool)
     for p in decorated.props:
         if not p.blocks:
             continue

@@ -18,7 +18,8 @@ stock's 0.01-0.04.
 
 The gate's first-try rate (the pipeline's PASS: traversal, corridors, outlines and the
 Format_Checker) holds at Normal against Decor ``none`` on the same seeds, and a build stays
-within step 10's time (Decor ``none``) plus 5 s.
+within step 10's time (Decor ``none``) plus 5 s. At Dense it passes first try on every seed
+(task 21): the default dungeon and city, and the page's 16-room Graph dungeon.
 
 Built ``.eqg`` files hold the client's art: they live in a temporary folder only. The tests
 need the install (``EQ_PATH``) and skip without it.
@@ -84,8 +85,16 @@ HARD_PER_ROOM = {"dungeon": (0.9, 11.5), "city": (1.9, 17.4)}
 TIMED = {"dungeon": 4, "city": 5}
 
 
-def _spec(zone_type: str, seed: int, decor: str):
-    spec = plan_to_spec(ZonePlan(name=f"b{seed}", zone_type=zone_type).validate(), seed=seed)
+#: Dense's first try (task 21): the default dungeon and city, and the page's 16-room Graph
+#: dungeon (the configuration that failed on seeds 4 and 7). ``0`` rooms: the plan's default.
+DENSE = [("dungeon", 0), ("dungeon", 16), ("city", 0)]
+
+
+def _spec(zone_type: str, seed: int, decor: str, rooms: int = 0):
+    plan = ZonePlan(name=f"b{seed}", zone_type=zone_type)
+    if rooms:
+        plan.room_count = rooms
+    spec = plan_to_spec(plan.validate(), seed=seed)
     spec.decor = decor
     return spec
 
@@ -113,17 +122,20 @@ def _read_back(eqg: Path, side: dict):
 
 
 @lru_cache(maxsize=None)
-def _zone(zone_type: str, seed: int, decor: str) -> dict:
-    """Build, gate as the pipeline does, and (with Decor) measure by the survey's code."""
-    spec = _spec(zone_type, seed, decor)
+def _zone(zone_type: str, seed: int, decor: str, rooms: int = 0) -> dict:
+    """Build, gate as the pipeline does, and (at Normal) measure by the survey's code."""
+    spec = _spec(zone_type, seed, decor, rooms)
     with tempfile.TemporaryDirectory() as tmp:
         r = ZoneBuilder(spec).build(output_dir=Path(tmp), write_glb=False)
         report = _traversal_report(r.eqg_path, spec, None)
         fmt = check_eqg(r.eqg_path, spec, sidecar_path=r.sidecar_path)
         gate = (report.passed and report.corridors_passed and fmt.passed
                 and all(o.ok for o in getattr(report, "outlines", ())))
-        if decor == "none":
-            return {"gate": gate}
+        if decor != "normal":
+            if gate:
+                return {"gate": True}
+            fails = [o.reason for o in getattr(report, "outlines", ()) if not o.ok]
+            return {"gate": False, "why": fails[:3] or ["traversal, corridors or format"]}
         side = json.loads(r.sidecar_path.read_text(encoding="utf-8"))
         ter, placed, sizes = _read_back(r.eqg_path, side)
     m = ds.measure_zone(ter, AgentModel(), placed, sizes, floors_up=True, city=zone_type == "city")
@@ -190,6 +202,23 @@ def test_gate_first_try_rate_holds(zone_type):
     print(f"\n{zone_type} first try, seeds {SEEDS.start}-{SEEDS.stop - 1}: "
           + ", ".join(f"{d} {len(p)}/{len(SEEDS)}" for d, p in passed.items()))
     assert len(passed["normal"]) >= len(passed["none"]), sorted(set(passed["none"]) - set(passed["normal"]))
+
+
+@pytest.mark.slow
+@needs_install
+@pytest.mark.parametrize("zone_type,rooms", DENSE, ids=[f"{z}-{r or 'default'}" for z, r in DENSE])
+def test_dense_passes_the_gate_first_try(zone_type, rooms):
+    """Task 21 (Req 12.1): at Dense the gate passes first try on every seed whose rooms pass it
+    bare (Decor ``none``), so a pinned seed never returns 503 for its Props. A 16-room Graph
+    dungeon failed on seeds 4 (``footprint_cut``) and 7 (``throat_narrow``) before placement
+    kept blocking Props ``BLOCKING_GAP`` apart and read a stacked model in the gate's band as
+    in the way. Decor ``none`` is built only for a seed Dense fails."""
+    failed = {s: z["why"] for s in SEEDS if not (z := _zone(zone_type, s, "dense", rooms))["gate"]}
+    bare = sorted(s for s in failed if not _zone(zone_type, s, "none", rooms)["gate"])
+    print(f"\n{zone_type} ({rooms or 'default'} rooms) Dense first try, seeds {SEEDS.start}-"
+          f"{SEEDS.stop - 1}: {len(SEEDS) - len(failed)}/{len(SEEDS)}"
+          + (f" (failing with Decor none too: {bare})" if bare else ""))
+    assert not {s: w for s, w in failed.items() if s not in bare}, failed
 
 
 def _timed(zone_type: str, decor: str, out: Path) -> float:
