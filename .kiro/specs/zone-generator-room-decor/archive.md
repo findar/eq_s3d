@@ -138,7 +138,20 @@ From task 11 (Site Props, `1e3a6cb`):
     builds, which task 11 couldn't (`decor_for` skips roomless zones). The Decor control will
     cover wilderness.
 
+From task 20 (Site Props in builds, `d2adbda`–`275f6ef`):
+
+36. **The open-ground screen is catalogue data:** `"open_ground": true/false` on every
+    non-skeletal floor or raised model (2,414 kept, 1,616 refused), written by
+    `prop_catalogue.py screen` (~40 min, one-off); only `true` models go at Sites. A Mount
+    changed in `tags.toml` needs a rescreen (a test flags it).
+37. **`decor_for` places rooms, then Sites** (`rooms=False` for the wilderness gate ZON). Site
+    Props ride on each Site's sidecar row (`props`, `dressing`, `decor_drops`, `bare`), never
+    on `rooms`; the maps draw them too. Decor covers wilderness. About 4 Props per Site at
+    Normal, 6 at Dense; a wilderness build takes up to 0.6 s longer.
+
 ## Follow-ups
+
+- **`web/index.html` tooltips** still say Decor is "in the rooms"; Sites take it too.
 
 - **Corridor lights:** placement lights `source = "corridor"` contexts, but `room_context`
   builds none yet (task 13 or later).
