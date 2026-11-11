@@ -14,4 +14,4 @@ A "Step 11 — Decorating rooms" section in `docs/ACCEPTANCE.md`: pinned cases (
 Recheck every case on the final code before landing. Pre-existing thorough failures (step 10 archive) are named, not hidden.
 
 ## Result
-
+✔ 802fbaf · 2371 passed, 1 failed (thorough): `test_properties_mapgeom.py::test_reachable_only`, pre-existing (replays at 3ae15d5^)

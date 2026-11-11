@@ -106,7 +106,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: tests/test_decor_bands.py; widened by the coordinator to fix the band misses: rules/decor/rooms.toml, rules/decor/sets.toml, generators/decor/, generators/builder.py (the decor functions), tests/test_decor_placement.py, tests/test_decor_builds.py
   - Reqs: 12.1, 12.4
 
-- [ ] 15. Acceptance section, thorough run
+- [x] 15. Acceptance section, thorough run
   - Card: [cards/15-acceptance.md](cards/15-acceptance.md)
   - Type: agent · Size: S · Depends: 14
   - Owns: docs/ACCEPTANCE.md
