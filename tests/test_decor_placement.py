@@ -320,6 +320,30 @@ def test_floor_and_raised_props_stand_on_their_bottom(decorated, hand):
     assert n > 500 and stacked > 10
 
 
+def test_a_site_prop_tops_out_clear_of_a_step(rules):
+    """Room-decor task 13: at a Site, a solid floor Prop's top a step over the ground round it
+    is half in the gate's band; the half out of it is a pocket walled in (wilderness seed 23,
+    dense: a crate 3 u tall). The shipped catalogue: the fixture's models don't suit Sites."""
+    from generators.decor.catalogue import load as load_catalogue
+    from generators.decor.placement import SITE_STEP_SLACK, STEP_UP
+    cat = load_catalogue()
+    n = 0
+    for c in CORPUS:
+        if c.source != "site":
+            continue
+        for seed in range(4):
+            d = place(c, rules, cat, "dense", decor_seed=seed)
+            for p in d.props:
+                if p.mount != "floor" or not p.blocks:
+                    continue
+                ground = [c.floor[ij] for ij in _footprint(c, p) if not np.isnan(c.floor[ij])]
+                top = p.z + p.h
+                n += 1
+                assert top - max(ground) >= STEP_UP + SITE_STEP_SLACK or \
+                    top - min(ground) <= STEP_UP - SITE_STEP_SLACK, (c.id, seed, p)
+    assert n > 50
+
+
 def test_a_model_drawn_under_its_origin_stands_on_its_bottom(rules, fixture):
     """GENMETCRATE700's mesh runs from 22.8 to 4.6 u UNDER its origin: stood on its origin it
     was a box below the world (task 13 finding 3). It stands on its bottom."""

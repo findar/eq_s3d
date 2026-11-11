@@ -354,6 +354,9 @@ SITE_GAP = 6.0
 #: ground between them whole, or ``SITE_GAP`` apart: a gap between leaves a strip the gate's
 #: raster can read as a pocket cut off.
 SITE_TOUCH = 2.0
+#: A Site's floor Prop keeps its top at least this far over or under a step above the
+#: ground round it (u): the gate's ground and the Site's floor differ by a few tenths.
+SITE_STEP_SLACK = 0.25
 
 
 class _SiteBounds:
@@ -903,6 +906,13 @@ class _Placer:
         ground = ground[~np.isnan(ground)]
         low = float(ground.min()) if len(ground) else z
         blocks = _blocking(model) and z + sz.h >= low + STEP_UP - BAND_SLACK
+        # At a Site, a top about a step over the ground round it is half in the gate's band
+        # and half not: the part out of it reads as ground a player stands on, walled in by
+        # the part in it (a pocket cut off, room-decor task 13). Over or under it, clearly.
+        if r.site is not None and _blocking(model) and len(ground) and \
+                z + sz.h - float(ground.max()) < STEP_UP + SITE_STEP_SLACK and \
+                z + sz.h - low > STEP_UP - SITE_STEP_SLACK:
+            return None
         blocked = r.blocked
         if blocks:
             blocked = r.blocked | mask
