@@ -1640,10 +1640,6 @@ Known issues (not regressions; open follow-ups in the spec's `archive.md`):
 
 - Some wall Props still sit into the wall on outdoor dungeons: in p (seed 3) MIRTORCH701 by
   about 2.1 u, and in o (seed 4) a banner by about 2.4 u. This was already so before task 14.
-- Dense isn't first-try on every pinned seed. A 16-room Dungeon at Dense fails the gate on
-  seeds 4 (`footprint_cut` in `room_9`) and 7 (`throat_narrow` in `room_13`), so the page
-  returns 503 for those pinned seeds. A blank seed retries and builds. Task 14 checked first
-  try at Normal (40/40).
 - GENMETCRATE700 builds at twice its stock size because of the scale limit.
 - Floor models placed along a wall still assume their front is +X, so a bench or rack can
   face the wall side-on.
