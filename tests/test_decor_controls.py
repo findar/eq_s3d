@@ -97,7 +97,7 @@ def test_the_plan_refuses_bad_values(fields, message):
     ("an unfurnished fortress", "none"),
     ("a goblin warren", ""),                           # no word: the default
     ("a barely lit temple", ""),                       # "bare" only as a word
-    ("a cluttered forest with orc camps", ""),         # no rooms
+    ("a cluttered forest with orc camps", "dense"),    # Site Props (task 20)
 ])
 def test_prompt_words_pick_decor(prompt, decor):
     assert RulePlanner().plan(prompt).decor == decor
@@ -117,9 +117,7 @@ def test_cli_options_reach_the_spec(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("argv", [["--zone-type", "dungeon", "--decor", "lots"],
-                                  ["--zone-type", "dungeon", "--decor-seed", "-3"],
-                                  ["--zone-type", "wilderness", "--decor", "dense"],
-                                  ["--zone-type", "wilderness", "--decor-seed", "3"]])
+                                  ["--zone-type", "dungeon", "--decor-seed", "-3"]])
 def test_cli_bad_use_is_a_usage_error(argv, tmp_path):
     with pytest.raises(SystemExit):
         main.main(["generate", "d10", *argv, "--output", str(tmp_path)])
@@ -133,7 +131,7 @@ def test_the_page_reads_the_list_from_the_server(client):
     r = client.get("/api/controls")
     assert r.status_code == 200
     assert r.json()["decor"] == {"values": VALID_DECOR, "default": DEFAULT_DECOR,
-                                 "zone_types": ["dungeon", "city", "outdoor_dungeon"]}
+                                 "zone_types": ["dungeon", "city", "wilderness", "outdoor_dungeon"]}
 
 
 @pytest.mark.parametrize("body, named", [
@@ -143,8 +141,6 @@ def test_the_page_reads_the_list_from_the_server(client):
     ({"controls": {"zone_type": "dungeon", "decor_seed": -1}}, ["decor_seed"]),
     ({"controls": {"zone_type": "dungeon"}, "decor_seed": 2 ** 31}, ["decor_seed"]),
     ({"controls": {"zone_type": "dungeon"}, "decor_seed": 1.5}, ["decor_seed"]),
-    ({"controls": {"zone_type": "wilderness", "decor": "dense"}}, ["decor", "dungeon, city or outdoor_dungeon"]),
-    ({"controls": {"zone_type": "wilderness"}, "decor_seed": 3}, ["decor_seed", "dungeon, city"]),
 ])
 def test_a_bad_value_is_a_400_naming_the_choices(client, body, named):
     r = client.post("/api/generate", json={"mode": "controls", **body})
