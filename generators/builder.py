@@ -632,8 +632,10 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     the same whatever the Props (Req 6.4). ``rooms=False`` places the Sites
     alone (the wilderness gate's view). A Prop whose model can't be imported
     drops, recorded as ``not importable``."""
+    import math
     from dataclasses import replace
     from generators.decor.placement import Drop, check, place, size_of
+    from generators.decor.rules import BARE
     from generators.decor.stock import NotImportable, eq_path_from_env
     from generators.room_context import _Mesh, contexts, site_contexts
 
@@ -663,8 +665,20 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
             p = _on_wall(p, imported[fname].ter, size_of(catalogue.models[p.key]).side, mesh)
         return p
 
+    # At most ceil(the rooms' summed bare chances) rooms go bare: a five-room city at 0.2 a
+    # room has one. Independent draws left two or three of five bare, and four cities in 40
+    # under stock's lowest Props per room (task 14). Later rooms that draw bare past the cap
+    # are placed in full.
+    bare_left = math.ceil(sum(
+        rules.weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
+        for c in todo if c.source == "room") - 1e-9)
     for ctx in todo:
         d = place(ctx, rules, catalogue, control, spec.decor_seed)
+        if d.bare and ctx.source == "room":
+            if bare_left > 0:
+                bare_left -= 1
+            else:
+                d = place(ctx, rules, catalogue, control, spec.decor_seed, may_be_bare=False)
         kept, files = [], []
         for p in d.props:
             try:

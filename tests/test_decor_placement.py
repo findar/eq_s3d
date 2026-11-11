@@ -631,7 +631,8 @@ def test_placement_imports_nothing_from_the_room_stage_but_room_context():
 
 def test_imports_place_takes_a_context_and_no_zone():
     import inspect
-    assert list(inspect.signature(place).parameters) == ["context", "rules", "catalogue", "control", "decor_seed"]
+    assert list(inspect.signature(place).parameters) == ["context", "rules", "catalogue", "control", "decor_seed",
+                                                          "may_be_bare"]
 
 
 def test_sizes_come_from_the_catalogue(fixture):

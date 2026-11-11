@@ -40,7 +40,8 @@ needs_install = pytest.mark.skipif(EQ is None, reason="EQ_PATH is not set (no EQ
 DECORATED = {
     "dungeon": (dict(zone_type="dungeon"), 4),
     "city": (dict(zone_type="city"), 5),
-    "outdoor_dungeon": (dict(zone_type="outdoor_dungeon", room_count=5), 1),
+    # seed 2: task 14's retune left seed 1 with no banner for the banner test to look at
+    "outdoor_dungeon": (dict(zone_type="outdoor_dungeon", room_count=5), 2),
 }
 
 
