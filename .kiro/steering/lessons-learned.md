@@ -180,7 +180,10 @@ read before touching the relevant area so it isn't rediscovered.
   then blocked the merge. Before merging a branch, run `git status` in the main checkout;
   if a modified file also changed on the branch, compare it with the branch's version
   (`git show <branch>:<file> | diff - <file>`) and discard the stray copy only when the
-  branch has it. Brief agents to use absolute worktree paths for every edit.
+  branch has it. Brief agents to use absolute worktree paths for every edit. One cause, seen
+  in task 21: a .NET call such as `[System.IO.File]::WriteAllText("rel\path", ...)` resolves a
+  relative path against the PROCESS's directory (the main checkout), not PowerShell's `$PWD`,
+  so the edit lands in main. Pass .NET file APIs absolute paths.
 
 ## Design calls already settled (don't relitigate)
 

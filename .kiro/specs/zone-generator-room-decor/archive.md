@@ -185,7 +185,20 @@ From task 14 (gate sweep and stock bands, `d9375e4`–`251babc`):
     off floor the strict reading doesn't join (a POI's own dressing exempt); wall Props skip inside
     corners where they'd poke into the next wall, and `check()` reads wall Props as placement does.
 
+From task 21 (Dense passes the gate first try, `958e029`):
+
+48. **Placement agrees with the gate at Dense** (16-room Graph dungeon 35/40 -> 39/40 first try,
+    default dungeon and city 40/40; Props -1.4% at most): blocking floor Props within 6 u are
+    refused only when closing the gap makes a pocket (nearly touching plans included); a stacked
+    model in the gate's band blocks and is checked; the clear-width reading counts floor more than
+    a step higher within its radius; Props over a dais at least head height tall keep their bottom
+    a head above the floor around it; floor the bare plans shut off (away from walls, 64 u² or
+    more) fails. The band test sweeps Dense first try too, failing only seeds that pass at none.
+
 ## Follow-ups
+
+- **From task 21:** 16-room Graph dungeon seed 26 fails the gate with Decor none (`room_8` open
+  seam at (450.4, -20.1, 136.9)): geometry, not decor; belongs with the thorough/outline fixes.
 
 - **From task 14:** wall Props still sometimes sit into the wall on outdoor_dungeon (seed 3
   MIRTORCH701 2.08 u, seed 4 a banner 2.44 u; already so before task 14); city seed 53 (outside
