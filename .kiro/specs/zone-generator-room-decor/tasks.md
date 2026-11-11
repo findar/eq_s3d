@@ -100,10 +100,10 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Type: agent · Size: M · Depends: 12
   - Owns: rules/decor/rooms.toml, rules/decor/sets.toml, rules/decor/tags.toml (only corrections the user gave), generators/decor/, generators/builder.py (the decor functions: `decor_for`, `_at_origin`, `_flame`, the decor GLB mesh), scripts/prop_catalogue.py + rules/decor/catalogue.json (a measured wall side per wall model), tests/test_decor_builds.py, tests/test_decor_placement.py, tests/test_layout_engine.py (goldens with Decor on)
 
-- [ ] 14. Gate sweep and stock bands
+- [x] 14. Gate sweep and stock bands
   - Card: [cards/14-sweep-bands.md](cards/14-sweep-bands.md)
   - Type: agent · Size: S · Depends: 2, 13
-  - Owns: tests/test_decor_bands.py
+  - Owns: tests/test_decor_bands.py; widened by the coordinator to fix the band misses: rules/decor/rooms.toml, rules/decor/sets.toml, generators/decor/, generators/builder.py (the decor functions), tests/test_decor_placement.py, tests/test_decor_builds.py
   - Reqs: 12.1, 12.4
 
 - [ ] 15. Acceptance section, thorough run
