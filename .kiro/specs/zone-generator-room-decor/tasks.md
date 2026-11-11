@@ -91,14 +91,14 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Owns: rules/decor/rooms.toml (Site recipes only), generators/decor/placement.py (Site POIs), generators/sites/placement.py (hand Site POIs to decor), tests/test_site_props.py, tests/test_site_builds.py (its Decor `none` cases), scripts/record_rooms.py + tests/fixtures/rooms/ (add a farmstead recording)
   - Reqs: 11
 
-- [ ] 12. HUMAN: first look at decorated rooms
+- [x] 12. HUMAN: first look at decorated rooms
   - Card: [cards/12-first-look.md](cards/12-first-look.md)
   - Type: human · Depends: 10, 11, 20
 
 - [ ] 13. Tune from the first look
   - Card: [cards/13-tune.md](cards/13-tune.md)
   - Type: agent · Size: M · Depends: 12
-  - Owns: rules/decor/rooms.toml, rules/decor/sets.toml, rules/decor/tags.toml (only corrections the user gave), generators/decor/, tests/test_layout_engine.py (goldens with Decor on)
+  - Owns: rules/decor/rooms.toml, rules/decor/sets.toml, rules/decor/tags.toml (only corrections the user gave), generators/decor/, generators/builder.py (the decor functions: `decor_for`, `_at_origin`, `_flame`, the decor GLB mesh), scripts/prop_catalogue.py + rules/decor/catalogue.json (a measured wall side per wall model), tests/test_decor_builds.py, tests/test_decor_placement.py, tests/test_layout_engine.py (goldens with Decor on)
 
 - [ ] 14. Gate sweep and stock bands
   - Card: [cards/14-sweep-bands.md](cards/14-sweep-bands.md)
