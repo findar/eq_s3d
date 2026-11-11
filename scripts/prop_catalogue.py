@@ -37,6 +37,7 @@ Usage::
     python scripts/prop_catalogue.py build --eq-path F:\everquest_rof2 --archives befallen
     python scripts/prop_catalogue.py tag
     python scripts/prop_catalogue.py screen --eq-path F:\everquest_rof2
+    python scripts/prop_catalogue.py wallside --eq-path F:\everquest_rof2
     python scripts/prop_catalogue.py sheet --eq-path F:\everquest_rof2 --out output/prop_sheet
 
 ``tag`` (task 3) proposes every entry's Tags with a confidence and a reason (``auto_tags``);
@@ -73,7 +74,7 @@ from site_survey import WLD_PASSABLE, _frags, _name, measure_model  # noqa: E402
 OUT = ROOT / "rules" / "decor" / "catalogue.json"
 FORMAT = 1
 #: Fields later tasks own; a rebuild carries them over by key.
-KEPT = ("observed", "tags", "open_ground")
+KEPT = ("observed", "tags", "open_ground", "wall_side")
 #: ``<zone>_obj.s3d``, ``<zone>_obj2.s3d`` and ``<zone>_2_obj.s3d`` all serve ``<zone>``.
 OBJ_ARCHIVE = re.compile(r"(.+?)(_2)?_obj(\d*)\.s3d", re.IGNORECASE)
 MAX_AREA = 1.0e6     # u^2 of surface past which the footprint raster isn't drawn
@@ -650,6 +651,157 @@ def screen(cat: dict, eq_path: Path, out: Path | None = OUT, jobs: int | None = 
     if out is not None:
         write(cat, out)
     return cat
+
+
+# --- wallside: which side of a wall model faces its wall (room-decor task 13) ---------------------
+#
+# Placement hangs a wall Prop with one side of the model to the wall. Which side that is differs by
+# model (stock's TORCHPOINT has the wall at its -X, WALLTORCH200 at its +X, GKTORCH701 at its +Y),
+# so ``wallside`` measures it from stock: for every stock placement of a wall model whose origin
+# is within ``SIDE_REACH`` of a zone wall, the plan direction from the origin to the nearest wall
+# point, turned into the model's frame (WLD yaw is 512ths of a turn, counter-clockwise: the only
+# reading under which a model's placements agree), votes for one of the four sides. It writes
+# ``wall_side`` = {side, n, share, standoff (stock's origin off the wall, p50, model units),
+# back (the model's own reach from its origin to that side, model units)}; the side is ``-x``
+# (archive decision 21) where stock never hangs the model on a wall.
+
+#: How near a wall a stock placement's origin must be to vote (u), and the wall sampling (u).
+SIDE_REACH = 8.0
+SIDE_STEP = 0.5
+#: The sides, as the model-frame unit vector pointing at the wall.
+SIDES = {"-x": (-1.0, 0.0), "+x": (1.0, 0.0), "-y": (0.0, -1.0), "+y": (0.0, 1.0)}
+
+
+def wall_side_keys(cat: dict) -> list:
+    """The entries ``wallside`` measures: every model (whatever its ``use``) whose Mount,
+    after ``tags.toml``, is wall, skeletal ones aside."""
+    from generators.decor.catalogue import load as load_merged
+
+    merged = load_merged().models
+    return sorted(k for k in cat["models"] if k in merged and merged[k].animation != "skeletal"
+                  and merged[k].tags.mount == "wall")
+
+
+def _side_of(dx: float, dy: float, yaw_deg: float) -> str:
+    t = -np.radians(yaw_deg)
+    lx, ly = dx * np.cos(t) - dy * np.sin(t), dx * np.sin(t) + dy * np.cos(t)
+    if abs(lx) >= abs(ly):
+        return "+x" if lx > 0 else "-x"
+    return "+y" if ly > 0 else "-y"
+
+
+def _zone_sides(args) -> dict:
+    """{key: [(side, distance)]} for the wanted models' placements in one zone, in a worker."""
+    from scipy.spatial import cKDTree
+
+    from core.ter import FLAG_PASSABLE
+    from decor_survey import placements
+    from dungeon_topology_survey import _samples
+    from outdoor_dungeon_survey import load_mesh
+
+    eq_path, zone, names = args
+    objs = [o for o in placements(Path(eq_path), zone) if o.name in names]
+    if not objs:
+        return {}
+    try:
+        mesh = load_mesh(Path(eq_path), zone)
+    except Exception:  # noqa: BLE001 - no terrain: nothing to measure against
+        return {}
+    v = np.array([(p.x, p.y, p.z) for p in mesh.vertices], dtype=np.float64)
+    f = np.array([(p.v1, p.v2, p.v3) for p in mesh.polygons if not p.flags & FLAG_PASSABLE],
+                 dtype=np.int64).reshape(-1, 3)
+    tri = v[f]
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    a = np.linalg.norm(n, axis=1)
+    ok = a > 1e-9
+    tri, n = tri[ok], n[ok] / a[ok, None]
+    tri = tri[np.abs(n[:, 2]) < 0.7]
+    p = np.array([(o.x, o.y, o.z) for o in objs])
+    lo, hi = tri.min(axis=1), tri.max(axis=1)
+    near = np.zeros(len(tri), bool)
+    for q in p:
+        near |= np.all((lo <= q + SIDE_REACH) & (hi >= q - SIDE_REACH), axis=1)
+    if not near.any():
+        return {}
+    pts = _samples(tri[near], SIDE_STEP)
+    d, i = cKDTree(pts).query(p, distance_upper_bound=SIDE_REACH)
+    out = defaultdict(list)
+    for o, dist, k in zip(objs, d, i):
+        if not np.isfinite(dist):
+            continue
+        dx, dy = pts[k, 0] - o.x, pts[k, 1] - o.y
+        if np.hypot(dx, dy) < 0.05:
+            continue
+        out[names[o.name]].append((_side_of(dx, dy, o.yaw), float(np.hypot(dx, dy) / max(o.scale, 1e-6))))
+    return dict(out)
+
+
+def _back_keys(keys) -> dict:
+    """{key: {side: reach}} from each model's own vertices, in a worker (as ``_screen_keys``)."""
+    from generators.decor.stock import NotImportable
+
+    importer = _SCREEN["importer"]
+    out = {}
+    for key in keys:
+        try:
+            ter = importer.get(key).ter
+        except NotImportable:
+            continue
+        v = np.array([(q.x, q.y) for q in ter.vertices], dtype=np.float64).reshape(-1, 2)
+        out[key] = {s: float(max(0.0, (v @ np.array(u)).max())) for s, u in SIDES.items()}
+    importer._files.clear()
+    importer._wlds.clear()
+    importer._models.clear()
+    return out
+
+
+def wall_sides(cat: dict, eq_path: Path, out: Path | None = OUT, jobs: int | None = None,
+               keys=None) -> dict:
+    """Measure ``keys`` (default ``wall_side_keys``) and write each entry's ``wall_side``;
+    every other entry loses its own. Only that field changes."""
+    from decor_survey import model_index
+
+    keys = wall_side_keys(cat) if keys is None else sorted(keys)
+    wanted = set(keys)
+    index = {zk: k for zk, k in model_index(cat).items() if k in wanted}
+    by_zone = defaultdict(dict)
+    for (zone, name), k in index.items():
+        by_zone[zone][name] = k
+    votes = defaultdict(list)
+    by_archive = defaultdict(list)
+    for k in keys:
+        by_archive[cat["models"][k]["source"]["archive"]].append(k)
+    backs = {}
+    with ProcessPoolExecutor(jobs, initializer=_screen_init, initargs=(str(eq_path),)) as pool:
+        for got in pool.map(_zone_sides, [(str(eq_path), z, by_zone[z]) for z in sorted(by_zone)]):
+            for k, rows in got.items():
+                votes[k] += rows
+        for got in pool.map(_back_keys, sorted(by_archive.values(), key=len, reverse=True)):
+            backs.update(got)
+    for key, entry in cat["models"].items():
+        entry.pop("wall_side", None)
+        if key not in wanted or key not in backs:
+            continue
+        rows = votes.get(key, [])
+        count = Counter(s for s, _ in rows)
+        side, n = count.most_common(1)[0] if rows else ("-x", 0)
+        dist = [d for s, d in rows if s == side]
+        entry["wall_side"] = {"side": side, "n": len(rows),
+                              "share": round(n / len(rows), 2) if rows else 0.0,
+                              "standoff": round(float(np.median(dist)), 2) if dist else None,
+                              "back": round(backs[key][side], 2)}
+    if out is not None:
+        write(cat, out)
+    return cat
+
+
+def wall_side_report(cat: dict) -> None:
+    rows = {k: e["wall_side"] for k, e in cat["models"].items() if "wall_side" in e}
+    print(f"wall sides: {len(rows)} models, {sum(1 for r in rows.values() if r['n'])} measured on stock")
+    print("  by side:", dict(Counter(r["side"] for r in rows.values() if r["n"]).most_common()))
+    for k, r in sorted(rows.items(), key=lambda kv: -kv[1]["n"])[:25]:
+        print(f"  {k:<24} {r['side']} n={r['n']:<4} share={r['share']:.2f} "
+              f"standoff={r['standoff']} back={r['back']}")
 
 
 def screen_report(cat: dict) -> None:
@@ -1447,6 +1599,11 @@ def main(argv=None) -> int:
     sc.add_argument("--eq-path", type=Path, required=True)
     sc.add_argument("--catalogue", type=Path, default=OUT)
     sc.add_argument("--jobs", type=int, default=None)
+    ws = sub.add_parser("wallside", help="measure which side of each wall model faces its wall "
+                                         "on stock (writes only wall_side)")
+    ws.add_argument("--eq-path", type=Path, required=True)
+    ws.add_argument("--catalogue", type=Path, default=OUT)
+    ws.add_argument("--jobs", type=int, default=None)
     sh = sub.add_parser("sheet", help="write the local HTML review sheet")
     sh.add_argument("--eq-path", type=Path, required=True)
     sh.add_argument("--out", type=Path, default=ROOT / "output" / "prop_sheet")
@@ -1467,6 +1624,10 @@ def main(argv=None) -> int:
     elif args.cmd == "screen":
         cat = screen(load(args.catalogue), args.eq_path, args.catalogue, args.jobs)
         screen_report(cat)
+        print(f"wrote {args.catalogue}")
+    elif args.cmd == "wallside":
+        cat = wall_sides(load(args.catalogue), args.eq_path, args.catalogue, args.jobs)
+        wall_side_report(cat)
         print(f"wrote {args.catalogue}")
     elif args.cmd == "sheet":
         page = write_sheet(args.eq_path, args.out, args.catalogue, args.tags, args.all, args.jobs)
