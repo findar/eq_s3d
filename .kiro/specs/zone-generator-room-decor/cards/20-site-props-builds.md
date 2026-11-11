@@ -31,3 +31,4 @@ Task 11 dresses a Site from its RoomContext, but built zones don't carry the res
 from the install (`screen` rewrites only its own field).
 
 ## Result
+✔ 275f6ef · 2345 passed (7 outside Owns need the edits in the integration note)
