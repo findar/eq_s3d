@@ -163,7 +163,34 @@ for a first pass", banners invisible, torches not mounting on the wall, a box be
 41. **The viewer's decor colour averages drawn texels only** and never-drawn faces are skipped,
     so mostly-transparent banners show.
 
+From task 14 (gate sweep and stock bands, `d9375e4`–`251babc`):
+
+42. **P12 is measured by the survey's own `measure_zone` on the read-back `.eqg`**: the median of
+    seeds 0–39 against the stock p25–p75, each seed's Props per room against the stock min–max.
+    Structure share is not checked (decor places no Structure). Medians after the retune: dungeon
+    4.20 a room, light .42, container .10, furniture .13, wall .33; city 6.38, light .40,
+    container .13, furniture .32, wall .26. Gate first try 40/40; decor adds about 0.6 s. Task 14's
+    Owns were widened to the recipes and placement to fix the misses, not loosen the bands.
+43. **Wall lines prefer models whose stock hang is flush**: 73 of 252 wall models are sunk more
+    than `WALL_EMBED` (1.5 u) into stock walls, so their origin reads off the wall; they are the
+    fallback. Origins unchanged (decision 38 holds).
+44. **Recipe lookup gains a zone-type tier** `[zones.<zone type>]` between kind and default; city
+    rooms (no room type or kind) take `[zones.city]`. Amends decision 19.
+45. **Bare rooms are capped per build** at ceil(sum of the rooms' bare chances): the same expected
+    rate, but a small zone can't draw most rooms bare.
+46. **Group members that are stacked are optional** and fall back to smaller models; new Groups
+    `laid_table`, `crate_stack`.
+47. **Placement agrees with the gate on four more cases**: floor joined only over a rise steeper
+    than walkable stays joined; a 6 u gap after a blocking Prop in a row; blocking Props stay 6 u
+    off floor the strict reading doesn't join (a POI's own dressing exempt); wall Props skip inside
+    corners where they'd poke into the next wall, and `check()` reads wall Props as placement does.
+
 ## Follow-ups
+
+- **From task 14:** wall Props still sometimes sit into the wall on outdoor_dungeon (seed 3
+  MIRTORCH701 2.08 u, seed 4 a banner 2.44 u; already so before task 14); city seed 53 (outside
+  the test's 40) is under the per-room hard edge at 1.67; city raised, plant and furniture sit near
+  their band tops.
 
 - **From task 13:** the scale limit makes GENMETCRATE700 twice its stock size; floor models
   placed along a wall still assume their front is +X; the `.eqg` rotation direction is unchecked
