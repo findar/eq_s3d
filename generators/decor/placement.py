@@ -721,10 +721,15 @@ class _Chooser:
         self.used: List[str] = []
         self.condition: Optional[str] = None
         self.by: Dict[Tuple[str, str, str], List[Model]] = {}
+        # A Site stands on open ground the wilderness gate judges: only models its screen
+        # takes (the catalogue's ``open_ground``, measured once by prop_catalogue.py screen).
+        site = ctx.source == "site"
         for key in sorted(catalogue.models):
             m = catalogue.models[key]
             t = m.tags
             if t.use != "yes" or m.animation == "skeletal" or t.set not in self.sets:
+                continue
+            if site and m.open_ground is not True:
                 continue
             self.by.setdefault((t.kind, t.mount, t.set), []).append(m)
 

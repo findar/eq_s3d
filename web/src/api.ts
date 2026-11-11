@@ -25,8 +25,8 @@ export interface GenerateControls {
   // VALID_DUNGEON_RACES, or "" for none.
   dungeon_theme?: string;
   dungeon_race?: string;
-  // Dungeon / city / outdoor dungeon only: the Decor control (a value from
-  // /api/controls) and the decor seed that rerolls the Props alone.
+  // The zone types /api/controls lists (rooms and Sites): the Decor control
+  // (a value from /api/controls) and the decor seed that rerolls the Props alone.
   decor?: string;
   decor_seed?: number;
 }
@@ -167,6 +167,8 @@ export interface ZoneDecor {
   lights: number;
   models: number;
   rooms: number;
+  // Sites dressed (wilderness, outdoor dungeon); absent when none were.
+  sites?: number;
   bare: number;
   drops: number;
   check: string[];
@@ -220,6 +222,8 @@ export interface ZoneSidecar {
   theme?: ZoneContent;
   // Props (room-decor): present only when the build placed Props.
   decor?: ZoneDecor;
+  // Sites (wilderness, outdoor dungeon): each Site's Props ride on its row.
+  sites?: { sites?: { props?: ZoneProp[] }[] };
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {

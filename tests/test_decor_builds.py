@@ -144,7 +144,9 @@ def test_props_are_packed_once_and_placed_one_object_each(decorated, label):
     _spec_, plain = decorated[label, "none"]
     spec, result = decorated[label, "normal"]
     arc, zon, side = _loaded(result)
-    props = [p for r in side["rooms"] for p in r.get("props", [])]
+    # rooms first, then Sites, as in the ZON (task 20)
+    props = ([p for r in side["rooms"] for p in r.get("props", [])]
+             + [p for s in side.get("sites", {}).get("sites", []) for p in s.get("props", [])])
     assert props, "no Props placed"
     objs = [o for o in zon.objects if o.name.startswith("decor_")]
     assert len(objs) == len(props) == side["decor"]["props"]

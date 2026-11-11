@@ -477,7 +477,7 @@ class DecorBuild:
 
     def room_records(self) -> Dict[str, dict]:
         """The sidecar's per-room ``props``, ``dressing`` (by POI) and
-        ``decor_drops`` (Req 10.3), by room id."""
+        ``decor_drops`` (Req 10.3), by room (or Site) id."""
         out = {}
         for ctx, d, _ in self.rooms:
             dressing = []
@@ -492,11 +492,21 @@ class DecorBuild:
                            "decor_drops": [x.to_dict() for x in d.drops], "bare": d.bare}
         return out
 
+    def with_sites(self, report: dict) -> dict:
+        """The sidecar's ``sites`` block (step 10's) with each Site's ``props``,
+        ``dressing`` and ``decor_drops`` added, as a room's (a copy: the
+        block is shared through the Sites cache)."""
+        records = self.room_records()
+        return {**report, "sites": [{**s, **records.get(f"site{n}", {})}
+                                    for n, s in enumerate(report.get("sites", []))]}
+
     def summary(self) -> dict:
-        """The sidecar's ``decor`` block."""
+        """The sidecar's ``decor`` block (``sites`` only when Sites were dressed)."""
+        n_sites = sum(1 for ctx, _, _ in self.rooms if ctx.source == "site")
         return {"control": self.control, "seed": self.seed, "props": len(self.placed),
                 "lights": sum(1 for _, p in self.placed if p.light),
-                "models": len(self.models), "rooms": len(self.rooms),
+                "models": len(self.models), "rooms": len(self.rooms) - n_sites,
+                **({"sites": n_sites} if n_sites else {}),
                 "bare": sum(1 for _, d, _ in self.rooms if d.bare),
                 "drops": sum(len(d.drops) for _, d, _ in self.rooms),
                 "check": [f"{ctx.id}: {why}" for ctx, _, probs in self.rooms for why in probs]}
@@ -540,20 +550,24 @@ class DecorBuild:
 
 
 def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
-              eq_path=None) -> Optional[DecorBuild]:
-    """Props for a built room-graph zone (dungeon, city, outdoor dungeon), or
-    ``None`` with Decor ``none``, a zone with no rooms, or no install (then
-    with a warning, Req 10.6). Contexts come from ``room_context.contexts``;
-    each room is placed on its own stream, so the geometry is the same
-    whatever the Props (Req 6.4). A Prop whose model can't be imported drops,
-    recorded as ``not importable``."""
+              eq_path=None, rooms: bool = True) -> Optional[DecorBuild]:
+    """Props for a built zone's rooms (dungeon, city, outdoor dungeon) and
+    Sites (wilderness, outdoor dungeon; room-decor task 20), or ``None`` with
+    Decor ``none``, a zone with neither, or no install (then with a warning,
+    Req 10.6). Contexts come from ``room_context.contexts`` then
+    ``site_contexts``; each is placed on its own stream, so the geometry is
+    the same whatever the Props (Req 6.4). ``rooms=False`` places the Sites
+    alone (the wilderness gate's view). A Prop whose model can't be imported
+    drops, recorded as ``not importable``."""
     from dataclasses import replace
     from generators.decor.placement import Drop, check, place
     from generators.decor.stock import NotImportable, eq_path_from_env
-    from generators.room_context import contexts
+    from generators.room_context import contexts, site_contexts
 
     control = spec.decor or "none"
-    if control == "none" or not spec.rooms:
+    sited = spec.wilderness is not None and (spec.sites or "none") != "none"
+    rooms = rooms and bool(spec.rooms)
+    if control == "none" or not (rooms or sited):
         return None
     eq = eq_path if eq_path is not None else eq_path_from_env()
     if eq is None:
@@ -563,7 +577,8 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     importer = _importer(eq)
     seed = spec.decor_seed if spec.decor_seed is not None else int(spec.seed or 0)
     out = DecorBuild(control, seed)
-    for ctx in contexts(spec, ter):
+    todo = (contexts(spec, ter) if rooms else []) + (site_contexts(spec, ter) if sited else [])
+    for ctx in todo:
         d = place(ctx, rules, catalogue, control, spec.decor_seed)
         kept, files = [], []
         for p in d.props:
@@ -763,7 +778,7 @@ class ZoneBuilder:
         if veg is not None:
             wild_meta["vegetation"] = dict(veg.report)
         if sites is not None:
-            wild_meta["sites"] = dict(sites.report)
+            wild_meta["sites"] = dict(sites.report) if decor is None else decor.with_sites(sites.report)
         # The Texture_Manifest rides with every build (Req 5).
         side_meta = {**wild_meta,
                      "textures": texture_manifest(ter, modes, veg, dds_by_name, sites, decor)}
