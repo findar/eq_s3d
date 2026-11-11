@@ -149,7 +149,25 @@ From task 20 (Site Props in builds, `d2adbda`–`275f6ef`):
     on `rooms`; the maps draw them too. Decor covers wilderness. About 4 Props per Site at
     Normal, 6 at Dense; a wilderness build takes up to 0.6 s longer.
 
+From task 13 (first-look fixes, `9ba2890`–`0ac6dfe`; user's first look 2026-11-10: "mostly ok
+for a first pass", banners invisible, torches not mounting on the wall, a box below the world):
+
+38. **`wall_side` in the catalogue:** each wall model's side to the wall, distance off it and back
+    depth, measured from stock placements (277 models, 254 measured). A wall Prop turns that side
+    to the wall; the build moves it to 0.05 u off the real wall mesh at its height, or drops it
+    ("no wall") when that move exceeds 1 u (4 of 222 at corners and notches). Amends decision 21.
+39. **Floor Props stand on their bottom**, 0.05 u over the lowest floor under their plan; a
+    stacked Prop sits on the top of the one below. Amends decision 29's `_at_origin`.
+40. **The Site screen judges each model standing on its bottom** (rescreen: 2,379 kept, 1,651
+    refused); at Sites a Prop's top stays at least 0.25 u (`SITE_STEP_SLACK`) off the step height.
+41. **The viewer's decor colour averages drawn texels only** and never-drawn faces are skipped,
+    so mostly-transparent banners show.
+
 ## Follow-ups
+
+- **From task 13:** the scale limit makes GENMETCRATE700 twice its stock size; floor models
+  placed along a wall still assume their front is +X; the `.eqg` rotation direction is unchecked
+  in the client; wall Props at corners aren't checked for poking sideways into the wall.
 
 - **`web/index.html` tooltips** still say Decor is "in the rooms"; Sites take it too.
 
