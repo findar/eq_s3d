@@ -26,13 +26,13 @@ Diagnostic used: the lead's `s11_look.py` (scratchpad) reads a built `.eqg` + si
 lists wall Props and floor Props below the nearest floor.
 
 ## Done when
-- [ ] A test pins each finding: no floor/raised Prop below the floor under it; every wall Prop's back within 1 u of the wall mesh; banners present in the GLB `decor` mesh with visible (non-zero alpha) faces.
+- [x] A test pins each finding: no floor/raised Prop below the floor under it; every wall Prop's back within 1 u of the wall mesh; banners present in the GLB `decor` mesh with visible (non-zero alpha) faces.
       → verify: `python -m pytest tests/test_decor_builds.py tests/test_decor_placement.py -q`
-- [ ] Each finding from task 12 is fixed or recorded as a follow-up in `archive.md`.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] Each finding from task 12 is fixed or recorded as a follow-up in `archive.md`.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 Change values and placement, not the gate.
 
 ## Result
-
+✔ 0ac6dfe · 2365 passed

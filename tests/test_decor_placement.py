@@ -301,6 +301,98 @@ def test_wall_props_hang_on_a_wall_clear_of_doors_at_stock_height(decorated, han
     assert n > 100
 
 
+def test_floor_and_raised_props_stand_on_their_bottom(decorated, hand):
+    """Task 13 finding 3 (a box below the world): a floor Prop's bottom (``z - below``) stands
+    just over the lowest floor under its plan, never under it; a stacked Prop's on the top of
+    what it stands on."""
+    from generators.decor.placement import LIFT
+    n = stacked = 0
+    for c, d, _ in decorated + hand:
+        for p in d.props:
+            if p.mount == "floor":
+                n += 1
+                low = min(c.floor[i, j] for i, j in _footprint(c, p))
+                assert p.z - p.below == pytest.approx(low + LIFT, abs=1e-6), (c.id, p)
+            elif p.mount == "raised":
+                stacked += 1
+                under = [q for q in d.props if q.group == p.group and q.mount == "floor"]
+                assert any(p.z - p.below == pytest.approx(q.z + q.h + LIFT, abs=1e-6) for q in under), (c.id, p)
+    assert n > 500 and stacked > 10
+
+
+def test_a_site_prop_tops_out_clear_of_a_step(rules):
+    """Room-decor task 13: at a Site, a solid floor Prop's top a step over the ground round it
+    is half in the gate's band; the half out of it is a pocket walled in (wilderness seed 23,
+    dense: a crate 3 u tall). The shipped catalogue: the fixture's models don't suit Sites."""
+    from generators.decor.catalogue import load as load_catalogue
+    from generators.decor.placement import SITE_STEP_SLACK, STEP_UP
+    cat = load_catalogue()
+    n = 0
+    for c in CORPUS:
+        if c.source != "site":
+            continue
+        for seed in range(4):
+            d = place(c, rules, cat, "dense", decor_seed=seed)
+            for p in d.props:
+                if p.mount != "floor" or not p.blocks:
+                    continue
+                ground = [c.floor[ij] for ij in _footprint(c, p) if not np.isnan(c.floor[ij])]
+                top = p.z + p.h
+                n += 1
+                assert top - max(ground) >= STEP_UP + SITE_STEP_SLACK or \
+                    top - min(ground) <= STEP_UP - SITE_STEP_SLACK, (c.id, seed, p)
+    assert n > 50
+
+
+def test_a_model_drawn_under_its_origin_stands_on_its_bottom(rules, fixture):
+    """GENMETCRATE700's mesh runs from 22.8 to 4.6 u UNDER its origin: stood on its origin it
+    was a box below the world (task 13 finding 3). It stands on its bottom."""
+    from dataclasses import replace
+    from generators.decor.placement import LIFT
+    models = {k: (replace(m, measured={"w": 17.7, "d": 22.8, "h": -4.59, "below": 22.77},
+                          observed={"scale": [0.25, 0.25, 1.2]}) if m.tags.kind == "crate" else m)
+              for k, m in fixture.models.items()}
+    cat = Catalogue(models=models, kinds=fixture.kinds, sets=fixture.sets)
+    crates = [p for seed in range(6) for p in place(box_room(room_type="storeroom", w=80.0, d=70.0), rules, cat,
+                                                    "dense", decor_seed=seed).props
+              if p.kind == "crate" and p.mount == "floor"]
+    assert crates
+    for p in crates:
+        assert p.z - p.below == pytest.approx(LIFT, abs=1e-6) and p.z + p.h > 0.0, p
+        assert p.z > 0.0                    # its origin over its mesh, as stock draws it
+
+
+@pytest.mark.parametrize("side", ["-x", "+x", "-y", "+y"])
+def test_a_wall_prop_turns_its_measured_side_to_the_wall(rules, fixture, side):
+    """Task 13 finding 2: stock hangs each wall model with its own side to the wall
+    (catalogue ``wall_side``); placement turns that side to the wall face and stands the
+    origin off it by the model's own reach to that side (its back flush)."""
+    from dataclasses import replace
+    from generators.decor.catalogue import WALL_SIDES
+    from generators.decor.placement import WALL_FLUSH
+    back = 1.7
+    models = {k: (replace(m, wall_side={"side": side, "n": 9, "share": 1.0, "standoff": back, "back": back})
+                  if m.tags.mount == "wall" else m) for k, m in fixture.models.items()}
+    cat = Catalogue(models=models, kinds=fixture.kinds, sets=fixture.sets)
+    c = box_room(room_type="throne", kind="deep", h=40.0)
+    n = 0
+    for seed in range(4):
+        for p in place(c, rules, cat, "dense", decor_seed=seed).props:
+            if p.mount != "wall":
+                continue
+            n += 1
+            u = WALL_SIDES[side]
+            cs, sn = math.cos(p.yaw), math.sin(p.yaw)
+            to_wall = (cs * u[0] - sn * u[1], sn * u[0] + cs * u[1])
+            # the face it hangs on: turned against its side, its origin straight out from it
+            on = [w for w in c.walls if to_wall[0] * -w.nx + to_wall[1] * -w.ny > 0.999
+                  and abs((p.x - w.x) * w.ny - (p.y - w.y) * w.nx) < 1e-6]
+            assert on, (side, p)
+            assert any((p.x - w.x) * w.nx + (p.y - w.y) * w.ny == pytest.approx(back + WALL_FLUSH, abs=1e-6)
+                       for w in on), (side, p)
+    assert n > 4
+
+
 def test_wall_lights_keep_their_spacing(decorated):
     from generators.decor.placement import ROOM_LIGHT_GAP, _spacing
     for c, d, _ in decorated:

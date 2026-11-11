@@ -95,7 +95,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Card: [cards/12-first-look.md](cards/12-first-look.md)
   - Type: human · Depends: 10, 11, 20
 
-- [ ] 13. Tune from the first look
+- [x] 13. Tune from the first look
   - Card: [cards/13-tune.md](cards/13-tune.md)
   - Type: agent · Size: M · Depends: 12
   - Owns: rules/decor/rooms.toml, rules/decor/sets.toml, rules/decor/tags.toml (only corrections the user gave), generators/decor/, generators/builder.py (the decor functions: `decor_for`, `_at_origin`, `_flame`, the decor GLB mesh), scripts/prop_catalogue.py + rules/decor/catalogue.json (a measured wall side per wall model), tests/test_decor_builds.py, tests/test_decor_placement.py, tests/test_layout_engine.py (goldens with Decor on)

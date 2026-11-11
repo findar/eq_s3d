@@ -432,6 +432,66 @@ def _at_origin(prop, model: TerFile):
                    y=prop.y - (s * cx + c * cy) * prop.scale)
 
 
+#: How far behind and before a wall Prop's model the wall mesh is looked for (u); its nearest
+#: point then stands ``placement.WALL_FLUSH`` off it.
+WALL_REACH = 4.0
+#: The most the wall mesh may move a wall Prop from placement's spot (u): further, the face it
+#: was given is a short jog it overhangs (a corner, a notch), and it drops.
+WALL_MOVE = 1.0
+OFF_THE_WALL = "no wall: the wall mesh at its height is more than 1 u from its spot"
+
+
+def _on_wall(prop, model: TerFile, side: Tuple[float, float], mesh):
+    """A wall Prop moved along its wall's normal so its model's nearest point to the wall
+    stands ``WALL_FLUSH`` off the BUILT wall mesh behind it, at its own height: placement
+    puts it flush with the context's wall face, which a rough wall leaves where the wall's
+    foot is, not where the wall stands at a torch's height (design Risks). Each model vertex
+    casts a level ray to the wall (``side``: the model-frame way to it, catalogue
+    ``wall_side``); unchanged when no ray meets a wall within ``WALL_REACH``. None when the
+    move would be more than ``WALL_MOVE``: the model overhangs the end of a short wall piece
+    (in a corner or a notch, rays from its far side meet the next wall), and no spot along
+    that normal is flush with its own face."""
+    import math
+    import numpy as np
+    from dataclasses import replace
+    from generators.decor.placement import WALL_FLUSH
+    from generators.room_context import WALL_NZ
+
+    c, s = math.cos(prop.yaw), math.sin(prop.yaw)
+    to_wall = np.array([c * side[0] - s * side[1], s * side[0] + c * side[1], 0.0])
+    v = np.array([[p.x, p.y, p.z] for p in model.vertices], dtype=np.float64)
+    rot = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    w = v @ rot.T * prop.scale + (prop.x, prop.y, prop.z)
+    lo, hi = w.min(axis=0) - WALL_REACH, w.max(axis=0) + WALL_REACH
+    pick = mesh.within(lo[0], lo[1], lo[2] + WALL_REACH, hi[0], hi[1], hi[2] - WALL_REACH) \
+        & (np.abs(mesh.normal[:, 2]) < WALL_NZ) & (mesh.normal[:, :2] @ -to_wall[:2] > 0.5)
+    if not pick.any():
+        return prop
+    tri = mesh.tri[pick]
+    # Rays from each vertex, started WALL_REACH on the room's side, towards the wall.
+    o = w - to_wall * WALL_REACH
+    e1, e2 = tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]
+    pv = np.cross(np.broadcast_to(to_wall, e2.shape), e2)
+    det = np.einsum("ij,ij->i", e1, pv)
+    ok = np.abs(det) > 1e-9
+    tri, e1, e2, pv, det = tri[ok], e1[ok], e2[ok], pv[ok], det[ok]
+    if not len(tri):
+        return prop
+    tv = o[:, None, :] - tri[None, :, 0, :]
+    u = np.einsum("vtj,tj->vt", tv, pv) / det
+    qv = np.cross(tv, e1[None, :, :])
+    vv = (qv @ to_wall) / det
+    t = np.einsum("vtj,tj->vt", qv, e2) / det
+    hit = (u >= -1e-6) & (vv >= -1e-6) & (u + vv <= 1 + 1e-6) & (t >= 0) & (t <= 2 * WALL_REACH)
+    if not hit.any():
+        return prop
+    gap = float(np.where(hit, t, np.inf).min()) - WALL_REACH     # nearest vertex to the wall
+    move = gap - WALL_FLUSH
+    if abs(move) > WALL_MOVE:
+        return None
+    return replace(prop, x=prop.x + to_wall[0] * move, y=prop.y + to_wall[1] * move)
+
+
 def _flame(model: TerFile) -> Tuple[float, float, float]:
     """Where a light-bearing model's flame is, model space: the middle of its
     blended (``Alpha``-shaded: flame, glow) triangles, else the top of its
@@ -446,6 +506,16 @@ def _flame(model: TerFile) -> Tuple[float, float, float]:
         return tuple(float(c) for c in v[idx].mean(axis=0))
     lo, hi = v.min(axis=0), v.max(axis=0)
     return (float(lo[0] + hi[0]) / 2, float(lo[1] + hi[1]) / 2, float(hi[2]))
+
+
+def _drawn_colour(dds: bytes, dds_to_rgb) -> Tuple[int, int, int]:
+    """A texture's mean colour over the texels with any alpha (all of them when none has)."""
+    import numpy as np
+
+    rgb = dds_to_rgb(dds).reshape(-1, 3)
+    alpha = np.frombuffer(dds[128:128 + len(rgb) * 4], dtype=np.uint8)[3::4]
+    drawn = rgb[alpha > 0] if (alpha > 0).any() else rgb
+    return tuple(int(c) for c in drawn.mean(axis=0))
 
 
 class DecorBuild:
@@ -513,28 +583,31 @@ class DecorBuild:
 
     def mesh(self) -> tuple:
         """The GLB ``decor`` mesh: every Prop's model scaled, turned and moved,
-        merged, each texture's mean colour on its triangles."""
+        merged, each texture's mean colour (over the texels the client draws: a
+        masked banner's clear ground left out) on its triangles. Triangles the
+        client never draws (``Boundary`` materials) are left out."""
         import numpy as np
         from core.eqg import dds_to_rgb
+        from core.ter import SHADER_BOUNDARY
 
         rgb_of: Dict[str, Tuple[int, int, int]] = {}
         parts = {}
         for fname, model in self.models.items():
             v = np.array([[p.x, p.y, p.z] for p in model.vertices], dtype=np.float64)
             n = np.array([[p.nx, p.ny, p.nz] for p in model.vertices], dtype=np.float64)
-            f = np.array([[q.v1, q.v2, q.v3] for q in model.polygons], dtype=np.int64)
+            f = np.array([[q.v1, q.v2, q.v3] for q in model.polygons], dtype=np.int64).reshape(-1, 3)
+            mat_of = np.array([q.material for q in model.polygons], dtype=np.int64)
             col = np.full((len(v), 4), 200, dtype=np.uint8)
             col[:, 3] = 255
+            hidden = {m.index for m in model.materials if m.shader == SHADER_BOUNDARY}
             for mat in model.materials:
                 tex = _diffuse_of(mat)
-                if tex not in self.textures:
+                if tex not in self.textures or mat.index in hidden:
                     continue
                 if tex not in rgb_of:
-                    img = dds_to_rgb(self.textures[tex]).reshape(-1, 3)
-                    rgb_of[tex] = tuple(int(c) for c in img.mean(axis=0))
-                sel = f[[q.material == mat.index for q in model.polygons]]
-                col[sel.ravel(), :3] = rgb_of[tex]
-            parts[fname] = (v, n, f, col)
+                    rgb_of[tex] = _drawn_colour(self.textures[tex], dds_to_rgb)
+                col[f[mat_of == mat.index].ravel(), :3] = rgb_of[tex]
+            parts[fname] = (v, n, f[~np.isin(mat_of, list(hidden))], col)
         verts, norms, faces, cols = [], [], [], []
         base = 0
         for fname, p in self.placed:
@@ -560,9 +633,9 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     alone (the wilderness gate's view). A Prop whose model can't be imported
     drops, recorded as ``not importable``."""
     from dataclasses import replace
-    from generators.decor.placement import Drop, check, place
+    from generators.decor.placement import Drop, check, place, size_of
     from generators.decor.stock import NotImportable, eq_path_from_env
-    from generators.room_context import contexts, site_contexts
+    from generators.room_context import _Mesh, contexts, site_contexts
 
     control = spec.decor or "none"
     sited = spec.wilderness is not None and (spec.sites or "none") != "none"
@@ -577,7 +650,19 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     importer = _importer(eq)
     seed = spec.decor_seed if spec.decor_seed is not None else int(spec.seed or 0)
     out = DecorBuild(control, seed)
-    todo = (contexts(spec, ter) if rooms else []) + (site_contexts(spec, ter) if sited else [])
+    mesh = _Mesh(ter) if rooms else None
+    todo = (contexts(spec, mesh) if rooms else []) + (site_contexts(spec, ter) if sited else [])
+
+    imported = {}                           # model file -> its import
+
+    def settled(p, fname):
+        """Its origin where its model fills its footprint, a wall Prop on the wall mesh
+        (None: no wall there to hang on)."""
+        p = _at_origin(p, imported[fname].ter)
+        if p.mount == "wall" and mesh is not None:
+            p = _on_wall(p, imported[fname].ter, size_of(catalogue.models[p.key]).side, mesh)
+        return p
+
     for ctx in todo:
         d = place(ctx, rules, catalogue, control, spec.decor_seed)
         kept, files = [], []
@@ -587,15 +672,27 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
             except NotImportable as e:
                 d.drops.append(Drop(p.step, p.line, p.key, f"not importable: {e}"[:200], p.poi))
                 continue
-            out.models.setdefault(stock.model_file, stock.ter)
-            out.textures.update(stock.textures)
+            imported.setdefault(stock.model_file, stock)
             kept.append(p)
             files.append(stock.model_file)
         d = replace(d, props=kept)
         problems = check(ctx, d)            # on the footprints placement reserved
-        d = replace(d, props=[_at_origin(p, out.models[f]) for p, f in zip(kept, files)])
-        out.placed.extend(zip(files, d.props))
+        props, used = [], []
+        for p, f in zip(kept, files):
+            q = settled(p, f)
+            if q is None:
+                d.drops.append(Drop(p.step, p.line, p.key, OFF_THE_WALL, p.poi))
+                continue
+            props.append(q)
+            used.append(f)
+        d = replace(d, props=props)
+        out.placed.extend(zip(used, d.props))
         out.rooms.append((ctx, d, problems))
+    # The models (and their textures) of the Props kept, each once.
+    for fname, _p in out.placed:
+        if fname not in out.models:
+            out.models[fname] = imported[fname].ter
+            out.textures.update(imported[fname].textures)
     # Keep the imported models for the next build, and a few archives (a few MB
     # each; a long-lived Server would otherwise gather them all).
     if len(importer._files) > ARCHIVES_KEPT:

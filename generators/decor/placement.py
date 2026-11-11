@@ -28,10 +28,13 @@ matches), and per Group member.
 - **along the wall** (``along_wall``, ``corners``, ``by_door``, ``rows``): backed to a wall face,
   its back half a plan-depth off it, turned so its front faces the room;
 - **wall** Props hang on a wall face at the height stock uses for the model (observed ``over``,
-  its p50) and stock's distance off the wall (observed ``wall``), never within ``FRAME`` of a
-  door's clear zone and never on a lintel (a wall face whose foot is above the floor in front of
-  it). Wall faces are the context's samples of the BUILT wall mesh, with each sample's own
-  bottom and top, so a torch on a rough wall sits where that wall stands (design Risks). Wall
+  its p50), the side of the model stock puts to a wall turned to it (catalogue ``wall_side``,
+  measured on stock's placements) and its back flush with the face (its own reach to that side
+  off it), never within ``FRAME`` of a door's clear zone and never on a lintel (a wall face
+  whose foot is above the floor in front of it). Wall faces are the context's samples of the
+  BUILT wall mesh, with each sample's own bottom and top; the build then sets each wall Prop on
+  the wall mesh at its own height (``generators/builder.py``), so a torch on a rough wall sits
+  where that wall stands (design Risks). Wall
   lights keep ``LIGHT_SPACING`` (finding 1: 38 u dungeon, 26 u city; a room keeps
   ``ROOM_LIGHT_GAP`` of it);
 - **ceiling** Props hang where the ceiling is at least the model's length plus ``HEAD_HEIGHT``
@@ -40,9 +43,14 @@ matches), and per Group member.
   members round it, in a row with it, beside it or stacked on it (raised).
 
 **Yaw** is step 10's decision 10: radians counter-clockwise from +X, and a model's front faces
-+X at yaw 0. A wall or along-wall Prop's yaw is its wall's into-room normal, so its back (-X)
-is to the wall: stock's own wall torches agree (TORCHPOINT in Qeynos catacombs and Sol A stand
-with the wall at local -X and the flame 2.3 u off it).
++X at yaw 0. An along-wall floor Prop's yaw is its wall's into-room normal, so its back (-X)
+is to the wall. A wall Prop turns its measured side to the wall instead: stock differs by model
+(TORCHPOINT has the wall at its -X, WALLTORCH200 at +X, GKTORCH701 at +Y), and a model stock
+never hangs keeps -X.
+
+**Floor and raised** Props stand on their bottom (``measured.below`` under the origin, which
+some models draw far from: GENMETCRATE700's mesh lies wholly under its origin), ``LIFT`` over
+the lowest floor under their footprint or the top of what they stack on.
 
 **The room check** (Req 13.4): decor checks its own result against the context, by the gate's
 rules (``analyzer/footprints.py``, mirrored here, not imported): a Prop blocks where it is
@@ -67,7 +75,7 @@ from scipy.ndimage import distance_transform_edt
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
-from generators.decor.catalogue import UNKNOWN, Catalogue, Model
+from generators.decor.catalogue import UNKNOWN, WALL_SIDES, Catalogue, Model
 from generators.decor.rules import (BARE, DEFAULT_CONTROL, MOUNTS_FILLING, NEUTRAL, DecorRules, Group, Line,
                                     draw_count)
 from generators.room_context import STEP_UP, RoomContext, WallFace
@@ -92,6 +100,8 @@ DEFAULT_LIGHT_SPACING = 38.0
 ROOM_LIGHT_GAP = 0.8
 #: The most a floor Prop's ground may rise across its footprint (u).
 FLAT = 2.0
+#: A floor or raised Prop's bottom stands this far over what it stands on (u).
+LIFT = 0.05
 #: Spots tried per item before it drops; anchor spots tried per Group.
 TRIES = 24
 GROUP_TRIES = 8
@@ -100,6 +110,8 @@ FALLBACKS = 2
 #: Gap between a Prop's back and its wall (u), and between neighbours in a row or Group.
 WALL_GAP = 0.5
 GAP = 1.0
+#: A wall Prop's back stands this far off its wall (u).
+WALL_FLUSH = 0.05
 #: Defaults for a model the survey never saw placed: height of a wall Prop over the floor.
 WALL_HEIGHT = {"light": 5.5, "hanging": 8.0}
 DEFAULT_WALL_HEIGHT = 6.0
@@ -188,24 +200,39 @@ class Decorated:
 class Size:
     w: float                # along the model's X (its front), scaled
     d: float                # along its Y
-    h: float
-    below: float
+    h: float                # its top over its origin, scaled (below it when negative)
+    below: float            # its bottom under its origin, scaled (over it when negative)
     scale: float
     over: Optional[float]   # stock's height over the floor (p50), scaled with the room: as stock
     wall: Optional[float]   # stock's distance off the wall (p50)
+    #: A wall model's side to its wall (catalogue ``wall_side``; ``-x`` when unmeasured): the
+    #: model-frame unit vector pointing at the wall, and the model's reach from its origin to
+    #: that side, scaled (None when unmeasured).
+    side: Tuple[float, float] = (-1.0, 0.0)
+    back: Optional[float] = None
 
 
 def size_of(model: Model) -> Size:
+    """A model's measured size at the scale stock gives it. ``h`` and ``below`` are the mesh's
+    own top and bottom about its origin, so a model drawn under its origin (GENMETCRATE700:
+    -22.8 to -4.6) keeps that and stands on its bottom, not its origin."""
     m = model.measured or {}
     obs = model.observed or {}
     sc = obs.get("scale") or [1.0, 1.0, 1.0]
     s = float(min(2.0, max(0.5, sc[1] if len(sc) > 1 else 1.0)))
     over = obs.get("over")
     wall = obs.get("wall")
+    top = float(m.get("h", 2.0))
+    bottom = float(m.get("below", 0.0))
+    if top + bottom < 0.1:                  # flat (a rug): a sliver of height, over its bottom
+        top = 0.1 - bottom
+    ws = model.wall_side or {}
+    side = WALL_SIDES.get(ws.get("side", "-x"), (-1.0, 0.0))
+    back = float(ws["back"]) * s if "back" in ws else None
     return Size(w=max(0.2, float(m.get("w", 2.0))) * s, d=max(0.2, float(m.get("d", 2.0))) * s,
-                h=max(0.1, float(m.get("h", 2.0))) * s, below=max(0.0, float(m.get("below", 0.0))) * s,
+                h=top * s, below=bottom * s,
                 scale=s, over=float(over[1]) if over and len(over) > 1 else None,
-                wall=float(wall[1]) if wall and len(wall) > 1 else None)
+                wall=float(wall[1]) if wall and len(wall) > 1 else None, side=side, back=back)
 
 
 def _blocking(model: Model) -> bool:
@@ -327,6 +354,9 @@ SITE_GAP = 6.0
 #: ground between them whole, or ``SITE_GAP`` apart: a gap between leaves a strip the gate's
 #: raster can read as a pocket cut off.
 SITE_TOUCH = 2.0
+#: A Site's floor Prop keeps its top at least this far over or under a step above the
+#: ground round it (u): the gate's ground and the Site's floor differ by a few tenths.
+SITE_STEP_SLACK = 0.25
 
 
 class _SiteBounds:
@@ -853,7 +883,12 @@ class _Placer:
         fl = r.floor[cells]
         if float(fl.max() - fl.min()) > FLAT:
             return None
-        z = float(fl.min())
+        # Its bottom on the lowest floor under its plan (just over it: a flat rug would
+        # flicker in it), not under the margin round it: that would sink it.
+        under = r.rect_cells(x, y, yaw, sz.w, sz.d)
+        under = r.floor[under] if under is not None else fl
+        under = under[~np.isnan(under)]
+        z = float(under.min() if len(under) else fl.min()) + sz.below + LIFT
         if r.ceiling is not None:
             ce = r.ceiling[cells]
             ce = ce[~np.isnan(ce)]
@@ -871,6 +906,13 @@ class _Placer:
         ground = ground[~np.isnan(ground)]
         low = float(ground.min()) if len(ground) else z
         blocks = _blocking(model) and z + sz.h >= low + STEP_UP - BAND_SLACK
+        # At a Site, a top about a step over the ground round it is half in the gate's band
+        # and half not: the part out of it reads as ground a player stands on, walled in by
+        # the part in it (a pocket cut off, room-decor task 13). Over or under it, clearly.
+        if r.site is not None and _blocking(model) and len(ground) and \
+                z + sz.h - float(ground.max()) < STEP_UP + SITE_STEP_SLACK and \
+                z + sz.h - low > STEP_UP - SITE_STEP_SLACK:
+            return None
         blocked = r.blocked
         if blocks:
             blocked = r.blocked | mask
@@ -977,8 +1019,15 @@ class _Placer:
         light = model.tags.category == "light"
         over = sz.over if sz.over is not None and 0.5 <= sz.over <= 40 else \
             WALL_HEIGHT.get(model.tags.category, DEFAULT_WALL_HEIGHT)
-        off = sz.wall if sz.wall is not None and sz.wall <= sz.w + 1.0 else sz.w / 2 + 0.1
-        half = sz.d / 2
+        # Its measured side to the wall, its own reach to that side off the wall (flush;
+        # the build then sets it on the wall mesh itself), else stock's distance.
+        across = sz.w if sz.side[1] == 0.0 else sz.d          # its depth off the wall
+        if sz.back is not None:
+            off = sz.back + WALL_FLUSH
+        else:
+            off = sz.wall if sz.wall is not None and sz.wall <= across + 1.0 else across / 2 + 0.1
+        half = (sz.d if sz.side[1] == 0.0 else sz.w) / 2
+        turn = math.pi - math.atan2(sz.side[1], sz.side[0])
         for f in faces:
             w = f.face
             z = f.floor + over
@@ -988,11 +1037,13 @@ class _Placer:
             if any(math.hypot(x - px, y - py) < (spacing if light and plight else half + ph + GAP)
                    for px, py, ph, plight in r.wall_props):
                 continue
-            yaw = math.atan2(w.ny, w.nx)
+            yaw = math.atan2(w.ny, w.nx) + turn
             blocks = _blocking(model) and z - sz.below < f.floor + HEAD_HEIGHT and z + sz.h > f.floor + STEP_UP
             blocked = r.blocked
             if blocks:
-                foot = r.footprint(x, y, yaw, sz.w, sz.d)
+                # Its plan about its middle: a model's depth off the wall from its back.
+                mid = across / 2 - off
+                foot = r.footprint(x + w.nx * mid, y + w.ny * mid, yaw, sz.w, sz.d)
                 if foot is None or r.poi_spot[foot[0]].any():
                     continue
                 blocked = r.blocked | foot[1]
@@ -1144,7 +1195,7 @@ class _Placer:
     def _stack(self, a: Prop, model: Model, sz: Size, step, line, gid) -> Optional[Prop]:
         if sz.w > a.w + 0.01 or sz.d > a.d + 0.01:
             return None
-        z = a.z + a.h
+        z = a.z + a.h + sz.below + LIFT     # its bottom on the anchor's top
         r = self.room
         if r.ceiling is not None:
             i = int(round((a.x - r.xs[0]) / r.cell))
