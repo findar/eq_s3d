@@ -144,126 +144,45 @@ def test_decor_none_places_nothing_at_a_site(rules, catalogue):
 
 EQ = eq_path_from_env()
 P11_SEEDS = range(1, 41)
+#: P11 runs in blocks of seeds so the parallel runner spreads it (about 20 s a block).
+P11_BLOCKS = [P11_SEEDS[i:i + 10] for i in range(0, len(P11_SEEDS), 10)]
 
-
-#: The fine raster a model is judged on alone (u), and how far it reaches past the model.
-JUDGE_STEP = 0.5
-JUDGE_PAD = 12.0
-
-
-def gate_solid(importer, model) -> bool:
-    """Whether the wilderness Footprint gate can take this model at the scale placement gives
-    it, whatever its yaw or the raster's offset. That gate reads a solid by its winding and
-    has no room gate's "a piece inside one model's plan is its inside" rule, while stock
-    models are open shells wound any way: many enclose ground (most carts, a third of the
-    rocks), which fails as an Enterable with no opening or as ground cut off from Spawn.
-
-    Judged on a fine raster: the ground a player (half-width 1.5 u) stands on beside it must
-    all lie within reach of open ground a body twice as wide (3 u: a strip the gate's 2 u
-    raster always keeps joined, at any angle) reaches from outside; a pocket fails. And the
-    gate's own opening measure must not find it Enterable. A Prop stands at the lowest of its
-    ground, so it may sit up to ``placement.FLAT`` below the ground round it, which moves
-    the gate's band up its model: the ground stood on is read with the band's least (its
-    floor raised by ``FLAT``), the way out with its most (its head raised by ``FLAT``), and
-    the opening at both heights. Judging one model takes about half a second."""
-    import numpy as np
-    from scipy.ndimage import binary_dilation, label
-
-    from analyzer.footprints import (PLAYER_HALF_WIDTH, HEAD_HEIGHT, collidable_triangles,
-                                     coverage, flat_raster, measure_opening)
-    from analyzer.traverse import AgentModel
-    from generators.decor.placement import FLAT, size_of
-    from generators.decor.stock import NotImportable
-
-    try:
-        ter = importer.get(model.key).ter
-    except NotImportable:
-        return False
-    local = collidable_triangles(ter)
-    if not len(local):
-        return True
-    scale = size_of(model).scale
-    tris = local * scale
-    low = AgentModel().max_step_up
-    # Where the band's floor or head crosses a corner of the model as it sinks, and between.
-    zs = np.unique(np.round(tris[:, :, 2], 2))
-    events = {round(z - edge + d, 2) for z in zs for edge in (low, HEAD_HEIGHT) for d in (-0.02, 0.02)}
-    sinks = sorted({0.0, FLAT / 2, FLAT} | {e for e in events if 0.0 < e < FLAT})
-    for dz in (0.0, FLAT / 2, FLAT):
-        if measure_opening(local - np.array([0.0, 0.0, dz / scale]), scale).enterable:
-            return False
-    reach = float(np.abs(tris[:, :, :2]).max()) + JUDGE_PAD
-    ground = flat_raster(-reach, -reach, reach, reach, JUDGE_STEP)
-    owners = np.zeros(len(tris), dtype=np.int32)
-    grow = int(np.ceil((PLAYER_HALF_WIDTH + JUDGE_STEP) / JUDGE_STEP))
-    for dz in sinks:
-        def free(radius):
-            return ~coverage(ground, tris, owners, radius, low + dz, HEAD_HEIGHT + dz).covered
-        stand, wide = free(PLAYER_HALF_WIDTH), free(2 * PLAYER_HALF_WIDTH)
-        labels, _ = label(wide)
-        border = set(np.unique(np.r_[labels[0], labels[-1], labels[:, 0], labels[:, -1]])) - {0}
-        near = binary_dilation(np.isin(labels, list(border)), iterations=grow)
-        if (stand & ~near).any():
-            return False
-    return True
-
-
-def site_catalogue(catalogue, rules, importer):
-    """The catalogue less the floor models a Site's lines could draw that the wilderness gate
-    can't take (``gate_solid``)."""
-    from dataclasses import replace
-    from generators.decor.rules import SITE_POI_PURPOSES
-
-    lines = [ln for r in rules.sites.values() for ln in r.lines]
-    lines += [ln for purpose in SITE_POI_PURPOSES for ln in rules.dressing_for(purpose)]
-    kinds = {k for ln in lines for k in ln.kinds}
-    kinds |= {k for ln in lines if ln.group for m in rules.groups[ln.group].members for k in m.kinds}
-    models = {key: m for key, m in catalogue.models.items()
-              if m.tags.use != "yes" or m.tags.kind not in kinds or m.tags.mount not in ("floor", "raised")
-              or gate_solid(importer, m)}
-    return replace(catalogue, models=models)
-
-
-@pytest.fixture(scope="module")
-def site_cat(rules, catalogue):
-    from generators.builder import _importer
-    return site_catalogue(catalogue, rules, _importer(EQ))
 
 
 @pytest.mark.slow
 @pytest.mark.skipif(EQ is None, reason="EQ_PATH is not set (no EQ install to read)")
-def test_p11_sites_with_props_pass_the_footprint_gate(rules, site_cat):
+@pytest.mark.parametrize("control", CONTROLS)
+@pytest.mark.parametrize("block", range(len(P11_BLOCKS)))
+def test_p11_sites_with_props_pass_the_footprint_gate(rules, catalogue, control, block):
     """P11: at Normal and Dense (Sites and Decor both), Sites with their Props pass the
     wilderness Footprint gate with the trees and Structures, every POI reached and every
-    Site_Clear free, on 40 seeds. One test, so the models are judged once."""
+    Site_Clear free, on 40 seeds (here one control, one block of them). The gate reads the ZON the builder writes (``_gate_zon``,
+    its Props from ``builder.decor_for``). Which models may stand on open ground is the
+    catalogue's measured ``open_ground`` (``prop_catalogue.py screen``), not judged here."""
     import generators.wilderness.build as wb
-    from analyzer.footprints import Placed, check_footprints, placed_from_zon
+    from analyzer.footprints import check_footprints, placed_from_zon
     from analyzer.traverse import AgentModel
-    from generators.builder import _at_origin, _importer
     from generators.room_context import site_contexts
 
-    importer = _importer(EQ)
     agent = AgentModel()
     failed, props, kinds = [], Counter(), Counter()
-    for control, seed in ((c, s) for c in CONTROLS for s in P11_SEEDS):
+    for seed in P11_BLOCKS[block]:
         spec = wb.wilderness_spec(f"p{seed}", seed)
-        spec.sites = control
+        spec.sites = spec.decor = control
         ter = wb.build_wilderness_ter(spec, f"ter_p{seed}.ter", 2)
-        extra = []
+        here = 0
         for ctx in site_contexts(spec, ter):
-            d = place(ctx, rules, site_cat, control)
+            d = place(ctx, rules, catalogue, control)
             kinds[ctx.room_type] += 1
             props[ctx.room_type] += len(d.props)
+            here += len(d.props)
+            assert all(catalogue.models[p.key].open_ground for p in d.props)
             failed += [f"{control} seed {seed} {ctx.id}: {why}"
                        for why in site_clear_problems(ctx, d.props) + check(ctx, d)]
-            for p in d.props:
-                stock = importer.get(p.key)
-                q = _at_origin(p, stock.ter)
-                extra.append(Placed(f"{ctx.id}:{p.key}", stock.model_file, stock.ter,
-                                    q.x, q.y, q.z, q.yaw, 0.0, 0.0, q.scale))
         zon, models = wb._gate_zon(spec, ter)
+        assert sum(1 for o in zon.objects if o.name.startswith("decor_")) == here
         ground = wb._ground_raster(spec, ter, agent)
-        report = check_footprints(ground, placed_from_zon(zon, models) + extra,
+        report = check_footprints(ground, placed_from_zon(zon, models),
                                   wb.sites_for(spec, ter).pois(), agent)
         failed += [f"{control} seed {seed}: {f}" for f in report.failures]
     print("Sites and Props by kind:", {k: (kinds[k], props[k]) for k in sorted(kinds)})
