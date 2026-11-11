@@ -71,7 +71,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import binary_dilation, distance_transform_edt
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
@@ -110,8 +110,16 @@ FALLBACKS = 2
 #: Gap between a Prop's back and its wall (u), and between neighbours in a row or Group.
 WALL_GAP = 0.5
 GAP = 1.0
+#: The gap after a blocking Prop in a row: the gate leaves any gap from 5.83 u open
+#: (``analyzer.footprints``: 2 x the half-width plus a raster step's diagonal).
+ROW_GAP_BLOCKING = 6.0
+#: Cells (2 u each) round a lane of floor the strict reading doesn't join that a blocking Prop
+#: keeps off: 6 u, about the gate's clear width less a cell.
+LANE_NEAR = 3
 #: A wall Prop's back stands this far off its wall (u).
 WALL_FLUSH = 0.05
+#: The gate's walkable slope (``AgentModel.walkable_slope_deg``, 40°) as a grade.
+WALK_GRADE = math.tan(math.radians(40.0))
 #: How near (u) a wall sample turned from a wall Prop's own face must be to its plan's corner
 #: to stop it there: about the samples' spacing.
 WALL_TURN_NEAR = 3.0
@@ -534,6 +542,21 @@ class Room:
         self._loose = (self.ok,) + self._graph(self.ok)
         self._loose_starts = self._starts(door_cells, *self._loose)
         self.loose_before = self._joined(np.zeros(self.shape, bool), loose=True)
+        #: The strict reading joined only where a cell's rise to the next is a walkable slope
+        #: (no steeper than the gate's 40° over a cell): a rise of 2-3 u over 2 u can be a step
+        #: the gate takes or a bank it has no floor on. Floor joined this way before a Prop
+        #: must stay joined this way (task 14: a barrel shut a terrace whose other way down was
+        #: a 45° bank; a brazier shut a gutter below a rise). Floor joined only over such rises
+        #: is judged on the other readings.
+        self._gentle = (self.walk,) + self._graph(self.walk, self.cell * WALK_GRADE)
+        self.gentle_before = self._joined(np.zeros(self.shape, bool), graph=self._gentle)
+        #: Walkable floor the strict reading doesn't join (a gutter below a rise, a strip by a
+        #: wall), and the cells within ``LANE_NEAR`` of it: whether such a lane is a way through
+        #: and where it opens only the gate's own samples tell, so no blocking Prop stands on
+        #: or by one (task 14: a torch over a dais's gutter, a brazier by a gutter's mouth,
+        #: each cut it off).
+        lane = self.walk & ~self.before
+        self.by_lane = binary_dilation(lane, np.ones((3, 3), bool), iterations=LANE_NEAR)             if lane.any() else lane
         self.door_masks = [_in_rect(self.gx, self.gy, d.clear) for d in ctx.doors if d.clear]
         self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
         self.faces = self._faces()
@@ -542,15 +565,16 @@ class Room:
 
     # -- connectivity (the gate's "reached floor stays joined") ----------------
 
-    def _graph(self, mask: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """The steps between side-by-side cells of ``mask`` a player takes (both ends)."""
+    def _graph(self, mask: np.ndarray, rise: float = STEP_UP) -> Tuple[np.ndarray, np.ndarray]:
+        """The steps between side-by-side cells of ``mask`` a player takes (both ends),
+        rising at most ``rise``."""
         nx, ny = self.shape
         idx = np.arange(nx * ny).reshape(nx, ny)
         f = np.where(mask, self.floor, np.nan)
         a, b = [], []
         with np.errstate(invalid="ignore"):
-            right = mask[:-1, :] & mask[1:, :] & (np.abs(f[:-1, :] - f[1:, :]) <= STEP_UP)
-            up = mask[:, :-1] & mask[:, 1:] & (np.abs(f[:, :-1] - f[:, 1:]) <= STEP_UP)
+            right = mask[:-1, :] & mask[1:, :] & (np.abs(f[:-1, :] - f[1:, :]) <= rise)
+            up = mask[:, :-1] & mask[:, 1:] & (np.abs(f[:, :-1] - f[:, 1:]) <= rise)
         a.append(idx[:-1, :][right]); b.append(idx[1:, :][right])
         a.append(idx[:, :-1][up]); b.append(idx[:, 1:][up])
         return np.concatenate(a), np.concatenate(b)
@@ -583,10 +607,10 @@ class Room:
                        shape=(nx * ny, nx * ny))
         return connected_components(m, directed=False)
 
-    def _joined(self, blocked: np.ndarray, loose: bool = False) -> np.ndarray:
-        """Reached floor (``walk``; ``loose``: all of ``ok``) not blocked and joined to a
-        door (or a Site's approach)."""
-        mask, ea, eb = self._loose if loose else (self.walk, self._ea, self._eb)
+    def _joined(self, blocked: np.ndarray, loose: bool = False, graph=None) -> np.ndarray:
+        """Reached floor (``walk``; ``loose``: all of ``ok``; or ``graph``'s) not blocked and
+        joined to a door (or a Site's approach)."""
+        mask, ea, eb = graph or (self._loose if loose else (self.walk, self._ea, self._eb))
         starts = self._loose_starts if loose else self.starts
         _n, lab = self._components(blocked, mask, ea, eb)
         lab = lab.reshape(self.shape)
@@ -634,6 +658,9 @@ class Room:
         """A blocking Prop's grown plan: (the cells grown by ``grow``, the three-layer mask of
         it, of the plan grown by ``grow_wide`` and of it grown the least the gate's clear
         width may take); None when its middle is off the grid."""
+        # The yaw as the Prop records it, so ``check`` reads the same cells: a plan edge on a
+        # cell's middle flips with the last bit of cos/sin (task 14).
+        yaw = float(yaw) % (2 * math.pi)
         grown = self.rect_cells(x, y, yaw, w, d, self.grow, clip=True)
         wide = self.rect_cells(x, y, yaw, w, d, self.grow_wide, clip=True)
         least = self.rect_cells(x, y, yaw, w, d, max(0.0, WIDE_RADIUS - self.cell / 2), clip=True)
@@ -656,6 +683,8 @@ class Room:
         loose_after = self._joined(blocked, loose=True)
         if not cut.any():
             cut = self.loose_before & self.walk & ~blocked & ~loose_after
+        if not cut.any():
+            cut = self.gentle_before & ~blocked & ~self._joined(blocked, graph=self._gentle)
         if cut.any():
             i, j = (int(v[0]) for v in np.nonzero(cut))
             out.append(f"cuts off {int(cut.sum())} floor cells at ({self.xs[i]:.0f}, {self.ys[j]:.0f})")
@@ -958,6 +987,8 @@ class _Placer:
             return None
         blocked, as_read = r.blocked, r.as_read
         if blocks:
+            if not dressing and (mask[0] & r.by_lane).any():     # a POI's own dressing may
+                return None
             blocked, as_read = r.blocked | mask, r.as_read | mask
             if r.problems(blocked) or r.problems(as_read):
                 return None
@@ -1046,8 +1077,11 @@ class _Placer:
         return out
 
     def row_spots(self, prev: Prop, sz: Size) -> List[Tuple[float, float, float]]:
-        """Next to ``prev`` along its own Y (a row), either side."""
-        step = (prev.d + sz.d) / 2 + GAP
+        """Next to ``prev`` along its own Y (a row), either side. After a blocking Prop the gap
+        is ``ROW_GAP_BLOCKING``: two round models a step apart shut the floor between their
+        curves off from the room, a pocket in neither one's plan that the gate fails (task 14:
+        braziers 1 u apart in a row, 68-76 u^2 each)."""
+        step = (prev.d + sz.d) / 2 + (ROW_GAP_BLOCKING if prev.blocks else GAP)
         c, s = math.cos(prev.yaw), math.sin(prev.yaw)
         sides = [1, -1] if self.rng.random() < 0.5 else [-1, 1]
         # keep the back in line with prev's back
@@ -1096,7 +1130,7 @@ class _Placer:
                 # ``before``): whether it is a way through only the gate's own samples tell.
                 # A torch over a 3 u gutter between a dais and its wall cut the gutter off
                 # (task 14, dungeon seed 11).
-                if (foot[1][0] & r.walk & ~r.before).any():
+                if (foot[1][0] & r.by_lane).any():
                     continue
                 blocked, as_read = r.blocked | foot[1], r.as_read | seen[1]
                 if r.problems(blocked) or r.problems(as_read):
