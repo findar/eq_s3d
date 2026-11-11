@@ -605,12 +605,13 @@ def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
 
 def _gate_zon(spec: ZoneSpec, ter: TerFile):
     """The ZON objects and models the builder would write for this spec and
-    TER: the builder's own ``_build_zon``, so the gate sees what ships. A
-    Vegetation missing a Species' model (hand-built in tests) gets the kit's,
-    the model the builder would pack."""
+    TER: the builder's own ``_build_zon``, so the gate sees what ships, the
+    Sites' Props included (room-decor task 20; a room's Props are the room
+    gate's). A Vegetation missing a Species' model (hand-built in tests) gets
+    the kit's, the model the builder would pack."""
     from dataclasses import replace
 
-    from generators.builder import ZoneBuilder
+    from generators.builder import ZoneBuilder, decor_for
 
     veg = vegetation_for(spec, ter)
     missing = sorted({t.species for t in veg.placement.instances} - set(veg.model_index))
@@ -628,8 +629,9 @@ def _gate_zon(spec: ZoneSpec, ter: TerFile):
                 sp, _salted_seed(int(spec.seed) & 0x7FFFFFFF, "vegetation", "model", name))
         veg = replace(veg, models=models, model_index=index)
     sites = sites_for(spec, ter)
-    zon = ZoneBuilder(spec)._build_zon(f"ter_{spec.name.lower()}.ter", veg, sites)
-    return zon, {**veg.models, **sites.models}
+    decor = decor_for(spec, ter, [], rooms=False)
+    zon = ZoneBuilder(spec)._build_zon(f"ter_{spec.name.lower()}.ter", veg, sites, decor)
+    return zon, {**veg.models, **sites.models, **(decor.models if decor is not None else {})}
 
 
 def structure_failures(spec: ZoneSpec, ter: TerFile, zon, models: Mapping[str, TerFile],
