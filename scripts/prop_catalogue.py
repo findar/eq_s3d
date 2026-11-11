@@ -549,7 +549,8 @@ def open_ground(ter, scale: float) -> bool:
     Judged on a fine raster: the ground a player (half-width 1.5 u) stands on beside it must
     all lie within reach of open ground a body twice as wide (3 u: a strip the gate's 2 u
     raster always keeps joined, at any angle) reaches from outside; a pocket fails. And the
-    gate's own opening measure must not find it Enterable. A Prop stands at the lowest of its
+    gate's own opening measure must not find it Enterable. The model is judged standing on its
+    bottom, as placement stands it (task 13), not on its origin. A Prop stands at the lowest of its
     ground, so it may sit up to ``placement.FLAT`` below the ground round it, which moves
     the gate's band up its model: the ground stood on is read with the band's least (its
     floor raised by ``FLAT``), the way out with its most (its head raised by ``FLAT``), and
@@ -559,11 +560,14 @@ def open_ground(ter, scale: float) -> bool:
     from analyzer.footprints import (PLAYER_HALF_WIDTH, HEAD_HEIGHT, collidable_triangles,
                                      coverage, flat_raster, measure_opening)
     from analyzer.traverse import AgentModel
-    from generators.decor.placement import FLAT
+    from generators.decor.placement import FLAT, LIFT
 
     local = collidable_triangles(ter)
     if not len(local):
         return True
+    # Placement stands a model on its bottom, LIFT over the ground (room-decor task 13).
+    bottom = min(p.z for p in ter.vertices)
+    local = local - np.array([0.0, 0.0, bottom - LIFT / scale])
     tris = local * scale
     low = AgentModel().max_step_up
     # Where the band's floor or head crosses a corner of the model as it sinks, and between.
