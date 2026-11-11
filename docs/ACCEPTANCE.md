@@ -1495,3 +1495,176 @@ barn to its own Site_Clear (h). Sites are bare: furniture and loose props are st
 
 - [ ] **[DEFERRED]** Walking into huts and lean-tos and round Sites in the RoF2 client needs a
       takeover install. It moves to M6's in-engine smoke load.
+
+## Step 11 — Decorating rooms
+
+> Roadmap step 11 (`zone-generator-room-decor`). Rooms and Sites now hold **Props**: the
+> client's own models (furniture, lights, crates, banners, rock and bone), catalogued from the
+> install's `_obj*.s3d` archives and copied into the build unchanged. A room's **recipe**
+> (`rules/decor/rooms.toml`: its room type, else its kind, else the zone type, else the
+> default) says what it takes. Its race, theme or zone type picks a **Set**, which is whose
+> models it uses. A Prop is mounted on the **floor**, on a **wall**, on the **ceiling** or
+> **raised** on another Prop (a candle on a table, a crate on a crate). Each light-bearing
+> Prop adds a ZON point light. The **Decor** control (None, Sparse, Normal, Dense) sets how
+> much is placed. The **Decor seed** rerolls the Props alone: the zone and its layout stay
+> the same. The **⟳ reroll decor** button beside Decor in the side panel does the same with
+> a fresh decor seed. Decor needs the EQ install on the Server (`EQ_PATH`); without it a build
+> has no Props and warns `NO_INSTALL`. Restart the Server on the merged code first and check
+> the side panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. **Every case is made from the Controls panel alone**; leave the description
+box empty. Dungeon, Layout Graph, 16 rooms, and Size, Verticality and Locks at their defaults,
+unless the row says otherwise. City has 12 rooms, Outdoor dungeon has the Rooms its row names,
+and Wilderness has Rooms 5 with the Step 10 defaults (Trees, Sites Normal, Inhabitants biome's
+mix). Theme and Race are None, Decor is Normal and Decor seed is blank (the zone's seed)
+unless the row names them. Each was built on this code through the Server's own route
+(`POST /api/generate`) and built on the first attempt with the gate passing. Counts are from
+the sidecar's top-level `decor` block (`props`, `lights`, `models`). A room's Props are in
+`rooms[].props` (`key`, `kind`, `mount`, `set`) and a Site's in `sites.sites[].props`; a
+room's type is `layout.rooms.<id>.room_layout`.
+
+| # | Controls | Seed | Decor seed | Decor | What it shows |
+|---|----------|------|------------|-------|---------------|
+| a | Defaults | 2 | blank (2) | **Dense** | 125 Props, 46 lights, 45 models. MISTBANNER ×4 on `room_13`'s walls, GENTAPESTRY602 ×2 in `room_12`. Ten torch models, among them WALLTORCH200, WALLTORCHARMSTUB200, CDTORCH101, VETORCH101, POTORCHAINS504T and TORCHPOINT. Stacked crates: in `room_2` HPCRATES401@abysmal and CRATEG sit on crates; in `room_9` CRATEK and CRATEG do. A table set in `room_6`. `room_14` is bare |
+| b | Defaults | 2 | blank | **None** | No Props, and no `decor` block in the sidecar. The rooms and walls are a's |
+| c | Defaults | 2 | blank (2) | **Sparse** | 49 Props, 24 lights. One MISTBANNER |
+| d | Defaults | 2 | blank (2) | Normal | 77 Props, 37 lights. MISTBANNER ×2 (`room_13`), GENTAPESTRY602 (`room_12`), NTHRONE with two braziers in the deep room (`room_5`). Leaving Decor at its default gives these same Props |
+| e | Defaults | 2 | **1000** | Normal | **Reroll:** d's zone (the sidecar `layout` is identical) with other Props: 71 Props, 30 lights, 4 bare rooms. `room_12` now holds TAKBANNER701 ×2, `room_5` an HHTHRONE, and `room_0` braziers and torches |
+| f | Defaults | 2 | **2** | Normal | Same Props as d: a decor seed equal to the zone's is the default |
+| g | Theme **Fortress** | 2 | blank (2) | Normal | **Room types:** throne `room_5` (NTHRONE, FLAG2 ×2, braziers, HUMRUG1). Barracks `room_2` (GOTHBED303 and 3 BED2) and `room_6` (rows of beds). Armory `room_4` (5 HHRACK and 2 VSWRACKS302 in rows) and `room_15` (6 MISTSKRACK702). Battle arena `room_13` (SCAFLAG800 ×3). Storeroom `room_14` is bare. 106 Props |
+| h | Race **Ogre** | 1 | blank (1) | Normal | 108 Props, 14 in the `ogre` Set. QRGFLAG ×4, GENTAPESTRY602 ×4. Crates stacked in `room_6` and `room_12` |
+| i | Race **Goblin** | 1 | blank (1) | Normal | 127 Props, 33 `goblin`. Every torch is the goblins' PERTORCH1 (32) |
+| j | Race **Gnoll** | 1 | blank (1) | Normal | 118 Props, 24 `gnoll`. 12 banners and 38 crates, stacked in five rooms |
+| k | Theme **Tomb** | 1 | blank (1) | Normal | 109 Props, 12 `undead`. Dark: 16 lights. Rock, bones, bone piles, webs and urns; no banners or furniture. Ossuary, vault and ritual chamber rooms |
+| l | Theme **Wizard lair** | 2 | blank (2) | Normal | 112 Props, 32 `erudite`. Bookcases, desks, and books raised on desks (SHBOOK301 in `room_9` and `room_11`). PAFLAG104 |
+| m | **City**, 12 rooms | 1 | blank (1) | Normal | 97 Props, 36 lights. Barrels, bookcases, MISTLAMP lamps, plants and braziers; 4 in the `human` Set. `room_10` is the fullest (19); `room_3` is bare |
+| n | **Outdoor dungeon**, 8 rooms | 2 | blank (2) | Normal | 29 Props, 9 lights; NTHRONE in the deep room. Lighter than a dungeon, by the outdoor-dungeon weights |
+| o | **Outdoor dungeon**, 5 rooms | 4 | blank (4) | Normal | TAKBANNER701 ×2 behind the throne (ACBTHRONE301) in `room_4`. The human ruin Site holds two chests (GOTHCHEST301). **Known issue:** a banner here sits about 2.4 u into the wall |
+| p | **Outdoor dungeon**, 5 rooms | 3 | blank (3) | Normal | A table and 3 chairs with a candle on the table in `room_2`. **Known issue:** its MIRTORCH701 sits about 2.1 u into the wall |
+| q | **Wilderness** | 7 | blank (7) | Normal | **Sites:** the gnoll camp has BARSTOOL1, CRATEG ×2 and FURSTACK2; the centaur shrine has CANDLE ×2 and MISTFURN703. 7 Props, 2 lights |
+| r | **Wilderness** | 9 | blank (9) | Normal | Human farmstead yard: a WAGON, BARREL4 ×3, an MBENCH301 and a fishing pole (POPFISHPOLE500) |
+| s | **Wilderness** | 7 | blank | **None** | q's Sites (same Structures), no Props |
+| t | **Wilderness** | 7 | blank (7) | **Sparse** | The shrine has CANDLE ×2 and SCULL; the camp has BARSTOOL1, HPCRATES402 ×2 and BONES. 7 Props: on two small Sites Sparse places as many as Normal, only other models |
+| u | **Wilderness** | 7 | blank (7) | **Dense** | 10 Props: the camp adds BONES3 ×2, the shrine a second MISTFURN703 |
+
+a to f share a zone: b, c, d and a step the Decor control on the same rooms, and d, e and f
+show the decor seed. s, t, q and u do the same for Sites. Compare them side by side. From the
+command line (theme and race are page-only, so g to l need the page):
+
+```bash
+python main.py generate decor_a --seed 2 --rooms 16 --decor dense
+python main.py generate decor_e --seed 2 --rooms 16 --decor-seed 1000
+python main.py generate decor_m --zone-type city --seed 1 --rooms 12
+python main.py generate decor_o --zone-type outdoor_dungeon --seed 4 --rooms 5
+python main.py generate decor_q --zone-type wilderness --seed 7
+```
+
+These give the same Props as the page (checked for a, e and q). The `.eqg` files contain the
+client's own models and textures, so they are for your own client and server: don't commit or
+share them.
+
+### D.1 — The Props look placed
+
+- [ ] **[MUST] Banners show and hang flat** — In a, walk `room_13` and `room_12`. Each
+      MISTBANNER and tapestry can be seen (not invisible or a black sheet), hangs flat against
+      the wall, faces into the room, and is not sunk into the wall or floating off it. The same
+      goes for g's FLAG2 and SCAFLAG800 and h's QRGFLAG.
+- [ ] **[MUST] Torches on the wall** — In a, d and g, every wall torch has its back flush to
+      the wall at about head height, with its flame on the room side. No torch stands free in
+      the air or is buried in the stone. Several torch models show, not one model everywhere
+      (i is the exception: a goblin zone uses goblin torches).
+- [ ] **[MUST] Standing on the floor** — Tables, chairs, chests, beds, racks, rock and bones
+      rest on the floor. None floats or is sunk to its knees, including on uneven rough floors
+      (k).
+- [ ] **[MUST] Stacks sit on what's below** — In a's `room_2` and `room_9`, and in h and j, a
+      stacked crate sits on the top of the crate below. Candles and books (a `room_6`, l) sit on
+      their table or desk.
+- [ ] **[MUST] Nothing below the world** — From outside or below each zone (fly out), no Prop
+      hangs under the floor or outside the walls.
+- [ ] **[SHOULD] Lights match** — With Lights on, the lit torches and braziers glow where they
+      stand, and tomb (k) reads darker than a or g.
+
+### D.2 — Rooms read as what they are
+
+- [ ] **[MUST] Room types** — g's throne has its seat, flags and rug, its barracks have beds,
+      its armories have weapon racks, and its storeroom is empty or holds crates.
+- [ ] **[MUST] Races and themes differ** — Goblin (i), gnoll (j), ogre (h), tomb (k) and wizard
+      lair (l) each use their own models where they have them, and the five look apart. A room
+      keeps to one culture.
+- [ ] **[MUST] Cities** — m reads as a lived-in town: barrels, shelves, lamps and plants, lit,
+      not a dungeon's bones and rubble.
+- [ ] **[MUST] Outdoor dungeons** — n, o and p are furnished like a smaller dungeon, and o's
+      ruin Site holds its chests on the ground.
+- [ ] **[SHOULD] Not too full or too empty** — In d, most rooms hold a few things and a couple
+      hold a lot, and one may be bare. It reads like a Classic-era dungeon, not a warehouse.
+
+### D.3 — Sites look natural
+
+- [ ] **[MUST] Camp Props** — In q and u, the camp's stool, crates and furs stand on the ground
+      near the fire and tents, upright on slopes, not inside a tent wall and not on the path
+      through. The shrine's candles stand by the monument.
+- [ ] **[MUST] Farm Props** — In r, the wagon, barrels and bench stand in the farmstead's yard,
+      clear of the hut's opening and the fences.
+- [ ] **[MUST] None leaves Sites alone** — s has q's Sites unchanged and nothing at them.
+
+### D.4 — The way stays open
+
+- [ ] **[MUST] Rows leave gaps** — In g, walk between the rows of racks in `room_4` and
+      `room_15` and between the beds in `room_2` and `room_6`. Where a row stands, there is a
+      gap to walk through or round it, and no row walls off part of the room.
+- [ ] **[MUST] Door to door** — In a (Dense) and m, walk every room from door to door. No Prop
+      stands in a doorway or blocks the path, and you don't snag on rubble.
+- [ ] **[MUST] Gate held** — Every case built on the first attempt with the gate passing
+      (`validated` in the side panel).
+
+### D.5 — Controls, reroll and sidecar
+
+- [ ] **[MUST] Decor steps** — b, c, d and a on one zone go none, few, more, most (0, 49, 77
+      and 125 Props). The rooms and walls don't change between them.
+- [ ] **[MUST] Reroll keeps the zone** — e is d's zone with other Props. Then press
+      **⟳ reroll decor** on d: the rooms, walls and corridors stay where they were and only the
+      Props change. The Decor row reads `normal · seed <the new decor seed>`.
+- [ ] **[MUST] Controls** — Decor and Decor seed show for Dungeon, City, Outdoor dungeon and
+      Wilderness. The Decor list is None, Sparse, Normal, Dense, with Normal selected.
+- [ ] **[MUST] Maps** — The map (M) draws each Prop over a traced outline (dots for wall,
+      raised and ceiling Props), and `maps/<name>.txt` has a purple loop for each floor Prop's
+      footprint.
+- [ ] **[MUST] Sidecar** — `<name>.zone.json` has a top-level `decor` block (`control`,
+      `seed`, `props`, `lights`, `models`, `rooms`, `bare`, `drops`, `check`), and each room and
+      Site has `props`, `dressing` and `decor_drops`. `check` is empty.
+- [ ] **[MUST] Pinned seed repeats** — The same seed and decor seed give the same Props.
+
+Known issues (not regressions; open follow-ups in the spec's `archive.md`):
+
+- Some wall Props still sit into the wall on outdoor dungeons: in p (seed 3) MIRTORCH701 by
+  about 2.1 u, and in o (seed 4) a banner by about 2.4 u. This was already so before task 14.
+- Dense isn't first-try on every pinned seed. A 16-room Dungeon at Dense fails the gate on
+  seeds 4 (`footprint_cut` in `room_9`) and 7 (`throat_narrow` in `room_13`), so the page
+  returns 503 for those pinned seeds. A blank seed retries and builds. Task 14 checked first
+  try at Normal (40/40).
+- GENMETCRATE700 builds at twice its stock size because of the scale limit.
+- Floor models placed along a wall still assume their front is +X, so a bench or rack can
+  face the wall side-on.
+- Wall Props at inside corners aren't checked for poking sideways into the next wall.
+- The `.eqg` rotation direction hasn't been checked in the client.
+- City seed 53 falls under the per-room hard edge, at 1.67 Props a room. City raised, plant
+  and furniture Props sit near the tops of their bands.
+- Corridors get no lights yet, because no corridor contexts are built.
+- The page's tooltip still says Decor is "in the rooms", though Sites take it too.
+- Doorway gates aren't placed as doors, and pieces stock always places together aren't
+  placed whole.
+- Rerolling step 9's Structure and Clutter Features without moving the layout is still open:
+  the decor seed covers Props only.
+- The thorough suite at this step (task 15): 2371 passed, 1 failed. The failure is
+  `tests/test_properties_mapgeom.py::test_reachable_only`, where an outline polyline differs
+  between the reachable and all-floor outlines on a synthetic world. It replays the same at
+  `3ae15d5^`, the code before step 11; the outline code is unchanged here. It belongs with
+  step 10's open failures: three dungeon and outline tests under the thorough profile and
+  the mapgeom face-order bug. Those three passed in this run; they fail on some draws only.
+
+### D.6 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Seeing the Props, their lights and their collision in the RoF2 client
+      needs a takeover install. It moves to M6's in-engine smoke load.
