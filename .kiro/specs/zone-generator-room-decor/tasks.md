@@ -113,7 +113,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 
 - [ ] 16. HUMAN: decorating rooms acceptance pass
   - Card: [cards/16-human-acceptance.md](cards/16-human-acceptance.md)
-  - Type: human · Depends: 15
+  - Type: human · Depends: 15, 21
 
 - [ ] 17. Close step 11
   - Card: [cards/17-close.md](cards/17-close.md)
@@ -137,3 +137,9 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Type: agent · Size: M · Depends: 11
   - Owns: generators/builder.py (`decor_for` takes Site contexts), generators/wilderness/build.py (the gate ZON carries Props), scripts/prop_catalogue.py + rules/decor/catalogue.json + generators/decor/catalogue.py (the open-ground screen), generators/decor/placement.py (honour the screen at Sites), ai/schema.py + web/src/ (Decor shown for wilderness), tests/test_site_props.py, tests/test_site_decor_builds.py
   - Reqs: 10.1, 11
+
+- [ ] 21. Dense passes the gate first try
+  - Card: [cards/21-dense-first-try.md](cards/21-dense-first-try.md)
+  - Type: agent · Size: M · Depends: 14, 15
+  - Owns: generators/decor/, generators/builder.py (the decor functions), rules/decor/rooms.toml, tests/test_decor_bands.py, tests/test_decor_placement.py, tests/test_decor_builds.py, docs/ACCEPTANCE.md (the step 11 known-issue line only)
+  - Reqs: 12.1
