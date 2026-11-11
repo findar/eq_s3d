@@ -338,6 +338,37 @@ def test_a_model_drawn_under_its_origin_stands_on_its_bottom(rules, fixture):
         assert p.z > 0.0                    # its origin over its mesh, as stock draws it
 
 
+@pytest.mark.parametrize("side", ["-x", "+x", "-y", "+y"])
+def test_a_wall_prop_turns_its_measured_side_to_the_wall(rules, fixture, side):
+    """Task 13 finding 2: stock hangs each wall model with its own side to the wall
+    (catalogue ``wall_side``); placement turns that side to the wall face and stands the
+    origin off it by the model's own reach to that side (its back flush)."""
+    from dataclasses import replace
+    from generators.decor.catalogue import WALL_SIDES
+    from generators.decor.placement import WALL_FLUSH
+    back = 1.7
+    models = {k: (replace(m, wall_side={"side": side, "n": 9, "share": 1.0, "standoff": back, "back": back})
+                  if m.tags.mount == "wall" else m) for k, m in fixture.models.items()}
+    cat = Catalogue(models=models, kinds=fixture.kinds, sets=fixture.sets)
+    c = box_room(room_type="throne", kind="deep", h=40.0)
+    n = 0
+    for seed in range(4):
+        for p in place(c, rules, cat, "dense", decor_seed=seed).props:
+            if p.mount != "wall":
+                continue
+            n += 1
+            u = WALL_SIDES[side]
+            cs, sn = math.cos(p.yaw), math.sin(p.yaw)
+            to_wall = (cs * u[0] - sn * u[1], sn * u[0] + cs * u[1])
+            # the face it hangs on: turned against its side, its origin straight out from it
+            on = [w for w in c.walls if to_wall[0] * -w.nx + to_wall[1] * -w.ny > 0.999
+                  and abs((p.x - w.x) * w.ny - (p.y - w.y) * w.nx) < 1e-6]
+            assert on, (side, p)
+            assert any((p.x - w.x) * w.nx + (p.y - w.y) * w.ny == pytest.approx(back + WALL_FLUSH, abs=1e-6)
+                       for w in on), (side, p)
+    assert n > 4
+
+
 def test_wall_lights_keep_their_spacing(decorated):
     from generators.decor.placement import ROOM_LIGHT_GAP, _spacing
     for c, d, _ in decorated:

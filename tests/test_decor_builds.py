@@ -341,6 +341,158 @@ def test_floor_props_stand_on_the_floor_under_them(decorated, label):
     assert n > 3
 
 
+def _wall_samples(tri, normal, w):
+    """The level-facing triangles within 2 u of the vertices ``w``, sampled every ~0.25 u,
+    with each sample's triangle's declared normal (into the room)."""
+    import numpy as np
+
+    walls = np.abs(normal[:, 2]) < 0.2
+    tri, normal = tri[walls], normal[walls]
+    lo, hi = w.min(axis=0) - 2.0, w.max(axis=0) + 2.0
+    near = np.all((tri.max(axis=1) >= lo) & (tri.min(axis=1) <= hi), axis=1)
+    pts, nrm = [np.zeros((0, 3))], [np.zeros((0, 3))]
+    for t, nv in zip(tri[near], normal[near]):
+        k = max(1, int(math.ceil(max(np.linalg.norm(t[1] - t[0]), np.linalg.norm(t[2] - t[0])) / 0.25)))
+        a, b = np.meshgrid(np.arange(k + 1), np.arange(k + 1), indexing="ij")
+        keep = a + b <= k
+        a, b = a[keep] / k, b[keep] / k
+        pts.append(t[0] + a[:, None] * (t[1] - t[0]) + b[:, None] * (t[2] - t[0]))
+        nrm.append(np.repeat(nv[None], len(a), axis=0))
+    return np.vstack(pts), np.vstack(nrm)
+
+
+@pytest.mark.slow
+@needs_install
+@pytest.mark.parametrize("label", sorted(DECORATED))
+def test_wall_props_are_flush_with_the_wall_mesh(decorated, label):
+    """Task 13 finding 2: every wall Prop's back is within 1 u of the built wall mesh (on a
+    rough wall too), and the model stands in front of the wall, not in it."""
+    import numpy as np
+    from scipy.spatial import cKDTree
+
+    _spec_, result = decorated[label, "normal"]
+    props, tri, normal = _placed(result)
+    n = 0
+    for p, w in props:
+        if p["mount"] != "wall":
+            continue
+        n += 1
+        pts, nrm = _wall_samples(tri, normal, w)
+        assert len(pts), p
+        d, i = cKDTree(pts).query(w)
+        assert d.min() <= 1.0, (p["key"], float(d.min()))
+        # in front of the wall: its middle on the room's side of the wall nearest it
+        mid = w.mean(axis=0)
+        _d, j = cKDTree(pts).query(mid)
+        assert float((mid - pts[j])[:2] @ nrm[j][:2]) > 0.0, p["key"]
+    assert n > 0
+
+
+@pytest.mark.slow
+@needs_install
+def test_banners_show_in_the_glb_in_front_of_their_wall(decorated):
+    """Task 13 finding 1: banners were placed (the sidecar had them) but hung behind the
+    wall face (MISTBANNER's cloth is 0.9 u behind its origin, which stood 0.14 u off the
+    wall). The build's banners are in the GLB ``decor`` mesh with drawn colour and their
+    cloth on the room's side of the wall."""
+    import numpy as np
+    import trimesh
+    from scipy.spatial import cKDTree
+
+    _spec_, result = decorated["outdoor_dungeon", "normal"]
+    props, tri, normal = _placed(result)
+    banners = [(p, w) for p, w in props if p["kind"] == "banner"]
+    assert banners, "the pinned build places no banner"
+    for p, w in banners:
+        pts, nrm = _wall_samples(tri, normal, w)
+        _d, j = cKDTree(pts).query(w)
+        ahead = np.einsum("ij,ij->i", (w - pts[j])[:, :2], nrm[j][:, :2])
+        assert ahead.min() > -0.05, (p["key"], float(ahead.min()))     # none of it in the wall
+    scene = trimesh.load(result.glb_path, force="scene")
+    decor = scene.geometry["decor"]
+    verts = np.asarray(decor.vertices)
+    cols = np.asarray(decor.visual.vertex_colors)
+    for p, w in banners:
+        # each of the banner's vertices is a GLB decor vertex (same place), drawn
+        d = np.min(np.linalg.norm(verts[None, :, :] - w[:, None, :].astype(np.float32), axis=2), axis=1)
+        assert d.max() < 1e-3, p["key"]
+        hit = np.argmin(np.linalg.norm(verts[None, :, :] - w[:, None, :].astype(np.float32), axis=2), axis=1)
+        assert (cols[hit, 3] > 0).all() and (cols[hit, :3].sum(axis=1) > 0).all(), p["key"]
+        faces = np.asarray(decor.faces)
+        assert np.isin(faces, hit).all(axis=1).any(), p["key"]
+
+
+def test_a_wall_prop_is_set_on_the_wall_mesh_at_its_own_height():
+    """Task 13 finding 2 on a rough wall (design Risks): placement hangs a wall Prop flush
+    with the wall's foot line; the build moves it onto the wall mesh at the Prop's height
+    (here leaning 0.6 u back), and drops it when the mesh is more than 1 u off (a corner or
+    notch the model overhangs)."""
+    from types import SimpleNamespace
+
+    import numpy as np
+    from generators.builder import WALL_MOVE, _on_wall
+    from generators.decor.placement import WALL_FLUSH, Prop
+    from generators.room_context import _Mesh
+
+    def wall(x_at_top, foot=0.0):
+        # a wall along y, room to +x, its foot at x = foot and its face at x_at_top 20 u up
+        v = [(foot, -20.0, 0.0), (foot, 20.0, 0.0), (x_at_top, 20.0, 20.0), (x_at_top, -20.0, 20.0)]
+        n = np.array([20.0, 0.0, foot - x_at_top]) / math.hypot(20.0, x_at_top - foot)
+        verts = [SimpleNamespace(x=a, y=b, z=c, nx=n[0], ny=n[1], nz=n[2]) for a, b, c in v]
+        polys = [SimpleNamespace(v1=0, v2=1, v3=2, material=0), SimpleNamespace(v1=0, v2=2, v3=3, material=0)]
+        return _Mesh(SimpleNamespace(vertices=verts, polygons=polys, materials=[SimpleNamespace(name="wall")]))
+
+    # a plate 0.2 u thick, its back (-X, the side to the wall) 0.5 u behind its origin
+    model = SimpleNamespace(vertices=[SimpleNamespace(x=x, y=y, z=z) for x in (-0.5, -0.3)
+                                      for y in (-1.0, 1.0) for z in (0.0, 2.0)])
+    prop = Prop("PLATE", "torch", "light", "wall", "neutral", 0.5 + WALL_FLUSH, 0.0, 10.0, 0.0, 1.0,
+                0.2, 2.0, 2.0, 0.0, False, "prop", "test", "on_wall")
+    flat = _on_wall(prop, model, (-1.0, 0.0), wall(0.0))
+    assert flat.x == pytest.approx(prop.x, abs=1e-6)            # flush already
+    lean = _on_wall(prop, model, (-1.0, 0.0), wall(-1.2))        # 0.6 u back at z = 10 to 12
+    assert lean.x - 0.5 == pytest.approx(-0.6 + WALL_FLUSH, abs=1e-6) and lean.y == prop.y
+    assert WALL_MOVE < 3.0 and _on_wall(prop, model, (-1.0, 0.0), wall(-3.0, foot=-3.0)) is None
+
+
+@needs_install
+def test_mistbanner_hangs_in_front_of_its_wall():
+    """Task 13 finding 1, the banner the user missed: MISTBANNER's cloth is a plane 0.9 u
+    behind its origin (-X), and its origin stood 0.14 u off the wall, so the cloth hung
+    inside the wall. Placed now with its measured side and reach, every vertex of the real
+    model is on the room's side of a flat wall, the cloth within 0.25 u of it."""
+    from dataclasses import replace
+
+    import numpy as np
+    from generators.decor.catalogue import load
+    from generators.decor.rules import load_decor
+    from generators.decor.placement import place
+    from generators.decor.stock import Importer
+    from tests.test_decor_placement import box_room, fixture_catalogue
+
+    rules = load_decor()
+    real = load().models["MISTBANNER"]
+    fixture = fixture_catalogue(rules)
+    models = {k: (replace(real, key=k, tags=m.tags) if m.tags.kind == "banner" and m.tags.mount == "wall" else m)
+              for k, m in fixture.models.items()}
+    cat = type(fixture)(models=models, kinds=fixture.kinds, sets=fixture.sets)
+    v = np.array([(q.x, q.y, q.z) for q in Importer(EQ).get("MISTBANNER").ter.vertices])
+    c = box_room(room_type="throne", kind="deep", h=40.0)
+    n = 0
+    for seed in range(6):
+        for p in place(c, rules, cat, "dense", decor_seed=seed).props:
+            if p.kind != "banner":
+                continue
+            n += 1
+            cs, sn = math.cos(p.yaw), math.sin(p.yaw)
+            w = v[:, :2] @ np.array([[cs, sn], [-sn, cs]]) * p.scale + (p.x, p.y)
+            # MISTBANNER's side is -X: its wall faces the way its front (+X) does
+            face = min((f for f in c.walls if f.nx * cs + f.ny * sn > 0.999),
+                       key=lambda f: math.hypot(p.x - f.x, p.y - f.y))
+            ahead = (w[:, 0] - face.x) * face.nx + (w[:, 1] - face.y) * face.ny
+            assert ahead.min() >= 0.0 and ahead.min() <= 0.25, (p, float(ahead.min()))
+    assert n > 0
+
+
 @pytest.mark.slow
 @needs_install
 def test_light_none_adds_no_lights(decorated):
