@@ -195,6 +195,28 @@ From task 21 (Dense passes the gate first try, `958e029`):
     a head above the floor around it; floor the bare plans shut off (away from walls, 64 u² or
     more) fails. The band test sweeps Dense first try too, failing only seeds that pass at none.
 
+From task 22 (lights as a set, `d69bb1f`; the user's acceptance note, 2026-11-12: "torches
+should be at a common height ... either evenly spaced or on directly opposite walls ... a forge i
+would usually only expect a single one in a room"):
+
+49. **Lights on walls or in corners are placed as symmetric sets** by a placement rule on the
+    light Category: opposite pairs, pairs plus an end-wall middle, or evenly along one wall;
+    corner lights in 2 opposite or all 4 corners (an odd count rounds up or down at even odds). A
+    set that doesn't fit shrinks to a smaller symmetric set, never a lopsided one. Stock pairs
+    lights about 3x as often as random spots.
+50. **A room's wall lights share one height** (the first light's stock p50: dungeon 8.3, city 7.0
+    over the floor); a light within 4 u of an existing floor level snaps to it.
+51. **`once` in `rooms.toml`** lists kinds placed at most once a room: anvil, box, cart, desk,
+    fire (measured on stock), forge (the user's word).
+
+From task 23 (mesh outlines, `e9de241`):
+
+52. **Floor and raised Props in rooms are read by their catalogue `outline`** (the plan hull of
+    their collidable triangles, written by `prop_catalogue.py outline`, 3,677 models) for floor
+    height, footprint and the inside-one-model exemption, as the gate reads them; the rectangle
+    still keeps Props apart and limits slope. Models with nothing collidable have no outline.
+    Sites keep the rectangle. Decor time about +0.2 s on a dungeon.
+
 ## Follow-ups
 
 - **From task 21:** 16-room Graph dungeon seed 26 fails the gate with Decor none (`room_8` open
