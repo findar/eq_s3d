@@ -11,7 +11,9 @@
 #              on_wall (wall), ceiling (ceiling); along_wall (back to a wall), corners, centre,
 #              far_end, scatter, rows, by_door, on_dais (floor)
 #            and for Dressing, round its POI: beside, behind, flank, round (floor); wall (the
-#            wall nearest the POI)
+#            wall nearest the POI). A light line on_wall or at corners is placed as one
+#            symmetric set (task 22): pairs straight across the room or evenly along a wall;
+#            two opposite corners or all four (an odd corner count rounds up or down by chance)
 #   count    how many: a number or [low, high]
 #   chance   how likely this line is at all
 #   by       the Scale that moves this line (scales.toml): finish, structure or clutter. Left out,
@@ -28,6 +30,13 @@
 
 # Clutter moves debris; Structure moves furniture lines (design "Decor recipes as data").
 moves = { debris = "clutter", furniture = "structure" }
+
+# Kinds a room holds at most once (task 22): a line, a Group member or a Dressing asking for one
+# again takes its next kind, or drops. `decor_survey.py --layout` lists the kinds the stock rooms
+# hold once: in 4 rooms or more, at most a tenth of them holding two (anvil, box, cart, desk, fire).
+# The forge is the user's (acceptance pass, task 16: "a forge i would usually only expect a single
+# one in a room"); stock puts two in 2 of its 4 forge rooms (Ak'Anon's smithy, Upper Guk's pair).
+once = ["anvil", "box", "cart", "desk", "fire", "forge"]
 
 # --- Weights by Layer -----------------------------------------------------------------------
 #

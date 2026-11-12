@@ -47,7 +47,7 @@ import random
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, FrozenSet, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from ai.schema import VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_ZONE_TYPES, available_inhabitants
 from generators.decor.catalogue import CATEGORIES, DECOR_DIR, TAGS_FILE, Catalogue, read_reviews
@@ -176,6 +176,8 @@ class DecorRules:
     #: A zone type's own recipe for its rooms with no room type or kind (``[zones.<zone type>]``:
     #: a city's rooms, which have neither), in place of the default.
     zones: Mapping[str, Recipe] = field(default_factory=dict)
+    #: Kinds a room holds at most once (``once``, task 22: what stock rooms hold once).
+    once: FrozenSet[str] = frozenset()
 
     # -- lookup ---------------------------------------------------------------
 
@@ -555,6 +557,19 @@ def _moves(chk: _Checker, raw: Any) -> Dict[str, str]:
     return out
 
 
+def _once(chk: _Checker, raw: Any, kinds: Mapping[str, str]) -> FrozenSet[str]:
+    if not isinstance(raw, list):
+        chk.fail("top level", "once", raw, 'a list of kinds: ["forge", "anvil"]')
+        return frozenset()
+    out = set()
+    for k in raw:
+        if k not in kinds:
+            chk.fail("once", k, "an unknown kind", _one_of(sorted(kinds)), raw=True)
+        else:
+            out.add(k)
+    return frozenset(out)
+
+
 def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
     """Load and check ``rooms.toml`` and ``sets.toml`` from ``path`` (a folder); raises
     ``RuleSetError`` with every failure of both. Kinds and Sets are the catalogue's
@@ -579,7 +594,7 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
     # rooms.toml
     chk = r_chk
     chk.keys(rooms, "top level", ("default", "every", "kinds", "types", "zones", "sites", "groups", "dressing",
-                                  "weights", "moves"),
+                                  "weights", "moves", "once"),
              required=("default", "every", "dressing", "weights"))
     raw_groups = chk.table(rooms.get("groups", {}), "top level", "groups", "[groups.<name>]") or {}
     groups: Dict[str, Any] = {}
@@ -615,6 +630,7 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
                      "altar, guard)", raw=True)
     weights, controls = _weights(chk, rooms.get("weights", {}))
     moves = _moves(chk, rooms.get("moves", {}))
+    once = _once(chk, rooms.get("once", []), kinds)
 
     # sets.toml
     set_rules = _sets(s_chk, set_data, sets)
@@ -622,7 +638,7 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
     raise_all()
     return DecorRules(default, named["kinds"], named["types"], named["sites"], every,
                       {k: g for k, g in groups.items() if isinstance(g, Group)}, dressing, weights, controls, moves,
-                      set_rules, named["zones"])
+                      set_rules, named["zones"], once)
 
 
 # ---------------------------------------------------------------------------
