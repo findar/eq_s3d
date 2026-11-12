@@ -24,7 +24,11 @@ matches), and per Group member.
   clear zone, and off Features, except a recipe's ``on_dais`` line and a POI's Dressing when the
   POI stands on a dais (Req 6.1). A footprint is the model's plan (``measured`` w along its own
   X, d along Y), turned by its yaw. Its floor may rise at most ``FLAT`` across it; it stands at
-  the lowest. It must fit under the ceiling;
+  the lowest floor under its body. It must fit under the ceiling. In a room, what the Prop
+  covers and stands over is its **mesh outline** (catalogue ``outline``, task 23): the plan hull
+  of its collidable triangles, the plan the gate reads it by, so a round model neither sinks
+  into floor beyond its rectangle's corner nor counts the floor between its body and a wall as
+  its own (the gate cuts that off). The rectangle still keeps Props apart; Sites keep it too;
 - **along the wall** (``along_wall``, ``corners``, ``by_door``, ``rows``): backed to a wall face,
   its back half a plan-depth off it, turned so its front faces the room;
 - **wall** Props hang on a wall face at the height stock uses for the model (observed ``over``,
@@ -199,6 +203,9 @@ class Prop:
     at: str                 # the line's arrangement
     poi: Optional[int] = None
     group: Optional[int] = None
+    #: A floor or raised Prop's plan as the gate reads it (the catalogue's ``outline``, scaled,
+    #: about the middle of its plan), for ``check``; None: its measured rectangle. Not written out.
+    outline: Optional[Tuple[Tuple[float, float], ...]] = field(default=None, compare=False, repr=False)
 
     @property
     def light(self) -> bool:
@@ -206,6 +213,7 @@ class Prop:
 
     def to_dict(self) -> dict:
         out = asdict(self)
+        out.pop("outline", None)
         for k in ("x", "y", "z", "yaw", "scale", "w", "d", "h", "below"):
             out[k] = round(float(out[k]), 3)
         return out
@@ -260,6 +268,8 @@ class Size:
     #: that side, scaled (None when unmeasured).
     side: Tuple[float, float] = (-1.0, 0.0)
     back: Optional[float] = None
+    #: Its plan as the gate reads it, scaled (catalogue ``outline``, task 23); None: unmeasured.
+    outline: Optional[Tuple[Tuple[float, float], ...]] = None
 
 
 def size_of(model: Model) -> Size:
@@ -282,7 +292,9 @@ def size_of(model: Model) -> Size:
     return Size(w=max(0.2, float(m.get("w", 2.0))) * s, d=max(0.2, float(m.get("d", 2.0))) * s,
                 h=top * s, below=bottom * s,
                 scale=s, over=float(over[1]) if over and len(over) > 1 else None,
-                wall=float(wall[1]) if wall and len(wall) > 1 else None, side=side, back=back)
+                wall=float(wall[1]) if wall and len(wall) > 1 else None, side=side, back=back,
+                outline=tuple((px * s, py * s) for px, py in model.outline)
+                if getattr(model, "outline", None) else None)
 
 
 def _sunk(model: Model) -> bool:
@@ -751,17 +763,65 @@ class Room:
                 out.append(bool(at & set(int(v) for v in labels)))
         return out
 
-    def footprint(self, x, y, yaw, w, d):
+    @staticmethod
+    def outline_at(x: float, y: float, yaw: float, outline) -> np.ndarray:
+        """A model's outline (model frame about the middle of its plan, scaled) turned by
+        ``yaw`` and moved to (x, y): the world plan the gate reads it by."""
+        c, s = math.cos(yaw), math.sin(yaw)
+        o = np.asarray(outline, dtype=np.float64)
+        return np.column_stack([x + c * o[:, 0] - s * o[:, 1], y + s * o[:, 0] + c * o[:, 1]])
+
+    def poly_cells(self, x: float, y: float, plan: np.ndarray, grow: float = 0.0, *more: float):
+        """The grid cells whose middles lie in a convex world ``plan`` grown by ``grow`` (as
+        ``rect_cells`` with ``clip``: the cells on the grid, the middle cell when none; None
+        when (x, y), its middle, is off the grid). With ``more`` grows, a tuple of the cells for
+        each grow, the distances worked out once."""
+        nx, ny = self.shape
+        ci, cj = int(round((x - self.xs[0]) / self.cell)), int(round((y - self.ys[0]) / self.cell))
+        if not (0 <= ci < nx and 0 <= cj < ny):
+            return None
+        grows = (grow,) + more
+        reach = max(grows)
+        lo, hi = plan.min(axis=0) - reach - self.cell, plan.max(axis=0) + reach + self.cell
+        li0 = max(int(math.floor((lo[0] - self.xs[0]) / self.cell)), 0)
+        li1 = min(int(math.ceil((hi[0] - self.xs[0]) / self.cell)), nx - 1)
+        lj0 = max(int(math.floor((lo[1] - self.ys[0]) / self.cell)), 0)
+        lj1 = min(int(math.ceil((hi[1] - self.ys[0]) / self.cell)), ny - 1)
+        middle = (np.array([ci]), np.array([cj]))
+        if li1 < li0 or lj1 < lj0:
+            out = [middle] * len(grows)
+        else:
+            dist = _polygon_distance(self.gx[li0:li1 + 1, lj0:lj1 + 1],
+                                     self.gy[li0:li1 + 1, lj0:lj1 + 1], plan)
+            out = []
+            for g in grows:
+                ii, jj = np.nonzero(dist <= g)
+                out.append((ii + li0, jj + lj0) if len(ii) else middle)
+        return tuple(out) if more else out[0]
+
+    def footprint(self, x, y, yaw, w, d, outline=None):
         """A blocking Prop's grown plan: (the cells grown by ``grow``, the ``LAYERS``-layer mask
         of it, of the plan grown by ``grow_wide``, of it grown the least the gate's clear width
-        may take, and of the bare plan); None when its middle is off the grid."""
+        may take, and of the bare plan); None when its middle is off the grid. With an
+        ``outline`` (task 23) the plan is the model's mesh outline, as the gate reads it: its
+        collidable triangles lie inside it, so the grown outline still holds all the gate covers,
+        and floor between a round body and its rectangle's corner is floor, as it is to the gate
+        (its "inside one model's plan" is that hull)."""
         # The yaw as the Prop records it, so ``check`` reads the same cells: a plan edge on a
         # cell's middle flips with the last bit of cos/sin (task 14).
         yaw = float(yaw) % (2 * math.pi)
-        grown = self.rect_cells(x, y, yaw, w, d, self.grow, clip=True)
-        wide = self.rect_cells(x, y, yaw, w, d, self.grow_wide, clip=True)
-        least = self.rect_cells(x, y, yaw, w, d, max(0.0, WIDE_RADIUS - self.cell / 2), clip=True)
-        bare = self.rect_cells(x, y, yaw, w, d, 0.0, clip=True)
+        if outline is not None:
+            plan = self.outline_at(x, y, yaw, outline)
+            cells = self.poly_cells(x, y, plan, self.grow, self.grow_wide,
+                                    max(0.0, WIDE_RADIUS - self.cell / 2), 0.0)
+            if cells is None:
+                return None
+            grown, wide, least, bare = cells
+        else:
+            grown = self.rect_cells(x, y, yaw, w, d, self.grow, clip=True)
+            wide = self.rect_cells(x, y, yaw, w, d, self.grow_wide, clip=True)
+            least = self.rect_cells(x, y, yaw, w, d, max(0.0, WIDE_RADIUS - self.cell / 2), clip=True)
+            bare = self.rect_cells(x, y, yaw, w, d, 0.0, clip=True)
         if grown is None or wide is None or least is None or bare is None:
             return None
         m = np.zeros((LAYERS,) + self.shape, bool)
@@ -905,8 +965,16 @@ class Room:
         behind = np.einsum("cqk,qk->cq", rel, m) < -WALL_FLUSH
         return bool((close & behind).any())
 
+    def plan_of(self, x: float, y: float, yaw: float, w: float, d: float, outline=None) -> np.ndarray:
+        """A blocking floor Prop's plan polygon: its mesh outline when measured (task 23), else
+        its rectangle's corners."""
+        yaw = float(yaw) % (2 * math.pi)
+        if outline is not None:
+            return self.outline_at(x, y, yaw, outline)
+        return _SiteBounds.corners(x, y, yaw, w, d)
+
     def spaced(self, x: float, y: float, yaw: float, w: float, d: float, group: Optional[int],
-               plans: np.ndarray) -> bool:
+               plans: np.ndarray, outline=None) -> bool:
         """A blocking floor Prop's plan keeps ``BLOCKING_GAP`` off every other blocking floor
         Prop's plan (its own Group's members excepted), or the gaps nearer shut no pocket: with
         them closed (each pair's hull in the way, on top of ``plans``, every blocking plan with
@@ -916,7 +984,7 @@ class Room:
         distance from a corner of one to the other."""
         if not self.plans:
             return True
-        mine = _SiteBounds.corners(x, y, float(yaw) % (2 * math.pi), w, d)
+        mine = self.plan_of(x, y, yaw, w, d, outline)
         seams = []
         for plan, g in self.plans:
             if group is not None and g == group:
@@ -1111,12 +1179,18 @@ class _Placer:
         if r.site is not None:
             del r.site.props[s[7]:]
 
+    def _outline(self, sz: Size):
+        """The plan a floor or raised Prop is read by: in a room its mesh outline when measured
+        (task 23); at a Site, and unmeasured, its rectangle (None)."""
+        return sz.outline if self.room.site is None else None
+
     def _prop(self, model: Model, sz: Size, x, y, z, yaw, mount, blocks, step, line: Line, at: str,
               poi=None, group=None) -> Prop:
         t = model.tags
         p = Prop(model.key, t.kind, t.category, mount, t.set, float(x), float(y), float(z),
                  float(yaw) % (2 * math.pi), sz.scale, sz.w, sz.d, sz.h, sz.below, blocks, step,
-                 _where(line), at, poi, group)
+                 _where(line), at, poi, group,
+                 self._outline(sz) if mount in ("floor", "raised") else None)
         self.out.props.append(p)
         self.chooser.bind(model)
         return p
@@ -1145,8 +1219,12 @@ class _Placer:
         if float(fl.max() - fl.min()) > FLAT:
             return None
         # Its bottom on the lowest floor under its plan (just over it: a flat rug would
-        # flicker in it), not under the margin round it: that would sink it.
-        under = r.rect_cells(x, y, yaw, sz.w, sz.d)
+        # flicker in it), not under the margin round it: that would sink it. In a room the plan
+        # is its mesh outline (task 23): a round model's rectangle reaches floor its body doesn't
+        # stand over, and stood on that floor's lowest, the body sank into the floor under it.
+        outline = self._outline(sz)
+        under = r.poly_cells(x, y, r.outline_at(x, y, float(yaw) % (2 * math.pi), outline)) \
+            if outline is not None else r.rect_cells(x, y, yaw, sz.w, sz.d)
         under = r.floor[under] if under is not None else fl
         under = under[~np.isnan(under)]
         z = float(under.min() if len(under) else fl.min()) + sz.below + LIFT
@@ -1155,7 +1233,7 @@ class _Placer:
             ce = ce[~np.isnan(ce)]
             if len(ce) and float(ce.min()) < z + sz.h + 0.5:
                 return None
-        foot = r.footprint(x, y, yaw, sz.w, sz.d)
+        foot = r.footprint(x, y, yaw, sz.w, sz.d, outline)
         if foot is None:
             return None
         grown, mask = foot
@@ -1185,7 +1263,7 @@ class _Placer:
         if blocks:
             if not dressing and (mask[0] & r.by_lane).any():     # a POI's own dressing may
                 return None
-            if not r.spaced(x, y, yaw, sz.w, sz.d, group, r.blocked[3] | mask[3]):
+            if not r.spaced(x, y, yaw, sz.w, sz.d, group, r.blocked[3] | mask[3], outline):
                 return None
             blocked, as_read = r.blocked | mask, r.as_read | mask
             if r.problems(blocked) or r.problems(as_read):
@@ -1204,7 +1282,7 @@ class _Placer:
                 self.room.site.add(x, y, yaw, sz.w, sz.d, group)
             self.room.blocked, self.room.as_read = blocked
             if blocks:
-                self.room.plans.append((_SiteBounds.corners(x, y, float(yaw) % (2 * math.pi), sz.w, sz.d), group))
+                self.room.plans.append((self.room.plan_of(x, y, yaw, sz.w, sz.d, self._outline(sz)), group))
             return self._prop(model, sz, x, y, z, yaw, mount, blocks, step, line, at, poi, group)
         return None
 
@@ -1546,18 +1624,26 @@ class _Placer:
         else:
             plans = [((1, 1), [(-1, -1)]), ((1, -1), [(-1, -1)])]
             self.rng.shuffle(plans)
-        # Each corner's spots where the light stands alone, then sets of them that mirror.
-        free: Dict[Tuple[int, int], list] = {}
-        for q in {q for qa, images in plans for q in [qa] + [(qa[0] * a, qa[1] * b) for a, b in images]}:
-            free[q] = [s for s in quads.get(q, [])[:CORNER_TRIES]
-                       if self._floor_ok(model, sz, s[2][0], s[2][1], s[2][2]) is not None]
+        # Each corner's spots where the light stands alone (judged once each, and only when a set
+        # could use them: the room check is the cost), then sets of them that mirror.
+        alone: Dict[Tuple[Tuple[int, int], int], bool] = {}
+
+        def free(q, i) -> bool:
+            if (q, i) not in alone:
+                s = quads[q][i][2]
+                alone[q, i] = self._floor_ok(model, sz, s[0], s[1], s[2]) is not None
+            return alone[q, i]
+
         for qa, images in plans:
-            for ua, va, spot in free[qa]:
+            for ka, (ua, va, spot) in enumerate(quads.get(qa, [])[:CORNER_TRIES]):
+                if not free(qa, ka):
+                    continue
                 rest = []
                 for su, sv in images:
-                    q = free[(qa[0] * su, qa[1] * sv)]
+                    qi = (qa[0] * su, qa[1] * sv)
+                    q = quads.get(qi, [])[:CORNER_TRIES]
                     near = sorted((math.hypot(u - ua * su, v - va * sv), i) for i, (u, v, _s) in enumerate(q))
-                    rest.append([q[i][2] for dist, i in near if dist <= CORNER_TOL][:3])
+                    rest.append([q[i][2] for dist, i in near if dist <= CORNER_TOL and free(qi, i)][:3])
                 if not all(rest):
                     continue
                 save = self._save()
@@ -1661,7 +1747,7 @@ class _Placer:
         # is (task 21: a candle on a table narrowed a door's way under the clear width).
         blocks = False
         if _blocking(model):
-            foot = r.footprint(x, y, yaw, sz.w, sz.d)
+            foot = r.footprint(x, y, yaw, sz.w, sz.d, self._outline(sz))
             if foot is None:
                 return None
             grown, mask = foot
@@ -1834,7 +1920,7 @@ def check(context: RoomContext, decorated: Decorated) -> List[str]:
     for p in decorated.props:
         if not p.blocks:
             continue
-        foot = room.footprint(p.x, p.y, p.yaw, p.w, p.d)
+        foot = room.footprint(p.x, p.y, p.yaw, p.w, p.d, p.outline)
         if foot is None:
             return [f"{p.key} at ({p.x:.0f}, {p.y:.0f}) stands outside the room"]
         blocked |= foot[1]

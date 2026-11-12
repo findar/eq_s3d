@@ -362,6 +362,61 @@ def test_a_model_drawn_under_its_origin_stands_on_its_bottom(rules, fixture):
         assert p.z > 0.0                    # its origin over its mesh, as stock draws it
 
 
+def test_a_round_model_stands_on_the_floor_under_its_mesh(rules):
+    """Task 23 (task 22's full run, dungeon seed 4): LROCK308 stood on the lowest floor under its
+    rectangle, at a corner its round body doesn't cover, and sank 0.12 u into the floor under
+    it. Here a 1.5 u dip under that corner only: the rock stands on the floor its outline
+    covers, not in the dip. The shipped catalogue's LROCK308 and its measured outline."""
+    import random
+    from generators.decor.catalogue import load as load_catalogue
+    from generators.decor.placement import LIFT, _in_polygon, _Placer
+    cat = load_catalogue()
+    m = cat.models["LROCK308"]
+    sz = size_of(m)
+    assert sz.outline is not None
+    ctx = box_room(w=60.0, d=60.0)
+    gx = ctx.origin[0] + np.arange(ctx.floor.shape[0])[:, None] * ctx.cell + 0 * ctx.floor
+    gy = ctx.origin[1] + np.arange(ctx.floor.shape[1])[None, :] * ctx.cell + 0 * ctx.floor
+    ctx.floor[(gx > 46) & (gy > 44)] = -1.5
+    x, y = 45.0, 40.0
+    room = Room(ctx)
+    hull = room.outline_at(x, y, 0.0, sz.outline)
+    assert ((np.abs(gx - x) <= sz.w / 2) & (np.abs(gy - y) <= sz.d / 2) & (ctx.floor < 0)).any()
+    assert not (_in_polygon(gx, gy, hull) & (ctx.floor < 0)).any()     # the dip is outside its body
+    got = _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, sz, x, y, 0.0)
+    assert got is not None
+    assert got[1] - sz.below == pytest.approx(LIFT, abs=1e-6)
+    # The rectangle reading (before task 23) stood it in the dip, 1.5 u into the floor under it.
+    from dataclasses import replace
+    old = _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, replace(sz, outline=None), x, y, 0.0)
+    assert old is not None and old[1] - sz.below == pytest.approx(-1.5 + LIFT, abs=1e-6)
+
+
+def test_a_round_model_leaves_no_pocket_by_a_wall(rules):
+    """Task 23 (task 22's full run, graph warren 16 rooms, build seed 242886303): GKROCKS401's
+    rectangle filled a corner, but its round body left floor between it and the walls, which
+    the gate (a pocket outside its mesh hull) cut off and placement (inside its rectangle)
+    didn't. Placement reads its outline: the spot is refused, and ``check`` finds the cut."""
+    import random
+    from dataclasses import replace
+    from generators.decor.catalogue import load as load_catalogue
+    from generators.decor.placement import Prop, _Placer
+    cat = load_catalogue()
+    m = cat.models["GKROCKS401"]
+    sz = size_of(m)
+    assert sz.outline is not None
+    ctx = box_room(w=60.0, d=60.0)
+    for gap in (0.5, 1.0, 2.0):
+        x, y = sz.w / 2 + gap, 60.0 - sz.d / 2 - gap
+        assert _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, sz, x, y, 0.0) is None, gap
+        # The rectangle reading (before task 23) took it.
+        assert _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, replace(sz, outline=None), x, y, 0.0)
+        p = Prop(m.key, "rock", "debris", "floor", "neutral", x, y, sz.below, 0.0, sz.scale, sz.w, sz.d, sz.h,
+                 sz.below, True, "debris", "test", "scatter", outline=sz.outline)
+        assert check(ctx, Decorated("hand", [p])), gap
+        assert not check(ctx, Decorated("hand", [replace(p, outline=None)])), gap
+
+
 @pytest.mark.parametrize("side", ["-x", "+x", "-y", "+y"])
 def test_a_wall_prop_turns_its_measured_side_to_the_wall(rules, fixture, side):
     """Task 13 finding 2: stock hangs each wall model with its own side to the wall
