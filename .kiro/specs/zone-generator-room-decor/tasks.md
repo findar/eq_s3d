@@ -113,7 +113,7 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
 
 - [ ] 16. HUMAN: decorating rooms acceptance pass
   - Card: [cards/16-human-acceptance.md](cards/16-human-acceptance.md)
-  - Type: human · Depends: 15, 21
+  - Type: human · Depends: 15, 21, 22
 
 - [ ] 17. Close step 11
   - Card: [cards/17-close.md](cards/17-close.md)
@@ -142,4 +142,10 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Card: [cards/21-dense-first-try.md](cards/21-dense-first-try.md)
   - Type: agent · Size: M · Depends: 14, 15
   - Owns: generators/decor/, generators/builder.py (the decor functions), rules/decor/rooms.toml, tests/test_decor_bands.py, tests/test_decor_placement.py, tests/test_decor_builds.py, docs/ACCEPTANCE.md (the step 11 known-issue line only)
+  - Reqs: 12.1
+
+- [ ] 22. Lights laid out as a set; one-per-room kinds
+  - Card: [cards/22-light-layout.md](cards/22-light-layout.md)
+  - Type: agent · Size: M · Depends: 21
+  - Owns: generators/decor/, generators/builder.py (the decor functions), rules/decor/rooms.toml, scripts/decor_survey.py (new measures only; existing ones unchanged), tests/test_decor_placement.py, tests/test_decor_builds.py, tests/test_decor_bands.py, docs/ACCEPTANCE.md (step 11 checks for this)
   - Reqs: 12.1
