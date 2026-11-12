@@ -362,6 +362,61 @@ def test_a_model_drawn_under_its_origin_stands_on_its_bottom(rules, fixture):
         assert p.z > 0.0                    # its origin over its mesh, as stock draws it
 
 
+def test_a_round_model_stands_on_the_floor_under_its_mesh(rules):
+    """Task 23 (task 22's full run, dungeon seed 4): LROCK308 stood on the lowest floor under its
+    rectangle, at a corner its round body doesn't cover, and sank 0.12 u into the floor under
+    it. Here a 1.5 u dip under that corner only: the rock stands on the floor its outline
+    covers, not in the dip. The shipped catalogue's LROCK308 and its measured outline."""
+    import random
+    from generators.decor.catalogue import load as load_catalogue
+    from generators.decor.placement import LIFT, _in_polygon, _Placer
+    cat = load_catalogue()
+    m = cat.models["LROCK308"]
+    sz = size_of(m)
+    assert sz.outline is not None
+    ctx = box_room(w=60.0, d=60.0)
+    gx = ctx.origin[0] + np.arange(ctx.floor.shape[0])[:, None] * ctx.cell + 0 * ctx.floor
+    gy = ctx.origin[1] + np.arange(ctx.floor.shape[1])[None, :] * ctx.cell + 0 * ctx.floor
+    ctx.floor[(gx > 46) & (gy > 44)] = -1.5
+    x, y = 45.0, 40.0
+    room = Room(ctx)
+    hull = room.outline_at(x, y, 0.0, sz.outline)
+    assert ((np.abs(gx - x) <= sz.w / 2) & (np.abs(gy - y) <= sz.d / 2) & (ctx.floor < 0)).any()
+    assert not (_in_polygon(gx, gy, hull) & (ctx.floor < 0)).any()     # the dip is outside its body
+    got = _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, sz, x, y, 0.0)
+    assert got is not None
+    assert got[1] - sz.below == pytest.approx(LIFT, abs=1e-6)
+    # The rectangle reading (before task 23) stood it in the dip, 1.5 u into the floor under it.
+    from dataclasses import replace
+    old = _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, replace(sz, outline=None), x, y, 0.0)
+    assert old is not None and old[1] - sz.below == pytest.approx(-1.5 + LIFT, abs=1e-6)
+
+
+def test_a_round_model_leaves_no_pocket_by_a_wall(rules):
+    """Task 23 (task 22's full run, graph warren 16 rooms, build seed 242886303): GKROCKS401's
+    rectangle filled a corner, but its round body left floor between it and the walls, which
+    the gate (a pocket outside its mesh hull) cut off and placement (inside its rectangle)
+    didn't. Placement reads its outline: the spot is refused, and ``check`` finds the cut."""
+    import random
+    from dataclasses import replace
+    from generators.decor.catalogue import load as load_catalogue
+    from generators.decor.placement import Prop, _Placer
+    cat = load_catalogue()
+    m = cat.models["GKROCKS401"]
+    sz = size_of(m)
+    assert sz.outline is not None
+    ctx = box_room(w=60.0, d=60.0)
+    for gap in (0.5, 1.0, 2.0):
+        x, y = sz.w / 2 + gap, 60.0 - sz.d / 2 - gap
+        assert _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, sz, x, y, 0.0) is None, gap
+        # The rectangle reading (before task 23) took it.
+        assert _Placer(ctx, rules, cat, random.Random(1))._floor_ok(m, replace(sz, outline=None), x, y, 0.0)
+        p = Prop(m.key, "rock", "debris", "floor", "neutral", x, y, sz.below, 0.0, sz.scale, sz.w, sz.d, sz.h,
+                 sz.below, True, "debris", "test", "scatter", outline=sz.outline)
+        assert check(ctx, Decorated("hand", [p])), gap
+        assert not check(ctx, Decorated("hand", [replace(p, outline=None)])), gap
+
+
 @pytest.mark.parametrize("side", ["-x", "+x", "-y", "+y"])
 def test_a_wall_prop_turns_its_measured_side_to_the_wall(rules, fixture, side):
     """Task 13 finding 2: stock hangs each wall model with its own side to the wall
@@ -401,6 +456,113 @@ def test_wall_lights_keep_their_spacing(decorated):
             for b in range(a + 1, len(lights)):
                 gap = math.hypot(lights[a].x - lights[b].x, lights[a].y - lights[b].y)
                 assert gap >= _spacing(c) * ROOM_LIGHT_GAP - 1e-6, c.id
+
+
+# --- task 22: lights laid out as a set, one height, kinds held once ---------------------------------
+
+def _symmetric(c, props) -> bool:
+    """A set's lights mirror onto each other across one of the room's axes or by a half turn
+    about its middle; or stand in pairs straight across the room from each other (facing each
+    other, the one between them on their line), with at most one odd one out; or stand evenly
+    along one wall. Each within two set tolerances: each spot takes the wall face nearest it."""
+    from generators.decor.placement import CORNER_TOL, SET_TOL
+    if len(props) < 2:
+        return True
+    tol = CORNER_TOL + 0.5 if props[0].at == "corners" else 2 * SET_TOL + 0.5
+    centre, axes, _half = Room(c).frame()
+    loc = np.array([axes @ np.array([p.x - centre[0], p.y - centre[1]]) for p in props])
+    for flip in ((1, -1), (-1, 1), (-1, -1)):
+        d = np.linalg.norm((loc * flip)[:, None, :] - loc[None, :, :], axis=2).min(axis=1)
+        if (d <= tol).all():
+            return True
+    alone = 0
+    for a in props:
+        facing = [b for b in props if b is not a and math.cos(a.yaw - b.yaw) < -0.999
+                  and abs((b.x - a.x) * math.sin(a.yaw) - (b.y - a.y) * math.cos(a.yaw)) <= tol]
+        alone += not facing
+    if alone <= len(props) % 2:
+        return True
+    # Along one wall (a rough one bends): all facing the same way, evenly spaced along it.
+    if any(math.cos(a.yaw - b.yaw) < 0.5 for a in props for b in props):
+        return False
+    along = loc[:, int(np.ptp(loc[:, 1]) > np.ptp(loc[:, 0]))]
+    return bool(np.ptp(np.diff(np.sort(along))) <= tol)
+
+
+def _sets(d):
+    """The lights of each light line placed as a set (on the walls, in the corners)."""
+    out = {}
+    for p in d.props:
+        if p.light and p.step != "dressing" and p.at in ("on_wall", "corners"):
+            out.setdefault(p.line, []).append(p)
+    return out.values()
+
+
+def test_a_rooms_lights_are_laid_out_as_a_set(decorated, hand):
+    """Task 22 (the user's acceptance pass: "light sources generally have symetrical layouts,
+    so either evenly spaced or on directly opposite walls"): each light line's lights mirror
+    across the room or stand evenly along a wall, and corner lights fill two opposite corners
+    or all four. Before, they took any free wall spot."""
+    n = corners = 0
+    for c, d, control in decorated + hand:
+        for props in _sets(d):
+            assert _symmetric(c, props), (c.id, control, [(p.key, round(p.x), round(p.y)) for p in props])
+            n += len(props) >= 2
+            if props[0].at == "corners":
+                corners += 1
+                assert len(props) in (2, 4), (c.id, props)
+    assert n > 100 and corners > 10
+
+
+def test_a_rooms_wall_lights_hang_at_one_height(rules, fixture):
+    """Task 22 ("torches should be at a common height"): a room's wall lights take the first
+    one's stock height over one floor level, whatever their model's own stock height and over
+    a low dais (here 2 u along the north wall). Before, each hung at its model's height over
+    the floor in front of it."""
+    from dataclasses import replace
+    models = dict(fixture.models)
+    for key, m in fixture.models.items():         # a second torch stock hangs higher
+        if m.tags.kind == "torch" and m.tags.mount == "wall":
+            models[key + "_HIGH"] = replace(m, key=key + "_HIGH", name=key + "_HIGH",
+                                            observed={**m.observed, "over": [9.0, 9.0, 9.0]})
+    cat = Catalogue(models=models, kinds=fixture.kinds, sets=fixture.sets)
+    c = box_room(w=80.0, d=60.0, kind="hall", pois=[{"purpose": "guard", "name": "", "x": 60.0, "y": 50.0,
+                                                    "z": 0.0, "feature": None}])
+    floor = c.floor.copy()
+    floor[:, -4:] = 2.0                             # the north 8 u, a step up
+    c.floor = floor
+    mixed = 0
+    for seed in range(16):
+        d = place(c, rules, cat, "dense", decor_seed=seed)
+        lights = [p for p in d.props if p.mount == "wall" and p.light]
+        assert len({round(p.z, 6) for p in lights}) <= 1, (seed, [(p.key, p.y, p.z) for p in lights])
+        mixed += len({p.key for p in lights}) > 1 or len({p.y > 50 for p in lights}) > 1
+        assert check(c, d) == []
+    assert mixed >= 4
+
+
+def test_a_kind_held_once_is_placed_once(rules, fixture):
+    """Task 22 ("a forge i would usually only expect a single one in a room"): the kinds rules
+    ``once`` names (those stock rooms hold once, and the forge) stand at most once a room, even
+    where a recipe asks for more; a line with alternatives takes its next kind. Before, a forge
+    room asked for two forges took two."""
+    from dataclasses import replace
+    from generators.decor.rules import Line, Recipe
+    assert {"forge", "anvil"} <= rules.once
+    extra = (Line(("forge",), "", "along_wall", (2, 2), 1.0, "", 0, "furniture", ("rooms.toml", "test", "props[0]")),
+             Line(("anvil", "barrel"), "", "along_wall", (2, 2), 1.0, "", 0, "furniture",
+                  ("rooms.toml", "test", "props[1]")))
+    forge = rules.types["forge"]
+    asked = replace(rules, types={**rules.types, "forge": Recipe(forge.name, forge.lines + extra)})
+    c = box_room(room_type="forge", kind="hall", w=90.0, d=70.0)
+    seen = 0
+    for seed in range(8):
+        d = place(c, asked, fixture, "dense", decor_seed=seed)
+        kinds = [p.kind for p in d.props]
+        for k in asked.once:
+            assert kinds.count(k) <= 1, (seed, k, kinds)
+        seen += "forge" in kinds and "barrel" in kinds
+    assert seen
 
 
 def test_ceiling_props_hang_clear_of_head_height(decorated, hand):

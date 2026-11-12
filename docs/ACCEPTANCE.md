@@ -1527,20 +1527,20 @@ room's type is `layout.rooms.<id>.room_layout`.
 
 | # | Controls | Seed | Decor seed | Decor | What it shows |
 |---|----------|------|------------|-------|---------------|
-| a | Defaults | 2 | blank (2) | **Dense** | 125 Props, 46 lights, 45 models. MISTBANNER ×4 on `room_13`'s walls, GENTAPESTRY602 ×2 in `room_12`. Ten torch models, among them WALLTORCH200, WALLTORCHARMSTUB200, CDTORCH101, VETORCH101, POTORCHAINS504T and TORCHPOINT. Stacked crates: in `room_2` HPCRATES401@abysmal and CRATEG sit on crates; in `room_9` CRATEK and CRATEG do. A table set in `room_6`. `room_14` is bare |
+| a | Defaults | 2 | blank (2) | **Dense** | 135 Props, 45 lights, 43 models. MISTBANNER ×4 on `room_13`'s walls, GENTAPESTRY602 ×2 in `room_12`. Nine torch models, among them WALLTORCH200, WALLTORCHARMSTUB200, CDTORCH101, VETORCH101, POTORCHAINS504T and TORCHPOINT. Stacked crates: in `room_2` HPCRATES401@abysmal and CRATEG sit on crates; in `room_9` CRATEK and CRATEG do. A table set in `room_6`. `room_14` is bare |
 | b | Defaults | 2 | blank | **None** | No Props, and no `decor` block in the sidecar. The rooms and walls are a's |
-| c | Defaults | 2 | blank (2) | **Sparse** | 49 Props, 24 lights. One MISTBANNER |
-| d | Defaults | 2 | blank (2) | Normal | 77 Props, 37 lights. MISTBANNER ×2 (`room_13`), GENTAPESTRY602 (`room_12`), NTHRONE with two braziers in the deep room (`room_5`). Leaving Decor at its default gives these same Props |
-| e | Defaults | 2 | **1000** | Normal | **Reroll:** d's zone (the sidecar `layout` is identical) with other Props: 71 Props, 30 lights, 4 bare rooms. `room_12` now holds TAKBANNER701 ×2, `room_5` an HHTHRONE, and `room_0` braziers and torches |
+| c | Defaults | 2 | blank (2) | **Sparse** | 44 Props, 22 lights. One MISTBANNER |
+| d | Defaults | 2 | blank (2) | Normal | 72 Props, 36 lights. MISTBANNER ×2 (`room_13`), GENTAPESTRY602 (`room_12`), NTHRONE with two braziers in the deep room (`room_5`). Leaving Decor at its default gives these same Props |
+| e | Defaults | 2 | **1000** | Normal | **Reroll:** d's zone (the sidecar `layout` is identical) with other Props: 66 Props, 32 lights, 4 bare rooms. `room_12` now holds TAKBANNER701 ×2, `room_5` an HHTHRONE, and `room_0` braziers and torches |
 | f | Defaults | 2 | **2** | Normal | Same Props as d: a decor seed equal to the zone's is the default |
-| g | Theme **Fortress** | 2 | blank (2) | Normal | **Room types:** throne `room_5` (NTHRONE, FLAG2 ×2, braziers, HUMRUG1). Barracks `room_2` (GOTHBED303 and 3 BED2) and `room_6` (rows of beds). Armory `room_4` (5 HHRACK and 2 VSWRACKS302 in rows) and `room_15` (6 MISTSKRACK702). Battle arena `room_13` (SCAFLAG800 ×3). Storeroom `room_14` is bare. 106 Props |
+| g | Theme **Fortress** | 2 | blank (2) | Normal | **Room types:** throne `room_5` (NTHRONE, FLAG2 ×2, braziers, HUMRUG1). Barracks `room_2` (GOTHBED303 and 3 BED2) and `room_6` (rows of beds). Armory `room_4` (3 HHRACK and 4 VSWRACKS302 in rows) and `room_15` (6 MISTSKRACK702). Battle arena `room_13` (SCAFLAG800 ×3). Storeroom `room_14` is bare. 100 Props |
 | h | Race **Ogre** | 1 | blank (1) | Normal | 108 Props, 14 in the `ogre` Set. QRGFLAG ×4, GENTAPESTRY602 ×4. Crates stacked in `room_6` and `room_12` |
 | i | Race **Goblin** | 1 | blank (1) | Normal | 127 Props, 33 `goblin`. Every torch is the goblins' PERTORCH1 (32) |
 | j | Race **Gnoll** | 1 | blank (1) | Normal | 118 Props, 24 `gnoll`. 12 banners and 38 crates, stacked in five rooms |
 | k | Theme **Tomb** | 1 | blank (1) | Normal | 109 Props, 12 `undead`. Dark: 16 lights. Rock, bones, bone piles, webs and urns; no banners or furniture. Ossuary, vault and ritual chamber rooms |
 | l | Theme **Wizard lair** | 2 | blank (2) | Normal | 112 Props, 32 `erudite`. Bookcases, desks, and books raised on desks (SHBOOK301 in `room_9` and `room_11`). PAFLAG104 |
-| m | **City**, 12 rooms | 1 | blank (1) | Normal | 97 Props, 36 lights. Barrels, bookcases, MISTLAMP lamps, plants and braziers; 4 in the `human` Set. `room_10` is the fullest (19); `room_3` is bare |
-| n | **Outdoor dungeon**, 8 rooms | 2 | blank (2) | Normal | 29 Props, 9 lights; NTHRONE in the deep room. Lighter than a dungeon, by the outdoor-dungeon weights |
+| m | **City**, 12 rooms | 1 | blank (1) | Normal | 89 Props, 30 lights. Barrels, bookcases, MISTLAMP lamps, plants and braziers; 4 in the `human` Set. `room_10` is the fullest (15); `room_3` is bare |
+| n | **Outdoor dungeon**, 8 rooms | 2 | blank (2) | Normal | 34 Props, 11 lights; NTHRONE in the deep room. Lighter than a dungeon, by the outdoor-dungeon weights |
 | o | **Outdoor dungeon**, 5 rooms | 4 | blank (4) | Normal | TAKBANNER701 ×2 behind the throne (ACBTHRONE301) in `room_4`. The human ruin Site holds two chests (GOTHCHEST301). **Known issue:** a banner here sits about 2.4 u into the wall |
 | p | **Outdoor dungeon**, 5 rooms | 3 | blank (3) | Normal | A table and 3 chairs with a candle on the table in `room_2`. **Known issue:** its MIRTORCH701 sits about 2.1 u into the wall |
 | q | **Wilderness** | 7 | blank (7) | Normal | **Sites:** the gnoll camp has BARSTOOL1, CRATEG ×2 and FURSTACK2; the centaur shrine has CANDLE ×2 and MISTFURN703. 7 Props, 2 lights |
@@ -1561,7 +1561,9 @@ python main.py generate decor_o --zone-type outdoor_dungeon --seed 4 --rooms 5
 python main.py generate decor_q --zone-type wilderness --seed 7
 ```
 
-These give the same Props as the page (checked for a, e and q). The `.eqg` files contain the
+These give the same Props as the page (checked for a, e and q). Task 22 (lights as a set) moved
+the counts of a to g, m and n; h to l weren't rebuilt through the page after it, so their counts
+may be a few Props off. The `.eqg` files contain the
 client's own models and textures, so they are for your own client and server: don't commit or
 share them.
 
@@ -1621,8 +1623,8 @@ share them.
 
 ### D.5 — Controls, reroll and sidecar
 
-- [ ] **[MUST] Decor steps** — b, c, d and a on one zone go none, few, more, most (0, 49, 77
-      and 125 Props). The rooms and walls don't change between them.
+- [ ] **[MUST] Decor steps** — b, c, d and a on one zone go none, few, more, most (0, 44, 72
+      and 135 Props). The rooms and walls don't change between them.
 - [ ] **[MUST] Reroll keeps the zone** — e is d's zone with other Props. Then press
       **⟳ reroll decor** on d: the rooms, walls and corridors stay where they were and only the
       Props change. The Decor row reads `normal · seed <the new decor seed>`.
@@ -1660,7 +1662,26 @@ Known issues (not regressions; open follow-ups in the spec's `archive.md`):
   step 10's open failures: three dungeon and outline tests under the thorough profile and
   the mapgeom face-order bug. Those three passed in this run; they fail on some draws only.
 
-### D.6 — In-client check (deferred to M6)
+### D.6 — Lights as a set, once a room (task 22)
+
+- [ ] **[MUST] One height** — A room's wall torches hang at one height. In a, `room_12`'s three
+      VETORCH101 are level (before, they ran from −190.0 to −186.8), and so are `room_3`'s
+      POTORCHAINS504T. In d, `room_10`'s three DROVTORCH200 are level. On a raised part of a
+      floor a torch may sit higher, but only by that floor's step, never a little off.
+- [ ] **[MUST] Opposite or evenly spaced** — In d, `room_0`, `room_5`, `room_6` and `room_9`
+      have their two lights on directly opposite walls. `room_2`, `room_10` and `room_13` have an
+      opposite pair plus one in the middle of the end wall. `room_11` and `room_12` have two on
+      one wall, evenly spaced. No room has its lights bunched on one side.
+- [ ] **[MUST] Corners** — Floor lights at corners stand in opposite corners or in all four:
+      k's candles in `room_2` and candelabras in `room_5`, and m's MISTLAMP pairs in `room_6` and
+      `room_7`.
+- [ ] **[MUST] Once a room** — In l, each room with a desk has one (`room_2`, `room_6`,
+      `room_9`, `room_11`). Forges, anvils, fires, carts and boxes are also placed at most once
+      a room (`once` in `rules/decor/rooms.toml`).
+- [ ] **[SHOULD] Still lit** — The rooms in a, d and g aren't darker than before: a set that
+      doesn't fit drops to a smaller set, not to none.
+
+### D.7 — In-client check (deferred to M6)
 
 - [ ] **[DEFERRED]** Seeing the Props, their lights and their collision in the RoF2 client
       needs a takeover install. It moves to M6's in-engine smoke load.

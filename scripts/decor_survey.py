@@ -21,6 +21,10 @@ reports per zone and room style:
   and the share of beds with another bed within ``ROW_GAP`` (a row).
 - **By doors**: a door is where a room's floor meets another room or a corridor; the
   share of doors with a light within ``DOOR_NEAR``, and the categories that stand there.
+- **Light layout** (``--layout``, task 22): wall lights' height over the floor and its
+  spread within a room; how a room's lights pair up by symmetry (straight across the room,
+  mirrored along one wall, in opposite corners), against the same lights at random spots on
+  the room's walls and floor; and which catalogue kinds rooms hold at most once.
 
 It also works out every catalogue model's **observed** fields, over every zone that
 places it (outdoor zones from the terrain under them, rooms or not): height over the
@@ -582,7 +586,168 @@ def measure_zone(mesh, agent: AgentModel, objs: list, sizes, floors_up: bool = F
         "doors": len(door_groups), "doors_lit": lit_doors / max(len(door_groups), 1),
         "by_door": {k: v / max(sum(by_door.values()), 1) for k, v in by_door.items()},
         "_where": where, "_sur": sur, "_names": names,
+        "_floor": floor, "_chamber": chamber, "_surf": surf,
     }
+
+
+# --- lights laid out as a set, kinds once a room (task 22) ------------------------------------
+
+SYM_TOL = 6.0       # a light's mirror image this near another light pairs them (u, in plan)
+SYM_OUT = 0.7       # a light this far out along an axis (share of the half-extent) is at a wall
+SYM_RANDOM = 20     # random layouts per room for the baseline
+
+
+def _room_frames(rxy: np.ndarray) -> list:
+    """A room's axes two ways (its floor's principal axes, and the world's), each with the
+    centre and half-extents of its floor (p2-p98) along them."""
+    c = rxy.mean(0)
+    _, _, vt = np.linalg.svd(rxy - c, full_matrices=False)
+    out = []
+    for ax in (vt, np.eye(2)):
+        loc = (rxy - c) @ ax.T
+        lo, hi = np.percentile(loc, 2, 0), np.percentile(loc, 98, 0)
+        out.append((c + ((lo + hi) / 2) @ ax, ax, (hi - lo) / 2))
+    return out
+
+
+def _pairs(pts: np.ndarray, frame) -> np.ndarray:
+    """Each light's partner, under the room's best of three symmetries (a mirror on either
+    axis, or a half turn about the centre): ``across`` (mirrored onto the opposite wall),
+    ``along`` (mirrored along one wall), ``corner`` (both out in a corner), ``turn`` (a half
+    turn elsewhere), or "" for none."""
+    c, ax, half = frame
+    loc = (pts - c) @ ax.T
+    tree = cKDTree(loc)
+    best, lab = -1, None
+    for flip in ((1, -1), (-1, 1), (-1, -1)):
+        d, j = tree.query(loc * flip)
+        ok = (d <= SYM_TOL) & (j != np.arange(len(loc)))
+        out_ = np.abs(loc) >= SYM_OUT * np.maximum(half, 1.0)
+        lb = np.full(len(loc), "", dtype="<U6")
+        for i in np.nonzero(ok)[0]:
+            if out_[i].all():
+                lb[i] = "corner"
+            elif flip == (-1, -1):
+                lb[i] = "turn"
+            else:
+                k = 1 if flip == (1, -1) else 0         # the coordinate the mirror flips
+                lb[i] = "across" if out_[i, k] else "along"
+        if ok.sum() > best:
+            best, lab = int(ok.sum()), lb
+    return lab
+
+
+def _evenness(pts: np.ndarray, frame) -> list:
+    """Three lights or more out on one wall: the spread of their spacing (std / mean)."""
+    c, ax, half = frame
+    loc = (pts - c) @ ax.T
+    out = []
+    for k in (0, 1):
+        for sgn in (-1, 1):
+            on = loc[:, 1 - k] * sgn >= SYM_OUT * half[1 - k]
+            if on.sum() >= 3:
+                g = np.diff(np.sort(loc[on, k]))
+                if g.mean() > 0:
+                    out.append(float(g.std() / g.mean()))
+    return out
+
+
+def light_layout(m: dict, objs: list, kinds: list, seed: int = 0) -> dict:
+    """Task 22's measures of one zone, from ``measure_zone``'s result ``m``: wall lights'
+    height over the floor and its spread within a room; how a room's lights (wall and floor)
+    pair up by symmetry, against the same lights at random spots on the room's walls and
+    floor; and per catalogue kind, the rooms holding it and those holding two or more."""
+    rng = np.random.default_rng(seed)
+    where, sur, names = m["_where"], m["_sur"], m["_names"]
+    floor, chamber, surf = m["_floor"], m["_chamber"], m["_surf"]
+    cats = np.array([category(n) for n in names])
+    mount = sur["mount"]
+    p = np.array([(o.x, o.y, o.z) for o in objs], float).reshape(-1, 3)
+    wpts = surf.walls.data
+    out = {"over": [], "spread": [], "pairs": Counter(), "random": Counter(), "full": [], "full_random": [],
+           "even": [], "kinds": defaultdict(lambda: [0, 0])}
+    for room in sorted(set(where[where >= 0].tolist())):
+        inr = where == room
+        for k, n in Counter(k for k, i in zip(kinds, inr) if i and k).items():
+            out["kinds"][k][0] += 1
+            out["kinds"][k][1] += n >= 2
+        wl = inr & (cats == "light") & (mount == "wall")
+        o = sur["over"][wl]
+        o = o[np.isfinite(o)]
+        out["over"] += o.tolist()
+        if len(o) >= 2:
+            out["spread"].append(float(o.max() - o.min()))
+        lt = inr & (cats == "light") & np.isin(mount, ("wall", "floor"))
+        if lt.sum() < 2:
+            continue
+        nodes = chamber == room
+        rxy, rz = floor.xy[nodes], floor.z[nodes]
+        frames = _room_frames(rxy)
+        pts = p[lt][:, :2]
+        labs = [_pairs(pts, f) for f in frames]
+        k = int(np.argmax([np.sum(lb != "") for lb in labs]))
+        out["pairs"].update(labs[k].tolist())
+        out["full"].append(bool(np.all(labs[k] != "")))
+        on_wall = mount[lt] == "wall"
+        if on_wall.sum() >= 3:
+            out["even"] += _evenness(pts[on_wall], frames[k])
+        # the baseline: the room's wall spots at a light's height, and its floor
+        d, kk = cKDTree(rxy).query(wpts[:, :2], distance_upper_bound=4.0)
+        near = np.isfinite(d)
+        kk = np.where(near, kk, 0)
+        near &= np.abs(wpts[:, 2] - (rz[kk] + 6.0)) <= 6.0
+        rw = wpts[near][:, :2]
+        for _ in range(SYM_RANDOM):
+            bp = np.array([rw[rng.integers(len(rw))] if (w and len(rw)) else rxy[rng.integers(len(rxy))]
+                           for w in on_wall])
+            bl = [_pairs(bp, f) for f in frames]
+            kb = int(np.argmax([np.sum(lb != "") for lb in bl]))
+            out["random"].update(bl[kb].tolist())
+            out["full_random"].append(bool(np.all(bl[kb] != "")))
+    return out
+
+
+def print_layout(rows: dict) -> None:
+    """Task 22's figures over the surveyed zones, dungeons and cities apart."""
+    def q(v):
+        v = np.asarray(v, float)
+        return " ".join(f"{x:.1f}" for x in np.percentile(v, (10, 25, 50, 75, 90))) + f" (n={len(v)})" \
+            if len(v) else "-"
+
+    print("\nLights laid out as a set (task 22):")
+    kinds = defaultdict(lambda: [0, 0])
+    for label, city in (("dungeon", False), ("city", True)):
+        kept = [r["_layout"] for z, r in rows.items() if (z in CITIES) == city and "_layout" in r]
+        if not kept:
+            continue
+        over = sum((k["over"] for k in kept), [])
+        spread = np.array(sum((k["spread"] for k in kept), []))
+        pairs, rand = sum((k["pairs"] for k in kept), Counter()), sum((k["random"] for k in kept), Counter())
+        n, nr = max(sum(pairs.values()), 1), max(sum(rand.values()), 1)
+        full = sum((k["full"] for k in kept), [])
+        full_r = sum((k["full_random"] for k in kept), [])
+        even = sum((k["even"] for k in kept), [])
+        print(f"  {label}: wall lights' height over the floor p10-p90 {q(over)}")
+        if len(spread):
+            print(f"        within a room (2+ wall lights), its spread {q(spread)}; within 1 u "
+                  f"{np.mean(spread <= 1):.2f}, 2 u {np.mean(spread <= 2):.2f}, 4 u {np.mean(spread <= 4):.2f}")
+        print(f"        rooms with 2+ lights {len(full)}, {n} lights; paired (stock / random): "
+              + ", ".join(f"{k or 'unpaired'} {pairs[k] / n:.2f}/{rand[k] / nr:.2f}"
+                          for k in ("across", "along", "corner", "turn", ""))
+              + f"; rooms all paired {np.mean(full) if full else 0:.2f}/{np.mean(full_r) if full_r else 0:.2f}")
+        if even:
+            print(f"        3+ wall lights on one wall: {len(even)}, spacing std/mean p50 "
+                  f"{np.median(even):.2f}, under 0.2 {np.mean(np.array(even) < 0.2):.2f}")
+        for k in kept:
+            for kind, (a, b) in k["kinds"].items():
+                kinds[kind][0] += a
+                kinds[kind][1] += b
+    once = sorted((k for k, (a, b) in kinds.items() if a >= 4 and b / a <= 0.1), key=lambda k: -kinds[k][0])
+    print("  kinds in 4+ rooms, at most a tenth of them holding two or more: "
+          + ", ".join(f"{k} {kinds[k][0]} ({kinds[k][1]})" for k in once))
+    for k in ("forge", "throne", "chest"):
+        if k in kinds:
+            print(f"    {k}: {kinds[k][0]} rooms, {kinds[k][1]} with two or more")
 
 
 # --- observed fields ---------------------------------------------------------------------------
@@ -707,7 +872,7 @@ def _band(vals, fmt="{:.2f}") -> str:
     return (fmt.format(min(v)) + "-" + fmt.format(max(v))) if v else "-"
 
 
-def survey(eq_path: Path, zones, cat: dict, cache: Path | None) -> dict:
+def survey(eq_path: Path, zones, cat: dict, cache: Path | None, layout: bool = False) -> dict:
     agent = AgentModel()
     index = model_index(cat)
     rows = {}
@@ -721,6 +886,8 @@ def survey(eq_path: Path, zones, cat: dict, cache: Path | None) -> dict:
                          city=zone in CITIES)
         r["style"] = "city" if zone in CITIES else STYLES.get(zone, "-")
         r["unknown"] = sum(1 for k in keys if k is None)
+        if layout:
+            r["_layout"] = light_layout(r, objs, [cat["models"][k]["tags"]["kind"] if k else "" for k in keys])
         rows[zone] = r
         print_zone(zone, r)
     return rows
@@ -795,11 +962,15 @@ def main(argv=None) -> int:
     ap.add_argument("--write", action="store_true",
                     help="write the observed fields into the catalogue")
     ap.add_argument("--jobs", type=int, default=None)
+    ap.add_argument("--layout", action="store_true",
+                    help="also measure how rooms lay their lights out and which kinds they hold once")
     args = ap.parse_args(argv)
     import prop_catalogue
     cat = prop_catalogue.load(args.catalogue)
-    rows = survey(args.eq_path, args.zones.split(","), cat, args.cache)
+    rows = survey(args.eq_path, args.zones.split(","), cat, args.cache, args.layout)
     print_bands(rows)
+    if args.layout:
+        print_layout(rows)
     print_leftovers(rows)
     if not args.no_observe:
         observed, types = observe_all(args.eq_path, cat, args.jobs)

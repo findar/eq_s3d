@@ -177,6 +177,11 @@ class Model:
     #: stock's ``standoff`` (origin off the wall, p50) and the model's own ``back`` (its reach
     #: from the origin to that side), both model units. None for models that aren't wall Mounts.
     wall_side: Optional[Mapping[str, Any]] = None
+    #: A floor or raised model's plan as the room gate reads it (``scripts/prop_catalogue.py
+    #: outline``, room-decor task 23): the hull of its collidable triangles' plan, model units,
+    #: about the middle of its plan (where placement centres it), counter-clockwise. None when
+    #: unmeasured (wall, ceiling, skeletal) or when nothing of it collides.
+    outline: Optional[Tuple[Tuple[float, float], ...]] = None
 
     @property
     def placed_total(self) -> int:
@@ -386,6 +391,17 @@ def _open_ground(chk: _Checker, key: str, entry: Mapping[str, Any]) -> Optional[
     return None
 
 
+def _outline(chk: _Checker, key: str, entry: Mapping[str, Any]) -> Optional[Tuple[Tuple[float, float], ...]]:
+    v = entry.get("outline")
+    if v is None:
+        return None
+    if isinstance(v, list) and len(v) >= 3 and all(
+            isinstance(p, list) and len(p) == 2 and all(isinstance(c, (int, float)) for c in p) for p in v):
+        return tuple((float(p[0]), float(p[1])) for p in v)
+    chk.fail(key, "outline", v, "3 or more [x, y] points (run scripts/prop_catalogue.py outline)")
+    return None
+
+
 #: A wall model's side to its wall, as the model-frame unit vector pointing at the wall.
 WALL_SIDES = {"-x": (-1.0, 0.0), "+x": (1.0, 0.0), "-y": (0.0, -1.0), "+y": (0.0, 1.0)}
 
@@ -428,7 +444,8 @@ def load(catalogue: Path = DECOR_DIR / CATALOGUE_FILE, tags: Path = DECOR_DIR / 
             placed=dict(e.get("placed", {}).get("zones", {})),
             textures=tuple(e.get("textures", ())),
             tags=merge(prop, reviews.get(key, {}), kinds, accept),
-            open_ground=_open_ground(c_chk, key, e), wall_side=_wall_side(c_chk, key, e))
+            open_ground=_open_ground(c_chk, key, e), wall_side=_wall_side(c_chk, key, e),
+            outline=_outline(c_chk, key, e))
     errors: list[CheckError] = c_chk.errors + t_chk.errors
     if errors:
         raise RuleSetError(errors)

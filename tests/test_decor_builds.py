@@ -496,6 +496,31 @@ def test_mistbanner_hangs_in_front_of_its_wall():
 
 @pytest.mark.slow
 @needs_install
+@pytest.mark.parametrize("label", sorted(DECORATED))
+def test_a_built_rooms_lights_share_a_height_and_once_kinds_stand_once(decorated, label):
+    """Task 22 on a built zone, as the ZON places them: a room's wall lights hang at one
+    height (or a floor level apart, more than ``LIGHT_LEVEL``), and a kind the rules hold once
+    stands at most once a room."""
+    from generators.decor.placement import LIGHT_LEVEL
+    from generators.decor.rules import load_decor
+    once = load_decor().once
+    _spec_, result = decorated[label, "normal"]
+    _arc, zon, side = _loaded(result)
+    objs = [o for o in zon.objects if o.name.startswith("decor_")]
+    rows = [(r["id"], p) for r in side["rooms"] for p in r.get("props", [])]
+    lit = 0
+    for room in {rid for rid, _p in rows}:
+        mine = [(o, p) for o, (rid, p) in zip(objs, rows) if rid == room]
+        zs = sorted({round(o.z, 3) for o, p in mine if p["mount"] == "wall" and p["category"] == "light"})
+        lit += len(zs) > 0
+        assert all(b - a > LIGHT_LEVEL for a, b in zip(zs, zs[1:])), (room, zs)
+        kinds = [p["kind"] for _o, p in mine]
+        assert all(kinds.count(k) <= 1 for k in once), (room, kinds)
+    assert lit
+
+
+@pytest.mark.slow
+@needs_install
 def test_light_none_adds_no_lights(decorated):
     """With Decor ``none`` the ZON lights are the rooms' own."""
     spec, result = decorated["dungeon", "none"]

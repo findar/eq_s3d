@@ -24,7 +24,11 @@ matches), and per Group member.
   clear zone, and off Features, except a recipe's ``on_dais`` line and a POI's Dressing when the
   POI stands on a dais (Req 6.1). A footprint is the model's plan (``measured`` w along its own
   X, d along Y), turned by its yaw. Its floor may rise at most ``FLAT`` across it; it stands at
-  the lowest. It must fit under the ceiling;
+  the lowest floor under its body. It must fit under the ceiling. In a room, what the Prop
+  covers and stands over is its **mesh outline** (catalogue ``outline``, task 23): the plan hull
+  of its collidable triangles, the plan the gate reads it by, so a round model neither sinks
+  into floor beyond its rectangle's corner nor counts the floor between its body and a wall as
+  its own (the gate cuts that off). The rectangle still keeps Props apart; Sites keep it too;
 - **along the wall** (``along_wall``, ``corners``, ``by_door``, ``rows``): backed to a wall face,
   its back half a plan-depth off it, turned so its front faces the room;
 - **wall** Props hang on a wall face at the height stock uses for the model (observed ``over``,
@@ -36,7 +40,14 @@ matches), and per Group member.
   the wall mesh at its own height (``generators/builder.py``), so a torch on a rough wall sits
   where that wall stands (design Risks). Wall
   lights keep ``LIGHT_SPACING`` (finding 1: 38 u dungeon, 26 u city; a room keeps
-  ``ROOM_LIGHT_GAP`` of it);
+  ``ROOM_LIGHT_GAP`` of it), and a room's wall lights hang at one height: the first one's
+  stock height, over one floor level (``LIGHT_LEVEL``; task 22);
+- **lights as a set** (task 22): a light line ``on_wall`` or at ``corners`` places its lights
+  as one symmetric set in the room's own axes (``Room.frame``), whole or not at all: pairs
+  straight across the room or evenly along one wall; two opposite corners or all four. A set
+  with no room drops to a smaller symmetric one, never to a lopsided one (``light_set``);
+- **once a room** (task 22): a kind the rules' ``once`` names stands at most once in a room;
+  a line asking for it again takes its next kind;
 - **ceiling** Props hang where the ceiling is at least the model's length plus ``HEAD_HEIGHT``
   over the floor, so they never block (Req 6.2);
 - **Groups** are placed whole or dropped whole (Req 6.3): the anchor at its arrangement, its
@@ -140,6 +151,24 @@ WALL_EMBED = 1.5
 #: Defaults for a model the survey never saw placed: height of a wall Prop over the floor.
 WALL_HEIGHT = {"light": 5.5, "hanging": 8.0}
 DEFAULT_WALL_HEIGHT = 6.0
+#: A room's wall lights hang at one height (task 22): the first one's stock height over the
+#: floor, over one floor level. A wall whose floor lies within this of a level the room's
+#: lights already use takes that level (a low dais, an uneven cave floor); further off it is
+#: another floor of the room, with its own level.
+LIGHT_LEVEL = 4.0
+#: A light set's spot (task 22) takes a wall face this near it along its wall (u), on a wall
+#: facing straight along one of the room's axes (its normal within about 25°: not a chamfer).
+SET_TOL = 3.0
+SIDE_ALIGN = 0.9
+#: A corner light's partner stands this near the mirror image of it (u).
+CORNER_TOL = 8.0
+#: A light set's shifts along its walls, tried after the centred set (u).
+SET_SHIFTS = (0.0, 4.0, -4.0, 8.0, -8.0, 12.0, -12.0, 16.0, -16.0)
+#: Most corners a corner set fills; spots tried for its first light.
+CORNERS = 4
+CORNER_TRIES = 12
+#: Light lines placed as a set (task 22), by arrangement.
+SET_AT = ("on_wall", "corners")
 #: Steps, in the order a room takes them.
 STEPS: Tuple[str, ...] = ("dressing", "group", "prop", "debris")
 CORRIDOR = "corridor"
@@ -174,6 +203,9 @@ class Prop:
     at: str                 # the line's arrangement
     poi: Optional[int] = None
     group: Optional[int] = None
+    #: A floor or raised Prop's plan as the gate reads it (the catalogue's ``outline``, scaled,
+    #: about the middle of its plan), for ``check``; None: its measured rectangle. Not written out.
+    outline: Optional[Tuple[Tuple[float, float], ...]] = field(default=None, compare=False, repr=False)
 
     @property
     def light(self) -> bool:
@@ -181,6 +213,7 @@ class Prop:
 
     def to_dict(self) -> dict:
         out = asdict(self)
+        out.pop("outline", None)
         for k in ("x", "y", "z", "yaw", "scale", "w", "d", "h", "below"):
             out[k] = round(float(out[k]), 3)
         return out
@@ -235,6 +268,8 @@ class Size:
     #: that side, scaled (None when unmeasured).
     side: Tuple[float, float] = (-1.0, 0.0)
     back: Optional[float] = None
+    #: Its plan as the gate reads it, scaled (catalogue ``outline``, task 23); None: unmeasured.
+    outline: Optional[Tuple[Tuple[float, float], ...]] = None
 
 
 def size_of(model: Model) -> Size:
@@ -257,7 +292,9 @@ def size_of(model: Model) -> Size:
     return Size(w=max(0.2, float(m.get("w", 2.0))) * s, d=max(0.2, float(m.get("d", 2.0))) * s,
                 h=top * s, below=bottom * s,
                 scale=s, over=float(over[1]) if over and len(over) > 1 else None,
-                wall=float(wall[1]) if wall and len(wall) > 1 else None, side=side, back=back)
+                wall=float(wall[1]) if wall and len(wall) > 1 else None, side=side, back=back,
+                outline=tuple((px * s, py * s) for px, py in model.outline)
+                if getattr(model, "outline", None) else None)
 
 
 def _sunk(model: Model) -> bool:
@@ -591,6 +628,10 @@ class Room:
         #: so its own room check can't find what placement let through (task 14).
         self.as_read = np.zeros((LAYERS,) + self.shape, bool)
         self.wall_props: List[Tuple[float, float, float, bool]] = []     # x, y, half-span, light
+        #: The room's one wall-light height over its floor, once a wall light is up, and the
+        #: floor levels its wall lights stand over (``LIGHT_LEVEL``).
+        self.light_over: Optional[float] = None
+        self.light_levels: List[float] = []
         self.ceiling_props: List[Tuple[float, float]] = []
         #: Blocking floor Props' plans (corners) and Groups, for ``BLOCKING_GAP``.
         self.plans: List[Tuple[np.ndarray, Optional[int]]] = []
@@ -722,17 +763,65 @@ class Room:
                 out.append(bool(at & set(int(v) for v in labels)))
         return out
 
-    def footprint(self, x, y, yaw, w, d):
+    @staticmethod
+    def outline_at(x: float, y: float, yaw: float, outline) -> np.ndarray:
+        """A model's outline (model frame about the middle of its plan, scaled) turned by
+        ``yaw`` and moved to (x, y): the world plan the gate reads it by."""
+        c, s = math.cos(yaw), math.sin(yaw)
+        o = np.asarray(outline, dtype=np.float64)
+        return np.column_stack([x + c * o[:, 0] - s * o[:, 1], y + s * o[:, 0] + c * o[:, 1]])
+
+    def poly_cells(self, x: float, y: float, plan: np.ndarray, grow: float = 0.0, *more: float):
+        """The grid cells whose middles lie in a convex world ``plan`` grown by ``grow`` (as
+        ``rect_cells`` with ``clip``: the cells on the grid, the middle cell when none; None
+        when (x, y), its middle, is off the grid). With ``more`` grows, a tuple of the cells for
+        each grow, the distances worked out once."""
+        nx, ny = self.shape
+        ci, cj = int(round((x - self.xs[0]) / self.cell)), int(round((y - self.ys[0]) / self.cell))
+        if not (0 <= ci < nx and 0 <= cj < ny):
+            return None
+        grows = (grow,) + more
+        reach = max(grows)
+        lo, hi = plan.min(axis=0) - reach - self.cell, plan.max(axis=0) + reach + self.cell
+        li0 = max(int(math.floor((lo[0] - self.xs[0]) / self.cell)), 0)
+        li1 = min(int(math.ceil((hi[0] - self.xs[0]) / self.cell)), nx - 1)
+        lj0 = max(int(math.floor((lo[1] - self.ys[0]) / self.cell)), 0)
+        lj1 = min(int(math.ceil((hi[1] - self.ys[0]) / self.cell)), ny - 1)
+        middle = (np.array([ci]), np.array([cj]))
+        if li1 < li0 or lj1 < lj0:
+            out = [middle] * len(grows)
+        else:
+            dist = _polygon_distance(self.gx[li0:li1 + 1, lj0:lj1 + 1],
+                                     self.gy[li0:li1 + 1, lj0:lj1 + 1], plan)
+            out = []
+            for g in grows:
+                ii, jj = np.nonzero(dist <= g)
+                out.append((ii + li0, jj + lj0) if len(ii) else middle)
+        return tuple(out) if more else out[0]
+
+    def footprint(self, x, y, yaw, w, d, outline=None):
         """A blocking Prop's grown plan: (the cells grown by ``grow``, the ``LAYERS``-layer mask
         of it, of the plan grown by ``grow_wide``, of it grown the least the gate's clear width
-        may take, and of the bare plan); None when its middle is off the grid."""
+        may take, and of the bare plan); None when its middle is off the grid. With an
+        ``outline`` (task 23) the plan is the model's mesh outline, as the gate reads it: its
+        collidable triangles lie inside it, so the grown outline still holds all the gate covers,
+        and floor between a round body and its rectangle's corner is floor, as it is to the gate
+        (its "inside one model's plan" is that hull)."""
         # The yaw as the Prop records it, so ``check`` reads the same cells: a plan edge on a
         # cell's middle flips with the last bit of cos/sin (task 14).
         yaw = float(yaw) % (2 * math.pi)
-        grown = self.rect_cells(x, y, yaw, w, d, self.grow, clip=True)
-        wide = self.rect_cells(x, y, yaw, w, d, self.grow_wide, clip=True)
-        least = self.rect_cells(x, y, yaw, w, d, max(0.0, WIDE_RADIUS - self.cell / 2), clip=True)
-        bare = self.rect_cells(x, y, yaw, w, d, 0.0, clip=True)
+        if outline is not None:
+            plan = self.outline_at(x, y, yaw, outline)
+            cells = self.poly_cells(x, y, plan, self.grow, self.grow_wide,
+                                    max(0.0, WIDE_RADIUS - self.cell / 2), 0.0)
+            if cells is None:
+                return None
+            grown, wide, least, bare = cells
+        else:
+            grown = self.rect_cells(x, y, yaw, w, d, self.grow, clip=True)
+            wide = self.rect_cells(x, y, yaw, w, d, self.grow_wide, clip=True)
+            least = self.rect_cells(x, y, yaw, w, d, max(0.0, WIDE_RADIUS - self.cell / 2), clip=True)
+            bare = self.rect_cells(x, y, yaw, w, d, 0.0, clip=True)
         if grown is None or wide is None or least is None or bare is None:
             return None
         m = np.zeros((LAYERS,) + self.shape, bool)
@@ -876,8 +965,16 @@ class Room:
         behind = np.einsum("cqk,qk->cq", rel, m) < -WALL_FLUSH
         return bool((close & behind).any())
 
+    def plan_of(self, x: float, y: float, yaw: float, w: float, d: float, outline=None) -> np.ndarray:
+        """A blocking floor Prop's plan polygon: its mesh outline when measured (task 23), else
+        its rectangle's corners."""
+        yaw = float(yaw) % (2 * math.pi)
+        if outline is not None:
+            return self.outline_at(x, y, yaw, outline)
+        return _SiteBounds.corners(x, y, yaw, w, d)
+
     def spaced(self, x: float, y: float, yaw: float, w: float, d: float, group: Optional[int],
-               plans: np.ndarray) -> bool:
+               plans: np.ndarray, outline=None) -> bool:
         """A blocking floor Prop's plan keeps ``BLOCKING_GAP`` off every other blocking floor
         Prop's plan (its own Group's members excepted), or the gaps nearer shut no pocket: with
         them closed (each pair's hull in the way, on top of ``plans``, every blocking plan with
@@ -887,7 +984,7 @@ class Room:
         distance from a corner of one to the other."""
         if not self.plans:
             return True
-        mine = _SiteBounds.corners(x, y, float(yaw) % (2 * math.pi), w, d)
+        mine = self.plan_of(x, y, yaw, w, d, outline)
         seams = []
         for plan, g in self.plans:
             if group is not None and g == group:
@@ -921,6 +1018,30 @@ class Room:
             out.append(_Face(w, floor, near < FRAME, bool(turn.any()), FRAME <= near <= 16.0))
         return out
 
+    def frame(self) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+        """The room's own axes, for laying lights out as a set (task 22): (centre, axes as rows,
+        half-extents along them), the first axis the longer. The axes follow its walls (the
+        normals' angle modulo a quarter turn), the centre and extents the wall faces' reach
+        along them. None for a room with no walls."""
+        if hasattr(self, "_frame"):
+            return self._frame
+        walls = self.ctx.walls
+        self._frame = None
+        if len(walls) >= 3:
+            n = np.array([(w.nx, w.ny) for w in walls])
+            p = np.array([(w.x, w.y) for w in walls])
+            phi = np.arctan2(n[:, 1], n[:, 0])
+            th = 0.25 * math.atan2(float(np.sin(4 * phi).sum()), float(np.cos(4 * phi).sum()))
+            axes = np.array([[math.cos(th), math.sin(th)], [-math.sin(th), math.cos(th)]])
+            loc = (p - p.mean(axis=0)) @ axes.T
+            lo, hi = loc.min(axis=0), loc.max(axis=0)
+            centre = p.mean(axis=0) + ((lo + hi) / 2) @ axes
+            half = (hi - lo) / 2
+            if half[1] > half[0]:
+                axes, half = np.array([axes[1], -axes[0]]), half[::-1].copy()
+            self._frame = (centre, axes, half)
+        return self._frame
+
 
 # ---------------------------------------------------------------------------
 # Choosing a model
@@ -940,6 +1061,9 @@ class _Chooser:
         self.sets = rules.sets.sets_for(ctx.zone_type, ctx.race, ctx.theme)
         self.used: List[str] = []
         self.condition: Optional[str] = None
+        #: Kinds a room holds at most once (rules ``once``, task 22) and those it holds.
+        self.once = frozenset(getattr(rules, "once", ()))
+        self.taken: set = set()
         self.by: Dict[Tuple[str, str, str], List[Model]] = {}
         # A Site stands on open ground the wilderness gate judges: only models its screen
         # takes (the catalogue's ``open_ground``, measured once by prop_catalogue.py screen).
@@ -963,6 +1087,8 @@ class _Chooser:
 
     def choose(self, kinds: Sequence[str], mount: str) -> Optional[Model]:
         for kind in kinds:
+            if kind in self.taken:              # held once, and the room has one
+                continue
             for s in self.sets:
                 if not self.fits(s):
                     continue
@@ -984,6 +1110,8 @@ class _Chooser:
         limit = area(than)
         out = []
         for kind in kinds:
+            if kind in self.taken:
+                continue
             pool = [m for s in self.sets if self.fits(s) for mt in MOUNTS_FILLING[mount]
                     for m in self.by.get((kind, mt, s), ()) if area(m) < limit - 1e-9 and self.suits(m)]
             if pool:
@@ -996,6 +1124,12 @@ class _Chooser:
             self.used.append(s)
         if self.condition is None and model.tags.condition != UNKNOWN:
             self.condition = model.tags.condition
+        if model.tags.kind in self.once:
+            self.taken.add(model.tags.kind)
+
+    def most(self, model: Model, n: int) -> int:
+        """How many of ``model`` a line may place: one of a kind held once a room."""
+        return min(n, 1) if model.tags.kind in self.once else n
 
 
 # ---------------------------------------------------------------------------
@@ -1031,24 +1165,32 @@ class _Placer:
         r = self.room
         return (r.occupied.copy(), r.blocked.copy(), list(r.wall_props), list(r.ceiling_props),
                 list(self.chooser.used), len(self.out.props), self.chooser.condition,
-                len(r.site.props) if r.site is not None else 0, r.as_read.copy(), len(r.plans))
+                len(r.site.props) if r.site is not None else 0, r.as_read.copy(), len(r.plans),
+                r.light_over, list(r.light_levels), set(self.chooser.taken))
 
     def _restore(self, s) -> None:
         r = self.room
         r.occupied, r.blocked, r.as_read = s[0].copy(), s[1].copy(), s[8].copy()
         del r.plans[s[9]:]
+        r.light_over, r.light_levels, self.chooser.taken = s[10], list(s[11]), set(s[12])
         r.wall_props, r.ceiling_props, self.chooser.used, n = list(s[2]), list(s[3]), list(s[4]), s[5]
         self.chooser.condition = s[6]
         del self.out.props[n:]
         if r.site is not None:
             del r.site.props[s[7]:]
 
+    def _outline(self, sz: Size):
+        """The plan a floor or raised Prop is read by: in a room its mesh outline when measured
+        (task 23); at a Site, and unmeasured, its rectangle (None)."""
+        return sz.outline if self.room.site is None else None
+
     def _prop(self, model: Model, sz: Size, x, y, z, yaw, mount, blocks, step, line: Line, at: str,
               poi=None, group=None) -> Prop:
         t = model.tags
         p = Prop(model.key, t.kind, t.category, mount, t.set, float(x), float(y), float(z),
                  float(yaw) % (2 * math.pi), sz.scale, sz.w, sz.d, sz.h, sz.below, blocks, step,
-                 _where(line), at, poi, group)
+                 _where(line), at, poi, group,
+                 self._outline(sz) if mount in ("floor", "raised") else None)
         self.out.props.append(p)
         self.chooser.bind(model)
         return p
@@ -1077,8 +1219,12 @@ class _Placer:
         if float(fl.max() - fl.min()) > FLAT:
             return None
         # Its bottom on the lowest floor under its plan (just over it: a flat rug would
-        # flicker in it), not under the margin round it: that would sink it.
-        under = r.rect_cells(x, y, yaw, sz.w, sz.d)
+        # flicker in it), not under the margin round it: that would sink it. In a room the plan
+        # is its mesh outline (task 23): a round model's rectangle reaches floor its body doesn't
+        # stand over, and stood on that floor's lowest, the body sank into the floor under it.
+        outline = self._outline(sz)
+        under = r.poly_cells(x, y, r.outline_at(x, y, float(yaw) % (2 * math.pi), outline)) \
+            if outline is not None else r.rect_cells(x, y, yaw, sz.w, sz.d)
         under = r.floor[under] if under is not None else fl
         under = under[~np.isnan(under)]
         z = float(under.min() if len(under) else fl.min()) + sz.below + LIFT
@@ -1087,7 +1233,7 @@ class _Placer:
             ce = ce[~np.isnan(ce)]
             if len(ce) and float(ce.min()) < z + sz.h + 0.5:
                 return None
-        foot = r.footprint(x, y, yaw, sz.w, sz.d)
+        foot = r.footprint(x, y, yaw, sz.w, sz.d, outline)
         if foot is None:
             return None
         grown, mask = foot
@@ -1117,7 +1263,7 @@ class _Placer:
         if blocks:
             if not dressing and (mask[0] & r.by_lane).any():     # a POI's own dressing may
                 return None
-            if not r.spaced(x, y, yaw, sz.w, sz.d, group, r.blocked[3] | mask[3]):
+            if not r.spaced(x, y, yaw, sz.w, sz.d, group, r.blocked[3] | mask[3], outline):
                 return None
             blocked, as_read = r.blocked | mask, r.as_read | mask
             if r.problems(blocked) or r.problems(as_read):
@@ -1136,7 +1282,7 @@ class _Placer:
                 self.room.site.add(x, y, yaw, sz.w, sz.d, group)
             self.room.blocked, self.room.as_read = blocked
             if blocks:
-                self.room.plans.append((_SiteBounds.corners(x, y, float(yaw) % (2 * math.pi), sz.w, sz.d), group))
+                self.room.plans.append((self.room.plan_of(x, y, yaw, sz.w, sz.d, self._outline(sz)), group))
             return self._prop(model, sz, x, y, z, yaw, mount, blocks, step, line, at, poi, group)
         return None
 
@@ -1228,6 +1374,8 @@ class _Placer:
         light = model.tags.category == "light"
         over = sz.over if sz.over is not None and 0.5 <= sz.over <= 40 else \
             WALL_HEIGHT.get(model.tags.category, DEFAULT_WALL_HEIGHT)
+        if light and r.light_over is not None:      # the room's one wall-light height
+            over = r.light_over
         # Its measured side to the wall, its own reach to that side off the wall (flush;
         # the build then sets it on the wall mesh itself), else stock's distance.
         across = sz.w if sz.side[1] == 0.0 else sz.d          # its depth off the wall
@@ -1239,7 +1387,10 @@ class _Placer:
         turn = math.pi - math.atan2(sz.side[1], sz.side[0])
         for f in faces:
             w = f.face
-            z = f.floor + over
+            level = f.floor
+            if light:       # over the level the room's lights use where this floor is near it
+                level = next((v for v in r.light_levels if abs(v - f.floor) <= LIGHT_LEVEL), f.floor)
+            z = level + over
             if z + sz.h > w.top - 0.25 or z - sz.below < w.bottom - 0.01:
                 continue
             if r.into_a_wall(w, across, half):
@@ -1269,6 +1420,10 @@ class _Placer:
                     continue
             r.blocked, r.as_read = blocked, as_read
             r.wall_props.append((x, y, half, light))
+            if light:
+                r.light_over = over
+                if level not in r.light_levels:
+                    r.light_levels.append(level)
             return self._prop(model, sz, x, y, z, yaw, "wall", blocks, step, line, at, poi)
         return None
 
@@ -1330,6 +1485,10 @@ class _Placer:
         if model is None:
             self.out.drops.append(Drop(step, _where(line), _what(line), "no model"))
             return
+        n = self.chooser.most(model, n)
+        if model.tags.category == "light" and line.at in SET_AT:
+            self.light_set(model, line, step, n)
+            return
         prev = None
         for _ in range(n):
             got, why = self._item(model, line, step, prev)
@@ -1342,6 +1501,157 @@ class _Placer:
                 self.out.drops.append(Drop(step, _where(line), _what(line), why))
             else:
                 prev = got
+
+    # -- lights as a set (task 22) -------------------------------------------------------
+
+    def light_set(self, model: Model, line: Line, step: str, n: int) -> None:
+        """A light line's ``n`` lights placed as one symmetric set, whole or not at all: on the
+        walls in pairs straight across the room or evenly along one wall (a lone light in a
+        wall's middle; an odd one out in the middle of an end wall, on the pairs' mirror line);
+        in the corners, two opposite corners or all four. A corner set is even: an odd count
+        rounds up or down by chance, so the mean is kept. A set with no room drops to the next
+        smaller one (smaller models first), never to a lopsided one."""
+        corners = line.at == "corners"
+        if corners:
+            if n % 2:
+                n += 1 if self.rng.random() < 0.5 else -1
+            n = min(n, CORNERS)
+        placed = 0
+        if n > 0 and self.room.faces and self.room.frame() is not None:
+            models = [model] + self.chooser.smaller(line.kinds, line.mount, model)
+            k = n
+            while k > 0 and not placed:
+                for m in models:
+                    if (self._corner_set if corners else self._wall_set)(m, line, step, k):
+                        placed = k
+                        break
+                k -= 2 if corners else 1
+        why = "no wall" if not self.room.faces else "no spot"
+        for _ in range(n - placed):
+            self.out.drops.append(Drop(step, _where(line), _what(line), why))
+
+    def _sides(self) -> Dict[Tuple[int, int], Tuple[np.ndarray, List[_Face]]]:
+        """The room's wall faces clear of doors by side: (axis, +1 or -1) is the wall at that
+        end of the room's axis, each face with its place along that wall."""
+        centre, axes, _half = self.room.frame()
+        out: Dict[Tuple[int, int], list] = {}
+        for f in self.room.faces:
+            if f.door:
+                continue
+            d = axes @ np.array([f.face.nx, f.face.ny])
+            loc = axes @ np.array([f.face.x - centre[0], f.face.y - centre[1]])
+            for a in (0, 1):
+                if abs(d[a]) >= SIDE_ALIGN:     # its into-room normal points back along the axis
+                    out.setdefault((a, -1 if d[a] > 0 else 1), []).append((float(loc[1 - a]), f))
+        return {k: (np.array([t for t, _ in v]), [f for _, f in v]) for k, v in out.items()}
+
+    def _wall_patterns(self, k: int, half: np.ndarray):
+        """Sets of ``k`` wall spots, each spot (side, place along it, shifts with the set): the
+        families in the room's random order, each centred, then shifted along its walls."""
+        def even(m: int, a: int) -> List[float]:     # m spots evenly along a wall at an end of axis a
+            run = float(half[1 - a])
+            return [(i - (m - 1) / 2) * 2 * run / m for i in range(m)]
+
+        fams = []
+        if k == 1:
+            fams += [[((a, s), 0.0, True)] for a in (0, 1) for s in (1, -1)]
+        else:
+            m, odd = divmod(k, 2)
+            for a in (1, 0):            # pairs straight across the room: its width, its length
+                pairs = [((a, s), t, True) for t in even(m, a) for s in (1, -1)]
+                if odd:
+                    fams += [pairs + [((1 - a, s), 0.0, False)] for s in (1, -1)]
+                else:
+                    fams.append(pairs)
+                    if m >= 2:          # a pair fewer, and the other two walls' middles
+                        fams.append([((a, s), t, True) for t in even(m - 1, a) for s in (1, -1)]
+                                    + [((1 - a, s), 0.0, False) for s in (1, -1)])
+            fams += [[((a, s), t, True) for t in even(k, a)] for a in (0, 1) for s in (1, -1)]
+        self.rng.shuffle(fams)
+        for shift in SET_SHIFTS:
+            for fam in fams:
+                if shift and not any(sh for _, _, sh in fam):
+                    continue
+                yield [(side, t + (shift if sh else 0.0)) for side, t, sh in fam]
+
+    def _wall_set(self, model: Model, line: Line, step: str, k: int) -> bool:
+        sz = size_of(model)
+        _centre, _axes, half = self.room.frame()
+        sides = self._sides()
+        spacing = _spacing(self.ctx) * ROOM_LIGHT_GAP
+        for pattern in self._wall_patterns(k, half):
+            spots = []
+            for side, t in pattern:
+                if side not in sides:
+                    break
+                ts, fs = sides[side]
+                d = np.abs(ts - t)
+                idx = np.nonzero(d <= SET_TOL)[0]
+                if not len(idx):
+                    break
+                spots.append([fs[i] for i in idx[np.argsort(d[idx], kind="stable")]])
+            else:
+                first = [(s[0].face.x, s[0].face.y) for s in spots]
+                if any(math.hypot(a[0] - b[0], a[1] - b[1]) < spacing - 2 * SET_TOL
+                       for i, a in enumerate(first) for b in first[i + 1:]):
+                    continue
+                save = self._save()
+                if all(self._put_wall(model, sz, faces, step, line, line.at, spacing) is not None
+                       for faces in spots):
+                    return True
+                self._restore(save)
+        return False
+
+    def _corner_set(self, model: Model, line: Line, step: str, k: int) -> bool:
+        """Two opposite corners (``k`` 2) or all four, each light near the mirror image of the
+        first in the room's axes."""
+        sz = size_of(model)
+        centre, axes, half = self.room.frame()
+        off = sz.w / 2 + WALL_GAP
+        quads: Dict[Tuple[int, int], list] = {}
+        for f in self.room.faces:   # every wall face, deepest in its corner first: a face
+            if f.door:              # turned at the corner itself often leaves no room
+                continue
+            w = f.face
+            x, y = w.x + w.nx * off, w.y + w.ny * off
+            u, v = axes @ np.array([x - centre[0], y - centre[1]])
+            quads.setdefault((1 if u >= 0 else -1, 1 if v >= 0 else -1), []).append(
+                (float(u), float(v), (x, y, math.atan2(w.ny, w.nx))))
+        for q in quads.values():        # deepest in the corner first
+            q.sort(key=lambda s: -(abs(s[0]) / max(half[0], 1.0) + abs(s[1]) / max(half[1], 1.0)))
+        if k >= CORNERS:
+            plans = [((1, 1), [(-1, 1), (1, -1), (-1, -1)])]
+        else:
+            plans = [((1, 1), [(-1, -1)]), ((1, -1), [(-1, -1)])]
+            self.rng.shuffle(plans)
+        # Each corner's spots where the light stands alone (judged once each, and only when a set
+        # could use them: the room check is the cost), then sets of them that mirror.
+        alone: Dict[Tuple[Tuple[int, int], int], bool] = {}
+
+        def free(q, i) -> bool:
+            if (q, i) not in alone:
+                s = quads[q][i][2]
+                alone[q, i] = self._floor_ok(model, sz, s[0], s[1], s[2]) is not None
+            return alone[q, i]
+
+        for qa, images in plans:
+            for ka, (ua, va, spot) in enumerate(quads.get(qa, [])[:CORNER_TRIES]):
+                if not free(qa, ka):
+                    continue
+                rest = []
+                for su, sv in images:
+                    qi = (qa[0] * su, qa[1] * sv)
+                    q = quads.get(qi, [])[:CORNER_TRIES]
+                    near = sorted((math.hypot(u - ua * su, v - va * sv), i) for i, (u, v, _s) in enumerate(q))
+                    rest.append([q[i][2] for dist, i in near if dist <= CORNER_TOL and free(qi, i)][:3])
+                if not all(rest):
+                    continue
+                save = self._save()
+                if self._put_floor(model, sz, [spot], step, line, line.at) is not None and \
+                        all(self._put_floor(model, sz, c, step, line, line.at) is not None for c in rest):
+                    return True
+                self._restore(save)
+        return False
 
     # -- Groups -----------------------------------------------------------------------
 
@@ -1359,7 +1669,7 @@ class _Placer:
                 self._restore(save)
                 return
             self.chooser.bind(model)            # the members keep to the anchor's culture
-            drawn.append((m, model, n))
+            drawn.append((m, model, self.chooser.most(model, n)))
         self._restore(save)
         anchor_m, anchor_model, _ = drawn[0]
         asz = size_of(anchor_model)
@@ -1437,7 +1747,7 @@ class _Placer:
         # is (task 21: a candle on a table narrowed a door's way under the clear width).
         blocks = False
         if _blocking(model):
-            foot = r.footprint(x, y, yaw, sz.w, sz.d)
+            foot = r.footprint(x, y, yaw, sz.w, sz.d, self._outline(sz))
             if foot is None:
                 return None
             grown, mask = foot
@@ -1471,7 +1781,7 @@ class _Placer:
                 if model is None:
                     self.out.drops.append(Drop("dressing", _where(line), _what(line), "no model", k))
                     continue
-                for t in range(n):
+                for t in range(self.chooser.most(model, n)):
                     got, why = self._dress(k, poi, model, line, t)
                     for other in (self.chooser.smaller(line.kinds, line.mount, model)
                                   if got is None and why == "no spot" else ()):
@@ -1610,7 +1920,7 @@ def check(context: RoomContext, decorated: Decorated) -> List[str]:
     for p in decorated.props:
         if not p.blocks:
             continue
-        foot = room.footprint(p.x, p.y, p.yaw, p.w, p.d)
+        foot = room.footprint(p.x, p.y, p.yaw, p.w, p.d, p.outline)
         if foot is None:
             return [f"{p.key} at ({p.x:.0f}, {p.y:.0f}) stands outside the room"]
         blocked |= foot[1]

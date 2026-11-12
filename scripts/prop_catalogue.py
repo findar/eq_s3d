@@ -38,6 +38,7 @@ Usage::
     python scripts/prop_catalogue.py tag
     python scripts/prop_catalogue.py screen --eq-path F:\everquest_rof2
     python scripts/prop_catalogue.py wallside --eq-path F:\everquest_rof2
+    python scripts/prop_catalogue.py outline --eq-path F:\everquest_rof2
     python scripts/prop_catalogue.py sheet --eq-path F:\everquest_rof2 --out output/prop_sheet
 
 ``tag`` (task 3) proposes every entry's Tags with a confidence and a reason (``auto_tags``);
@@ -74,7 +75,7 @@ from site_survey import WLD_PASSABLE, _frags, _name, measure_model  # noqa: E402
 OUT = ROOT / "rules" / "decor" / "catalogue.json"
 FORMAT = 1
 #: Fields later tasks own; a rebuild carries them over by key.
-KEPT = ("observed", "tags", "open_ground", "wall_side")
+KEPT = ("observed", "tags", "open_ground", "wall_side", "outline")
 #: ``<zone>_obj.s3d``, ``<zone>_obj2.s3d`` and ``<zone>_2_obj.s3d`` all serve ``<zone>``.
 OBJ_ARCHIVE = re.compile(r"(.+?)(_2)?_obj(\d*)\.s3d", re.IGNORECASE)
 MAX_AREA = 1.0e6     # u^2 of surface past which the footprint raster isn't drawn
@@ -655,6 +656,98 @@ def screen(cat: dict, eq_path: Path, out: Path | None = OUT, jobs: int | None = 
     if out is not None:
         write(cat, out)
     return cat
+
+
+# --- outline: a floor model's plan as the gate reads it (room-decor task 23) ----------------------
+#
+# The room gate reads a placed model by its mesh: its collidable triangles cover the floor, and a
+# pocket inside the plan hull of one model's triangles is that model's own inside. Placement read
+# every model as its measured rectangle, which reaches past a round model's body: a rock stood on
+# floor its body doesn't cover and sank into the floor under it, and floor between a rock and a
+# wall read as rock to placement and as a cut-off pocket to the gate. ``outline`` measures that
+# hull once, in the model's own frame about the middle of its plan (the bounding box of all its
+# vertices, where placement centres a floor Prop; ``builder._at_origin``), model units, and
+# writes it as ``outline`` = [[x, y], ...] counter-clockwise. A model with no collidable
+# triangle gets none (it blocks nothing).
+
+#: Decimals an outline point keeps (model units).
+OUTLINE_DECIMALS = 2
+
+
+def outline_of(ter):
+    """The plan hull of a model's collidable triangles about the middle of its plan (model
+    units, counter-clockwise), or None when it has no collidable triangle."""
+    from analyzer.footprints import _hull, collidable_triangles
+
+    tris = collidable_triangles(ter)
+    if not len(tris):
+        return None
+    xs = [p.x for p in ter.vertices]
+    ys = [p.y for p in ter.vertices]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    hull = _hull(tris[..., :2].reshape(-1, 2) - np.array([cx, cy]))
+    if len(hull) < 3:
+        return None
+    return [[round(float(x), OUTLINE_DECIMALS), round(float(y), OUTLINE_DECIMALS)] for x, y in hull]
+
+
+def _outline_keys(keys) -> dict:
+    """{key: outline} for these keys (one source archive's), in a worker (as ``_screen_keys``)."""
+    from generators.decor.stock import NotImportable
+
+    importer = _SCREEN["importer"]
+    out = {}
+    for key in keys:
+        try:
+            ter = importer.get(key).ter
+        except NotImportable:
+            continue
+        hull = outline_of(ter)
+        if hull is not None:
+            out[key] = hull
+    importer._files.clear()
+    importer._wlds.clear()
+    importer._models.clear()
+    return out
+
+
+def outlines(cat: dict, eq_path: Path, out: Path | None = OUT, jobs: int | None = None,
+             keys=None) -> dict:
+    """Measure ``keys`` (default ``screen_keys``: floor and raised models, skeletal aside) and
+    write each entry's ``outline``; every other entry loses its own. Only that field changes."""
+    keys = screen_keys(cat) if keys is None else sorted(keys)
+    by_archive = defaultdict(list)
+    for k in keys:
+        by_archive[cat["models"][k]["source"]["archive"]].append(k)
+    got = {}
+    with ProcessPoolExecutor(jobs, initializer=_screen_init, initargs=(str(eq_path),)) as pool:
+        for part in pool.map(_outline_keys, sorted(by_archive.values(), key=len, reverse=True)):
+            got.update(part)
+    for key, entry in cat["models"].items():
+        if key in got:
+            entry["outline"] = got[key]
+        else:
+            entry.pop("outline", None)
+    if out is not None:
+        write(cat, out)
+    return cat
+
+
+def outline_report(cat: dict) -> None:
+    rows = {k: e for k, e in cat["models"].items() if "outline" in e}
+    share = []
+    for e in rows.values():
+        m = e.get("measured", {})
+        pts = np.array(e["outline"], dtype=np.float64)
+        x, y = pts[:, 0], pts[:, 1]
+        area = 0.5 * abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+        box = float(m.get("w", 0.0)) * float(m.get("d", 0.0))
+        if box > 0:
+            share.append(area / box)
+    print(f"outlines: {len(rows)} models")
+    if share:
+        q = np.percentile(share, [10, 50, 90])
+        print(f"  hull area / measured rectangle: p10 {q[0]:.2f}  p50 {q[1]:.2f}  p90 {q[2]:.2f}")
 
 
 # --- wallside: which side of a wall model faces its wall (room-decor task 13) ---------------------
@@ -1608,6 +1701,11 @@ def main(argv=None) -> int:
     ws.add_argument("--eq-path", type=Path, required=True)
     ws.add_argument("--catalogue", type=Path, default=OUT)
     ws.add_argument("--jobs", type=int, default=None)
+    ol = sub.add_parser("outline", help="measure each floor and raised model's plan hull, as the "
+                                        "room gate reads it (writes only outline)")
+    ol.add_argument("--eq-path", type=Path, required=True)
+    ol.add_argument("--catalogue", type=Path, default=OUT)
+    ol.add_argument("--jobs", type=int, default=None)
     sh = sub.add_parser("sheet", help="write the local HTML review sheet")
     sh.add_argument("--eq-path", type=Path, required=True)
     sh.add_argument("--out", type=Path, default=ROOT / "output" / "prop_sheet")
@@ -1632,6 +1730,10 @@ def main(argv=None) -> int:
     elif args.cmd == "wallside":
         cat = wall_sides(load(args.catalogue), args.eq_path, args.catalogue, args.jobs)
         wall_side_report(cat)
+        print(f"wrote {args.catalogue}")
+    elif args.cmd == "outline":
+        cat = outlines(load(args.catalogue), args.eq_path, args.catalogue, args.jobs)
+        outline_report(cat)
         print(f"wrote {args.catalogue}")
     elif args.cmd == "sheet":
         page = write_sheet(args.eq_path, args.out, args.catalogue, args.tags, args.all, args.jobs)
