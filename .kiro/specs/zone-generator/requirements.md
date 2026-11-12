@@ -653,6 +653,8 @@ the requirements.
 
 > **Refined by step 10** (design decision 30): wilderness and outdoor-dungeon builds may also pack generated Structure models (`site_<kind>_<variant>_<set>.mod`), their textures, and one ZON object per Structure. Every model is still generated from the Zone_Spec (32.7).
 
+> **Refined by step 11** (design decision 31): every build type may also pack stock Prop models copied unchanged from the user's own install (`_obj*.s3d`, catalogued in `rules/decor/catalogue.json`), their textures, one ZON object per Prop and a ZON light per light Prop. 32.7 is amended for Props only: they are external models taken from the install as generation input; every other mesh is still generated from the Zone_Spec.
+
 ## Delivery Model (process constraints)
 
 These govern how the system is built, not how it behaves.

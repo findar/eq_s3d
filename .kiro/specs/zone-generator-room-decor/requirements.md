@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 11, ready.** Written 2026-11-08 at master `e50ecfc`; revised the same
+> **STATUS: roadmap step 11, DONE** (signed off 2026-11-12, master `940ae43`; see `archive.md`). Was: ready. Written 2026-11-08 at master `e50ecfc`; revised the same
 > day for the user's direction to use the client's own models, catalogued and tagged (design
 > decision 1). Every open question answered the same day (`archive.md` "Decisions"). Task index:
 > `tasks.md` (card format, 18 tasks).

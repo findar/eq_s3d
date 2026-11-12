@@ -111,11 +111,11 @@ The design's open questions are answered (2026-11-08); the answers are in `archi
   - Type: agent · Size: S · Depends: 14
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 16. HUMAN: decorating rooms acceptance pass
+- [x] 16. HUMAN: decorating rooms acceptance pass
   - Card: [cards/16-human-acceptance.md](cards/16-human-acceptance.md)
   - Type: human · Depends: 15, 21, 22, 23
 
-- [ ] 17. Close step 11
+- [x] 17. Close step 11
   - Card: [cards/17-close.md](cards/17-close.md)
   - Type: agent · Size: S · Depends: 16 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-room-decor/, .kiro/specs/zone-generator/

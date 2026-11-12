@@ -5,7 +5,22 @@ this file to pick up a task; it holds the "why".
 
 ## What landed
 
-Nothing yet. Rows are added at the close step (task 17).
+| Tasks | What landed | Commits |
+|---|---|---|
+| 1–4, 19 | Catalogue of 4,651 stock models with proposed Tags; review sheet; four review batches; proposed tags accepted by default, `condition`, feedback in `tags.toml` | to `e3d4b8a` |
+| 2, 14 | Stock survey of what fills rooms; P12 bands met at Normal (dungeon 4.3 a room, city 6.9) | `d9375e4`–`251babc` |
+| 5, 6, 18 | Gate learns placed models; import a catalogued model (vertex-animated frozen); RoomContext and the room corpus | to `d08aa5c` |
+| 7, 8 | Decor recipes as data; placement in rooms | `192400c`, `2bc13ad` |
+| 9, 10 | Decor in builds (ZON objects and lights, sidecar); Decor control, decor seed and reroll, Props on maps | `9f75d97`–`999ee63` |
+| 11, 20 | Site Props; open-ground screen; Site Props in wilderness and outdoor-dungeon builds | `1e3a6cb`, `d2adbda`–`275f6ef` |
+| 12, 16 | HUMAN first look and acceptance pass, both signed off | — |
+| 13 | First-look fixes: banners visible, wall Props flush by a measured wall side, floor Props on their bottom | `9ba2890`–`0ac6dfe` |
+| 15 | Acceptance section (21 pinned cases), thorough run | `802fbaf` |
+| 21 | Dense passes the gate first try | `958e029` |
+| 22, 23 | Lights as symmetric sets at one height; once-a-room kinds; floor Props by their mesh outline | `d69bb1f`, `e9de241` |
+| 17 | Close: trackers, umbrella decision 31, Req 32.4/32.7 refined | the close commit |
+
+Suite 2383 (fast); thorough 2371 + 1 pre-existing mapgeom failure. 79 trailed commits, master `940ae43`.
 
 ## Decisions
 
