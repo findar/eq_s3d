@@ -1,7 +1,9 @@
 """Where Sites stand (roadmap step 10, Requirements 4 and 6; design "Sites").
 
-:func:`place_sites` is a pure function of the landscape, its built TER, the Site rules
-(``generators/sites/rules.py``), the biome, the Sites control and the zone seed. It draws
+:func:`place_sites` is a pure function of the World's terrain (with earlier Attachments'
+Terrain edits applied) and its ``ground`` Socket (world-sockets task 5; or, legacy, the
+landscape and its built TER), the Site rules (``generators/sites/rules.py``), the biome, the
+Sites control and the seed. It draws
 from its OWN salted stream (``_salted_seed(seed, *SITES_SALT)``), so the terrain's stream
 never moves and the TER is never touched (archive decision 1: Sites stand on unchanged
 ground). A Site is placed in three moves:
@@ -55,8 +57,9 @@ from generators.sites.rules import (
 from generators.vegetation.placement import (
     ClearShape,
     Ground,
-    ground_for,
+    ground_of,
     shapes_touch_quads,
+    ter_heights,
 )
 
 #: The salt of the Sites' own stream: ``_salted_seed(seed, "sites", "placement")``.
@@ -284,16 +287,25 @@ class _Terrain:
         return (i, j) if 0 <= i < nqx and 0 <= j < nqy else None
 
 
-def _terrain(land, ter: TerFile, spawn_xy: Tuple[float, float],
-             keep_clear: Sequence[ClearShape]) -> _Terrain:
+def terrain_of(land, ter: TerFile):
+    """A landscape and its built TER as a World's ``Terrain`` (heights: the TER's grid
+    vertex Zs): the legacy ``place_sites(land, ter, ...)`` form."""
+    from generators.world import Terrain
     synth = land.synth
-    ground = ground_for(land, ter, spawn_xy)
+    return Terrain(origin=synth.origin, res=synth.resolution,
+                   heights=ter_heights(ter, synth.heights.shape), node_type=synth.node_type,
+                   rim_seal=synth.rim_seal_mask, playable_interior=synth.playable_interior_mask)
+
+
+def _terrain(terrain, spawn_xy: Tuple[float, float],
+             keep_clear: Sequence[ClearShape]) -> _Terrain:
+    ground = ground_of(terrain, spawn_xy)
     h, res = ground.heights, ground.res
-    node = np.asarray(synth.node_type)
+    node = np.asarray(terrain.node_type)
     slope = _quad_slope_deg(h, res)
 
     wet_nodes = np.isin(node, _WET)
-    walk = (slope <= WALK_SLOPE_DEG) & ~_corners_any(wet_nodes) & ~_corners_any(synth.rim_seal_mask.astype(bool))
+    walk = (slope <= WALK_SLOPE_DEG) & ~_corners_any(wet_nodes) & ~_corners_any(terrain.rim_seal.astype(bool))
     labels, _ = label(walk)
     reached = np.zeros_like(walk)
     si, sj, _, _ = ground.quad_of(*spawn_xy)
@@ -302,7 +314,7 @@ def _terrain(land, ter: TerFile, spawn_xy: Tuple[float, float],
     if labels[si, sj]:
         reached = labels == labels[si, sj]
 
-    base = ground.eligible & reached & _corners_all(np.asarray(synth.playable_interior_mask, dtype=bool))
+    base = ground.eligible & reached & _corners_all(np.asarray(terrain.playable_interior, dtype=bool))
     if keep_clear:
         base &= ~shapes_touch_quads(base.shape, ground.origin, res, keep_clear)
 
@@ -755,23 +767,39 @@ def _redraw_kind(rules: SiteRules, biome: str, inhabitant: str, tried: set,
     return rng.choices(names, weights=[w[n] for n in names])[0]
 
 
-def place_sites(land, ter: TerFile, seed: int, biome: str = "plains",
+def place_sites(terrain, ground, seed: int, biome: str = "plains",
                 control: str = DEFAULT_DENSITY, inhabitant: str = "",
                 rules: Optional[SiteRules] = None,
                 spawn_xy: Optional[Tuple[float, float]] = None,
                 keep_clear: Sequence[ClearShape] = ()) -> SitePlacement:
     """The Sites of one zone (Requirements 4 and 6). Pure.
 
-    ``seed`` is the ZONE seed: the Sites salt their own stream from it (``SITES_SALT``).
+    ``terrain`` is the World's ``Terrain`` with every earlier Attachment's Terrain edits
+    applied, and ``ground`` its ``ground`` Socket (world-sockets task 5): the Spawn is the
+    Socket's ``spawn`` and its ``keep_clear`` shapes are Kept_Clear. The legacy form
+    ``place_sites(land, ter, ...)`` (a landscape and its built TER, the Spawn from the bowl)
+    reads the same arrays.
+
+    ``seed`` is the Attach stage's seed (``stages.rooms_seed``; the zone seed while no
+    ``rooms_seed`` is set): the Sites salt their own stream from it (``SITES_SALT``).
     ``control`` is the Sites control (none, sparse, normal, dense); ``inhabitant`` pins one
-    Inhabitant ("" draws from the biome's mix). ``keep_clear`` adds Kept_Clear shapes (an
-    outdoor dungeon's Apron, Tunnel and Mouth). Nothing here changes the landscape or TER."""
+    Inhabitant ("" draws from the biome's mix). ``spawn_xy`` overrides the Spawn;
+    ``keep_clear`` adds Kept_Clear shapes. Nothing here changes the terrain."""
     rules = rules or load_sites()
-    if spawn_xy is None:
-        from generators.wilderness.bowl import _spawn_world_point
-        sx, sy, _ = _spawn_world_point(land.synth, land.matrix, land.bowl.heights)
-        spawn_xy = (sx, sy)
-    t = _terrain(land, ter, spawn_xy, tuple(keep_clear))
+    shapes = tuple(keep_clear)
+    if hasattr(terrain, "synth"):                     # legacy: (land, ter)
+        land, ter = terrain, ground
+        if spawn_xy is None:
+            from generators.wilderness.bowl import _spawn_world_point
+            sx, sy, _ = _spawn_world_point(land.synth, land.matrix, land.bowl.heights)
+            spawn_xy = (sx, sy)
+        terrain = terrain_of(land, ter)
+    else:
+        if spawn_xy is None:
+            sx, sy = ground.ground["spawn"][:2]
+            spawn_xy = (float(sx), float(sy))
+        shapes = tuple(tuple(s) for s in ground.ground.get("keep_clear", ())) + shapes
+    t = _terrain(terrain, spawn_xy, shapes)
     area = float(t.reached.sum()) * t.ground.res ** 2
     band = rules.density(biome, control)
     rng = random.Random(sites_seed(seed))
@@ -833,4 +861,4 @@ def place_sites(land, ter: TerFile, seed: int, biome: str = "plains",
 
 __all__ = ["APRON_DEPTH", "CLEAR_WIDTH", "ClearArea", "Drop", "POIPoint", "PlacedStructure",
            "RUN_STRUCTURES", "SITES_SALT", "Site", "SitePlacement", "gap", "place_sites", "reach",
-           "site_target", "sites_seed"]
+           "site_target", "sites_seed", "terrain_of"]
