@@ -74,7 +74,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: ai/schema.py, ai/expand.py, generators/zone_spec.py, generators/builder.py (the sidecar's `seeds` block only), tests/test_stage_seeds.py; widened by the lead: generators/outdoor_dungeon.py (the `rooms_seed` parameter), generators/stages.py (`build_attachments`, one line), generators/wilderness/build.py (`sites_for`/`_sites`), generators/builder.py (`rooms_seed` in the `rooms.json` recipe)
   - Reqs: 4.1, 4.2, 4.4, 4.5
 
-- [ ] 8. The rooms seed on the CLI and the server
+- [x] 8. The rooms seed on the CLI and the server
   - Card: [cards/08-cli-server.md](cards/08-cli-server.md)
   - Type: agent · Size: M · Depends: 7
   - Owns: main.py, server/app.py, tests/test_stage_seeds_controls.py, tests/test_hygiene.py (its control-name guard and allow-lists)
