@@ -67,6 +67,7 @@ def test_the_corpus_covers_every_room_type_wall_style_and_race():
     have = record_rooms.coverage(ROOMS)
     assert have["zone_type"] == {"dungeon", "city", "outdoor_dungeon", "wilderness"}
     assert have["site"], "no Sites recorded"
+    assert {c.zone_type for c in ROOMS if c.source == "corridor"} >= {"dungeon", "city", "outdoor_dungeon"}
 
 
 def test_the_corpus_is_small():
@@ -89,6 +90,8 @@ def test_contexts_are_consistent():
             assert c.features and c.pois and c.clear, where
             continue
         assert not (c.spine & ~floor).any(), where
+        if c.source == "corridor":      # its whole floor is its way through
+            assert (c.spine == floor).all() and len(c.doors) == 2, where
         lid = ~np.isnan(c.ceiling)
         assert (c.ceiling[lid] > c.floor[lid]).all(), where
         assert c.walls and c.doors, where
@@ -103,7 +106,7 @@ def test_contexts_are_consistent():
             into += 0 <= i < floor.shape[0] and 0 <= j < floor.shape[1] and floor[i, j]
         assert into >= 0.9 * len(c.walls), where
         for d in c.doors:
-            assert d.side in "NSEW" and d.c1 > d.c0 and d.throats, where
+            assert d.side in "NSEW" and d.c1 > d.c0 and (d.throats or c.source == "corridor"), where
             cx0, cy0, cx1, cy1 = d.clear
             assert x0 - 0.01 <= cx0 < cx1 <= x1 + 0.01 and y0 - 0.01 <= cy0 < cy1 <= y1 + 0.01, where
         for p in c.pois:
@@ -118,15 +121,19 @@ def test_rough_walls_follow_the_mesh_not_a_flat_box():
 
 
 def test_reading_contexts_changes_nothing_about_the_build():
+    """Every room, then every corridor but a stair or Bridge (world-sockets task 14); the
+    spec and mesh untouched."""
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from generators.backends import backend_for
+    from generators.room_context import _corridor_left_out
 
     spec = plan_to_spec(ZonePlan(name="rc_still", zone_type="city", room_count=4), seed=5)
     ter = backend_for(spec.zone_type).build(spec, "ter_rc_still", 2)
     before = (dumps(spec.to_dict()), ter.to_bytes())
     rooms = contexts(spec, ter)
-    assert len(rooms) == len(spec.rooms)
+    assert [c.id for c in rooms] == [r.id for r in spec.rooms] +         [c.id for c in spec.corridors if not _corridor_left_out(c)]
+    assert {c.source for c in rooms[len(spec.rooms):]} == {"corridor"}
     assert (dumps(spec.to_dict()), ter.to_bytes()) == before
 
 

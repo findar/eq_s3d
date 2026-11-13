@@ -106,10 +106,12 @@ def _catalogue() -> dict:
 
 def _read_back(eqg: Path, side: dict):
     """(TER, [Placed], [size]) of a built zone: the ZON's ``decor_`` objects, each with its
-    sidecar row's catalogue key (rooms first, then Sites, as the ZON lists them)."""
+    sidecar row's catalogue key (rooms first, then corridors, then Sites, as the ZON lists
+    them)."""
     arc = PfsArchive.from_file(eqg)
     zon = ZonFile.from_bytes(arc.get(next(f for f in arc.list_files() if f.lower().endswith(".zon"))))
     rows = ([p for r in side["rooms"] for p in r.get("props", [])]
+            + [p for c in side.get("corridors", []) for p in c.get("props", [])]
             + [p for s in side.get("sites", {}).get("sites", []) for p in s.get("props", [])])
     objs = [o for o in zon.objects if o.name.startswith("decor_")]
     assert len(objs) == len(rows)

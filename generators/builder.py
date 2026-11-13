@@ -562,6 +562,17 @@ class DecorBuild:
                            "decor_drops": [x.to_dict() for x in d.drops], "bare": d.bare}
         return out
 
+    def corridor_records(self, corridors) -> List[dict]:
+        """The sidecar's ``corridors`` block (world-sockets task 14): each corridor
+        decor lit, in ZON order (after the rooms, before the Sites), with the rooms
+        it joins and its ``props`` and ``decor_drops`` as a room's. ``corridors``
+        is the spec's, for the rooms each joins."""
+        joins = {c.id: (c.from_room, c.to_room) for c in corridors}
+        records = self.room_records()
+        return [{"id": ctx.id, "from_room": joins.get(ctx.id, ("", ""))[0],
+                 "to_room": joins.get(ctx.id, ("", ""))[1], **records[ctx.id]}
+                for ctx, _, _ in self.rooms if ctx.source == "corridor"]
+
     def with_sites(self, report: dict) -> dict:
         """The sidecar's ``sites`` block (step 10's) with each Site's ``props``,
         ``dressing`` and ``decor_drops`` added, as a room's (a copy: the
@@ -573,9 +584,11 @@ class DecorBuild:
     def summary(self) -> dict:
         """The sidecar's ``decor`` block (``sites`` only when Sites were dressed)."""
         n_sites = sum(1 for ctx, _, _ in self.rooms if ctx.source == "site")
+        n_corridors = sum(1 for ctx, _, _ in self.rooms if ctx.source == "corridor")
         return {"control": self.control, "seed": self.seed, "props": len(self.placed),
                 "lights": sum(1 for _, p in self.placed if p.light),
-                "models": len(self.models), "rooms": len(self.rooms) - n_sites,
+                "models": len(self.models), "rooms": len(self.rooms) - n_sites - n_corridors,
+                **({"corridors": n_corridors} if n_corridors else {}),
                 **({"sites": n_sites} if n_sites else {}),
                 "bare": sum(1 for _, d, _ in self.rooms if d.bare),
                 "drops": sum(len(d.drops) for _, d, _ in self.rooms),
@@ -902,6 +915,9 @@ class ZoneBuilder:
                      "textures": texture_manifest(ter, modes, veg, dds_by_name, sites, decor)}
         if decor is not None:
             side_meta["decor"] = decor.summary()
+            corridor_rows = decor.corridor_records(self.spec.corridors)
+            if corridor_rows:
+                side_meta["corridors"] = corridor_rows
         side_meta["sockets"] = stages.sockets_sidecar(stages.apply_edits(world, attachments),
                                                       attachments)
         # The layout block (graph-layout Req 7.5): engine, rule set, rooms'

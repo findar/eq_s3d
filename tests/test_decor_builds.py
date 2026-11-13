@@ -130,6 +130,14 @@ def decorated(tmp_path_factory):
     return out
 
 
+def _rows(side, sites: bool = True) -> list:
+    """Every Prop row of a sidecar in ZON order: rooms, then corridors (world-sockets task
+    14), then Sites (task 20)."""
+    return ([p for r in side["rooms"] for p in r.get("props", [])]
+            + [p for c in side.get("corridors", []) for p in c.get("props", [])]
+            + ([p for s in side.get("sites", {}).get("sites", []) for p in s.get("props", [])] if sites else []))
+
+
 def _loaded(result):
     arc = PfsArchive.from_file(result.eqg_path)
     side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
@@ -145,9 +153,7 @@ def test_props_are_packed_once_and_placed_one_object_each(decorated, label):
     _spec_, plain = decorated[label, "none"]
     spec, result = decorated[label, "normal"]
     arc, zon, side = _loaded(result)
-    # rooms first, then Sites, as in the ZON (task 20)
-    props = ([p for r in side["rooms"] for p in r.get("props", [])]
-             + [p for s in side.get("sites", {}).get("sites", []) for p in s.get("props", [])])
+    props = _rows(side)
     assert props, "no Props placed"
     objs = [o for o in zon.objects if o.name.startswith("decor_")]
     assert len(objs) == len(props) == side["decor"]["props"]
@@ -261,8 +267,7 @@ def test_light_one_zon_light_per_light_bearing_prop(decorated, label):
     every room's own light stays."""
     spec, result = decorated[label, "normal"]
     _arc, zon, side = _loaded(result)
-    props = [p for r in side["rooms"] for p in r.get("props", [])]
-    lit = [p for p in props if p["category"] == "light"]
+    lit = [p for p in _rows(side, sites=False) if p["category"] == "light"]
     assert lit, "no light-bearing Prop placed"
     names = [l.name for l in zon.lights]
     assert [n for n in names if not n.startswith("decor_light_")] == [l.id for l in spec.lights]
@@ -289,8 +294,7 @@ def _placed(result):
     v = np.array([(p.x, p.y, p.z) for p in ter.vertices])
     vn = np.array([(p.nx, p.ny, p.nz) for p in ter.vertices])
     idx = np.array([(p.v1, p.v2, p.v3) for p in ter.polygons])
-    rows = ([p for r in side["rooms"] for p in r.get("props", [])]
-            + [p for s in side.get("sites", {}).get("sites", []) for p in s.get("props", [])])
+    rows = _rows(side)
     objs = [o for o in zon.objects if o.name.startswith("decor_")]
     models = {}
     out = []
@@ -507,7 +511,7 @@ def test_a_built_rooms_lights_share_a_height_and_once_kinds_stand_once(decorated
     _spec_, result = decorated[label, "normal"]
     _arc, zon, side = _loaded(result)
     objs = [o for o in zon.objects if o.name.startswith("decor_")]
-    rows = [(r["id"], p) for r in side["rooms"] for p in r.get("props", [])]
+    rows = [(r["id"], p) for r in side["rooms"] + side.get("corridors", []) for p in r.get("props", [])]
     lit = 0
     for room in {rid for rid, _p in rows}:
         mine = [(o, p) for o, (rid, p) in zip(objs, rows) if rid == room]
@@ -516,6 +520,28 @@ def test_a_built_rooms_lights_share_a_height_and_once_kinds_stand_once(decorated
         assert all(b - a > LIGHT_LEVEL for a, b in zip(zs, zs[1:])), (room, zs)
         kinds = [p["kind"] for _o, p in mine]
         assert all(kinds.count(k) <= 1 for k in once), (room, kinds)
+    assert lit
+
+
+@pytest.mark.slow
+@needs_install
+def test_corridors_are_lit_on_their_walls(decorated):
+    """World-sockets task 14 (Req 8): each corridor but a stair or Bridge has a context, so
+    decor lights it on its walls and places nothing else there; the sidecar lists them after
+    the rooms, and ``decor.rooms`` still counts rooms."""
+    from generators.room_context import _corridor_left_out
+
+    lit = 0
+    for label in sorted(DECORATED):
+        spec, result = decorated[label, "normal"]
+        side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+        rows = side.get("corridors", [])
+        want = [c.id for c in spec.corridors if not _corridor_left_out(c)]
+        assert [r["id"] for r in rows] == want and side["decor"].get("corridors", 0) == len(want)
+        assert side["decor"]["rooms"] == len(spec.rooms)
+        for r in rows:
+            assert all(p["mount"] == "wall" and p["category"] == "light" for p in r["props"]), r["id"]
+            lit += bool(r["props"])
     assert lit
 
 

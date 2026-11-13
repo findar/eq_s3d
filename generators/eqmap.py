@@ -350,6 +350,8 @@ def _sidecar_props(sidecar: dict) -> list:
     rows = []
     for room in sidecar.get("rooms") or []:
         rows.extend(room.get("props") or [])
+    for corridor in sidecar.get("corridors") or []:
+        rows.extend(corridor.get("props") or [])   # corridor lights (world-sockets task 14)
     for site in (sidecar.get("sites") or {}).get("sites") or []:
         rows.extend(site.get("props") or [])   # Site Props (task 20)
     return rows
