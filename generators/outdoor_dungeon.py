@@ -66,6 +66,7 @@ from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,
 from generators.wilderness.matrix import (DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE,
                                           Landform)
 from generators.wilderness.biome import load_biome_kit
+from generators.world import Socket
 from generators.zone_spec import MaterialSpec, ZoneSpec
 from generators.topology.embed import SLAB
 
@@ -235,31 +236,34 @@ def floor_depth(verticality: Optional[str] = None, race: str = "") -> float:
     return FLOOR_DEPTH + extra * level_height(race)
 
 
-def host_envelope(spec: ZoneSpec, ter: TerFile, *,
-                  rock_cover: float = ROCK_COVER,
+def host_envelope(host, terrain, *,
+                  rock_cover: Optional[float] = None,
                   entrance_floor: Optional[float] = None,
                   depth: float = FLOOR_DEPTH) -> Envelope:
-    """The Envelope under a host-hill spec's built terrain.
+    """The Envelope under a ``hillside`` Socket (``host``) on the World's
+    height grid (``terrain``: the heights, or the World's ``Terrain``). The
+    legacy form, a host-hill spec and its built TER, reads the same Socket
+    off them (:func:`_hill`).
 
-    ``entrance_floor`` defaults to the TER height at the hill's foot on the
-    approach side (the open ground the Entrance will open onto); the floor
-    limit is ``depth`` (``FLOOR_DEPTH``; deeper for a multi-level dungeon,
-    :func:`floor_depth`) below it. That foot is the Envelope's entry, so
-    the layout's entrance room is the one nearest it."""
-    land = landscape_for(spec)
-    landform = land.matrix.landform
-    if landform is None:
-        raise ValueError(f"spec {spec.name!r} has no Landform to build an Envelope under")
-    surface = ter_surface(ter, land.synth.origin, land.synth.resolution,
-                          land.bowl.heights.shape)
-    foot = approach_foot(landform)
+    The footprint is the Socket's (the hill disc, already clipped to the
+    bowl's interior: no room under the Rim's strips), the surface the grid
+    as the client walks it, the Rock_Cover the Socket's unless
+    ``rock_cover`` is given. ``entrance_floor`` defaults to the Socket's
+    ``z``, the ground at the hill's foot on the approach side (the open
+    ground the Entrance will open onto); the floor limit is ``depth``
+    (``FLOOR_DEPTH``; deeper for a multi-level dungeon, :func:`floor_depth`)
+    below it. That foot is the Envelope's entry, so the layout's entrance
+    room is the one nearest it."""
+    socket, grid = _hill(host, terrain)
+    if socket is None:
+        raise ValueError(f"spec {host.name!r} has no Landform to build an Envelope under")
     if entrance_floor is None:
-        entrance_floor = float(surface(*foot))
-    # The hill disc can reach past the bowl's interior (the default hill's
-    # does, under the W Rim); the Envelope is the disc clipped to it.
-    footprint = clip_to_rect(host_footprint(landform), bowl_interior(land))
-    return Envelope(footprint, entrance_floor - depth,
-                    surface, rock_cover, entry=foot)
+        entrance_floor = socket.z
+    if rock_cover is None:
+        rock_cover = socket.ground["rock_cover"]
+    return Envelope(tuple(tuple(p) for p in socket.ground["footprint"]),
+                    entrance_floor - depth, _grid_surface(grid.z, grid.origin, grid.res),
+                    rock_cover, entry=(socket.x, socket.y))
 
 
 def tunnel_wall(resolution: float) -> float:
@@ -307,11 +311,14 @@ def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
     return spec, list(gen.warnings)
 
 
-def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
+def plan_dungeon(host, terrain, envelope: Envelope, name: str,
                  seed: Optional[int], room_count: int = DEFAULT_ROOMS,
                  engine=None, **kwargs) -> Tuple[ZoneSpec, List[str], "Entrance"]:
-    """The dungeon under ``host``: its layout (with warnings) and the
-    Entrance into its entrance room. ``engine`` is the one Layout_Engine every
+    """The dungeon under ``host`` (a ``hillside`` Socket on the World's
+    height grid ``terrain``; or, legacy, a host spec and its TER): its layout
+    (with warnings) and the Entrance into its entrance room. Nothing here
+    reads the landscape: the grid, resolution, approach side, Rock_Cover and
+    undiggable cells all come from the Socket. ``engine`` is the one Layout_Engine every
     shrink step lays out with (built once by the caller, not re-chosen per
     scale).
 
@@ -325,9 +332,12 @@ def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
     :func:`tunnel_wall` on a side through every shrink. If no size keeps them
     all, the largest plan that drops rooms wins; if none plans at all, the
     last ``PLAN_ERRORS`` error is raised."""
+    socket, grid = _hill(host, terrain)
+    if socket is None:
+        raise EntranceError(f"spec {host.name!r} has no Landform")
     reduced, error = None, None
     facings = int(getattr(engine, "facings", 1)) if engine is not None else 1
-    side = tunnel_wall(landscape_for(host).synth.resolution) if facings > 1 else 0.0
+    side = tunnel_wall(grid.res) if facings > 1 else 0.0
     for shrink in range(FIT_SHRINKS + 1):
         for facing in range(facings):
             try:
@@ -337,8 +347,8 @@ def plan_dungeon(host: ZoneSpec, ter: TerFile, envelope: Envelope, name: str,
                 # The Tunnel opens into the layout's entrance room, so the
                 # pacing (depth, climax, keys) runs from the way in.
                 first = next(r.id for r in layout.rooms if r.role == "entrance")
-                layout = align_to_grid(host, ter, envelope, layout, first)
-                entrance = plan_entrance(host, ter, layout, room_id=first)
+                layout = align_to_grid(socket, grid, envelope, layout, first)
+                entrance = plan_entrance(socket, grid, layout, room_id=first)
             except PLAN_ERRORS as e:
                 error = e
                 continue
@@ -386,7 +396,7 @@ def _translate(spec: ZoneSpec, axis: int, d: float, dz: float = 0.0) -> None:
     spec.safe_point = (*mv(sx, sy), sz + dz)
 
 
-def align_to_grid(host: ZoneSpec, ter: TerFile, envelope: Envelope, layout: ZoneSpec,
+def align_to_grid(host, terrain, envelope: Envelope, layout: ZoneSpec,
                   room_id: str) -> ZoneSpec:
     """``layout`` moved across the approach (by the least amount, under half
     a terrain cell) so that room ``room_id``'s wall facing the approach holds
@@ -397,14 +407,13 @@ def align_to_grid(host: ZoneSpec, ter: TerFile, envelope: Envelope, layout: Zone
 
     Stock-scale rooms (step 7 task 17) are ~56-120 u across against a 40 u
     cell, so whether a wall holds a cell used to be down to where the grid
-    happened to fall."""
-    land = landscape_for(host)
-    landform = land.matrix.landform
-    if landform is None:
+    happened to fall. ``host`` and ``terrain`` are as :func:`plan_dungeon`
+    takes them."""
+    socket, grid = _hill(host, terrain)
+    if socket is None:
         return layout
-    ax, _out = _RUN[landform.approach]
+    ax, _out = _RUN[socket.side]
     cross = 1 - ax
-    grid = _host_grid(host, ter)
     room = next(r for r in layout.rooms if r.id == room_id)
     half = (room.depth if ax == 0 else room.width) / 2
     mid = room.center_y if ax == 0 else room.center_x
@@ -522,7 +531,9 @@ class Entrance:
 
 
 class _Grid:
-    """The host TER's vertex grid, addressed along a run and a cross axis."""
+    """The host terrain's vertex grid, addressed along a run and a cross axis:
+    a host TER's first ``nx * ny`` vertices, or the World's heights
+    (:meth:`of`), which are the same floats."""
 
     def __init__(self, ter: TerFile, origin, resolution: float, shape):
         self.nx, self.ny = shape
@@ -530,6 +541,16 @@ class _Grid:
         self.res = float(resolution)
         self.z = np.array([v.z for v in ter.vertices[:self.nx * self.ny]],
                           dtype=np.float64).reshape(self.nx, self.ny)
+
+    @classmethod
+    def of(cls, heights: np.ndarray, origin, resolution: float) -> "_Grid":
+        """The grid of a height array (``heights[i, j]`` at vertex ``(i, j)``)."""
+        grid = cls.__new__(cls)
+        grid.z = np.asarray(heights, dtype=np.float64)
+        grid.nx, grid.ny = grid.z.shape
+        grid.origin = (float(origin[0]), float(origin[1]))
+        grid.res = float(resolution)
+        return grid
 
     def coord(self, axis: int, k: int) -> float:
         """World coordinate of vertex index ``k`` along ``axis``."""
@@ -549,6 +570,40 @@ class _Grid:
 def _host_grid(host: ZoneSpec, ter: TerFile) -> _Grid:
     land = landscape_for(host)
     return _Grid(ter, land.synth.origin, land.synth.resolution, land.bowl.heights.shape)
+
+
+def socket_grid(socket: Socket, heights) -> _Grid:
+    """The grid a ``hillside`` Socket sits on: ``heights`` (the World's height
+    grid, or its ``Terrain``) at the Socket's origin and resolution."""
+    g = socket.ground
+    return _Grid.of(getattr(heights, "heights", heights), g["origin"], g["res"])
+
+
+def _hill(host, terrain) -> Tuple[Optional[Socket], _Grid]:
+    """``(socket, grid)`` for the planner: from a ``hillside`` Socket and the
+    World's heights (or its ``Terrain``, or a ``_Grid``); or, legacy, from a
+    host spec and its built TER, reading the Socket the World would offer off
+    them (``(None, grid)`` when the spec has no Landform)."""
+    if isinstance(host, Socket):
+        if host.kind != "hillside":
+            raise ValueError(f"Socket {host.id!r} is a {host.kind} Socket, not a hillside")
+        if isinstance(terrain, _Grid):
+            return host, terrain
+        return host, socket_grid(host, terrain)
+    land = landscape_for(host)
+    grid = terrain if isinstance(terrain, _Grid) else _host_grid(host, terrain)
+    if land.matrix.landform is None:
+        return None, grid
+    return Socket("hill0", "hillside", **hillside_socket(land, grid.z)), grid
+
+
+def undiggable_mask(socket: Socket, shape: Tuple[int, int]) -> np.ndarray:
+    """The Socket's undiggable vertices (``ground["undiggable"]``, ``[i, j]``
+    pairs) as a bool grid of ``shape``."""
+    keep = np.zeros(tuple(shape), bool)
+    idx = np.asarray(socket.ground["undiggable"], dtype=int).reshape(-1, 2)
+    keep[idx[:, 0], idx[:, 1]] = True
+    return keep
 
 
 def _strip_rect(axis: int, a: float, b: float, c0: float, c1: float):
@@ -635,8 +690,8 @@ def _boxes_covered(dungeon: ZoneSpec, surface, cover: float, sample: float = 8.0
     return True
 
 
-def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
-                  rock_cover: float = ROCK_COVER,
+def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
+                  rock_cover: Optional[float] = None,
                   room_id: Optional[str] = None) -> Entrance:
     """The Entrance with the least Apron digging, over every room wall facing
     the approach (only room ``room_id``'s when given), every strip that fits
@@ -647,15 +702,19 @@ def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
     room and corridor in XY, dig no ground within a cell of the Rim, a
     zoneline or water, and not dig the Apron through the cover over the
     dungeon. The portal's floor is as high as the headwall's cover allows,
-    lowered if need be so the Tunnel's ramp keeps to the grade."""
-    land = landscape_for(host)
-    landform = land.matrix.landform
-    if landform is None:
+    lowered if need be so the Tunnel's ramp keeps to the grade.
+
+    ``host`` and ``terrain`` are as :func:`plan_dungeon` takes them: the
+    approach side, the undiggable cells and (unless ``rock_cover`` is given)
+    the Rock_Cover are the Socket's."""
+    socket, grid = _hill(host, terrain)
+    if socket is None:
         raise EntranceError(f"spec {host.name!r} has no Landform")
-    side = landform.approach
+    if rock_cover is None:
+        rock_cover = socket.ground["rock_cover"]
+    side = socket.side
     ax, out = _RUN[side]
-    grid = _host_grid(host, ter)
-    keep = undiggable(land.synth.node_type, grid.z.shape)
+    keep = undiggable_mask(socket, grid.z.shape)
     rooms = {r.id: r for r in dungeon.rooms}
     # (id, rect, top): a blocker's top is its ceiling. On a stacked dungeon
     # (step 7 task 7) a room or corridor on a lower Level that the Tunnel
@@ -888,28 +947,30 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     ``ai.expand.layout_engine``); a one-Level dungeon (classic, or ``flat``)
     keeps step 5's.
 
-    Raises one of ``PLAN_ERRORS`` when the seed's hill can't hold the minimum
-    rooms or no wall gives an Entrance (the pipeline retries on a fresh
-    seed)."""
+    The World comes from ``world.world_for`` and the dungeon attaches to its
+    ``hillside`` Socket through ``stages.attach_rooms``: no TER is built to
+    plan. The Apron's Terrain edit (``stages.apply_edits``) gives the Spawn
+    its new height when the Apron reaches it.
+
+    Raises one of ``PLAN_ERRORS``, naming the Socket, when the seed's hill
+    can't hold the minimum rooms or no wall gives an Entrance (the pipeline
+    retries on a fresh seed)."""
+    from generators import stages
+    from generators.world import world_for
+
     spec = wilderness_spec(name, seed, edges, biome, landform=DEFAULT_HOST_HILL,
                            zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
     spec.zone_type = "outdoor_dungeon"
-    ter = build_wilderness_ter(spec, f"ter_{name}", 1)
-    depth = FLOOR_DEPTH
-    if getattr(engine, "stacking", False):
-        depth = floor_depth(verticality, layout_kwargs.get("dungeon_race") or "")
-    envelope = host_envelope(spec, ter, depth=depth)
-    layout, warnings, entrance = plan_dungeon(spec, ter, envelope, name, seed, room_count,
-                                              engine=engine, **layout_kwargs)
+    world = world_for("outdoor_dungeon", seed, biome=biome, edges=edges)
+    hill = next(s for s in world.sockets if s.kind == "hillside")
+    fields = dict(layout_kwargs, name=name, room_count=room_count, verticality=verticality)
+    att = stages.attach_rooms(world, hill, fields, seed, engine)
+    layout, warnings, entrance, envelope = att.layout, att.warnings, att.entrance, att.envelope
     # The Apron lowers the ground in front of the Mouth; when it reaches the
     # Outdoor_Spawn, the safe point drops with it onto the dug ground.
-    grid = _host_grid(spec, ter)
-    dug, _ = _apron(grid, entrance)
-    sx, sy, sz = spec.safe_point
-    before = float(_grid_surface(grid.z, grid.origin, grid.res)(sx, sy))
-    after = float(_grid_surface(dug, grid.origin, grid.res)(sx, sy))
-    if after < before:
-        spec.safe_point = (sx, sy, sz + after - before)
+    dug = stages.apply_edits(world, [att])
+    if dug.spawn != world.spawn:
+        spec.safe_point = dug.spawn
     spec.layout = layout.layout
     spec.rooms = layout.rooms
     spec.corridors = layout.corridors
