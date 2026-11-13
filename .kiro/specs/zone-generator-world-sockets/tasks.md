@@ -122,7 +122,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
 
 - [ ] 16. Acceptance section, thorough run
   - Card: [cards/16-acceptance.md](cards/16-acceptance.md)
-  - Type: agent · Size: S · Depends: 13, 15
+  - Type: agent · Size: S · Depends: 13, 13b, 15
   - Owns: docs/ACCEPTANCE.md
 
 - [ ] 17. HUMAN: World Sockets acceptance pass
@@ -145,3 +145,9 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Type: agent · Size: M · Depends: 14, 19
   - Owns: generators/outdoor_dungeon.py, generators/world.py (`world_of`, `world_for`), tests/test_world.py, tests/test_world_corpus.py, tests/test_layout_engine.py (the outdoor-dungeon golden only), tests/test_site_builds.py (the two outdoor-dungeon pins only), tests/fixtures/worlds/, tests/fixtures/rooms/ (the `outdoor_*` recordings) — `world_for`, `test_site_builds.py` and generators/stages.py (`apron_edit` only) widened by the lead
   - Reqs: 2, 6
+
+- [ ] 13b. The fast suite and the band sweeps
+  - Card: [cards/13b-fast-suite.md](cards/13b-fast-suite.md)
+  - Type: agent · Size: M · Depends: 13
+  - Owns: tests/test_decor_bands.py, tests/test_site_bands.py, tests/test_properties_layout.py, tests/test_topology_embed.py, tests/test_topology_levels.py, tests/test_pipeline.py, tests/test_properties_pipeline.py, tests/conftest.py (after task 13)
+  - Reqs: 7.5
