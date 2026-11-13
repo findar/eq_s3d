@@ -82,8 +82,8 @@ Found while working this step:
   test pins them equal). Only tests call the first now: delegate or delete it.
 - **`build_outdoor_dungeon_ter`, `tunnel_doors` and `sidecar_block` still call
   `landscape_for`** instead of reading the World (tasks 4 and 6).
-- **A build whose spec `world_of` can't remake now fails** (task 6), e.g. a hand-edited
-  Landform. Nothing makes one today.
+- ~~A build whose spec `world_of` can't remake now fails~~ (task 6). Retired by task 20:
+  `world_of` reads the spec's own Landform, with no cross-check.
 
 - **The page's Socket markers infer the map's world-to-pixel mapping** from the drawn room
   labels (`web/src/sockets.ts`, task 9), since the map SVG doesn't record it. A change to how
