@@ -116,7 +116,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: generators/room_context.py, scripts/record_rooms.py + tests/fixtures/rooms/, tests/test_room_context.py, tests/test_decor_builds.py, tests/test_decor_bands.py (recaptured bands only); widened by the lead: generators/builder.py (the sidecar `corridors` list and `summary()` counting corridors separately, nothing else), generators/eqmap.py `_sidecar_props`, tests/test_decor_bands.py `_read_back` row order, rules/decor/rooms.toml (rooms' wall lights retuned for corridor lights), tests/test_site_decor_builds.py + tests/test_decor_controls.py (rows in ZON order, corridors included), tests/test_decor_placement.py (room-spacing and light-set tests skip corridors; corridor spacing asserted)
   - Reqs: 8
 
-- [ ] 15. HUMAN: first look
+- [x] 15. HUMAN: first look
   - Card: [cards/15-first-look.md](cards/15-first-look.md)
   - Type: human · Depends: 9, 10, 14, 19, 20
 
