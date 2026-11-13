@@ -122,6 +122,12 @@ def _file_extension(filename: str) -> str:
     return filename[dot:].lower() if dot != -1 else ""
 
 
+def _rooms(plan, rooms_seed):
+    """``plan`` with the pipeline's rerolled rooms seed, if it drew one (task 19)."""
+    import dataclasses
+    return plan if rooms_seed is None else dataclasses.replace(plan, rooms_seed=rooms_seed)
+
+
 def _safe_segment(seg: str) -> bool:
     """One URL segment is a single safe path component (Req 9.3). ``fullmatch``,
     not ``match``: ``$`` also matches before a trailing newline, so ``match``
@@ -825,8 +831,9 @@ def generate(req: GenerateRequest):
         zone_type = plan.zone_type
         rooms = plan.room_count
 
-        def factory(s: int):
-            return plan_to_spec(plan, seed=s)
+        def factory(s: int, rooms_seed: Optional[int] = None):
+            # ``rooms_seed`` is the pipeline's rooms reroll on a gate failure (task 19).
+            return plan_to_spec(_rooms(plan, rooms_seed), seed=s)
     else:
         # Control-driven: the ``controls`` sub-object drives it, with the legacy
         # flat fields filling any key it doesn't name. The raw zone type is
@@ -885,8 +892,8 @@ def generate(req: GenerateRequest):
         zone_type = plan.zone_type
         rooms = plan.room_count
 
-        def factory(s: int):
-            return plan_to_spec(plan, seed=s, edges=edges, trees=trees,
+        def factory(s: int, rooms_seed: Optional[int] = None):
+            return plan_to_spec(_rooms(plan, rooms_seed), seed=s, edges=edges, trees=trees,
                                 trees_source="controls", sites_source=sites_source)
 
     # Build + traversability gate. On gated themes a failing dungeon seed is

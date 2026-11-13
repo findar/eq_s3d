@@ -14,6 +14,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -200,8 +201,10 @@ def cmd_generate(args) -> None:
     edges = getattr(args, "edges", None)
     trees = getattr(args, "trees", None)
 
-    def factory(seed):
-        return plan_to_spec(plan, seed=seed, edges=edges, trees=trees,
+    def factory(seed, rooms_seed=None):
+        # ``rooms_seed`` is the pipeline's rooms reroll on a gate failure (task 19).
+        p = plan if rooms_seed is None else dataclasses.replace(plan, rooms_seed=rooms_seed)
+        return plan_to_spec(p, seed=seed, edges=edges, trees=trees,
                             trees_source="cli", sites_source=sites_source)
 
     # Build through the shared validated pipeline, so the CLI gets the same
