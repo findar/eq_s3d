@@ -660,15 +660,22 @@ class TestPipelineLifecycle:
         ``build`` to return ``None`` (the numpy-less machine) makes the builder
         fall back to box and emit a ``backend_fallback`` warning. The gate is
         switched off so the build runs once; the pipeline merges ``result.warnings`` into both ``vb.warnings`` and the
-        written Sidecar (Req 4.3)."""
+        written Sidecar (Req 4.3).
+
+        Decor ``none``: the pipeline would otherwise give the spec the default
+        Decor, and placing Props in the box fallback's wilderness-sized rooms took
+        3 of this test's 3.6 min (world-sockets task 21). Props play no part in
+        the warning's path."""
         from generators.backends import TerrainBackend
 
         monkeypatch.setattr(TerrainBackend, "build",
                             lambda self, spec, ter_name, ter_version: None)
 
         def factory(seed):
-            return LayoutGenerator(zone_type="wilderness", seed=GOOD_SEED).generate(
+            spec = LayoutGenerator(zone_type="wilderness", seed=GOOD_SEED).generate(
                 "pipe", room_count=5)
+            spec.decor = "none"
+            return spec
 
         vb = _run(factory, tmp_path, zone_type="wilderness",
                   gated_zone_types=frozenset(), max_attempts=8)

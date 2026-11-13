@@ -33,7 +33,6 @@ import os
 import sys
 import tempfile
 import time
-from functools import lru_cache
 from pathlib import Path
 from statistics import median
 
@@ -123,9 +122,17 @@ def _spec(seed: int, sites: str):
     return spec
 
 
-@lru_cache(maxsize=None)
-def _zone(seed: int, sites: str) -> dict:
+def _zones(shared, sites: str, seeds) -> list:
+    """The zones of ``seeds`` at ``sites``, each built once per session whichever worker
+    asks first (``conftest.SharedResults``): the band and first-try tests share the Normal
+    builds. Claimed from the far end, so two tests that start together meet in the middle."""
+    keys = [("site_bands", s, sites) for s in seeds][::-1]
+    return shared.get_many(keys, _make_zone)[::-1]
+
+
+def _make_zone(key: tuple) -> dict:
     """Build, read the archive back, gate it as the pipeline does, and measure its Sites."""
+    _tag, seed, sites = key
     spec = _spec(seed, sites)
     with tempfile.TemporaryDirectory() as tmp:
         r = ZoneBuilder(spec).build(output_dir=Path(tmp), write_glb=False)
@@ -144,10 +151,10 @@ def _zone(seed: int, sites: str) -> dict:
             "kinds": {o[4] for o in objs if o[3].lower().startswith("site_")}}
 
 
-def test_a_build_reads_back_as_its_sites():
+def test_a_build_reads_back_as_its_sites(shared_results):
     """The fast check: one Normal build's shipped Structures read back through the survey's
     code as the Sites placement made (every one a Structure, none merged or split)."""
-    z = _zone(1000, "normal")
+    z = _zones(shared_results, "normal", [1000])[0]
     assert z["kinds"] and not z["kinds"] & NOT_STRUCTURE, z["kinds"]
     m = z["m"]
     assert m["sites"] == z["placed"] >= 1
@@ -190,8 +197,9 @@ def _band(name, value, band):
 
 
 @pytest.mark.slow
-def test_p9_normal_zones_measure_inside_the_stock_bands():
-    zs = [_zone(s, "normal")["m"] for s in SEEDS]
+def test_p9_normal_zones_measure_inside_the_stock_bands(shared_results):
+    built = _zones(shared_results, "normal", SEEDS)
+    zs = [z["m"] for z in built]
     per = [m["per_area"] for m in zs]
     pooled = sum(m["sites"] for m in zs) / (sum(m["ground"] for m in zs) / 1e6)
     p50 = [float(np.percentile(m["structs"], 50)) for m in zs if m["sites"]]
@@ -199,7 +207,7 @@ def test_p9_normal_zones_measure_inside_the_stock_bands():
     sp50 = [float(np.percentile(m["spacing"], 50)) for m in zs if len(m["spacing"])]
     spacing = np.concatenate([m["spacing"] for m in zs])
     allst = np.concatenate([m["structs"] for m in zs])
-    split = [s for s, m in zip(SEEDS, zs) if m["sites"] != _zone(s, "normal")["placed"]]
+    split = [s for s, z in zip(SEEDS, built) if z["m"]["sites"] != z["placed"]]
     r_zone = [clark_evans(m) for m in zs if m["sites"] >= MIN_SITES_R]
     # Pooled over every zone with 2+ Sites: each Site's nearest distance over its own zone's
     # random expectation.
@@ -227,10 +235,11 @@ def test_p9_normal_zones_measure_inside_the_stock_bands():
 
 
 @pytest.mark.slow
-def test_gate_first_try_rate_holds():
+def test_gate_first_try_rate_holds(shared_results):
     """Req 9.2: at Normal and Dense the gate passes on the first try at least as often as
     step 9's (Sites none) on the same seeds."""
-    passed = {s: [n for n in SEEDS if _zone(n, s)["gate"]] for s in ("none", "normal", "dense")}
+    passed = {s: [n for n, z in zip(SEEDS, _zones(shared_results, s, SEEDS)) if z["gate"]]
+              for s in ("none", "normal", "dense")}
     print(f"\nfirst try, seeds {SEEDS.start}-{SEEDS.stop - 1}: "
           + ", ".join(f"{s} {len(p)}/{len(SEEDS)}" for s, p in passed.items()))
     for s in ("normal", "dense"):
