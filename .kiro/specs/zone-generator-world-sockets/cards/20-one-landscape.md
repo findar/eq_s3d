@@ -36,3 +36,4 @@ as the change (design "Risks", "Corpora go stale"). A user may have a saved outd
 from before: it should still build (say in the commit body what it builds).
 
 ## Result
+✔ e432224, 95ec4c7 · 2518 passed
