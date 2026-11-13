@@ -22,11 +22,9 @@ Index fields: `Type` is `agent` or `human`. `Size` is S (≤ 2 files) / M (≤ 5
 L (split it). `Depends` lists task numbers. `Owns` lists the files and folders
 the task may edit; two ready tasks with disjoint `Owns` can run in parallel.
 
-**No task starts until the design's open questions are answered** (the answers go
-in `archive.md` "Decisions"). The cards are written for the recommended answers; a
-different answer re-cuts the cards it names before work starts. Task 14 runs only
-if question 7 is answered yes; if it's no, delete task 14 and drop it from task
-15's `Depends`.
+**The design's open questions were answered on 2026-11-12** (`archive.md`
+"Decisions"). Seven took the recommendation; question 5 (reroll only the failing
+stage) was answered yes, which added task 19 and Req 9. Task 14 runs (question 7 yes).
 
 Bytes: with no stage seed set, every build stays step 11's (Req 6.1). Tasks 3-8
 and 10 each prove it with `python -m pytest tests/test_layout_engine.py -q` plus
@@ -112,7 +110,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: tests/conftest.py (shared sweep builds), tests/test_vertical_build.py, tests/test_graph_layout_build.py, tests/test_walls_build.py, tests/test_features_sweep.py
   - Reqs: 7.5
 
-- [ ] 14. Corridor RoomContexts (only if question 7 is yes)
+- [ ] 14. Corridor RoomContexts
   - Card: [cards/14-corridor-contexts.md](cards/14-corridor-contexts.md)
   - Type: agent · Size: M · Depends: 6
   - Owns: generators/room_context.py, scripts/record_rooms.py + tests/fixtures/rooms/, tests/test_room_context.py, tests/test_decor_builds.py, tests/test_decor_bands.py (recaptured bands only)
@@ -120,7 +118,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
 
 - [ ] 15. HUMAN: first look
   - Card: [cards/15-first-look.md](cards/15-first-look.md)
-  - Type: human · Depends: 9, 10, 14
+  - Type: human · Depends: 9, 10, 14, 19
 
 - [ ] 16. Acceptance section, thorough run
   - Card: [cards/16-acceptance.md](cards/16-acceptance.md)
@@ -135,3 +133,9 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Card: [cards/18-close.md](cards/18-close.md)
   - Type: agent · Size: S · Depends: 17 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-world-sockets/, .kiro/specs/zone-generator/
+
+- [ ] 19. A gate failure rerolls only the failing stage
+  - Card: [cards/19-stage-reroll.md](cards/19-stage-reroll.md)
+  - Type: agent · Size: M · Depends: 7
+  - Owns: generators/pipeline.py (the retry loop and its helpers), tests/test_stage_reroll.py
+  - Reqs: 9

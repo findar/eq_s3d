@@ -1,8 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 12, drafted, open questions pending.** Written 2026-11-12 at master
-> `ad392b8`. The design's open questions (`design.md` "Open questions") go to the user before
-> any task starts; the answers land in `archive.md` "Decisions". Task index: `tasks.md` (card
+> **STATUS: roadmap step 12, ready.** Written 2026-11-12 at master `ad392b8`; the design's
+> open questions were answered the same day (`archive.md` "Decisions"; question 5 added
+> Requirement 9 and task 19). Task index: `tasks.md` (card
 > format).
 
 ## Introduction
@@ -172,11 +172,24 @@ iterations take minutes, not most of an hour.
 5. The fast suite (`-m "not slow"`) and the full suite SHALL meet the time targets design
    finding 2 sets, measured with `--durations`.
 
-### Requirement 8: Corridor contexts (only if design question 7 is answered yes)
+### Requirement 8: Corridor contexts (design question 7, answered yes)
 
 1. The Build stage SHALL hand decor a RoomContext per corridor (`source = "corridor"`), so
    corridor lights are placed by the path step 11 built.
 2. Builds with Decor `none` SHALL be unchanged; Decor-on goldens and bands are recaptured once.
+
+### Requirement 9: A gate failure rerolls only the failing stage (design question 5, answered yes)
+
+**User Story:** As a user, when a random build fails the gate because of its rooms or its
+Props, I want the retry to keep the world it drew and reroll only what failed.
+
+1. On a gated zone type with a random seed, a rejected attempt SHALL be retried from the stage
+   the gate's report names: Decor (redraw `decor_seed`) or the rooms (redraw `rooms_seed`),
+   keeping every earlier stage's seed.
+2. When the stage can't be named, or after two stage rerolls on one World, the retry SHALL
+   draw a fresh `seed` for everything, as today.
+3. Pinned seeds SHALL fail as they do today; retries stay inside the attempt cap and timeout.
+4. Each rejected attempt's log line SHALL name the stage blamed and the seeds it used.
 
 ## Exit criteria
 

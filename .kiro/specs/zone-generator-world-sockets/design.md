@@ -374,8 +374,9 @@ tests/fixtures/rooms/*.json   <── scripts/record_rooms.py (step 11)
   `plan_to_spec`.
 - **`pipeline.py`, `builder.py`, `main.py`, `ai/expand.py` are cross-branch hotspots.** Tasks
   that touch them are sequenced by `Depends`, and each keeps its edit small.
-- **Gate attribution.** Rerolling only the failing stage on a gate failure is tempting but
-  needs the gate to say which stage failed. Not in this step (design question 5).
+- **Gate attribution.** Rerolling only the failing stage (question 5, answered yes) needs
+  the stage named from the gate's report. A wrong name only costs an attempt: after two
+  stage rerolls the retry falls back to a fresh seed, inside the same cap and timeout.
 - **Corpora go stale.** Each corpus has its contract test; a deliberate change re-records,
   in the same commit as the change.
 
@@ -446,4 +447,7 @@ These go to the user; each has a recommendation and what follows from it.
 
 ## Decisions
 
-None yet. The user's answers go here and in `archive.md` "Decisions".
+Answered 2026-11-12; the full wording is `archive.md` "Decisions". Questions 1-4 and
+6-8 took the recommendation. Question 5 was answered yes: a gate failure on a random seed
+rerolls only the stage the gate's report names (Decor, then rooms, else the whole seed), at
+most twice per World; task 19, Req 9.
