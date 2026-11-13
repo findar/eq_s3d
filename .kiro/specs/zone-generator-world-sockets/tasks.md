@@ -50,7 +50,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: generators/world.py, generators/wilderness/build.py (expose what the World reads; no behaviour change), generators/outdoor_dungeon.py (the hillside Socket's ground; no behaviour change), tests/test_world.py
   - Reqs: 1.2, 1.3, 2.1–2.3
 
-- [ ] 4. The outdoor dungeon attaches to its hillside Socket
+- [x] 4. The outdoor dungeon attaches to its hillside Socket
   - Card: [cards/04-hillside.md](cards/04-hillside.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: generators/outdoor_dungeon.py, generators/stages.py, ai/expand.py (the outdoor-dungeon branch only), tests/test_attach_hillside.py
