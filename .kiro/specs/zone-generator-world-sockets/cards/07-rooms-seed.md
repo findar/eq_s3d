@@ -16,3 +16,4 @@ Index entry: `tasks.md` task 7. Requirements 4.1, 4.2, 4.4, 4.5. Design "Stage s
 `ai/expand.py` is a hotspot. Textures take `ZoneBuilder._base_seed` from `spec.seed`: leave that alone. A spec saved before this step has no `rooms_seed` and must load and rebuild as before. The CLI and server are task 8.
 
 ## Result
+✔ 3017c3a · 2457 passed (test_graph_build_time_within_classic_plus_10s fails on master too, under load)

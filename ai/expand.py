@@ -64,13 +64,16 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     room-graph zone types.
 
     The plan's ``sites`` / ``inhabitant`` reach the spec on those two types;
-    its ``decor`` / ``decor_seed`` reach any spec when chosen.
+    its ``decor`` / ``decor_seed`` / ``rooms_seed`` reach any spec when chosen.
+    ``seed`` makes the World; the plan's ``rooms_seed`` (unset: ``seed``) lays out
+    the rooms, their walls, Scales and Features, and the Sites (world-sockets Req 4).
     ``sites_source`` says who set them (``"controls"`` or ``"cli"``); left
     ``None`` it is ``"prompt"`` when a prompt plan moved them off their
     defaults, else ``"default"``.
     """
     plan.validate()
     rng_seed = seed if seed is not None else random.randint(0, 2 ** 31 - 1)
+    rooms_seed = rng_seed if plan.rooms_seed is None else plan.rooms_seed
 
     # Open-world wilderness: no room layout; the wilderness pipeline describes
     # the whole landscape (generators/wilderness/build.py). An outdoor dungeon
@@ -90,7 +93,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                 room_count=plan.room_count, locks=plan.locks,
                 dungeon_theme=plan.dungeon_theme, dungeon_race=plan.dungeon_race,
                 elemental_tint=(plan.elemental_tint or None),
-                verticality=plan.verticality,
+                verticality=plan.verticality, rooms_seed=plan.rooms_seed,
                 engine=layout_engine(plan.layout, plan.rule_set, plan.verticality,
                                      outdoor=True))
             spec.layout = layout_block(spec.layout, spec)
@@ -98,7 +101,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
             # cave, the Blackburrow it's modelled on.
             if spec.layout is not None:
                 from generators.outdoor_dungeon import tunnel_doors
-                _dress_rooms(spec, plan, rng_seed, extra_doors=tunnel_doors(spec),
+                _dress_rooms(spec, plan, rooms_seed, extra_doors=tunnel_doors(spec),
                              overlay="" if plan.dungeon_theme else "natural_cave")
         # Keep the fallback record (Req 1.4) for the sidecar; only when one fired.
         if intent.substitution is not None:
@@ -121,7 +124,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
 
     engine = layout_engine(plan.layout, plan.rule_set, plan.verticality) \
         if plan.zone_type in LAYOUT_ZONE_TYPES else None
-    gen = LayoutGenerator(zone_type=plan.zone_type, seed=rng_seed, engine=engine)
+    gen = LayoutGenerator(zone_type=plan.zone_type, seed=rooms_seed, engine=engine)
 
     # Apply size as a shift within the race's room bands (generate() sizes
     # the rooms from the race; this persists).
@@ -141,6 +144,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         dungeon_race=plan.dungeon_race,
         elemental_tint=(plan.elemental_tint or None),
     )
+    spec.seed = rng_seed        # the World's; the layout ran on the rooms seed
     spec.layout = layout_block(gen.layout_record, spec)
 
     # Add requested regions, placed in/near rooms. When the semantic layer is
@@ -148,7 +152,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     # skip those kinds here to avoid double-placing; keep any non-elemental
     # regions the plan requested (pvp/zoneline/generic).
     themed = bool(spec.dungeon_theme)
-    _add_regions(spec, plan, rng_seed, skip_elemental=themed)
+    _add_regions(spec, plan, rooms_seed, skip_elemental=themed)
 
     # Fold mood into material descriptions so textures pick it up.
     if plan.mood:
@@ -161,12 +165,12 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
 
     # A grown dungeon's rooms draw their real walls, last, when every door is known.
     if spec.layout is not None and plan.zone_type == "dungeon":
-        _dress_rooms(spec, plan, rng_seed)
+        _dress_rooms(spec, plan, rooms_seed)
     return _decor(spec, plan)
 
 
 def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:
-    """The plan's Decor control and decor seed on the spec, only when chosen:
+    """The plan's Decor control, decor seed and rooms seed on the spec, only when chosen:
     an unset control is built at the default by the pipeline and as none by a
     bare ``ZoneBuilder`` (room-decor decision 28), so a plan naming neither
     gives the spec it always did."""
@@ -174,6 +178,8 @@ def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:
         spec.decor = plan.decor
     if plan.decor_seed is not None:
         spec.decor_seed = plan.decor_seed
+    if plan.rooms_seed is not None:
+        spec.rooms_seed = plan.rooms_seed
     return spec
 
 

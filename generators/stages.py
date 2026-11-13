@@ -386,7 +386,7 @@ def build_attachments(spec, world: World, sites=None) -> List[Attachment]:
     Entrance (:func:`entrance_attachment`), as the ground Socket saw them."""
     from generators.sites.placement import SitePlacement
 
-    seed = rooms_seed(int(spec.seed or 0))
+    seed = rooms_seed(int(spec.seed or 0), getattr(spec, "rooms_seed", None))
     payload = spec.wilderness or {}
     out: List[Attachment] = []
     for socket in sorted(world.sockets, key=lambda s: ORDER.index(s.kind)):

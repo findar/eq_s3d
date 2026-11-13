@@ -364,6 +364,10 @@ class ZoneSpec:
     # the zone's seed). Left out of ``to_dict()`` while unset.
     decor: Optional[str] = None
     decor_seed: Optional[int] = None
+    # The Attach stage's seed (world-sockets Req 4): the rooms' layout, walls, Scales and
+    # Features and the Sites' placement. ``None``: ``seed``. The World, textures and trees
+    # stay on ``seed``. Left out of ``to_dict()`` while unset, so the spec hash holds.
+    rooms_seed: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -394,6 +398,7 @@ class ZoneSpec:
             **({"sites_source": self.sites_source} if self.sites_source != "default" else {}),
             **({"decor": self.decor} if self.decor is not None else {}),
             **({"decor_seed": self.decor_seed} if self.decor_seed is not None else {}),
+            **({"rooms_seed": self.rooms_seed} if self.rooms_seed is not None else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -427,6 +432,7 @@ class ZoneSpec:
             sites_source=d.get("sites_source", "default"),
             decor=d.get("decor"),
             decor_seed=d.get("decor_seed"),
+            rooms_seed=d.get("rooms_seed"),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)

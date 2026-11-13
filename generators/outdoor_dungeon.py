@@ -936,6 +936,7 @@ def is_outdoor_dungeon(spec: ZoneSpec) -> bool:
 def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_BIOME,
                          room_count: int = DEFAULT_ROOMS, engine=None,
                          verticality: Optional[str] = None,
+                         rooms_seed: Optional[int] = None,
                          **layout_kwargs) -> ZoneSpec:
     """One spec for an outdoor dungeon: the host wilderness spec (Host_Hill
     terrain at the outdoor-dungeon size) with the dungeon laid out inside its
@@ -964,7 +965,7 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     world = world_for("outdoor_dungeon", seed, biome=biome, edges=edges)
     hill = next(s for s in world.sockets if s.kind == "hillside")
     fields = dict(layout_kwargs, name=name, room_count=room_count, verticality=verticality)
-    att = stages.attach_rooms(world, hill, fields, seed, engine)
+    att = stages.attach_rooms(world, hill, fields, stages.rooms_seed(seed, rooms_seed), engine)
     layout, warnings, entrance, envelope = att.layout, att.warnings, att.entrance, att.envelope
     # The Apron lowers the ground in front of the Mouth; when it reaches the
     # Outdoor_Spawn, the safe point drops with it onto the dug ground.
