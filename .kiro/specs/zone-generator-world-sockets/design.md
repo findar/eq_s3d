@@ -97,22 +97,30 @@ one build.
 
 ## Research findings
 
-### 1. Where the time goes in one build (design-time probe, `ad392b8`)
+### 1. Where the time goes in one build (task 1, `scripts/stage_timings.py`)
 
-Measured with seed 7 at the plan's defaults, Decor Normal, the install present, on this
-machine while the suite ran in parallel (so slow by an unknown factor; ratios are what count).
-Warm means the catalogue, models and imports already loaded.
+`python scripts/stage_timings.py --seeds 1-5` with `EQ_PATH` set, at `3e4d996`, on a
+near-idle machine (CPU about 7 % before the run). Each zone type is planned, built with the
+pipeline's default Decor (Normal) and gated as `generate_validated` does, in its own process.
+Warm is the median (max) over seeds 1-5 with the per-seed caches cleared; seconds. Rows name
+the step 12 stage each piece of today's code becomes.
 
-| Zone type | World (landscape synth) | Plan (`plan_to_spec`) | Build, Decor none (warm) | Build, Decor Normal (warm) | Gate |
-|---|---|---|---|---|---|
-| dungeon | — | 1.25 s cold | 0.18 s | 1.87 s | 4.6 s |
-| city | — | 0.01 s | — | — | 0.7 s |
-| wilderness | 0.12 s | 0.12 s | 0.22 s | 0.99 s | 2.0 s (bowl) |
-| outdoor dungeon | 0.03 s | 0.89 s | 0.47 s | 2.12 s | 9.6 s |
+| Stage | dungeon | city | wilderness | outdoor dungeon |
+|---|---|---|---|---|
+| World (landscape synth) | — | — | 0.08 (0.16) | 0.08 (0.10) |
+| Plan (`plan_to_spec` less World) | 0.28 (0.40) | 0.00 | 0.00 | 0.72 (0.82) |
+| Build: geometry (TER) | 0.01 | 0.00 | 0.04 (0.09) | 0.21 (0.28) |
+| Build: Sites | — | — | 0.81 (1.18) | 0.02 (0.37) |
+| Build: trees | — | — | 0.17 (0.25) | 0.16 (0.19) |
+| Build: RoomContexts | 0.16 (0.23) | 0.06 | 0.05 (0.34) | 0.38 (0.60) |
+| Build: decor (less contexts) | 1.27 (1.83) | 1.52 (2.15) | 0.20 (1.99) | 2.15 (3.07) |
+| Build: pack (`.eqg`) | 0.30 (0.38) | 0.30 (0.44) | 0.18 (0.24) | 0.45 (0.52) |
+| Build: rest (textures, ZON, sidecar) | 0.55 (0.73) | 0.26 (0.36) | 0.09 (0.12) | 0.91 (1.10) |
+| Gate (traversal + format) | 1.28 (1.94) | 0.49 (0.59) | 2.58 (3.01) | 11.29 (13.35) |
+| **Total** | 3.74 (5.53) | 2.74 (3.20) | 4.71 (6.39) | 14.65 (18.54) |
 
-A cold first build with Decor on took 5-13 s (catalogue load, model import). In a warm
-dungeon build with Props, `decor_for` is about 1.3 s (placement 0.7-1.2 s, `contexts` 0.5-0.7
-s) and packing the PFS about 0.5 s.
+Cold (seed 1, fresh process): imports 1.1-7.7 s, decor 2.5-6.7 s (catalogue load and model
+import), totals 4.7 / 4.8 / 10.0 / 18.8 s.
 
 So **making terrain is not what's slow**: a landscape is 0.03-0.12 s. The time is in the gate
 (seconds per zone), cold model import, decor placement and packing. Isolation pays by letting
