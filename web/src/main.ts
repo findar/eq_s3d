@@ -8,6 +8,7 @@ import {
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
 import { showArtifacts, loadMapSvg } from "./artifacts";
+import { drawSockets } from "./sockets";
 
 // How a grown zone's rooms lean: "From rules", or a number or an overlay on top.
 const SCALE_CONTROLS = ["finish", "structure", "clutter", "overlay"];
@@ -26,9 +27,12 @@ const hintOverlay = $("hint-overlay");
 const seedInput = $("seed") as HTMLInputElement;
 const reproduceBtn = $("reproduce") as HTMLButtonElement;
 const rerollDecorBtn = $("reroll-decor") as HTMLButtonElement;
+const rerollRoomsBtn = $("reroll-rooms") as HTMLButtonElement;
 
 // Latest generated map URL, shown by the Map modal.
 let currentMapUrl: string | null = null;
+// The latest build's sidecar, whose Sockets the map dialog marks.
+let currentSidecar: ZoneSidecar | null = null;
 // Seed of the last successful generation, for the "reproduce" affordance.
 let lastSeed: number | null = null;
 // The request and result of the last successful generation, for "Reroll
@@ -190,6 +194,13 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   }
 
   $("m-seed").textContent = String(result.seed);
+  // The seeds block; a sidecar from before it has none (the plan's, else "—").
+  const seeds = sidecar.seeds;
+  const roomsSeed = seeds?.rooms_seed ?? result.plan?.rooms_seed ?? null;
+  const decorSeed = seeds?.decor_seed ?? result.plan?.decor_seed ?? null;
+  $("m-rooms-seed").textContent = roomsSeed != null ? String(roomsSeed) : "—";
+  $("m-decor-seed").textContent = usesControl(result.zone_type, "decor") && decorSeed != null
+    ? String(decorSeed) : "—";
   $("m-build").textContent = result.build_commit ?? "unknown";
   $("m-verts").textContent = result.vertices.toLocaleString();
   $("m-polys").textContent = result.polygons.toLocaleString();
@@ -371,6 +382,8 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   // Replaced by /api/controls' decor.zone_types on load (refreshControls).
   decor: ["dungeon", "city", "wilderness", "outdoor_dungeon"],
   "decor-seed": ["dungeon", "city", "wilderness", "outdoor_dungeon"],
+  // Every zone type (server: rooms_seed on any plan).
+  "rooms-seed": ["dungeon", "city", "wilderness", "outdoor_dungeon"],
 };
 
 function usesControl(zoneType: string, control: string): boolean {
@@ -471,6 +484,8 @@ async function doGenerate(mode: Mode) {
     const decor = usesControl(zoneType, "decor")
       ? ($("decor") as HTMLSelectElement).value || undefined : undefined;
     const decorSeed = usesControl(zoneType, "decor-seed") ? readDecorSeed() : undefined;
+    // The rooms seed: blank is left out (the zone's).
+    const roomsSeed = usesControl(zoneType, "rooms-seed") ? readStageSeed("rooms-seed") : undefined;
     params = {
       mode,
       controls: {
@@ -486,6 +501,7 @@ async function doGenerate(mode: Mode) {
         ...(dungeonRace !== undefined ? { dungeon_race: dungeonRace } : {}),
         ...(decor !== undefined ? { decor } : {}),
         ...(decorSeed !== undefined ? { decor_seed: decorSeed } : {}),
+        ...(roomsSeed !== undefined ? { rooms_seed: roomsSeed } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
     };
@@ -502,7 +518,8 @@ async function doGenerate(mode: Mode) {
       (dungeonTheme !== undefined ? ` theme=${dungeonTheme || "(none)"}` : "") +
       (dungeonRace !== undefined ? ` race=${dungeonRace || "(none)"}` : "") +
       (decor !== undefined ? ` decor=${decor}` : "") +
-      (decorSeed !== undefined ? ` decor_seed=${decorSeed}` : "") + seedNote,
+      (decorSeed !== undefined ? ` decor_seed=${decorSeed}` : "") +
+      (roomsSeed !== undefined ? ` rooms_seed=${roomsSeed}` : "") + seedNote,
     );
   }
   await runGenerate(params);
@@ -513,6 +530,7 @@ async function runGenerate(params: GenerateParams): Promise<void> {
   genDescBtn.disabled = true;
   genCtrlBtn.disabled = true;
   rerollDecorBtn.disabled = true;
+  rerollRoomsBtn.disabled = true;
   statusEl.textContent = "generating…";
 
   // Cheap re-check so a stale-server warning shows exactly when it matters.
@@ -521,8 +539,10 @@ async function runGenerate(params: GenerateParams): Promise<void> {
   try {
     const result = await generateZone(params);
     currentMapUrl = result.map_url;
+    currentSidecar = null;
     // Rebuild the Files list (and drop the previous build's map + PNG); a map
-    // dialog left open re-renders with this build's SVG.
+    // dialog left open re-renders with this build's SVG (and, once the sidecar
+    // is in, its Sockets).
     showArtifacts(result.artifacts ?? [], result.id);
     mapDownload.download = `${result.id}.map.svg`;
     if (!mapModal.classList.contains("hidden")) openMap();
@@ -538,8 +558,10 @@ async function runGenerate(params: GenerateParams): Promise<void> {
     treesToggle.disabled = !zoneScene.hasVegetation();
     zoneScene.setVegetationVisible(treesToggle.checked);
     const sidecar = await fetchSidecar(result.zone_url);
+    currentSidecar = sidecar;
     zoneScene.applyOverlays(sidecar);
     updatePanel(result, sidecar);
+    if (!mapModal.classList.contains("hidden")) openMap();
 
     // Place the camera near the zone's lowest/entry corner at a sensible
     // eye height, looking toward the centre. World is Z-up and the mesh is
@@ -567,16 +589,40 @@ async function runGenerate(params: GenerateParams): Promise<void> {
     genDescBtn.disabled = false;
     genCtrlBtn.disabled = false;
     rerollDecorBtn.disabled = !(lastResult && usesControl(lastResult.zone_type, "decor"));
+    rerollRoomsBtn.disabled = !lastResult;
   }
 }
 
-// The decor seed box: blank or non-numeric -> undefined (the zone's seed).
-function readDecorSeed(): number | undefined {
-  const raw = ($("decor-seed") as HTMLInputElement).value.trim();
+// A stage seed box: blank or non-numeric -> undefined (the zone's seed).
+function readStageSeed(id: string): number | undefined {
+  const raw = ($(id) as HTMLInputElement).value.trim();
   if (raw === "") return undefined;
   const n = Number(raw);
   return Number.isFinite(n) ? Math.min(2147483647, Math.abs(Math.trunc(n))) : undefined;
 }
+
+function readDecorSeed(): number | undefined {
+  return readStageSeed("decor-seed");
+}
+
+// Reroll rooms: the last request again, its zone seed pinned to what it built
+// and a fresh rooms seed, so the World stays and the rooms and Sites change
+// (world-sockets Req 4.3). A controls.rooms_seed would win over the top-level
+// one, so it is dropped; a decor seed the request carried rides along.
+rerollRoomsBtn.addEventListener("click", () => {
+  if (!lastParams || !lastResult) return;
+  const roomsSeed = Math.floor(Math.random() * 2147483648);
+  const controls = lastParams.controls ? { ...lastParams.controls } : undefined;
+  if (controls) delete controls.rooms_seed;
+  const params: GenerateParams = {
+    ...lastParams,
+    ...(controls ? { controls } : {}),
+    seed: lastResult.seed,
+    rooms_seed: roomsSeed,
+  };
+  console.log(`[input] reroll rooms: seed=${lastResult.seed} rooms_seed=${roomsSeed}`);
+  runGenerate(params);
+});
 
 // Reroll decor: the last request again, its zone seed pinned to what it built
 // and a fresh decor seed, so only the Props change (room-decor Req 10.2).
@@ -692,7 +738,7 @@ $("reset-view").addEventListener("click", () => {
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
-                  "decor", "decor-seed"]) {
+                  "decor", "decor-seed", "rooms-seed"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });
@@ -722,6 +768,11 @@ async function openMap() {
   try {
     // Inline SVG so it scales crisply; fetched once per build (artifacts.ts).
     mapBody.innerHTML = await loadMapSvg(currentMapUrl);
+    // The Sockets go on the dialog's copy only, so the downloads stay the
+    // server's map; the sidecar comes in after the map URL, so a dialog
+    // opened in between is redrawn with them (runGenerate).
+    const svg = mapBody.querySelector("svg");
+    if (svg && currentSidecar) drawSockets(svg, currentSidecar);
     mapDownload.href = currentMapUrl;
     mapModal.classList.remove("hidden");
   } catch (err) {

@@ -29,6 +29,8 @@ export interface GenerateControls {
   // (a value from /api/controls) and the decor seed that rerolls the Props alone.
   decor?: string;
   decor_seed?: number;
+  // Every zone type: the rooms seed that rerolls the rooms and Sites alone.
+  rooms_seed?: number;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:
@@ -41,6 +43,8 @@ export interface GenerateParams {
   seed?: number;
   // Rerolls the Props alone, in either mode ("Reroll decor").
   decor_seed?: number;
+  // Rerolls the rooms and Sites on the same World, in either mode ("Reroll rooms").
+  rooms_seed?: number;
 }
 
 export interface ZonePlan {
@@ -58,6 +62,8 @@ export interface ZonePlan {
   // Decor ("" = the default) and the decor seed (null = the zone's).
   decor?: string;
   decor_seed?: number | null;
+  // The rooms seed (null = the zone's).
+  rooms_seed?: number | null;
 }
 
 // One file of an accepted build (server/app.py ArtifactRef), in panel order:
@@ -224,6 +230,22 @@ export interface ZoneSidecar {
   decor?: ZoneDecor;
   // Sites (wilderness, outdoor dungeon): each Site's Props ride on its row.
   sites?: { sites?: { props?: ZoneProp[] }[] };
+  // Every stage seed the build used, resolved (world-sockets Req 4.4).
+  seeds?: { seed: number | null; rooms_seed: number | null; decor_seed: number | null };
+  // The World's Sockets and what attached to each (world-sockets task 6).
+  sockets?: ZoneSocket[];
+  // The traced outline (pipeline map post-pass): bounds are
+  // [x0, y0, z0, x1, y1, z1] of the Floor_Region.
+  outline?: { bounds: number[] } | null;
+}
+
+// One Socket in the sidecar (generators/stages.py sockets_sidecar).
+export interface ZoneSocket {
+  id: string;
+  kind: string;                // root | hillside | ground | door
+  point: [number, number, number];
+  side: string;                // N/E/S/W, "" when none
+  attached: { kind: string; rooms?: number; sites?: number } | null;
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {
