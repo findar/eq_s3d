@@ -24,7 +24,7 @@ import subprocess
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -47,7 +47,7 @@ from ai.schema import (
     LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
     SCALE_CONTROLS, VALID_FEATURES, ZonePlan, available_overlays, available_rule_sets, available_wall_styles,
     scale_control, VALID_SITES, available_inhabitants,
-    DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR, decor_seed,
+    DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR, decor_seed, rooms_seed,
 )
 
 # ---------------------------------------------------------------------------
@@ -292,7 +292,7 @@ async def _validation_to_400(request: Request, exc: RequestValidationError):
         field = str(loc[-1]) if loc else "body"
         # The StrictInt fields (seed, rooms) read most clearly as "must be an
         # integer"; everything else keeps the validator's own message.
-        if field in ("seed", "decor_seed", "rooms", "room_count", "locks"):
+        if field in ("seed", "decor_seed", "rooms_seed", "rooms", "room_count", "locks"):
             detail = f"{field} must be an integer"
         else:
             detail = f"{field}: {err.get('msg', 'invalid value')}"
@@ -412,6 +412,24 @@ def _require_sites(c: dict[str, Any], zone_type: Optional[str]) -> Optional[str]
     return given
 
 
+def _require_stage_seed(c: dict[str, Any], key: str, top_seed: Optional[int],
+                        check: Callable[[Any], Optional[int]]) -> None:
+    """Validate a stage seed in the controls (``decor_seed``, ``rooms_seed``) in place,
+    before any build or write. The request's top-level field of the same name (what
+    "Reroll decor" / "Reroll rooms" send, in either mode) fills one the controls don't
+    give; ``null`` is unset (the zone's seed stands in); anything but a whole
+    0..2^31-1 is a 400 naming ``key``."""
+    if c.get(key) is None and top_seed is not None:
+        c[key] = top_seed
+    if key in c and c[key] is None:
+        c.pop(key)
+    if key in c:
+        try:
+            c[key] = check(c[key])
+        except ValueError:
+            raise HTTPException(400, f"{key} must be an integer between {SEED_MIN} and {SEED_MAX}")
+
+
 def _require_decor(c: dict[str, Any], zone_type: Optional[str],
                    top_seed: Optional[int] = None) -> None:
     """Validate ``controls.decor`` / ``controls.decor_seed`` (room-decor
@@ -424,11 +442,9 @@ def _require_decor(c: dict[str, Any], zone_type: Optional[str],
     naming the field; either on a zone type without rooms (wilderness) is a
     400, as ``sites`` is on a type without a landscape.
     """
-    if c.get("decor_seed") is None and top_seed is not None:
-        c["decor_seed"] = top_seed
-    for key in ("decor", "decor_seed"):
-        if key in c and c[key] is None:
-            c.pop(key)
+    _require_stage_seed(c, "decor_seed", top_seed, decor_seed)
+    if c.get("decor") is None:
+        c.pop("decor", None)
     if "decor" in c:
         raw = c["decor"]
         value = raw.strip().lower() if isinstance(raw, str) else None
@@ -436,11 +452,6 @@ def _require_decor(c: dict[str, Any], zone_type: Optional[str],
             raise HTTPException(400, f"decor must be one of {', '.join(VALID_DECOR)} "
                                      f"(or \"\" for the default, {DEFAULT_DECOR})")
         c["decor"] = value
-    if "decor_seed" in c:
-        try:
-            c["decor_seed"] = decor_seed(c["decor_seed"])
-        except ValueError:
-            raise HTTPException(400, f"decor_seed must be an integer between {SEED_MIN} and {SEED_MAX}")
     if zone_type not in DECOR_ZONE_TYPES:
         for key in ("decor", "decor_seed"):
             if c.get(key) not in (None, ""):
@@ -596,7 +607,8 @@ class GenerateRequest(BaseModel):
                     "outdoor_dungeon only), dungeon_theme and dungeon_race "
                     "(\"\" for none; dungeon, city and outdoor_dungeon "
                     "only), decor (none/sparse/normal/dense, \"\" for normal) and "
-                    "decor_seed (dungeon, city and outdoor_dungeon only), …",
+                    "decor_seed (dungeon, city and outdoor_dungeon only), rooms_seed "
+                    "(the rooms and Sites; every zone type), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.
@@ -606,6 +618,12 @@ class GenerateRequest(BaseModel):
     # decor" resends the last request with ``seed`` pinned and a fresh one.
     decor_seed: Optional[StrictInt] = Field(
         default=None, description="Decor seed: reroll the Props alone (omit for the zone's seed)")
+    # Rerolls the rooms and Sites on the same World (world-sockets Req 4.1), in
+    # either mode: "Reroll rooms" resends the last request with ``seed`` pinned
+    # and a fresh one. The World is re-derived from ``seed``; nothing is read back.
+    rooms_seed: Optional[StrictInt] = Field(
+        default=None, description="Rooms seed: reroll the rooms and Sites on the same World "
+                                  "(omit for the zone's seed)")
 
     # Legacy flat fields (mode absent -> inferred), kept for back-compat with
     # pre-mode clients. ``zone_type`` is preferred over the legacy ``theme``;
@@ -751,6 +769,9 @@ def generate(req: GenerateRequest):
     if req.decor_seed is not None and not (SEED_MIN <= req.decor_seed <= SEED_MAX):
         raise HTTPException(
             400, f"decor_seed must be between {SEED_MIN} and {SEED_MAX}")
+    if req.rooms_seed is not None and not (SEED_MIN <= req.rooms_seed <= SEED_MAX):
+        raise HTTPException(
+            400, f"rooms_seed must be between {SEED_MIN} and {SEED_MAX}")
 
     plan_dict = None
     planner_name = None
@@ -797,6 +818,9 @@ def generate(req: GenerateRequest):
         # wilderness has none, so it changes nothing there).
         if req.decor_seed is not None:
             plan.decor_seed = req.decor_seed
+        # A rooms seed rerolls its rooms and Sites on the same World.
+        if req.rooms_seed is not None:
+            plan.rooms_seed = req.rooms_seed
         plan_dict = plan.to_dict()
         zone_type = plan.zone_type
         rooms = plan.room_count
@@ -847,6 +871,7 @@ def generate(req: GenerateRequest):
         _require_layout(c, canonical_zone_type(raw_zone_type))
         _require_content(c, canonical_zone_type(raw_zone_type))
         _require_decor(c, canonical_zone_type(raw_zone_type), req.decor_seed)
+        _require_stage_seed(c, "rooms_seed", req.rooms_seed, rooms_seed)
 
         # Proven equal to the legacy LayoutGenerator path by the 17.4 golden test.
         # ``validate()`` raises ValueError on a value it refuses (an unknown
