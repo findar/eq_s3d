@@ -62,7 +62,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: generators/sites/placement.py, generators/vegetation/placement.py (`ground_for` from a World), generators/wilderness/build.py (`sites_for`), generators/stages.py, tests/test_attach_ground.py
   - Reqs: 3.2, 3.3, 6.1
 
-- [ ] 6. The stages in the build; hand-offs saved
+- [x] 6. The stages in the build; hand-offs saved
   - Card: [cards/06-handoffs.md](cards/06-handoffs.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: generators/builder.py, generators/pipeline.py (the post-pass writes the hand-offs), generators/stages.py, tests/test_handoffs.py

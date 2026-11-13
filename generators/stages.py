@@ -22,7 +22,7 @@ P6, Req 3.3.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Any, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -62,7 +62,15 @@ class Attachment:
     (its ``floor_limit`` and ``rock_cover`` are what the spec records), the rooms asked for,
     its Terrain edits (the Apron) and the Kept_Clear shapes later Sockets keep off
     (``keep_clear``: the hill, Tunnel and Apron). For a ``ground`` Socket: the Sites
-    (``sites``, a ``SitePlacement``)."""
+    (``sites``, a ``SitePlacement``). For a ``root`` Socket: the layout alone.
+
+    ``seed`` is the seed it was attached with (:func:`rooms_seed`'s); ``controls`` the
+    Sites controls a ``ground`` Attachment was made with (``biome``, ``control``,
+    ``inhabitant``), so it can be made again from the World file and this.
+
+    Read back from its JSON form (:meth:`from_dict`), ``layout``, ``envelope`` and
+    ``sites`` are the plain dicts the file holds (the Envelope's ``floor_limit`` and
+    ``rock_cover``; ``SitePlacement.to_dict``), ``entrance`` an ``Entrance``."""
     socket: str
     kind: str
     layout: Any = None
@@ -73,6 +81,127 @@ class Attachment:
     edits: List[TerrainEdit] = field(default_factory=list)
     keep_clear: Tuple[ClearShape, ...] = ()
     sites: Any = None
+    seed: Optional[int] = None
+    controls: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        """The JSON form, every number exact (``world.dumps`` writes it)."""
+        from generators.world import _plain
+
+        env = self.envelope
+        if env is not None and not isinstance(env, Mapping):
+            env = {"floor_limit": env.floor_limit, "rock_cover": env.rock_cover}
+        ent = self.entrance
+        if ent is not None and not isinstance(ent, Mapping):
+            ent = ent.to_dict()
+        sites = self.sites
+        if sites is not None and not isinstance(sites, Mapping):
+            sites = sites.to_dict()
+        return _plain({
+            "socket": self.socket, "kind": self.kind,
+            "layout": _layout_dict(self.layout), "warnings": list(self.warnings),
+            "entrance": ent, "envelope": env, "rooms_requested": int(self.rooms_requested),
+            "edits": [{"socket": e.socket, "cells": [list(c) for c in e.cells],
+                       "spawn": None if e.spawn is None else list(e.spawn)} for e in self.edits],
+            "keep_clear": [list(s) for s in self.keep_clear],
+            "sites": sites, "seed": self.seed, "controls": dict(self.controls)})
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]) -> "Attachment":
+        from generators.outdoor_dungeon import Entrance
+
+        return cls(socket=d["socket"], kind=d["kind"], layout=d["layout"],
+                   warnings=list(d["warnings"]),
+                   entrance=None if d["entrance"] is None else Entrance.from_dict(d["entrance"]),
+                   envelope=d["envelope"], rooms_requested=d["rooms_requested"],
+                   edits=[TerrainEdit(socket=e["socket"],
+                                      cells=tuple((int(i), int(j), float(z)) for i, j, z in e["cells"]),
+                                      spawn=None if e["spawn"] is None else tuple(e["spawn"]))
+                          for e in d["edits"]],
+                   keep_clear=tuple(tuple(s) for s in d["keep_clear"]),
+                   sites=d["sites"], seed=d["seed"], controls=dict(d["controls"]))
+
+
+#: What a layout's JSON form holds of its ``ZoneSpec``: what the host spec gets from it.
+LAYOUT_KEYS = ("rooms", "corridors", "lights", "gates", "layout")
+
+
+def _layout_dict(layout) -> Optional[dict]:
+    if layout is None or isinstance(layout, Mapping):
+        return layout
+    d = layout.to_dict()
+    return {k: d.get(k) for k in LAYOUT_KEYS}
+
+
+# -- the hand-off files ---------------------------------------------------------
+
+#: The Attachments file's version (``<name>.attach.json``).
+ATTACH_VERSION = 1
+
+
+def attachments_json(attachments: Sequence[Attachment]) -> str:
+    """The Attachments file's stable text: its version and each Attachment in attach order,
+    floats as ``repr`` (``world.dumps``)."""
+    from generators.world import dumps
+    return dumps({"version": ATTACH_VERSION,
+                  "attachments": [a.to_dict() for a in attachments]}) + "\n"
+
+
+def attachments_from_json(text: str, source: Optional[str] = None) -> List[Attachment]:
+    """The Attachments of a file's text; another version is refused, naming the file
+    (``source``) and both versions."""
+    import json
+    doc = json.loads(text)
+    got = doc.get("version")
+    if got != ATTACH_VERSION:
+        where = f"{source}: " if source else ""
+        raise ValueError(f"{where}Attachments version {got!r}; this reads version {ATTACH_VERSION}")
+    return [Attachment.from_dict(a) for a in doc["attachments"]]
+
+
+def load_attachments(path) -> List[Attachment]:
+    """Read ``<name>.attach.json``."""
+    from pathlib import Path
+    return attachments_from_json(Path(path).read_text(encoding="utf-8"), source=str(path))
+
+
+def rooms_json(recipe: Mapping[str, Any], rooms: Sequence[Any]) -> str:
+    """``<name>.rooms.json``: the RoomContexts a build made, in the room corpus's form
+    (``room_context.save``; read with ``room_context.load``)."""
+    from generators import room_context as rc
+    return rc.dumps({"version": rc.VERSION, "recipe": rc._clean(dict(recipe)),
+                     "rooms": [c.to_dict() for c in rooms]}) + "\n"
+
+
+def handoffs(name: str, world: World, attachments: Sequence[Attachment],
+             rooms: Sequence[Any], recipe: Mapping[str, Any]) -> Dict[str, str]:
+    """The hand-off files of one build, file name -> text: ``<name>.world.json``,
+    ``<name>.attach.json`` and ``<name>.rooms.json`` (``recipe`` is the rooms file's)."""
+    return {f"{name}.world.json": world.to_json(),
+            f"{name}.attach.json": attachments_json(attachments),
+            f"{name}.rooms.json": rooms_json(recipe, rooms)}
+
+
+def sockets_sidecar(world: World, attachments: Sequence[Attachment]) -> List[dict]:
+    """The sidecar's ``sockets`` block: each Socket's id, kind, point, side and what attached
+    (``None`` when nothing did): ``{"kind": "dungeon" | "city", "rooms": n}`` or
+    ``{"kind": "sites", "sites": n}``. Advisory."""
+    by_socket = {a.socket: a for a in attachments}
+    out = []
+    for s in world.sockets:
+        a = by_socket.get(s.id)
+        what = None
+        if a is not None and a.kind == "ground":
+            sites = a.sites.get("sites", []) if isinstance(a.sites, Mapping) else \
+                (a.sites.sites if a.sites is not None else [])
+            what = {"kind": "sites", "sites": len(sites)}
+        elif a is not None:
+            layout = _layout_dict(a.layout) or {}
+            kind = world.recipe.get("zone_type") if s.kind == "root" else "dungeon"
+            what = {"kind": kind, "rooms": len(layout.get("rooms") or [])}
+        out.append({"id": s.id, "kind": s.kind, "point": [s.x, s.y, s.z], "side": s.side,
+                    "attached": what})
+    return out
 
 
 def attach_rooms(world: World, socket: Socket, fields: Mapping[str, Any],
@@ -115,7 +244,7 @@ def attach_rooms(world: World, socket: Socket, fields: Mapping[str, Any],
                       warnings=list(warnings), entrance=entrance, envelope=envelope,
                       rooms_requested=room_count,
                       edits=[apron_edit(world, socket, grid, entrance)],
-                      keep_clear=entrance_keep_clear(world, socket, entrance))
+                      keep_clear=entrance_keep_clear(world, socket, entrance), seed=seed)
 
 
 def entrance_attachment(world: World, socket: Socket, entrance) -> Attachment:
@@ -189,7 +318,8 @@ def attach_sites(world: World, socket: Socket, seed: int, *, biome: str = "plain
         raise ValueError(f"Socket {socket.id!r}: its World has no terrain")
     placement = place_sites(world.terrain, socket, seed, biome=biome, control=control,
                             inhabitant=inhabitant, rules=rules)
-    return Attachment(socket=socket.id, kind=socket.kind, sites=placement)
+    return Attachment(socket=socket.id, kind=socket.kind, sites=placement, seed=int(seed),
+                      controls={"biome": biome, "control": control, "inhabitant": inhabitant})
 
 
 def apron_edit(world: World, socket: Socket, grid, entrance) -> TerrainEdit:
@@ -248,6 +378,43 @@ def apply_edits(world: World, attachments: Sequence[Attachment]) -> World:
     return replace(world, terrain=terrain, spawn=spawn, sockets=sockets)
 
 
-__all__ = ["Attachment", "ClearShape", "ORDER", "TerrainEdit", "apply_edits", "apron_edit",
-           "attach_rooms", "attach_sites", "entrance_attachment", "entrance_keep_clear",
-           "rooms_seed"]
+def build_attachments(spec, world: World, sites=None) -> List[Attachment]:
+    """The Attachments a built ``spec`` holds on its ``world``, in attach order: the rooms
+    (planned in ``plan_to_spec``, read off the spec) on the ``root`` or ``hillside`` Socket,
+    then, on a ``ground`` Socket, ``sites`` (the build's ``SitePlacement``; Sites are made in
+    the build). A ``hillside`` Attachment's edits and Kept_Clear come from the spec's
+    Entrance (:func:`entrance_attachment`), as the ground Socket saw them."""
+    from generators.sites.placement import SitePlacement
+
+    seed = rooms_seed(int(spec.seed or 0))
+    payload = spec.wilderness or {}
+    out: List[Attachment] = []
+    for socket in sorted(world.sockets, key=lambda s: ORDER.index(s.kind)):
+        if socket.kind == "root":
+            out.append(Attachment(socket=socket.id, kind=socket.kind, layout=spec, seed=seed))
+        elif socket.kind == "hillside" and "dungeon" in payload:
+            from generators.outdoor_dungeon import Entrance
+            data = payload["dungeon"]
+            att = entrance_attachment(world, socket, Entrance.from_dict(data["entrance"]))
+            att.layout = spec
+            att.warnings = list(data["warnings"])
+            att.envelope = {"floor_limit": data["floor_limit"], "rock_cover": data["rock_cover"]}
+            att.rooms_requested = data["rooms_requested"]
+            att.seed = seed
+            out.append(att)
+        elif socket.kind == "ground":
+            from generators.wilderness.build import DEFAULT_BIOME, DEFAULT_SITES
+            control = getattr(spec, "sites", DEFAULT_SITES) or DEFAULT_SITES
+            placement = sites if sites is not None else SitePlacement(
+                sites=[], drops=[], target=0, walkable_area=0.0, control=control, band=(0.0, 0.0))
+            out.append(Attachment(socket=socket.id, kind=socket.kind, sites=placement, seed=seed,
+                                  controls={"biome": payload.get("biome", DEFAULT_BIOME),
+                                            "control": control,
+                                            "inhabitant": getattr(spec, "inhabitant", "") or ""}))
+    return out
+
+
+__all__ = ["ATTACH_VERSION", "Attachment", "ClearShape", "LAYOUT_KEYS", "ORDER", "TerrainEdit",
+           "apply_edits", "apron_edit", "attach_rooms", "attach_sites", "attachments_from_json",
+           "attachments_json", "build_attachments", "entrance_attachment", "entrance_keep_clear",
+           "handoffs", "load_attachments", "rooms_json", "rooms_seed", "sockets_sidecar"]
