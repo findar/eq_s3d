@@ -84,7 +84,7 @@ stream. "Where" and "what" are interleaved in that stream.
 
 ### What every build recomputes that a hand-off could skip
 
-- The outdoor dungeon's host TER, twice per build (plan and build). Cheap (finding 2), but
+- The outdoor dungeon's host TER, twice per build (plan and build). Cheap (finding 1), but
   the planner needs no TER at all, only the grid.
 - On a decor reroll (`decor_seed`), the planner, the whole TER, the gate and the maps, though
   only Props change. On a gate failure, a fresh seed for world, rooms and Props alike.
@@ -489,7 +489,7 @@ These go to the user; each has a recommendation and what follows from it.
    follow-up and Req 8 is dropped.
 
 8. **What should the suite's targets be?**
-   *Recommended: the fast suite under 5 minutes, the full suite under 25 (today 53.5 minutes,
+   *Recommended: the fast suite under 5 minutes, the full suite under 25 (today 42 minutes idle,
    finding 2), with every first-try and band check kept.* The fast suite is what agents
    iterate on; the full suite is run once before ticking a task. The fast suite wasn't timed
    separately here; task 1 does, and may revise the targets with your word. Most of the

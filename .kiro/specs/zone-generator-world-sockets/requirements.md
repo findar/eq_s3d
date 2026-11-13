@@ -33,7 +33,8 @@ Today one seed drives everything and the stages are tangled (design "Today's pip
 - The layout uses the same seed as the terrain, so rooms can't be rerolled on the same world.
   A decor reroll (`decor_seed`) re-runs the planner, the whole build and the gate.
 - Tests that need a hill, a Site or a room build a zone, and most run the gate. The full suite
-  took 53.5 minutes at `ad392b8`, almost all of it in gate sweeps (design finding 2).
+  took 42 minutes idle at `0688fa8` (the fast suite 16), almost all of it in gate sweeps (design
+  finding 2).
 
 This spec sits under the umbrella `zone-generator` (`.kiro/specs/zone-generator/`). "Req X.Y"
 below means a requirement of THIS spec unless it says "umbrella".
