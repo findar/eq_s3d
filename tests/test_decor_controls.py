@@ -169,11 +169,12 @@ def test_reroll_decor_changes_only_the_props_and_both_maps_show_them(client):
     (_, sa), (build, sb) = built(a), built(b)
     assert (sa["decor"]["control"], sa["decor"]["seed"]) == ("dense", 4)
     assert (sb["decor"]["control"], sb["decor"]["seed"]) == ("dense", 99)
-    rows = lambda s: [(p["key"], p["x"], p["y"]) for r in s["rooms"] for p in r.get("props", [])]
+    rows = lambda s: [(p["key"], p["x"], p["y"])
+                      for r in s["rooms"] + s.get("corridors", []) for p in r.get("props", [])]
     assert rows(sa) != rows(sb)
     assert [r["center"] for r in sa["rooms"]] == [r["center"] for r in sb["rooms"]]
 
-    props = [p for r in sb["rooms"] for p in r.get("props", [])]
+    props = [p for r in sb["rooms"] + sb.get("corridors", []) for p in r.get("props", [])]
     floor = sum(1 for p in props if p["mount"] == "floor")
     svg = (build / f"{b['id']}.map.svg").read_text(encoding="utf-8")
     assert svg.count('class="prop-footprint"') == floor > 0
@@ -269,6 +270,6 @@ def test_p10_a_decor_seed_changes_only_props(tmp_path):
     assert placed[0] and placed[0] != placed[1]
     side = json.loads(builds[1].sidecar_path.read_text(encoding="utf-8"))
     marks = prop_marks(builds[1].eqg_path, side)
-    rows = [p for r in side["rooms"] for p in r.get("props", [])]
+    rows = [p for r in side["rooms"] + side.get("corridors", []) for p in r.get("props", [])]
     assert len(marks.points) == len(rows) == side["decor"]["props"]
     assert len(marks.footprints) == sum(1 for p in rows if p["mount"] == "floor")
