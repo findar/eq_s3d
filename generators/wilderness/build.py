@@ -22,6 +22,7 @@ biome kit (``biome.py`` over ``styles/biomes.json``, task 7).
 
 from __future__ import annotations
 
+import json
 import zlib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -482,11 +483,29 @@ class Sites:
                      for i, s in enumerate(self.placement.sites) for p in s.pois)
 
 
-def sites_for(spec: ZoneSpec, ter: TerFile) -> Sites:
-    """The Sites for a wilderness (or outdoor-dungeon) spec and its built TER.
-    Pure; cached on the landscape inputs, the controls and the TER's heights,
-    so the builder, the trees and the gate share one result. An outdoor
-    dungeon's Apron, Tunnel, Mouth and Host_Hill are kept clear."""
+class _SpecRef:
+    """Carries the spec into the cached ``_sites`` without making it part of the key (the
+    World's inputs and the Entrance are the key; equal inputs give equal Worlds)."""
+
+    def __init__(self, spec: ZoneSpec):
+        self.spec = spec
+
+    def __hash__(self) -> int:
+        return 0
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, _SpecRef)
+
+
+def sites_for(spec: ZoneSpec, ter: Optional[TerFile] = None) -> Sites:
+    """The Sites for a wilderness (or outdoor-dungeon) spec: the ``ground`` Socket of the
+    spec's World (``world_of``) attached after the outdoor dungeon's Entrance, whose Apron
+    is applied as a Terrain edit and whose hill, Tunnel and Apron are Kept_Clear
+    (``stages.entrance_attachment``, ``stages.apply_edits``, ``stages.attach_sites``).
+
+    ``ter`` (the built TER) is not read: the World with the Apron applied holds the same
+    grid. Pure; cached on the World's inputs, the Entrance and the controls, so the builder,
+    the trees and the gate share one result."""
     from generators.sites.rules import DENSITIES
 
     payload = spec.wilderness or {}
@@ -496,27 +515,40 @@ def sites_for(spec: ZoneSpec, ter: TerFile) -> Sites:
                          f"expected one of {', '.join(DENSITIES)}")
     edges = normalise_edges(payload.get("edges"))
     landform, zone_size = _landform_args(payload)
-    keep_clear: Tuple[Tuple[float, ...], ...] = ()
+    entrance = None
     if control != "none" and "dungeon" in payload:
-        from generators.outdoor_dungeon import keep_clear_shapes
-        keep_clear = keep_clear_shapes(spec)
+        entrance = json.dumps(payload["dungeon"]["entrance"], sort_keys=True)
     return _sites(int(spec.seed) & 0x7FFFFFFF,
                   tuple((s, edges[s]) for s in DEFAULT_SIDES),
                   payload.get("biome", DEFAULT_BIOME), control,
                   getattr(spec, "inhabitant", "") or "",
                   getattr(spec, "sites_source", "default") or "default",
-                  (float(spec.safe_point[0]), float(spec.safe_point[1])),
-                  _ter_fingerprint(ter), _TerRef(ter), landform, zone_size, keep_clear)
+                  spec.zone_type, landform, zone_size, entrance, _SpecRef(spec))
+
+
+def _ground_world(spec: ZoneSpec, entrance: Optional[str]):
+    """The spec's World with its Entrance's Attachment applied: what the ground Socket
+    attaches to."""
+    from generators import stages
+    from generators.world import world_of
+
+    world = world_of(spec)
+    if entrance is None:
+        return world
+    from generators.outdoor_dungeon import Entrance
+    att = stages.entrance_attachment(world, world.socket("hill0"),
+                                     Entrance.from_dict(json.loads(entrance)))
+    return stages.apply_edits(world, [att])
 
 
 @lru_cache(maxsize=8)
 def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: str,
-           inhabitant: str, source: str, spawn_xy: Tuple[float, float], _fp: int,
-           ter_ref: _TerRef, landform: Optional[Landform] = None,
-           zone_size: float = DEFAULT_ZONE_SIZE,
-           keep_clear: Tuple[Tuple[float, ...], ...] = ()) -> Sites:
+           inhabitant: str, source: str, zone_type: str,
+           landform: Optional[Landform] = None, zone_size: float = DEFAULT_ZONE_SIZE,
+           entrance: Optional[str] = None, spec_ref: Optional[_SpecRef] = None) -> Sites:
+    from generators import stages
     from generators.sites.models import model_name, structure_model
-    from generators.sites.placement import SitePlacement, place_sites
+    from generators.sites.placement import SitePlacement
     from generators.sites.rules import load_sites
     from generators.textures.sites import site_texture, site_texture_name
 
@@ -528,10 +560,10 @@ def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: s
         if inhabitant and inhabitant not in rules.inhabitants:
             raise ValueError(f"unknown Inhabitant {inhabitant!r}; "
                              f"expected one of {', '.join(sorted(rules.inhabitants))}")
-        land = _landscape(seed, edges, biome, landform, zone_size)
-        placement = place_sites(land, ter_ref.ter, seed, biome=biome, control=control,
-                                inhabitant=inhabitant, rules=rules, spawn_xy=spawn_xy,
-                                keep_clear=keep_clear)
+        world = _ground_world(spec_ref.spec, entrance)
+        placement = stages.attach_sites(world, world.socket("ground"), stages.rooms_seed(seed),
+                                        biome=biome, control=control, inhabitant=inhabitant,
+                                        rules=rules).sites
 
     models: Dict[str, TerFile] = {}
     textures: Dict[str, bytes] = {}

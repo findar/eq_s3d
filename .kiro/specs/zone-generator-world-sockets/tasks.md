@@ -56,7 +56,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: generators/outdoor_dungeon.py, generators/stages.py, ai/expand.py (the outdoor-dungeon branch only), tests/test_attach_hillside.py
   - Reqs: 2.4, 3.1, 3.5, 6.1
 
-- [ ] 5. Sites attach to the ground Socket
+- [x] 5. Sites attach to the ground Socket
   - Card: [cards/05-ground.md](cards/05-ground.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: generators/sites/placement.py, generators/vegetation/placement.py (`ground_for` from a World), generators/wilderness/build.py (`sites_for`), generators/stages.py, tests/test_attach_ground.py

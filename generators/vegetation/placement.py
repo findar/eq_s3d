@@ -275,12 +275,25 @@ def ground_for(land, ter: TerFile, spawn_xy: Tuple[float, float],
     """The placement ground for a synthesized landscape and its built TER.
     ``keep_clear`` grows Kept_Clear by every quad a shape touches."""
     synth = land.synth
-    h = ter_heights(ter, synth.heights.shape)
-    res = float(synth.resolution)
-    elig = eligible_quads(h, synth.node_type, synth.rim_seal_mask, synth.origin, res, spawn_xy)
+    return _ground(ter_heights(ter, synth.heights.shape), synth.node_type, synth.rim_seal_mask,
+                   tuple(synth.origin), float(synth.resolution), spawn_xy, keep_clear)
+
+
+def ground_of(terrain, spawn_xy: Tuple[float, float],
+              keep_clear: Sequence[ClearShape] = ()) -> Ground:
+    """:func:`ground_for` from a World's ``Terrain`` (world-sockets task 5): its height
+    grid (the TER's grid vertex Zs, with any Terrain edits applied), cell types and Rim
+    seal. The same floats as the built TER's grid, so the same ground."""
+    return _ground(terrain.heights, terrain.node_type, terrain.rim_seal,
+                   tuple(terrain.origin), float(terrain.res), spawn_xy, keep_clear)
+
+
+def _ground(h: np.ndarray, node_type, rim_seal, origin: Tuple[float, float], res: float,
+            spawn_xy: Tuple[float, float], keep_clear: Sequence[ClearShape]) -> Ground:
+    elig = eligible_quads(h, node_type, rim_seal, origin, res, spawn_xy)
     if keep_clear:
-        elig &= ~shapes_touch_quads(elig.shape, tuple(synth.origin), res, keep_clear)
-    return Ground(heights=h, origin=tuple(synth.origin), res=res, eligible=elig)
+        elig &= ~shapes_touch_quads(elig.shape, origin, res, keep_clear)
+    return Ground(heights=h, origin=origin, res=res, eligible=elig)
 
 
 # ---------------------------------------------------------------------------
