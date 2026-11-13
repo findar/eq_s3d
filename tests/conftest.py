@@ -47,6 +47,18 @@ settings.load_profile("default")
 # 2. Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _restore_tempdir():
+    """`main.main(["generate", ...])` points the process-wide
+    `tempfile.tempdir` at its output's `.tmp`, which a test's `tmp_path`
+    deletes later; every later test on that worker then fails in scipy's temp
+    files with FileNotFoundError. Put it back after each test."""
+    import tempfile
+    saved = tempfile.tempdir
+    yield
+    tempfile.tempdir = saved
+
+
 # API-key environment variables the no_api_keys fixture clears.
 _API_ENV_VARS = (
     "OPENAI_API_KEY",
