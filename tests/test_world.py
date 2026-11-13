@@ -190,3 +190,58 @@ def test_outdoor_dungeon_host_and_entry_exact(seed, edges):
     assert {tuple(p) for p in hill.ground["undiggable"]} == keep
     # The Spawn before the Apron: the Apron only ever lowers the spec's.
     assert w.spawn[:2] == tuple(spec.safe_point[:2]) and spec.safe_point[2] <= w.spawn[2]
+    # One landscape (task 20): the spec's regions and water are the World's.
+    assert w.regions == [dataclasses.asdict(r) for r in spec.regions]
+    assert spec.water_level == t.water_level
+
+
+def test_apron_spawn_is_never_under_the_shipped_floor(monkeypatch):
+    """Task 20: a Spawn the Apron lowers is stored as the 32-bit float at or above the dug
+    ground, so the TER's (32-bit) floor is never above it (fortress troll seed 3 failed the
+    format check's ``safe_point`` by 4.8e-7 u). A fake Apron digs 31.103 u everywhere."""
+    from types import SimpleNamespace
+
+    from generators import outdoor_dungeon as od
+    from generators import stages
+
+    z = np.full((4, 4), -5.009791374206543)              # float32-exact, as the bowl's are
+    grid = SimpleNamespace(z=z, origin=(-60.0, -60.0), res=40.0)
+    monkeypatch.setattr(od, "_apron", lambda g, e: (g.z - 31.103078365325928, False))
+    world = SimpleNamespace(spawn=(-20.0, -20.0, float(z[1, 1])))
+    edit = stages.apron_edit(world, SimpleNamespace(id="hill0"), grid, None)
+    sz = edit.spawn[2]
+    assert float(np.float32(sz)) == sz                   # what the TER can store
+    assert sz >= -5.009791374206543 - 31.103078365325928
+    assert float(np.float32(z[1, 1] - 31.103078365325928)) <= sz   # the TER's floor there
+
+
+def _spawn_vertex(w: World):
+    t = w.terrain
+    i, j = (round((v - o) / t.res - 0.5) for v, o in zip(w.spawn[:2], t.origin))
+    return i, j
+
+
+def test_outdoor_dungeon_reads_one_landscape_seeds_0_39():
+    """Task 20: for seeds 0-39 an outdoor dungeon's World (``world_for`` alone, no TER and no
+    planning) takes its Spawn, regions and water from the placed Landform's landscape, the one
+    its terrain is, and the Spawn stands on that terrain's ground."""
+    from generators.wilderness.bowl import _spawn_world_point
+    from generators.wilderness.build import landscape_for, wilderness_spec
+    from generators.wilderness.matrix import DEFAULT_HOST_HILL, Landform
+    from generators.wilderness.matrix import OUTDOOR_DUNGEON_ZONE_SIZE as SIZE
+
+    for seed in range(40):
+        w = W.world_for("outdoor_dungeon", seed)
+        placed = Landform.from_dict(w.recipe["landform"])
+        assert w.socket("hill0").ground["landform"] == w.recipe["landform"], seed
+        # Asked for with the request or with what it places, the World is the same.
+        assert W.world_for("outdoor_dungeon", seed, landform=placed).to_json() == w.to_json()
+        land = landscape_for(wilderness_spec("p", seed, landform=placed, zone_size=SIZE))
+        assert land.matrix.landform == placed, seed
+        assert w.spawn == _spawn_world_point(land.synth, land.matrix, land.bowl.heights), seed
+        assert w.terrain.water_level == float(land.matrix.water_level), seed
+        assert w.regions[:len(land.bowl.regions)] == [dataclasses.asdict(r)
+                                                       for r in land.bowl.regions], seed
+        i, j = _spawn_vertex(w)
+        assert w.spawn[2] == w.terrain.heights[i, j], seed
+        assert DEFAULT_HOST_HILL.approach is None   # the request is the unplaced hill

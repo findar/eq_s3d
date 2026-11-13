@@ -388,17 +388,19 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
       (``grid_heights``: after the water bed sinks); ``bowl_heights`` the grid before, when
       it differs; the cell types, Rim seal and playable-interior masks are the synth's.
     - ``spawn`` and ``regions``: what ``wilderness_spec`` records in the spec (the safe
-      point before any Apron lowers it). These come from the landscape of the Landform
-      REQUEST, as today's spec does; for an outdoor dungeon that landscape differs from the
-      placed one on most seeds (same Spawn XY, another Z), and the World keeps both as the
-      spec and TER have them so no build moves.
+      point before any Apron lowers it), from the same landscape as ``terrain`` (task 20).
     - Sockets, in attach order: an outdoor dungeon's ``hill0`` (``hillside``, from
       ``outdoor_dungeon.hillside_socket``), then ``ground`` (Sites; its ``keep_clear`` is
       empty until an Attachment adds to it).
 
     ``landform`` is the request (a ``Landform`` or its dict): an outdoor dungeon's defaults
-    to ``DEFAULT_HOST_HILL`` and its ``zone_size`` to ``OUTDOOR_DUNGEON_ZONE_SIZE``. The
-    ``recipe`` records the inputs (``landform`` as asked)."""
+    to ``DEFAULT_HOST_HILL`` and its ``zone_size`` to ``OUTDOOR_DUNGEON_ZONE_SIZE``. A
+    request without an approach side draws one from the matrix's stream, which a placed
+    Landform (side and centre set) doesn't, so the two make different landscapes. The World
+    is made on the PLACED Landform: it is placed once, then asked for again as placed (a
+    placed Landform places to itself), and everything here reads that one landscape. The
+    ``recipe`` records the placed Landform, so asking with the request or with what it
+    places gives the same World."""
     from generators.zone_types import DEFINED_ZONE_TYPES, LANDSCAPE_ZONE_TYPES
 
     if zone_type not in DEFINED_ZONE_TYPES:
@@ -411,7 +413,8 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
 
     from generators.wilderness.biome import load_biome_kit
     from generators.wilderness.build import (DEFAULT_BIOME, grid_heights, landscape_for,
-                                             normalise_edges, wilderness_spec)
+                                             normalise_edges, synthesize_landscape,
+                                             wilderness_spec)
     from generators.wilderness.matrix import DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE
 
     if seed is None:
@@ -423,8 +426,12 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
         request = request if request is not None else DEFAULT_HOST_HILL
         zone_size = zone_size if zone_size else OUTDOOR_DUNGEON_ZONE_SIZE
     zone_size = float(zone_size) if zone_size else None
-    # The spec's own fields (regions, Spawn, the placed Landform) as plan_to_spec makes them.
-    spec = wilderness_spec("world", seed, edges, biome, landform=request, zone_size=zone_size)
+    placed = None
+    if request is not None:
+        placed = synthesize_landscape(seed, edges, biome, request, zone_size).matrix.landform
+    # The spec's own fields (regions, Spawn, water) as plan_to_spec makes them, on the
+    # placed Landform's landscape: the one the TER, planning and Sites read.
+    spec = wilderness_spec("world", seed, edges, biome, landform=placed, zone_size=zone_size)
     land = landscape_for(spec)
     heights = grid_heights(land, load_biome_kit(biome))
     bowl = np.asarray(land.bowl.heights, dtype=np.float64)
@@ -444,7 +451,7 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
                                   "spawn": list(spawn), "keep_clear": []}))
     recipe = {"zone_type": zone_type, "seed": seed, "biome": biome, "edges": edges,
               "zone_size": zone_size,
-              "landform": None if request is None else request.to_dict()}
+              "landform": None if placed is None else placed.to_dict()}
     return World(recipe=recipe, terrain=terrain, regions=[asdict(r) for r in spec.regions],
                  spawn=spawn, sockets=sockets)
 
@@ -453,28 +460,14 @@ def world_of(spec) -> World:
     """The World a spec was made on, from its zone type, seed and ``wilderness`` payload
     (``biome``, ``edges``, ``zone_size``, ``landform``); the spec is not changed.
 
-    The payload records the PLACED Landform, not the request. An outdoor dungeon's request
-    is always ``DEFAULT_HOST_HILL`` (``outdoor_dungeon_spec``), so that is what is asked
-    for again, and the placed Landform must come out as the payload records it; any other
-    spec with a Landform is re-made with the placed one as its request (``landscape_for``
-    reads it that way). Raises ``ValueError`` when the payload's Landform isn't re-made."""
+    The payload records the PLACED Landform, which places to itself, so it is asked for as
+    it is: the World is the landscape ``landscape_for`` reads, whatever the request was."""
     payload = spec.wilderness or {}
     if spec.zone_type not in ("wilderness", "outdoor_dungeon") or not payload:
         return world_for(spec.zone_type, spec.seed)
-    landform = payload.get("landform")
-    if spec.zone_type == "outdoor_dungeon":
-        from generators.wilderness.matrix import DEFAULT_HOST_HILL
-        landform = DEFAULT_HOST_HILL
-    w = world_for(spec.zone_type, spec.seed, biome=payload.get("biome"),
-                  edges=payload.get("edges"), zone_size=payload.get("zone_size"),
-                  landform=landform)
-    placed = payload.get("landform")
-    if placed is not None and spec.zone_type == "outdoor_dungeon":
-        got = w.socket("hill0").ground["landform"]
-        if _landform(got) != _landform(placed):
-            raise ValueError(f"spec {spec.name!r}: its Landform {placed} is not the one "
-                             f"its request places ({got})")
-    return w
+    return world_for(spec.zone_type, spec.seed, biome=payload.get("biome"),
+                     edges=payload.get("edges"), zone_size=payload.get("zone_size"),
+                     landform=payload.get("landform"))
 
 
 __all__ = ["KINDS", "NODE_CODES", "ROOT_ACCEPTS", "Socket", "Terrain", "VERSION", "World",

@@ -8,8 +8,8 @@
    "W": "mountain"
   },
   "landform": {
-   "approach": null,
-   "centre": [0.0,0.0],
+   "approach": "E",
+   "centre": [-150.0,0.0],
    "flank": 300.0,
    "kind": "hill",
    "radius": 250.0,

@@ -959,10 +959,14 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     from generators import stages
     from generators.world import world_for
 
-    spec = wilderness_spec(name, seed, edges, biome, landform=DEFAULT_HOST_HILL,
+    # The World places DEFAULT_HOST_HILL once; the spec is made on the Landform as placed,
+    # so its Spawn, regions, water and materials are the landscape the TER is (task 20).
+    world = world_for("outdoor_dungeon", seed, biome=biome, edges=edges,
+                      landform=DEFAULT_HOST_HILL, zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
+    spec = wilderness_spec(name, seed, edges, biome,
+                           landform=Landform.from_dict(world.recipe["landform"]),
                            zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
     spec.zone_type = "outdoor_dungeon"
-    world = world_for("outdoor_dungeon", seed, biome=biome, edges=edges)
     hill = next(s for s in world.sockets if s.kind == "hillside")
     fields = dict(layout_kwargs, name=name, room_count=room_count, verticality=verticality)
     att = stages.attach_rooms(world, hill, fields, stages.rooms_seed(seed, rooms_seed), engine)

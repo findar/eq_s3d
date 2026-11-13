@@ -140,8 +140,8 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: generators/pipeline.py (the retry loop and its helpers), tests/test_stage_reroll.py
   - Reqs: 9
 
-- [ ] 20. An outdoor dungeon reads one landscape
+- [x] 20. An outdoor dungeon reads one landscape
   - Card: [cards/20-one-landscape.md](cards/20-one-landscape.md)
   - Type: agent · Size: M · Depends: 14, 19
-  - Owns: generators/outdoor_dungeon.py, generators/world.py (`world_of`), tests/test_world.py, tests/test_world_corpus.py, tests/test_layout_engine.py (the outdoor-dungeon golden only), tests/fixtures/worlds/, tests/fixtures/rooms/ (the `outdoor_*` recordings)
+  - Owns: generators/outdoor_dungeon.py, generators/world.py (`world_of`, `world_for`), tests/test_world.py, tests/test_world_corpus.py, tests/test_layout_engine.py (the outdoor-dungeon golden only), tests/test_site_builds.py (the two outdoor-dungeon pins only), tests/fixtures/worlds/, tests/fixtures/rooms/ (the `outdoor_*` recordings) — `world_for`, `test_site_builds.py` and generators/stages.py (`apron_edit` only) widened by the lead
   - Reqs: 2, 6

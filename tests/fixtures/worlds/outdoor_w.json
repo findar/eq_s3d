@@ -8,8 +8,8 @@
    "W": "mountain"
   },
   "landform": {
-   "approach": null,
-   "centre": [0.0,0.0],
+   "approach": "W",
+   "centre": [150.0,0.0],
    "flank": 300.0,
    "kind": "hill",
    "radius": 250.0,
@@ -23,7 +23,7 @@
   {
    "center_x": -360.0,
    "center_y": -360.0,
-   "center_z": 203.16554870456457,
+   "center_z": 218.86008840799332,
    "extent_x": 80.0,
    "extent_y": 80.0,
    "extent_z": 40.0,
@@ -683,7 +683,7 @@
    "ground": {
     "keep_clear": [],
     "masks": ["rim_seal","playable_interior"],
-    "spawn": [-340.0,140.0,12.924626350402832]
+    "spawn": [-340.0,140.0,12.968452453613281]
    },
    "height": 0.0,
    "id": "ground",
@@ -695,10 +695,10 @@
    "x": -340.0,
    "y": 140.0,
    "yaw": 0.0,
-   "z": 12.924626350402832
+   "z": 12.968452453613281
   }
  ],
- "spawn": [-340.0,140.0,12.924626350402832],
+ "spawn": [-340.0,140.0,12.968452453613281],
  "terrain": {
   "cell_shape": [32,32],
   "heights": [
