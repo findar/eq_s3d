@@ -32,7 +32,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
 
 ## Tasks
 
-- [ ] 1. Stage timings and the suite baseline
+- [x] 1. Stage timings and the suite baseline
   - Card: [cards/01-baseline.md](cards/01-baseline.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/stage_timings.py, .kiro/specs/zone-generator-world-sockets/design.md (findings 1 and 2 only)
