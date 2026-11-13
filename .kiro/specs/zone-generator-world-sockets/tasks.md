@@ -92,7 +92,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: scripts/stage.py, tests/test_stage_script.py
   - Reqs: 5.4
 
-- [ ] 11. The World corpus
+- [x] 11. The World corpus
   - Card: [cards/11-world-corpus.md](cards/11-world-corpus.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: scripts/record_worlds.py, tests/fixtures/worlds/, tests/test_world_corpus.py
