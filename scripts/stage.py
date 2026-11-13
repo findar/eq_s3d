@@ -373,8 +373,11 @@ def rooms_stage(world, attachments, plan, eq_path=None, use_env: bool = True):
             rooms += contexts(spec, _Mesh(ter))
         if sited:
             rooms += site_contexts(spec, ter, _site_placement(world, attachments))
+    # The rooms seed the Attach stage used (task 7), as the build's recipe records it.
+    rooms_seed = next((a.seed for a in attachments if a.kind in ("root", "hillside")
+                       and getattr(a, "seed", None) is not None), spec.seed)
     recipe = {"name": spec.name, "zone_type": spec.zone_type, "seed": spec.seed,
-              "decor": control, "decor_seed": decor_seed}
+              "rooms_seed": rooms_seed, "decor": control, "decor_seed": decor_seed}
     return spec, ter, recipe, rooms
 
 
