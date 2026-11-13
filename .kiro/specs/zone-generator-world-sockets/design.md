@@ -126,46 +126,89 @@ So **making terrain is not what's slow**: a landscape is 0.03-0.12 s. The time i
 (seconds per zone), cold model import, decor placement and packing. Isolation pays by letting
 a test run one stage without the stages after it (build, pack, gate), not by skipping terrain.
 
-### 2. Where the suite's time goes
+### 2. Where the suite's time goes (task 1, idle machine)
 
-The full suite was run as the task brief asks (`EQ_PATH='F:\everquest_rof2' python -m pytest
-tests/ -q --durations=30 -p no:cacheprovider`, xdist `-n auto`) at `ad392b8`: **2383
-passed in 3211 s (53.5 min)**, with finding 1's probes running beside it for a few minutes.
-Per-test times are wall time on a busy worker, so they overstate each test alone; their
-order is what counts. The 30 slowest, by file:
+Both suites were run at `2d9ff02` (master at `0688fa8` merged in) with xdist `-n auto` (12
+workers), one after the other, with no other agent's work running:
+`EQ_PATH='F:\everquest_rof2' python -m pytest tests/ -q --durations=30 -p no:cacheprovider`,
+then the same with `-m "not slow"`.
 
-| File | Tests in the 30 | Their time | What they do |
-|---|---|---|---|
-| `test_vertical_build.py` | 11 (`test_stacked_builds_pass_the_gate_no_worse_than_flat[...]`) | 3,345 s | build and gate a sweep of seeds, stacked vs flat |
-| `test_graph_layout_build.py` | 3 (`test_graph_builds_pass_the_gate_no_worse_than_classic[...]`) | 1,930 s | build and gate a sweep, graph vs classic |
-| `test_decor_bands.py` | 3 (`test_dense_passes_the_gate_first_try[...]`, `test_p12_...[dungeon]`) | 1,171 s | build, gate and survey 40 seeds |
-| `test_site_bands.py` | 3 (`test_stock_r_band`, `test_gate_first_try_rate_holds`, `test_p9_...`) | 1,026 s | build and gate wildernesses over seeds |
-| `test_properties_layout.py` | 2 (`test_flush_openings`, `test_elevation_grade_cap`) | 844 s | Hypothesis over layouts (not marked `slow`) |
-| `test_topology_embed.py` | 1 (`test_big_races_keep_their_loops[giant]`) | 478 s | graph layouts at giant scale (not marked `slow`) |
-| `test_walls_build.py`, `test_features_sweep.py` | 3 | 666 s | first-try sweeps by wall style and Features |
-| `test_properties_pipeline.py`, `test_pipeline.py` | 2 | 765 s | pipeline lifecycle (one not marked `slow`) |
-| `test_corridor_clearance.py`, `test_bridges.py` | 2 | 690 s | sweeps |
+- **Fast suite** (`-m "not slow"`): **2156 passed in 957 s (16.0 min)**.
+- **Full suite**: **2403 passed in 2520 s (42.0 min)**.
+
+(The design-time run, 2383 passed in 53.5 min beside other work, overstated the full suite by
+about a quarter.) Per-test times are wall time on one worker. The full suite's 30 slowest:
+
+| Test | Time |
+|---|---|
+| `test_graph_layout_build.py::test_graph_builds_pass_the_gate_no_worse_than_classic[dungeon-classic_eq]` | 929 s |
+| `test_graph_layout_build.py::test_graph_builds_pass_the_gate_no_worse_than_classic[dungeon-warren]` | 771 s |
+| `test_decor_bands.py::test_dense_passes_the_gate_first_try[dungeon-16]` | 676 s |
+| `test_properties_layout.py::test_flush_openings` (not `slow`) | 536 s |
+| `test_topology_embed.py::test_big_races_keep_their_loops[giant]` (not `slow`) | 492 s |
+| `test_vertical_build.py::test_stacked_builds_pass_the_gate_no_worse_than_flat[outdoor_dungeon-classic_eq-dragon]` | 473 s |
+| `test_vertical_build.py::...[dungeon-classic_eq-dragon]` | 467 s |
+| `test_vertical_build.py::...[dungeon-classic_eq-plain]` | 398 s |
+| `test_corridor_clearance.py::test_no_corridor_clips_a_room_over_the_sweep` | 396 s |
+| `test_vertical_build.py::...[dungeon-classic_eq-fortress]` | 393 s |
+| `test_vertical_build.py::...[outdoor_dungeon-classic_eq-fortress]` | 367 s |
+| `test_vertical_build.py::...[dungeon-classic_eq-temple]` | 365 s |
+| `test_pipeline.py::TestPipelineLifecycle::test_backend_fallback_reaches_warnings_and_sidecar` (not `slow`) | 362 s |
+| `test_properties_pipeline.py::test_availability_follows_enabled` (not `slow`) | 353 s |
+| `test_bridges.py::test_bridge_dungeons_pass_the_gate_first_try` | 345 s |
+| `test_decor_bands.py::test_p12_normal_rooms_measure_inside_the_stock_bands[dungeon]` | 269 s |
+| `test_site_bands.py::test_gate_first_try_rate_holds` | 262 s |
+| `test_vertical_build.py::...[dungeon-warren-dragon]` | 250 s |
+| `test_vertical_build.py::...[dungeon-warren-fortress]` | 248 s |
+| `test_graph_layout_build.py::...[outdoor_dungeon-classic_eq]` | 244 s |
+| `test_features_sweep.py::test_f10_first_try[built-warren--giant-normal-8-moderate-dungeon]` | 237 s |
+| `test_properties_layout.py::test_elevation_grade_cap` (not `slow`) | 237 s |
+| `test_vertical_build.py::...[outdoor_dungeon-classic_eq-temple]` | 224 s |
+| `test_vertical_build.py::...[dungeon-warren-temple]` | 223 s |
+| `test_site_bands.py::test_p9_normal_zones_measure_inside_the_stock_bands` | 207 s |
+| `test_walls_build.py::test_w12_first_try_across_styles[rough-warren--dragon-8-moderate]` | 203 s |
+| `test_decor_bands.py::test_dense_passes_the_gate_first_try[dungeon-default]` | 201 s |
+| `test_vertical_build.py::...[dungeon-warren-plain]` | 200 s |
+| `test_walls_build.py::test_w12_first_try_across_styles[hewn-classic_eq--giant-8-moderate]` | 175 s |
+| `test_properties_layout.py::test_connectivity_and_roles` (not `slow`) | 169 s |
+
+By file: `test_vertical_build.py` 11 tests, 3,608 s; `test_graph_layout_build.py` 3, 1,944 s;
+`test_decor_bands.py` 3, 1,146 s; `test_properties_layout.py` 3, 942 s; then
+`test_topology_embed.py`, `test_site_bands.py`, `test_corridor_clearance.py`,
+`test_walls_build.py`, `test_pipeline.py`, `test_properties_pipeline.py`, `test_bridges.py`,
+`test_features_sweep.py` (175-492 s each). Total 10,672 s of the suite's worker time.
+
+The fast suite's slowest, by file: `test_topology_levels.py` 7 tests, 771 s (the v7
+flat/dramatic and survey-band checks, 57-183 s each); `test_properties_layout.py` 5, 762 s
+(`test_flush_openings` 356 s, `test_elevation_grade_cap` 189 s, `test_connectivity_and_roles`
+152 s); `test_topology_embed.py` 3, 413 s (`[giant]` 299 s, `[ogre]` 84 s);
+`test_pipeline.py::...test_backend_fallback_reaches_warnings_and_sidecar` 347 s;
+`test_properties_pipeline.py::test_availability_follows_enabled` 307 s; `test_room_scales.py`
+4, 160 s. The 30 together take 3,037 s.
 
 What this says:
 
-- **The suite's time is gate sweeps.** Twenty-five of the thirty are "build N seeds, run the
-  zone gate on each, compare a first-try rate". They need the Build stage and the gate on the
-  merged mesh; a World corpus alone can't replace them. What isolation buys them: they can
+- **The full suite's time is gate sweeps.** Twenty-four of the thirty are "build N seeds, run
+  the zone gate on each, compare a first-try rate". They need the Build stage and the gate on
+  the merged mesh; a World corpus alone can't replace them. What isolation buys them: they can
   share builds (the vertical, graph, walls and features sweeps build overlapping seeds per
   zone type and each builds its own), and a stage that checks itself (Req 7.4) lets a sweep
-  run the Attach stage's check on many seeds and the zone gate on a few.
-- **Three slow tests are in the fast suite** (`test_flush_openings`,
-  `test_big_races_keep_their_loops[giant]`, `test_backend_fallback_reaches_warnings_and_sidecar`):
-  together about 1,470 s of worker time that `-m "not slow"` still pays.
+  run the Attach stage's check on many seeds and the zone gate on a few. The single slowest
+  test (929 s) alone sets a floor of 15.5 min on the full suite's wall time.
+- **The fast suite is held up by a few long tests, not by its size.** Four unmarked tests
+  each run 5-6 min (`test_flush_openings`, `test_backend_fallback_reaches_warnings_and_sidecar`,
+  `test_availability_follows_enabled`, `test_big_races_keep_their_loops[giant]`), so the fast
+  suite can't finish in under 6 min however well it spreads. The v7 topology-level checks
+  (`test_topology_levels.py`) are the next tier: layout statistics over many seeds, not builds.
 - **Where the corpora help directly**: the outdoor-dungeon planning and Site placement tests
-  (task 12), and any sweep that measures only rooms or Sites (the Site bands' `stock_r` is
-  placement only, 620 s).
+  (task 12), and any sweep that measures only rooms or Sites (the Site bands' `stock_r`).
 
-**Targets** (Req 7.5; task 1 re-measures on an idle machine and may revise them, with the
-user's word): the fast suite (`-m "not slow"`) under **5 minutes**, the full suite under
-**25 minutes**, each test's first-try and band checks kept. Task 13 gets there by sharing
-builds across the sweep files, moving placement-only and planning-only sweeps onto the
-corpora, and marking or shrinking the three unmarked slow tests.
+**Targets** (Req 7.5, decision 8): the fast suite (`-m "not slow"`) under **5 minutes**, the
+full suite under **25 minutes**, each test's first-try and band checks kept. Measured idle:
+fast 16.0 min, full 42.0 min. Task 13 gets there by sharing builds across the sweep files,
+moving placement-only and planning-only sweeps onto the corpora, and marking or shrinking the
+unmarked slow tests above. Task 1 proposes no change to decision 8 without the user's word;
+its report to the coordinator says what it would propose.
 
 ### 3. What the code already offers
 
