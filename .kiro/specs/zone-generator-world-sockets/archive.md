@@ -44,6 +44,13 @@ Answered by the user on 2026-11-12, one prompt per question.
    25). Task 1 measured 16 min fast / 42 min full idle; four unmarked tests of 5-6 min each
    set a floor near 6 min, so they stay in the fast suite.
 
+Added after the questions:
+
+9. **An outdoor dungeon reads one landscape, fixed in step 12** (the user, 2026-11-13). Task 3
+   found its spec takes the Spawn, regions and water from the requested Landform's landscape
+   and everything else from the placed one (29 of seeds 0-39 differ). Task 20 makes all of it
+   the placed one; every affected outdoor dungeon changes once.
+
 ## Follow-ups
 
 Carried in from step 11 (`zone-generator-room-decor/archive.md` "Follow-ups") because they

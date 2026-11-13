@@ -118,7 +118,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
 
 - [ ] 15. HUMAN: first look
   - Card: [cards/15-first-look.md](cards/15-first-look.md)
-  - Type: human · Depends: 9, 10, 14, 19
+  - Type: human · Depends: 9, 10, 14, 19, 20
 
 - [ ] 16. Acceptance section, thorough run
   - Card: [cards/16-acceptance.md](cards/16-acceptance.md)
@@ -139,3 +139,9 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Type: agent · Size: M · Depends: 7
   - Owns: generators/pipeline.py (the retry loop and its helpers), tests/test_stage_reroll.py
   - Reqs: 9
+
+- [ ] 20. An outdoor dungeon reads one landscape
+  - Card: [cards/20-one-landscape.md](cards/20-one-landscape.md)
+  - Type: agent · Size: M · Depends: 14, 19
+  - Owns: generators/outdoor_dungeon.py, generators/world.py (`world_of`), tests/test_world.py, tests/test_world_corpus.py, tests/test_layout_engine.py (the outdoor-dungeon golden only), tests/fixtures/worlds/, tests/fixtures/rooms/ (the `outdoor_*` recordings)
+  - Reqs: 2, 6
