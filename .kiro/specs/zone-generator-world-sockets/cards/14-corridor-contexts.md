@@ -18,3 +18,4 @@ Index entry: `tasks.md` task 14. Requirement 8. Design question 7; step 11's fol
 Stairs and Bridges are corridors: a Bridge's deck has railings and a shaft beneath, and a Staircase's floor isn't flat. Read them as the gate does, or leave them out and say so. Lights in a corridor go on its walls, clear of its whole width.
 
 ## Result
+✔ c498ef0 · 2483 passed
