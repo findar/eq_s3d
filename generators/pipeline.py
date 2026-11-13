@@ -476,6 +476,7 @@ def generate_validated(
             all_warnings = base_warnings + list(result.warnings)
             map_meta = _write_map_artifacts(root, result, scratch, None, agent,
                                             all_warnings)
+            _write_handoffs(root, result, scratch)
             moved = _finalize_build(
                 root, result, scratch, final_dir, fmt=fmt,
                 warnings=all_warnings, validated=False, attempts=1,
@@ -526,6 +527,7 @@ def generate_validated(
                 map_meta = _write_map_artifacts(root, result, scratch,
                                                 report.surface, agent,
                                                 all_warnings)
+                _write_handoffs(root, result, scratch)
                 moved = _finalize_build(
                     root, result, scratch, final_dir, fmt=fmt,
                     warnings=all_warnings, validated=True, attempts=attempt,
@@ -663,6 +665,17 @@ def _write_map_artifacts(root: OutputRoot, result: BuildResult, scratch: Path,
     for band in block["bands"]:
         band["file"] = files.get(band["index"])
     return {"map_files": map_files, "outline": block}
+
+
+def _write_handoffs(root: OutputRoot, result: BuildResult, scratch: Path) -> None:
+    """Write the build's hand-offs into ``scratch`` (world-sockets Req 5.1, decision 6):
+    ``<name>.world.json``, ``<name>.attach.json``, ``<name>.rooms.json``. For the accepted
+    build only, as the maps are; not page downloads, and never read back here."""
+    if result.world is None:
+        return
+    scratch = scratch.resolve()
+    for fname, text in result.handoffs().items():
+        root.write_bytes(str(scratch / fname), text.encode("utf-8"))
 
 
 def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,

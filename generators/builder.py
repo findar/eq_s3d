@@ -779,15 +779,22 @@ class ZoneBuilder:
         if self.spec.wilderness is not None and "dungeon" in self.spec.wilderness:
             warnings.extend(self.spec.wilderness["dungeon"]["warnings"])
 
-        # Sites, then trees (wilderness only, steps 10 and 2): layers on top of
-        # the built TER, which they never change; trees keep off Site ground.
-        # Room-graph zones get neither (Req 10).
+        # The stages (world-sockets design "Where the stages run"): the World the
+        # spec was made on, its rooms' Attachment (planned in plan_to_spec), then
+        # the ground Socket's Sites. Sites, then trees (wilderness only, steps 10
+        # and 2) are layers on top of the built TER, which they never change;
+        # trees keep off Site ground. Room-graph zones get neither (Req 10).
+        from generators import stages
+        from generators.world import world_of
+        world = world_of(self.spec)
         veg = sites = None
         if self.spec.wilderness is not None:
             from generators.wilderness.build import sites_for, vegetation_for
             sites = sites_for(self.spec, ter)
             veg = vegetation_for(self.spec, ter)
             warnings.extend(veg.warnings)
+        attachments = stages.build_attachments(
+            self.spec, world, None if sites is None else sites.placement)
         # Props in rooms (room-decor task 9): on top of the built TER too.
         decor = decor_for(self.spec, ter, warnings)
 
@@ -895,6 +902,8 @@ class ZoneBuilder:
                      "textures": texture_manifest(ter, modes, veg, dds_by_name, sites, decor)}
         if decor is not None:
             side_meta["decor"] = decor.summary()
+        side_meta["sockets"] = stages.sockets_sidecar(stages.apply_edits(world, attachments),
+                                                      attachments)
         # The layout block (graph-layout Req 7.5): engine, rule set, rooms'
         # kinds and sizes, and the built graph's shape, classic or grown.
         layout_meta = layout_sidecar(self.spec)
@@ -950,6 +959,10 @@ class ZoneBuilder:
             material_count=len(ter.materials),
             backend=backend_name,
             warnings=warnings,
+            world=world,
+            attachments=attachments,
+            rooms=[ctx for ctx, _d, _p in decor.rooms] if decor is not None else [],
+            decor_seed=decor.seed if decor is not None else None,
         )
 
     def _wilderness_sidecar(self) -> dict:
@@ -1171,8 +1184,16 @@ class BuildResult:
     def __init__(self, spec, eqg_path, glb_path,
                  vertex_count, polygon_count, material_count,
                  backend="box", warnings=None,
-                 sidecar_path=None, map_path=None):
+                 sidecar_path=None, map_path=None,
+                 world=None, attachments=None, rooms=None, decor_seed=None):
         self.spec = spec
+        # The stages' results (world-sockets Req 5.1): the World, its Attachments in
+        # attach order and the RoomContexts decor was handed (none with Decor none).
+        # The Pipeline post-pass writes them as the build's hand-off files.
+        self.world = world
+        self.attachments = list(attachments) if attachments else []
+        self.rooms = list(rooms) if rooms else []
+        self.decor_seed = decor_seed
         self.eqg_path = eqg_path
         self.glb_path = glb_path
         # The .zone.json sidecar is written on every build (not only when a
@@ -1201,3 +1222,12 @@ class BuildResult:
         if self.glb_path:
             lines.append(f"  GLB:       {self.glb_path}")
         return "\n".join(lines)
+
+    def handoffs(self) -> Dict[str, str]:
+        """The hand-off files (world-sockets Req 5.1), file name -> text:
+        ``<name>.world.json``, ``<name>.attach.json``, ``<name>.rooms.json``."""
+        from generators.stages import handoffs
+        spec = self.spec
+        recipe = {"name": spec.name, "zone_type": spec.zone_type, "seed": spec.seed,
+                  "decor": spec.decor or "none", "decor_seed": self.decor_seed}
+        return handoffs(spec.name.lower(), self.world, self.attachments, self.rooms, recipe)
