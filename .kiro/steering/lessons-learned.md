@@ -184,6 +184,12 @@ read before touching the relevant area so it isn't rediscovered.
   in task 21: a .NET call such as `[System.IO.File]::WriteAllText("rel\path", ...)` resolves a
   relative path against the PROCESS's directory (the main checkout), not PowerShell's `$PWD`,
   so the edit lands in main. Pass .NET file APIs absolute paths.
+- **Parallel agents must not share a commit-message file, nor run full suites at once.** Worktrees
+  share one `.git` and the session's scratchpad, so two agents writing `.git/COMMIT_EDITMSG_TMP` (or
+  one scratch file) overwrite each other: in step 12 a task-6 commit went in under task 12's
+  message. Give each agent its own file in its own worktree (`.commitmsg-<n>.txt`). Three full
+  suites at once ran out of memory (80 MemoryError failures) and push time-limit tests over;
+  check for a running `pytest tests/` before starting one, and re-run such failures alone.
 
 ## Design calls already settled (don't relitigate)
 
