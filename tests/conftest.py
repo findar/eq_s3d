@@ -14,11 +14,22 @@ Two responsibilities (M0 design, "tests/conftest.py"):
 
 2. Fixtures for the no-API / no-network properties (P16): ``no_api_keys`` and
    ``no_network``.
+
+3. ``shared_results``: results the gate sweeps share across xdist workers
+   (world-sockets task 13), on disk under the session's temp root.
 """
 
 from __future__ import annotations
 
+import hashlib
+import os
+import pickle
 import socket
+import tempfile
+import time
+from dataclasses import asdict
+from pathlib import Path
+from typing import Callable, Hashable, List, Sequence
 
 import pytest
 from hypothesis import settings
@@ -189,3 +200,138 @@ def no_network(monkeypatch):
     monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
 
     yield attempts
+
+
+# ---------------------------------------------------------------------------
+# 3. Results shared across xdist workers (world-sockets task 13)
+# ---------------------------------------------------------------------------
+
+class SharedResults:
+    """A memo every worker of one pytest session shares, ON DISK.
+
+    xdist workers are separate processes, so a session fixture's memory is per
+    worker: two sweep tests needing the same build on two workers would each
+    make it. Here a result lives in a pickle under the session's temp root
+    (``pytest-N/shared-results``, new each session, so a code change between
+    runs can never be read back stale).
+
+    ``get_many(keys, compute)`` claims each key it can (an ``O_EXCL`` lock file)
+    and computes it, skips a key another worker is computing, then waits for
+    those. A sweep split into many small tests is so made by every worker that
+    picks one up, and the test that compares the sweep's rates reads what they
+    made (and makes what nobody has started). A claimant always computes before
+    it waits, so two workers never wait on each other. A claimant that fails
+    drops its lock and re-raises; a waiter then claims the key and computes it
+    (its own failure shows in its own test).
+
+    Readers can't change a shared result: every read unpickles a fresh copy, and
+    the claimant hands its caller an unpickled copy too.
+    """
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _paths(self, key: Hashable):
+        h = hashlib.sha1(repr(key).encode("utf-8")).hexdigest()[:24]
+        return self.root / f"{h}.pkl", self.root / f"{h}.lock"
+
+    @staticmethod
+    def _load(path: Path):
+        return pickle.loads(path.read_bytes())
+
+    def _claim(self, lock: Path) -> bool:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return True
+        except FileExistsError:
+            return False
+
+    def _compute(self, key, compute, res: Path, lock: Path):
+        try:
+            data = pickle.dumps(compute(key))
+        except BaseException:
+            lock.unlink(missing_ok=True)
+            raise
+        tmp = res.with_name(f"{res.name}.{os.getpid()}.tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, res)
+        return pickle.loads(data)
+
+    def get_many(self, keys: Sequence[Hashable], compute: Callable, *,
+                 timeout_s: float = 3600.0) -> List:
+        out, waiting = {}, []
+        for key in dict.fromkeys(keys):
+            res, lock = self._paths(key)
+            if res.exists():
+                out[key] = self._load(res)
+            elif self._claim(lock):
+                out[key] = self._compute(key, compute, res, lock)
+            else:
+                waiting.append(key)
+        for key in waiting:
+            res, lock = self._paths(key)
+            start = time.monotonic()
+            while not res.exists():
+                if not lock.exists() or time.monotonic() - start > timeout_s:
+                    # The claimant failed (or hung): make it here.
+                    if not lock.exists() and not self._claim(lock):
+                        continue
+                    out[key] = self._compute(key, compute, res, lock)
+                    break
+                time.sleep(0.25)
+            else:
+                out[key] = self._load(res)
+        return [out[k] for k in keys]
+
+    def get(self, key: Hashable, compute: Callable):
+        return self.get_many([key], compute)[0]
+
+
+@pytest.fixture(scope="session")
+def shared_results(tmp_path_factory) -> SharedResults:
+    """The session's :class:`SharedResults`. Under xdist each worker's basetemp
+    is ``pytest-N/popen-gwK``; their parent is the one session root they share."""
+    base = tmp_path_factory.getbasetemp()
+    root = base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base
+    return SharedResults(root / "shared-results")
+
+
+def gated_key(fields: dict, seed: int, max_attempts: int, timeout_s: float) -> tuple:
+    """The :func:`gated_attempts` key for a plan of ``fields`` (``ZonePlan``
+    keywords, no name) on sweep seed ``seed``. The plan is every field of the
+    validated ``ZonePlan`` but its name, so two sweeps asking for one zone in
+    different words (the vertical sweep's ``moderate``, the graph sweep's
+    default) meet on one key, so one build."""
+    from ai.schema import ZonePlan
+    d = asdict(ZonePlan(name="sweep", **fields).validate())
+    d.pop("name")
+    plan = tuple(sorted((k, tuple(v) if isinstance(v, list) else v) for k, v in d.items()))
+    return ("gated", plan, seed, max_attempts, timeout_s)
+
+
+def gated_attempts(key: tuple) -> object:
+    """``("gated", plan fields, seed, max_attempts, timeout_s)`` -> the pipeline's
+    build -> gate -> retry loop on ``random.Random(seed)``: the attempts it took,
+    or None when the budget ran out. Every sweep builds through this, so a zone
+    two sweeps share is built once. The build goes in a temporary folder."""
+    import random
+
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from generators.pipeline import GenerationFailed, generate_validated
+
+    _tag, fields, seed, max_attempts, timeout_s = key
+    plan = ZonePlan(name="sweep", **{k: list(v) if isinstance(v, tuple) else v
+                                     for k, v in fields}).validate()
+    with tempfile.TemporaryDirectory(prefix="sweep", ignore_cleanup_errors=True) as tmp:
+        try:
+            vb = generate_validated(lambda s: plan_to_spec(plan, seed=s),
+                                    zone_type=plan.zone_type, zone_id=plan.name,
+                                    output_dir=Path(tmp), write_glb=False,
+                                    rng=random.Random(seed), failure_log=None,
+                                    max_attempts=max_attempts, timeout_s=timeout_s)
+        except GenerationFailed:
+            return None
+    assert vb.validated
+    return vb.attempts

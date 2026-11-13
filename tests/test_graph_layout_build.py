@@ -24,7 +24,6 @@ A passing sweep is necessary, not sufficient: nothing here is looked at in
 the 3D viewer (task 13 does that).
 """
 
-import random
 import time
 
 import pytest
@@ -34,8 +33,9 @@ from ai.schema import ZonePlan
 from analyzer.rof2check import check_eqg
 from generators import outdoor_dungeon as od
 from generators.builder import ZoneBuilder
-from generators.pipeline import DEFAULT_MAX_ATTEMPTS, GenerationFailed, generate_validated
+from generators.pipeline import DEFAULT_MAX_ATTEMPTS, generate_validated
 from generators.wilderness.build import build_wilderness_ter, landscape_for
+from tests.conftest import gated_attempts, gated_key
 
 #: (zone type, base set, themes, room counts, sweep seeds). Each sweep seed
 #: seeds the pipeline's rng, so attempt k draws the same build seed for graph
@@ -51,40 +51,59 @@ SWEEPS = {
 
 
 def _plan(zone_type, layout, rule_set, theme, rooms, name="sweep"):
-    return ZonePlan(name=name, zone_type=zone_type, room_count=rooms,
-                    dungeon_theme=theme, layout=layout,
-                    rule_set=rule_set if layout == "graph" else "").validate()
+    return ZonePlan(name=name, **_fields(zone_type, layout, rule_set, theme, rooms)).validate()
 
 
-def _generate(tmp_path, plan, seed, max_attempts):
-    """The pipeline's build -> gate -> retry loop; the attempts it took, or
-    None when the budget ran out."""
-    try:
-        vb = generate_validated(lambda s: plan_to_spec(plan, seed=s),
-                                zone_type=plan.zone_type, zone_id=plan.name,
-                                output_dir=tmp_path, write_glb=False,
-                                rng=random.Random(seed), failure_log=None,
-                                max_attempts=max_attempts, timeout_s=600.0)
-    except GenerationFailed:
-        return None
-    assert vb.validated
-    return vb.attempts
+def _fields(zone_type, layout, rule_set, theme, rooms):
+    return dict(zone_type=zone_type, room_count=rooms, dungeon_theme=theme, layout=layout,
+                rule_set=rule_set if layout == "graph" else "")
+
+
+#: The pipeline's own timeout per sweep build.
+TIMEOUT_S = 600.0
+
+#: One (sweep, theme, room count, sweep seed) per sweep case.
+CASES = [(sweep, t, n, s) for sweep, (_z, _r, themes, counts, seeds) in sorted(SWEEPS.items())
+         for t in themes for n in counts for s in seeds]
+
+
+def _keys(sweep, theme, rooms, seed):
+    """A case's two builds, as ``conftest.gated_attempts`` keys: graph with the
+    pipeline's retry budget, classic with one attempt. The graph build is the
+    vertical sweep's ``moderate`` one (tests/test_vertical_build.py) on the same
+    seed, so it is built once for both."""
+    zone_type, rule_set = SWEEPS[sweep][:2]
+    return (gated_key(_fields(zone_type, "graph", rule_set, theme, rooms), seed,
+                      DEFAULT_MAX_ATTEMPTS, TIMEOUT_S),
+            gated_key(_fields(zone_type, "classic", "", theme, rooms), seed, 1, TIMEOUT_S))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("sweep, theme, rooms, seed", CASES,
+                         ids=[f"{w}-{t or 'plain'}-{n}-{s}" for w, t, n, s in CASES])
+def test_graph_build_passes_within_the_retries(shared_results, sweep, theme, rooms, seed):
+    """One case of the sweep: its graph build passes within the pipeline's retry
+    budget. Its classic build is made here too, so the sweep's builds spread over
+    the workers; the comparison below reads them."""
+    g, _c = shared_results.get_many(_keys(sweep, theme, rooms, seed), gated_attempts)
+    assert g is not None, f"graph build out of retries: {(sweep, theme or 'plain', rooms, seed)}"
 
 
 @pytest.mark.slow
 @pytest.mark.parametrize("sweep", sorted(SWEEPS))
-def test_graph_builds_pass_the_gate_no_worse_than_classic(tmp_path, sweep):
+def test_graph_builds_pass_the_gate_no_worse_than_classic(shared_results, sweep):
     zone_type, rule_set, themes, counts, seeds = SWEEPS[sweep]
     cases = [(t, n, s) for t in themes for n in counts for s in seeds]
+    keys = [k for case in cases for k in _keys(sweep, *case)]
+    # The case tests above make these builds; whatever none has started yet is
+    # made here, from the far end, so this test and they meet in the middle.
+    got = dict(zip(keys[::-1], shared_results.get_many(keys[::-1], gated_attempts)))
     graph, classic, failed = {}, {}, []
-    for k, (theme, rooms, seed) in enumerate(cases):
-        g = _generate(tmp_path / f"g{k}", _plan(zone_type, "graph", rule_set, theme, rooms),
-                      seed, DEFAULT_MAX_ATTEMPTS)
-        c = _generate(tmp_path / f"c{k}", _plan(zone_type, "classic", "", theme, rooms),
-                      seed, 1)
-        graph[theme, rooms, seed], classic[theme, rooms, seed] = g, c
-        if g is None:
-            failed.append((theme or "plain", rooms, seed))
+    for case in cases:
+        g_key, c_key = _keys(sweep, *case)
+        graph[case], classic[case] = got[g_key], got[c_key]
+        if got[g_key] is None:
+            failed.append((case[0] or "plain",) + case[1:])
     g_first = sum(a == 1 for a in graph.values())
     c_first = sum(a == 1 for a in classic.values())
     retries = sum(a - 1 for a in graph.values() if a)
@@ -168,14 +187,17 @@ def test_spawn_stands_on_the_dug_apron(tmp_path):
 
 
 def _timed_generate(tmp_path, layout, rooms, seed):
-    """Seconds for one full generate on a pinned seed: plan to spec, build,
-    walkability gate, format check, maps and the GLB (the server's path)."""
+    """CPU seconds for one full generate on a pinned seed: plan to spec, build,
+    walkability gate, format check, maps and the GLB (the server's path). CPU
+    time, not wall: under the parallel suite a wall clock counts the time the
+    build waits for a core, which says nothing about the build (as in
+    test_walls_build)."""
     plan = _plan("dungeon", layout, "", "", rooms, name="gltime")
-    t0 = time.perf_counter()
+    t0 = time.process_time()
     vb = generate_validated(lambda s: plan_to_spec(plan, seed=s), zone_type="dungeon",
                             zone_id="gltime", seed=seed, output_dir=tmp_path,
                             failure_log=None)
-    elapsed = time.perf_counter() - t0
+    elapsed = time.process_time() - t0
     assert vb.validated and vb.attempts == 1, (layout, vb.attempts)
     return elapsed
 

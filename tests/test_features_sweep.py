@@ -8,7 +8,6 @@ tolerance.
 """
 
 import os
-import random
 import sys
 import time
 from pathlib import Path
@@ -26,6 +25,7 @@ from generators.builder import ZoneBuilder  # noqa: E402
 from generators.geometry import build_mesh  # noqa: E402
 from generators.pipeline import generate_validated  # noqa: E402
 from room_feature_survey import measure_rooms  # noqa: E402
+from tests.conftest import gated_attempts, gated_key  # noqa: E402
 
 SOLID_FLOOR = {"rough": 0.00, "hewn": 0.05, "built": 0.20}
 SOLID_CEILING = 0.60
@@ -85,18 +85,35 @@ CASES = [("rough", "classic_eq", "", "", "normal", 12, "moderate", "dungeon"),
          ("built", "", "temple", "", "dense", 5, "moderate", "outdoor_dungeon")]
 
 
+SEEDS = range(4)
+
+
+def _key(walls, rule_set, theme, race, features, rooms, vert, zone_type, seed):
+    fields = dict(zone_type=zone_type, room_count=rooms, layout="graph", walls=walls, features=features,
+                  dungeon_theme=theme, rule_set=rule_set, dungeon_race=race, verticality=vert)
+    return gated_key(fields, seed, 4, 300.0)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("walls, rule_set, theme, race, features, rooms, vert, zone_type, seed",
+                         [case + (s,) for case in CASES for s in SEEDS])
+def test_f10_passes_within_the_retries(shared_results, walls, rule_set, theme, race, features, rooms, vert,
+                                       zone_type, seed):
+    """One seed of a case: it passes within four attempts. The case's first-try count
+    below reads these builds, so a case's seeds spread over the workers."""
+    tries = shared_results.get(_key(walls, rule_set, theme, race, features, rooms, vert, zone_type, seed),
+                               gated_attempts)
+    assert tries is not None, "out of retries"
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("walls, rule_set, theme, race, features, rooms, vert, zone_type", CASES)
-def test_f10_first_try(tmp_path, walls, rule_set, theme, race, features, rooms, vert, zone_type):
-    plan = _plan(walls, theme, features, rooms, vert, rule_set, race, zone_type)
-    tries = []
-    for seed in range(4):
-        vb = generate_validated(lambda s: plan_to_spec(plan, seed=s), zone_type=zone_type, zone_id="w11",
-                                rng=random.Random(seed), output_dir=tmp_path / str(seed), write_glb=False,
-                                failure_log=None, max_attempts=4, timeout_s=300.0)
-        assert vb.validated
-        tries.append(vb.attempts)
+def test_f10_first_try(shared_results, walls, rule_set, theme, race, features, rooms, vert, zone_type):
+    case = (walls, rule_set, theme, race, features, rooms, vert, zone_type)
+    keys = [_key(*case, s) for s in SEEDS]
+    tries = shared_results.get_many(keys[::-1], gated_attempts)[::-1]
     print(f"\n{walls} {theme or rule_set} {race} {features} {vert} {zone_type}: attempts {tries}")
+    assert None not in tries, tries
     assert sum(t == 1 for t in tries) >= 3, tries
 
 
