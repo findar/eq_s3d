@@ -114,6 +114,7 @@ _rooms_arg = _int_in_range("--rooms", 1, 30)
 _locks_arg = _int_in_range("--locks", 0, 5)
 _seed_arg = _int_in_range("--seed", 0, 2_147_483_647)
 _decor_seed_arg = _int_in_range("--decor-seed", 0, 2_147_483_647)
+_rooms_seed_arg = _int_in_range("--rooms-seed", 0, 2_147_483_647)
 
 
 def _edges_arg(value: str) -> dict:
@@ -177,7 +178,7 @@ def cmd_generate(args) -> None:
     # without ``--layout`` takes the plan default (graph on a dungeon /
     # outdoor dungeon since task 21; ``--layout classic`` for TinyKeep).
     for key in ("layout", "rule_set", "walls", "features", "finish", "structure", "clutter", "overlay",
-                "decor", "decor_seed"):
+                "decor", "decor_seed", "rooms_seed"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
     # Sites (wilderness / outdoor dungeon): only named when given, so the
@@ -333,6 +334,9 @@ def main(argv: list[str] | None = None) -> None:
                         f"clutter) stand in the rooms (default {DEFAULT_DECOR}; needs EQ_PATH)")
     g.add_argument("--decor-seed", dest="decor_seed", type=_decor_seed_arg, default=None,
                    help="Reroll the Props alone (0-2147483647); default: the zone's seed")
+    g.add_argument("--rooms-seed", dest="rooms_seed", type=_rooms_seed_arg, default=None,
+                   help="Reroll the rooms and Sites on the same World (0-2147483647); "
+                        "default: the zone's seed")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
