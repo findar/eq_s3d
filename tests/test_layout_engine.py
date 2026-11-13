@@ -72,11 +72,13 @@ GOLDENS = {
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).
+    # Recaptured once more by world-sockets task 20: the spec's Spawn,
+    # regions and materials now come from the placed hill's landscape.
     "outdoor_dungeon": (
         dict(zone_type="outdoor_dungeon", room_count=5, locks=1,
              layout="classic"), 3,
-        "19961348631cfb376dab285f0da4de79662cc3f1a18596fa8996fc2661322c8a",
-        "3104ae3704fc1c5dcbdfb385ae53779e16549e7488fcdebed13126ae4cccc6ce"),
+        "e9c7e4dc2365d3ebe140f41c4f18c73ca37a2be312b0f8777be90fbe954956d7",
+        "ecdcc1d1f9b6fab073a27b655d3914b00450236f5f7d4f4267149f8d09051706"),
 }
 
 

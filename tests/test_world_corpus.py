@@ -49,6 +49,19 @@ def test_the_corpus_covers_every_biome_side_water_case_and_socket_kind():
     assert record_worlds.missing(list(CORPUS.values())) == {}
 
 
+@pytest.mark.parametrize("path", [p for p in FILES if p.stem.startswith("outdoor_")],
+                         ids=lambda p: p.stem)
+def test_an_outdoor_world_holds_one_landscape(path):
+    """Task 20: an outdoor dungeon's World is made on its placed Landform (the recipe's is the
+    hill's), and its Spawn stands on the terrain's ground."""
+    world = CORPUS[path.stem]
+    t = world.terrain
+    assert world.recipe["landform"] == world.socket("hill0").ground["landform"]
+    assert world.recipe["landform"]["approach"] == world.socket("hill0").side
+    i, j = (round((v - o) / t.res - 0.5) for v, o in zip(world.spawn[:2], t.origin))
+    assert world.spawn[2] == t.heights[i, j]
+
+
 def test_the_corpus_is_small():
     size = sum(p.stat().st_size for p in FILES) / 1024 / 1024
     assert size < CORPUS_MB, f"corpus is {size:.2f} MB"

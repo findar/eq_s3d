@@ -23,7 +23,8 @@ import generators.wilderness.build as wb
 STEP9 = {
     ("wild", 1955208177): "8aaf8daf8112fbf2d5a6ce2a02c7de3ee60496c33ca82f6d877f8ef66e1f7aa0",
     ("wild", 31337): "413bbd2c9b4268d5c5efe2435ddb8317cb9e78472cf50d5d7f6c52117bba619e",
-    ("od", 3): "5c274108bc888fc344488d1ea580ce486cb37e2eed71ce1c13b389c08a84c050",
+    # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape).
+    ("od", 3): "e6d3f33ca633cfc0ad850ba76cd24362a67f93d23dabfb84752711c65a68cad8",
 }
 
 
@@ -33,7 +34,8 @@ STEP9 = {
 STEP10 = {
     ("wild", 1955208177, "normal"): "b6a10e08f3aa3ebd2a00d75c9804354a59df8c905f429e946b5890e1b1dc693e",
     ("wild", 31337, "dense"): "b06f419e5aad0fbe66067c95c247fdf789bceeb33c2bc0e5f5fd89ec270e699c",
-    ("od", 1001, "dense"): "f069b1a816e1a5fe700f9380f6d355fa9a33a09caa9ce9f9287d5e4fb4e3e88e",
+    # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape).
+    ("od", 1001, "dense"): "ab4c8a1c647504d32c1ff73eda99f94303198763733d7776d0f37da0a510cae6",
 }
 
 
