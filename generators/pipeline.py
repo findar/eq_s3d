@@ -48,6 +48,7 @@ junction-safe remove that never recurses through a directory junction / symlink
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import random
@@ -56,11 +57,11 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Collection, List, Optional, Sequence
+from typing import Callable, Collection, Dict, List, Mapping, Optional, Sequence
 
 from analyzer.rof2check import FormatReport, check_eqg
 from analyzer.traverse import (
-    AgentModel, RoomResult, TraversalReport, load_ter_from_eqg, validate,
+    AgentModel, RoomResult, TraversalReport, load_ter_from_eqg, placed_models, validate,
 )
 from core.paths import OutputRoot
 from generators.builder import BuildResult, ZoneBuilder
@@ -97,8 +98,10 @@ DEFAULT_FAILURE_LOG = Path("output") / "validation_failures.jsonl"
 
 
 # A factory that, given a seed, produces a fresh ZoneSpec for that seed. The
-# pipeline owns the seed-selection loop and calls this once per attempt.
-SpecFactory = Callable[[int], ZoneSpec]
+# pipeline owns the seed-selection loop and calls this once per attempt. One
+# that also takes a ``rooms_seed`` keyword (laying the rooms out with it on the
+# same World) lets a rooms fault reroll the rooms alone (world-sockets Req 9).
+SpecFactory = Callable[..., ZoneSpec]
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +134,11 @@ class AttemptFailure:
     # (e.g. "diffuse_textures", "safe_point"). This is what the JSONL `checks`
     # field and the GenerationFailed message list.
     checks: List[str] = field(default_factory=list)
+    # The stage the gate's report blames (world-sockets Req 9): ``decor``,
+    # ``rooms`` or ``zone`` (none named). And the seeds this attempt used:
+    # ``seed``, ``rooms_seed``, ``decor_seed``.
+    stage: str = ""
+    seeds: Dict[str, Optional[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -249,14 +257,20 @@ def _failed_checks(report: TraversalReport, fmt: FormatReport) -> List[str]:
 def log_validation_failure(failure_log: Optional[str | Path], *,
                            zone_id: str, zone_type: str, seed: int, attempt: int,
                            report: TraversalReport,
-                           checks: Sequence[str]) -> AttemptFailure:
+                           checks: Sequence[str],
+                           stage: str = "",
+                           seeds: Optional[Mapping[str, Optional[int]]] = None,
+                           ) -> AttemptFailure:
     """
     Record one rejected attempt: a structured line to stderr (via ``logging``)
     and an append-only JSONL entry to ``failure_log`` (the triage feed). The
-    JSONL line carries the failed ``checks`` list (design step 5). Returns the
-    AttemptFailure so the caller can accumulate it for GenerationFailed.
+    JSONL line carries the failed ``checks`` list (design step 5), the
+    ``stage`` the report blames and the ``seeds`` the attempt used
+    (world-sockets Req 9.4). Returns the AttemptFailure so the caller can
+    accumulate it for GenerationFailed.
     """
     reasons = _failure_reasons(report)
+    seeds = dict(seeds) if seeds is not None else {"seed": seed}
     failure = AttemptFailure(
         seed=seed,
         attempt=attempt,
@@ -264,14 +278,16 @@ def log_validation_failure(failure_log: Optional[str | Path], *,
         total_rooms=report.total_rooms,
         reasons=reasons,
         checks=list(checks),
+        stage=stage,
+        seeds=seeds,
     )
 
     logger.warning(
         "gate REJECT zone=%s zone_type=%s seed=%s attempt=%d "
-        "reachable=%d/%d checks=%s reasons=%s",
+        "reachable=%d/%d checks=%s stage=%s seeds=%s reasons=%s",
         zone_id, zone_type, seed, attempt,
         report.reachable_rooms, report.total_rooms,
-        ",".join(checks) or "(none)",
+        ",".join(checks) or "(none)", stage or "(none)", seeds,
         "; ".join(reasons) or "(none)",
     )
 
@@ -283,6 +299,8 @@ def log_validation_failure(failure_log: Optional[str | Path], *,
             "seed": seed,
             "attempt": attempt,
             "checks": list(checks),
+            "stage": stage,
+            "seeds": seeds,
             "reachable_rooms": report.reachable_rooms,
             "total_rooms": report.total_rooms,
             "reasons": reasons,
@@ -309,6 +327,95 @@ def _fresh_seed(rng: Optional[random.Random]) -> int:
     """A fresh 31-bit seed. Uses the supplied rng (tests) or the module rng."""
     r = rng if rng is not None else random
     return r.randint(0, 2 ** 31 - 1)
+
+
+# ---------------------------------------------------------------------------
+# Stage attribution (world-sockets Req 9, archive decision 5)
+# ---------------------------------------------------------------------------
+
+#: The stage a rejected attempt is blamed on: its Props (redraw ``decor_seed``),
+#: its rooms (redraw ``rooms_seed``), or none named (a fresh ``seed``).
+STAGE_DECOR, STAGE_ROOMS, STAGE_ZONE = "decor", "rooms", "zone"
+
+#: Stage rerolls on one World before the retry draws a fresh ``seed``.
+MAX_STAGE_REROLLS = 2
+
+#: The ZON object names the builder gives Props (``ZoneBuilder._build_zon``).
+PROP_OBJECT_PREFIX = "decor_"
+
+
+def _takes_rooms_seed(factory: Callable[..., ZoneSpec]) -> bool:
+    """Whether ``factory`` takes a ``rooms_seed`` keyword (a rooms reroll needs the
+    planner: the layout is made in ``plan_to_spec``). One that doesn't gets a
+    fresh ``seed`` for a rooms fault, as before."""
+    try:
+        params = inspect.signature(factory).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "rooms_seed" or p.kind is p.VAR_KEYWORD for p in params)
+
+
+def _report_without_props(eqg_path: Path, spec: ZoneSpec, agent: Optional[AgentModel],
+                          report: TraversalReport) -> Optional[TraversalReport]:
+    """The room gate run again with the build's Props left out (its ``decor_``
+    ZON objects; the TER is the same whatever the Props, room-decor Req 6.4).
+    ``report`` itself when the build has no Props. An outdoor dungeon's bowl
+    keeps the verdict ``report`` gave it (the bowl judges Site Props on its own
+    terms, so a fault there is never put on the rooms' Props). ``None`` for an
+    open wilderness, whose one gate can't leave Props out."""
+    placed = placed_models(eqg_path)
+    kept = [p for p in placed if not p.name.startswith(PROP_OBJECT_PREFIX)]
+    if len(kept) == len(placed):
+        return report
+    if is_outdoor_dungeon(spec):
+        bare = validate(eqg_path, spec=spec, agent=agent, check_corridors=True, placed=kept)
+        ids = {r.id for r in spec.rooms}
+        world = [r for r in report.rooms if r.room_id not in ids]
+        bare.rooms = world + bare.rooms
+        bare.total_rooms += len(world)
+        bare.reachable_rooms += sum(r.reachable for r in world)
+        return bare
+    if spec.wilderness is not None:
+        return None
+    return validate(eqg_path, spec=spec, agent=agent, check_corridors=True, placed=kept)
+
+
+def _in_attachments(report: TraversalReport, attachments: Sequence) -> bool:
+    """Whether every failure in ``report`` names a room or corridor of an
+    Attachment's layout (a ``root`` or ``hillside`` Socket's rooms), and there is one."""
+    names = set()
+    for att in attachments or ():
+        layout = getattr(att, "layout", None)
+        names |= {r.id for r in getattr(layout, "rooms", ())}
+        names |= {c.id for c in getattr(layout, "corridors", ())}
+    failing = ([r.room_id for r in report.rooms if not r.reachable]
+               + [o.room_id for o in report.outlines if not o.ok]
+               + [c.corridor_id for c in report.corridors if not c.connected]
+               + [cid for pair in report.conflicts for cid in pair])
+    return bool(failing) and all(f in names for f in failing)
+
+
+def _blame(result: BuildResult, spec: ZoneSpec, report: TraversalReport,
+           fmt: FormatReport, agent: Optional[AgentModel]) -> str:
+    """The stage a rejected attempt is put on, from what the gate reports
+    (archive decision 5): it passes with its Props left out -> ``decor``; it
+    fails without them and every failing room or corridor lies in an
+    Attachment -> ``rooms``; otherwise (a format failure among them) ``zone``."""
+    if not fmt.passed:
+        return STAGE_ZONE
+    bare = _report_without_props(result.eqg_path, spec, agent, report)
+    if bare is None:
+        return STAGE_ZONE
+    if bare.passed and bare.corridors_passed:
+        return STAGE_DECOR if bare is not report else STAGE_ZONE
+    return STAGE_ROOMS if _in_attachments(bare, result.attachments) else STAGE_ZONE
+
+
+def _seeds_used(spec: ZoneSpec, seed: int) -> Dict[str, Optional[int]]:
+    """The three stage seeds a spec builds with, as its sidecar's ``seeds`` block."""
+    return {"seed": seed,
+            "rooms_seed": seed if spec.rooms_seed is None else spec.rooms_seed,
+            "decor_seed": seed if spec.decor_seed is None else spec.decor_seed}
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +545,11 @@ def generate_validated(
       and retry, bounded by ``max_attempts`` AND ``timeout_s`` (whichever hits
       first). At least one full attempt always completes. Returns the first
       passing build; raises :class:`GenerationFailed` when the budget is spent.
+      A retry rerolls only the stage the gate blames (:func:`_blame`): Decor
+      (a new ``decor_seed``) or, when ``spec_factory`` takes ``rooms_seed``,
+      the rooms (a new ``rooms_seed``), keeping the World's ``seed``; at most
+      ``MAX_STAGE_REROLLS`` on one World, never a stage seed the factory's spec
+      already pins, and otherwise a fresh ``seed`` as before.
     * **Gated, pinned seed**: build -> gate once. On failure raise
       :class:`GenerationFailed` (``pinned=True``) rather than silently swapping
       the caller's explicit seed.
@@ -506,13 +618,34 @@ def generate_validated(
     start = time.monotonic()
     failures: List[AttemptFailure] = []
     attempt = 0
+    # Stage rerolls (world-sockets Req 9): the stage seeds this loop drew on the
+    # current World (None: the factory's own), and how many rerolls it has had.
+    takes_rooms = _takes_rooms_seed(spec_factory)
+    rooms_draw: Optional[int] = None
+    decor_draw: Optional[int] = None
+    rerolls = 0
+    next_stage = STAGE_ZONE
 
     while True:
         attempt += 1
-        use_seed = seed if pinned else _fresh_seed(rng)
+        if next_stage == STAGE_ZONE:
+            use_seed = seed if pinned else _fresh_seed(rng)
+            rooms_draw = decor_draw = None
+            rerolls = 0
         scratch = _scratch_dir(output_dir, zone_id, attempt)
+        stage = STAGE_ZONE
+        seeds = {"seed": use_seed, "rooms_seed": rooms_draw, "decor_seed": decor_draw}
+        rooms_pinned = decor_pinned = True
         try:
-            spec = _with_decor(spec_factory(use_seed))
+            spec = (spec_factory(use_seed) if rooms_draw is None
+                    else spec_factory(use_seed, rooms_seed=rooms_draw))
+            # A stage seed the caller chose is pinned: its stage is never rerolled.
+            rooms_pinned = rooms_draw is None and spec.rooms_seed is not None
+            decor_pinned = spec.decor_seed is not None
+            if decor_draw is not None:
+                spec.decor_seed = decor_draw
+            spec = _with_decor(spec)
+            seeds = _seeds_used(spec, use_seed)
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
             )
@@ -547,9 +680,11 @@ def generate_validated(
 
             # Rejected — gather the failed checks, log for triage, drop scratch.
             checks = _failed_checks(report, fmt)
+            stage = _blame(result, spec, report, fmt, agent)
             failures.append(log_validation_failure(
                 failure_log, zone_id=zone_id, zone_type=zone_type,
                 seed=use_seed, attempt=attempt, report=report, checks=checks,
+                stage=stage, seeds=seeds,
             ))
             _remove_scratch(root, output_dir, zone_id, scratch)
         except PLAN_ERRORS as e:
@@ -560,6 +695,7 @@ def generate_validated(
                 failure_log, zone_id=zone_id, zone_type=zone_type,
                 seed=use_seed, attempt=attempt,
                 report=_plan_failure_report(zone_id, e), checks=["plan"],
+                stage=STAGE_ZONE, seeds=seeds,
             ))
             _remove_scratch(root, output_dir, zone_id, scratch)
         except Exception:
@@ -577,7 +713,18 @@ def generate_validated(
             raise GenerationFailed(zone_id, zone_type, failures)
         if (time.monotonic() - start) >= timeout_s:
             raise GenerationFailed(zone_id, zone_type, failures, timed_out=True)
-        # else: pick a new fresh seed and retry.
+
+        # Retry the stage blamed on the same World, at most MAX_STAGE_REROLLS
+        # times and never a pinned stage; else a fresh seed for everything.
+        next_stage = STAGE_ZONE
+        if rerolls < MAX_STAGE_REROLLS:
+            if stage == STAGE_DECOR and not decor_pinned:
+                decor_draw, next_stage = _fresh_seed(rng), STAGE_DECOR
+            elif stage == STAGE_ROOMS and takes_rooms and not rooms_pinned:
+                # Decor is a later stage: it follows the new rooms.
+                rooms_draw, decor_draw, next_stage = _fresh_seed(rng), None, STAGE_ROOMS
+        if next_stage != STAGE_ZONE:
+            rerolls += 1
 
 
 # ---------------------------------------------------------------------------

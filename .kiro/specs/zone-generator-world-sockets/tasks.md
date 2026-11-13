@@ -134,7 +134,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Type: agent · Size: S · Depends: 17 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-world-sockets/, .kiro/specs/zone-generator/
 
-- [ ] 19. A gate failure rerolls only the failing stage
+- [x] 19. A gate failure rerolls only the failing stage
   - Card: [cards/19-stage-reroll.md](cards/19-stage-reroll.md)
   - Type: agent · Size: M · Depends: 7
   - Owns: generators/pipeline.py (the retry loop and its helpers), tests/test_stage_reroll.py
