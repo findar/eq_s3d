@@ -1,7 +1,8 @@
 r"""Record the room corpus (roadmap step 11, Req 13.2; design "Stages and the RoomContext").
 
 Each recording is a zone made from a pinned plan and seed, built, and read back as one
-RoomContext per room and per Site (``generators/room_context.py``). The files land in
+RoomContext per room, per corridor (world-sockets task 14; not stairs or Bridges) and per Site
+(``generators/room_context.py``). The files land in
 ``tests/fixtures/rooms/<name>.json``; decor's tests run on them without building a zone.
 Together the recordings hold every room type, wall style and race.
 
@@ -92,8 +93,8 @@ def recipe_named(name: str) -> Dict:
 
 
 def record(recipe: Mapping) -> List[RoomContext]:
-    """Make the recording's zone (its plan and seed), build its TER, and read every room's
-    and Site's context from them."""
+    """Make the recording's zone (its plan and seed), build its TER, and read every room's,
+    corridor's and Site's context from them."""
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from generators.backends import backend_for

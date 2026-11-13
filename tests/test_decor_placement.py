@@ -448,14 +448,18 @@ def test_a_wall_prop_turns_its_measured_side_to_the_wall(rules, fixture, side):
     assert n > 4
 
 
-def test_wall_lights_keep_their_spacing(decorated):
+def test_wall_lights_keep_their_spacing(decorated, rules):
     from generators.decor.placement import ROOM_LIGHT_GAP, _spacing
-    for c, d, _ in decorated:
+    for c, d, control in decorated:
         lights = [p for p in d.props if p.mount == "wall" and p.light]
+        # A corridor's lights keep the corridor spacing: the room spacing over its light weight.
+        gap_min = (_spacing(c) / max(rules.weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type,
+                                                       control).get("light", 1.0), 0.25)
+                   if c.source == "corridor" else _spacing(c) * ROOM_LIGHT_GAP)
         for a in range(len(lights)):
             for b in range(a + 1, len(lights)):
                 gap = math.hypot(lights[a].x - lights[b].x, lights[a].y - lights[b].y)
-                assert gap >= _spacing(c) * ROOM_LIGHT_GAP - 1e-6, c.id
+                assert gap >= gap_min - 1e-6, c.id
 
 
 # --- task 22: lights laid out as a set, one height, kinds held once ---------------------------------
@@ -505,6 +509,8 @@ def test_a_rooms_lights_are_laid_out_as_a_set(decorated, hand):
     or all four. Before, they took any free wall spot."""
     n = corners = 0
     for c, d, control in decorated + hand:
+        if c.source == "corridor":                  # lit by spacing, not as a set
+            continue
         for props in _sets(d):
             assert _symmetric(c, props), (c.id, control, [(p.key, round(p.x), round(p.y)) for p in props])
             n += len(props) >= 2

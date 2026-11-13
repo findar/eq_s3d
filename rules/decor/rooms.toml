@@ -91,13 +91,15 @@ plant = 1.8
 other = 1.8
 
 # Cities: more furniture and lights, almost no debris (finding 1). Written as the city's own,
-# not blended with the dungeon default.
+# not blended with the dungeon default. Containers and plants a little up with fewer wall lights
+# (world-sockets task 14), so a city's rooms keep their Props per room; furniture only a touch, so
+# it stays under finding 1's 36%.
 [weights.zone_types.city]
 light = { value = 1.1, override = true }
-container = { value = 2.8, override = true }
-furniture = { value = 2.2, override = true }
+container = { value = 3.0, override = true }
+furniture = { value = 2.25, override = true }
 debris = { value = 0.15, override = true }
-plant = { value = 1.15, override = true }
+plant = { value = 1.25, override = true }
 bare = { value = 0.2, override = true }
 
 # A natural cave: fewer lights, more lying about.
@@ -273,9 +275,16 @@ members = [ { kind = ["desk", "table"], at = "anchor" },
             { kind = ["book", "candle"], at = "stack", count = [0, 2] } ]
 
 # --- every room, after its own recipe: the backbone and the mess -----------------------------------
+#
+# Wall lights: [1, 2] at 0.9 since corridors are lit too (world-sockets task 14). Finding 1's
+# light share counts corridors' lights with rooms'; at [1, 3] the rooms alone stood at the top of
+# the band (dungeon .44 of .21-.45), and corridor lights took it out (.48).
+# A plain dungeon room's furniture stays under finding 1's 18% with the fewer lights through the
+# default's benches (0.05, was 0.15) and its own rocks and bones (below), not here: a city takes
+# these lines too, and more bones on its daises took its raised Props out of band.
 
 [every]
-props = [ { kind = ["torch", "lantern", "lamp"], at = "on_wall", count = [1, 3] },
+props = [ { kind = ["torch", "lantern", "lamp"], at = "on_wall", count = [1, 2], chance = 0.9 },
           { kind = ["brazier", "tiki"], at = "corners", count = [1, 2], chance = 0.1 },
           { kind = ["rock", "bones", "bone_pile"], at = "scatter", count = [1, 3] },
           { kind = ["web", "mushroom", "skull"], at = "corners", count = [1, 2], chance = 0.3, from = 5 },
@@ -287,18 +296,20 @@ props = [ { kind = ["torch", "lantern", "lamp"], at = "on_wall", count = [1, 3] 
 [default]
 props = [ { kind = ["barrel", "crate", "box"], at = "along_wall", count = [1, 2], chance = 0.3 },
           { group = "table_set", at = "centre", chance = 0.25 },
-          { kind = ["bench", "stool"], at = "along_wall", count = [1, 2], chance = 0.15 } ]
+          { kind = ["bench", "stool"], at = "along_wall", count = [1, 2], chance = 0.05 },
+          { kind = ["rock", "bones", "bone_pile"], at = "scatter", count = [1, 2], chance = 0.3 } ]
 
 # A city's rooms have no room type or kind: they take their zone type's recipe (task 14). Finding
 # 1's cities: furniture over a quarter, a third or more lights (half of them standing: lamps and
-# light poles, not only wall torches), a few plants, little debris.
+# light poles, not only wall torches), a few plants, little debris. With fewer wall lights (see
+# `every`) and lit corridors, more of a city room's lights stand (task 14 of world-sockets).
 [zones.city]
 props = [ { kind = ["barrel", "crate", "box"], at = "along_wall", count = [1, 2], chance = 0.2 },
           { group = "crate_stack", at = "along_wall", chance = 0.03 },
           { group = "table_set", at = "centre", chance = 0.2 },
           { kind = ["bookcase", "shelf", "bench"], at = "along_wall", count = [1, 2], chance = 0.5 },
           { kind = "plant", at = "corners", count = [1, 2], chance = 0.3 },
-          { kind = ["lamp", "lantern", "light_pole"], at = "corners", chance = 0.7 } ]
+          { kind = ["lamp", "lantern", "light_pole"], at = "corners", count = 2, chance = 0.6 } ]
 
 [kinds.entrance]
 props = [ { kind = ["brazier", "torch"], at = "by_door", count = [1, 2], chance = 0.3 },

@@ -123,9 +123,11 @@ def test_site_props_are_zon_objects_lights_and_sidecar_rows(built, label):
     sites = side["sites"]["sites"]
     props = _site_props(side)
     assert props, "no Site Props placed"
-    # The ZON: the rooms' Props, then the Sites', one object each; each model packed once.
+    # The ZON: the rooms' Props, the corridors', then the Sites', one object each;
+    # each model packed once.
     objs = [o for o in zon.objects if o.name.startswith("decor_")]
-    rows = _room_props(side) + props
+    corridors = [p for r in side.get("corridors", []) for p in r.get("props", [])]
+    rows = _room_props(side) + corridors + props
     assert len(objs) == len(rows) == side["decor"]["props"]
     for o, p in zip(objs, rows):
         assert (o.x, o.y, o.z) == pytest.approx((p["x"], p["y"], p["z"]), abs=1e-3)

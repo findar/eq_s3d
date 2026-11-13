@@ -110,10 +110,10 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: tests/conftest.py (shared sweep builds), tests/test_vertical_build.py, tests/test_graph_layout_build.py, tests/test_walls_build.py, tests/test_features_sweep.py
   - Reqs: 7.5
 
-- [ ] 14. Corridor RoomContexts
+- [x] 14. Corridor RoomContexts
   - Card: [cards/14-corridor-contexts.md](cards/14-corridor-contexts.md)
   - Type: agent · Size: M · Depends: 6
-  - Owns: generators/room_context.py, scripts/record_rooms.py + tests/fixtures/rooms/, tests/test_room_context.py, tests/test_decor_builds.py, tests/test_decor_bands.py (recaptured bands only)
+  - Owns: generators/room_context.py, scripts/record_rooms.py + tests/fixtures/rooms/, tests/test_room_context.py, tests/test_decor_builds.py, tests/test_decor_bands.py (recaptured bands only); widened by the lead: generators/builder.py (the sidecar `corridors` list and `summary()` counting corridors separately, nothing else), generators/eqmap.py `_sidecar_props`, tests/test_decor_bands.py `_read_back` row order, rules/decor/rooms.toml (rooms' wall lights retuned for corridor lights), tests/test_site_decor_builds.py + tests/test_decor_controls.py (rows in ZON order, corridors included), tests/test_decor_placement.py (room-spacing and light-set tests skip corridors; corridor spacing asserted)
   - Reqs: 8
 
 - [ ] 15. HUMAN: first look

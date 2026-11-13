@@ -25,6 +25,12 @@ What a room's context holds, all in world units, Z up:
 A Site's context is the same shape: its ground under the Site_Clear, its Structures as
 Features, its POIs, the Site_Clear's pieces, and no walls, ceiling or doors.
 
+A corridor's context (``source = "corridor"``, world-sockets task 14) follows its rooms':
+its floor and ceiling under its route, its wall faces from the mesh, its two doorways as
+doors with clear zones, a frame's or breach's jambs as Features, and its whole floor as the
+Spine, so decor lights it on its walls only. Stairs and Bridges have none
+(``_corridor_left_out``).
+
 Grids are stored by rows of the plan grid's X index (``grid[i][j]`` is the cell at
 ``origin + (i, j) * cell``). In JSON a height row is run-length coded (``[value, count]``
 pairs, ``null`` for no floor), and a mask row is a string of ``#`` (set) and ``.``.
@@ -107,7 +113,7 @@ class RoomContext:
     """One room (or Site) as decor sees it. ``floor`` and ``ceiling`` are (nx, ny) height
     grids with NaN where there's none; ``reached`` and ``spine`` are (nx, ny) masks."""
     id: str
-    source: str                         # "room" or "site"
+    source: str                         # "room", "corridor" or "site"
     zone_type: str
     theme: str
     race: str
@@ -368,7 +374,6 @@ def _walls(mesh: _Mesh, room, pick: np.ndarray) -> List[WallFace]:
     material whose foot lies on one of the room's wall lines, grouped by the wall piece it
     belongs to, sampled every ``WALL_STEP`` along it."""
     lines = _wall_lines(room)
-    pieces: Dict[tuple, dict] = {}
     # The wall lines each foot lies on, once per foot (wall triangles share their corners).
     on: Dict[tuple, frozenset] = {}
 
@@ -378,13 +383,20 @@ def _walls(mesh: _Mesh, room, pick: np.ndarray) -> List[WallFace]:
             got = on[pt] = frozenset(i for i, ln in enumerate(lines) if _on_segment(*pt, *ln))
         return got
 
+    return _wall_faces(mesh, pick, lambda a, b: bool(lines_at(a) & lines_at(b)))
+
+
+def _wall_faces(mesh: _Mesh, pick: np.ndarray, keep) -> List[WallFace]:
+    """Wall faces from the level-facing triangles ``pick``: each wall piece (the two plan
+    points its triangles stand on) that ``keep(a, b)`` takes, sampled every ``WALL_STEP``."""
+    pieces: Dict[tuple, dict] = {}
     for k in np.nonzero(pick)[0]:
         t = mesh.tri[k]
         pts = sorted({(round(float(x), 3), round(float(y), 3)) for x, y, _z in t})
         if len(pts) != 2:
             continue
         a, b = pts
-        if not lines_at(a) & lines_at(b):
+        if not keep(a, b):
             continue
         piece = pieces.setdefault((a, b), {"z": {a: [], b: []}, "n": []})
         for x, y, z in t:
@@ -458,8 +470,9 @@ def _extra_doors(spec) -> Dict[str, Dict[str, list]]:
 
 
 def contexts(spec, mesh) -> List[RoomContext]:
-    """Every room of a built dungeon, city or outdoor dungeon, from its spec and its built
-    TER (``mesh``). Reads them; changes neither."""
+    """Every room of a built dungeon, city or outdoor dungeon, then every corridor
+    (``corridor_contexts``), from its spec and its built TER (``mesh``). Reads them; changes
+    neither."""
     from generators.geometry import _bridge_slots, _door_openings, _merge_openings
     from generators.outline import _core_rect, _door_throats
     from generators.room_layouts import CELL, RoomGrid
@@ -523,6 +536,172 @@ def contexts(spec, mesh) -> List[RoomContext]:
                       for f in room.features],
             pois=[_clean({"purpose": p.purpose, "name": p.name, "x": p.x, "y": p.y, "z": p.z,
                           "feature": p.feature}) for p in room.pois]))
+    return out + corridor_contexts(spec, m)
+
+
+# ---------------------------------------------------------------------------
+# Corridors (world-sockets task 14, Req 8)
+# ---------------------------------------------------------------------------
+
+#: A corridor's wall faces this far along it from a frame's or breach's line, past the
+#: solid's own depth, are left out: a wall Prop there would stand in the jamb (u).
+OPENING_CLEAR = 5.0
+
+
+def _in_rects(px, py, rects, grow: float = 0.0):
+    out = np.zeros(np.shape(px), bool)
+    for x0, y0, x1, y1 in rects:
+        out |= (px > x0 - grow) & (px < x1 + grow) & (py > y0 - grow) & (py < y1 + grow)
+    return out
+
+
+def _floor_at(floor: np.ndarray, xs: np.ndarray, ys: np.ndarray, x: float, y: float) -> bool:
+    i = int(round((x - xs[0]) / (xs[1] - xs[0]))) if len(xs) > 1 else 0
+    j = int(round((y - ys[0]) / (ys[1] - ys[0]))) if len(ys) > 1 else 0
+    return 0 <= i < floor.shape[0] and 0 <= j < floor.shape[1] and not np.isnan(floor[i, j])
+
+
+def _corridor_left_out(cor) -> bool:
+    """Stairs and Bridges have no context: a stair's floor is treads and a Bridge's deck has
+    railings and a shaft beneath, which this reading of a corridor doesn't follow."""
+    return bool(cor.bridge) or (cor.steps != 0 and abs(cor.to_z - cor.from_z) > 0.01)
+
+
+def corridor_contexts(spec, mesh) -> List[RoomContext]:
+    """One context per corridor of a built zone (``source = "corridor"``), stairs and Bridges
+    left out (``_corridor_left_out``): its floor and ceiling on the plan grid, read from the
+    built mesh one leg or bend at a time within that piece's own heights (so a room stacked
+    over it isn't its floor); its wall faces from the mesh (any level triangle of its wall
+    materials inside it, facing into it: a rough leg's walls stand in off its side lines);
+    both doorways as doors with their clear zones; a frame's or breach's jambs as solid
+    Features. Its whole floor is the Spine: decor lights a corridor on its walls and keeps
+    every Prop off its way through."""
+    from generators.geometry import MeshBuilder
+    from generators.room_layouts import CELL
+    from generators.routing import corridor_route
+    from generators.semantics import body_height
+
+    m = mesh if isinstance(mesh, _Mesh) else _Mesh(mesh)
+    h = body_height(spec.dungeon_race)
+    rooms = {r.id: r for r in spec.rooms}
+    boxes = [(r.bounds[0][0], r.bounds[0][1], r.bounds[1][0], r.bounds[1][1]) for r in spec.rooms]
+    out = []
+    for cor in spec.corridors:
+        if _corridor_left_out(cor):
+            continue
+        route = corridor_route(cor, rooms)
+        wps, axes = list(route.waypoints), list(route.axes)
+        zs, _carry = MeshBuilder._waypoint_zs(wps, None if route.carry < 0 else route.carry,
+                                              cor.from_z, cor.to_z)
+        hw, height = cor.width / 2, cor.height
+        # The pieces: each leg waypoint to waypoint, each bend's square; with their heights.
+        pieces = []
+        for k in range(len(wps) - 1):
+            (ax, ay), (bx, by) = wps[k], wps[k + 1]
+            rect = (min(ax, bx), ay - hw, max(ax, bx), ay + hw) if axes[k] else \
+                (ax - hw, min(ay, by), ax + hw, max(ay, by))
+            pieces.append((rect, min(zs[k], zs[k + 1]), max(zs[k], zs[k + 1])))
+        for i in range(1, len(wps) - 1):
+            pieces.append((MeshBuilder._bend_square(wps, i, hw), zs[i], zs[i]))
+        rects = [p[0] for p in pieces]
+        x0, y0 = min(r[0] for r in rects), min(r[1] for r in rects)
+        x1, y1 = max(r[2] for r in rects), max(r[3] for r in rects)
+        z0, z1 = min(zs), max(zs) + height
+        xs = np.arange(x0 + CELL / 2, x1, CELL)
+        ys = np.arange(y0 + CELL / 2, y1, CELL)
+        if len(xs) == 0 or len(ys) == 0:
+            continue
+        gx, gy = np.meshgrid(xs, ys, indexing="ij")
+        inside = _in_rects(gx, gy, rects) & ~_in_rects(gx, gy, boxes)
+
+        t = cor.transition
+        walls_mat = {cor.wall_material} | ({t.wall_material} if t is not None and t.wall_material else set())
+        ceil_mat = {cor.ceiling_material} | ({t.ceiling_material} if t is not None and t.ceiling_material else set())
+        floor = np.full(gx.shape, np.nan)
+        ceiling = np.full(gx.shape, np.nan)
+        level = np.zeros(len(m.tri), bool)
+        flat = np.abs(m.normal[:, 2]) < WALL_NZ
+        is_wall = np.isin(m.material, list(walls_mat))
+        is_ceil = np.isin(m.material, list(ceil_mat)) & (m.normal[:, 2] < -FLAT_NZ)
+        for (rx0, ry0, rx1, ry1), lo, hi in pieces:
+            near = m.within(rx0 - 0.05, ry0 - 0.05, -1e9, rx1 + 0.05, ry1 + 0.05, 1e9)
+            up = near & (m.normal[:, 2] > FLAT_NZ) & (m.lo[:, 2] >= lo - 0.5) & (m.hi[:, 2] <= hi + 0.5)
+            cell = _in_rects(gx, gy, [(rx0, ry0, rx1, ry1)])
+            got = _sample(m.tri[up], xs, ys, "max")
+            floor = np.where(cell & ~np.isnan(got), np.fmax(floor, got), floor)
+            down = near & is_ceil & (m.lo[:, 2] >= lo + 0.5) & (m.hi[:, 2] <= hi + height + 0.5)
+            got = _sample(m.tri[down], xs, ys, "min")
+            ceiling = np.where(cell & ~np.isnan(got), np.fmin(ceiling, got), ceiling)
+            level |= near & flat & is_wall & (m.lo[:, 2] < hi + height - 0.1) & (m.hi[:, 2] <= hi + height + 0.5) \
+                & (m.hi[:, 2] > lo - 0.5)
+        floor[~inside] = np.nan
+        ceiling[np.isnan(floor) | ~(ceiling > floor + 0.5)] = np.nan
+        # A wall piece of the corridor's own: its foot inside it (or on its edge) and its face
+        # turned into it, not into a room it opens on.
+        k = np.nonzero(level)[0]
+        if len(k):
+            cx, cy = m.tri[k, :, 0].mean(axis=1), m.tri[k, :, 1].mean(axis=1)
+            n = m.normal[k, :2]
+            ln = np.hypot(n[:, 0], n[:, 1])
+            ln[ln < 1e-9] = 1.0
+            fx, fy = cx + n[:, 0] / ln, cy + n[:, 1] / ln
+            mine = _in_rects(cx, cy, rects, 0.1) & _in_rects(fx, fy, rects) & ~_in_rects(fx, fy, boxes)
+            level[:] = False
+            level[k[mine]] = True
+        walls = _wall_faces(m, level, lambda a, b: True)
+        # ...and standing by its floor: a corridor runs a little into the room it opens on
+        # (to the room's Box), and its walls there are the room's doorway, not the corridor's.
+        walls = [w for w in walls if all(_floor_at(floor, xs, ys, w.x + w.nx * d, w.y + w.ny * d)
+                                         for d in (CELL, 1.5 * CELL))]
+
+        # Frames and breaches: each jamb (as far in as it reaches) a solid Feature, and the
+        # walls beside them kept bare.
+        features = []
+        solid = np.zeros(gx.shape, bool)
+        if t is not None and t.material and t.form in ("frame", "breach"):
+            line, middle = (t.x, t.y) if t.along_x else (t.y, t.x)
+            for sign in (-1, 1):
+                a, b = middle + sign * (hw - t.jamb), middle + sign * hw
+                c0, c1 = min(a, b), max(a, b)
+                corners = [(line - t.depth, c0), (line + t.depth, c0), (line + t.depth, c1), (line - t.depth, c1)]
+                plan = [(u, v) if t.along_x else (v, u) for u, v in corners]
+                if sum(p[0] * q[1] - q[0] * p[1] for p, q in zip(plan, plan[1:] + plan[:1])) < 0:
+                    plan = plan[::-1]
+                features.append(_clean({"kind": "opening", "plan": plan, "height": height, "steps_side": ""}))
+                solid |= _in_polygon(gx, gy, plan)
+            walls = [w for w in walls
+                     if abs((w.x if t.along_x else w.y) - line) > t.depth + OPENING_CLEAR]
+
+        # The doorways: each end of the route, the room past it, its clear zone going in.
+        doors, starts = [], np.zeros(gx.shape, bool)
+        depth = 2 * h + 2.0
+        for end, nxt, z in ((0, 1, zs[0]), (len(wps) - 1, len(wps) - 2, zs[-1])):
+            (ex, ey), (qx, qy) = wps[end], wps[nxt]
+            along_x = axes[0] if end == 0 else axes[-1]
+            # A leg stands on its first waypoint's line (a near-straight route's ends differ).
+            if along_x:
+                ey = wps[0][1] if end == 0 else wps[-2][1]
+            else:
+                ex = wps[0][0] if end == 0 else wps[-2][0]
+            if along_x:
+                side = "W" if qx > ex else "E"
+                clear = (ex, ey - hw, ex + depth, ey + hw) if side == "W" else (ex - depth, ey - hw, ex, ey + hw)
+                c0, c1 = ey - hw, ey + hw
+            else:
+                side = "S" if qy > ey else "N"
+                clear = (ex - hw, ey, ex + hw, ey + depth) if side == "S" else (ex - hw, ey - depth, ex + hw, ey)
+                c0, c1 = ex - hw, ex + hw
+            clear = (max(clear[0], x0), max(clear[1], y0), min(clear[2], x1), min(clear[3], y1))
+            doors.append(Door(side, _r(c0), _r(c1), _r(z + height), [], tuple(_rr(clear))))
+            starts |= _in_rects(gx, gy, [clear], 0.01)
+        floor, ceiling = _rounded(floor), _rounded(ceiling)
+        reached = _reached(floor, solid, [tuple(int(v) for v in c) for c in np.argwhere(starts)])
+        out.append(RoomContext(
+            id=cor.id, source="corridor", zone_type=spec.zone_type, theme=spec.dungeon_theme or "",
+            race=spec.dungeon_race or "", room_type="", kind="", style="", seed=int(spec.seed or 0),
+            body_height=_r(h), scales={}, box=tuple(_rr((x0, y0, z0, x1, y1, z1))), cell=CELL,
+            origin=(_r(xs[0]), _r(ys[0])), floor=floor, reached=reached, ceiling=ceiling,
+            spine=~np.isnan(floor), walls=walls, doors=doors, features=features))
     return out
 
 
@@ -632,4 +811,4 @@ def load(path) -> Tuple[dict, List[RoomContext]]:
 
 
 __all__ = ["CAPSULE_SIDES", "DIGITS", "Door", "RoomContext", "STEP_UP", "VERSION", "WALL_STEP", "WallFace",
-           "contexts", "dumps", "load", "save", "site_contexts"]
+           "contexts", "corridor_contexts", "dumps", "load", "save", "site_contexts"]
