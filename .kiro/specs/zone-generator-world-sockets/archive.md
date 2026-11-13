@@ -85,6 +85,11 @@ Found while working this step:
 - **A build whose spec `world_of` can't remake now fails** (task 6), e.g. a hand-edited
   Landform. Nothing makes one today.
 
+- **The page's Socket markers infer the map's world-to-pixel mapping** from the drawn room
+  labels (`web/src/sockets.ts`, task 9), since the map SVG doesn't record it. A change to how
+  `generators/mapview.py` draws labels would quietly drop the markers (a console warning is
+  all). Sturdier: have `mapview.py` record the mapping on the SVG, or draw the Sockets itself.
+
 Out of this step, named so they aren't lost:
 
 - An exact Mouth Socket chosen by the World, and more than one dungeon in a World (design
