@@ -71,6 +71,20 @@ point Site Sockets (design question 2) are where they would be fixed:
 - **Outdoor dungeons get Sites on only some seeds**: their open ground is small (about
   0.8e6 u²).
 
+Found while working this step:
+
+- **Stair and Bridge corridors get no decor** (task 14 left them out rather than read stair
+  treads and bridge decks as the gate does).
+- **City decor sits near its band tops** after task 14's retune: furniture .33 of a .34 top,
+  light .43 of .45, container .14 of .15, and the rules' expected furniture .359 of a .36 cap.
+  A small recipe change can tip one over.
+- **`outdoor_dungeon.keep_clear_shapes` duplicates `stages.entrance_keep_clear`** (task 5; a
+  test pins them equal). Only tests call the first now: delegate or delete it.
+- **`build_outdoor_dungeon_ter`, `tunnel_doors` and `sidecar_block` still call
+  `landscape_for`** instead of reading the World (tasks 4 and 6).
+- **A build whose spec `world_of` can't remake now fails** (task 6), e.g. a hand-edited
+  Landform. Nothing makes one today.
+
 Out of this step, named so they aren't lost:
 
 - An exact Mouth Socket chosen by the World, and more than one dungeon in a World (design
