@@ -80,7 +80,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: main.py, server/app.py, tests/test_stage_seeds_controls.py, tests/test_hygiene.py (its control-name guard and allow-lists)
   - Reqs: 4.1
 
-- [ ] 9. Reroll rooms on the page; Sockets on the map
+- [x] 9. Reroll rooms on the page; Sockets on the map
   - Card: [cards/09-page.md](cards/09-page.md)
   - Type: agent · Size: S · Depends: 8
   - Owns: web/src/, web/index.html

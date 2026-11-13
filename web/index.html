@@ -108,6 +108,11 @@
         <label title="Rerolls the Props alone; blank uses the zone's seed">Decor seed
           <input type="number" id="decor-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
         </label>
+        <!-- Every zone type: the rooms seed rerolls the rooms and Sites on
+             the same World. A blank rooms seed uses the zone's. -->
+        <label title="Rerolls the rooms and Sites on the same land; blank uses the zone's seed">Rooms seed
+          <input type="number" id="rooms-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
+        </label>
         <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
              only) the topology rule set. "From theme" lets the dungeon theme
              pick its base set; the others are the shipped base sets under
@@ -228,8 +233,13 @@
     <div class="row"><span>Regions</span><span id="m-regions">—</span></div>
     <div class="row"><span>Gates</span><span id="m-gates">—</span></div>
 
+    <!-- The sidecar's seeds block: the stage seeds this build used, resolved. -->
+    <h3>Seeds</h3>
+    <div class="row"><span>Rooms</span><span class="seed-row"><span id="m-rooms-seed">—</span><button id="reroll-rooms" class="seed-btn" title="Rebuild this zone with a fresh rooms seed: same land, new rooms and Sites" disabled>⟳ reroll rooms</button></span></div>
+    <div class="row"><span>Decor</span><span class="seed-row"><span id="m-decor-seed">—</span><button id="reroll-decor" class="seed-btn" title="Rebuild this zone with a fresh decor seed: same zone, new Props" disabled>⟳ reroll decor</button></span></div>
+
     <h3>Props</h3>
-    <div class="row"><span>Decor</span><span class="seed-row"><span id="m-decor">—</span><button id="reroll-decor" class="seed-btn" title="Rebuild this zone with a fresh decor seed: same zone, new Props" disabled>⟳ reroll decor</button></span></div>
+    <div class="row"><span>Decor</span><span id="m-decor">—</span></div>
     <div id="m-props"><span style="color:#555;font-size:11px">—</span></div>
 
     <h3>Bounds (u)</h3>
