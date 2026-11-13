@@ -203,7 +203,8 @@ What this says:
 - **Where the corpora help directly**: the outdoor-dungeon planning and Site placement tests
   (task 12), and any sweep that measures only rooms or Sites (the Site bands' `stock_r`).
 
-**Targets** (Req 7.5, decision 8): the fast suite (`-m "not slow"`) under **5 minutes**, the
+**Targets** (Req 7.5, decision 8, revised 2026-11-13): the fast suite (`-m "not slow"`) under
+**8 minutes**, the
 full suite under **25 minutes**, each test's first-try and band checks kept. Measured idle:
 fast 16.0 min, full 42.0 min. Task 13 gets there by sharing builds across the sweep files,
 moving placement-only and planning-only sweeps onto the corpora, and marking or shrinking the

@@ -40,6 +40,9 @@ Answered by the user on 2026-11-12, one prompt per question.
    goldens, the room corpus and the P12 bands are recaptured once.
 8. **Suite targets: the fast suite under 5 minutes, the full suite under 25** (recommended),
    every first-try and band check kept. Task 1 may revise them with the user's word.
+   **Revised 2026-11-13 by the user: the fast suite under 8 minutes** (full suite still under
+   25). Task 1 measured 16 min fast / 42 min full idle; four unmarked tests of 5-6 min each
+   set a floor near 6 min, so they stay in the fast suite.
 
 ## Follow-ups
 
