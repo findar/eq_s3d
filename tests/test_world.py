@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import inspect
 import json
 import math
 import subprocess
@@ -119,3 +121,72 @@ def test_loads_without_the_wilderness_or_outdoor_dungeon():
     root = Path(__file__).resolve().parents[1]
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, cwd=root)
     assert out.stdout.strip() == "[]"
+
+
+# -- the World stage (task 3; design P2, P3) ---------------------------------
+
+LANDSCAPE_SEEDS = [(7, None), (3, {"E": "river"}), (6, {"N": "zoneline"})]
+SOCKETS = {"dungeon": [("root", "root")], "city": [("root", "root")],
+           "wilderness": [("ground", "ground")],
+           "outdoor_dungeon": [("hill0", "hillside"), ("ground", "ground")]}
+
+
+def _grid_zs(ter, shape) -> np.ndarray:
+    n = shape[0] * shape[1]
+    return np.array([v.z for v in ter.vertices[:n]], dtype=np.float64).reshape(shape)
+
+
+def test_world_stage_reads_only_world_inputs():
+    params = list(inspect.signature(W.world_for).parameters)
+    assert params == ["zone_type", "seed", "biome", "edges", "zone_size", "landform"]
+
+
+@pytest.mark.parametrize("zone_type", sorted(SOCKETS))
+def test_each_zone_type_offers_its_sockets_and_the_same_text(zone_type):
+    w = W.world_for(zone_type, 11, edges={"E": "river"})
+    text = w.to_json()
+    assert W.world_for(zone_type, 11, edges={"E": "river"}).to_json() == text
+    assert World.from_json(text) == w
+    assert [(s.id, s.kind) for s in w.sockets] == SOCKETS[zone_type]
+    assert (w.terrain is None) == (zone_type in ("dungeon", "city"))
+
+
+@pytest.mark.parametrize("seed,edges", LANDSCAPE_SEEDS)
+def test_wilderness_heights_exact(seed, edges):
+    from generators.wilderness.build import build_wilderness_ter, landscape_for, wilderness_spec
+
+    spec = wilderness_spec("w", seed, edges)
+    w = World.from_json(W.world_of(spec).to_json())
+    assert w.to_json() == W.world_for("wilderness", seed, edges=edges).to_json()
+    t = w.terrain
+    assert W._same_floats(t.heights, _grid_zs(build_wilderness_ter(spec, "t", 1), t.heights.shape))
+    assert W._same_floats(t.undrowned, np.asarray(landscape_for(spec).bowl.heights, np.float64))
+    assert w.spawn == tuple(spec.safe_point) == (w.socket("ground").x, w.socket("ground").y,
+                                                w.socket("ground").z)
+    assert w.regions == [dataclasses.asdict(r) for r in spec.regions]
+
+
+@pytest.mark.parametrize("seed,edges", LANDSCAPE_SEEDS)
+def test_outdoor_dungeon_host_and_entry_exact(seed, edges):
+    from generators.outdoor_dungeon import _UNDIGGABLE, host_envelope, outdoor_dungeon_spec
+    from generators.wilderness.build import build_wilderness_ter
+
+    spec = outdoor_dungeon_spec("od", seed, edges)
+    w = World.from_json(W.world_of(spec).to_json())
+    assert w.to_json() == W.world_for("outdoor_dungeon", seed, edges=edges).to_json()
+    host = build_wilderness_ter(spec, "t", 1)            # the host TER, before the Apron
+    t = w.terrain
+    assert W._same_floats(t.heights, _grid_zs(host, t.heights.shape))
+    env = host_envelope(spec, host)
+    hill = w.socket("hill0")
+    assert (hill.x, hill.y) == env.entry and hill.side == spec.wilderness["landform"]["approach"]
+    assert hill.z == float(env.surface(*env.entry))
+    assert [tuple(p) for p in hill.ground["footprint"]] == list(env.footprint)
+    assert hill.ground["rock_cover"] == env.rock_cover
+    assert hill.ground["landform"] == spec.wilderness["landform"]
+    near = np.pad(np.isin(t.node_type, _UNDIGGABLE), 1)
+    keep = {(i, j) for i in range(t.heights.shape[0]) for j in range(t.heights.shape[1])
+            if near[i:i + 3, j:j + 3].any()}
+    assert {tuple(p) for p in hill.ground["undiggable"]} == keep
+    # The Spawn before the Apron: the Apron only ever lowers the spec's.
+    assert w.spawn[:2] == tuple(spec.safe_point[:2]) and spec.safe_point[2] <= w.spawn[2]

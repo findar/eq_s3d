@@ -170,6 +170,14 @@ def _wet_quads(land: Landscape, kit: BiomeKit) -> np.ndarray:
     return wet if kit.water else np.zeros_like(wet)
 
 
+def grid_heights(land: Landscape, kit: BiomeKit) -> np.ndarray:
+    """The TER's grid vertex heights (float64, shape ``land.bowl.heights``):
+    the bowl's heights with the water bed sunk under the kit's water quads.
+    ``build_wilderness_ter`` writes exactly these; the World carries them."""
+    return sink_water_bed(np.asarray(land.bowl.heights, dtype=np.float64),
+                          _wet_quads(land, kit), float(land.matrix.water_level))
+
+
 # ---------------------------------------------------------------------------
 # Spec, mesh and gate
 # ---------------------------------------------------------------------------
@@ -227,7 +235,7 @@ def build_wilderness_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> Ter
     ox, oy = land.synth.origin
     water_level = float(land.matrix.water_level)
     wet = _wet_quads(land, kit)
-    h = sink_water_bed(np.asarray(land.bowl.heights, dtype=np.float64), wet, water_level)
+    h = grid_heights(land, kit)
     nx, ny = h.shape
 
     ter = TerFile(name=ter_name, magic=MAGIC_TERRAIN, version=ter_version)

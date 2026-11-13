@@ -445,6 +445,47 @@ _UNDIGGABLE = ("mountain_rim", "zoneline_gap", "water", "river", "lava")
 _RUN = {"W": (0, -1), "E": (0, 1), "S": (1, -1), "N": (1, 1)}
 
 
+def undiggable(node_type: np.ndarray, shape: Tuple[int, int]) -> np.ndarray:
+    """The vertices the Apron never digs (bool, ``shape``): those within a cell
+    of an ``_UNDIGGABLE`` cell. Digging them would open the Rim, move a
+    zoneline or sink ground under the water plane."""
+    nx, ny = shape
+    frozen = np.pad(np.isin(node_type, _UNDIGGABLE), 1)
+    keep = np.zeros((nx, ny), bool)
+    for di in (0, 1, 2):
+        for dj in (0, 1, 2):
+            keep |= frozen[di:di + nx, dj:dj + ny]
+    return keep
+
+
+def hillside_socket(land, heights: np.ndarray) -> Dict:
+    """The World's ``hillside`` Socket for a host-hill landscape (world-sockets
+    design "The Socket"), as ``Socket`` keyword arguments, read the way
+    planning reads them: ``x, y`` the approach foot, ``z`` the ground there on
+    ``heights`` (the TER's vertex grid, interpolated as ``host_envelope``
+    reads it), ``yaw`` the approach side's outward direction, ``width`` one
+    terrain cell (the least Tunnel). ``ground`` holds the footprint clipped to
+    the bowl's interior, the Rock_Cover, the grid's origin and resolution,
+    the ``undiggable`` vertices as ``[i, j]`` and the placed Landform. The
+    floor limit and Tunnel height depend on the dungeon, so they aren't here."""
+    landform = land.matrix.landform
+    if landform is None:
+        raise ValueError("a hillside Socket needs a landscape with a Landform")
+    origin = (float(land.synth.origin[0]), float(land.synth.origin[1]))
+    res = float(land.synth.resolution)
+    foot = approach_foot(landform)
+    dx, dy = _SIDE_STEP[landform.approach]
+    keep = undiggable(land.synth.node_type, heights.shape)
+    return {"x": foot[0], "y": foot[1],
+            "z": float(_grid_surface(heights, origin, res)(*foot)),
+            "yaw": math.atan2(dy, dx), "side": landform.approach,
+            "width": res, "height": 0.0, "accepts": ("dungeon",),
+            "ground": {"footprint": clip_to_rect(host_footprint(landform), bowl_interior(land)),
+                       "rock_cover": ROCK_COVER, "origin": origin, "res": res,
+                       "undiggable": np.argwhere(keep).tolist(),
+                       "landform": landform.to_dict()}}
+
+
 @dataclass(frozen=True)
 class Entrance:
     """Where the Tunnel leaves a room and opens onto the Apron.
@@ -614,13 +655,7 @@ def plan_entrance(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec, *,
     side = landform.approach
     ax, out = _RUN[side]
     grid = _host_grid(host, ter)
-    # Vertices within a cell of a frozen one: digging them would open the
-    # Rim, move a zoneline or sink ground under the water plane.
-    frozen = np.pad(np.isin(land.synth.node_type, _UNDIGGABLE), 1)
-    keep = np.zeros(grid.z.shape, bool)
-    for di in (0, 1, 2):
-        for dj in (0, 1, 2):
-            keep |= frozen[di:di + grid.nx, dj:dj + grid.ny]
+    keep = undiggable(land.synth.node_type, grid.z.shape)
     rooms = {r.id: r for r in dungeon.rooms}
     # (id, rect, top): a blocker's top is its ceiling. On a stacked dungeon
     # (step 7 task 7) a room or corridor on a lower Level that the Tunnel
