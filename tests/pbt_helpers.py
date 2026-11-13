@@ -391,19 +391,50 @@ def opening_floor_z(ter, x: float, y: float, z_ref: float, band: float,
     assertion (verified against an injected 1.5 u lip). ``far_z=None`` keeps the
     original behaviour for any caller that does not know the far end.
     """
-    out: List[float] = []
-    for tri in upward_faces(ter):
-        inside, z = _point_in_triangle_xy(x, y, tri, tol=1e-4)
-        if not (inside and (z_ref - band) <= z <= (z_ref + band)):
-            continue
-        # Exempt the FAR room's floor / ramp-top reached via the within-grade
-        # corridor ramp (short ramped corridor whose total rise < band).
-        if (far_z is not None
-                and abs(z - far_z) <= 0.01
-                and abs(z - z_ref) > 0.01):
-            continue
-        out.append(z)
-    return out
+    # Vectorised over the upward faces (world-sockets task 21): the same
+    # barycentric arithmetic as ``_point_in_triangle_xy``, in the same order, so
+    # the same floats; the faces are found once per TER, not once per opening.
+    tri = _upward_array(ter)
+    ax, ay, bx, by = tri[:, 0, 0], tri[:, 0, 1], tri[:, 1, 0], tri[:, 1, 1]
+    cx, cy = tri[:, 2, 0], tri[:, 2, 1]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    ok = np.abs(det) >= 1e-12
+    d = np.where(ok, det, 1.0)
+    l1 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d
+    l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d
+    l3 = 1.0 - l1 - l2
+    tol = 1e-4
+    ok &= (l1 >= -tol) & (l2 >= -tol) & (l3 >= -tol)
+    z = l1 * tri[:, 0, 2] + l2 * tri[:, 1, 2] + l3 * tri[:, 2, 2]
+    ok &= ((z_ref - band) <= z) & (z <= (z_ref + band))
+    # Exempt the FAR room's floor / ramp-top reached via the within-grade
+    # corridor ramp (short ramped corridor whose total rise < band).
+    if far_z is not None:
+        ok &= ~((np.abs(z - far_z) <= 0.01) & (np.abs(z - z_ref) > 0.01))
+    return [float(v) for v in z[ok]]
+
+
+#: ``_upward_array``'s one-entry cache: (the ``ter`` it was given, its faces).
+_UPWARD_CACHE: list = [None, None]
+
+
+def _upward_array(ter) -> np.ndarray:
+    """``upward_faces(ter)`` as one (N, 3, 3) array, kept for the last ``ter``
+    given (a probe asks for every opening of one zone in turn). The normal is
+    ``_winding_normal``'s: the cross product vectorised (the same products),
+    each length by ``np.linalg.norm`` on its own row, so the same faces pass."""
+    if _UPWARD_CACHE[0] is ter:
+        return _UPWARD_CACHE[1]
+    t = _ter(ter)
+    v = np.array([[p.x, p.y, p.z] for p in t.vertices], dtype=float).reshape(-1, 3)
+    idx = np.array([[p.v1, p.v2, p.v3] for p in t.polygons], dtype=np.int64).reshape(-1, 3)
+    tris = v[idx]
+    n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
+    length = np.array([np.linalg.norm(row) for row in n])
+    nz = np.divide(n[:, 2], length, out=np.zeros(len(n)), where=length != 0.0)
+    faces = tris[nz >= _COS_40]
+    _UPWARD_CACHE[0], _UPWARD_CACHE[1] = ter, faces
+    return faces
 
 
 # ---------------------------------------------------------------------------
