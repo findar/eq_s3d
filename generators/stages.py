@@ -325,7 +325,8 @@ def attach_sites(world: World, socket: Socket, seed: int, *, biome: str = "plain
 def apron_edit(world: World, socket: Socket, grid, entrance) -> TerrainEdit:
     """The Apron in front of ``entrance``'s Mouth as a Terrain edit of ``world``: the grid
     vertices it lowers, and the Spawn's new height when the dug ground reaches it (it drops
-    by as much as the ground under it does)."""
+    by as much as the ground under it does). The new height is the 32-bit float at or above
+    it, as the TER stores the dug ground, so the shipped floor is never above the Spawn."""
     from generators.outdoor_dungeon import _apron, _grid_surface
 
     dug, _ = _apron(grid, entrance)
@@ -334,7 +335,13 @@ def apron_edit(world: World, socket: Socket, grid, entrance) -> TerrainEdit:
     sx, sy, sz = world.spawn
     before = float(_grid_surface(grid.z, grid.origin, grid.res)(sx, sy))
     after = float(_grid_surface(dug, grid.origin, grid.res)(sx, sy))
-    spawn = (sx, sy, sz + after - before) if after < before else None
+    spawn = None
+    if after < before:
+        z = sz + after - before
+        z32 = np.float32(z)
+        if float(z32) < z:
+            z32 = np.nextafter(z32, np.float32(np.inf))
+        spawn = (sx, sy, float(z32))
     return TerrainEdit(socket=socket.id, cells=cells, spawn=spawn)
 
 

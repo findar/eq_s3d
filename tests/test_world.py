@@ -195,6 +195,26 @@ def test_outdoor_dungeon_host_and_entry_exact(seed, edges):
     assert spec.water_level == t.water_level
 
 
+def test_apron_spawn_is_never_under_the_shipped_floor(monkeypatch):
+    """Task 20: a Spawn the Apron lowers is stored as the 32-bit float at or above the dug
+    ground, so the TER's (32-bit) floor is never above it (fortress troll seed 3 failed the
+    format check's ``safe_point`` by 4.8e-7 u). A fake Apron digs 31.103 u everywhere."""
+    from types import SimpleNamespace
+
+    from generators import outdoor_dungeon as od
+    from generators import stages
+
+    z = np.full((4, 4), -5.009791374206543)              # float32-exact, as the bowl's are
+    grid = SimpleNamespace(z=z, origin=(-60.0, -60.0), res=40.0)
+    monkeypatch.setattr(od, "_apron", lambda g, e: (g.z - 31.103078365325928, False))
+    world = SimpleNamespace(spawn=(-20.0, -20.0, float(z[1, 1])))
+    edit = stages.apron_edit(world, SimpleNamespace(id="hill0"), grid, None)
+    sz = edit.spawn[2]
+    assert float(np.float32(sz)) == sz                   # what the TER can store
+    assert sz >= -5.009791374206543 - 31.103078365325928
+    assert float(np.float32(z[1, 1] - 31.103078365325928)) <= sz   # the TER's floor there
+
+
 def _spawn_vertex(w: World):
     t = w.terrain
     i, j = (round((v - o) / t.res - 0.5) for v, o in zip(w.spawn[:2], t.origin))
