@@ -38,7 +38,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: scripts/stage_timings.py, .kiro/specs/zone-generator-world-sockets/design.md (findings 1 and 2 only)
   - Reqs: 7.5
 
-- [ ] 2. Socket and World types
+- [x] 2. Socket and World types
   - Card: [cards/02-types.md](cards/02-types.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/world.py, tests/test_world.py
