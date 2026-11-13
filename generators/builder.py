@@ -904,6 +904,13 @@ class ZoneBuilder:
             side_meta["decor"] = decor.summary()
         side_meta["sockets"] = stages.sockets_sidecar(stages.apply_edits(world, attachments),
                                                       attachments)
+        # Every stage seed the build used, resolved (world-sockets Req 4.4).
+        # An unset stage seed is the zone's (``None`` only on a bare spec with no seed).
+        zone_seed = self.spec.seed
+        side_meta["seeds"] = {
+            "seed": zone_seed,
+            "rooms_seed": zone_seed if self.spec.rooms_seed is None else self.spec.rooms_seed,
+            "decor_seed": zone_seed if self.spec.decor_seed is None else self.spec.decor_seed}
         # The layout block (graph-layout Req 7.5): engine, rule set, rooms'
         # kinds and sizes, and the built graph's shape, classic or grown.
         layout_meta = layout_sidecar(self.spec)
@@ -1229,5 +1236,7 @@ class BuildResult:
         from generators.stages import handoffs
         spec = self.spec
         recipe = {"name": spec.name, "zone_type": spec.zone_type, "seed": spec.seed,
-                  "decor": spec.decor or "none", "decor_seed": self.decor_seed}
+                  "rooms_seed": spec.seed if spec.rooms_seed is None else spec.rooms_seed,
+                  "decor": spec.decor or "none",
+                  "decor_seed": self.decor_seed}
         return handoffs(spec.name.lower(), self.world, self.attachments, self.rooms, recipe)

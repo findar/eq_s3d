@@ -90,14 +90,21 @@ DECOR_ZONE_TYPES = ("dungeon", "city", "wilderness", "outdoor_dungeon")
 SEED_MAX = 2_147_483_647
 
 
-def decor_seed(value: Any) -> Optional[int]:
-    """A decor seed: None (the zone's seed salts the Props), or a whole 0..2^31-1."""
+def decor_seed(value: Any, name: str = "decor_seed") -> Optional[int]:
+    """A stage seed (``decor_seed``, ``rooms_seed``): None (the zone's seed stands in), or a
+    whole 0..2^31-1. ``name`` is the field the error names."""
     if value is None or value == "":
         return None
     number = value if isinstance(value, int) and not isinstance(value, bool) else None
     if number is None or not 0 <= number <= SEED_MAX:
-        raise ValueError(f"decor_seed {value!r} is not a whole number from 0 to {SEED_MAX}")
+        raise ValueError(f"{name} {value!r} is not a whole number from 0 to {SEED_MAX}")
     return number
+
+
+def rooms_seed(value: Any) -> Optional[int]:
+    """A rooms seed: None (the zone's seed lays the rooms and Sites out), or a whole
+    0..2^31-1 (world-sockets Req 4.1)."""
+    return decor_seed(value, "rooms_seed")
 
 
 def available_inhabitants(inhabitants_file: Optional[Path] = None) -> List[str]:
@@ -195,6 +202,8 @@ class ZonePlan:
     # Props in rooms (dungeon, city, outdoor dungeon; wilderness ignores them).
     decor: str = ""                  # "" (the default, normal) or one of VALID_DECOR
     decor_seed: Optional[int] = None # None: the zone's seed salts them; else rerolls the Props alone
+    # The Attach stage's seed: None is the zone's seed; else rerolls the rooms and Sites alone.
+    rooms_seed: Optional[int] = None
 
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
@@ -275,6 +284,7 @@ class ZonePlan:
             raise ValueError(f"decor {self.decor!r} is not one of: {', '.join(VALID_DECOR)} "
                              f"(or \"\" for the default, {DEFAULT_DECOR})")
         self.decor_seed = decor_seed(self.decor_seed)
+        self.rooms_seed = rooms_seed(self.rooms_seed)
         return self
 
     def to_dict(self) -> Dict[str, Any]:

@@ -523,7 +523,8 @@ def sites_for(spec: ZoneSpec, ter: Optional[TerFile] = None) -> Sites:
                   payload.get("biome", DEFAULT_BIOME), control,
                   getattr(spec, "inhabitant", "") or "",
                   getattr(spec, "sites_source", "default") or "default",
-                  spec.zone_type, landform, zone_size, entrance, _SpecRef(spec))
+                  spec.zone_type, landform, zone_size, entrance, _SpecRef(spec),
+                  getattr(spec, "rooms_seed", None))
 
 
 def _ground_world(spec: ZoneSpec, entrance: Optional[str]):
@@ -545,7 +546,8 @@ def _ground_world(spec: ZoneSpec, entrance: Optional[str]):
 def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: str,
            inhabitant: str, source: str, zone_type: str,
            landform: Optional[Landform] = None, zone_size: float = DEFAULT_ZONE_SIZE,
-           entrance: Optional[str] = None, spec_ref: Optional[_SpecRef] = None) -> Sites:
+           entrance: Optional[str] = None, spec_ref: Optional[_SpecRef] = None,
+           rooms: Optional[int] = None) -> Sites:
     from generators import stages
     from generators.sites.models import model_name, structure_model
     from generators.sites.placement import SitePlacement
@@ -561,7 +563,7 @@ def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: s
             raise ValueError(f"unknown Inhabitant {inhabitant!r}; "
                              f"expected one of {', '.join(sorted(rules.inhabitants))}")
         world = _ground_world(spec_ref.spec, entrance)
-        placement = stages.attach_sites(world, world.socket("ground"), stages.rooms_seed(seed),
+        placement = stages.attach_sites(world, world.socket("ground"), stages.rooms_seed(seed, rooms),
                                         biome=biome, control=control, inhabitant=inhabitant,
                                         rules=rules).sites
 
