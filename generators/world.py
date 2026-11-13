@@ -2,8 +2,8 @@
 
 The World stage makes a :class:`World`: the terrain grid (or none, for a dungeon or city),
 the water level, regions, the Spawn, and the :class:`Socket` s it offers: typed attach points
-that rooms and Sites are built off. This module holds only the types and their JSON form; the
-stage that makes a World is elsewhere.
+that rooms and Sites are built off. This module holds the types, their JSON form and the
+stage itself (:func:`world_for`, :func:`world_of`).
 
 The JSON form is versioned (:data:`VERSION`) and its text is stable (sorted keys, one
 layout), so a recorded World diffs cleanly. Unlike a RoomContext, **no number is rounded**:
@@ -11,10 +11,12 @@ floats are written as Python's ``repr`` writes them (the shortest text that read
 same float, ``-0.0`` included), because the Attach stage makes float comparisons on the
 grid's heights and the footprint's points, and a rounded value moves a room (Req 1.5).
 
-How the grids are written (``grid[i][j]`` is the cell or vertex at ``origin + (i, j) * res``):
+How the grids are written (``grid[i][j]`` is fine cell ``(i, j)``, and its vertex sits at the
+cell's centre, ``origin + (i + 0.5, j + 0.5) * res``, as the TER's grid vertices do):
 
 - **heights**: one list of floats per row, one row to a line. JSON has no NaN, so a missing
   height (NaN) is written ``null`` and read back as NaN; an infinite height is refused.
+  ``bowl_heights`` (written only when it differs from ``heights``) is the same form.
 - **masks** (Rim seal, playable interior): one string per row, ``#`` set and ``.`` not, as
   ``room_context`` writes them.
 - **cell types**: one string per row, one character per cell, and the ``node_codes`` legend
@@ -22,8 +24,9 @@ How the grids are written (``grid[i][j]`` is the cell or vertex at ``origin + (i
 
 A file of another version is refused on read, naming the file and both versions (Req 5.3).
 
-This module imports nothing from ``generators.wilderness`` or ``generators.outdoor_dungeon``,
-so a test can load a World without them.
+Loading a World imports nothing from ``generators.wilderness`` or
+``generators.outdoor_dungeon``, so a test can load one without them: only :func:`world_for`
+imports them, inside the call.
 """
 
 from __future__ import annotations
@@ -48,7 +51,7 @@ NODE_CODES: Dict[str, str] = {
 }
 
 #: Lists written one element to a line, each element whole on its line: a grid's rows.
-ROW_KEYS = frozenset({"heights", "node_type", "rim_seal", "playable_interior"})
+ROW_KEYS = frozenset({"heights", "bowl_heights", "node_type", "rim_seal", "playable_interior"})
 _SHORT = 100
 
 
@@ -225,9 +228,15 @@ class Socket:
 
 @dataclass(eq=False)
 class Terrain:
-    """A World's terrain grid: ``heights`` (float64, exact; NaN for none) on vertices at
-    ``origin + (i, j) * res``, the cell types (``node_type``, strings), the Rim seal and
-    playable-interior masks, and the water level (``None`` for no water)."""
+    """A World's terrain grid: ``heights`` (float64, exact; NaN for none) on the vertices at
+    the centres of fine cells, ``origin + (i + 0.5, j + 0.5) * res``: the TER's grid, after
+    the water bed sinks. Also the cell types (``node_type``, strings), the Rim seal and
+    playable-interior masks, and the water level (``None`` for no water).
+
+    ``bowl_heights`` is the bowl's grid BEFORE the water bed sinks (``land.bowl.heights``,
+    what ``outdoor_dungeon.keep_clear_shapes`` digs the Apron on), or ``None`` when it is
+    the same as ``heights`` (no water quads); :attr:`undrowned` reads whichever applies.
+    It is optional so a file written without it still loads."""
     origin: Tuple[float, float]
     res: float
     heights: np.ndarray
@@ -235,6 +244,7 @@ class Terrain:
     rim_seal: np.ndarray
     playable_interior: np.ndarray
     water_level: Optional[float] = None
+    bowl_heights: Optional[np.ndarray] = None
 
     def __post_init__(self) -> None:
         self.origin = (float(self.origin[0]), float(self.origin[1]))
@@ -245,31 +255,46 @@ class Terrain:
         self.playable_interior = np.asarray(self.playable_interior, dtype=bool)
         if self.water_level is not None:
             self.water_level = float(self.water_level)
+        if self.bowl_heights is not None:
+            self.bowl_heights = np.asarray(self.bowl_heights, dtype=np.float64)
+            if self.bowl_heights.shape != self.heights.shape:
+                raise ValueError(f"bowl_heights is not {self.heights.shape}")
+
+    @property
+    def undrowned(self) -> np.ndarray:
+        """The grid before the water bed sinks: ``bowl_heights``, else ``heights``."""
+        return self.heights if self.bowl_heights is None else self.bowl_heights
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Terrain):
             return NotImplemented
         return (self.to_dict() == other.to_dict()
-                and _same_floats(self.heights, other.heights))
+                and _same_floats(self.heights, other.heights)
+                and _same_floats(self.undrowned, other.undrowned))
 
     def to_dict(self) -> dict:
         types, legend = _types_out(self.node_type)
-        return {"origin": _plain(self.origin), "res": self.res,
-                "shape": list(self.heights.shape), "heights": _heights_out(self.heights),
-                "cell_shape": list(self.node_type.shape), "node_type": types, "node_codes": legend,
-                "rim_seal": _mask_out(self.rim_seal),
-                "playable_interior": _mask_out(self.playable_interior),
-                "water_level": self.water_level}
+        d = {"origin": _plain(self.origin), "res": self.res,
+             "shape": list(self.heights.shape), "heights": _heights_out(self.heights),
+             "cell_shape": list(self.node_type.shape), "node_type": types, "node_codes": legend,
+             "rim_seal": _mask_out(self.rim_seal),
+             "playable_interior": _mask_out(self.playable_interior),
+             "water_level": self.water_level}
+        if self.bowl_heights is not None:
+            d["bowl_heights"] = _heights_out(self.bowl_heights)
+        return d
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> "Terrain":
         shape, cells = tuple(d["shape"]), tuple(d["cell_shape"])
+        bowl = d.get("bowl_heights")
         return cls(origin=tuple(d["origin"]), res=d["res"],
                    heights=_heights_in(d["heights"], shape),
                    node_type=_types_in(d["node_type"], d["node_codes"], cells),
                    rim_seal=_mask_in(d["rim_seal"], cells, "rim_seal"),
                    playable_interior=_mask_in(d["playable_interior"], cells, "playable_interior"),
-                   water_level=d.get("water_level"))
+                   water_level=d.get("water_level"),
+                   bowl_heights=None if bowl is None else _heights_in(bowl, shape))
 
 
 # -- the World ---------------------------------------------------------------
@@ -334,4 +359,123 @@ def load(path) -> World:
     return World.from_json(Path(path).read_text(encoding="utf-8"), source=str(path))
 
 
-__all__ = ["KINDS", "NODE_CODES", "Socket", "Terrain", "VERSION", "World", "dumps", "load", "save"]
+# -- the World stage ---------------------------------------------------------
+
+#: What a ``root`` Socket accepts: a dungeon or city with no world around it.
+ROOT_ACCEPTS = ("dungeon", "city")
+
+
+def _landform(value) -> Any:
+    """A Landform from a Landform, its dict form, or ``None``."""
+    if value is None or not isinstance(value, Mapping):
+        return value
+    from generators.wilderness.matrix import Landform
+    return Landform.from_dict(dict(value))
+
+
+def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = None,
+              edges: Optional[Mapping[str, str]] = None, zone_size: Optional[float] = None,
+              landform: Any = None) -> World:
+    """The World stage (design "The World"): the World of a zone of ``zone_type`` from its
+    seed and the world controls alone (no room, Site or Decor input), the same text for the
+    same inputs.
+
+    A dungeon or city gets no terrain and one ``root`` Socket. A wilderness or outdoor
+    dungeon gets the landscape of ``synthesize_landscape``, read as the build reads it:
+
+    - ``terrain``: the PLACED Landform's landscape (``landscape_for`` of the spec, which the
+      TER, planning and Sites all read). ``heights`` are exactly the TER's grid vertex Zs
+      (``grid_heights``: after the water bed sinks); ``bowl_heights`` the grid before, when
+      it differs; the cell types, Rim seal and playable-interior masks are the synth's.
+    - ``spawn`` and ``regions``: what ``wilderness_spec`` records in the spec (the safe
+      point before any Apron lowers it). These come from the landscape of the Landform
+      REQUEST, as today's spec does; for an outdoor dungeon that landscape differs from the
+      placed one on most seeds (same Spawn XY, another Z), and the World keeps both as the
+      spec and TER have them so no build moves.
+    - Sockets, in attach order: an outdoor dungeon's ``hill0`` (``hillside``, from
+      ``outdoor_dungeon.hillside_socket``), then ``ground`` (Sites; its ``keep_clear`` is
+      empty until an Attachment adds to it).
+
+    ``landform`` is the request (a ``Landform`` or its dict): an outdoor dungeon's defaults
+    to ``DEFAULT_HOST_HILL`` and its ``zone_size`` to ``OUTDOOR_DUNGEON_ZONE_SIZE``. The
+    ``recipe`` records the inputs (``landform`` as asked)."""
+    from generators.zone_types import DEFINED_ZONE_TYPES, LANDSCAPE_ZONE_TYPES
+
+    if zone_type not in DEFINED_ZONE_TYPES:
+        raise ValueError(f"unknown zone type {zone_type!r}; expected one of {DEFINED_ZONE_TYPES}")
+    if zone_type not in LANDSCAPE_ZONE_TYPES:
+        return World(recipe={"zone_type": zone_type, "seed": seed},
+                     sockets=[Socket("root", "root", accepts=ROOT_ACCEPTS)])
+
+    from dataclasses import asdict
+
+    from generators.wilderness.biome import load_biome_kit
+    from generators.wilderness.build import (DEFAULT_BIOME, grid_heights, landscape_for,
+                                             normalise_edges, wilderness_spec)
+    from generators.wilderness.matrix import DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE
+
+    if seed is None:
+        raise ValueError(f"a {zone_type} World needs a seed")
+    biome = biome or DEFAULT_BIOME
+    edges = normalise_edges(edges)
+    request = _landform(landform)
+    if zone_type == "outdoor_dungeon":
+        request = request if request is not None else DEFAULT_HOST_HILL
+        zone_size = zone_size if zone_size else OUTDOOR_DUNGEON_ZONE_SIZE
+    zone_size = float(zone_size) if zone_size else None
+    # The spec's own fields (regions, Spawn, the placed Landform) as plan_to_spec makes them.
+    spec = wilderness_spec("world", seed, edges, biome, landform=request, zone_size=zone_size)
+    land = landscape_for(spec)
+    heights = grid_heights(land, load_biome_kit(biome))
+    bowl = np.asarray(land.bowl.heights, dtype=np.float64)
+    terrain = Terrain(origin=land.synth.origin, res=land.synth.resolution, heights=heights,
+                      node_type=land.synth.node_type, rim_seal=land.synth.rim_seal_mask,
+                      playable_interior=land.synth.playable_interior_mask,
+                      water_level=float(land.matrix.water_level),
+                      bowl_heights=None if _same_floats(bowl, heights) else bowl)
+    spawn = tuple(float(v) for v in spec.safe_point)
+    sockets = []
+    if zone_type == "outdoor_dungeon":
+        from generators.outdoor_dungeon import hillside_socket
+        sockets.append(Socket("hill0", "hillside", **hillside_socket(land, heights)))
+    sockets.append(Socket("ground", "ground", x=spawn[0], y=spawn[1], z=spawn[2],
+                          accepts=("site",),
+                          ground={"masks": ["rim_seal", "playable_interior"],
+                                  "spawn": list(spawn), "keep_clear": []}))
+    recipe = {"zone_type": zone_type, "seed": seed, "biome": biome, "edges": edges,
+              "zone_size": zone_size,
+              "landform": None if request is None else request.to_dict()}
+    return World(recipe=recipe, terrain=terrain, regions=[asdict(r) for r in spec.regions],
+                 spawn=spawn, sockets=sockets)
+
+
+def world_of(spec) -> World:
+    """The World a spec was made on, from its zone type, seed and ``wilderness`` payload
+    (``biome``, ``edges``, ``zone_size``, ``landform``); the spec is not changed.
+
+    The payload records the PLACED Landform, not the request. An outdoor dungeon's request
+    is always ``DEFAULT_HOST_HILL`` (``outdoor_dungeon_spec``), so that is what is asked
+    for again, and the placed Landform must come out as the payload records it; any other
+    spec with a Landform is re-made with the placed one as its request (``landscape_for``
+    reads it that way). Raises ``ValueError`` when the payload's Landform isn't re-made."""
+    payload = spec.wilderness or {}
+    if spec.zone_type not in ("wilderness", "outdoor_dungeon") or not payload:
+        return world_for(spec.zone_type, spec.seed)
+    landform = payload.get("landform")
+    if spec.zone_type == "outdoor_dungeon":
+        from generators.wilderness.matrix import DEFAULT_HOST_HILL
+        landform = DEFAULT_HOST_HILL
+    w = world_for(spec.zone_type, spec.seed, biome=payload.get("biome"),
+                  edges=payload.get("edges"), zone_size=payload.get("zone_size"),
+                  landform=landform)
+    placed = payload.get("landform")
+    if placed is not None and spec.zone_type == "outdoor_dungeon":
+        got = w.socket("hill0").ground["landform"]
+        if _landform(got) != _landform(placed):
+            raise ValueError(f"spec {spec.name!r}: its Landform {placed} is not the one "
+                             f"its request places ({got})")
+    return w
+
+
+__all__ = ["KINDS", "NODE_CODES", "ROOT_ACCEPTS", "Socket", "Terrain", "VERSION", "World",
+           "dumps", "load", "save", "world_for", "world_of"]

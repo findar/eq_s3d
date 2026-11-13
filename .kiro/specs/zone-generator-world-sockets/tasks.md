@@ -44,7 +44,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: generators/world.py, tests/test_world.py
   - Reqs: 1.1, 1.4, 1.5, 5.3
 
-- [ ] 3. The World stage
+- [x] 3. The World stage
   - Card: [cards/03-world-stage.md](cards/03-world-stage.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/world.py, generators/wilderness/build.py (expose what the World reads; no behaviour change), generators/outdoor_dungeon.py (the hillside Socket's ground; no behaviour change), tests/test_world.py
