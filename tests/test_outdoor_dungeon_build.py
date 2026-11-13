@@ -1,5 +1,7 @@
 """Outdoor-dungeon task 6: the backend and the gate (D4, D6, D7, retry); task
-12: the time budget (Req 8.3)."""
+12: the time budget (Req 8.3). Each case here reads a build or runs the
+pipeline; planning alone is tested on the World corpus
+(``test_attach_hillside.py``, ``test_world_corpus.py``)."""
 
 import random
 import time
@@ -25,21 +27,20 @@ def _build(tmp_path, seed, name="odtest"):
 def test_every_room_reached_from_outdoor_spawn(tmp_path, seed):
     """D4: the bowl passes, every room is reached from the outdoor Spawn
     (through the Entrance: the dungeon is otherwise sealed), and every
-    corridor is continuous."""
-    spec, result = _build(tmp_path, seed)
+    corridor is continuous. D6 on the first seed: the same seed gives the
+    same .eqg (the PFS footer's write time aside); it shares this build
+    rather than making two of its own (world-sockets task 12). Planning on
+    its own (rooms in the Envelope, the Tunnel, the Apron) is tested on the
+    World corpus in ``test_attach_hillside.py``."""
+    spec, result = _build(tmp_path / "a", seed)
     report = od.outdoor_dungeon_report(result.eqg_path, spec)
     assert report.rooms[0].room_id == "bowl"
     assert report.total_rooms == len(spec.rooms) + 1
     assert report.passed, report.summary()
     assert report.checked_corridors and report.corridors_passed
-
-
-def test_same_inputs_same_eqg(tmp_path):
-    """D6: the same seed gives the same .eqg (the PFS footer's write time
-    aside)."""
-    _, a = _build(tmp_path / "a", 3)
-    _, b = _build(tmp_path / "b", 3)
-    assert a.eqg_path.read_bytes()[:-4] == b.eqg_path.read_bytes()[:-4]
+    if seed == 0:
+        _, again = _build(tmp_path / "b", seed)
+        assert again.eqg_path.read_bytes()[:-4] == result.eqg_path.read_bytes()[:-4]
 
 
 def test_plain_wilderness_unchanged():

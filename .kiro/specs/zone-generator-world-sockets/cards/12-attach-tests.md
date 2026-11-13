@@ -18,3 +18,4 @@ The Attach stage tested off the World corpus, with no terrain made, no TER built
 Move a case only when it checks nothing the build adds; a case that reads the built `.eqg` stays. Don't add tests for their own sake (steering): each moved case replaces a slower one.
 
 ## Result
+✔ 3863387 · 2464 passed

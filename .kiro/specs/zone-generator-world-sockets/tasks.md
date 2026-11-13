@@ -98,7 +98,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: scripts/record_worlds.py, tests/fixtures/worlds/, tests/test_world_corpus.py
   - Reqs: 7.1, 7.3
 
-- [ ] 12. Attach tests on the World corpus
+- [x] 12. Attach tests on the World corpus
   - Card: [cards/12-attach-tests.md](cards/12-attach-tests.md)
   - Type: agent · Size: M · Depends: 5, 11
   - Owns: tests/test_attach_hillside.py, tests/test_attach_ground.py, tests/test_world_corpus.py (the attach contract), tests/test_outdoor_dungeon_build.py (planning-only cases move out), tests/test_site_placement.py (placement-only cases move out)

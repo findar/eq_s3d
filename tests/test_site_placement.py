@@ -1,22 +1,24 @@
 """Site placement (roadmap step 10 task 6, Requirements 4 and 6).
 
-On synthesized landscapes and their built TERs (no full build):
+On synthesized landscapes and their built TERs (no full build), the checks that need a TER
+or many terrains:
 
 - P4: Sites only on eligible ground (playable plains, slope within the recipe, outside
   Kept_Clear), spaced; Structures inside their Site; Site_Clear free of Structures and
-  trees; misfits drop with a reason, never fail (Req 4.1-4.3);
+  trees (Req 4.1-4.3);
 - P7: every Site names a POI, and every POI stands on ground the walk gate reaches from
   Spawn (Req 6.1);
-- P5: terrain identical whatever the Sites; trees identical with Sites ``none`` and with
-  no Sites argument at all (Req 4.4).
+- P5: trees identical with Sites ``none`` and with no Sites argument at all (Req 4.4);
+- task 15: camps keep their tents over 30 terrains; the target's expected value.
 
 The checks re-derive what they test (TER triangle planes, node types, distances, the walk
-gate's own flood) rather than reusing the placement's helpers.
+gate's own flood) rather than reusing the placement's helpers. The placement-only cases on
+one terrain (misfits, terrain identical across densities, the Sites' own stream, the camp
+ring, an outdoor dungeon's target) run on the World corpus in ``test_attach_ground.py``.
 """
 
 import math
 import pickle
-from dataclasses import replace
 from functools import lru_cache
 
 import numpy as np
@@ -37,6 +39,7 @@ from generators.wilderness.build import (
     synthesize_landscape,
     wilderness_spec,
 )
+from generators.world import world_for
 from tests.pbt_helpers import scaled
 
 RULES = load_sites()
@@ -159,34 +162,6 @@ def test_property_p4_sites_on_eligible_ground_spaced_and_kept_clear(zone):
             assert gap(disc, shape) >= -EPS
 
 
-def test_misfits_drop_with_reasons_and_never_fail():
-    """A recipe that can't fit: too many tents for its ring, and a kind no ground holds."""
-    camp = RULES.kinds["camp"]
-    crowded = replace(camp, structures=(camp.structures[0], replace(camp.structures[1], count=(12, 12))))
-    shrine = RULES.kinds["shrine"]
-    nowhere = replace(shrine, ground=replace(shrine.ground, radius=400.0))
-    # The test picks the kinds (camps and shrines only) and the density itself, so it doesn't
-    # hang on the shipped weights or density.
-    plains = RULES.biomes["plains"]
-    only = replace(plains, density=(2.0, 2.0),
-                   weights={k: (1.0 if k in ("camp", "shrine") else 0.0) for k in RULES.kinds})
-    rules = replace(RULES, kinds={**RULES.kinds, "camp": crowded, "shrine": nowhere},
-                    biomes={**RULES.biomes, "plains": only})
-    spec, ter, land = _zone(7, 0)
-    seen = set()
-    for seed in range(6):
-        p = place_sites(land, ter, seed, control="dense", inhabitant="human", rules=rules)
-        seen |= {(d.kind, d.reason) for d in p.drops}
-        assert all(len([t for t in s.structures if t.kind == "tent"]) < 12 for s in p.sites)
-    assert ("tent", sp.NO_ROOM) in seen
-    # A shrine with no ground is redrawn as a camp (task 15); with nothing else to try, it drops.
-    assert not any(d.reason == sp.NO_GROUND for d in p.drops)
-    alone = replace(rules, biomes={**rules.biomes, "plains": replace(
-        only, weights={k: float(k == "shrine") for k in RULES.kinds})})
-    p = place_sites(land, ter, 0, control="dense", inhabitant="human", rules=alone)
-    assert ("shrine", sp.NO_GROUND) in {(d.kind, d.reason) for d in p.drops}
-
-
 # ---------------------------------------------------------------------------
 # P7
 # ---------------------------------------------------------------------------
@@ -215,23 +190,6 @@ def test_property_p7_every_site_names_a_poi_on_reached_ground(seed, edge_ix):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("seed,edge_ix", [(3, 0), (21, 1)])
-def test_p5_terrain_identical_across_site_densities(seed, edge_ix):
-    spec, ter, land = _zone(seed, edge_ix)
-    ter_bytes = ter.to_bytes()
-    heights = np.array(land.synth.heights, copy=True)
-    bowl = np.array(land.bowl.heights, copy=True)
-    counts = []
-    for control in ("none", "sparse", "normal", "dense"):
-        p = place_sites(land, ter, seed, control=control, rules=RULES)
-        counts.append(len(p.sites))
-        assert ter.to_bytes() == ter_bytes
-        assert np.array_equal(land.synth.heights, heights) and np.array_equal(land.bowl.heights, bowl)
-    assert counts[0] == 0 and counts[-1] > 0
-    fresh = build_wilderness_ter(wilderness_spec("t", seed, EDGES[edge_ix]), "ter_t.ter", 2)
-    assert fresh.to_bytes() == ter_bytes
-
-
-@pytest.mark.parametrize("seed,edge_ix", [(3, 0), (21, 1)])
 def test_p5_trees_identical_with_sites_none(seed, edge_ix):
     _, ter, land = _zone(seed, edge_ix)
     none = place_sites(land, ter, seed, control="none", rules=RULES)
@@ -246,14 +204,6 @@ def test_p5_trees_identical_with_sites_none(seed, edge_ix):
                                     keep_clear=some.clear_shapes())) != pickle.dumps(before)
 
 
-def test_sites_draw_their_own_stream():
-    """Same inputs, same Sites; the stream is the zone seed salted, not the seed itself."""
-    _, ter, land = _zone(3, 0)
-    a = place_sites(land, ter, 3, rules=RULES)
-    assert pickle.dumps(a) == pickle.dumps(place_sites(land, ter, 3, rules=RULES))
-    assert sp.sites_seed(3) != 3 and sp.SITES_SALT == ("sites", "placement")
-
-
 # ---------------------------------------------------------------------------
 # Task 15: camps keep their tents; the target keeps its expected value
 # ---------------------------------------------------------------------------
@@ -263,12 +213,11 @@ def _drop_table(seeds, controls=("normal", "dense")):
     tents (or a centaur's lean-tos) it kept."""
     tried, dropped, camps = {}, {}, []
     for seed in seeds:
-        spec = wilderness_spec("t", seed)
-        ter = build_wilderness_ter(spec, "ter_t.ter", 2)
-        land = synthesize_landscape(seed, None)
+        # The World stage's terrain: the TER's grid, so no TER is built (world-sockets task 12).
+        world = world_for("wilderness", seed)
         for control in controls:
-            p = place_sites(land, ter, seed, control=control, rules=RULES,
-                            spawn_xy=tuple(spec.safe_point[:2]))
+            p = place_sites(world.terrain, world.socket("ground"), seed, control=control,
+                            rules=RULES)
             for s in p.sites:
                 tried[s.kind] = tried.get(s.kind, 0) + len(s.structures)
                 if s.kind == "camp":
@@ -298,29 +247,6 @@ def test_camp_keeps_its_tents_and_no_recipe_drops_a_fifth():
     _check_camps_and_drops(range(1000, 1030))
 
 
-def test_camp_ring_clears_its_fire_and_faces_in():
-    """Each kept tent stands a clear width from the fire and its neighbours, opening inward."""
-    for seed in range(1000, 1004):
-        spec = wilderness_spec("t", seed)
-        ter = build_wilderness_ter(spec, "ter_t.ter", 2)
-        land = synthesize_landscape(seed, None)
-        rules = replace(RULES, biomes={**RULES.biomes, "plains": replace(
-            RULES.biomes["plains"], weights={k: float(k == "camp") for k in RULES.kinds})})
-        p = place_sites(land, ter, seed, control="dense", rules=rules,
-                        spawn_xy=tuple(spec.safe_point[:2]))
-        assert p.sites
-        for s in p.sites:
-            fire = [t for t in s.structures if t.kind == "fire_ring"]
-            tents = [t for t in s.structures if t.kind in ("tent", "lean_to")]
-            assert len(fire) == 1 and 2 <= len(tents) <= 4
-            for i, t in enumerate(tents):
-                assert gap(t.footprint(), fire[0].footprint()) >= sp.CLEAR_WIDTH - EPS
-                to_fire = math.atan2(fire[0].y - t.y, fire[0].x - t.x)
-                assert abs(sp._wrap(t.yaw - to_fire)) < 1e-6
-                for u in tents[i + 1:]:
-                    assert gap(t.footprint(), u.footprint()) >= sp.CLEAR_WIDTH - EPS
-
-
 @pytest.mark.parametrize("band, area", [((0.3, 0.5), 0.816e6), ((0.6, 1.0), 0.816e6),
                                         ((0.3, 0.5), 4.7e6), ((0.1, 0.1), 2.5e6)])
 def test_target_keeps_the_expected_value(band, area):
@@ -334,14 +260,3 @@ def test_target_keeps_the_expected_value(band, area):
     hi = math.floor(band[1] * area / 1e6) + 1
     assert set(draws) <= set(range(lo, hi + 1))
     assert any(draws), "never a Site"
-
-
-def test_target_outdoor_dungeon_gets_a_site_at_normal():
-    """An outdoor dungeon's open ground (~0.82e6 u^2) gets Sites at Normal on some seeds."""
-    from generators import outdoor_dungeon as od
-    from generators.wilderness import build as wb
-    spec = od.outdoor_dungeon_spec("t1001", 1001)
-    ter = od.build_outdoor_dungeon_ter(spec, "ter_t.ter", 2)
-    spec.sites = "normal"
-    p = wb.sites_for(spec, ter).placement
-    assert p.walkable_area < 1e6 and p.target >= 1 and p.sites
