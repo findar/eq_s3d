@@ -1,0 +1,27 @@
+{
+ "recipe": {
+  "seed": 7,
+  "zone_type": "city"
+ },
+ "regions": [],
+ "sockets": [
+  {
+   "accepts": ["dungeon","city"],
+   "ground": {},
+   "height": 0.0,
+   "id": "root",
+   "kind": "root",
+   "level": 0,
+   "side": "",
+   "version": 1,
+   "width": 0.0,
+   "x": 0.0,
+   "y": 0.0,
+   "yaw": 0.0,
+   "z": 0.0
+  }
+ ],
+ "spawn": [0.0,0.0,0.0],
+ "terrain": null,
+ "version": 1
+}
