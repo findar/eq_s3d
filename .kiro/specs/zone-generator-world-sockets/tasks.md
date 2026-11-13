@@ -86,7 +86,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: web/src/, web/index.html
   - Reqs: 4.3
 
-- [ ] 10. Stage commands
+- [x] 10. Stage commands
   - Card: [cards/10-stage-commands.md](cards/10-stage-commands.md)
   - Type: agent · Size: S · Depends: 6
   - Owns: scripts/stage.py, tests/test_stage_script.py

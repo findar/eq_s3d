@@ -16,3 +16,4 @@ Index entry: `tasks.md` task 10. Requirement 5.4. Design "Testing in isolation",
 Write under `output/` through the `OutputRoot`, as builds do. The `attach` GLB of rooms alone is the box mesh of the layout, not the merged outdoor TER.
 
 ## Result
+✔ 2c624f5 · 2454 passed
