@@ -1,6 +1,6 @@
-# 13b — The fast suite and the band sweeps
+# 21 — The fast suite and the band sweeps
 
-Index entry: `tasks.md` task 13b. Requirement 7.5. Design finding 2; `archive.md` decision 8
+Index entry: `tasks.md` task 21. Requirement 7.5. Design finding 2; `archive.md` decision 8
 (revised 2026-11-13: fast suite under 8 min, full under 25).
 
 ## Goal

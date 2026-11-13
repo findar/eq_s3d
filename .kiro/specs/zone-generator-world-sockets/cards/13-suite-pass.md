@@ -5,7 +5,7 @@ Index entry: `tasks.md` task 13. Requirement 7.5. Design finding 2, "Testing in 
 ## Goal
 Bring the suite inside finding 2's targets. Finding 2: the time is gate sweeps. The vertical, graph-layout, walls and Features sweeps each build and gate their own seeds per zone type; build each (zone type, seed, controls) once in a session-shared cache (`tests/conftest.py`) that all four read, and where a sweep compares first-try rates, run the Attach stage's own check (Req 7.4) on the full seed list and the zone gate on a fixed few. Each test keeps the property it states.
 
-If the targets are still missed, the lead adds task 13b for the rest of finding 2: `test_decor_bands.py` and `test_site_bands.py` (share builds the same way), and the three slow tests not marked `slow` (`test_properties_layout.py::test_flush_openings`, `test_topology_embed.py::test_big_races_keep_their_loops[giant]`, `test_pipeline.py::...test_backend_fallback_reaches_warnings_and_sidecar`).
+If the targets are still missed, the lead adds task 21 for the rest of finding 2: `test_decor_bands.py` and `test_site_bands.py` (share builds the same way), and the three slow tests not marked `slow` (`test_properties_layout.py::test_flush_openings`, `test_topology_embed.py::test_big_races_keep_their_loops[giant]`, `test_pipeline.py::...test_backend_fallback_reaches_warnings_and_sidecar`).
 
 ## Done when
 - [ ] The fast and full suites are inside the targets, on an idle machine.
