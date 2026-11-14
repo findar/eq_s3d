@@ -47,7 +47,7 @@ Tasks 1–3 own the same files and run one after another, in one worktree.
   - Owns: web/index.html, web/src/style.css, web/src/main.ts, web/src/scene.ts
   - Reqs: 2
 
-- [ ] 4. Acceptance section
+- [x] 4. Acceptance section
   - Card: [cards/04-acceptance.md](cards/04-acceptance.md)
   - Type: agent · Size: S · Depends: 3
   - Owns: docs/ACCEPTANCE.md

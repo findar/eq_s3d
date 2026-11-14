@@ -2012,3 +2012,81 @@ Known issues (not regressions; open follow-ups in the spec's `archive.md`):
 
 - [ ] **[DEFERRED]** Walking round the hamlets in the RoF2 client needs a takeover install. It
       moves to M6's in-engine smoke load.
+
+## Step 14 — Web UI cleanup
+
+> Roadmap step 14 (`zone-generator-web-cleanup`). The page shows only what applies. The header
+> has a **Describe | Controls** switch and one **Generate** button: Describe shows the
+> description box, Controls shows the Controls panel (collapsible with the ▾ beside the
+> switch). The page remembers the choice in this browser and starts in Controls. The Controls
+> sit in labelled groups (Zone, Layout, Content, Landscape, Decor, Seeds), and each control,
+> panel row and overlay toggle shows only when it does something. Nothing a build makes
+> changed. Restart the Server on the merged code first and check no stale-code banner shows.
+
+Check at the page's full width (1280 px or wider) and once narrower (about 900 px).
+
+### U.1 — Describe or Controls
+
+- [ ] **[MUST] One at a time** — Press **Describe**: the description box shows and the Controls
+      panel goes. Press **Controls**: the panel shows and the box goes. The seed box stays in
+      both.
+- [ ] **[MUST] Generate sends what shows** — In Describe, type `a flooded temple`, Generate: the
+      side panel's Plan says Mode `prompt`. In Controls, Generate: Mode `controls`.
+- [ ] **[MUST] No silent fallback** — In Describe with the box empty, Generate is greyed out;
+      typing turns it on. Enter in the box generates.
+- [ ] **[MUST] Remembered** — Choose Describe, reload the page: it opens in Describe. Choose
+      Controls, collapse the panel with ▾, reload: Controls, collapsed.
+- [ ] **[SHOULD] Reroll keeps its mode** — After a Describe build, **reroll rooms** rebuilds
+      from the same description (Mode stays `prompt`).
+
+### U.2 — Only what applies
+
+- [ ] **[MUST] Dungeon** — Zone, Layout, Content, Decor and Seeds show; no Landscape. With Layout
+      **Classic**, Rule set, Finish, Structure, Clutter and Overlay go; back to **Graph**, they
+      return.
+- [ ] **[MUST] City** — No Layout group at all (a city has no layout choice); Content shows.
+- [ ] **[MUST] Wilderness** — Zone shows only Zone type; Landscape (four edges, Trees, Sites,
+      Inhabitants), Decor and Seeds show; no Layout or Content. Set Sites **none**: Inhabitants
+      goes.
+- [ ] **[MUST] Outdoor dungeon** — Zone without Size; Layout, Content, Landscape, Decor, Seeds.
+- [ ] **[MUST] Decor None** — Set Decor to None: the decor seed box goes.
+- [ ] **[MUST] Disabled types stay** — A zone type the server has turned off still shows in the
+      list, greyed, with its reason.
+- [ ] **[MUST] Side panel before a build** — Reload with the Server stopped (or watch the first
+      second): the panel says only "No zone yet" under the build line.
+- [ ] **[MUST] Side panel after a build** — A dungeon with Decor shows Props, the decor seed and
+      **reroll decor**; with Decor None they go. A wilderness shows no Gates row and no Content.
+      The overlay toggles list only what the zone has: Trees on a wilderness with trees, Gates
+      on a zone with locks; Wireframe and Room IDs always.
+
+### U.3 — Lined up
+
+- [ ] **[MUST] Header** — One row at full width: every button and box the same height, text on
+      one baseline, no button text on two lines.
+- [ ] **[MUST] Controls** — In each group the labels line up in one column and the boxes in the
+      next, all boxes of a group the same width. Groups with nothing to show are gone, not empty
+      frames.
+- [ ] **[MUST] Side panel** — Values line up on one right edge; the ⟳ buttons line up in their
+      own column.
+- [ ] **[SHOULD] Narrow** — At about 900 px the header wraps between groups (the switch, the
+      seed, the buttons), never through the middle of a control.
+- [ ] **[MUST] Banner on top** — With a stale server (restart it after a commit, or leave the
+      page open across a merge) the orange stale-code banner shows above the open Controls.
+
+### U.4 — Nothing else moved
+
+- [ ] **[MUST] Same zones** — A seed you know builds the same zone as before (the same rooms,
+      Sites and Props).
+- [ ] **[MUST] Keys** — Typing in any box doesn't move the camera; R resets the view, M opens
+      the map, Esc closes it.
+- [ ] **[MUST] The rest** — The Files list, the map dialog and its Socket diamonds, reproduce,
+      and the reroll buttons work as in step 13.
+
+Known issues (not regressions):
+
+- The decor seed and Inhabitants are still sent when hidden (Decor None, Sites none): leaving
+  them out builds the same zone but records a different value in the sidecar's `seeds` and
+  `sites` blocks, so they stay (task 3).
+- The Controls panel covers the top of the 3D view while open; collapse it with ▾ to see the
+  whole zone.
+- The page still has no type check (`@types/three` deferred).
