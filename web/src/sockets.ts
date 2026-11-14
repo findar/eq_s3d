@@ -92,14 +92,15 @@ function mapFrame(svg: SVGSVGElement, sidecar: ZoneSidecar): Frame | null {
 }
 
 /** "hillside hill0 (N): dungeon, 7 rooms" — the marker's tooltip. A point
- *  Socket: "site site3, Group 1: farmstead" or "site site7: unused". */
+ *  Socket: "site site3, Group 1: farmstead" or "site site7, Group 2: unused". */
 export function socketTitle(s: ZoneSocket): string {
   const head = `${s.kind} ${s.id}` + (s.side ? ` (${s.side})` : "");
   const a = s.attached;
   if (s.kind === "site") {
-    // The sidecar names a point's Group only when a Site stands on it.
-    if (!a) return `${head}: unused`;
-    const group = a.group !== undefined && a.group !== null ? `, Group ${a.group}` : "";
+    // Every point names its Group (older sidecars only on a used point's attachment).
+    const g = s.group ?? a?.group;
+    const group = g !== undefined && g !== null ? `, Group ${g}` : "";
+    if (!a) return `${head}${group}: unused`;
     return `${head}${group}: ${a.site ?? a.kind}`;
   }
   if (!a) return `${head}: nothing attached`;

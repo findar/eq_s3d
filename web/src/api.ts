@@ -259,6 +259,7 @@ export interface ZoneSocket {
   point: [number, number, number];
   side: string;                // N/E/S/W, "" when none
   attached: SocketAttachment | null;
+  group?: number;              // a site point's Group, used or not
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {

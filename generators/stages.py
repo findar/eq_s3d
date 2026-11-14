@@ -191,8 +191,8 @@ def sockets_sidecar(world: World, attachments: Sequence[Attachment]) -> List[dic
     """The sidecar's ``sockets`` block: each Socket's id, kind, point, side and what attached
     (``None`` when nothing did): ``{"kind": "dungeon" | "city", "rooms": n}``,
     ``{"kind": "sites", "sites": n}`` or, on a point ``site`` Socket, the Site standing on
-    it, ``{"kind": "site", "site": <its kind>, "group": g}`` (``g`` the point's Group).
-    Advisory."""
+    it, ``{"kind": "site", "site": <its kind>, "group": g}`` (``g`` the point's Group). A
+    ``site`` Socket's entry also carries ``group`` itself, used or not. Advisory."""
     by_socket = {a.socket: a for a in attachments}
     on_point: Dict[str, str] = {}
     for a in attachments:
@@ -220,8 +220,12 @@ def sockets_sidecar(world: World, attachments: Sequence[Attachment]) -> List[dic
             layout = _layout_dict(a.layout) or {}
             kind = world.recipe.get("zone_type") if s.kind == "root" else "dungeon"
             what = {"kind": kind, "rooms": len(layout.get("rooms") or [])}
-        out.append({"id": s.id, "kind": s.kind, "point": [s.x, s.y, s.z], "side": s.side,
-                    "attached": what})
+        entry = {"id": s.id, "kind": s.kind, "point": [s.x, s.y, s.z], "side": s.side,
+                 "attached": what}
+        if s.kind == "site":
+            # Every point names its Group, used or not, so the map can say it (Req 9.1).
+            entry["group"] = s.ground["group"]
+        out.append(entry)
     return out
 
 
