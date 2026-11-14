@@ -592,7 +592,7 @@ def cmd_draw_sites(out: Path) -> int:
         likes = ", ".join(f"{k} {v:g}" for k, v in recipe.likes.items()) or "nothing in particular"
         pois = "; ".join(f"{p.name} ({p.purpose} at {p.at})" for p in recipe.pois)
         body.append(f"<h2>{_esc(kind)}</h2><p>{_esc(recipe.arrangement)}; ground radius {g.radius:g} u, "
-                    f"slope up to {g.slope_deg:g}&deg;, spacing {g.spacing:g} u, margin {g.margin:g} u; likes "
+                    f"slope up to {g.slope_deg:g}&deg;, margin {g.margin:g} u; likes "
                     f"{_esc(likes)}. POIs: {_esc(pois)}.</p><div class=row>")
         for who in sorted(rules.inhabitants):
             built = rules.recipe_for(kind, who)
