@@ -62,6 +62,10 @@ Found while working this step:
 - **Outdoor-dungeon points favour small recipes** (task 16): most usable points are hill points
   where only ruins and watchtowers fit (farmsteads fit on 1 of 39 seeds, huts 16). Offering
   flatter points would let bigger recipes stand.
+- **A single-room decor view** (the user, 2026-11-14, backlog): to polish generation, show one
+  room (or one Site) on its own with how Decor laid it out: its Props, POIs, Dressing and what
+  dropped and why. `scripts/stage.py decor` already writes the rooms with their Props as a GLB;
+  the gap is focusing on one room and reading its layout in the viewer.
 
 Carried in from step 10 (`zone-generator-wilderness-pois/archive.md` "Follow-ups") by step 12,
 because point Site Sockets are where they get fixed; this step closes them:
