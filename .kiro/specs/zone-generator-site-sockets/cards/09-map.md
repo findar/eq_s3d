@@ -16,3 +16,4 @@ Index entry: `tasks.md` task 9. Requirement 9. Design "Hand-offs", question 7.
 `tests/reference_mapview.py` and the mapview property tests compare SVG output: add attributes without changing anything drawn. Movement keys stay suppressed while typing (lessons-learned "Web viewer"). A commit-message hook blocks two words about the frontend build (lessons-learned "Environment"). `web/node_modules` is shared through a junction: don't change dependencies.
 
 ## Result
+✔ bd394c6 · 3093 passed · frontend builds · not checked in the browser by the agent (task 12 looks)

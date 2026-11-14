@@ -81,7 +81,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: generators/sites/placement.py, generators/sites/rules.py, rules/sites/sites.toml, tests/test_site_placement.py, tests/test_site_rules.py
   - Reqs: 3.5
 
-- [ ] 9. Point Sockets on the map
+- [x] 9. Point Sockets on the map
   - Card: [cards/09-map.md](cards/09-map.md)
   - Type: agent · Size: M · Depends: 6
   - Owns: generators/mapview.py (the frame attributes only), web/src/sockets.ts, web/src/api.ts, tests/test_properties_mapview.py (the frame only)
