@@ -7,6 +7,11 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | Six labelled Control groups as aligned grids; header on one row; side panel aligned; the stale-code banner above the open Controls | `3ccd8ac`, `1c4a6d1` |
+| 2 | Describe \| Controls switch and one Generate, remembered; no silent fallback | `0bfdb20` |
+| 3 | Only what applies: controls, groups, request fields, side panel, overlay toggles | `79fc0af` |
+| 4 | Acceptance section "Step 14 — Web UI cleanup" | `d8ecbb9` |
+| 5–6 | Look and acceptance signed off ("All good"); closed | |
 
 ## Decisions
 
@@ -21,3 +26,7 @@ prompt or the controls when we generate"); the user sees them at the first look.
    their reason (question 4).
 
 ## Follow-ups
+
+- **Hidden controls still sent** (task 3): the decor seed (Decor None) and Inhabitants (Sites none)
+  build the same zone when left out, but the sidecar then records another value, so they're sent.
+- **The open Controls cover the top of the 3D view**; collapse with ▾.

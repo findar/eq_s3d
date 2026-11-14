@@ -52,11 +52,11 @@ Tasks 1–3 own the same files and run one after another, in one worktree.
   - Type: agent · Size: S · Depends: 3
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 5. HUMAN: look and acceptance
+- [x] 5. HUMAN: look and acceptance
   - Card: [cards/05-human.md](cards/05-human.md)
   - Type: human · Depends: 4
 
-- [ ] 6. Close step 14
+- [x] 6. Close step 14
   - Card: [cards/06-close.md](cards/06-close.md)
   - Type: agent · Size: S · Depends: 5 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-web-cleanup/

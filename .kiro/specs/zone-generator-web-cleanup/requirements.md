@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 14, ready.** Drafted 2026-11-14 at master `0b604ea` from the user's
+> **STATUS: roadmap step 14, DONE** (signed off by the user 2026-11-14, "All good"). Drafted 2026-11-14 at master `0b604ea` from the user's
 > request the same day: "i also want to cleanup the web ui. if possible only show controls
 > when they can be used, make sure all controls have clean alignment, and since the text
 > generator seems to be less used recently we should have a way to show only the text prompt

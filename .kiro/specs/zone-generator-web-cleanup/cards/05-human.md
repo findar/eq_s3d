@@ -11,3 +11,4 @@ Walk the acceptance section "Step 14 — Web UI cleanup".
 - [ ] Walk the acceptance section.
 
 ## Result
+✔ signed off by the user 2026-11-14: "All good"
