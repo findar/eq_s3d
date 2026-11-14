@@ -87,7 +87,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: generators/mapview.py (the frame attributes only), web/src/sockets.ts, web/src/api.ts, tests/test_properties_mapview.py (the frame only)
   - Reqs: 9
 
-- [ ] 10. The stage command on version 2
+- [x] 10. The stage command on version 2
   - Card: [cards/10-stage-command.md](cards/10-stage-command.md)
   - Type: agent · Size: S · Depends: 6
   - Owns: scripts/stage.py, tests/test_stage_script.py
