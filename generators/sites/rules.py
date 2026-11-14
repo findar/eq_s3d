@@ -6,7 +6,9 @@
   arrangement, the ground it needs and likes, and its POIs;
 - ``inhabitants.toml``: who builds Sites: a material set, model variants, swaps, and Weights
   over kinds;
-- ``biomes.toml``: per biome, a density band, the Inhabitant mix and Weights over kinds.
+- ``biomes.toml``: per biome, a density band, the Inhabitant mix, Weights over kinds, and how
+  its Sites group (``groups``: the Group gap, sizes and spacing, and the clustering targets
+  built zones must measure inside; step 13).
 
 A Site's kind is drawn from Layers multiplied, least specific first: biome x Inhabitant x
 control, as step 9's Scales are (``generators/room_scales.combine``): the product, to the power
@@ -57,6 +59,11 @@ _STRUCTURE_NUMBERS = {"radius": (0.5, 100.0), "height": (0.5, 200.0)}
 _GROUND_NUMBERS = {"radius": (4.0, 400.0), "slope_deg": (0.0, 40.0), "spacing": (0.0, 5000.0),
                    "margin": (0.0, 100.0)}
 _LIKE_RANGE = (0.0, 10.0)
+#: ``[biomes.<name>.groups]``: the plain numbers' ranges, and the [low, high] pairs'.
+_GROUP_NUMBERS = {"gap": (1.0, 5000.0), "spacing": (0.0, 20000.0)}
+_GROUP_BANDS = {"within": (0.0, 5000.0), "target_r": (0.0, 10.0), "target_in_gap": (0.0, 1.0),
+                "target_nn_p10": (0.0, 20000.0)}
+_SHARE_SUM_TOLERANCE = 1e-6
 
 
 # ---------------------------------------------------------------------------
@@ -121,11 +128,28 @@ class Inhabitant:
 
 
 @dataclass(frozen=True)
+class Groups:
+    """How a biome's Sites group (step 13, design finding 1): Sites within ``gap`` u of each
+    other are one Group; ``sizes`` is the share of Groups of each size (summing to 1); a
+    Group's nearest-neighbour distances lie in ``within``; two Groups' points stand at least
+    ``spacing`` apart. The ``target_*`` bands are what built zones must measure inside:
+    Clark-Evans R, the share of Sites with another within ``gap``, and nearest-Site p10 (u)."""
+    gap: float
+    sizes: Mapping[int, float]
+    within: Tuple[float, float]
+    spacing: float
+    target_r: Tuple[float, float]
+    target_in_gap: Tuple[float, float]
+    target_nn_p10: Tuple[float, float]
+
+
+@dataclass(frozen=True)
 class Biome:
     name: str
     density: Tuple[float, float]
     inhabitants: Mapping[str, float]
     weights: Mapping[str, float] = field(default_factory=dict)
+    groups: Optional[Groups] = None
 
 
 Weights = Mapping[str, float]
@@ -447,12 +471,63 @@ def _inhabitant(chk: _Checker, name: str, raw: Any, structures: Mapping[str, Str
     return Inhabitant(name, materials, maps["variants"], maps["swap"], weights)
 
 
-def _biome(chk: _Checker, name: str, raw: Any, inhabitants: Sequence[str], kinds: Sequence[str]) -> Optional[Biome]:
-    where = f"biomes.{name}"
-    tbl = chk.table(raw, "biomes", name, '{ density = [0.8, 2], inhabitants = { human = 1 }, weights = {...} }')
+def _band(chk: _Checker, v: Any, where: str, fld: str, lo: float, hi: float) -> Optional[Tuple[float, float]]:
+    """``[low, high]``: two numbers from ``lo`` to ``hi``, the low not above the high."""
+    if (isinstance(v, list) and len(v) == 2 and all(_is_number(x) for x in v)
+            and lo <= v[0] <= v[1] <= hi):
+        return (float(v[0]), float(v[1]))
+    chk.fail(where, fld, v, f"[low, high], from {lo:g} to {hi:g}, the low not above the high")
+    return None
+
+
+def _groups(chk: _Checker, raw: Any, where: str) -> Optional[Groups]:
+    """``[biomes.<name>.groups]``, every field required (no defaults: a biome's Groups are
+    measured, not assumed)."""
+    tbl = chk.table(raw, where, "groups", "{ gap = 300, sizes = { 1 = 0.7, 2 = 0.3 }, within = [112, 227], ... }")
     if tbl is None:
         return None
-    chk.keys(tbl, where, ("density", "inhabitants", "weights"), required=("density", "inhabitants"))
+    fields = ("gap", "sizes", "within", "spacing", "target_r", "target_in_gap", "target_nn_p10")
+    chk.keys(tbl, where, fields, required=fields, prefix="groups.")
+    values: Dict[str, Any] = {}
+    for k, (lo, hi) in _GROUP_NUMBERS.items():
+        if k in tbl:
+            values[k] = _number(chk, tbl[k], where, f"groups.{k}", lo, hi)
+    for k, (lo, hi) in _GROUP_BANDS.items():
+        if k in tbl:
+            values[k] = _band(chk, tbl[k], where, f"groups.{k}", lo, hi)
+    sizes: Dict[int, float] = {}
+    t = chk.table(tbl["sizes"], where, "groups.sizes", "{ 1 = 0.7, 2 = 0.3 }") if "sizes" in tbl else None
+    ok = t is not None
+    for k, v in (t or {}).items():
+        if not (k.isdigit() and int(k) >= 1):
+            chk.fail(where, f"groups.sizes.{k}", "a size under 1 or not a whole number",
+                     "a Group size: a whole number from 1 up", raw=True)
+            ok = False
+            continue
+        if not _is_number(v) or not 0 <= v <= 1:
+            chk.fail(where, f"groups.sizes.{k}", v, "a share from 0 to 1")
+            ok = False
+            continue
+        sizes[int(k)] = float(v)
+    if ok and abs(sum(sizes.values()) - 1.0) > _SHARE_SUM_TOLERANCE:
+        chk.fail(where, "groups.sizes", t, f"shares of Groups summing to 1 (these sum to {sum(sizes.values()):g})")
+        ok = False
+    if not ok or None in values.values() or len(values) < len(fields) - 1:
+        return None
+    return Groups(gap=values["gap"], sizes=dict(sorted(sizes.items())), within=values["within"],
+                  spacing=values["spacing"], target_r=values["target_r"],
+                  target_in_gap=values["target_in_gap"], target_nn_p10=values["target_nn_p10"])
+
+
+def _biome(chk: _Checker, name: str, raw: Any, inhabitants: Sequence[str], kinds: Sequence[str]) -> Optional[Biome]:
+    where = f"biomes.{name}"
+    tbl = chk.table(raw, "biomes", name,
+                    '{ density = [0.8, 2], inhabitants = { human = 1 }, weights = {...}, groups = {...} }')
+    if tbl is None:
+        return None
+    # A biome with Site rules groups its Sites: no default, only measured biomes have rules.
+    chk.keys(tbl, where, ("density", "inhabitants", "weights", "groups"),
+             required=("density", "inhabitants", "groups"))
     density = tbl.get("density")
     band = None
     if density is not None:
@@ -474,9 +549,10 @@ def _biome(chk: _Checker, name: str, raw: Any, inhabitants: Sequence[str], kinds
     if t is not None and not any(mix.values()):
         chk.fail(where, "inhabitants", t, "at least one Inhabitant with a weight above 0")
     weights = _kind_weights(chk, tbl["weights"], where, kinds) if "weights" in tbl else {}
-    if band is None or not any(mix.values()):
+    groups = _groups(chk, tbl["groups"], where) if "groups" in tbl else None
+    if band is None or not any(mix.values()) or groups is None:
         return None
-    return Biome(name, band, mix, weights)
+    return Biome(name, band, mix, weights, groups)
 
 
 def load_sites(path=SITES_DIR, biomes: Optional[Sequence[str]] = None) -> SiteRules:
@@ -561,5 +637,5 @@ def load_sites(path=SITES_DIR, biomes: Optional[Sequence[str]] = None) -> SiteRu
 
 
 __all__ = ["ARRANGEMENTS", "Biome", "CENTRE", "DEFAULT_DENSITY", "DENSITIES", "ENTRANCE", "FACES", "Ground",
-           "Inhabitant", "LIKES", "Line", "POI_PURPOSES", "SITES_DIR", "SITE_KINDS", "STRUCTURE_KINDS",
+           "Groups", "Inhabitant", "LIKES", "Line", "POI_PURPOSES", "SITES_DIR", "SITE_KINDS", "STRUCTURE_KINDS",
            "SitePOI", "SiteRecipe", "SiteRules", "Structure", "chances", "combine_weights", "load_sites"]

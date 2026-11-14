@@ -45,6 +45,9 @@ def test_the_shipped_files_load_with_a_recipe_for_every_kind():
     assert set(SITE_KINDS) <= set(rules.kinds)
     assert {"human", "orc", "gnoll", "centaur"} <= set(rules.inhabitants)
     assert "plains" in rules.biomes
+    groups = rules.biomes["plains"].groups
+    assert groups.gap == 300 and sum(groups.sizes.values()) == pytest.approx(1.0)
+    assert groups.within[0] <= groups.within[1] and groups.target_r[0] <= groups.target_r[1]
     for recipe in rules.kinds.values():
         assert recipe.structures and recipe.pois
         assert {line.kind for line in recipe.structures} <= set(rules.structures)
@@ -97,6 +100,12 @@ def test_the_shipped_files_load_with_a_recipe_for_every_kind():
     ("biomes.toml", re.compile(r'(\[biomes\.plains\][\s\S]*?weights = \{ camp = )[\d.]+'), r'\g<1>"lots"',
      "biomes.plains", "weights.camp"),
     ("biomes.toml", '[biomes.plains]', '[biomes.tundra]', "biomes", "tundra"),
+    ("biomes.toml", re.compile(r'(sizes = \{ 1 = )[\d.]+'), r'\g<1>0.5', "biomes.plains", "groups.sizes"),
+    ("biomes.toml", re.compile(r'within = \[[\d.]+, [\d.]+\]'), 'within = [227, 112]', "biomes.plains",
+     "groups.within"),
+    ("biomes.toml", re.compile(r'sizes = \{ 1 = '), 'sizes = { 0 = 0, 1 = ', "biomes.plains", "groups.sizes.0"),
+    ("biomes.toml", 'gap = 300', 'linkage = "single"\ngap = 300', "biomes.plains", "groups.linkage"),
+    ("biomes.toml", re.compile(r'\[biomes\.plains\.groups\][\s\S]*'), '', "biomes.plains", "groups"),
 ])
 def test_every_bad_value_is_named_by_file_entry_and_field(tmp_path, file, old, new, where, fld):
     errors = _errors(_copy(tmp_path, file, old, new))

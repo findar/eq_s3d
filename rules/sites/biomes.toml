@@ -8,6 +8,15 @@
 #   weights      Site kind -> weight: the least specific Layer under Inhabitant and control. A kind
 #                it doesn't name it leaves alone (weight 1); 0 is never.
 #
+# [biomes.<name>.groups]  how the biome's Sites group (step 13); every biome with Site rules has one
+#   gap            u: Sites this close are one Group (single linkage)
+#   sizes          Group size -> share of Groups; whole sizes from 1, shares summing to 1
+#   within         [low, high] u: a Group's nearest-neighbour distances
+#   spacing        u: the least distance between two Groups' points
+#   target_r       [low, high] Clark-Evans R the built zones must measure inside
+#   target_in_gap  [low, high] share of Sites with another Site within `gap`
+#   target_nn_p10  [low, high] u: the pooled nearest-Site spacing p10
+#
 # From design finding 1 (task 1's survey). Density: the plains (the Karanas, Qeynos Hills) hold
 # 0.1-0.5 Sites per 1e6 u^2; Normal aims at 0.3-0.5, so Dense (x2) lands at 0.6-1.0, round the
 # all-zone median 0.8, and Sparse (x0.5) at 0.15-0.25. Mix: of the plains' 91 Sites, South
@@ -19,3 +28,18 @@
 density = [0.3, 0.5]
 inhabitants = { human = 6, gnoll = 2, centaur = 1.5, orc = 0.5 }
 weights = { camp = 1, hut = 9, farmstead = 2, watchtower = 0.5, shrine = 3, ruin = 1 }
+
+# Step 13 design finding 1 (`python scripts/site_clustering.py --eq-path <EQ>`): the plains' 91
+# Sites, single linkage at 300 u (nothing more joins up to 400 u): 58 Groups, 69 % single, 19 %
+# pairs, 9 % threes, one six and one eight (folded into 4: no control asks for more than 5
+# Sites). Within-Group NN p10-p90 111.6-226.8 u; Group-centre NN p10 672 u, rounded down to 600
+# so a 1200 u outdoor dungeon holds two Groups. Targets: the five plains zones' min-max of R
+# (0.497-0.946), of the share within 300 u (0.333-0.651) and of NN p10 (108.4-191.3 u).
+[biomes.plains.groups]
+gap = 300
+sizes = { 1 = 0.69, 2 = 0.19, 3 = 0.09, 4 = 0.03 }
+within = [112, 227]
+spacing = 600
+target_r = [0.50, 0.95]
+target_in_gap = [0.33, 0.65]
+target_nn_p10 = [108, 191]
