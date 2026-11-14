@@ -17,3 +17,4 @@ Index entry: `tasks.md` task 6. Requirements 3, 6.1–6.4, 7. Design "The Sites 
 `generators/stages.py` and `generators/wilderness/build.py` are cross-branch hotspots: small edits. The `_sites` cache keys on the World's inputs; the points come from the World, so they should need no new key, but check. Only hashes change in the golden files: if a test's logic needs changing, stop and say so. Re-record corpora in the same commit as the change (step 12 design "Risks").
 
 ## Result
+✔ 27ff7ee · 3092 passed

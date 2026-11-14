@@ -64,11 +64,11 @@ GOLDENS = {
         "2467f660f243c0e8061e643049622d3542ab51d891e20019b70e95c840c75ff5"),
     # Recaptured once, deliberately, by wilderness POIs task 7: the default
     # (Sites normal) build now packs Site Structures. Moved by tasks 15 and 10
-    # (Site recipes and weights).
+    # (Site recipes and weights), and by site-sockets task 6 (Sites on points).
     "wilderness": (
         dict(zone_type="wilderness"), 4,
         "a948f132378258b14e6606cc06faf248f712cca2b7317e627ce5dda6c56fcc62",
-        "d1e800981c350b361a0956261cfa05172cb7b372330aba86fc46e4627f011ab6"),
+        "fb61407721b8a3a7ac2c8fffd82035acbc4e8d373e09cb531734d8570c29edb7"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).

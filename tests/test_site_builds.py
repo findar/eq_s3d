@@ -30,12 +30,13 @@ STEP9 = {
 
 # .eqg[:-4] sha256 of Sites builds at step 10 (room-decor task 11): Decor ``none``
 # (and Decor left unset, which the builder takes as none) must still give these, Site
-# Props or not (room-decor Req 12.2, P11).
+# Props or not (room-decor Req 12.2, P11). Recaptured by site-sockets task 6 (Sites stand
+# on the World's points).
 STEP10 = {
-    ("wild", 1955208177, "normal"): "b6a10e08f3aa3ebd2a00d75c9804354a59df8c905f429e946b5890e1b1dc693e",
-    ("wild", 31337, "dense"): "b06f419e5aad0fbe66067c95c247fdf789bceeb33c2bc0e5f5fd89ec270e699c",
+    ("wild", 1955208177, "normal"): "ecd18b34a9365c092df72bba3e24dedf44e65696b73c8941c7db7b7178879aef",
+    ("wild", 31337, "dense"): "37af0c058fbcb7d323c84bf7f327edb1fee857761b5ed27ef77b67d7cd714fbb",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape).
-    ("od", 1001, "dense"): "ab4c8a1c647504d32c1ff73eda99f94303198763733d7776d0f37da0a510cae6",
+    ("od", 1001, "dense"): "86d7e6b69fd24a66f7a035c229db2948ebfda141edc1a2974bad920db6979730",
 }
 
 

@@ -5,8 +5,9 @@ Most tests read a recorded World (``tests/fixtures/worlds/``), attach an outdoor
 rooms to its hill first where it has one, apply that Attachment and attach the ground Socket,
 with landscape synthesis, every TER build and the zone gate patched to raise
 (``test_attach_hillside.forbid_world_and_build``). They check the Sites' own rules: Kept_Clear,
-spacing, Structures inside their Site, Site_Clear free, POIs on reached ground, misfits
-dropped with a reason, the terrain left alone.
+each Site on a point of a kind that fits it (site-sockets P4-P6), Structures inside their
+Site, Site_Clear free, POIs on reached ground, misfits dropped with a reason, the terrain
+left alone.
 
 One test builds TERs (two seeds, dry and wet): the Build applies the same edits and gets the
 same Sites as the Attach stage (P6).
@@ -27,6 +28,7 @@ from generators import outdoor_dungeon as od
 from generators import stages
 from generators.sites import placement as sp
 from generators.sites.placement import gap, place_sites, reach
+from generators.sites.points import slope_key
 from generators.sites.rules import load_sites
 from generators.vegetation.placement import SPAWN_CLEARING, ter_heights
 from generators.world import World, world_of
@@ -42,7 +44,7 @@ GROUNDS = [r["name"] for r in record_worlds.RECORDINGS
 BARE = {"outdoor_n", "outdoor_w"}
 REASONS = {sp.NO_GROUND, sp.NO_APPROACH, sp.NO_ROOM, sp.OUTSIDE, sp.IN_CLEAR, sp.CROWDED,
            sp.APRON_OFF, sp.APRON_BLOCKED, sp.STRUCTURE_GONE, sp.NO_FREE_GROUND, sp.NO_POI,
-           sp.NO_STRUCTURES}
+           sp.NO_STRUCTURES, sp.NO_POINT}
 
 
 @pytest.fixture
@@ -143,10 +145,26 @@ def test_ground_attachment_keeps_its_rules_on_the_corpus(name, ground):
                 if not t.enterable or t.run:
                     assert gap((poi.x, poi.y, poi.x, poi.y, 0.0), t.footprint()) > 0, \
                         (poi.name, t.kind)
-    for k, a in enumerate(p.sites):
-        for b in p.sites[k + 1:]:
-            need = max(RULES.kinds[a.kind].ground.spacing, RULES.kinds[b.kind].ground.spacing)
-            assert math.hypot(a.x - b.x, a.y - b.y) >= need - EPS
+    # P4: each Site stands on its own point, of a kind that fits it, its ground and margin a
+    # clear width from every other Site's, its way in crossing no other Site's ground.
+    points = {s.id: s for s in dug.sockets if s.kind == "site"}
+    assert points, f"{name} offers points"
+    assert len({s.socket for s in p.sites}) == len(p.sites)
+    for s in p.sites:
+        pt = points[s.socket]
+        assert (s.x, s.y) == (pt.x, pt.y), s.socket
+        g = RULES.kinds[s.kind].ground
+        assert float(pt.ground["free"][slope_key(g.slope_deg)]) >= s.radius + s.margin
+        disc = (s.x, s.y, s.x, s.y, s.radius + s.margin)
+        for keep in shapes:
+            assert gap(disc, keep) >= 0.0, (s.socket, keep)
+        way = next(c.shape for c in s.clear if c.what == "approach")
+        for other in p.sites:
+            if other is s:
+                continue
+            o = (other.x, other.y, other.x, other.y, other.radius + other.margin)
+            assert gap(disc, o) >= sp.CLEAR_WIDTH - EPS, (s.socket, other.socket)
+            assert gap(way, o) >= -EPS, (s.socket, other.socket)
     for d in p.drops:
         assert d.reason in REASONS and d.what in ("site", "structure", "poi")
         assert (d.site is None) == (d.what == "site")
@@ -182,11 +200,47 @@ def test_p6_the_build_applies_the_attach_stages_edits(seed, edges):
     biome = spec.wilderness["biome"]
     got = _sites(dug, stages.rooms_seed(seed))
     legacy = place_sites(wb.landscape_for(spec), ter, seed, biome=biome, control="dense",
-                         rules=RULES, spawn_xy=tuple(spec.safe_point[:2]), keep_clear=shapes)
+                         rules=RULES, spawn_xy=tuple(spec.safe_point[:2]), keep_clear=shapes,
+                         points=[s for s in world.sockets if s.kind == "site"])
     assert pickle.dumps(got.sites) == pickle.dumps(legacy)
     assert pickle.dumps(wb.sites_for(spec, ter).placement) == pickle.dumps(got.sites)
     if edges is None:
         assert got.sites.sites, "this seed gets a Site at dense"
+
+
+def test_a_point_under_kept_clear_is_skipped(ground):
+    """P5 (site-sockets): a Kept_Clear shape over the points a Site stood on keeps every Site
+    off them; the other Sites still stand on points."""
+    dug, _, _ = ground("wilderness_plains")
+    first = _sites(dug, 1001).sites
+    assert first.sites
+    used = {s.socket for s in first.sites}
+    pts = {s.id: s for s in dug.sockets if s.kind == "site"}
+    shapes = [[pts[i].x, pts[i].y, pts[i].x, pts[i].y, 1.0] for i in sorted(used)]
+    gsock = dug.socket("ground")
+    blocked = replace(dug, sockets=[replace(s, ground=dict(s.ground, keep_clear=shapes))
+                                    if s.kind == "ground" else s for s in dug.sockets])
+    again = _sites(blocked, 1001).sites
+    assert not used & {s.socket for s in again.sites}
+    assert all(s.socket in pts for s in again.sites)
+    assert gsock.ground["keep_clear"] == []
+
+
+@pytest.mark.parametrize("name", ["wilderness_plains", "outdoor_e"])
+def test_a_rooms_seed_moves_sites_only_among_the_points(name, ground):
+    """P6 (site-sockets): another ``rooms_seed`` leaves the World's text (its points with it)
+    as it was and stands its Sites on the same World's points, on other ones."""
+    dug, world, _ = ground(name)
+    before = world.to_json()
+    pts = {s.id: (s.x, s.y) for s in dug.sockets if s.kind == "site"}
+    placed = []
+    for seed in (1001, 11, 12, 13):
+        p = _sites(dug, seed, control="normal").sites
+        assert world.to_json() == before
+        assert all(pts[s.socket] == (s.x, s.y) for s in p.sites)
+        placed.append(sorted(s.socket for s in p.sites))
+    assert any(placed), name
+    assert len({tuple(p) for p in placed}) > 1, placed
 
 
 # ---------------------------------------------------------------------------
@@ -235,12 +289,14 @@ def test_misfits_drop_with_reasons_and_never_fail(ground):
         seen |= {(d.kind, d.reason) for d in p.drops}
         assert all(len([t for t in s.structures if t.kind == "tent"]) < 12 for s in p.sites)
     assert ("tent", sp.NO_ROOM) in seen
-    # A shrine with no ground is redrawn as a camp (task 15); with nothing else to try, it drops.
+    # On points a shrine no point holds is never drawn: the point takes a camp; with nothing
+    # else that fits any point, the Site drops for want of a point (site-sockets task 6).
     assert not any(d.reason == sp.NO_GROUND for d in p.drops)
     alone = replace(rules, biomes={**rules.biomes, "plains": replace(
         only, weights={k: float(k == "shrine") for k in RULES.kinds})})
     p = _sites(dug, 0, rules=alone, inhabitant="human").sites
-    assert ("shrine", sp.NO_GROUND) in {(d.kind, d.reason) for d in p.drops}
+    assert not p.sites and p.target
+    assert {(d.kind, d.reason) for d in p.drops} == {("", sp.NO_POINT)}
 
 
 @pytest.mark.parametrize("name,seed", [("wilderness_plains", 1000), ("wilderness_plains", 1001),
