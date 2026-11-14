@@ -108,11 +108,11 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Type: agent · Size: S · Depends: 12
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 14. HUMAN: point Site Sockets acceptance pass
+- [x] 14. HUMAN: point Site Sockets acceptance pass
   - Card: [cards/14-human-acceptance.md](cards/14-human-acceptance.md)
   - Type: human · Depends: 13
 
-- [ ] 15. Close step 13
+- [x] 15. Close step 13
   - Card: [cards/15-close.md](cards/15-close.md)
   - Type: agent · Size: S · Depends: 14 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-site-sockets/, .kiro/specs/zone-generator/

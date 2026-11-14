@@ -11,3 +11,4 @@ Walk the acceptance section "Step 13 — Point Site Sockets".
 - [ ] Walk the acceptance section.
 
 ## Result
+✔ signed off by the user 2026-11-14: "All good"

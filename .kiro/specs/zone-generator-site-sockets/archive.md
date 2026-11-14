@@ -7,6 +7,18 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1–3 | The stock clustering survey per biome; the `groups` block in `biomes.toml`; point Sockets in Groups with Free radii and a hill flag (`generators/sites/points.py`) | |
+| 4 | World v2 posts `site` Sockets after `ground`; `stages.ORDER` has `site`; attach v2 | |
+| 5–6, 16 | Sites stand on points: the kind drawn first by weights alone, then the next fitting point in Group order, likes choosing within a Group; `NO_POINT` | |
+| 7 | Outdoor dungeons keep their rooms, corridors, Tunnel and Apron clear, not the hill: a Site on 39/39 seeds | |
+| 8 | The area path, recipe `spacing`, `NO_GROUND`, `terrain_of` and `_choose_centre` retired | |
+| 9 | The map SVG writes its frame; the page draws every point, filled or hollow, with its Group | |
+| 10 | `scripts/stage.py` world and attach on version 2 | |
+| 11 | The plains clustering target and the gate held by tests (decisions 10, 11) | |
+| 12–14 | First look, acceptance section with the older cases rebuilt, thorough run, acceptance pass | |
+| 15 | Closed: ROADMAP, umbrella decision 33 | |
+
+32 trailed commits before the close, master `40164af`. Wilderness Normal: R pooled 1.45 -> 0.84, within 300 u 8 % -> 47 %, NN p10 383 -> 121 u. Full suite 3106 passed in 22.9 min.
 
 ## Decisions
 
