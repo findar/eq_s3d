@@ -13,3 +13,4 @@ Index entry: `tasks.md` task 4.
 Write what a person sees, not what code does.
 
 ## Result
+✔ d8ecbb9 · checked in the page at 1280 px; suite last run at task 3 (3106 passed), only docs and CSS since
