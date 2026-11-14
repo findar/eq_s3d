@@ -9,7 +9,9 @@ or many terrains:
 - P7: every Site names a POI, and every POI stands on ground the walk gate reaches from
   Spawn (Req 6.1);
 - P5: trees identical with Sites ``none`` and with no Sites argument at all (Req 4.4);
-- task 15: camps keep their tents over 30 terrains; the target's expected value.
+- task 15: camps keep their tents over 30 terrains; the target's expected value;
+- step 13 P4: on point Sockets, every Site on a point it fits, grounds and ways in clear of
+  each other, no point under Kept_Clear used (Req 3.1-3.3, 3.7, 3.8).
 
 The checks re-derive what they test (TER triangle planes, node types, distances, the walk
 gate's own flood) rather than reusing the placement's helpers. The placement-only cases on
@@ -245,6 +247,97 @@ def test_camp_keeps_its_tents_and_no_recipe_drops_a_fifth():
     inside its ground: every camp keeps 2 or more, and no recipe drops more than a fifth of
     its Structures (Req 4.2, 4.3)."""
     _check_camps_and_drops(range(1000, 1030))
+
+
+# ---------------------------------------------------------------------------
+# Step 13 P4: Sites on point Sockets
+# ---------------------------------------------------------------------------
+
+def _point_sockets(world):
+    """The World's point Site Sockets: its own ``site`` Sockets once the World offers them
+    (site-sockets task 4), else ``site_points`` on it, shaped as those Sockets are."""
+    own = [s for s in world.sockets if s.kind == "site"]
+    if own:
+        return own
+    from types import SimpleNamespace
+    from generators.sites.points import site_points
+    hills = [s for s in world.sockets if s.kind == "hillside"]
+    pts = site_points(world.terrain, world.spawn, world.recipe["seed"], world.recipe["biome"], RULES,
+                      hill=hills[0].ground["footprint"] if hills else None)
+    return [SimpleNamespace(id=p.id, kind="site", x=p.x, y=p.y, z=p.z, accepts=("site",),
+                            ground=p.ground()) for p in pts]
+
+
+@lru_cache(maxsize=None)
+def _point_world(name):
+    """A World with its earlier Attachments applied (an outdoor dungeon's rooms on its hill)
+    and its point Sockets: a corpus recording by name, or a fresh wilderness by seed."""
+    from generators import stages
+    from tests.test_attach_hillside import attach, record_worlds
+    world = record_worlds.load_world(name) if isinstance(name, str) else world_for("wilderness", name)
+    atts = [attach(world)] if any(s.kind == "hillside" for s in world.sockets) else []
+    return stages.apply_edits(world, atts), _point_sockets(world)
+
+
+POINT_WORLDS = ["wilderness_plains", "wilderness_river", "outdoor_n", "outdoor_s", "outdoor_e",
+                "outdoor_w", "outdoor_river", 1000, 1001, 1002, 1003]
+
+
+def _smallest_outer(free):
+    fits = [r.ground.radius + r.ground.margin for r in RULES.kinds.values()
+            if free.get(f"{r.ground.slope_deg:g}", 0.0) >= r.ground.radius + r.ground.margin]
+    return min(fits) if fits else None
+
+
+def test_property_p4_sites_stand_on_points_that_fit_them():
+    """Every Site centred on a point of its own, of a kind whose ground and margin fit the
+    point's Free radius at the recipe's slope, clear of Kept_Clear; grounds keep CLEAR_WIDTH;
+    no way in crosses another Site's ground; no point under Kept_Clear used; Sites ``none``
+    places nothing (step 13 Req 3.1-3.3, 3.7, 3.8)."""
+    sites_seen = skipped_seen = 0
+    for name in POINT_WORLDS:
+        dug, points = _point_world(name)
+        ground = dug.socket("ground")
+        keep = [tuple(s) for s in ground.ground.get("keep_clear", ())]
+        by_id = {p.id: p for p in points}
+        under = {p.id for p in points if _smallest_outer(p.ground["free"]) is None or any(
+            gap((p.x, p.y, p.x, p.y, _smallest_outer(p.ground["free"])), s) < 0 for s in keep)}
+        skipped_seen += len(under)
+        for seed in (0, 1, 2):
+            none = place_sites(dug.terrain, ground, seed, control="none", rules=RULES, points=points)
+            assert none.sites == [] and none.drops == [] and none.target == 0
+            for control in ("normal", "dense"):
+                p = place_sites(dug.terrain, ground, seed, control=control, rules=RULES, points=points)
+                where = (name, seed, control)
+                used = [s.socket for s in p.sites]
+                assert len(set(used)) == len(used), where
+                assert len(p.sites) + sum(d.what == "site" for d in p.drops) == p.target, where
+                for d in p.drops:
+                    assert d.reason in REASONS | {sp.NO_POINT}, where
+                for s in p.sites:
+                    pt = by_id[s.socket]
+                    assert s.socket not in under, (where, s.socket)
+                    assert (s.x, s.y) == (pt.x, pt.y), where
+                    g = RULES.kinds[s.kind].ground
+                    outer = s.radius + s.margin
+                    assert outer == g.radius + g.margin
+                    assert pt.ground["free"][f"{g.slope_deg:g}"] >= outer, (where, s.kind)
+                    for k in keep:
+                        assert gap((s.x, s.y, s.x, s.y, outer), k) >= -EPS, (where, s.kind)
+                    for t in s.structures:
+                        assert reach(t.footprint(), s.x, s.y) <= s.radius + EPS, (where, s.kind)
+                    # The way in, beyond the margin: 40 u out, a player's clear width across.
+                    fx, fy = math.cos(s.approach_yaw), math.sin(s.approach_yaw)
+                    way = (s.x + fx * outer, s.y + fy * outer, s.x + fx * (outer + sp.APPROACH_REACH),
+                           s.y + fy * (outer + sp.APPROACH_REACH), sp.CLEAR_WIDTH / 2)
+                    for o in p.sites:
+                        if o is s:
+                            continue
+                        disc = (o.x, o.y, o.x, o.y, o.radius + o.margin)
+                        assert gap((s.x, s.y, s.x, s.y, outer), disc) >= sp.CLEAR_WIDTH - EPS, where
+                        assert gap(way, disc) >= -EPS, (where, s.kind, o.kind)
+                sites_seen += len(p.sites)
+    assert sites_seen > 50 and skipped_seen, (sites_seen, skipped_seen)
 
 
 @pytest.mark.parametrize("band, area", [((0.3, 0.5), 0.816e6), ((0.6, 1.0), 0.816e6),

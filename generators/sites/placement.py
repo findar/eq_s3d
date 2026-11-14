@@ -20,6 +20,9 @@ ground). A Site is placed in three moves:
   an apron in front of each Enterable Structure's opening, and the margin round its ground.
   No Structure may stand in it; one that would is dropped and recorded.
 
+Given the World's point Site Sockets (step 13), **where** is a point instead: each Site
+stands centred on one the World offered, of a kind that fits it (``_place_on_points``).
+
 Anything that can't fit (a Site with no ground, a Structure with no room, a POI whose
 Structure dropped) is dropped and recorded with a reason; placement never fails (Req 4.3).
 Every kept Site names at least one POI, each on ground reached from Spawn (Req 6.1).
@@ -38,7 +41,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import asdict, dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt, label, uniform_filter
@@ -107,6 +110,7 @@ STRUCTURE_GONE = "its Structure dropped"
 NO_FREE_GROUND = "no free ground beside its Structure"
 NO_POI = "no POI left"
 NO_STRUCTURES = "no Structure left"
+NO_POINT = "no point fits its recipe"
 
 _WET = ("water", "river", "lava")
 _EPS = 1e-6
@@ -186,6 +190,16 @@ class Site:
     structures: Tuple[PlacedStructure, ...]
     pois: Tuple[POIPoint, ...]
     clear: Tuple[ClearArea, ...]
+    #: The point Socket's id the Site stands on (step 13); None on the area path, whose
+    #: JSON form then leaves the key out (its bytes are step 12's).
+    socket: Optional[str] = None
+
+
+def _site_dict(s: Site) -> dict:
+    d = asdict(s)
+    if d["socket"] is None:
+        del d["socket"]
+    return d
 
 
 @dataclass
@@ -206,7 +220,7 @@ class SitePlacement:
     def to_dict(self) -> dict:
         return {"control": self.control, "target": self.target,
                 "walkable_area": self.walkable_area, "band": list(self.band),
-                "sites": [asdict(s) for s in self.sites], "drops": [asdict(d) for d in self.drops]}
+                "sites": [_site_dict(s) for s in self.sites], "drops": [asdict(d) for d in self.drops]}
 
 
 # ---------------------------------------------------------------------------
@@ -388,14 +402,28 @@ def _choose_centre(t: _Terrain, recipe: SiteRecipe, placed: Sequence[Tuple[Site,
     return best
 
 
-def _approach(t: _Terrain, cx: float, cy: float, outer: float, rng: random.Random) -> Optional[float]:
+def approach_way(cx: float, cy: float, outer: float, yaw: float) -> ClearShape:
+    """The way in beyond a Site's ground: from its margin out ``APPROACH_REACH`` along ``yaw``,
+    a player's clear width across."""
+    fx, fy = math.cos(yaw), math.sin(yaw)
+    return (cx + fx * outer, cy + fy * outer, cx + fx * (outer + APPROACH_REACH),
+            cy + fy * (outer + APPROACH_REACH), CLEAR_WIDTH / 2)
+
+
+def _approach(t: _Terrain, cx: float, cy: float, outer: float, rng: random.Random,
+              avoid: Sequence[ClearShape] = ()) -> Optional[float]:
     """The way in: of the directions whose ground beyond the Site is reached and walkable all
-    the way out to ``APPROACH_REACH``, the one facing Spawn most (with a little chance)."""
+    the way out to ``APPROACH_REACH``, the one facing Spawn most (with a little chance).
+    ``avoid``: shapes the way in may not meet (earlier Sites' grounds, Req 3.7)."""
     to_spawn = math.atan2(t.spawn_xy[1] - cy, t.spawn_xy[0] - cx)
     best, best_score = None, -math.inf
     steps = max(2, int(math.ceil(APPROACH_REACH / (t.ground.res / 2))))
     for k in range(APPROACH_DIRECTIONS):
         a = 2 * math.pi * k / APPROACH_DIRECTIONS
+        if avoid:
+            way = approach_way(cx, cy, outer, a)
+            if any(gap(way, s) < 0 for s in avoid):
+                continue
         ok = True
         for s in range(steps + 1):
             d = outer + APPROACH_REACH * s / steps
@@ -771,8 +799,14 @@ def place_sites(terrain, ground, seed: int, biome: str = "plains",
                 control: str = DEFAULT_DENSITY, inhabitant: str = "",
                 rules: Optional[SiteRules] = None,
                 spawn_xy: Optional[Tuple[float, float]] = None,
-                keep_clear: Sequence[ClearShape] = ()) -> SitePlacement:
-    """The Sites of one zone (Requirements 4 and 6). Pure.
+                keep_clear: Sequence[ClearShape] = (),
+                points: Optional[Sequence[Any]] = None) -> SitePlacement:
+    """The Sites of one zone (Requirements 4 and 6; step 13 Requirement 3). Pure.
+
+    ``points``: the World's point Site Sockets (kind ``site``, in rank order). Given them,
+    each Site stands on one of them, centred on its point (``_place_on_points``, whose
+    docstring holds the order of the stream's draws) and names it in ``Site.socket``. Without
+    them, Sites choose their own centres on the area as step 10 does (bytes unchanged).
 
     ``terrain`` is the World's ``Terrain`` with every earlier Attachment's Terrain edits
     applied, and ``ground`` its ``ground`` Socket (world-sockets task 5): the Spawn is the
@@ -808,6 +842,10 @@ def place_sites(terrain, ground, seed: int, biome: str = "plains",
         return out
     out.target = site_target(rng, band, area)
 
+    if points is not None:
+        _place_on_points(out, t, rules, biome, inhabitant, rng, points, shapes)
+        return out
+
     placed: List[Tuple[Site, SiteRecipe]] = []
     for _ in range(out.target):
         who = rules.draw_inhabitant(biome, rng, inhabitant)
@@ -834,31 +872,171 @@ def place_sites(terrain, ground, seed: int, biome: str = "plains",
         if a is None:
             out.drops.append(Drop("site", kind, NO_APPROACH, who))
             continue
-        arr = _Arranger(rules, recipe, cx, cy, a, rng)
-        arr.arrange()
-        pois, poi_drops = _poi_points(arr, recipe)
-        index = len(placed)
-        if not arr.kept or not pois:
-            out.drops.append(Drop("site", kind, NO_STRUCTURES if not arr.kept else NO_POI, who))
-            continue
-        for k, why in arr.drops:
-            out.drops.append(Drop("structure", k, why, who, index))
-        for name, why in poi_drops:
-            out.drops.append(Drop("poi", name, why, who, index))
-        z = t.ground.surface_z
-        structures = tuple(PlacedStructure(**{**asdict(s), "z": z(s.x, s.y)}) for s, _, _ in arr.kept)
-        clear = (ClearArea("ground", cx, cy, cx, cy, outer),) + tuple(arr.clear)
-        site = Site(kind=kind, inhabitant=who, x=cx, y=cy, z=z(cx, cy),
-                    radius=recipe.ground.radius, margin=recipe.ground.margin, approach_yaw=_wrap(a),
-                    structures=structures,
-                    pois=tuple(POIPoint(n, p, x, y, z(x, y), at) for n, p, x, y, at in pois),
-                    clear=clear)
-        placed.append((site, recipe))
-        out.sites.append(site)
-        out.counts[kind] = out.counts.get(kind, 0) + 1
+        site = _arrange_site(out, t, rules, recipe, kind, who, cx, cy, a, rng)
+        if site is not None:
+            placed.append((site, recipe))
     return out
 
 
-__all__ = ["APRON_DEPTH", "CLEAR_WIDTH", "ClearArea", "Drop", "POIPoint", "PlacedStructure",
-           "RUN_STRUCTURES", "SITES_SALT", "Site", "SitePlacement", "gap", "place_sites", "reach",
-           "site_target", "sites_seed", "terrain_of"]
+def _arrange_site(out: SitePlacement, t: _Terrain, rules: SiteRules, recipe: SiteRecipe,
+                  kind: str, who: str, cx: float, cy: float, a: float, rng: random.Random,
+                  socket: Optional[str] = None) -> Optional[Site]:
+    """Step 10's Site round ``(cx, cy)`` with its way in ``a``: its Structures arranged, its
+    POIs, its drops recorded in ``out``; the Site, kept in ``out``, or None when it dropped."""
+    outer = recipe.ground.radius + recipe.ground.margin
+    arr = _Arranger(rules, recipe, cx, cy, a, rng)
+    arr.arrange()
+    pois, poi_drops = _poi_points(arr, recipe)
+    index = len(out.sites)
+    if not arr.kept or not pois:
+        out.drops.append(Drop("site", kind, NO_STRUCTURES if not arr.kept else NO_POI, who))
+        return None
+    for k, why in arr.drops:
+        out.drops.append(Drop("structure", k, why, who, index))
+    for name, why in poi_drops:
+        out.drops.append(Drop("poi", name, why, who, index))
+    z = t.ground.surface_z
+    structures = tuple(PlacedStructure(**{**asdict(s), "z": z(s.x, s.y)}) for s, _, _ in arr.kept)
+    clear = (ClearArea("ground", cx, cy, cx, cy, outer),) + tuple(arr.clear)
+    site = Site(kind=kind, inhabitant=who, x=cx, y=cy, z=z(cx, cy),
+                radius=recipe.ground.radius, margin=recipe.ground.margin, approach_yaw=_wrap(a),
+                structures=structures,
+                pois=tuple(POIPoint(n, p, x, y, z(x, y), at) for n, p, x, y, at in pois),
+                clear=clear, socket=socket)
+    out.sites.append(site)
+    out.counts[kind] = out.counts.get(kind, 0) + 1
+    return site
+
+
+# ---------------------------------------------------------------------------
+# On point Sockets (step 13)
+# ---------------------------------------------------------------------------
+
+def _point_likes(recipe: SiteRecipe, g: Mapping[str, Any]) -> float:
+    """:func:`_likes_score` read off a point Socket's ``ground`` (its height rank, clearing,
+    water and zoneline distances, as the World measured them)."""
+    score = 0.0
+    for like, w in recipe.likes.items():
+        if like == "near_water":
+            d = g.get("water_d")
+            f = 0.0 if d is None else max(0.0, 1.0 - float(d) / NEAR_WATER_REACH)
+        elif like == "by_zoneline":
+            d = g.get("zoneline_d")
+            f = 0.0 if d is None else max(0.0, 1.0 - float(d) / ZONELINE_REACH)
+        elif like == "high_ground":
+            f = float(g["height_rank"])
+        elif like == "low_ground":
+            f = 1.0 - float(g["height_rank"])
+        else:  # clearing
+            f = float(g["clearing"])
+        score += w * f
+    return score
+
+
+def _smallest_outer(rules: SiteRules, free: Mapping[str, float]) -> Optional[float]:
+    """The smallest ``radius + margin`` of the recipes that fit a point's Free radii."""
+    from generators.sites.points import slope_key
+    fits = [r.ground.radius + r.ground.margin for r in rules.kinds.values()
+            if float(free.get(slope_key(r.ground.slope_deg), 0.0)) >= r.ground.radius + r.ground.margin]
+    return min(fits) if fits else None
+
+
+def usable_points(points: Sequence[Any], rules: SiteRules,
+                  keep_clear: Sequence[ClearShape]) -> List[Any]:
+    """The point Sockets a Site may take (Req 3.3): those whose smallest-outer disc (the
+    smallest recipe that fits them) meets no Kept_Clear shape, in their order."""
+    out = []
+    for p in points:
+        outer = _smallest_outer(rules, p.ground["free"])
+        if outer is None:
+            continue
+        disc = (p.x, p.y, p.x, p.y, outer)
+        if any(gap(disc, s) < 0 for s in keep_clear):
+            continue
+        out.append(p)
+    return out
+
+
+def _group_order(usable: Sequence[Any], rng: random.Random) -> List[Any]:
+    """The usable points Group by Group: each next Group drawn with a chance in proportion to
+    its usable size (Req 3.4), its points in rank order."""
+    groups: Dict[int, List[Any]] = {}
+    for p in sorted(usable, key=lambda p: int(p.ground["rank"])):
+        groups.setdefault(int(p.ground["group"]), []).append(p)
+    order: List[Any] = []
+    while groups:
+        names = sorted(groups)
+        g = rng.choices(names, weights=[len(groups[n]) for n in names])[0]
+        order.extend(groups.pop(g))
+    return order
+
+
+def _place_on_points(out: SitePlacement, t: _Terrain, rules: SiteRules, biome: str,
+                     inhabitant: str, rng: random.Random, points: Sequence[Any],
+                     keep_clear: Sequence[ClearShape]) -> None:
+    """Sites on point Sockets (step 13 design "The Sites stage on points"); ``out.target`` is
+    drawn. The ``SITES_SALT`` stream draws, after the target, in this order (every Site
+    build's bytes depend on it):
+
+    1. the Group order: one draw per Group with a usable point (:func:`_group_order`);
+    2. then per point taken, in that order: its Inhabitant; if a kind fits, the kind, then
+       the way in (:func:`_approach`), then the arrangement (``_Arranger``'s draws).
+
+    A kind fits a point when its ``radius + margin`` is within the point's Free radius at the
+    recipe's slope, its disc meets no Kept_Clear shape and no earlier Site's way in, and keeps
+    ``CLEAR_WIDTH`` from every earlier Site's ground and margin; of those with a weight, one
+    is drawn by ``weight * (1 + likes)``. A point no kind fits, or with no way in, is passed
+    over; every point is taken at most once. A Site still to place when no point is left is
+    dropped (``NO_POINT``)."""
+    from generators.sites.points import slope_key
+
+    for p in points:
+        if p.kind != "site":
+            raise ValueError(f"Socket {p.id!r} ({p.kind}) is not a point Site Socket")
+    queue = iter(_group_order(usable_points(points, rules, keep_clear), rng))
+    grounds: List[ClearShape] = []      # earlier Sites' ground and margin
+    ways: List[ClearShape] = []         # earlier Sites' ways in, beyond their margin
+    for _ in range(out.target):
+        site = None
+        for p in queue:
+            who = rules.draw_inhabitant(biome, rng, inhabitant)
+            weights = rules.kind_weights(biome, who)
+            free = p.ground["free"]
+            fits: Dict[str, float] = {}
+            for kind in sorted(weights):
+                if weights[kind] <= 0:
+                    continue
+                recipe = rules.kinds[kind]
+                outer = recipe.ground.radius + recipe.ground.margin
+                if float(free.get(slope_key(recipe.ground.slope_deg), 0.0)) < outer:
+                    continue
+                disc = (p.x, p.y, p.x, p.y, outer)
+                if any(gap(disc, s) < 0 for s in keep_clear) or any(gap(disc, w) < 0 for w in ways):
+                    continue
+                if any(gap(disc, s) < CLEAR_WIDTH for s in grounds):
+                    continue
+                fits[kind] = weights[kind] * (1.0 + _point_likes(recipe, p.ground))
+            if not fits:
+                continue
+            names = sorted(fits)
+            kind = rng.choices(names, weights=[fits[n] for n in names])[0]
+            recipe = rules.recipe_for(kind, who)
+            outer = recipe.ground.radius + recipe.ground.margin
+            cx, cy = float(p.x), float(p.y)
+            a = _approach(t, cx, cy, outer, rng, avoid=grounds)
+            if a is None:
+                continue
+            site = _arrange_site(out, t, rules, recipe, kind, who, cx, cy, a, rng, socket=p.id)
+            # The point is used either way; a Site whose arrangement failed is dropped, named.
+            if site is not None:
+                grounds.append((cx, cy, cx, cy, outer))
+                ways.append(approach_way(cx, cy, outer, a))
+            break
+        else:
+            out.drops.append(Drop("site", "", NO_POINT))
+
+
+__all__ = ["APRON_DEPTH", "CLEAR_WIDTH", "ClearArea", "Drop", "NO_POINT", "POIPoint",
+           "PlacedStructure", "RUN_STRUCTURES", "SITES_SALT", "Site", "SitePlacement",
+           "approach_way", "gap", "place_sites", "reach", "site_target", "sites_seed",
+           "terrain_of", "usable_points"]
