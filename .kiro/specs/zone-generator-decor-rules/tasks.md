@@ -33,7 +33,7 @@ build on its header, Controls and side panel.
 
 ## Tasks
 
-- [ ] 1. Decor layers in the loader
+- [x] 1. Decor layers in the loader
   - Card: [cards/01-loader.md](cards/01-loader.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/decor/rules.py, rules/decor/themes.toml, rules/decor/layers/, tests/test_decor_rules.py, tests/test_decor_layers.py
