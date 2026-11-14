@@ -16,10 +16,10 @@ test_availability_follows_enabled`, `test_topology_levels.py`. Find why each is 
 strategy drawing huge cases) and fix that.
 
 ## Done when
-- [ ] The fast suite is under 8 min and the full suite under 25 min, idle.
+- [x] The fast suite is under 8 min and the full suite under 25 min, idle.
       → verify: `EQ_PATH='F:\everquest_rof2' python -m pytest tests/ -q --durations=30 -p no:cacheprovider` and the same with `-m "not slow"`
-- [ ] No check lost: each changed test checks what it did (old -> new, in the commit body).
-- [ ] `python -m pytest tests/ -q` is green; `--hypothesis-profile thorough` keeps its examples.
+- [x] No check lost: each changed test checks what it did (old -> new, in the commit body).
+- [x] `python -m pytest tests/ -q` is green; `--hypothesis-profile thorough` keeps its examples.
 
 ## Pitfalls
 Same as task 13. A Hypothesis test's `max_examples` under the default profile is the fast
@@ -27,3 +27,4 @@ suite's budget; the thorough profile is not, so don't cut that one. If a test ca
 without losing its property, stop and report it with its time.
 
 ## Result
+✔ bd9f935 · 2241 passed fast in 5.1 min, 3044 full in 22.1 min (idle)
