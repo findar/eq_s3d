@@ -15,9 +15,9 @@
 #                  side    "open": on the Site's open side, away from the rest (a farm's corral)
 #                  chance  how likely the line is at all, 0 to 1
 #   ground       radius (u, the Site's own ground), slope_deg (the steepest ground it stands on),
-#                spacing (u, the least distance to any other Site's centre), margin (u, the
-#                Site_Clear round its edge)
-#   likes        what scores a candidate centre, 0 to 10 each: near_water, high_ground,
+#                margin (u, the Site_Clear round its edge). No spacing: the biome's Groups
+#                space Sites (biomes.toml; a recipe with spacing is refused)
+#   likes        what scores a point for this kind, 0 to 10 each: near_water, high_ground,
 #                low_ground, by_zoneline, clearing
 #   pois         at least one: { name, purpose, at }. `at` is a Structure in this recipe, "centre"
 #                or "entrance". purpose is one of Light_Spot, interior, altar, lookout, gathering,
@@ -27,8 +27,7 @@
 # scripts/site_survey.py): Structure sizes are the generated models' own (generators/sites/
 # models.py, the largest over every variant and seed); a Site's radius sits in the survey's band
 # (zone p50 0-45 u, p90 35-120 u; plains p50 0-93 u); slopes under the survey's p50 (under 8
-# degrees in every zone, plains 0-7.8); spacing in its band (zone p10 130-490 u over all zones,
-# 108-190 u on the plains; the closest pair anywhere 108 u); counts from Structures per Site
+# degrees in every zone, plains 0-7.8); counts from Structures per Site
 # (zone p50 1-3, p90 2-10 on the plains; 51% of Sites are one Structure, 44% 2-5, 5% 6+).
 # Stock Sites are not drawn to water or zonelines (both 1000 u or more away at the median), so
 # no recipe likes them.
@@ -109,7 +108,7 @@ structures = [
     { kind = "fire_ring", at = "centre" },
     { kind = "tent", count = [2, 4], face = "in" },        # 3-5 Structures (SRO, Oasis zone p50 3)
 ]
-ground = { radius = 46, slope_deg = 8, spacing = 200, margin = 8 }      # tents ring the fire 32 u out (SRO 37, Oasis 42)
+ground = { radius = 46, slope_deg = 8, margin = 8 }      # tents ring the fire 32 u out (SRO 37, Oasis 42)
 likes = { clearing = 1 }
 pois = [
     { name = "camp fire", purpose = "Light_Spot", at = "fire_ring" },
@@ -123,7 +122,7 @@ structures = [
     { kind = "hut", at = "centre", face = "any" },
     { kind = "fence", count = [0, 1], at = "row", side = "open", chance = 0.5 },   # mostly alone (SHAK, HUT1)
 ]
-ground = { radius = 40, slope_deg = 6, spacing = 200, margin = 8 }      # the hut and a fence run
+ground = { radius = 40, slope_deg = 6, margin = 8 }      # the hut and a fence run
 likes = { clearing = 2 }
 pois = [
     { name = "hut interior", purpose = "interior", at = "hut" },
@@ -138,7 +137,7 @@ structures = [
     { kind = "barn", face = "any" },                       # BARN1 x4 to RHOUSE1 x3: one a farm
     { kind = "fence", count = [3, 4], at = "row", side = "open" },        # the corral (CORRALL 46x43)
 ]
-ground = { radius = 90, slope_deg = 5, spacing = 300, margin = 10 }     # house, barn, corral 60-150 apart
+ground = { radius = 90, slope_deg = 5, margin = 10 }     # house, barn, corral 60-150 apart
 likes = { low_ground = 3 }
 pois = [
     { name = "farmhouse interior", purpose = "interior", at = "hut" },
@@ -151,7 +150,7 @@ arrangement = "lone"
 structures = [
     { kind = "tower", count = [1, 2] },        # two stand as a pair (EKTOWER, ELFTOWER, MTOWER)
 ]
-ground = { radius = 40, slope_deg = 10, spacing = 400, margin = 8 }     # a pair 40-50 u apart
+ground = { radius = 40, slope_deg = 10, margin = 8 }     # a pair 40-50 u apart
 likes = { high_ground = 4 }
 pois = [
     { name = "lookout", purpose = "lookout", at = "tower" },
@@ -166,7 +165,7 @@ structures = [
     { kind = "monument", at = "centre" },
     { kind = "standing_stone", count = [3, 5], face = "in", chance = 0.25 },   # MCIRCLE, MONU4 x4 in Oasis
 ]
-ground = { radius = 34, slope_deg = 8, spacing = 300, margin = 8 }      # stones ring a burial mound
+ground = { radius = 34, slope_deg = 8, margin = 8 }      # stones ring a burial mound
 likes = { high_ground = 3, clearing = 2 }
 pois = [
     { name = "shrine altar", purpose = "altar", at = "monument" },
@@ -180,7 +179,7 @@ structures = [
     { kind = "ruin_wall", count = [1, 4], face = "in" },          # a lone wall, or a court ~40 u (COMRUIN 46x35)
     { kind = "standing_stone", count = [0, 2], at = "cluster", chance = 0.2 },
 ]
-ground = { radius = 32, slope_deg = 10, spacing = 300, margin = 8 }
+ground = { radius = 32, slope_deg = 10, margin = 8 }
 likes = { high_ground = 1, clearing = 1 }
 pois = [
     { name = "ruin court", purpose = "interior", at = "ruin_wall" },

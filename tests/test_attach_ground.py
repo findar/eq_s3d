@@ -27,7 +27,7 @@ from analyzer.traverse import AgentModel
 from generators import outdoor_dungeon as od
 from generators import stages
 from generators.sites import placement as sp
-from generators.sites.placement import gap, place_sites, reach
+from generators.sites.placement import gap, reach
 from generators.sites.points import slope_key
 from generators.sites.rules import load_sites
 from generators.routing import corridor_route, route_footprint
@@ -41,7 +41,7 @@ EPS = 1e-6
 #: Every recording with a ground Socket (the landscape zone types).
 GROUNDS = [r["name"] for r in record_worlds.RECORDINGS
            if r["zone_type"] in record_worlds.LANDSCAPE]
-REASONS = {sp.NO_GROUND, sp.NO_APPROACH, sp.NO_ROOM, sp.OUTSIDE, sp.IN_CLEAR, sp.CROWDED,
+REASONS = {sp.NO_APPROACH, sp.NO_ROOM, sp.OUTSIDE, sp.IN_CLEAR, sp.CROWDED,
            sp.APRON_OFF, sp.APRON_BLOCKED, sp.STRUCTURE_GONE, sp.NO_FREE_GROUND, sp.NO_POI,
            sp.NO_STRUCTURES, sp.NO_POINT}
 
@@ -174,8 +174,7 @@ def test_ground_attachment_keeps_its_rules_on_the_corpus(name, ground):
 def test_p6_the_build_applies_the_attach_stages_edits(seed, edges):
     """P6 against a build: the edit and shapes the Attach stage made when it planned are
     the Build's; the Apron's heights are exactly the built TER's grid; the Kept_Clear is
-    what the spec's Entrance, rooms and corridors give; the Sites are the ones placed on the
-    built TER, and the build's.
+    what the spec's Entrance, rooms and corridors give; the Sites are the build's.
     A seed that gets a Site at dense, and one with water, whose grid before the water bed
     sinks differs from the TER's."""
     spec = od.outdoor_dungeon_spec(f"g{seed}", seed, edges=edges)
@@ -197,12 +196,7 @@ def test_p6_the_build_applies_the_attach_stages_edits(seed, edges):
     assert [tuple(s) for s in dug.socket("ground").ground["keep_clear"]] == list(shapes)
     assert tuple(dug.socket("ground").ground["spawn"][:2]) == tuple(spec.safe_point[:2])
 
-    biome = spec.wilderness["biome"]
     got = _sites(dug, stages.rooms_seed(seed))
-    legacy = place_sites(wb.landscape_for(spec), ter, seed, biome=biome, control="dense",
-                         rules=RULES, spawn_xy=tuple(spec.safe_point[:2]), keep_clear=shapes,
-                         points=[s for s in world.sockets if s.kind == "site"])
-    assert pickle.dumps(got.sites) == pickle.dumps(legacy)
     assert pickle.dumps(wb.sites_for(spec, ter).placement) == pickle.dumps(got.sites)
     if edges is None:
         assert got.sites.sites, "this seed gets a Site at dense"
@@ -291,7 +285,8 @@ def test_misfits_drop_with_reasons_and_never_fail(ground):
     assert ("tent", sp.NO_ROOM) in seen
     # On points a shrine no point holds is never drawn: the point takes a camp; with nothing
     # else that fits any point, the Site drops for want of a point (site-sockets task 6).
-    assert not any(d.reason == sp.NO_GROUND for d in p.drops)
+    assert not any(s.kind == "shrine" for s in p.sites)
+    assert not any(d.what == "site" and d.kind == "shrine" for d in p.drops)
     alone = replace(rules, biomes={**rules.biomes, "plains": replace(
         only, weights={k: float(k == "shrine") for k in RULES.kinds})})
     p = _sites(dug, 0, rules=alone, inhabitant="human").sites

@@ -1,27 +1,24 @@
 """Where Sites stand (roadmap step 10, Requirements 4 and 6; design "Sites").
 
 :func:`place_sites` is a pure function of the World's terrain (with earlier Attachments'
-Terrain edits applied) and its ``ground`` Socket (world-sockets task 5; or, legacy, the
-landscape and its built TER), the Site rules (``generators/sites/rules.py``), the biome, the
-Sites control and the seed. It draws
+Terrain edits applied), its ``ground`` Socket (world-sockets task 5) and its point Site
+Sockets (step 13), the Site rules (``generators/sites/rules.py``), the biome, the Sites
+control and the seed. It draws
 from its OWN salted stream (``_salted_seed(seed, *SITES_SALT)``), so the terrain's stream
 never moves and the TER is never touched (archive decision 1: Sites stand on unchanged
 ground). A Site is placed in three moves:
 
-- **where**: a centre on eligible ground: every quad its ground and margin touch is
-  playable plains, no steeper than the recipe allows, outside Kept_Clear (the trees' own:
-  Spawn clearing, zoneline approaches, shores; plus any ``keep_clear`` shapes the caller
-  adds, e.g. an outdoor dungeon's Apron), reached from Spawn, and at least the recipe's
-  spacing from every other Site. Candidate centres are scored by the recipe's likes (near
-  water, high or low ground, by a zoneline, a clearing) plus a Gumbel draw, best kept;
+- **where**: centred on a point the World offered, of a kind that fits it: the recipe's
+  ground and margin within the point's Free radius at its slope, clear of Kept_Clear (the
+  ``ground`` Socket's, e.g. an outdoor dungeon's rooms, plus any ``keep_clear`` shapes the
+  caller adds) and of earlier Sites; the kind drawn by weight and the recipe's likes (near
+  water, high or low ground, by a zoneline, a clearing) read off the point
+  (``_place_on_points``);
 - **what**: the recipe's Structures, arranged round the centre (ring, row, cluster, lone,
   perimeter; facing in, out or any; a ``side = "open"`` line on the Site's flank);
 - **keep clear**: its Site_Clear: an approach from open ground beyond the Site to its middle,
   an apron in front of each Enterable Structure's opening, and the margin round its ground.
   No Structure may stand in it; one that would is dropped and recorded.
-
-Given the World's point Site Sockets (step 13), **where** is a point instead: each Site
-stands centred on one the World offered, of a kind that fits it (``_place_on_points``).
 
 Anything that can't fit (a Site with no ground, a Structure with no room, a POI whose
 Structure dropped) is dropped and recorded with a reason; placement never fails (Req 4.3).
@@ -44,10 +41,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-from scipy.ndimage import distance_transform_edt, label, uniform_filter
+from scipy.ndimage import distance_transform_edt, label
 
 from analyzer.footprints import CLEAR_WIDTH as _GATE_CLEAR_WIDTH
-from core.ter import TerFile
 from generators.sites.rules import (
     CENTRE,
     DEFAULT_DENSITY,
@@ -62,7 +58,6 @@ from generators.vegetation.placement import (
     Ground,
     ground_of,
     shapes_touch_quads,
-    ter_heights,
 )
 
 #: The salt of the Sites' own stream: ``_salted_seed(seed, "sites", "placement")``.
@@ -79,26 +74,21 @@ RUN_HALF_THICK = 1.0
 RUN_STRUCTURES = frozenset({"fence", "ruin_wall"})
 #: Steepest ground the walker stands on (``AgentModel.walkable_slope_deg``): reached ground.
 WALK_SLOPE_DEG = 40.0
-#: Candidate centres scored per Site, and random draws allowed to find them.
-CANDIDATES = 48
-CANDIDATE_DRAWS = 6
 #: The approach must find walkable reached ground this far beyond the Site's margin.
 APPROACH_REACH = 40.0
 APPROACH_DIRECTIONS = 16
 #: Likes fade to nothing at these distances.
 NEAR_WATER_REACH = 400.0
 ZONELINE_REACH = 600.0
-#: The clearing like: share of eligible ground within this many quads of the centre.
+#: The clearing like: share of eligible ground within this many quads of the centre (the
+#: World measures it per point, ``sites.points``).
 CLEARING_QUADS = 2
-#: Scale of the Gumbel draw added to a candidate's score: likes lead, chance varies.
-SCORE_NOISE = 1.0
 #: Tries a cluster or lone Structure gets to find room.
 CLUSTER_TRIES = 40
 #: How far in front of a solid Structure its POI stands.
 POI_OFFSET = 2.0
 
 #: Drop reasons (the sidecar's words).
-NO_GROUND = "no eligible ground for its recipe, spaced from the other Sites"
 NO_APPROACH = "no approach from open ground"
 NO_ROOM = "no room on its arrangement"
 OUTSIDE = "outside its Site's ground"
@@ -190,8 +180,8 @@ class Site:
     structures: Tuple[PlacedStructure, ...]
     pois: Tuple[POIPoint, ...]
     clear: Tuple[ClearArea, ...]
-    #: The point Socket's id the Site stands on (step 13); None on the area path, whose
-    #: JSON form then leaves the key out (its bytes are step 12's).
+    #: The point Socket's id the Site stands on (step 13). None only on a Site made by hand,
+    #: whose JSON form then leaves the key out.
     socket: Optional[str] = None
 
 
@@ -301,16 +291,6 @@ class _Terrain:
         return (i, j) if 0 <= i < nqx and 0 <= j < nqy else None
 
 
-def terrain_of(land, ter: TerFile):
-    """A landscape and its built TER as a World's ``Terrain`` (heights: the TER's grid
-    vertex Zs): the legacy ``place_sites(land, ter, ...)`` form."""
-    from generators.world import Terrain
-    synth = land.synth
-    return Terrain(origin=synth.origin, res=synth.resolution,
-                   heights=ter_heights(ter, synth.heights.shape), node_type=synth.node_type,
-                   rim_seal=synth.rim_seal_mask, playable_interior=synth.playable_interior_mask)
-
-
 def _terrain(terrain, spawn_xy: Tuple[float, float],
              keep_clear: Sequence[ClearShape]) -> _Terrain:
     ground = ground_of(terrain, spawn_xy)
@@ -349,58 +329,6 @@ def _terrain(terrain, spawn_xy: Tuple[float, float],
 # ---------------------------------------------------------------------------
 # Where
 # ---------------------------------------------------------------------------
-
-def _likes_score(t: _Terrain, recipe: SiteRecipe, i: int, j: int, clearing: np.ndarray) -> float:
-    score = 0.0
-    for like, w in recipe.likes.items():
-        if like == "near_water":
-            f = 0.0 if t.water_d is None else max(0.0, 1.0 - t.water_d[i, j] / NEAR_WATER_REACH)
-        elif like == "by_zoneline":
-            f = 0.0 if t.zoneline_d is None else max(0.0, 1.0 - t.zoneline_d[i, j] / ZONELINE_REACH)
-        elif like == "high_ground":
-            f = float(t.height_rank[i, j])
-        elif like == "low_ground":
-            f = 1.0 - float(t.height_rank[i, j])
-        else:  # clearing
-            f = float(clearing[i, j])
-        score += w * f
-    return score
-
-
-def _choose_centre(t: _Terrain, recipe: SiteRecipe, placed: Sequence[Tuple[Site, SiteRecipe]],
-                   rng: random.Random) -> Optional[Tuple[float, float]]:
-    g = recipe.ground
-    elig = t.base & (t.slope <= g.slope_deg)
-    for site, other in placed:     # no quad of another Site's ground
-        elig &= ~shapes_touch_quads(elig.shape, t.ground.origin, t.ground.res,
-                                    [(site.x, site.y, site.x, site.y, site.radius + site.margin)])
-    cells = np.argwhere(elig)
-    if not len(cells):
-        return None
-    on = Ground(heights=t.ground.heights, origin=t.ground.origin, res=t.ground.res, eligible=elig)
-    clearing = uniform_filter(elig.astype(np.float64), size=2 * CLEARING_QUADS + 1, mode="constant")
-    outer = g.radius + g.margin
-    best, best_score = None, -math.inf
-    found = 0
-    for _ in range(CANDIDATES * CANDIDATE_DRAWS):
-        if found >= CANDIDATES:
-            break
-        i, j = cells[rng.randrange(len(cells))]
-        x0, y0, _, _ = on.quad_rect(int(i), int(j))
-        x, y = x0 + rng.random() * on.res, y0 + rng.random() * on.res
-        if not on.disc_on_eligible(x, y, outer):
-            continue
-        if any(math.hypot(x - s.x, y - s.y) < max(g.spacing, o.ground.spacing, outer + s.radius + s.margin)
-               for s, o in placed):
-            continue
-        found += 1
-        u = rng.random()
-        noise = -math.log(-math.log(min(max(u, 1e-12), 1 - 1e-12)))
-        score = _likes_score(t, recipe, int(i), int(j), clearing) + SCORE_NOISE * noise
-        if score > best_score:
-            best, best_score = (x, y), score
-    return best
-
 
 def approach_way(cx: float, cy: float, outer: float, yaw: float) -> ClearShape:
     """The way in beyond a Site's ground: from its margin out ``APPROACH_REACH`` along ``yaw``,
@@ -789,26 +717,14 @@ def site_target(rng: random.Random, band: Tuple[float, float], area: float,
 DUNGEON_FLOOR_CONTROLS = ("normal", "dense")
 
 
-def _dungeon_floor(control: str, keep_clear: Sequence[ClearShape],
-                   points: Optional[Sequence[Any]]) -> int:
+def _dungeon_floor(control: str, keep_clear: Sequence[ClearShape]) -> int:
     """1 on an outdoor dungeon at Normal or Dense, else 0 (Sparse keeps step 10's draw).
     An outdoor dungeon is ground with Kept_Clear shapes (an earlier Attachment's: the
     dungeon's Tunnel, Apron, rooms and corridors); a wilderness's ground has none. Not the
     points' ``hill`` flag: on some seeds the World offers no point over the hill."""
-    if control not in DUNGEON_FLOOR_CONTROLS or points is None:
+    if control not in DUNGEON_FLOOR_CONTROLS:
         return 0
     return int(bool(keep_clear))
-
-
-def _redraw_kind(rules: SiteRules, biome: str, inhabitant: str, tried: set,
-                 rng: random.Random) -> Optional[str]:
-    """Another kind for this Inhabitant, drawn by weight from those not yet tried (None when
-    none with a weight is left)."""
-    w = rules.kind_weights(biome, inhabitant)
-    names = [n for n in sorted(w) if n not in tried and w[n] > 0]
-    if not names:
-        return None
-    return rng.choices(names, weights=[w[n] for n in names])[0]
 
 
 def place_sites(terrain, ground, seed: int, biome: str = "plains",
@@ -816,19 +732,17 @@ def place_sites(terrain, ground, seed: int, biome: str = "plains",
                 rules: Optional[SiteRules] = None,
                 spawn_xy: Optional[Tuple[float, float]] = None,
                 keep_clear: Sequence[ClearShape] = (),
-                points: Optional[Sequence[Any]] = None) -> SitePlacement:
+                points: Sequence[Any] = ()) -> SitePlacement:
     """The Sites of one zone (Requirements 4 and 6; step 13 Requirement 3). Pure.
 
-    ``points``: the World's point Site Sockets (kind ``site``, in rank order). Given them,
-    each Site stands on one of them, centred on its point (``_place_on_points``, whose
-    docstring holds the order of the stream's draws) and names it in ``Site.socket``. Without
-    them, Sites choose their own centres on the area as step 10 does (bytes unchanged).
+    ``points``: the World's point Site Sockets (kind ``site``, in rank order). Each Site
+    stands on one of them, centred on its point (``_place_on_points``, whose docstring holds
+    the order of the stream's draws) and names it in ``Site.socket``; with no points, every
+    Site drops (``NO_POINT``).
 
     ``terrain`` is the World's ``Terrain`` with every earlier Attachment's Terrain edits
     applied, and ``ground`` its ``ground`` Socket (world-sockets task 5): the Spawn is the
-    Socket's ``spawn`` and its ``keep_clear`` shapes are Kept_Clear. The legacy form
-    ``place_sites(land, ter, ...)`` (a landscape and its built TER, the Spawn from the bowl)
-    reads the same arrays.
+    Socket's ``spawn`` and its ``keep_clear`` shapes are Kept_Clear.
 
     ``seed`` is the Attach stage's seed (``stages.rooms_seed``; the zone seed while no
     ``rooms_seed`` is set): the Sites salt their own stream from it (``SITES_SALT``).
@@ -836,19 +750,13 @@ def place_sites(terrain, ground, seed: int, biome: str = "plains",
     Inhabitant ("" draws from the biome's mix). ``spawn_xy`` overrides the Spawn;
     ``keep_clear`` adds Kept_Clear shapes. Nothing here changes the terrain."""
     rules = rules or load_sites()
-    shapes = tuple(keep_clear)
-    if hasattr(terrain, "synth"):                     # legacy: (land, ter)
-        land, ter = terrain, ground
-        if spawn_xy is None:
-            from generators.wilderness.bowl import _spawn_world_point
-            sx, sy, _ = _spawn_world_point(land.synth, land.matrix, land.bowl.heights)
-            spawn_xy = (sx, sy)
-        terrain = terrain_of(land, ter)
-    else:
-        if spawn_xy is None:
-            sx, sy = ground.ground["spawn"][:2]
-            spawn_xy = (float(sx), float(sy))
-        shapes = tuple(tuple(s) for s in ground.ground.get("keep_clear", ())) + shapes
+    if hasattr(terrain, "synth"):
+        raise TypeError("place_sites takes a World's terrain and ground Socket; the "
+                        "(landscape, TER) form is retired (site-sockets task 8)")
+    if spawn_xy is None:
+        sx, sy = ground.ground["spawn"][:2]
+        spawn_xy = (float(sx), float(sy))
+    shapes = tuple(tuple(s) for s in ground.ground.get("keep_clear", ())) + tuple(keep_clear)
     t = _terrain(terrain, spawn_xy, shapes)
     area = float(t.reached.sum()) * t.ground.res ** 2
     band = rules.density(biome, control)
@@ -856,41 +764,8 @@ def place_sites(terrain, ground, seed: int, biome: str = "plains",
     out = SitePlacement(sites=[], drops=[], target=0, walkable_area=area, control=control, band=band)
     if band[1] <= 0 or area <= 0:
         return out
-    out.target = site_target(rng, band, area, least=_dungeon_floor(control, shapes, points))
-
-    if points is not None:
-        _place_on_points(out, t, rules, biome, inhabitant, rng, points, shapes)
-        return out
-
-    placed: List[Tuple[Site, SiteRecipe]] = []
-    for _ in range(out.target):
-        who = rules.draw_inhabitant(biome, rng, inhabitant)
-        kind = rules.draw_kind(biome, who, rng)
-        first = kind
-        recipe = rules.recipe_for(kind, who)
-        centre = _choose_centre(t, recipe, placed, rng)
-        tried = {kind}
-        while centre is None:
-            # No ground for this kind: a small open area may still hold a smaller one. Redraw
-            # from the kinds not yet tried, by their weights, before dropping the Site.
-            kind = _redraw_kind(rules, biome, who, tried, rng)
-            if kind is None:
-                break
-            tried.add(kind)
-            recipe = rules.recipe_for(kind, who)
-            centre = _choose_centre(t, recipe, placed, rng)
-        if centre is None:
-            out.drops.append(Drop("site", first, NO_GROUND, who))
-            continue
-        cx, cy = centre
-        outer = recipe.ground.radius + recipe.ground.margin
-        a = _approach(t, cx, cy, outer, rng)
-        if a is None:
-            out.drops.append(Drop("site", kind, NO_APPROACH, who))
-            continue
-        site = _arrange_site(out, t, rules, recipe, kind, who, cx, cy, a, rng)
-        if site is not None:
-            placed.append((site, recipe))
+    out.target = site_target(rng, band, area, least=_dungeon_floor(control, shapes))
+    _place_on_points(out, t, rules, biome, inhabitant, rng, points, shapes)
     return out
 
 
@@ -1057,4 +932,4 @@ def _place_on_points(out: SitePlacement, t: _Terrain, rules: SiteRules, biome: s
 __all__ = ["APRON_DEPTH", "CLEAR_WIDTH", "ClearArea", "Drop", "NO_POINT", "POIPoint",
            "PlacedStructure", "RUN_STRUCTURES", "SITES_SALT", "Site", "SitePlacement",
            "approach_way", "gap", "place_sites", "reach", "site_target", "sites_seed",
-           "terrain_of", "usable_points"]
+           "usable_points"]

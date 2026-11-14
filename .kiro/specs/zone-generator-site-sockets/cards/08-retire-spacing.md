@@ -16,3 +16,4 @@ With every caller on points (task 6), remove what the area Socket needed: `place
 Grep the whole repo (tests and scripts included) before deleting: `scripts/stage.py` and the band test may import a name. A test moved off the legacy form keeps its property (old -> new in the commit body); don't add tests for their own sake.
 
 ## Result
+✔ 7dc1efd · 3103 passed

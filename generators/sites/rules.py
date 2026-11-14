@@ -56,8 +56,11 @@ DEFAULT_DENSITY = "normal"
 
 _NAME = re.compile(r"[a-z][a-z0-9_]*")
 _STRUCTURE_NUMBERS = {"radius": (0.5, 100.0), "height": (0.5, 200.0)}
-_GROUND_NUMBERS = {"radius": (4.0, 400.0), "slope_deg": (0.0, 40.0), "spacing": (0.0, 5000.0),
-                   "margin": (0.0, 100.0)}
+_GROUND_NUMBERS = {"radius": (4.0, 400.0), "slope_deg": (0.0, 40.0), "margin": (0.0, 100.0)}
+#: A recipe's ``ground`` fields that are retired, and what replaced each (site-sockets
+#: decision 5): a stale recipe is refused, the field named.
+_GROUND_RETIRED = {"spacing": "no such field: the biome's Groups space Sites "
+                              "(biomes.toml groups.spacing)"}
 _LIKE_RANGE = (0.0, 10.0)
 #: ``[biomes.<name>.groups]``: the plain numbers' ranges, and the [low, high] pairs'.
 _GROUP_NUMBERS = {"gap": (1.0, 5000.0), "spacing": (0.0, 20000.0)}
@@ -95,7 +98,6 @@ class Line:
 class Ground:
     radius: float
     slope_deg: float
-    spacing: float
     margin: float = 0.0
 
 
@@ -355,15 +357,19 @@ def _lines(chk: _Checker, raw: Any, where: str, arrangement: str, structures: Ma
 
 
 def _ground(chk: _Checker, raw: Any, where: str) -> Optional[Ground]:
-    tbl = chk.table(raw, where, "ground", "{ radius = 24, slope_deg = 8, spacing = 400, margin = 8 }")
+    tbl = chk.table(raw, where, "ground", "{ radius = 24, slope_deg = 8, margin = 8 }")
     if tbl is None:
         return None
-    chk.keys(tbl, where, tuple(_GROUND_NUMBERS), required=("radius", "slope_deg", "spacing"), prefix="ground.")
+    for k, instead in _GROUND_RETIRED.items():
+        if k in tbl:
+            chk.fail(where, f"ground.{k}", "a retired field", instead, raw=True)
+    chk.keys({k: v for k, v in tbl.items() if k not in _GROUND_RETIRED}, where, tuple(_GROUND_NUMBERS),
+             required=("radius", "slope_deg"), prefix="ground.")
     values = {}
     for k, (lo, hi) in _GROUND_NUMBERS.items():
         if k in tbl:
             values[k] = _number(chk, tbl[k], where, f"ground.{k}", lo, hi)
-    if None in values.values() or not {"radius", "slope_deg", "spacing"} <= set(values):
+    if None in values.values() or not {"radius", "slope_deg"} <= set(values):
         return None
     return Ground(**values)
 

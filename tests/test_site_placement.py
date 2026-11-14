@@ -1,10 +1,11 @@
 """Site placement (roadmap step 10 task 6, Requirements 4 and 6).
 
-On synthesized landscapes and their built TERs (no full build), the checks that need a TER
-or many terrains:
+On synthesized landscapes and their built TERs (no full build), Sites placed on each one's
+World (its terrain is the TER's grid) and the World's point Site Sockets, the checks that need
+a TER or many terrains:
 
 - P4: Sites only on eligible ground (playable plains, slope within the recipe, outside
-  Kept_Clear), spaced; Structures inside their Site; Site_Clear free of Structures and
+  Kept_Clear), grounds a clear width apart; Structures inside their Site; Site_Clear free of Structures and
   trees (Req 4.1-4.3);
 - P7: every Site names a POI, and every POI stands on ground the walk gate reaches from
   Spawn (Req 6.1);
@@ -41,16 +42,16 @@ from generators.wilderness.build import (
     synthesize_landscape,
     wilderness_spec,
 )
-from generators.world import world_for
+from generators.world import world_for, world_of
 from tests.pbt_helpers import scaled
 
 RULES = load_sites()
 KIT = load_vegetation_kit("plains_grassland")
 EDGES = [None, {"N": "zoneline", "E": "river"}, {"E": "zoneline", "W": "zoneline"},
          {"N": "mountain", "S": "zoneline", "W": "river"}]
-REASONS = {sp.NO_GROUND, sp.NO_APPROACH, sp.NO_ROOM, sp.OUTSIDE, sp.IN_CLEAR, sp.CROWDED,
+REASONS = {sp.NO_APPROACH, sp.NO_ROOM, sp.OUTSIDE, sp.IN_CLEAR, sp.CROWDED,
            sp.APRON_OFF, sp.APRON_BLOCKED, sp.STRUCTURE_GONE, sp.NO_FREE_GROUND, sp.NO_POI,
-           sp.NO_STRUCTURES}
+           sp.NO_STRUCTURES, sp.NO_POINT}
 EPS = 1e-6
 
 ZONES = st.tuples(st.integers(0, 2**31 - 1), st.sampled_from(range(len(EDGES))),
@@ -65,6 +66,22 @@ def _zone(seed, edge_ix):
     spec = wilderness_spec("t", seed, edges)
     ter = build_wilderness_ter(spec, "ter_t.ter", 2)
     return spec, ter, synthesize_landscape(seed, edges)
+
+
+@lru_cache(maxsize=16)
+def _world(seed, edge_ix):
+    spec, _, _ = _zone(seed, edge_ix)
+    return world_of(spec)
+
+
+def _place(seed, edge_ix, control):
+    """The zone's Sites on its World's ground and point Site Sockets."""
+    return _place_on(_world(seed, edge_ix), seed, control)
+
+
+def _place_on(world, seed, control):
+    return place_sites(world.terrain, world.socket("ground"), seed, control=control, rules=RULES,
+                       points=[s for s in world.sockets if s.kind == "site"])
 
 
 def _triangle_under(ter, land, x, y):
@@ -112,7 +129,7 @@ def _node_trees(land):
 def test_property_p4_sites_on_eligible_ground_spaced_and_kept_clear(zone):
     seed, edge_ix, control = zone
     spec, ter, land = _zone(seed, edge_ix)
-    p = place_sites(land, ter, seed, control=control, rules=RULES)
+    p = _place(seed, edge_ix, control)
     res, not_plains, wet, zoneline = _node_trees(land)
     spawn = np.array(spec.safe_point[:2])
 
@@ -145,11 +162,11 @@ def test_property_p4_sites_on_eligible_ground_spaced_and_kept_clear(zone):
                 for t in other.structures:
                     assert gap(c.shape, t.footprint()) >= -EPS, (s.kind, c.what, t.kind)
 
-    # Spaced: centres at least the larger recipe spacing apart.
+    # Spaced: every two Sites' grounds and margins a player's clear width apart.
     for k, a in enumerate(p.sites):
         for b in p.sites[k + 1:]:
-            need = max(RULES.kinds[a.kind].ground.spacing, RULES.kinds[b.kind].ground.spacing)
-            assert math.hypot(a.x - b.x, a.y - b.y) >= need - EPS
+            gap_ab = math.hypot(a.x - b.x, a.y - b.y) - (a.radius + a.margin) - (b.radius + b.margin)
+            assert gap_ab >= sp.CLEAR_WIDTH - EPS
 
     # Misfits are recorded with a known reason; Structure drops name a kept Site.
     for d in p.drops:
@@ -171,7 +188,7 @@ def test_property_p4_sites_on_eligible_ground_spaced_and_kept_clear(zone):
 @pytest.mark.parametrize("seed,edge_ix", [(1, 0), (5, 1), (13, 2), (34, 3)])
 def test_property_p7_every_site_names_a_poi_on_reached_ground(seed, edge_ix):
     spec, ter, land = _zone(seed, edge_ix)
-    p = place_sites(land, ter, seed, control="dense", rules=RULES)
+    p = _place(seed, edge_ix, "dense")
     assert p.sites
     _, reached = _reached_faces(spec, ter, AgentModel())
     for s in p.sites:
@@ -194,14 +211,14 @@ def test_property_p7_every_site_names_a_poi_on_reached_ground(seed, edge_ix):
 @pytest.mark.parametrize("seed,edge_ix", [(3, 0), (21, 1)])
 def test_p5_trees_identical_with_sites_none(seed, edge_ix):
     _, ter, land = _zone(seed, edge_ix)
-    none = place_sites(land, ter, seed, control="none", rules=RULES)
+    none = _place(seed, edge_ix, "none")
     assert none.sites == [] and none.clear_shapes() == ()
     tree_seed = seed ^ 0x5EED
     before = place_trees(land, ter, KIT, "normal", tree_seed)
     after = place_trees(land, ter, KIT, "normal", tree_seed, keep_clear=none.clear_shapes())
     assert pickle.dumps(after) == pickle.dumps(before)
     # And Sites do move the trees off their ground (the argument is live).
-    some = place_sites(land, ter, seed, control="dense", rules=RULES)
+    some = _place(seed, edge_ix, "dense")
     assert pickle.dumps(place_trees(land, ter, KIT, "normal", tree_seed,
                                     keep_clear=some.clear_shapes())) != pickle.dumps(before)
 
@@ -218,8 +235,7 @@ def _drop_table(seeds, controls=("normal", "dense")):
         # The World stage's terrain: the TER's grid, so no TER is built (world-sockets task 12).
         world = world_for("wilderness", seed)
         for control in controls:
-            p = place_sites(world.terrain, world.socket("ground"), seed, control=control,
-                            rules=RULES)
+            p = _place_on(world, seed, control)
             for s in p.sites:
                 tried[s.kind] = tried.get(s.kind, 0) + len(s.structures)
                 if s.kind == "camp":
