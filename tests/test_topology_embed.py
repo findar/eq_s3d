@@ -281,25 +281,30 @@ BIG_RACE_NS = (10, 15, 20)
 BIG_RACE_FIDELITY = 0.95
 
 
-@lru_cache(maxsize=None)
-def _race_sweep(race):
+def _race_spec(key):
+    """``("race", race, seed, rooms)`` -> its graph dungeon's spec."""
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
-    out = []
-    for s in BIG_RACE_SEEDS:
-        for n in BIG_RACE_NS:
-            plan = ZonePlan(name="r", zone_type="dungeon", room_count=n,
-                            dungeon_race=race, layout="graph").validate()
-            out.append(plan_to_spec(plan, seed=s))
-    return out
+    _tag, race, s, n = key
+    plan = ZonePlan(name="r", zone_type="dungeon", room_count=n,
+                    dungeon_race=race, layout="graph").validate()
+    return plan_to_spec(plan, seed=s)
+
+
+def _race_sweep(shared, race):
+    """The race's sweep, each dungeon planned once per session whichever worker asks
+    first (``conftest.SharedResults``): ``test_race_scale_applies_once`` reads the giant
+    sweep too, and two tests that run at once split it. Every read is a fresh copy."""
+    return shared.get_many([("race", race, s, n) for s in BIG_RACE_SEEDS for n in BIG_RACE_NS],
+                           _race_spec)
 
 
 @pytest.mark.parametrize("race", ["ogre", "giant"])
-def test_big_races_keep_their_loops(race):
+def test_big_races_keep_their_loops(shared_results, race):
     """Rooms are placed at their race-scaled size, so the loops survive Job B
     and the built graph has the classic cycles per room; big races get great
     halls."""
-    specs = _race_sweep(race)
+    specs = _race_sweep(shared_results, race)
     fid = statistics.mean(sp.layout["edge_fidelity"] for sp in specs)
     cycles = statistics.mean(
         (len({frozenset((c.from_room, c.to_room)) for c in sp.corridors})
@@ -310,12 +315,12 @@ def test_big_races_keep_their_loops(race):
     assert any(a[1] == "great_hall" for sp in specs for a in sp.layout["applied"])
 
 
-def test_race_scale_applies_once():
+def test_race_scale_applies_once(shared_results):
     """The race goes on grown rooms once (in the engine, from its bands): a
     giant's rooms average (22/6)^2 the floor area of no race's (H 22 against
     a human's 6), not that squared again."""
     def mean_area(race):
-        return statistics.mean(r.width * r.depth for sp in _race_sweep(race)
+        return statistics.mean(r.width * r.depth for sp in _race_sweep(shared_results, race)
                                for r in sp.rooms if r.kind)
     ratio = mean_area("giant") / mean_area("")
     k = (22.0 / 6.0) ** 2

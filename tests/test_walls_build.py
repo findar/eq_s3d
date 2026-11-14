@@ -8,7 +8,6 @@ a built plain room's Fill can only come down toward stock.
 """
 
 import os
-import random
 import sys
 import time
 from pathlib import Path
@@ -25,6 +24,7 @@ from analyzer.traverse import AgentModel  # noqa: E402
 from generators.geometry import build_mesh  # noqa: E402
 from generators.pipeline import generate_validated  # noqa: E402
 from wall_survey import measure  # noqa: E402
+from tests.conftest import gated_attempts, gated_key  # noqa: E402
 
 BANDS = {
     "rough": {"axis": (.37, .57), "plumb": (.96, 1), "edge": (10, 14), "run": (17, 31), "fill": (.67, .74),
@@ -40,20 +40,25 @@ BANDS = {
 TOLERANCE = 0.03    # a share of the band's top, for the sample
 
 
-@pytest.fixture(scope="module")
-def measured():
+def _measure_style(key):
+    """``("w11", style)`` -> the style's medians over four flat seeds, by the wall survey."""
+    style = key[1]
     agent = AgentModel()
-    out = {}
-    for style in BANDS:
-        rows = []
-        for seed in (2, 4, 7, 10):
-            plan = ZonePlan(name="w12", zone_type="dungeon", room_count=20, layout="graph", walls=style, features="none",
-                            verticality="flat").validate()
-            r = measure(build_mesh(plan_to_spec(plan, seed=seed)).to_ter("w12"), agent, floors_up=True)
-            r["run"] = r["run"][1]
-            rows.append(r)
-        out[style] = {k: median(row[k] for row in rows) for k in BANDS[style]}
-    return out
+    rows = []
+    for seed in (2, 4, 7, 10):
+        plan = ZonePlan(name="w12", zone_type="dungeon", room_count=20, layout="graph", walls=style, features="none",
+                        verticality="flat").validate()
+        r = measure(build_mesh(plan_to_spec(plan, seed=seed)).to_ter("w12"), agent, floors_up=True)
+        r["run"] = r["run"][1]
+        rows.append(r)
+    return {k: median(row[k] for row in rows) for k in BANDS[style]}
+
+
+@pytest.fixture(scope="module")
+def measured(shared_results):
+    """Each style measured once per session, whichever worker asks first."""
+    styles = sorted(BANDS)
+    return dict(zip(styles, shared_results.get_many([("w11", s) for s in styles], _measure_style)))
 
 
 @pytest.mark.slow
@@ -96,21 +101,21 @@ SWEEP = [(style, rule_set, theme, race, rooms, vert)
          )]
 
 
+SEEDS = range(4)
+
+
 @pytest.mark.slow
-@pytest.mark.parametrize("style, rule_set, theme, race, rooms, vert", SWEEP)
-def test_w12_first_try_across_styles(tmp_path, style, rule_set, theme, race, rooms, vert):
-    plan = ZonePlan(name="w12", zone_type="dungeon", room_count=rooms, layout="graph", walls=style,
-                    rule_set=rule_set, dungeon_theme=theme, dungeon_race=race, verticality=vert).validate()
-    first = 0
-    seeds = range(4)
-    for seed in seeds:
-        vb = generate_validated(lambda s: plan_to_spec(plan, seed=s), zone_type="dungeon", zone_id="w12",
-                                rng=random.Random(seed), output_dir=tmp_path / str(seed), write_glb=False,
-                                failure_log=None, max_attempts=4, timeout_s=300.0)
-        assert vb.validated
-        first += vb.attempts == 1
-    print(f"\n{style} {rule_set or theme} {race} {vert}: first try {first}/{len(seeds)}")
-    assert first == len(seeds), "step 7's stacked builds passed first try on every case"
+@pytest.mark.parametrize("style, rule_set, theme, race, rooms, vert, seed",
+                         [case + (s,) for case in SWEEP for s in SEEDS])
+def test_w12_first_try_across_styles(shared_results, style, rule_set, theme, race, rooms, vert, seed):
+    """Step 7's stacked builds passed first try on every case: each case and seed
+    of the sweep a test of its own, so the sweep spreads over the workers."""
+    fields = dict(zone_type="dungeon", room_count=rooms, layout="graph", walls=style, rule_set=rule_set,
+                  dungeon_theme=theme, dungeon_race=race, verticality=vert)
+    attempts = shared_results.get(gated_key(fields, seed, 4, 300.0), gated_attempts)
+    print(f"\n{style} {rule_set or theme} {race} {vert} seed {seed}: attempts {attempts}")
+    assert attempts is not None, "out of retries"
+    assert attempts == 1, "step 7's stacked builds passed first try on every case"
 
 
 @pytest.mark.slow

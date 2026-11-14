@@ -104,7 +104,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: tests/test_attach_hillside.py, tests/test_attach_ground.py, tests/test_world_corpus.py (the attach contract), tests/test_outdoor_dungeon_build.py (planning-only cases move out), tests/test_site_placement.py (placement-only cases move out)
   - Reqs: 7.2–7.4
 
-- [ ] 13. The suite pass
+- [x] 13. The suite pass
   - Card: [cards/13-suite-pass.md](cards/13-suite-pass.md)
   - Type: agent · Size: M · Depends: 1, 12
   - Owns: tests/conftest.py (shared sweep builds), tests/test_vertical_build.py, tests/test_graph_layout_build.py, tests/test_walls_build.py, tests/test_features_sweep.py
@@ -146,7 +146,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Owns: generators/outdoor_dungeon.py, generators/world.py (`world_of`, `world_for`), tests/test_world.py, tests/test_world_corpus.py, tests/test_layout_engine.py (the outdoor-dungeon golden only), tests/test_site_builds.py (the two outdoor-dungeon pins only), tests/fixtures/worlds/, tests/fixtures/rooms/ (the `outdoor_*` recordings) — `world_for`, `test_site_builds.py` and generators/stages.py (`apron_edit` only) widened by the lead
   - Reqs: 2, 6
 
-- [ ] 21. The fast suite and the band sweeps
+- [x] 21. The fast suite and the band sweeps
   - Card: [cards/21-fast-suite.md](cards/21-fast-suite.md)
   - Type: agent · Size: M · Depends: 13
   - Owns: tests/test_decor_bands.py, tests/test_site_bands.py, tests/test_properties_layout.py, tests/test_topology_embed.py, tests/test_topology_levels.py, tests/test_pipeline.py, tests/test_properties_pipeline.py, tests/conftest.py (after task 13)

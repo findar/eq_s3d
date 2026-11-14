@@ -15,6 +15,8 @@ Correctness Property 15 (umbrella P2).
 
 from __future__ import annotations
 
+import functools
+
 import pytest
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
@@ -691,6 +693,13 @@ def _run_availability_example(enabled, t, rooms, tmp_path_factory, monkeypatch):
     # calls those (not a captured copy), so this monkeypatch gates the whole
     # availability surface for this example.
     monkeypatch.setattr(_zt, "ENABLED_ZONE_TYPES", frozenset(enabled))
+
+    # Each 200 is a real build through the server's path (build, Format_Checker,
+    # Sidecar, maps), but ungated: the traversal gate and its retries took about
+    # half of this test's time (world-sockets task 21), and nothing here reads
+    # the gate's verdict. The gate has its own properties.
+    monkeypatch.setattr(_app_mod, "generate_validated",
+                        functools.partial(_app_mod.generate_validated, validate_enabled=False))
 
     canonical_t = _zt.canonical_zone_type(t)
     t_enabled = canonical_t is not None and canonical_t in enabled

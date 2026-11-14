@@ -54,19 +54,28 @@ class Outline:
         a Cell a little off convex."""
         pts = np.asarray(pts, dtype=np.float64)
         verts = np.asarray(self.verts, dtype=np.float64)
-        a, b, c = [], [], []
+        out = np.zeros(len(pts), dtype=bool)
+        # Each Cell tests only the points in its own bounding box (plus a margin far
+        # wider than ``tol`` can reach): the same test, without every point against
+        # every Cell's edges (a giant's room grid times its Cells took seconds).
         for cell in self.cells:
             poly = verts[cell]
-            a.append(poly)
-            b.append(np.roll(poly, -1, axis=0))
-            c.append(np.broadcast_to(poly.mean(axis=0), poly.shape))
-        a, b, c = np.vstack(a), np.vstack(b), np.vstack(c)
+            lo, hi = poly.min(axis=0) - 1e-3, poly.max(axis=0) + 1e-3
+            idx = np.nonzero(~out & (pts[:, 0] >= lo[0]) & (pts[:, 0] <= hi[0])
+                             & (pts[:, 1] >= lo[1]) & (pts[:, 1] <= hi[1]))[0]
+            if not len(idx):
+                continue
+            p = pts[idx]
+            a = poly
+            b = np.roll(poly, -1, axis=0)
+            c = np.broadcast_to(poly.mean(axis=0), poly.shape)
 
-        def left_of(p, q):
-            return ((q[:, 0] - p[:, 0]) * (pts[:, 1, None] - p[:, 1])
-                    - (q[:, 1] - p[:, 1]) * (pts[:, 0, None] - p[:, 0])) >= -tol
+            def left_of(s, q):
+                return ((q[:, 0] - s[:, 0]) * (p[:, 1, None] - s[:, 1])
+                        - (q[:, 1] - s[:, 1]) * (p[:, 0, None] - s[:, 0])) >= -tol
 
-        return (left_of(a, b) & left_of(b, c) & left_of(c, a)).any(axis=1)
+            out[idx] = (left_of(a, b) & left_of(b, c) & left_of(c, a)).any(axis=1)
+        return out
 
     def lift_at(self, i: int) -> float:
         return self.lift[i] if self.lift else 0.0

@@ -29,7 +29,6 @@ Stacked_Share, level count and span in finding 7's bands at ``moderate``.
 from __future__ import annotations
 
 import dataclasses
-import functools
 import hashlib
 import json
 
@@ -509,36 +508,42 @@ def _vertical_measures(spec) -> dict:
             "fidelity": spec.layout["edge_fidelity"]}
 
 
-@functools.lru_cache(maxsize=None)
-def _v7_sweep(label, vert):
-    out = []
-    for n in V7_NS:
-        for s in V7_SEEDS:
-            plan = ZonePlan(name="v7", zone_type="dungeon", room_count=n, layout="graph",
-                            verticality=vert, **V7_SETS[label]).validate()
-            spec = plan_to_spec(plan, seed=1000 * n + s)
-            out.append((spec, _vertical_measures(spec)))
-    return out
+def _v7_build(key):
+    """``("v7", label, vert, n, s)`` -> (spec, its V7 measures)."""
+    _tag, label, vert, n, s = key
+    plan = ZonePlan(name="v7", zone_type="dungeon", room_count=n, layout="graph",
+                    verticality=vert, **V7_SETS[label]).validate()
+    spec = plan_to_spec(plan, seed=1000 * n + s)
+    return spec, _vertical_measures(spec)
 
 
-def _v7_means(label, vert):
-    rows = [m for _s, m in _v7_sweep(label, vert)]
+def _v7_sweep(shared, label, vert):
+    """The sweep's dungeons, each planned once per session whichever worker asks first
+    (``conftest.SharedResults``): the four V7 tests read the same sweeps, and two that run
+    at once split one between them. Every read is a fresh copy."""
+    return shared.get_many([("v7", label, vert, n, s) for n in V7_NS for s in V7_SEEDS],
+                           _v7_build)
+
+
+def _v7_means(shared, label, vert):
+    rows = [m for _s, m in _v7_sweep(shared, label, vert)]
     return {k: fmean(r[k] for r in rows) for k in ("stacked", "levels", "span", "fidelity")}
 
 
 @pytest.mark.parametrize("label", sorted(V7_SETS))
-def test_v7_moderate_falls_in_the_survey_bands(label):
-    m = _v7_means(label, "moderate")
+def test_v7_moderate_falls_in_the_survey_bands(shared_results, label):
+    m = _v7_means(shared_results, label, "moderate")
     bad = [f"{k} {m[k]:.3f} not in {lo}-{hi}" for k, (lo, hi) in V7_BANDS.items()
            if not lo <= m[k] <= hi]
     assert not bad, f"{label}: " + "; ".join(bad)
 
 
 @pytest.mark.parametrize("label", sorted(V7_SETS))
-def test_v7_flat_is_one_level_and_dramatic_is_more(label):
-    for spec, m in _v7_sweep(label, "flat"):
+def test_v7_flat_is_one_level_and_dramatic_is_more(shared_results, label):
+    for spec, m in _v7_sweep(shared_results, label, "flat"):
         assert "levels" not in spec.layout and m["stacked"] == 0.0
-    mod, dram = _v7_means(label, "moderate"), _v7_means(label, "dramatic")
+    mod = _v7_means(shared_results, label, "moderate")
+    dram = _v7_means(shared_results, label, "dramatic")
     for k in V7_BANDS:
         assert dram[k] >= mod[k], f"{label}: dramatic {k} {dram[k]:.3f} < moderate {mod[k]:.3f}"
 
@@ -550,9 +555,9 @@ STACKED_FIDELITY_MEASURED = {"classic_eq": 0.963, "warren": 0.933, "temple": 0.9
 
 
 @pytest.mark.parametrize("label", sorted(V7_SETS))
-def test_v7_stacked_fidelity(label):
+def test_v7_stacked_fidelity(shared_results, label):
     for vert in ("moderate", "dramatic"):
-        fid = _v7_means(label, vert)["fidelity"]
+        fid = _v7_means(shared_results, label, vert)["fidelity"]
         bar = STACKED_FIDELITY_MEASURED[label] - 0.03
         assert fid >= bar, f"{label} {vert}: mean Edge_Fidelity {fid:.4f} < bar {bar:.3f}"
 
@@ -564,9 +569,9 @@ def test_v7_stacked_fidelity(label):
 # restored once clear), not the grammar: its n >= 20 cycles are at the warren
 # band's 0.29 already (tests/test_ruleset_warren.py).
 @pytest.mark.parametrize("label", ["classic_eq", "warren"])
-def test_v7_stacked_builds_keep_the_built_shape(label):
+def test_v7_stacked_builds_keep_the_built_shape(shared_results, label):
     from tests.test_topology_embed import BUILT_BANDS, _built_shape
-    rows = [_built_shape(spec, spec.layout) for spec, _m in _v7_sweep(label, "moderate")]
+    rows = [_built_shape(spec, spec.layout) for spec, _m in _v7_sweep(shared_results, label, "moderate")]
     bad = []
     for m, (lo, hi) in BUILT_BANDS[label].items():
         mean = fmean(r[m] for r in rows)

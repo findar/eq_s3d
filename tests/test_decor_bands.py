@@ -27,13 +27,13 @@ need the install (``EQ_PATH``) and skip without it.
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
 import sys
 import tempfile
 import time
-from functools import lru_cache
 from pathlib import Path
 from statistics import median
 
@@ -99,7 +99,7 @@ def _spec(zone_type: str, seed: int, decor: str, rooms: int = 0):
     return spec
 
 
-@lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=None)
 def _catalogue() -> dict:
     return json.loads((ROOT / "rules" / "decor" / "catalogue.json").read_text(encoding="utf-8"))["models"]
 
@@ -123,9 +123,20 @@ def _read_back(eqg: Path, side: dict):
     return ter, placed, sizes
 
 
-@lru_cache(maxsize=None)
-def _zone(zone_type: str, seed: int, decor: str, rooms: int = 0) -> dict:
+def _key(zone_type: str, seed: int, decor: str, rooms: int = 0) -> tuple:
+    return ("decor_bands", zone_type, seed, decor, rooms)
+
+
+def _zones(shared, keys) -> list:
+    """The zones of ``keys`` (``_key``), each built once per session whichever worker
+    asks first (``conftest.SharedResults``): the band, first-try and Dense tests read
+    the same builds."""
+    return shared.get_many(keys, _make_zone)
+
+
+def _make_zone(key: tuple) -> dict:
     """Build, gate as the pipeline does, and (at Normal) measure by the survey's code."""
+    _tag, zone_type, seed, decor, rooms = key
     spec = _spec(zone_type, seed, decor, rooms)
     with tempfile.TemporaryDirectory() as tmp:
         r = ZoneBuilder(spec).build(output_dir=Path(tmp), write_glb=False)
@@ -145,10 +156,10 @@ def _zone(zone_type: str, seed: int, decor: str, rooms: int = 0) -> dict:
 
 
 @needs_install
-def test_a_build_reads_back_through_the_survey():
+def test_a_build_reads_back_through_the_survey(shared_results):
     """The fast check: a Normal dungeon's Props all reach the survey, on the walked floor,
     with a known size and a Mount read from the mesh."""
-    z = _zone("dungeon", 0, "normal")
+    z = _zones(shared_results, [_key("dungeon", 0, "normal")])[0]
     m = z["m"]
     assert z["props"] > 0 and m["objects"] == z["props"]
     assert m["off_floor"] <= 0.1, m["off_floor"]
@@ -163,9 +174,29 @@ def _q(v) -> str:
 
 @pytest.mark.slow
 @needs_install
+@pytest.mark.parametrize("zone_type, seed", [(z, s) for z in sorted(BANDS) for s in SEEDS])
+def test_p12_normal_zone_inside_the_hard_edge(shared_results, zone_type, seed):
+    """One seed of the sweep: its Normal zone's Props per room sit inside the stock
+    min-max. Its Decor ``none`` build (the first-try comparison) is made here too, so the
+    sweep spreads over the workers; the band and first-try tests below read them."""
+    normal, _none = _zones(shared_results, [_key(zone_type, seed, "normal"),
+                                            _key(zone_type, seed, "none")])
+    lo, hi = HARD_PER_ROOM[zone_type]
+    v = normal["m"]["per_room_mean"]
+    assert lo <= v <= hi, f"per room, mean {v:.2f} outside the hard edge {lo}-{hi}"
+
+
+def _sweep(shared, zone_type: str, decor: str) -> list:
+    """Every seed's zone; from the far end, so a test that starts before the per-seed
+    tests above have made them meets those in the middle."""
+    return _zones(shared, [_key(zone_type, s, decor) for s in SEEDS][::-1])[::-1]
+
+
+@pytest.mark.slow
+@needs_install
 @pytest.mark.parametrize("zone_type", sorted(BANDS))
-def test_p12_normal_rooms_measure_inside_the_stock_bands(zone_type):
-    zs = [_zone(zone_type, s, "normal")["m"] for s in SEEDS]
+def test_p12_normal_rooms_measure_inside_the_stock_bands(shared_results, zone_type):
+    zs = [z["m"] for z in _sweep(shared_results, zone_type, "normal")]
     band = BANDS[zone_type]
     lines, bad = [], []
 
@@ -197,30 +228,37 @@ def test_p12_normal_rooms_measure_inside_the_stock_bands(zone_type):
 @pytest.mark.slow
 @needs_install
 @pytest.mark.parametrize("zone_type", sorted(BANDS))
-def test_gate_first_try_rate_holds(zone_type):
+def test_gate_first_try_rate_holds(shared_results, zone_type):
     """Req 12.2: at Normal the gate passes first try at least as often as Decor ``none``
     on the same seeds."""
-    passed = {d: [s for s in SEEDS if _zone(zone_type, s, d)["gate"]] for d in ("none", "normal")}
+    passed = {d: [s for s, z in zip(SEEDS, _sweep(shared_results, zone_type, d)) if z["gate"]]
+              for d in ("none", "normal")}
     print(f"\n{zone_type} first try, seeds {SEEDS.start}-{SEEDS.stop - 1}: "
           + ", ".join(f"{d} {len(p)}/{len(SEEDS)}" for d, p in passed.items()))
     assert len(passed["normal"]) >= len(passed["none"]), sorted(set(passed["none"]) - set(passed["normal"]))
 
 
+DENSE_CASES = [(z, r, s) for z, r in DENSE for s in SEEDS]
+
+
 @pytest.mark.slow
 @needs_install
-@pytest.mark.parametrize("zone_type,rooms", DENSE, ids=[f"{z}-{r or 'default'}" for z, r in DENSE])
-def test_dense_passes_the_gate_first_try(zone_type, rooms):
+@pytest.mark.parametrize("zone_type,rooms,seed", DENSE_CASES,
+                         ids=[f"{z}-{r or 'default'}-{s}" for z, r, s in DENSE_CASES])
+def test_dense_passes_the_gate_first_try(shared_results, zone_type, rooms, seed):
     """Task 21 (Req 12.1): at Dense the gate passes first try on every seed whose rooms pass it
     bare (Decor ``none``), so a pinned seed never returns 503 for its Props. A 16-room Graph
     dungeon failed on seeds 4 (``footprint_cut``) and 7 (``throat_narrow``) before placement
     kept blocking Props ``BLOCKING_GAP`` apart and read a stacked model in the gate's band as
-    in the way. Decor ``none`` is built only for a seed Dense fails."""
-    failed = {s: z["why"] for s in SEEDS if not (z := _zone(zone_type, s, "dense", rooms))["gate"]}
-    bare = sorted(s for s in failed if not _zone(zone_type, s, "none", rooms)["gate"])
-    print(f"\n{zone_type} ({rooms or 'default'} rooms) Dense first try, seeds {SEEDS.start}-"
-          f"{SEEDS.stop - 1}: {len(SEEDS) - len(failed)}/{len(SEEDS)}"
-          + (f" (failing with Decor none too: {bare})" if bare else ""))
-    assert not {s: w for s, w in failed.items() if s not in bare}, failed
+    in the way. Decor ``none`` is built only for a seed Dense fails. One seed per test, so the
+    sweep spreads over the workers."""
+    z = _zones(shared_results, [_key(zone_type, seed, "dense", rooms)])[0]
+    if z["gate"]:
+        return
+    bare = _zones(shared_results, [_key(zone_type, seed, "none", rooms)])[0]
+    print(f"\n{zone_type} ({rooms or 'default'} rooms) seed {seed}: Dense fails ({z['why']}), "
+          f"Decor none {'passes' if bare['gate'] else 'fails too'}")
+    assert not bare["gate"], {seed: z["why"]}
 
 
 def _timed(zone_type: str, decor: str, out: Path) -> float:
