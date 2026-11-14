@@ -63,7 +63,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: generators/sites/placement.py, tests/test_site_placement.py
   - Reqs: 3.1–3.4, 3.6, 3.7
 
-- [ ] 6. The Sites stage on point Sockets
+- [x] 6. The Sites stage on point Sockets
   - Card: [cards/06-sites-stage.md](cards/06-sites-stage.md)
   - Type: agent · Size: M · Depends: 4, 5
   - Owns: generators/stages.py, generators/wilderness/build.py (`_sites` only), tests/test_attach_ground.py, tests/test_handoffs.py; recaptures: tests/test_layout_engine.py (wilderness and outdoor-dungeon `.eqg` hashes only), tests/test_site_builds.py (STEP10 hashes only), tests/test_site_decor_builds.py (hashes only), tests/fixtures/rooms/ (recordings with Sites, by `scripts/record_rooms.py`)
