@@ -1453,6 +1453,36 @@ sha256 `8aaf8daf…`, the step 9 build `tests/test_site_builds.py` pins. A build
 has another name and so other bytes; on the page, check l has no Structures and its trees and
 ground look like step 9's.
 
+**Since step 13 (point Site Sockets)** these cases build other Sites: a Site now stands on one
+of the World's points, in Groups the way stock hamlets sit, so the kind drawn and where it
+lands both move. The ground, trees and water are the same; only l (Sites None) is unchanged.
+Rebuilt on step 13's code, each on its first attempt:
+
+| # | Now |
+|---|-----|
+| a | A human camp (3 canvas tents) and a gnoll camp (4 hide tents) side by side, Group 0 |
+| b | One human hut with a rail fence (as before) |
+| c | A human farmstead (hut and 3 fences; its barn still drops "in its Site_Clear") |
+| d | Two human huts, far apart |
+| e | A gnoll shrine (lone monument) and a human hut |
+| f | A human shrine ringed by 3 standing stones beside a gnoll shrine, and a human hut |
+| g | A gnoll shrine ringed by 4 stones, and an orc camp of 2 tents |
+| h | Two human huts together |
+| i | An orc ruin (4 walls and a stone) beside an orc lashed watchtower |
+| j | Two gnoll wattle huts together |
+| k | A centaur ruin beside a centaur burial mound |
+| m | A centaur camp of 3 hide lean-tos |
+| n | m, and an orc shrine |
+| o | n, and a human shrine (still each step keeps the last one's Sites and adds one) |
+| p | A human shrine |
+| q | A human camp |
+| r | A centaur ruin (3 walls, 2 stones) |
+| s | A human shrine: s no longer drops its Site |
+| t | i's orc ruin and watchtower, `control_source` `prompt` |
+
+P.1's "each kind" now needs these: camp a, hut b, farmstead c, watchtower i, shrine f, ruin i
+or k. The step 13 section's cases show the Groups.
+
 ### P.1 — Sites read as what they are
 
 - [ ] **[MUST] Each kind** — a's camp, b's hut, c's farmstead, d's tower, e's shrine and f's
@@ -1566,6 +1596,12 @@ the counts of a to g, m and n; h to l weren't rebuilt through the page after it,
 may be a few Props off. The `.eqg` files contain the
 client's own models and textures, so they are for your own client and server: don't commit or
 share them.
+
+**Since step 13 (point Site Sockets)** the Site cases build other Sites (see step 10's note):
+q, s, t and u (wilderness 7) hold a human camp and a gnoll camp side by side, not the gnoll
+camp and centaur shrine; o (outdoor dungeon 4) holds a human camp of 3 tents, not the ruin
+with chests. n and p (outdoor dungeons 2 and 3) now also have a Site: a human shrine and a
+human ruin of 4 walls. r's farmstead is unchanged. The rooms and their Props are untouched.
 
 ### D.1 — The Props look placed
 
@@ -1751,6 +1787,15 @@ These give the same rooms, Sites, Sockets and Props as the page (checked for b, 
 The `.eqg` files contain the client's own models and textures (Decor): don't commit or share
 them.
 
+**Since step 13 (point Site Sockets)** every outdoor dungeon case has a Site, and the
+wilderness pair moved: a has a human shrine at (341, 120) and b an orc shrine on the same point;
+c has a human camp at (738, −873) and a gnoll camp at (868, −927); d a human hut and a human
+shrine at (868, −927) and (1002, −839). m has a human hut, n a gnoll ruin, o and p human ruins.
+The hover text on the `ground` diamond now says `sites, 1` on a and the other outdoor
+dungeons; the Sites themselves show as point diamonds (step 13). The Spawns, rooms, corridors
+and Props are unchanged. The known issues "Outdoor dungeons get Sites on only some seeds"
+and "Sites still spread at random" are fixed by step 13.
+
 ### S.1 — Rerolling the rooms keeps the World
 
 - [ ] **[MUST] Same hill, new rooms** — In a then b, the terrain is the same: the same hills,
@@ -1861,3 +1906,109 @@ Known issues (not regressions; open follow-ups in the spec's `archive.md`):
 
 - [ ] **[DEFERRED]** Corridor lights and the moved Spawns in the RoF2 client need a takeover
       install. It moves to M6's in-engine smoke load.
+
+## Step 13 — Point Site Sockets
+
+> Roadmap step 13 (`zone-generator-site-sockets`). The World now offers **point `site`
+> Sockets** (`site0`, `site1` ...) on good ground, in **Groups** the way stock zones cluster
+> their hamlets, and each Site stands on one. A Site's kind is drawn first by the biome's and
+> Inhabitant's weights; it then takes the next point in Group order that fits it, so Sites
+> gather in a Group until it is full and only then start another. An outdoor dungeon keeps only
+> its rooms, corridors, Tunnel and Apron clear, so at Normal and Dense it now always gets a Site.
+> The map dialog (M) draws every point as a small orange diamond: filled where a Site stands,
+> hollow where unused. **Reroll rooms** moves the Sites among the same points. Restart the
+> Server on the merged code first and check the side panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. Leave the description box empty; Trees normal, Rooms 5, Sites **Normal** and
+Inhabitants biome's mix unless the row names them. Every case was built on this code through
+the Server's own route (`POST /api/generate`) on its first attempt with the gate passing.
+A Site's point is `sites.sites[].socket` in the sidecar; the point's Group is on its entry in
+`sockets` (`group`).
+
+| # | Controls | Seed | Rooms seed | What it shows |
+|---|----------|------|------------|---------------|
+| a | **Wilderness** | 1003 | blank | **A hamlet:** a human hut at (600, −281) and a human camp at (599, −502), both on Group 0's points (`site0`, `site1`). 10 points, 6 Groups |
+| b | **Wilderness**, Sites **Dense** | 1003 | blank | **A bigger hamlet:** a's two, and a gnoll camp at (687, −178) and a human shrine at (815, −28): four Sites in Group 0 |
+| c | **Wilderness** | 1001 | blank | A centaur camp (4 hide lean-tos) at (−682, −562) and a human hut at (−818, −478), both in Group 2 |
+| d | **Wilderness** | 1001 | **12345** | **Rooms reroll:** c's ground, water and trees. The Sites move to other points: a gnoll wattle hut at (−145, −17) in Group 1 and a centaur burial mound ringed by 5 stones at (417, −672) in Group 6 |
+| e | **Wilderness** | 1004 | blank | **Two apart:** a human ruin (one wall) at (−162, −27) in Group 4 and a gnoll wattle hut at (−916, −9) in Group 1, about 750 u apart |
+| f | **Wilderness**, Sites **Dense** | 1005 | blank | A human camp at (−457, 1082) and a human hut at (−645, 995) in Group 5, and an orc ruin (2 walls) alone in Group 1 |
+| g | **Wilderness** | 1002 | blank | A centaur camp (2 lean-tos) at (439, 1018) and a centaur burial mound at (505, 831), Group 4 |
+| h | **Outdoor dungeon** | 2 | blank | **A Site by the dungeon:** a human shrine at (341, 120), across the ground from the west hill and its Mouth. 6 points |
+| i | **Outdoor dungeon** | 3 | blank | A human ruin of 4 walls at (214, 412). Only 2 points: this landscape has little flat ground |
+| j | **Outdoor dungeon** | 18 | blank | A human hut at (439, 115). Hill W |
+| k | **Outdoor dungeon**, Sites **Dense** | 2 | blank | h's shrine and no more: Dense asks for more, but the other points are too small for any kind left (a known lean) |
+
+c and d are the reroll pair: build c and press **reroll rooms** (the ⟳ gives a fresh rooms
+seed, so its Sites differ from d's; the ground stays c's either way). From the command line:
+
+```bash
+python main.py generate points_a --zone-type wilderness --seed 1003
+python main.py generate points_b --zone-type wilderness --seed 1003 --sites dense
+python main.py generate points_d --zone-type wilderness --seed 1001 --rooms-seed 12345
+python main.py generate points_h --zone-type outdoor_dungeon --seed 2
+```
+
+The `.eqg` files contain the client's own models and textures (Decor): don't commit or share
+them.
+
+### T.1 — Sites read as hamlets
+
+- [ ] **[MUST] Together on good ground** — In a and b the Sites stand near one another on one
+      patch of level ground, like a small hamlet seen in a stock plains zone, not strewn across
+      the zone. b adds two more to the same place.
+- [ ] **[MUST] Room to breathe** — In a, b, c and f no two Sites overlap or crowd: a tent,
+      fence or wall of one never stands in another's ground, and you can walk between them.
+- [ ] **[MUST] Not on a slope or in water** — Every Site above stands on ground about as level
+      as before (step 10): nothing tilts, floats, sinks to its roof or stands in water.
+- [ ] **[SHOULD] Apart when they're apart** — In e the two Sites read as two separate places,
+      each on its own patch of ground.
+- [ ] **[SHOULD] Not too many** — At Normal a wilderness still reads as a Karana with a place or
+      two, not a town.
+
+### T.2 — Outdoor dungeons get a Site
+
+- [ ] **[MUST] One, out of the way** — In h, i and j the Site stands on the open ground, not on
+      the hill above the dungeon, not in the Tunnel or the Apron trench, and not on the path from
+      the Spawn to the Mouth.
+- [ ] **[MUST] The dungeon walk holds** — In h, walk from the Spawn to the Mouth and through
+      every room: as in step 12.
+
+### T.3 — The points on the map
+
+- [ ] **[MUST] Diamonds where the Sites stand** — Press **M** on a. Small orange diamonds mark
+      the points: two filled (where the hut and the camp stand, next to their Site markers and
+      labels), the rest hollow.
+- [ ] **[MUST] Hover text** — Hovering a filled diamond names its point, Group and Site, for
+      example `site site0, Group 0: hut`; a hollow one says `site site5, Group 2: unused`.
+      Points of one Group sit close together on the map.
+- [ ] **[MUST] Outdoor dungeons too** — On h the six points show, one filled (the shrine), with
+      `hill0` and `ground` drawn as in step 12.
+
+### T.4 — Rerolling the rooms moves the Sites
+
+- [ ] **[MUST] Same points, new Sites** — On c, **reroll rooms**: the ground, water and trees
+      stay; the hollow and filled diamonds stand in the same places, but a different set of
+      them is filled, and the Sites may be other kinds (d).
+- [ ] **[MUST] Walkable after a reroll** — In d walk from the Spawn to each Site.
+
+Known issues (not regressions; open follow-ups in the spec's `archive.md`):
+
+- The kind mix follows step 10's weights, which give fewer farmsteads (about 10 %) than stock
+  plains (about 27 %): retuning the weights against a stock survey is a follow-up.
+- At Dense a big Site often starts a new Group, so Dense gathers less than Normal (decision 11).
+- Outdoor-dungeon points are mostly small, so big recipes (farmsteads, ruins of many walls)
+  rarely fit there, and Dense seldom adds a second Site (k). Flatter points are a follow-up.
+- The thorough suite at this step (task 13): 3103 passed, 3 failed (45 min, while the cases
+  above were built alongside). Two failed on pytest's own temporary folders going missing
+  mid-run and passed alone. The third, `test_corridor_clearance.py::test_elevated_box_builds_have_one_band`,
+  drew a 30-room dungeon (seed 403, moderate) with 4 depth bands on 3 Levels: it fails the
+  same way on the code before this step (dungeon layout, untouched here), so it is
+  pre-existing and stays open.
+
+### T.5 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Walking round the hamlets in the RoF2 client needs a takeover install. It
+      moves to M6's in-engine smoke load.

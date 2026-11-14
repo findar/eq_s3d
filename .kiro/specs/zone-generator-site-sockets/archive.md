@@ -66,6 +66,9 @@ Found while working this step:
   room (or one Site) on its own with how Decor laid it out: its Props, POIs, Dressing and what
   dropped and why. `scripts/stage.py decor` already writes the rooms with their Props as a GLB;
   the gap is focusing on one room and reading its layout in the viewer.
+- **A box build with an extra depth band** (task 13's thorough run): a 30-room dungeon, seed
+  403, moderate, has 4 depth bands on 3 Levels (`test_elevated_box_builds_have_one_band`).
+  Pre-existing: the same on the code before step 13. Dungeon layout, not Sites.
 
 Carried in from step 10 (`zone-generator-wilderness-pois/archive.md` "Follow-ups") by step 12,
 because point Site Sockets are where they get fixed; this step closes them:
