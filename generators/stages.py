@@ -15,13 +15,15 @@ synthesized and no TER is built (Req 2.4, 3.1).
 
 Attaching Sites to the ``ground`` Socket (:func:`attach_sites`) reads the World with every
 earlier Attachment's Terrain edits applied and the Socket, whose ``keep_clear`` holds the
-Kept_Clear shapes those Attachments added (the outdoor dungeon's hill, Tunnel and Apron):
+Kept_Clear shapes those Attachments added (the outdoor dungeon's Tunnel, Apron, rooms and
+corridors):
 P6, Req 3.3. Each Site stands on one of the World's ``site`` Sockets (its points) and names
 it (site-sockets task 6).
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -63,7 +65,7 @@ class Attachment:
     host spec gets), the layout's warnings, the Entrance, the Envelope it was laid out in
     (its ``floor_limit`` and ``rock_cover`` are what the spec records), the rooms asked for,
     its Terrain edits (the Apron) and the Kept_Clear shapes later Sockets keep off
-    (``keep_clear``: the hill, Tunnel and Apron). For a ``ground`` Socket: the Sites
+    (``keep_clear``: the Tunnel, Apron, rooms and corridors). For a ``ground`` Socket: the Sites
     (``sites``, a ``SitePlacement``). For a ``root`` Socket: the layout alone.
 
     ``seed`` is the seed it was attached with (:func:`rooms_seed`'s); ``controls`` the
@@ -263,15 +265,15 @@ def attach_rooms(world: World, socket: Socket, fields: Mapping[str, Any],
                       warnings=list(warnings), entrance=entrance, envelope=envelope,
                       rooms_requested=room_count,
                       edits=[apron_edit(world, socket, grid, entrance)],
-                      keep_clear=entrance_keep_clear(world, socket, entrance), seed=seed)
+                      keep_clear=entrance_keep_clear(world, socket, entrance, layout), seed=seed)
 
 
-def entrance_attachment(world: World, socket: Socket, entrance) -> Attachment:
-    """What an outdoor dungeon's planned ``entrance`` adds to ``world`` at its ``hillside``
-    Socket: the Apron as a Terrain edit and the hill, Tunnel and Apron as Kept_Clear. The
-    build reads the Entrance off the spec (the rooms were attached in ``plan_to_spec``) and
-    applies this before the ground Socket attaches; its edit and shapes are the ones
-    :func:`attach_rooms` made."""
+def entrance_attachment(world: World, socket: Socket, entrance, layout) -> Attachment:
+    """What an outdoor dungeon's planned ``entrance`` and ``layout`` (the spec holding its
+    rooms and corridors) add to ``world`` at its ``hillside`` Socket: the Apron as a Terrain
+    edit and the Tunnel, Apron, rooms and corridors as Kept_Clear. The build reads both off
+    the spec (the rooms were attached in ``plan_to_spec``) and applies this before the
+    ground Socket attaches; its edit and shapes are the ones :func:`attach_rooms` made."""
     from generators.outdoor_dungeon import socket_grid
 
     if world.terrain is None:
@@ -279,23 +281,54 @@ def entrance_attachment(world: World, socket: Socket, entrance) -> Attachment:
     grid = socket_grid(socket, world.terrain)
     return Attachment(socket=socket.id, kind=socket.kind, entrance=entrance,
                       edits=[apron_edit(world, socket, grid, entrance)],
-                      keep_clear=entrance_keep_clear(world, socket, entrance))
+                      keep_clear=entrance_keep_clear(world, socket, entrance, layout))
 
 
-def entrance_keep_clear(world: World, socket: Socket, entrance) -> Tuple[ClearShape, ...]:
-    """What Sites keep off round an outdoor dungeon (POIs spec Req 7), as capsules: the
-    Host_Hill's footprint disc (the Socket's placed Landform); the Tunnel, wall to portal;
-    and the Mouth and Apron, from the portal out over the most rows the Apron digs and one
-    row more. The Tunnel's and Apron's capsules are the dug strip's half-width plus
-    ``outdoor_dungeon.SITE_CLEAR``.
+#: What Sites keep from an outdoor dungeon's rooms and corridors (site-sockets Req 5.1,
+#: design finding 3): ``outdoor_dungeon.SITE_CLEAR`` plus 8 u, the 16 u finding 3 measured.
+DUNGEON_CLEAR_EXTRA = 8.0
+
+
+def dungeon_keep_clear(layout) -> Tuple[ClearShape, ...]:
+    """The capsules over an outdoor dungeon's rooms and corridors (``layout``: the spec or
+    layout ``ZoneSpec`` holding them), each grown by ``SITE_CLEAR + DUNGEON_CLEAR_EXTRA``.
+    A room is a capsule along its long side whose radius is half its short side times
+    sqrt(2), so it covers the room's corners; a corridor is a capsule per leg of its built
+    route (``routing.corridor_route``) of radius half its width times sqrt(2), so it covers
+    the leg's square ends and every bend. Every room is taken, on every Level."""
+    from generators.outdoor_dungeon import SITE_CLEAR
+    from generators.routing import corridor_route
+
+    grow = SITE_CLEAR + DUNGEON_CLEAR_EXTRA
+    out: List[ClearShape] = []
+    for r in layout.rooms:
+        hw, hd = float(r.width) / 2.0, float(r.depth) / 2.0
+        half, run = min(hw, hd), abs(hw - hd)
+        dx, dy = (run, 0.0) if hw >= hd else (0.0, run)
+        out.append((r.center_x - dx, r.center_y - dy, r.center_x + dx, r.center_y + dy,
+                    half * math.sqrt(2.0) + grow))
+    rooms = {r.id: r for r in layout.rooms}
+    for c in layout.corridors:
+        wps = corridor_route(c, rooms).waypoints
+        r = float(c.width) / 2.0 * math.sqrt(2.0) + grow
+        for (x0, y0), (x1, y1) in zip(wps, wps[1:]):
+            out.append((float(x0), float(y0), float(x1), float(y1), r))
+    return tuple(out)
+
+
+def entrance_keep_clear(world: World, socket: Socket, entrance, layout) -> Tuple[ClearShape, ...]:
+    """What Sites keep off round an outdoor dungeon (site-sockets Req 5.1, 5.4), as
+    capsules: the Tunnel, wall to portal; the Mouth and Apron, from the portal out over the
+    most rows the Apron digs and one row more; then the dungeon's rooms and corridors
+    (:func:`dungeon_keep_clear` of ``layout``). The Tunnel's and Apron's capsules are the
+    dug strip's half-width plus ``outdoor_dungeon.SITE_CLEAR``. The Host_Hill's disc is no
+    longer kept (archive decision 3): a Site may stand on the hill's crown or shelf, never
+    over a room.
 
     The rows the Apron digs are found on the grid before the water bed sinks
-    (``Terrain.undrowned``), as ``outdoor_dungeon.keep_clear_shapes`` finds them on the
-    landscape's bowl: the same floats, so the same shapes."""
+    (``Terrain.undrowned``)."""
     from generators.outdoor_dungeon import SITE_CLEAR, _apron, _Grid
-    from generators.wilderness.matrix import Landform
 
-    lf = Landform.from_dict(socket.ground["landform"])
     g = socket.ground
     grid = _Grid.of(world.terrain.undrowned, g["origin"], g["res"])
     e = entrance
@@ -314,11 +347,10 @@ def entrance_keep_clear(world: World, socket: Socket, entrance) -> Tuple[ClearSh
     mid = (coord(1 - e.axis, e.cross) + coord(1 - e.axis, e.cross + 1)) / 2.0
     portal = coord(e.axis, e.portal)
     far = coord(e.axis, e.portal + e.outward * (reach + 1))
-    hill = (lf.centre[0], lf.centre[1], lf.centre[0], lf.centre[1], lf.radius + lf.flank / 2.0)
     tunnel = (*pt(e.wall, mid), *pt(portal, mid), res / 2.0 + SITE_CLEAR)
     # The Apron's trench spans the strip's two columns and one either side.
     apron = (*pt(portal, mid), *pt(far, mid), 2.0 * res + SITE_CLEAR)
-    return (hill, tunnel, apron)
+    return (tunnel, apron) + dungeon_keep_clear(layout)
 
 
 def attach_sites(world: World, socket: Socket, seed: int, *, biome: str = "plains",
@@ -423,7 +455,7 @@ def build_attachments(spec, world: World, sites=None) -> List[Attachment]:
         elif socket.kind == "hillside" and "dungeon" in payload:
             from generators.outdoor_dungeon import Entrance
             data = payload["dungeon"]
-            att = entrance_attachment(world, socket, Entrance.from_dict(data["entrance"]))
+            att = entrance_attachment(world, socket, Entrance.from_dict(data["entrance"]), spec)
             att.layout = spec
             att.warnings = list(data["warnings"])
             att.envelope = {"floor_limit": data["floor_limit"], "rock_cover": data["rock_cover"]}
@@ -444,5 +476,5 @@ def build_attachments(spec, world: World, sites=None) -> List[Attachment]:
 
 __all__ = ["ATTACH_VERSION", "Attachment", "ClearShape", "LAYOUT_KEYS", "ORDER", "TerrainEdit",
            "apply_edits", "apron_edit", "attach_rooms", "attach_sites", "attachments_from_json",
-           "attachments_json", "build_attachments", "entrance_attachment", "entrance_keep_clear",
+           "attachments_json", "build_attachments", "dungeon_keep_clear", "entrance_attachment", "entrance_keep_clear",
            "handoffs", "load_attachments", "rooms_json", "rooms_seed", "sockets_sidecar"]

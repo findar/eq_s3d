@@ -2,7 +2,7 @@
 
 Builds place Sites and pass the gate with them; Sites ``none`` is step 9's
 bytes; the same inputs give the same ``.eqg``; outdoor dungeons keep step 5's
-guarantees and their Apron, Tunnel, Mouth and Host_Hill clear (P8)."""
+guarantees and their Apron, Tunnel, Mouth and the dungeon under the hill clear (P8)."""
 
 import hashlib
 import json
@@ -13,9 +13,11 @@ import pytest
 from core.pfs import PfsArchive
 from core.zon import ZonFile
 from generators import outdoor_dungeon as od
+from generators import stages
 from generators.builder import ZoneBuilder
 from generators.pipeline import load_ter_from_eqg
 from generators.sites.placement import gap
+from generators.world import world_of
 import generators.wilderness.build as wb
 
 # .eqg[:-4] sha256 of master before task 7 (step 9), with the default trees.
@@ -35,8 +37,9 @@ STEP9 = {
 STEP10 = {
     ("wild", 1955208177, "normal"): "ecd18b34a9365c092df72bba3e24dedf44e65696b73c8941c7db7b7178879aef",
     ("wild", 31337, "dense"): "37af0c058fbcb7d323c84bf7f327edb1fee857761b5ed27ef77b67d7cd714fbb",
-    # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape).
-    ("od", 1001, "dense"): "86d7e6b69fd24a66f7a035c229db2948ebfda141edc1a2974bad920db6979730",
+    # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape), and by
+    # site-sockets task 7 (Sites keep off the dungeon's rooms, not the hill).
+    ("od", 1001, "dense"): "5824418dc69a3f68c1fd6bc6e93968ce4f464116c8afc448055c10198ab7432d",
 }
 
 
@@ -135,7 +138,8 @@ def test_some_outdoor_dungeons_get_sites():
 @pytest.mark.parametrize("pick", [0, 1])
 def test_outdoor_dungeons_keep_step5_with_sites(tmp_path, pick):
     """P8: an outdoor dungeon with Sites (dense: its open ground is small)
-    keeps every Site off the Apron, Tunnel, Mouth and Host_Hill, its terrain
+    keeps every Site off the Apron, Tunnel, Mouth and the dungeon under the hill (its rooms
+    and corridors; site-sockets decision 3), its terrain
     is the Sites-none terrain, and step 5's gate holds: the bowl passes, every
     room is reached from the outdoor Spawn and every corridor is continuous.
     The seeds are the first two in OD_SEEDS that get a Site."""
@@ -148,7 +152,9 @@ def test_outdoor_dungeons_keep_step5_with_sites(tmp_path, pick):
     ter, _ = load_ter_from_eqg(r.eqg_path)
     placed = wb.sites_for(spec, ter).placement
     assert placed.sites, "no Site on this seed: pick another"
-    for keep in od.keep_clear_shapes(spec):
+    world = world_of(spec)
+    entrance = od.Entrance.from_dict(spec.wilderness[od.DUNGEON_KEY]["entrance"])
+    for keep in stages.entrance_keep_clear(world, world.socket("hill0"), entrance, spec):
         for s in placed.sites:
             for c in s.clear:
                 assert gap(c.shape, keep) >= 0.0, (s.kind, c.what, keep)

@@ -30,6 +30,7 @@ from generators.sites import placement as sp
 from generators.sites.placement import gap, place_sites, reach
 from generators.sites.points import slope_key
 from generators.sites.rules import load_sites
+from generators.routing import corridor_route, route_footprint
 from generators.vegetation.placement import SPAWN_CLEARING, ter_heights
 from generators.world import World, world_of
 import generators.wilderness.build as wb
@@ -40,8 +41,6 @@ EPS = 1e-6
 #: Every recording with a ground Socket (the landscape zone types).
 GROUNDS = [r["name"] for r in record_worlds.RECORDINGS
            if r["zone_type"] in record_worlds.LANDSCAPE]
-#: Recorded hills whose open ground takes no Site at the seeds below (the hill fills it).
-BARE = {"outdoor_n", "outdoor_w"}
 REASONS = {sp.NO_GROUND, sp.NO_APPROACH, sp.NO_ROOM, sp.OUTSIDE, sp.IN_CLEAR, sp.CROWDED,
            sp.APRON_OFF, sp.APRON_BLOCKED, sp.STRUCTURE_GONE, sp.NO_FREE_GROUND, sp.NO_POI,
            sp.NO_STRUCTURES, sp.NO_POINT}
@@ -98,7 +97,8 @@ def test_ground_attachment_keeps_its_rules_on_the_corpus(name, ground):
     gsock = dug.socket("ground")
     if atts:
         (att,) = atts
-        again = stages.entrance_attachment(world, world.socket("hill0"), att.entrance)
+        again = stages.entrance_attachment(world, world.socket("hill0"), att.entrance,
+                                           att.layout)
         assert again.edits == att.edits and again.keep_clear == att.keep_clear
         assert [tuple(s) for s in gsock.ground["keep_clear"]] == list(att.keep_clear)
         assert not np.array_equal(dug.terrain.heights, world.terrain.heights)
@@ -117,8 +117,7 @@ def test_ground_attachment_keeps_its_rules_on_the_corpus(name, ground):
     assert got.socket == "ground" and got.kind == "ground" and not got.edits
     assert dug.to_json() == before                      # the terrain is left alone (P5)
     p = got.sites
-    if name not in BARE:
-        assert p.sites, f"{name} gets a Site at dense"
+    assert p.sites, f"{name} gets a Site at dense"
     for s in p.sites:
         outer = s.radius + s.margin
         assert np.linalg.norm(np.array([s.x, s.y]) - spawn) >= SPAWN_CLEARING + outer - EPS
@@ -175,7 +174,8 @@ def test_ground_attachment_keeps_its_rules_on_the_corpus(name, ground):
 def test_p6_the_build_applies_the_attach_stages_edits(seed, edges):
     """P6 against a build: the edit and shapes the Attach stage made when it planned are
     the Build's; the Apron's heights are exactly the built TER's grid; the Kept_Clear is
-    ``keep_clear_shapes``; the Sites are the ones placed on the built TER, and the build's.
+    what the spec's Entrance, rooms and corridors give; the Sites are the ones placed on the
+    built TER, and the build's.
     A seed that gets a Site at dense, and one with water, whose grid before the water bed
     sinks differs from the TER's."""
     spec = od.outdoor_dungeon_spec(f"g{seed}", seed, edges=edges)
@@ -183,7 +183,7 @@ def test_p6_the_build_applies_the_attach_stages_edits(seed, edges):
     ter = od.build_outdoor_dungeon_ter(spec, "ter_t.ter", 2)
     world = World.from_json(world_of(spec).to_json())
     entrance = od.Entrance.from_dict(spec.wilderness[od.DUNGEON_KEY]["entrance"])
-    att = stages.entrance_attachment(world, world.socket("hill0"), entrance)
+    att = stages.entrance_attachment(world, world.socket("hill0"), entrance, spec)
 
     planned = attach(world, seed=seed)
     assert planned.entrance == entrance
@@ -193,7 +193,7 @@ def test_p6_the_build_applies_the_attach_stages_edits(seed, edges):
     built = ter_heights(ter, world.terrain.heights.shape)
     assert np.array_equal(dug.terrain.heights, built)
     assert not np.array_equal(world.terrain.heights, built)
-    shapes = od.keep_clear_shapes(spec)
+    shapes = stages.entrance_keep_clear(world, world.socket("hill0"), entrance, spec)
     assert [tuple(s) for s in dug.socket("ground").ground["keep_clear"]] == list(shapes)
     assert tuple(dug.socket("ground").ground["spawn"][:2]) == tuple(spec.safe_point[:2])
 
@@ -322,7 +322,116 @@ def test_camp_ring_clears_its_fire_and_faces_in(name, seed, ground):
 
 
 def test_target_outdoor_dungeon_gets_a_site_at_normal(ground):
-    """An outdoor dungeon's open ground (~0.82e6 u^2) gets Sites at Normal on some seeds."""
+    """An outdoor dungeon's open ground (~0.82e6 u^2) tries at least one Site at Normal and
+    Dense (site-sockets Req 5.2); Sparse keeps step 10's draw, which gives none on most
+    seeds."""
     dug, _, _ = ground("outdoor_e")
+    for control in ("normal", "dense"):
+        for seed in range(8):
+            p = _sites(dug, seed, control=control).sites
+            assert p.walkable_area < 1e6 and p.target >= 1, (control, seed)
     p = _sites(dug, 1001, control="normal").sites
-    assert p.walkable_area < 1e6 and p.target >= 1 and p.sites
+    assert p.sites
+    assert min(_sites(dug, seed, control="sparse").sites.target for seed in range(8)) == 0
+
+
+# ---------------------------------------------------------------------------
+# The outdoor dungeon keeps its dungeon clear (site-sockets task 7, P7, P8)
+# ---------------------------------------------------------------------------
+
+#: The corpus's outdoor dungeons.
+HILLS = [r["name"] for r in record_worlds.RECORDINGS if r["zone_type"] == "outdoor_dungeon"]
+
+
+def _capsule_rect_gap(c, rect) -> float:
+    """The free distance between capsule ``c`` and the axis-aligned ``rect`` (x0, y0, x1,
+    y1), negative when they overlap: the segment's distance to the rectangle less its
+    radius."""
+    x0, y0, x1, y1 = rect
+    (ax, ay, bx, by, r) = c
+
+    def to_rect(px, py):
+        return math.hypot(max(x0 - px, 0.0, px - x1), max(y0 - py, 0.0, py - y1))
+
+    if any(x0 <= px <= x1 and y0 <= py <= y1 for px, py in ((ax, ay), (bx, by))):
+        return -r
+    edges = ((x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0))
+    seg = (ax, ay, bx, by, 0.0)
+    if any(sp._cross(seg, (*e, 0.0)) for e in edges):
+        return -r
+    d = min(to_rect(ax, ay), to_rect(bx, by),
+            *(sp._point_segment(px, py, seg) for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))))
+    return d - r
+
+
+def _dungeon_rects(layout):
+    """The rooms' and corridors' footprints in plan, as the geometry builds them."""
+    rects = [(r.center_x - r.width / 2, r.center_y - r.depth / 2,
+              r.center_x + r.width / 2, r.center_y + r.depth / 2) for r in layout.rooms]
+    rooms = {r.id: r for r in layout.rooms}
+    for c in layout.corridors:
+        rects += route_footprint(corridor_route(c, rooms), c.width / 2)
+    return rects
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", HILLS)
+def test_p7_no_site_over_the_dungeon(name, monkeypatch):
+    """P7 (Req 5.1, 5.4): over the corpus's outdoor dungeons, with rooms and Sites at seeds
+    0-39, no Site (its ground and margin), Structure or Site_Clear stands over a room or
+    corridor (the footprints the geometry builds), the Tunnel or the Apron; the Kept_Clear
+    has no hill disc, and covers every room's corners and corridor's bends with 16 u to
+    spare."""
+    world = record_worlds.load_world(name)
+    forbid_world_and_build(monkeypatch)
+    grow = od.SITE_CLEAR + stages.DUNGEON_CLEAR_EXTRA
+    placed = 0
+    for seed in range(40):
+        try:
+            att = attach(world, seed=seed)
+        except od.PLAN_ERRORS:
+            continue
+        rects = _dungeon_rects(att.layout)
+        tunnel, apron = att.keep_clear[:2]
+        dungeon = att.keep_clear[2:]
+        rooms = {r.id: r for r in att.layout.rooms}
+        legs = sum(len(corridor_route(c, rooms).waypoints) - 1 for c in att.layout.corridors)
+        assert len(dungeon) == len(rooms) + legs          # no hill disc
+        for rect in rects:                 # each footprint lies 16 u inside the Kept_Clear
+            x0, y0, x1, y1 = rect
+            for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+                assert max(-gap((px, py, px, py, 0.0), k) for k in dungeon) >= grow - EPS
+        dug = stages.apply_edits(world, [att])
+        p = _sites(dug, seed, control="dense").sites
+        placed += len(p.sites)
+        for s in p.sites:
+            shapes = [(s.x, s.y, s.x, s.y, s.radius + s.margin)]
+            shapes += [c.shape for c in s.clear] + [t.footprint() for t in s.structures]
+            for shape in shapes:
+                for keep in (tunnel, apron):
+                    assert gap(shape, keep) >= 0.0, (seed, s.kind, keep)
+                for rect in rects:
+                    assert _capsule_rect_gap(shape, rect) >= 0.0, (seed, s.kind, rect)
+    assert placed >= 30, placed
+
+
+#: Planning seeds for P8 (seed 8 doesn't plan an outdoor dungeon).
+P8_SEEDS = range(40)
+
+
+@pytest.mark.slow
+def test_p8_outdoor_dungeons_get_a_site_at_normal():
+    """P8, placement only (Req 5.2, 5.3): at Normal, the outdoor dungeons the planner makes
+    at seeds 0-39 get a Site on at least 35 of the seeds that plan (step 10 placed one on 8
+    of 39; site-sockets task 7 measured 39 of 39). The Sites are the build's
+    (``sites_for``)."""
+    planned, hits = 0, 0
+    for seed in P8_SEEDS:
+        try:
+            spec = od.outdoor_dungeon_spec(f"p{seed}", seed)
+        except od.PLAN_ERRORS:
+            continue
+        planned += 1
+        spec.sites = "normal"
+        hits += bool(wb.sites_for(spec).placement.sites)
+    assert planned >= 38 and hits >= 35, (hits, planned)

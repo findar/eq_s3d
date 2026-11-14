@@ -125,7 +125,7 @@ def test_p4_an_attachment_from_a_saved_socket_equals_the_live_one(name, monkeypa
     hill's edits. For an outdoor
     dungeon the spec ``outdoor_dungeon_spec`` plans (building no TER, Req 2.4) carries that
     Attachment: its rooms, Entrance, floor limit, the Spawn after the Apron, and the
-    Kept_Clear the build's ``keep_clear_shapes`` gives (wet ground included)."""
+    Kept_Clear its Entrance, rooms and corridors give (wet ground included)."""
     from dataclasses import asdict
 
     import generators.wilderness.build as wb
@@ -145,7 +145,7 @@ def test_p4_an_attachment_from_a_saved_socket_equals_the_live_one(name, monkeypa
 
     def sites(world):
         dug = stages.apply_edits(world, [stages.entrance_attachment(
-            world, world.socket("hill0"), a.entrance) for a in atts])
+            world, world.socket("hill0"), a.entrance, a.layout) for a in atts])
         return stages.attach_sites(dug, dug.socket("ground"), 1001,
                                    biome=world.recipe["biome"], control="dense")
     got = sites(saved)
@@ -167,4 +167,5 @@ def test_p4_an_attachment_from_a_saved_socket_equals_the_live_one(name, monkeypa
         assert data["entrance"] == att.entrance.to_dict()
         assert data["floor_limit"] == att.envelope.floor_limit
         assert tuple(spec.safe_point) == stages.apply_edits(saved, [att]).spawn
-        assert tuple(od.keep_clear_shapes(spec)) == att.keep_clear
+        assert stages.entrance_keep_clear(saved, saved.socket("hill0"), att.entrance,
+                                          spec) == att.keep_clear

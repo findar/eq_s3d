@@ -111,8 +111,26 @@ def test_hillside_attachment_holds_on_the_corpus(name, layout, verticality, race
     for i, j, z in edit.cells:
         assert (i, j) not in keep
         assert z <= world.terrain.heights[i, j]
-    # The hill, Tunnel and Apron as Kept_Clear, for the ground Socket.
-    assert len(att.keep_clear) == 3
+    # The Tunnel, Apron, rooms and corridors as Kept_Clear, for the ground Socket (no hill
+    # disc, site-sockets decision 3): the Tunnel runs wall to portal, the Apron out from the
+    # portal, then one capsule per room and one per leg of each corridor's built route.
+    from generators.routing import corridor_route
+    from generators.sites.placement import gap as sp_gap
+    tunnel, apron = att.keep_clear[:2]
+    assert (apron[0], apron[1]) == (tunnel[2], tunnel[3])        # both meet at the portal
+    assert apron[4] > tunnel[4]                                  # the trench is wider
+    rooms = {r.id: r for r in att.layout.rooms}
+    routes = [corridor_route(c, rooms).waypoints for c in att.layout.corridors]
+    legs = [leg for wps in routes for leg in zip(wps, wps[1:])]
+    assert att.keep_clear[2:] == stages.dungeon_keep_clear(att.layout)
+    assert len(att.keep_clear) == 2 + len(rooms) + len(legs)
+    for shape, r in zip(att.keep_clear[2:], att.layout.rooms):   # each room inside its capsule
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                px, py = r.center_x + sx * r.width / 2, r.center_y + sy * r.depth / 2
+                assert sp_gap((px, py, px, py, 0.0), shape) < 0
+    for shape, ((x0, y0), (x1, y1)) in zip(att.keep_clear[2 + len(rooms):], legs):
+        assert shape[:4] == (x0, y0, x1, y1)
     dug = stages.apply_edits(world, [att])
     moved = dug.terrain.heights != world.terrain.heights
     assert {(int(i), int(j)) for i, j in np.argwhere(moved)} <= {(i, j) for i, j, _ in edit.cells}
