@@ -39,10 +39,10 @@ build on its header, Controls and side panel.
   - Owns: generators/decor/rules.py, rules/decor/themes.toml, rules/decor/layers/, tests/test_decor_rules.py, tests/test_decor_layers.py
   - Reqs: 1, 2.1
 
-- [ ] 2. Layers through the build
+- [x] 2. Layers through the build
   - Card: [cards/02-build.md](cards/02-build.md)
   - Type: agent · Size: M · Depends: 1
-  - Owns: ai/schema.py, generators/builder.py, server/app.py, main.py, tests/test_decor_layers_build.py
+  - Owns: ai/schema.py, generators/builder.py, server/app.py, main.py, tests/test_decor_layers_build.py, tests/test_hygiene.py (the CLI option list only)
   - Reqs: 2.2–2.5
 
 - [ ] 3. The tomb layer, the guide and the tools
