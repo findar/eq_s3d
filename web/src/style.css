@@ -18,19 +18,39 @@ html, body {
   overflow: hidden;
 }
 
-/* ---- Control bar ---- */
+/* ---- Control bar ----
+   One row at 1280 px and wider; narrower, it wraps by whole groups (.hgroup,
+   the description box), never mid-control. main.ts keeps --header-h equal to
+   the bar's real height so the viewport and side panel start below it. Every
+   control in the bar shares one height (--ctl-h) and so one baseline. */
+:root {
+  --header-h: 52px;
+  --ctl-h: 32px;
+  --field-label-w: 6.5rem;
+  --field-ctl-w: 10rem;
+}
+
 #controls {
   position: fixed;
   top: 0; left: 0; right: 0;
-  height: 52px;
+  min-height: 52px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
-  padding: 0 18px;
+  gap: 8px 14px;
+  padding: 10px 16px;
   background: var(--panel);
   border-bottom: 1px solid #1e2230;
   z-index: 20;
   backdrop-filter: blur(6px);
+}
+#controls [hidden] { display: none !important; }
+
+.hgroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
 }
 
 .brand {
@@ -38,123 +58,144 @@ html, body {
   letter-spacing: 1px;
   color: var(--accent);
   font-size: 15px;
+  white-space: nowrap;
 }
 
-#controls label {
+#controls label.inline {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
-#controls label.checkbox { gap: 5px; }
-
-#controls select {
+#controls select,
+#controls input[type="number"],
+#prompt {
+  height: var(--ctl-h);
   background: #141822;
   color: var(--text);
   border: 1px solid #2a3040;
   border-radius: 5px;
-  padding: 5px 8px;
+  padding: 0 8px;
   font-size: 13px;
-  cursor: pointer;
+  font-family: inherit;
 }
-
-#controls input[type="number"] {
-  background: #141822;
-  color: var(--text);
-  border: 1px solid #2a3040;
-  border-radius: 5px;
-  padding: 5px 8px;
-  font-size: 13px;
-  width: 130px;
-}
-#controls input[type="number"]:focus { outline: none; border-color: var(--accent); }
-#controls input[type="number"]::placeholder { color: #4a5464; }
+#controls select { cursor: pointer; }
+#controls select:focus,
+#controls input[type="number"]:focus,
+#prompt:focus { outline: none; border-color: var(--accent); }
+#controls input::placeholder { color: #4a5464; }
+#seed { width: 8.5rem; }
 
 #prompt {
-  flex: 1;
+  flex: 1 1 220px;
   min-width: 220px;
-  background: #141822;
-  color: var(--text);
-  border: 1px solid #2a3040;
-  border-radius: 6px;
-  padding: 9px 12px;
-  font-size: 13px;
+  padding: 0 12px;
 }
-#prompt:focus { outline: none; border-color: var(--accent); }
-#prompt::placeholder { color: #4a5464; }
 
-#advanced {
-  position: relative;
-  font-size: 12px;
-  color: var(--muted);
-}
+/* Buttons: one style per role. Primary is Generate; secondary is the rest. */
+button.primary,
+button.secondary,
 #advanced > summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 6px 10px;
-  border: 1px solid #2a3040;
+  height: var(--ctl-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
   user-select: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
 }
-#advanced > summary::-webkit-details-marker { display: none; }
-#advanced[open] > summary { border-color: var(--accent); }
-.adv-body {
-  position: absolute;
-  top: 36px;
-  right: 0;
-  background: var(--panel);
-  border: 1px solid #2a3040;
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 30;
-  min-width: 160px;
-}
-
-#controls input[type="checkbox"] { cursor: pointer; accent-color: var(--accent); }
-
-#generate {
+button.primary {
   background: var(--accent);
   color: #06121f;
-  border: none;
-  border-radius: 6px;
-  padding: 8px 18px;
+  border: 1px solid var(--accent);
   font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
 }
-#generate:hover { background: #8fc5ff; }
-#generate:disabled { opacity: 0.5; cursor: wait; }
-
-button.secondary {
+button.primary:hover:not(:disabled) { background: #8fc5ff; }
+button.primary:disabled { opacity: 0.5; cursor: default; }
+button.secondary,
+#advanced > summary {
   background: transparent;
   color: var(--muted);
   border: 1px solid #2a3040;
-  border-radius: 6px;
-  padding: 8px 14px;
-  font-size: 13px;
-  cursor: pointer;
 }
-button.secondary:hover { border-color: var(--accent); color: var(--text); }
+button.secondary:hover,
+#advanced > summary:hover { border-color: var(--accent); color: var(--text); }
 
-#status { font-size: 12px; color: var(--muted); margin-left: 4px; }
+/* ---- Controls panel: six groups, each a label/control grid ---- */
+#advanced > summary { list-style: none; }
+#advanced > summary::-webkit-details-marker { display: none; }
+#advanced[open] > summary { border-color: var(--accent); color: var(--text); }
+.adv-body {
+  position: absolute;          /* below the bar (#controls is the box) */
+  top: 100%;
+  left: 0;
+  max-width: calc(100% - 240px - 32px);
+  max-height: calc(100vh - var(--header-h) - 16px);
+  overflow: auto;
+  margin: 0 0 0 16px;
+  background: var(--panel);
+  border: 1px solid #2a3040;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  z-index: 30;
+}
+
+fieldset.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid #1e2230;
+  border-radius: 6px;
+  padding: 6px 10px 10px;
+  min-width: 0;
+}
+fieldset.group > legend {
+  padding: 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--accent-dim);
+}
+label.field {
+  display: grid;
+  grid-template-columns: var(--field-label-w) var(--field-ctl-w);
+  align-items: center;
+  column-gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+label.field > span { white-space: nowrap; }
+label.field > select,
+label.field > input { width: 100%; }
+
+#controls input[type="checkbox"] { cursor: pointer; accent-color: var(--accent); }
+
+#status { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
 /* ---- Viewport ---- */
 #viewport {
   position: fixed;
-  inset: 52px 240px 0 0;
+  inset: var(--header-h) 240px 0 0;
   display: block;
 }
 
 /* ---- Panel ---- */
 #panel {
   position: fixed;
-  top: 52px; right: 0; bottom: 0;
+  top: var(--header-h); right: 0; bottom: 0;
   width: 240px;
   padding: 16px 14px;
   background: var(--panel);
@@ -174,30 +215,36 @@ button.secondary:hover { border-color: var(--accent); color: var(--text); }
 }
 #panel h3:first-child { margin-top: 0; }
 
+/* Panel rows: label left, value on one right edge. A seed row adds its
+   button in a fixed column of its own, so the buttons line up. */
 .row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
   font-size: 12px;
   margin: 4px 0;
 }
-.row span:last-child { color: var(--accent); font-variant-numeric: tabular-nums; }
-
-/* Seed row: value + a small "reproduce" button */
-.seed-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.row > span:first-child { white-space: nowrap; }
+.row > span:nth-child(2) {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
-.seed-row #m-seed { color: var(--accent); font-variant-numeric: tabular-nums; }
+.row.seed { grid-template-columns: auto 1fr 5.4rem; align-items: center; }
+.row.seed > span:nth-child(2) { white-space: nowrap; overflow-wrap: normal; }
 .seed-btn {
   background: transparent;
   color: var(--muted);
   border: 1px solid #2a3040;
   border-radius: 5px;
-  padding: 2px 7px;
+  padding: 2px 6px;
   font-size: 10px;
+  font-family: inherit;
   cursor: pointer;
   white-space: nowrap;
+  width: 100%;
 }
 .seed-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
 .seed-btn:disabled { opacity: 0.4; cursor: default; }
@@ -226,7 +273,7 @@ button.secondary:hover { border-color: var(--accent); color: var(--text); }
 
 #build-warning {
   position: fixed;
-  top: 52px; left: 0; right: 240px;
+  top: var(--header-h); left: 0; right: 240px;
   padding: 8px 18px;
   background: rgba(120, 50, 10, 0.92);
   border-bottom: 1px solid var(--warn);
@@ -310,19 +357,6 @@ button.secondary:hover { border-color: var(--accent); color: var(--text); }
   height: auto;
   width: auto;
 }
-
-/* Wilderness map-edge selectors (Controls panel; hidden for other types). */
-#edges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  margin: 4px 0 0;
-  padding: 6px 8px;
-  border: 1px solid #2a3040;
-  border-radius: 6px;
-}
-#edges[hidden] { display: none; }
-#edges legend { padding: 0 4px; }
 
 /* ---- Files (Artifacts panel) ---- */
 #artifact-list {

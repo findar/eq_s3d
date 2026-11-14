@@ -403,23 +403,38 @@ function readEdges(): Record<string, string> {
 
 function syncControlVisibility(): void {
   const zoneType = ($("zone-type") as HTMLSelectElement).value;
+  // `hidden` does the hiding: the stylesheet's `#controls [hidden]` rule beats
+  // the grid display of a `label.field` and a `fieldset.group`.
   for (const control of Object.keys(CONTROL_ZONE_TYPES)) {
     const el = $(control);
-    // The fieldset itself, or the <label> wrapping an input. The inline
-    // display beats the panel's `label { display: flex }`.
+    // The Landscape group itself, or the <label> wrapping an input.
     const box = (control === "edges" ? el : el.closest("label") ?? el) as HTMLElement;
-    const on = usesControl(zoneType, control);
-    box.hidden = !on;
-    box.style.display = on ? "" : "none";
+    box.hidden = !usesControl(zoneType, control);
   }
   // The rule set and wall style only mean something under the graph engine.
   const graphOn = usesControl(zoneType, "layout") && readLayout() === "graph";
   for (const id of ["rule-set", ...SCALE_CONTROLS]) {
-    const box = $(id).closest("label") as HTMLElement;
-    box.hidden = !graphOn;
-    box.style.display = graphOn ? "" : "none";
+    ($(id).closest("label") as HTMLElement).hidden = !graphOn;
+  }
+  // A group with nothing showing hides (the Landscape group has its own rule).
+  for (const group of document.querySelectorAll<HTMLElement>("#controls-panel fieldset.group")) {
+    if (group.id === "edges") continue;
+    const fields = [...group.querySelectorAll<HTMLElement>("label.field")];
+    group.hidden = fields.every((f) => f.hidden);
   }
 }
+
+// The bar wraps by whole groups when narrow; keep --header-h at its real
+// height so the viewport, side panel and banner start below it, and let the
+// scene re-fit its canvas.
+const headerEl = $("controls");
+new ResizeObserver(() => {
+  const h = Math.ceil(headerEl.getBoundingClientRect().height);
+  if (document.documentElement.style.getPropertyValue("--header-h") !== `${h}px`) {
+    document.documentElement.style.setProperty("--header-h", `${h}px`);
+    window.dispatchEvent(new Event("resize"));
+  }
+}).observe(headerEl);
 
 function readLayout(): string {
   return ($("layout") as HTMLSelectElement).value;
