@@ -35,7 +35,7 @@ Tasks 1–3 own the same files and run one after another, in one worktree.
   - Owns: web/index.html, web/src/style.css, web/src/main.ts
   - Reqs: 3
 
-- [ ] 2. Describe or Controls, one Generate
+- [x] 2. Describe or Controls, one Generate
   - Card: [cards/02-mode.md](cards/02-mode.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: web/index.html, web/src/style.css, web/src/main.ts

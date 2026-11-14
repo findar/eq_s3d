@@ -14,3 +14,4 @@ Replace the two Generate buttons with a Describe | Controls switch (`role="radio
 The side panel's Plan "Mode" row must still say which mode built the zone. Storage can throw (private windows): the page must work without it. The reroll buttons rebuild in the mode that built the shown zone: keep that.
 
 ## Result
+✔ 0bfdb20 · 3106 passed · frontend builds · not checked in the browser by the agent (the lead looks)
