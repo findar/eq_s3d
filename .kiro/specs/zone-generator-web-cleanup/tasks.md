@@ -29,7 +29,7 @@ Tasks 1–3 own the same files and run one after another, in one worktree.
 
 ## Tasks
 
-- [ ] 1. Grouped, aligned Controls and header
+- [x] 1. Grouped, aligned Controls and header
   - Card: [cards/01-layout.md](cards/01-layout.md)
   - Type: agent · Size: M · Depends: —
   - Owns: web/index.html, web/src/style.css, web/src/main.ts

@@ -14,3 +14,4 @@ Regroup the Controls into the six groups of Req 3.3 (`<fieldset class="group">` 
 Movement keys stay suppressed while typing (lessons-learned "Web viewer"). A commit-message hook blocks two words about the frontend build (lessons-learned "Environment"). `web/node_modules` is shared through a junction: don't change dependencies. The `label { display: flex }` rule fights inline `display` in `syncControlVisibility`: keep hiding working.
 
 ## Result
+✔ 3ccd8ac · 3106 passed · frontend builds · not checked in the browser by the agent (the lead looks)
