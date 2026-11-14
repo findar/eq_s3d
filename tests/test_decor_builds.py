@@ -267,7 +267,7 @@ def test_light_one_zon_light_per_light_bearing_prop(decorated, label):
     every room's own light stays."""
     spec, result = decorated[label, "normal"]
     _arc, zon, side = _loaded(result)
-    lit = [p for p in _rows(side, sites=False) if p["category"] == "light"]
+    lit = [p for p in _rows(side) if p["category"] == "light"]
     assert lit, "no light-bearing Prop placed"
     names = [l.name for l in zon.lights]
     assert [n for n in names if not n.startswith("decor_light_")] == [l.id for l in spec.lights]
