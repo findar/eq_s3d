@@ -20,3 +20,4 @@ Index entry: `tasks.md` task 4. Requirements 1, 2.1, 2.5, 2.6. Design "Point Soc
 Keep `world.py` free of top-level imports from the generators (step 12 task 2): import `points` inside `world_for`. `stages.sockets_sidecar` and `stages.ORDER` meet a `site` Socket from now on: if either fails on one, the fix belongs to task 6's file, so stop and say so rather than widening Owns. Re-record the corpus in the same commit as the version change.
 
 ## Result
+✔ fe4107a · 3088 passed

@@ -56,7 +56,8 @@ def test_every_build_directory_holds_the_three_files(builds, zone_type):
     side = json.loads(vb.result.sidecar_path.read_text(encoding="utf-8"))
     world = world_mod.load(files["world"])
     assert [s["id"] for s in side["sockets"]] == [s.id for s in world.sockets]
-    assert all(s["attached"] is not None for s in side["sockets"])
+    # A point Site Socket may have nothing attached (null); every other Socket has its own.
+    assert all(s["attached"] is not None for s in side["sockets"] if s["kind"] != "site")
 
 
 @pytest.mark.parametrize("zone_type", ZONE_TYPES)
