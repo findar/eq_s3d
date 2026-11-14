@@ -117,8 +117,48 @@ def test_schematic_unchanged(spec, size, padding):
     for cor in spec.corridors:
         cor.transition = None       # a Frame's Door_Spot is drawn since step 9 (test_transition_rules)
     expected = reference_mapview.render_map_svg(spec, size, padding)
-    assert render_map_svg(spec, size, padding) == expected
-    assert render_map_svg(spec, size, padding, outline=None) == expected
+    # The frame's attributes (site-sockets task 9) draw nothing; all else is byte-identical.
+    assert _unframed(render_map_svg(spec, size, padding)) == expected
+    assert _unframed(render_map_svg(spec, size, padding, outline=None)) == expected
+
+
+_FRAME_ATTRS = re.compile(r' data-frame-a="([^"]*)" data-frame-b="([^"]*)" data-frame-s="([^"]*)"')
+
+
+def _unframed(svg: str) -> str:
+    """``svg`` with the root's frame attributes taken out (one set, on the root; none on
+    the "no layout" map)."""
+    head, rest = svg.split(">", 1)
+    assert len(_FRAME_ATTRS.findall(head)) == (0 if "no layout" in rest else 1)
+    assert not _FRAME_ATTRS.search(rest)
+    return _FRAME_ATTRS.sub("", head) + ">" + rest
+
+
+@settings(deadline=None, max_examples=scaled(100))
+@given(data=st.data(), spec=zone_specs(), size=sizes, padding=paddings)
+def test_frame_maps_rooms_to_their_labels(data, spec, size, padding):
+    """
+    The map SVG records its world-to-pixel frame (site-sockets Req 9.2).
+
+    For any Zone_Spec, with or without an outline, the root ``<svg>`` carries
+    ``data-frame-a``, ``-b`` and ``-s``, and ``u = a + s·x``, ``v = b − s·y``
+    puts each room's centre where its depth number is drawn (``x``, ``y − 4``).
+    """
+    outline = data.draw(st.one_of(st.none(), synthetic_outlines(spec)))
+    svg = render_map_svg(spec, size, padding, outline=outline)
+    root = ET.fromstring(svg)
+    if not spec.rooms and not spec.corridors and outline is None:
+        assert root.get("data-frame-s") is None          # "no layout": no frame
+        return
+    a, b, s = (float(root.get(f"data-frame-{k}")) for k in "abs")
+    assert s > 0
+    labels = [t for t in root.iter(_NS + "text")
+              if t.get("font-size") == "12" and t.get("text-anchor") == "middle"]
+    assert len(labels) == len(spec.rooms)
+    for r, t in zip(spec.rooms, labels):
+        assert t.text == str(r.graph_depth)
+        assert abs(a + s * r.center_x - float(t.get("x"))) <= 0.051
+        assert abs(b - s * r.center_y - (float(t.get("y")) - 4)) <= 0.051
 
 
 def _path_points(d: str):

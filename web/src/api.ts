@@ -228,8 +228,10 @@ export interface ZoneSidecar {
   theme?: ZoneContent;
   // Props (room-decor): present only when the build placed Props.
   decor?: ZoneDecor;
-  // Sites (wilderness, outdoor dungeon): each Site's Props ride on its row.
-  sites?: { sites?: { props?: ZoneProp[] }[] };
+  // Sites (wilderness, outdoor dungeon): each Site's Props ride on its row, and
+  // `socket` names the point `site` Socket it stands on (site-sockets; absent
+  // on older sidecars).
+  sites?: { sites?: { kind?: string; socket?: string | null; props?: ZoneProp[] }[] };
   // Every stage seed the build used, resolved (world-sockets Req 4.4).
   seeds?: { seed: number | null; rooms_seed: number | null; decor_seed: number | null };
   // The World's Sockets and what attached to each (world-sockets task 6).
@@ -239,13 +241,24 @@ export interface ZoneSidecar {
   outline?: { bounds: number[] } | null;
 }
 
+// What attached to a Socket: a dungeon or city ({kind, rooms}), the ground's
+// Sites ({kind: "sites", sites}) or, on a point `site` Socket, the Site standing
+// on it ({kind: "site", site: <its kind>, group: <the point's Group>}).
+export interface SocketAttachment {
+  kind: string;
+  rooms?: number;
+  sites?: number;
+  site?: string;
+  group?: number;
+}
+
 // One Socket in the sidecar (generators/stages.py sockets_sidecar).
 export interface ZoneSocket {
   id: string;
-  kind: string;                // root | hillside | ground | door
+  kind: string;                // root | hillside | ground | site | door
   point: [number, number, number];
   side: string;                // N/E/S/W, "" when none
-  attached: { kind: string; rooms?: number; sites?: number } | null;
+  attached: SocketAttachment | null;
 }
 
 export async function generateZone(params: GenerateParams): Promise<GenerateResult> {
