@@ -385,17 +385,42 @@ PROP_LIGHT_RADIUS = 30.0
 NO_INSTALL = "decor_none:no_install (EQ_PATH unset or missing), built with Decor none"
 
 
-def _decor_data():
-    """The decor rules and the catalogue, loaded once per process."""
-    global _DECOR_DATA
-    if _DECOR_DATA is None:
+def _decor_data(layers: Tuple[str, ...] = ()):
+    """The decor rules with ``layers`` merged on (``load_decor``) and the catalogue, each
+    loaded once per process: the rules once per tuple of layer names (and rules folder,
+    ``ai.schema.RULES_DECOR_DIR``), the catalogue once."""
+    global _CATALOGUE
+    from ai import schema
+    from generators.decor.rules import load_decor
+    key = (str(schema.RULES_DECOR_DIR), tuple(layers))
+    if key not in _DECOR_RULES:
+        _DECOR_RULES[key] = load_decor(schema.RULES_DECOR_DIR, layers=key[1])
+    if _CATALOGUE is None:
         from generators.decor.catalogue import load
-        from generators.decor.rules import load_decor
-        _DECOR_DATA = (load_decor(), load())
-    return _DECOR_DATA
+        _CATALOGUE = load()
+    return _DECOR_RULES[key], _CATALOGUE
 
 
-_DECOR_DATA = None
+_DECOR_RULES: Dict[Tuple[str, Tuple[str, ...]], object] = {}
+_CATALOGUE = None
+
+
+def with_decor_layers(spec: ZoneSpec, layers) -> ZoneSpec:
+    """The spec carrying the request's extra decor layers (decor-rules Req 2.2), for Decor
+    alone. They ride as a plain attribute, not a ZoneSpec field: never in ``to_dict``, the
+    spec JSON or any hash of it, so the World and rooms stages don't see them and a build
+    naming none is the build it always was."""
+    spec.decor_layers = tuple(layers or ())
+    return spec
+
+
+def decor_layers_of(spec: ZoneSpec) -> Tuple[str, ...]:
+    """The layers a spec's Decor takes: its theme's, then its race's (``themes.toml``),
+    then the request's (``with_decor_layers``)."""
+    from ai import schema
+    from generators.decor.rules import layers_for
+    return layers_for(spec.dungeon_theme or "", spec.dungeon_race or "",
+                      tuple(getattr(spec, "decor_layers", ()) or ()), schema.RULES_DECOR_DIR)
 _IMPORTERS: Dict[str, object] = {}
 
 
@@ -523,9 +548,10 @@ class DecorBuild:
     (``models``/``textures``, packed as the ``site_`` path packs Structures)
     and ``placed`` as (model file, Prop) in ZON order."""
 
-    def __init__(self, control: str, seed: int):
+    def __init__(self, control: str, seed: int, layers: Tuple[str, ...] = ()):
         self.control = control
         self.seed = seed
+        self.layers = tuple(layers)     # the decor layers merged on, in merge order
         self.rooms: list = []           # (RoomContext, Decorated, check problems)
         self.models: Dict[str, TerFile] = {}
         self.textures: Dict[str, bytes] = {}
@@ -582,10 +608,13 @@ class DecorBuild:
                                     for n, s in enumerate(report.get("sites", []))]}
 
     def summary(self) -> dict:
-        """The sidecar's ``decor`` block (``sites`` only when Sites were dressed)."""
+        """The sidecar's ``decor`` block (``sites`` only when Sites were dressed, ``layers``
+        only when decor layers were merged on)."""
         n_sites = sum(1 for ctx, _, _ in self.rooms if ctx.source == "site")
         n_corridors = sum(1 for ctx, _, _ in self.rooms if ctx.source == "corridor")
-        return {"control": self.control, "seed": self.seed, "props": len(self.placed),
+        return {"control": self.control, "seed": self.seed,
+                **({"layers": list(self.layers)} if self.layers else {}),
+                "props": len(self.placed),
                 "lights": sum(1 for _, p in self.placed if p.light),
                 "models": len(self.models), "rooms": len(self.rooms) - n_sites - n_corridors,
                 **({"corridors": n_corridors} if n_corridors else {}),
@@ -661,10 +690,10 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     if eq is None:
         warnings.append(NO_INSTALL)
         return None
-    rules, catalogue = _decor_data()
+    rules, catalogue = _decor_data(decor_layers_of(spec))
     importer = _importer(eq)
     seed = spec.decor_seed if spec.decor_seed is not None else int(spec.seed or 0)
-    out = DecorBuild(control, seed)
+    out = DecorBuild(control, seed, rules.layers)
     mesh = _Mesh(ter) if rooms else None
     todo = (contexts(spec, mesh) if rooms else []) + (site_contexts(spec, ter) if sited else [])
 

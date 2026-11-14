@@ -35,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt
 
 from core.env import env_value
 from core.paths import OutputRoot, assert_output_allowed, new_zone_id
+from generators.builder import with_decor_layers
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, LANDSCAPE_ZONE_TYPES, canonical_zone_type,
@@ -613,7 +614,8 @@ class GenerateRequest(BaseModel):
                     "outdoor_dungeon only), dungeon_theme and dungeon_race "
                     "(\"\" for none; dungeon, city and outdoor_dungeon "
                     "only), decor (none/sparse/normal/dense, \"\" for normal) and "
-                    "decor_seed (dungeon, city and outdoor_dungeon only), rooms_seed "
+                    "decor_seed (dungeon, city and outdoor_dungeon only), decor_layers "
+                    "(decor layers on top of the dungeon theme's, from /api/controls), rooms_seed "
                     "(the rooms and Sites; every zone type), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
@@ -733,11 +735,18 @@ def list_themes():
 @app.get("/api/controls")
 def list_controls():
     """The values the page's control lists offer, from the code that checks
-    them, so the page hard-codes none (room-decor Req 10.1). Each entry:
-    ``values`` in order, the ``default`` and the ``zone_types`` it applies to."""
+    them, so the page hard-codes none (room-decor Req 10.1). ``decor``:
+    ``values`` in order, the ``default`` and the ``zone_types`` it applies to.
+    ``decor_layers``: each decor layer in ``rules/decor/layers/`` with its
+    description, read from the folder on every call, so a dropped-in file shows
+    up without a restart (decor-rules Req 2.3)."""
+    from ai import schema
+    from generators.decor.rules import layer_names
     return {
         "decor": {"values": list(VALID_DECOR), "default": DEFAULT_DECOR,
                   "zone_types": list(DECOR_ZONE_TYPES)},
+        "decor_layers": [{"name": name, "description": desc}
+                         for name, desc in layer_names(schema.RULES_DECOR_DIR).items()],
     }
 
 
@@ -893,8 +902,10 @@ def generate(req: GenerateRequest):
         rooms = plan.room_count
 
         def factory(s: int, rooms_seed: Optional[int] = None):
-            return plan_to_spec(_rooms(plan, rooms_seed), seed=s, edges=edges, trees=trees,
-                                trees_source="controls", sites_source=sites_source)
+            return with_decor_layers(
+                plan_to_spec(_rooms(plan, rooms_seed), seed=s, edges=edges, trees=trees,
+                             trees_source="controls", sites_source=sites_source),
+                plan.decor_layers)
 
     # Build + traversability gate. On gated themes a failing dungeon seed is
     # never returned: the pipeline retries on fresh seeds (bounded by attempts +

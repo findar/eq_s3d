@@ -638,6 +638,7 @@ _ALLOWED_CLI_OPTIONS = {
     "--features",  # what stands in rooms (room layouts spec task 7)
     "--finish", "--structure", "--clutter", "--overlay",  # how rooms lean (room layouts spec task 21)
     "--decor", "--decor-seed",  # Props in rooms (room-decor spec task 10)
+    "--decor-layer",  # decor layers on top of the theme's (decor-rules spec task 2)
     "--rooms-seed",  # rooms and Sites on the same World (world-sockets spec task 8)
     # housekeeping the task allows
     "--output", "--ter-version", "--no-validate",

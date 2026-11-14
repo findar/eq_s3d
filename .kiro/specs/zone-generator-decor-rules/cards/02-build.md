@@ -14,3 +14,4 @@ Index entry: `tasks.md` task 2. Requirements 2.2–2.5. Design "Through the buil
 `generators/pipeline.py` and `main.py` are cross-branch hotspots (steering "Parallel agents"): keep edits minimal. A plan field that reaches a Zone_Spec hash breaks every golden: keep `decor_layers` out of the spec, as `decor` and `decor_seed` are. If the sidecar gains `decor.layers` only when non-empty, older readers stay happy; check `web/src/api.ts` doesn't need it yet (task 5 types it).
 
 ## Result
+✔ f37d4a6 · 3155 passed
