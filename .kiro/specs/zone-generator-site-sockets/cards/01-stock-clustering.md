@@ -15,3 +15,4 @@ Commit the measurement finding 1 was drafted from, so its numbers come from the 
 The biome groups are a reading of the zones, not data in the survey: say so in the script. R_mc uses random draws: fix the generator's seed. The walked-ground cache lives under `output/site_survey/cache/` (gitignored, per worktree): copy it from the main checkout or let `ground_of` rebuild it (slow). No tests: a script that writes a finding.
 
 ## Result
+✔ 86f015f · 3082 passed

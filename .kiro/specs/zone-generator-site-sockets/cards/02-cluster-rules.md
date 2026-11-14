@@ -18,3 +18,4 @@ Index entry: `tasks.md` task 2. Requirement 2.7. Design "The clustering rules, a
 Follow the loader's existing pattern for `density` and `inhabitants` rather than adding a second way. A biome with Site rules but no `groups` block is an error, not a default: only plains exists.
 
 ## Result
+✔ 947136f · 3082 passed
