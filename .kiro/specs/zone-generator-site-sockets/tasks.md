@@ -99,7 +99,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: tests/test_site_bands.py, tests/test_site_builds.py (the outdoor-dungeon sweep only)
   - Reqs: 4, 5.3, 8
 
-- [ ] 12. HUMAN: first look
+- [x] 12. HUMAN: first look
   - Card: [cards/12-first-look.md](cards/12-first-look.md)
   - Type: human · Depends: 9, 10, 11
 
