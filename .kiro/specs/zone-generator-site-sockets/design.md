@@ -48,61 +48,62 @@ Kept_Clear shapes are zone-wide. Each Site records which point Socket it took.
 
 ## Research findings
 
-### 1. How stock places its Sites (measured for this draft)
+### 1. How stock places its Sites (measured)
 
 Measured 2026-11-14 with the step 10 survey's own code (`scripts/site_survey.py`: `cluster`,
-`site_measures`, `ground_of` on the cached walked ground) by a scratch script that task 1
-commits as `scripts/site_clustering.py`. R_CE is Clark–Evans as
-`tests/test_site_bands.clark_evans` computes it (mean nearest-Site distance over
-`0.5 / sqrt(Sites / ground)`). R_mc divides the same mean by the mean nearest distance of as
-many points dropped uniformly on the zone's own dry walked cells (400 draws), so the ground's
-shape and edges are in the expectation; p is the share of those draws as clustered or more.
-"In 300" is the share of Sites with another Site within 300 u. The biome groups are this
-draft's reading of the zones, not the survey's.
+`site_measures`, `ground_of` on the cached walked ground) by `scripts/site_clustering.py`
+(task 1; `python scripts/site_clustering.py --eq-path F:\everquest_rof2` prints every number
+below). R_CE is Clark–Evans as `tests/test_site_bands.clark_evans` computes it (mean
+nearest-Site distance over `0.5 / sqrt(Sites / ground)`). R_mc divides the same mean by the
+mean nearest distance of as many points dropped uniformly on the zone's own dry walked cells
+(400 draws, generator seed 13), so the ground's shape and edges are in the expectation; p is
+the share of those draws as clustered or more. "In 300" is the share of Sites with another
+Site within 300 u. The biome groups are the script's reading of the zones (`BIOME`), not the
+survey's.
 
 | Zone | Group | Sites | Ground 1e6 u² | R_CE | R_mc | p | Sites per 300 u Group | In 300 | NN p10 / p50 |
 |---|---|---|---|---|---|---|---|---|---|
-| qeytoqrg | plains | 6 | 15.4 | 0.95 | 0.71 | 0.14 | 1.20 | 33 % | 173 / 896 |
+| qeytoqrg | plains | 6 | 15.4 | 0.95 | 0.71 | 0.12 | 1.20 | 33 % | 173 / 896 |
 | qey2hh1 | plains | 43 | 114.3 | 0.58 | 0.51 | 0.00 | 1.79 | 65 % | 108 / 192 |
 | northkarana | plains | 17 | 50.9 | 0.83 | 0.68 | 0.02 | 1.21 | 35 % | 181 / 671 |
-| eastkarana | plains | 17 | 36.3 | 0.76 | 0.56 | 0.00 | 1.70 | 59 % | 160 / 196 |
-| southkarana | plains | 8 | 90.3 | 0.50 | 0.39 | 0.00 | 1.60 | 62 % | 191 / 222 |
-| innothule | swamp | 10 | 10.1 | 0.64 | 0.53 | 0.01 | 1.67 | 60 % | 140 / 188 |
+| eastkarana | plains | 17 | 36.3 | 0.76 | 0.56 | 0.01 | 1.70 | 59 % | 160 / 196 |
+| southkarana | plains | 8 | 90.3 | 0.50 | 0.41 | 0.00 | 1.60 | 62 % | 191 / 222 |
+| innothule | swamp | 10 | 10.1 | 0.64 | 0.52 | 0.01 | 1.67 | 60 % | 140 / 188 |
 | feerrott | swamp | 34 | 17.8 | 0.99 | 0.89 | 0.14 | 1.55 | 56 % | 148 / 264 |
-| everfrost | snow | 29 | 39.4 | 0.94 | 0.87 | 0.10 | 1.32 | 45 % | 197 / 305 |
-| lakerathe | hills | 36 | 17.4 | 0.94 | 0.84 | 0.06 | 1.80 | 64 % | 132 / 201 |
+| everfrost | snow | 29 | 39.4 | 0.94 | 0.86 | 0.10 | 1.32 | 45 % | 197 / 305 |
+| lakerathe | hills | 36 | 17.4 | 0.94 | 0.84 | 0.07 | 1.80 | 64 % | 132 / 201 |
 | rathemtn | hills | 30 | 65.1 | 0.82 | 0.75 | 0.01 | 1.25 | 27 % | 128 / 697 |
-| ecommons | hills | 18 | 17.5 | 1.21 | 1.03 | 0.58 | 1.12 | 22 % | 288 / 626 |
-| steamfont | hills | 11 | 14.6 | 1.35 | 1.15 | 0.80 | 1.38 | 36 % | 182 / 414 |
-| cauldron | hills | 4 | 9.7 | 1.70 | 1.24 | 0.77 | 1.00 | 0 % | 1232 / 1282 |
-| nro | desert | 17 | 16.1 | 1.12 | 0.91 | 0.27 | 1.06 | 12 % | 256 / 434 |
-| sro | desert | 20 | 11.4 | 1.63 | 1.41 | 1.00 | 1.00 | 0 % | 448 / 615 |
-| oasis | desert | 16 | 11.0 | 1.31 | 1.03 | 0.58 | 1.14 | 25 % | 233 / 488 |
-| tox | forest | 12 | 11.5 | 1.62 | 1.18 | 0.81 | 1.00 | 0 % | 417 / 602 |
-| lfaydark | forest | 15 | 17.3 | 1.42 | 1.25 | 0.94 | 1.00 | 0 % | 481 / 791 |
-| kithicor | forest | 17 | 16.5 | 1.04 | 0.91 | 0.27 | 1.13 | 24 % | 226 / 531 |
-| nektulos | forest | 7 | 11.2 | 1.73 | 1.36 | 0.93 | 1.00 | 0 % | 607 / 1046 |
+| ecommons | hills | 18 | 17.5 | 1.21 | 1.01 | 0.52 | 1.12 | 22 % | 288 / 626 |
+| steamfont | hills | 11 | 14.6 | 1.35 | 1.16 | 0.81 | 1.38 | 36 % | 182 / 414 |
+| cauldron | hills | 4 | 9.7 | 1.70 | 1.24 | 0.80 | 1.00 | 0 % | 1232 / 1282 |
+| nro | desert | 17 | 16.1 | 1.12 | 0.92 | 0.29 | 1.06 | 12 % | 256 / 434 |
+| sro | desert | 20 | 11.4 | 1.63 | 1.40 | 1.00 | 1.00 | 0 % | 448 / 615 |
+| oasis | desert | 16 | 11.0 | 1.31 | 1.03 | 0.60 | 1.14 | 25 % | 233 / 488 |
+| tox | forest | 12 | 11.5 | 1.62 | 1.20 | 0.86 | 1.00 | 0 % | 417 / 602 |
+| lfaydark | forest | 15 | 17.3 | 1.42 | 1.23 | 0.94 | 1.00 | 0 % | 481 / 791 |
+| kithicor | forest | 17 | 16.5 | 1.04 | 0.93 | 0.30 | 1.13 | 24 % | 226 / 531 |
+| nektulos | forest | 7 | 11.2 | 1.73 | 1.34 | 0.91 | 1.00 | 0 % | 607 / 1046 |
 
 (beholder has no Site; the three towns stay out, as in step 10.) By group, zones with 3+ Sites:
 
-| Group | Zones | R_CE min–max (median) | R_mc median | In 300, median |
-|---|---|---|---|---|
-| plains | 5 | 0.50–0.95 (0.76) | 0.56 | 59 % |
-| swamp | 2 | 0.64–0.99 | 0.71 | 58 % |
-| snow | 1 | 0.94 | 0.87 | 45 % |
-| hills | 5 | 0.82–1.70 (1.21) | 1.03 | 27 % |
-| desert | 3 | 1.12–1.63 (1.31) | 1.03 | 12 % |
-| forest | 4 | 1.04–1.73 (1.52) | 1.21 | 0 % |
-| all 20 | 20 | p10–p90 0.64–1.64 (1.02) | 0.90 | 30 % |
+| Group | Zones | R_CE min–max (median) | R_mc median | In 300, median | NN p10, min–max |
+|---|---|---|---|---|---|
+| plains | 5 | 0.50–0.95 (0.76) | 0.56 | 59 % | 108–191 |
+| swamp | 2 | 0.64–0.99 (0.82) | 0.71 | 58 % | 140–148 |
+| snow | 1 | 0.94 | 0.86 | 45 % | 197 |
+| hills | 5 | 0.82–1.70 (1.21) | 1.01 | 27 % | 128–1232 |
+| desert | 3 | 1.12–1.63 (1.31) | 1.03 | 12 % | 233–448 |
+| forest | 4 | 1.04–1.73 (1.52) | 1.21 | 0 % | 226–607 |
+| all 20 | 20 | p10–p90 0.64–1.64 (1.02) | 0.90 | 30 % | 108–1232 |
 
 The all-zone R_CE p10–p90 reproduces step 10's `STOCK_R` (0.64–1.64) and the plains range
 its 0.50–0.95, so the numbers here are step 10's numbers, extended.
 
 What it says:
 
-- **Plains cluster, and not because of their ground's shape.** R_mc is 0.39–0.71 and four of
+- **Plains cluster, and not because of their ground's shape.** R_mc is 0.41–0.71 and four of
   five plains zones are more clustered than 98 % of random draws on their own ground. Swamps
-  and snow cluster too; forests and deserts space their Sites out (R_mc 0.91–1.41, no Site
+  and snow cluster too; forests and deserts space their Sites out (R_mc 0.92–1.40, no Site
   within 300 u in five of seven). So the clustering target is per biome, and stock supports
   three kinds of answer: clustered (plains, swamp, snow), random-ish (hills), dispersed
   (desert, forest). Only plains has Site rules today; the others are recorded for their
@@ -118,6 +119,24 @@ What it says:
   Nothing joins between 300 and 400 u, so 300 u is the natural gap. By Site rather than by
   Group, 44 % of plains Sites stand alone and 56 % in a Group of two or more (Groups of 1, 2,
   3, 6 and 8 hold 40, 22, 15, 6 and 8 of the 91).
+
+  **The plains block** (`rules/sites/biomes.toml`, task 2), as the script prints it from the
+  300 u row and the plains zones:
+
+  ```toml
+  [biomes.plains.groups]
+  gap = 300                       # nothing joins between 300 and 400 u
+  sizes = { 1 = 0.69, 2 = 0.19, 3 = 0.09, 4 = 0.03 }   # 300 u shares; the 6 and 8 fold into 4
+  within = [112, 227]             # within-Group NN p10-p90 (111.6, 226.8)
+  spacing = 600                   # Group-centre NN p10 672, rounded down
+  target_r = [0.50, 0.95]         # plains R_CE min-max (0.497, 0.946)
+  target_in_gap = [0.33, 0.65]    # plains "in 300" min-max (0.333, 0.651)
+  target_nn_p10 = [108, 191]      # plains zone NN p10 min-max (108.4, 191.3)
+  ```
+
+  Corrected from the draft: `target_nn_p10`'s high is 191 (southkarana's p10 is 191.3), not
+  the 190 the draft wrote below and in Req 4.1. The draft's R_mc and p columns came from other
+  random draws; the table above holds the script's (seed 13), and every conclusion stands.
 
 ### 2. Where today's Sites stand (measured for this draft)
 

@@ -15,3 +15,4 @@ Index entry: `tasks.md` task 3. Requirements 2.2–2.5. Design "How the World ch
 Reuse `sites.placement._terrain` and `vegetation.placement` (`Ground.disc_on_eligible`, `shapes_touch_quads`) rather than a second eligibility rule: placement must agree with the World about what a point offers. Salt the stream the way trees and Sites do (`_salted_seed`), so the terrain's stream never moves.
 
 ## Result
+✔ 6e371a6 · 3082 passed

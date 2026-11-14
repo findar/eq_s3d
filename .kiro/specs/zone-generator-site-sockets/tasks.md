@@ -33,19 +33,19 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
 
 ## Tasks
 
-- [ ] 1. Stock clustering, measured
+- [x] 1. Stock clustering, measured
   - Card: [cards/01-stock-clustering.md](cards/01-stock-clustering.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/site_clustering.py, .kiro/specs/zone-generator-site-sockets/design.md (finding 1 only)
   - Reqs: 4.1, 2.7
 
-- [ ] 2. The clustering rules
+- [x] 2. The clustering rules
   - Card: [cards/02-cluster-rules.md](cards/02-cluster-rules.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: rules/sites/biomes.toml, generators/sites/rules.py, tests/test_site_rules.py
   - Reqs: 2.7
 
-- [ ] 3. Choosing points
+- [x] 3. Choosing points
   - Card: [cards/03-points.md](cards/03-points.md)
   - Type: agent · Size: S · Depends: 2
   - Owns: generators/sites/points.py, tests/test_site_points.py

@@ -29,6 +29,13 @@ delegated); the lead took each recommendation after review.
    world-to-pixel mapping on the SVG.
 8. **A Site-caused gate failure is not a stage reroll in this step** (`pipeline.py` untouched).
 
+From the tasks:
+
+- Task 1: plains `target_nn_p10` is **[108, 191]**, not the draft's 190 (southkarana's p10 is
+  191.3); `biomes.toml` holds it and task 11 reads it from there. Req 4.1 still says 190.
+- Task 3: a point's `ground` also carries **`hill`** (true for a spare over the hillside
+  footprint); spares share the one `n_offer` budget with the points off the hill.
+
 ## Follow-ups
 
 Carried in from step 10 (`zone-generator-wilderness-pois/archive.md` "Follow-ups") by step 12,
