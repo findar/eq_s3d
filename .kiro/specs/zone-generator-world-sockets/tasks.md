@@ -120,7 +120,7 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Card: [cards/15-first-look.md](cards/15-first-look.md)
   - Type: human · Depends: 9, 10, 14, 19, 20
 
-- [ ] 16. Acceptance section, thorough run
+- [x] 16. Acceptance section, thorough run
   - Card: [cards/16-acceptance.md](cards/16-acceptance.md)
   - Type: agent · Size: S · Depends: 13, 15, 21
   - Owns: docs/ACCEPTANCE.md
