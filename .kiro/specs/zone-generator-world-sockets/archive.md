@@ -7,6 +7,22 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | Stage timings and the suite baseline (`scripts/stage_timings.py`) | `3e4d996`–`d2b62d7` |
+| 2, 3 | Socket, Terrain and World types with an exact JSON form; the World stage, `world_for` / `world_of` | `9e6d153`–`6a09e08` |
+| 4, 5 | The outdoor dungeon attaches to its hillside Socket; Sites attach to the ground Socket | `d0715f4`–`154cf29` |
+| 6 | The build runs through the stages; hand-offs saved; sidecar Sockets, seeds, corridors | `cd5e1de`, `6237b33` |
+| 7, 8, 9 | The rooms seed; on the CLI and server; Reroll rooms on the page and Sockets on the map | `3017c3a`–`b846501` |
+| 10 | `scripts/stage.py` runs one stage from its hand-off | `2c624f5`–`2f12314` |
+| 11, 12 | The World corpus and attach tests on it | `43f5194`–`af864cf` |
+| 14 | Corridor RoomContexts, so corridors are lit; room wall lights retuned | `c498ef0`–`e8cea18` |
+| 19 | A gate failure rerolls only the failing stage; CLI and server factories take the rooms reroll | `eb38280`–`d021a11` |
+| 20 | An outdoor dungeon reads one landscape; an Apron-lowered Spawn never under the floor | `e432224`–`5a0c899` |
+| 13, 21 | Suites: fast 14.6 -> 5.1 min, full 44 -> 22 min; `Outline.contains` box prefilter | `2871744`–`174eff3` |
+| 15, 17 | HUMAN first look and acceptance pass, both signed off | `127e0b7`, the close commit |
+| 16 | Acceptance section, thorough run (3044 passed) | `cfda381`, `7b4f43e` |
+| 18 | Close: trackers, umbrella decision 32 | the close commit |
+
+Default and thorough suites 3044 passed. 50 trailed commits, master `25f6c9e`.
 
 ## Decisions
 

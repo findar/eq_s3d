@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 12, ready.** Written 2026-11-12 at master `ad392b8`; the design's
+> **STATUS: roadmap step 12, DONE** (signed off 2026-11-13, master `25f6c9e`; see `archive.md`). Was: ready. Written 2026-11-12 at master `ad392b8`; the design's
 > open questions were answered the same day (`archive.md` "Decisions"; question 5 added
 > Requirement 9 and task 19). Task index: `tasks.md` (card
 > format).

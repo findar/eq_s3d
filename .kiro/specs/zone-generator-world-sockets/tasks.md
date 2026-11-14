@@ -125,11 +125,11 @@ their own goldens. Only task 14 recaptures goldens, and only the Decor-on ones.
   - Type: agent · Size: S · Depends: 13, 15, 21
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 17. HUMAN: World Sockets acceptance pass
+- [x] 17. HUMAN: World Sockets acceptance pass
   - Card: [cards/17-human-acceptance.md](cards/17-human-acceptance.md)
   - Type: human · Depends: 16
 
-- [ ] 18. Close step 12
+- [x] 18. Close step 12
   - Card: [cards/18-close.md](cards/18-close.md)
   - Type: agent · Size: S · Depends: 17 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-world-sockets/, .kiro/specs/zone-generator/
