@@ -125,6 +125,13 @@ def _props_group(props: "PropMarks", px, py) -> str:
     return "".join(parts)
 
 
+def frame_attrs(a: float, b: float, s: float) -> str:
+    """The map's world-to-pixel frame as attributes on the root ``<svg>``: world (x, y)
+    is drawn at ``u = a + s·x``, ``v = b − s·y``. Nothing drawn reads them; the page
+    places Sockets by them (`web/src/sockets.ts`)."""
+    return f' data-frame-a="{float(a)!r}" data-frame-b="{float(b)!r}" data-frame-s="{float(s)!r}"'
+
+
 def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
                    outline: Optional["OutlineSet"] = None,
                    sites: Optional["SiteMarks"] = None,
@@ -190,7 +197,7 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     parts: List[str] = []
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
-        f'viewBox="0 0 {w:.0f} {h:.0f}">'
+        f'viewBox="0 0 {w:.0f} {h:.0f}"{frame_attrs(padding - min_x * scale, padding + max_y * scale, scale)}>'
     )
     parts.append(f'<rect x="0" y="0" width="{w:.0f}" height="{h:.0f}" fill="#0f0f16"/>')
 

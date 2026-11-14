@@ -2,11 +2,12 @@
 //
 // The map SVG (generators/mapview.py) draws world (x, y) at
 //   u = a + s·x,  v = b − s·y          (north up, 40 px padding)
-// but doesn't say what a, b and s are. They are recovered here from points the
-// SVG and the sidecar both carry: each room's depth number sits at its centre
-// (u, v + 4), followed by its id. Two rooms or more fit all three; with one
-// room, or none (a wilderness), the sidecar's outline bounds give the frame.
-// No frame, no markers: the map is left as it is.
+// and writes a, b and s on its root as data-frame-a / -b / -s (site-sockets
+// task 9). A map made before that carries no frame, so it is recovered from
+// points the SVG and the sidecar both carry: each room's depth number sits at
+// its centre (u, v + 4), followed by its id. Two rooms or more fit all three;
+// with one room, or none (a wilderness), the sidecar's outline bounds give the
+// frame. No frame, no markers: the map is left as it is.
 
 import type { ZoneSidecar, ZoneSocket } from "./api";
 
@@ -44,7 +45,19 @@ function boundsScale(svg: SVGSVGElement, bounds: number[]): number | null {
   return inner > 0 ? inner / span : null;
 }
 
+/** The frame mapview.py wrote on the SVG's root, or null on an older map. */
+function writtenFrame(svg: SVGSVGElement): Frame | null {
+  const [a, b, s] = ["a", "b", "s"].map((k) => {
+    const v = svg.getAttribute(`data-frame-${k}`);
+    return v === null || v.trim() === "" ? NaN : Number(v);
+  });
+  return Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(s) && s > 0 ? { a, b, s } : null;
+}
+
 function mapFrame(svg: SVGSVGElement, sidecar: ZoneSidecar): Frame | null {
+  const written = writtenFrame(svg);
+  if (written) return written;
+  // A map made before the frame was written: fit it from the room labels.
   const anchors = roomAnchors(svg, sidecar);
   const bounds = sidecar.outline?.bounds;
   if (anchors.length >= 2) {
@@ -78,10 +91,17 @@ function mapFrame(svg: SVGSVGElement, sidecar: ZoneSidecar): Frame | null {
   return null;
 }
 
-/** "hillside hill0 (N): dungeon, 7 rooms" — the marker's tooltip. */
+/** "hillside hill0 (N): dungeon, 7 rooms" — the marker's tooltip. A point
+ *  Socket: "site site3, Group 1: farmstead" or "site site7: unused". */
 export function socketTitle(s: ZoneSocket): string {
   const head = `${s.kind} ${s.id}` + (s.side ? ` (${s.side})` : "");
   const a = s.attached;
+  if (s.kind === "site") {
+    // The sidecar names a point's Group only when a Site stands on it.
+    if (!a) return `${head}: unused`;
+    const group = a.group !== undefined && a.group !== null ? `, Group ${a.group}` : "";
+    return `${head}${group}: ${a.site ?? a.kind}`;
+  }
   if (!a) return `${head}: nothing attached`;
   if (a.kind === "sites") return `${head}: sites, ${a.sites ?? 0}`;
   return `${head}: ${a.kind}, ${a.rooms ?? 0} rooms`;
@@ -92,12 +112,24 @@ const SOCKET_FILL: Record<string, string> = {
   ground: "#66bb6a",
   root: "#90a4ae",
   door: "#ba68c8",
+  site: "#d08850",          // mapview.py's Site colour
 };
 
 // One step along the Socket's side, for the hillside's facing tick.
 const SIDE_DIR: Record<string, [number, number]> = {
   N: [0, -1], E: [1, 0], S: [0, 1], W: [-1, 0],
 };
+
+/** A diamond of half-width `r` centred on (u, v). */
+function diamond(u: number, v: number, r: number, fill: string, stroke: string, width: number): SVGPathElement {
+  const d = document.createElementNS(SVG_NS, "path");
+  d.setAttribute("d", `M ${u.toFixed(1)} ${(v - r).toFixed(1)} L ${(u + r).toFixed(1)} ${v.toFixed(1)} ` +
+    `L ${u.toFixed(1)} ${(v + r).toFixed(1)} L ${(u - r).toFixed(1)} ${v.toFixed(1)} Z`);
+  d.setAttribute("fill", fill);
+  d.setAttribute("stroke", stroke);
+  d.setAttribute("stroke-width", String(width));
+  return d;
+}
 
 /** Draw the Sockets onto `svg` (the map dialog's inlined copy). Returns how
  *  many were drawn: 0 when the sidecar has none or the frame can't be found. */
@@ -118,6 +150,17 @@ export function drawSockets(svg: SVGSVGElement, sidecar: ZoneSidecar): number {
     const fill = SOCKET_FILL[s.kind] ?? "#eceff1";
     const mark = document.createElementNS(SVG_NS, "g");
     mark.setAttribute("class", `socket socket-${s.kind}`);
+    if (s.kind === "site") {
+      // A point Socket: a small diamond, filled when a Site stands on it,
+      // hollow when unused; no label (there are many), the tooltip says which.
+      mark.appendChild(diamond(u, v, 5, s.attached ? fill : "none", s.attached ? "#0f0f16" : fill, 1.5));
+      if (!s.attached) mark.setAttribute("class", "socket socket-site socket-unused");
+      const title = document.createElementNS(SVG_NS, "title");
+      title.textContent = socketTitle(s);
+      mark.appendChild(title);
+      g.appendChild(mark);
+      continue;
+    }
     const dir = SIDE_DIR[s.side];
     if (dir) {
       // The way out of the hill: a short tick toward the Socket's side.
@@ -131,13 +174,7 @@ export function drawSockets(svg: SVGSVGElement, sidecar: ZoneSidecar): number {
       mark.appendChild(tick);
     }
     // A diamond, so it doesn't read as a POI or Prop dot.
-    const d = document.createElementNS(SVG_NS, "path");
-    d.setAttribute("d", `M ${u.toFixed(1)} ${(v - 8).toFixed(1)} L ${(u + 8).toFixed(1)} ${v.toFixed(1)} ` +
-      `L ${u.toFixed(1)} ${(v + 8).toFixed(1)} L ${(u - 8).toFixed(1)} ${v.toFixed(1)} Z`);
-    d.setAttribute("fill", fill);
-    d.setAttribute("stroke", "#0f0f16");
-    d.setAttribute("stroke-width", "1.5");
-    mark.appendChild(d);
+    mark.appendChild(diamond(u, v, 8, fill, "#0f0f16", 1.5));
     // Its id beside it ("hill0", "ground", "root"); the tooltip says the rest.
     const label = document.createElementNS(SVG_NS, "text");
     label.setAttribute("x", (u + 11).toFixed(1));
