@@ -310,7 +310,7 @@ label.field > input { width: 100%; }
   color: #ffe2cc;
   font-size: 13px;
   line-height: 1.5;
-  z-index: 18;
+  z-index: 35;            /* above the open Controls (30), below the map (40) */
 }
 #build-warning.hidden { display: none; }
 #build-warning b { color: var(--warn); }
