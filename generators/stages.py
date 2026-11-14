@@ -16,7 +16,8 @@ synthesized and no TER is built (Req 2.4, 3.1).
 Attaching Sites to the ``ground`` Socket (:func:`attach_sites`) reads the World with every
 earlier Attachment's Terrain edits applied and the Socket, whose ``keep_clear`` holds the
 Kept_Clear shapes those Attachments added (the outdoor dungeon's hill, Tunnel and Apron):
-P6, Req 3.3.
+P6, Req 3.3. Each Site stands on one of the World's ``site`` Sockets (its points) and names
+it (site-sockets task 6).
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from generators.world import Socket, World
 
 #: Socket kinds in the order they attach (Req 3.3): the Apron digs the ground before the
 #: Sites see it, and Sites keep off the Tunnel and Apron. A ``site`` Socket (a point a Site
-#: may stand on) comes last; nothing attaches to it here yet (site-sockets task 6).
+#: may stand on) comes last: the ground Socket's Sites stand on the World's points.
 ORDER = ("root", "hillside", "ground", "site")
 
 #: A Kept_Clear shape: the capsule of radius ``r`` round ``(x0, y0)-(x1, y1)``.
@@ -136,8 +137,9 @@ def _layout_dict(layout) -> Optional[dict]:
 
 # -- the hand-off files ---------------------------------------------------------
 
-#: The Attachments file's version (``<name>.attach.json``).
-ATTACH_VERSION = 1
+#: The Attachments file's version (``<name>.attach.json``). Version 2 (site-sockets): each
+#: Site names the point Socket it stands on (``socket``).
+ATTACH_VERSION = 2
 
 
 def attachments_json(attachments: Sequence[Attachment]) -> str:
@@ -185,14 +187,30 @@ def handoffs(name: str, world: World, attachments: Sequence[Attachment],
 
 def sockets_sidecar(world: World, attachments: Sequence[Attachment]) -> List[dict]:
     """The sidecar's ``sockets`` block: each Socket's id, kind, point, side and what attached
-    (``None`` when nothing did): ``{"kind": "dungeon" | "city", "rooms": n}`` or
-    ``{"kind": "sites", "sites": n}``. Advisory."""
+    (``None`` when nothing did): ``{"kind": "dungeon" | "city", "rooms": n}``,
+    ``{"kind": "sites", "sites": n}`` or, on a point ``site`` Socket, the Site standing on
+    it, ``{"kind": "site", "site": <its kind>, "group": g}`` (``g`` the point's Group).
+    Advisory."""
     by_socket = {a.socket: a for a in attachments}
+    on_point: Dict[str, str] = {}
+    for a in attachments:
+        if a.kind != "ground" or a.sites is None:
+            continue
+        for site in (a.sites.get("sites", []) if isinstance(a.sites, Mapping) else a.sites.sites):
+            if isinstance(site, Mapping):
+                sock, kind = site.get("socket"), site["kind"]
+            else:
+                sock, kind = site.socket, site.kind
+            if sock is not None:
+                on_point[sock] = kind
     out = []
     for s in world.sockets:
         a = by_socket.get(s.id)
         what = None
-        if a is not None and a.kind == "ground":
+        if s.kind == "site":
+            if s.id in on_point:
+                what = {"kind": "site", "site": on_point[s.id], "group": s.ground["group"]}
+        elif a is not None and a.kind == "ground":
             sites = a.sites.get("sites", []) if isinstance(a.sites, Mapping) else \
                 (a.sites.sites if a.sites is not None else [])
             what = {"kind": "sites", "sites": len(sites)}
@@ -309,8 +327,9 @@ def attach_sites(world: World, socket: Socket, seed: int, *, biome: str = "plain
 
     ``world`` has every earlier Attachment's edits applied (:func:`apply_edits`), so the
     Sites stand on the dug ground and keep off the Socket's ``keep_clear`` shapes. ``seed``
-    is :func:`rooms_seed`'s: the Sites salt their own stream from it. Reads only the World's
-    terrain and the Socket."""
+    is :func:`rooms_seed`'s: the Sites salt their own stream from it. Each Site stands on one
+    of the World's ``site`` Sockets (its points, in the World's order) and names it. Reads
+    only the World's terrain, the Socket and the points."""
     from generators.sites.placement import place_sites
 
     if socket.kind != "ground" or "site" not in socket.accepts:
@@ -318,7 +337,8 @@ def attach_sites(world: World, socket: Socket, seed: int, *, biome: str = "plain
     if world.terrain is None:
         raise ValueError(f"Socket {socket.id!r}: its World has no terrain")
     placement = place_sites(world.terrain, socket, seed, biome=biome, control=control,
-                            inhabitant=inhabitant, rules=rules)
+                            inhabitant=inhabitant, rules=rules,
+                            points=[s for s in world.sockets if s.kind == "site"])
     return Attachment(socket=socket.id, kind=socket.kind, sites=placement, seed=int(seed),
                       controls={"biome": biome, "control": control, "inhabitant": inhabitant})
 

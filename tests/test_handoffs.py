@@ -58,6 +58,17 @@ def test_every_build_directory_holds_the_three_files(builds, zone_type):
     assert [s["id"] for s in side["sockets"]] == [s.id for s in world.sockets]
     # A point Site Socket may have nothing attached (null); every other Socket has its own.
     assert all(s["attached"] is not None for s in side["sockets"] if s["kind"] != "site")
+    # A point a Site stands on names the Site's kind and the point's Group (site-sockets).
+    sites = {s["socket"]: s["kind"] for s in side.get("sites", {}).get("sites", [])}
+    points = {s.id: s for s in world.sockets if s.kind == "site"}
+    assert set(sites) <= set(points)
+    for s in side["sockets"]:
+        if s["kind"] == "site":
+            want = None if s["id"] not in sites else \
+                {"kind": "site", "site": sites[s["id"]], "group": points[s["id"]].ground["group"]}
+            assert s["attached"] == want, s["id"]
+    if zone_type == "wilderness":
+        assert sites, "the wilderness build has Sites on points"
 
 
 @pytest.mark.parametrize("zone_type", ZONE_TYPES)
@@ -139,12 +150,19 @@ def test_decor_none_hands_on_no_rooms(tmp_path):
 
 def test_another_version_is_refused_named(builds, tmp_path):
     files = _files(builds["outdoor_dungeon"])
-    for kind, read in (("world", world_mod.load), ("attach", stages.load_attachments),
-                       ("rooms", room_context.load)):
-        doc = json.loads(files[kind].read_text(encoding="utf-8"))
-        doc["version"] = 99
-        bad = tmp_path / f"bad.{kind}.json"
-        bad.write_text(json.dumps(doc), encoding="utf-8")
-        with pytest.raises(ValueError) as e:
-            read(bad)
-        assert str(bad) in str(e.value) and "99" in str(e.value) and "1" in str(e.value)
+    for kind, read, version, older in (("world", world_mod.load, world_mod.VERSION, 1),
+                                       ("attach", stages.load_attachments, stages.ATTACH_VERSION, 1),
+                                       ("rooms", room_context.load, room_context.VERSION, None)):
+        assert json.loads(files[kind].read_text(encoding="utf-8"))["version"] == version
+        for got in (99, older):
+            if got is None:
+                continue
+            doc = json.loads(files[kind].read_text(encoding="utf-8"))
+            doc["version"] = got
+            bad = tmp_path / f"bad{got}.{kind}.json"
+            bad.write_text(json.dumps(doc), encoding="utf-8")
+            with pytest.raises(ValueError) as e:
+                read(bad)
+            msg = str(e.value)
+            assert str(bad) in msg and f"version {got};" in msg, msg
+            assert msg.endswith((f"reads version {version}", f"reads {version}")), msg

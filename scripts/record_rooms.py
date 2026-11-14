@@ -72,7 +72,7 @@ RECORDINGS: List[Dict] = [
      "plan": {"zone_type": "wilderness", "sites": "dense"}},
     {"name": "fortress_classic", "seed": 121,
      "plan": {"zone_type": "dungeon", "dungeon_theme": "fortress", "layout": "classic", "room_count": 10}},
-    {"name": "wilderness_orc", "seed": 118,
+    {"name": "wilderness_orc", "seed": 120,
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "orc"}},
     {"name": "wilderness_gnoll", "seed": 119,
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "gnoll"}},
