@@ -15,3 +15,4 @@ Index entry: `tasks.md` task 13.
 Write what a person sees, not what a test checks.
 
 ## Result
+✔ 12ea2a7 · thorough 3103 passed, 3 failed (2 temp-folder flakes, 1 pre-existing)

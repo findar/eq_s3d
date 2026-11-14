@@ -103,7 +103,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Card: [cards/12-first-look.md](cards/12-first-look.md)
   - Type: human · Depends: 9, 10, 11
 
-- [ ] 13. Acceptance section, thorough run
+- [x] 13. Acceptance section, thorough run
   - Card: [cards/13-acceptance.md](cards/13-acceptance.md)
   - Type: agent · Size: S · Depends: 12
   - Owns: docs/ACCEPTANCE.md
