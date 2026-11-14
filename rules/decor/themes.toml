@@ -1,0 +1,21 @@
+# rules/decor/themes.toml -- which decor layers each dungeon theme (and race) takes.
+#
+# theme = { layers = ["<file in layers/>", ...] }
+#
+# [races]
+# race = { layers = ["<file in layers/>", ...] }
+#
+# Theme names are the dungeon themes (ai/schema.py VALID_DUNGEON_THEMES); race names are the
+# dungeon races and the Site Inhabitants. A theme or race not listed takes no layer. Every
+# layer named must be a file in layers/.
+#
+# A build's layers merge in this order: its theme's, then its race's, then the ones the request
+# names (decor_layers), each once, where it first stands. How a layer merges onto rooms.toml
+# is in generators/decor/rules.py (load_decor).
+#
+# No theme takes a layer yet: the first one (tomb) arrives with step 15's worked example.
+#
+# tomb = { layers = ["tomb"] }
+#
+# [races]
+# goblin = { layers = ["goblin_clutter"] }
