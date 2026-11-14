@@ -38,6 +38,12 @@ delegated); the lead took each recommendation after review.
     a step 10 gap, now a follow-up. Outdoor dungeons are fit-limited (ruins expected ~36 %;
     farmsteads fit 1 of 39 seeds): gate is "largest share below task 6's 51 %". Dense clustering
     asserts the pooled measures; per-zone R (about 4 Sites a zone) is printed, not asserted.
+11. **Stock clustering is held at Normal, the stock density** (lead, 2026-11-14, task 11). The
+    plains bands come from stock zones at 0.3-0.5 Sites per 1e6 u², which Normal reproduces
+    (0.41). Dense is denser than any stock zone, so no stock clustering figure exists for it:
+    with kind-first, Dense pooled R is 1.03 (big recipes open new Groups). Dense asserts that
+    Sites still group (within 300 u 33-65 %, NN p10 108-191, pooled R below the pre-points
+    1.30); its R is printed. Supersedes decision 10's Dense clause.
 
 From the tasks:
 
