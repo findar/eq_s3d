@@ -57,7 +57,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: generators/world.py, tests/test_world.py, scripts/record_worlds.py, tests/fixtures/worlds/, tests/test_world_corpus.py
   - Reqs: 1, 2.1, 2.5, 2.6
 
-- [ ] 5. Sites stand on points
+- [x] 5. Sites stand on points
   - Card: [cards/05-placement.md](cards/05-placement.md)
   - Type: agent · Size: S · Depends: 3
   - Owns: generators/sites/placement.py, tests/test_site_placement.py
