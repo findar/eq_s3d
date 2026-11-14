@@ -231,10 +231,16 @@
     <!-- Non-fatal advisories from the last response, in plain words. -->
     <div id="warnings" role="status"></div>
 
+    <!-- Before the first build: the note alone, not a column of dashes. -->
+    <p id="panel-empty" class="empty-note">No zone yet.</p>
+
+    <!-- What the shown build has. A section, row, button or toggle the build
+         has nothing for hides (main.ts updatePanel). -->
+    <div id="panel-body" hidden>
     <h3>Plan</h3>
     <div class="row"><span>Mode</span><span id="m-mode">—</span></div>
     <div class="row"><span>Zone type</span><span id="m-zone-type">—</span></div>
-    <div class="row"><span>Rooms</span><span id="m-rooms">—</span></div>
+    <div class="row" id="r-rooms"><span>Rooms</span><span id="m-rooms">—</span></div>
     <div id="m-plan-extra"></div>
 
     <h3>Zone</h3>
@@ -245,27 +251,35 @@
     <div class="row"><span>Materials</span><span id="m-mats">—</span></div>
     <div class="row"><span>Lights</span><span id="m-lights">—</span></div>
     <div class="row"><span>Regions</span><span id="m-regions">—</span></div>
-    <div class="row"><span>Gates</span><span id="m-gates">—</span></div>
+    <div class="row" id="r-gates"><span>Gates</span><span id="m-gates">—</span></div>
 
     <!-- The sidecar's seeds block: the stage seeds this build used, resolved. -->
+    <section id="s-seeds">
     <h3>Seeds</h3>
-    <div class="row seed"><span>Rooms</span><span id="m-rooms-seed">—</span><button id="reroll-rooms" class="seed-btn" title="Rebuild this zone with a fresh rooms seed: same land, new rooms and Sites" disabled>⟳ reroll rooms</button></div>
-    <div class="row seed"><span>Decor</span><span id="m-decor-seed">—</span><button id="reroll-decor" class="seed-btn" title="Rebuild this zone with a fresh decor seed: same zone, new Props" disabled>⟳ reroll decor</button></div>
+    <div class="row seed" id="r-rooms-seed"><span>Rooms</span><span id="m-rooms-seed">—</span><button id="reroll-rooms" class="seed-btn" title="Rebuild this zone with a fresh rooms seed: same land, new rooms and Sites" disabled>⟳ reroll rooms</button></div>
+    <div class="row seed" id="r-decor-seed"><span>Decor</span><span id="m-decor-seed">—</span><button id="reroll-decor" class="seed-btn" title="Rebuild this zone with a fresh decor seed: same zone, new Props" disabled>⟳ reroll decor</button></div>
+    </section>
 
+    <section id="s-props">
     <h3>Props</h3>
     <div class="row"><span>Decor</span><span id="m-decor">—</span></div>
-    <div id="m-props"><span style="color:#555;font-size:11px">—</span></div>
+    <div id="m-props"></div>
+    </section>
 
     <h3>Bounds (u)</h3>
     <div class="row"><span>Width X</span><span id="m-wx">—</span></div>
     <div class="row"><span>Width Y</span><span id="m-wy">—</span></div>
     <div class="row"><span>Height Z</span><span id="m-wz">—</span></div>
 
+    <section id="s-pacing">
     <h3>Pacing</h3>
-    <div id="m-pacing"><span style="color:#555;font-size:11px">—</span></div>
+    <div id="m-pacing"></div>
+    </section>
 
+    <section id="s-content">
     <h3>Content</h3>
-    <div id="m-content"><span style="color:#555;font-size:11px">—</span></div>
+    <div id="m-content"></div>
+    </section>
 
     <!-- The latest build's files: native download links, probed per build. -->
     <section id="artifacts" aria-labelledby="artifacts-h">
@@ -277,11 +291,11 @@
 
     <h3>Overlays</h3>
     <label class="toggle"><input type="checkbox" id="t-wire" /> Wireframe</label>
-    <label class="toggle"><input type="checkbox" id="t-lights" checked /> Lights</label>
-    <label class="toggle"><input type="checkbox" id="t-regions" checked /> Regions</label>
-    <label class="toggle"><input type="checkbox" id="t-gates" checked /> Gates (lock/key)</label>
+    <label class="toggle" hidden><input type="checkbox" id="t-lights" checked /> Lights</label>
+    <label class="toggle" hidden><input type="checkbox" id="t-regions" checked /> Regions</label>
+    <label class="toggle" hidden><input type="checkbox" id="t-gates" checked /> Gates (lock/key)</label>
     <label class="toggle"><input type="checkbox" id="t-labels" checked /> Room IDs</label>
-    <label class="toggle" title="Show or hide the zone's trees (wilderness builds with trees)"><input type="checkbox" id="t-trees" checked disabled /> Trees</label>
+    <label class="toggle" title="Show or hide the zone's trees (wilderness builds with trees)" hidden><input type="checkbox" id="t-trees" checked /> Trees</label>
 
     <h3>Controls</h3>
     <p class="hint">Click viewport to capture mouse.<br>
@@ -290,6 +304,7 @@
       R or "Reset View" to return to start<br>
       M for top-down map<br>
       Esc release mouse</p>
+    </div>
   </aside>
 
   <div id="hint-overlay">Click to look around · WASD to move</div>
