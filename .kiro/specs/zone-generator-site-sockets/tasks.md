@@ -95,7 +95,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
 
 - [ ] 11. The clustering target and the gate, held
   - Card: [cards/11-bands-and-gate.md](cards/11-bands-and-gate.md)
-  - Type: agent · Size: S · Depends: 7, 8
+  - Type: agent · Size: S · Depends: 7, 8, 16
   - Owns: tests/test_site_bands.py, tests/test_site_builds.py (the outdoor-dungeon sweep only)
   - Reqs: 4, 5.3, 8
 
@@ -116,3 +116,9 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Card: [cards/15-close.md](cards/15-close.md)
   - Type: agent · Size: S · Depends: 14 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-site-sockets/, .kiro/specs/zone-generator/
+
+- [ ] 16. Kind first, then the point
+  - Card: [cards/16-kind-first.md](cards/16-kind-first.md)
+  - Type: agent · Size: M · Depends: 8
+  - Owns: generators/sites/placement.py, tests/test_site_placement.py, tests/test_attach_ground.py; recaptures: tests/test_layout_engine.py (wilderness and outdoor-dungeon hashes only), tests/test_site_builds.py (hashes only), tests/fixtures/rooms/ (recordings with Sites, by `scripts/record_rooms.py`)
+  - Reqs: 3.2

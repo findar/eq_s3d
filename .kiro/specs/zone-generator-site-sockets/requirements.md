@@ -104,11 +104,13 @@ sit in hamlets on good ground and a reroll moves them among those spots.
 
 1. The Sites stage SHALL attach each Site to one point Socket and record its Socket id in the
    Site's data.
-2. A Site's kind SHALL be drawn, by the biome's and Inhabitant's weights times the recipe's
-   likes at the point, from the kinds whose recipe ground and margin fit the point's Free radius
-   at the recipe's slope and keep a clear width from every earlier Site's ground; a point no
-   kind fits is passed over, and a Site with no point left is dropped and recorded (step 10
-   Req 4.3).
+2. A Site's kind SHALL be drawn first, by the biome's and Inhabitant's weights alone, from the
+   kinds that fit some point left; it SHALL then stand on the next point in the Group order
+   whose Free radius fits its recipe ground and margin at the recipe's slope and keeps a clear
+   width from every earlier Site's ground, the recipe's likes choosing among fitting points of
+   that Group. A Site with no point left is dropped and recorded (step 10 Req 4.3). *(Revised
+   2026-11-14, task 16: the first wording, likes times weights at each point, drifted the kind
+   mix off stock; `archive.md` decision 9.)*
 3. A point whose Free radius disc meets a Kept_Clear shape on the `ground` Socket (added by an
    earlier Attachment) SHALL be passed over.
 4. The Sites control SHALL still set how many Sites are tried (step 10's target); the Sites

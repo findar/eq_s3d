@@ -28,6 +28,10 @@ delegated); the lead took each recommendation after review.
 7. **The map shows every point**, used ones filled, unused hollow; `mapview.py` writes its
    world-to-pixel mapping on the SVG.
 8. **A Site-caused gate failure is not a stage reroll in this step** (`pipeline.py` untouched).
+9. **Kind first, then the point** (lead, 2026-11-14, from task 11's measurements). Drawing the
+   kind by weight x likes at each point drifted the mix off stock (wilderness farmsteads 13 % ->
+   5 %, outdoor dungeons 51 % ruins). The kind is drawn by weight alone, then stood on the next
+   fitting point in the Group order, likes choosing within the Group. Req 3.2 revised; task 16.
 
 From the tasks:
 
