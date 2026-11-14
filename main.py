@@ -22,7 +22,7 @@ from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, SCALE_CONTROLS, VALID_FEATURES, VALID_LAYOUTS, ZonePlan, available_overlays,
     available_rule_sets, available_wall_styles, VALID_SITES, available_inhabitants,
-    DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR,
+    DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR, decor_layers,
 )
 from core.env import env_value
 from core.paths import (
@@ -31,7 +31,7 @@ from core.paths import (
     assert_output_allowed,
     new_zone_id,
 )
-from generators.builder import BUILD_NAME_RE
+from generators.builder import BUILD_NAME_RE, with_decor_layers
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, LANDSCAPE_ZONE_TYPES,
@@ -150,6 +150,15 @@ def _rule_set_arg(value: str) -> str:
     return v
 
 
+def _decor_layer_arg(value: str) -> str:
+    """``--decor-layer`` converter: a decor layer under ``rules/decor/layers/``,
+    else exit 2 naming them."""
+    try:
+        return (decor_layers(value) or ("",))[0]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc))
+
+
 def cmd_generate(args) -> None:
     # Resolve the zone type. ``--zone-type`` / ``--theme`` share one dest and
     # are already converted + validated by ``_zone_type_arg`` (so a disabled or
@@ -179,7 +188,7 @@ def cmd_generate(args) -> None:
     # without ``--layout`` takes the plan default (graph on a dungeon /
     # outdoor dungeon since task 21; ``--layout classic`` for TinyKeep).
     for key in ("layout", "rule_set", "walls", "features", "finish", "structure", "clutter", "overlay",
-                "decor", "decor_seed", "rooms_seed"):
+                "decor", "decor_seed", "decor_layers", "rooms_seed"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
     # Sites (wilderness / outdoor dungeon): only named when given, so the
@@ -204,8 +213,9 @@ def cmd_generate(args) -> None:
     def factory(seed, rooms_seed=None):
         # ``rooms_seed`` is the pipeline's rooms reroll on a gate failure (task 19).
         p = plan if rooms_seed is None else dataclasses.replace(plan, rooms_seed=rooms_seed)
-        return plan_to_spec(p, seed=seed, edges=edges, trees=trees,
-                            trees_source="cli", sites_source=sites_source)
+        return with_decor_layers(plan_to_spec(p, seed=seed, edges=edges, trees=trees,
+                                              trees_source="cli", sites_source=sites_source),
+                                 p.decor_layers)
 
     # Build through the shared validated pipeline, so the CLI gets the same
     # "every room reachable on foot" guarantee as the server (dungeon/box
@@ -337,6 +347,10 @@ def main(argv: list[str] | None = None) -> None:
                         f"clutter) stand in the rooms (default {DEFAULT_DECOR}; needs EQ_PATH)")
     g.add_argument("--decor-seed", dest="decor_seed", type=_decor_seed_arg, default=None,
                    help="Reroll the Props alone (0-2147483647); default: the zone's seed")
+    g.add_argument("--decor-layer", dest="decor_layers", type=_decor_layer_arg, action="append",
+                   default=None, metavar="LAYER",
+                   help="A decor layer (rules/decor/layers/) on top of the dungeon theme's; "
+                        "repeat for more, merged in order")
     g.add_argument("--rooms-seed", dest="rooms_seed", type=_rooms_seed_arg, default=None,
                    help="Reroll the rooms and Sites on the same World (0-2147483647); "
                         "default: the zone's seed")

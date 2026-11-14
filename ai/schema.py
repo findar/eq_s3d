@@ -17,7 +17,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Mapping
+from typing import List, Optional, Dict, Any, Mapping, Tuple
 
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, canonical_zone_type, read_zone_type,
@@ -88,6 +88,36 @@ VALID_DECOR = ["none", "sparse", "normal", "dense"]
 DEFAULT_DECOR = "normal"
 DECOR_ZONE_TYPES = ("dungeon", "city", "wilderness", "outdoor_dungeon")
 SEED_MAX = 2_147_483_647
+
+# Decor layers (decor-rules step 15, Req 2): rules/decor/layers/<name>.toml, merged
+# onto rooms.toml by generators.decor.rules.load_decor. Read with a plain glob, as
+# the rule sets are: that module imports this one. The builder reads the folder
+# from here too, so the two agree.
+RULES_DECOR_DIR = Path(__file__).resolve().parent.parent / "rules" / "decor"
+
+
+def available_decor_layers(rules_dir: Optional[Path] = None) -> List[str]:
+    """The decor layer names in ``rules/decor/layers/`` (sorted)."""
+    d = Path(rules_dir) if rules_dir is not None else RULES_DECOR_DIR
+    return sorted(p.stem for p in (d / "layers").glob("*.toml"))
+
+
+def decor_layers(value: Any, rules_dir: Optional[Path] = None) -> Tuple[str, ...]:
+    """A request's extra decor layers: None, "" or [] for none; a name or a list of
+    names, each a file in ``rules/decor/layers/``, each kept once where it first
+    stands. Anything else raises ``ValueError`` naming the known layers."""
+    if value is None or value == "":
+        return ()
+    names = [value] if isinstance(value, str) else value
+    if not isinstance(names, (list, tuple)) or any(not isinstance(n, str) for n in names):
+        raise ValueError(f"decor_layers {value!r} is not a list of decor layer names")
+    names = [n.strip() for n in names if n.strip()]
+    known = available_decor_layers(rules_dir)
+    for n in names:
+        if n not in known:
+            raise ValueError(f"decor_layers {n!r} is not one of: "
+                             + (", ".join(known) if known else "none (rules/decor/layers/ holds no layer yet)"))
+    return tuple(dict.fromkeys(names))
 
 
 def decor_seed(value: Any, name: str = "decor_seed") -> Optional[int]:
@@ -202,6 +232,10 @@ class ZonePlan:
     # Props in rooms (dungeon, city, outdoor dungeon; wilderness ignores them).
     decor: str = ""                  # "" (the default, normal) or one of VALID_DECOR
     decor_seed: Optional[int] = None # None: the zone's seed salts them; else rerolls the Props alone
+    # Decor layers on top of the theme's (rules/decor/themes.toml). Only Decor reads them: they
+    # never reach the Zone_Spec's fields (generators.builder.with_decor_layers carries them),
+    # and ``to_dict`` leaves them out while empty.
+    decor_layers: Tuple[str, ...] = ()
     # The Attach stage's seed: None is the zone's seed; else rerolls the rooms and Sites alone.
     rooms_seed: Optional[int] = None
 
@@ -284,13 +318,19 @@ class ZonePlan:
             raise ValueError(f"decor {self.decor!r} is not one of: {', '.join(VALID_DECOR)} "
                              f"(or \"\" for the default, {DEFAULT_DECOR})")
         self.decor_seed = decor_seed(self.decor_seed)
+        self.decor_layers = decor_layers(self.decor_layers)
         self.rooms_seed = rooms_seed(self.rooms_seed)
         return self
 
     def to_dict(self) -> Dict[str, Any]:
         # The emitted dict carries ``zone_type`` and never a legacy ``theme``
-        # key (Req 11.1).
-        return asdict(self)
+        # key (Req 11.1). ``decor_layers`` only when some are named, so a plan
+        # naming none is the dict it always was.
+        out = asdict(self)
+        layers = out.pop("decor_layers", ())
+        if layers:
+            out["decor_layers"] = list(layers)
+        return out
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any],
