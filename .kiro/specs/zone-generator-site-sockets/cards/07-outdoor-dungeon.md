@@ -18,3 +18,4 @@ Index entry: `tasks.md` task 7. Requirements 5, 7.2. Design "The outdoor dungeon
 A room's capsule must cover its corners: half the short side times √2, as finding 3 measured. Stacked Levels put rooms over each other: take every room. Kept_Clear never moves the Spawn. Trees keep step 5's ground; don't change what they read.
 
 ## Result
+✔ 570ff4f, 2c5e5d2 · 3098 passed

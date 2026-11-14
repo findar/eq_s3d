@@ -69,7 +69,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: generators/stages.py, generators/wilderness/build.py (`_sites` only), tests/test_attach_ground.py, tests/test_handoffs.py; recaptures: tests/test_layout_engine.py (wilderness and outdoor-dungeon `.eqg` hashes only), tests/test_site_builds.py (STEP10 hashes only), tests/test_site_decor_builds.py (hashes only), tests/fixtures/rooms/ (recordings with Sites, by `scripts/record_rooms.py`)
   - Reqs: 3, 6.1–6.4, 7
 
-- [ ] 7. The outdoor dungeon keeps its dungeon clear
+- [x] 7. The outdoor dungeon keeps its dungeon clear
   - Card: [cards/07-outdoor-dungeon.md](cards/07-outdoor-dungeon.md)
   - Type: agent · Size: M · Depends: 6
   - Owns: generators/stages.py (`entrance_keep_clear` only), generators/outdoor_dungeon.py (`keep_clear_shapes` deleted), generators/sites/placement.py (`site_target`'s floor only), tests/test_attach_ground.py, tests/test_world_corpus.py + tests/test_site_builds.py (their `keep_clear_shapes` uses); recaptures: tests/test_layout_engine.py (outdoor-dungeon `.eqg` hash only), tests/test_site_builds.py (outdoor-dungeon hashes only), tests/fixtures/rooms/ (`outdoor_*` recordings with Sites)
