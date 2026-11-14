@@ -1,4 +1,5 @@
-"""The World and Socket types (world-sockets Req 1.1, 1.4, 1.5, 5.3; design P1)."""
+"""The World and Socket types (world-sockets Req 1.1, 1.4, 1.5, 5.3; design P1), and the
+point Site Sockets a World offers (site-sockets Req 1, 2.1; design P1)."""
 
 from __future__ import annotations
 
@@ -42,6 +43,13 @@ def _ground() -> Socket:
                   ground={"keep_clear": [(1.0, 2.0, 3.0, 4.0, ODD)], "spawn": (12.0, ODD, -0.0)})
 
 
+def _site() -> Socket:
+    return Socket("site0", "site", x=ODD, y=-0.0, z=3.25, accepts=("site",),
+                  ground={"group": 0, "rank": 0, "free": {"5": 61.0, "8": ODD, "10": 160.0},
+                          "height_rank": 0.4213, "clearing": 0.9, "water_d": None,
+                          "zoneline_d": 512.5, "hill": False})
+
+
 WORLDS = {
     "root": lambda: World(recipe={"zone_type": "dungeon", "seed": 7},
                           sockets=[Socket("root", "root", accepts=("dungeon", "city"))]),
@@ -52,6 +60,8 @@ WORLDS = {
         spawn=(ODD, -0.0, 4.5), sockets=[_hillside(), _ground()]),
     "ground": lambda: World(recipe={"zone_type": "wilderness", "seed": 1}, terrain=_terrain(),
                             spawn=(0.0, 0.0, 1.0), sockets=[_ground()]),
+    "ground+site": lambda: World(recipe={"zone_type": "wilderness", "seed": 1}, terrain=_terrain(),
+                                 spawn=(0.0, 0.0, 1.0), sockets=[_ground(), _site()]),
     "door": lambda: World(sockets=[Socket("door0", "door", x=ODD, width=8.0, height=12.0,
                                           accepts=("room",))]),
 }
@@ -104,6 +114,27 @@ def test_another_version_is_refused_by_name(tmp_path):
         W.load(path)
 
 
+def test_a_site_socket_keeps_its_point_exactly():
+    site = World.from_json(WORLDS["ground+site"]().to_json()).socket("site0")
+    assert site == _site() and site.kind == "site" and site.accepts == ("site",)
+    assert site.x == ODD and math.copysign(1.0, site.y) == -1.0
+    assert site.ground["free"]["8"] == ODD and site.ground["water_d"] is None
+
+
+def test_a_version_1_file_is_refused_by_name(tmp_path):
+    """Site-sockets Req 1.2: a World written before point Sockets is refused, naming the file
+    and both versions."""
+    assert W.VERSION == 2
+    d = WORLDS["root"]().to_dict()
+    d["version"] = 1
+    for s in d["sockets"]:
+        s["version"] = 1
+    path = tmp_path / "v1.world.json"
+    path.write_text(json.dumps(d), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"v1\.world\.json.*World version 1; this reads version 2"):
+        W.load(path)
+
+
 def test_unknown_kind_and_non_finite_numbers_are_refused():
     with pytest.raises(ValueError, match="kind"):
         Socket("x", "tower")
@@ -126,6 +157,7 @@ def test_loads_without_the_wilderness_or_outdoor_dungeon():
 # -- the World stage (task 3; design P2, P3) ---------------------------------
 
 LANDSCAPE_SEEDS = [(7, None), (3, {"E": "river"}), (6, {"N": "zoneline"})]
+#: Each zone type's Sockets before its points (``site0``, ``site1``, ... follow, landscapes only).
 SOCKETS = {"dungeon": [("root", "root")], "city": [("root", "root")],
            "wilderness": [("ground", "ground")],
            "outdoor_dungeon": [("hill0", "hillside"), ("ground", "ground")]}
@@ -147,8 +179,46 @@ def test_each_zone_type_offers_its_sockets_and_the_same_text(zone_type):
     text = w.to_json()
     assert W.world_for(zone_type, 11, edges={"E": "river"}).to_json() == text
     assert World.from_json(text) == w
-    assert [(s.id, s.kind) for s in w.sockets] == SOCKETS[zone_type]
+    head = SOCKETS[zone_type]
+    assert [(s.id, s.kind) for s in w.sockets[:len(head)]] == head
+    points = w.sockets[len(head):]
+    assert [(s.id, s.kind) for s in points] == [(f"site{k}", "site") for k in range(len(points))]
     assert (w.terrain is None) == (zone_type in ("dungeon", "city"))
+    assert bool(points) == (w.terrain is not None)
+
+
+@pytest.mark.parametrize("zone_type", ["wilderness", "outdoor_dungeon"])
+def test_points_are_site_points_on_the_worlds_own_inputs(zone_type):
+    """The ``site`` Sockets are ``site_points`` of the World's terrain, Spawn, seed and biome
+    (an outdoor dungeon's handed the hillside footprint), in rank order, after ``ground``."""
+    from generators.sites.points import site_points
+
+    w = W.world_for(zone_type, 5)
+    hill = w.socket("hill0").ground["footprint"] if zone_type == "outdoor_dungeon" else None
+    want = site_points(w.terrain, w.spawn, 5, w.recipe["biome"], hill=hill)
+    got = [s for s in w.sockets if s.kind == "site"]
+    assert [(s.id, s.x, s.y, s.z, s.ground) for s in got] == \
+        [(p.id, p.x, p.y, p.z, p.ground()) for p in want]
+    kinds = [s.kind for s in w.sockets]
+    assert kinds.index("site") == kinds.index("ground") + 1
+    if zone_type == "outdoor_dungeon":
+        assert any(s.ground["hill"] for s in got)
+
+
+def test_world_stage_reads_no_site_control(monkeypatch):
+    """Req 2.1: the points read no Sites control or Inhabitant (patched to raise)."""
+    from generators.sites import placement
+    from generators.sites.rules import SiteRules
+
+    want = W.world_for("outdoor_dungeon", 4).to_json()
+
+    def boom(*a, **k):
+        raise AssertionError("the World stage read a Sites control or Inhabitant")
+    for name in ("density", "draw_inhabitant", "draw_kind", "kind_chances", "kind_weights",
+                 "inhabitant_chances", "recipe_for"):
+        monkeypatch.setattr(SiteRules, name, boom)
+    monkeypatch.setattr(placement, "site_target", boom)
+    assert W.world_for("outdoor_dungeon", 4).to_json() == want
 
 
 @pytest.mark.parametrize("seed,edges", LANDSCAPE_SEEDS)

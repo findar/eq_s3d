@@ -663,7 +663,7 @@
    "kind": "hillside",
    "level": 0,
    "side": "E",
-   "version": 1,
+   "version": 2,
    "width": 40.0,
    "x": 400.0,
    "y": 0.0,
@@ -682,12 +682,186 @@
    "kind": "ground",
    "level": 0,
    "side": "",
-   "version": 1,
+   "version": 2,
    "width": 0.0,
    "x": 460.0,
    "y": 140.0,
    "yaw": 0.0,
    "z": -2.608506679534912
+  },
+  {
+   "accepts": ["site"],
+   "ground": {
+    "clearing": 0.8,
+    "free": {
+     "10": 40.75,
+     "5": 0.0,
+     "6": 2.0,
+     "8": 39.0
+    },
+    "group": 0,
+    "height_rank": 0.115,
+    "hill": false,
+    "rank": 0,
+    "water_d": 640.0,
+    "zoneline_d": null
+   },
+   "height": 0.0,
+   "id": "site0",
+   "kind": "site",
+   "level": 0,
+   "side": "",
+   "version": 2,
+   "width": 0.0,
+   "x": 459.14,
+   "y": -262.08,
+   "yaw": 0.0,
+   "z": 13.979074662685404
+  },
+  {
+   "accepts": ["site"],
+   "ground": {
+    "clearing": 1.0,
+    "free": {
+     "10": 141.0,
+     "5": 0.0,
+     "6": 31.5,
+     "8": 133.75
+    },
+    "group": 1,
+    "height_rank": 0.9376,
+    "hill": true,
+    "rank": 1,
+    "water_d": 656.0,
+    "zoneline_d": null
+   },
+   "height": 0.0,
+   "id": "site1",
+   "kind": "site",
+   "level": 0,
+   "side": "",
+   "version": 2,
+   "width": 0.0,
+   "x": -171.72,
+   "y": -39.23,
+   "yaw": 0.0,
+   "z": 130.43808724212647
+  },
+  {
+   "accepts": ["site"],
+   "ground": {
+    "clearing": 1.0,
+    "free": {
+     "10": 116.5,
+     "5": 0.0,
+     "6": 0.0,
+     "8": 58.25
+    },
+    "group": 1,
+    "height_rank": 0.7583,
+    "hill": true,
+    "rank": 2,
+    "water_d": 488.3,
+    "zoneline_d": null
+   },
+   "height": 0.0,
+   "id": "site2",
+   "kind": "site",
+   "level": 0,
+   "side": "",
+   "version": 2,
+   "width": 0.0,
+   "x": -37.3,
+   "y": 75.66,
+   "yaw": 0.0,
+   "z": 112.11516818237304
+  },
+  {
+   "accepts": ["site"],
+   "ground": {
+    "clearing": 1.0,
+    "free": {
+     "10": 52.25,
+     "5": 32.5,
+     "6": 32.5,
+     "8": 32.5
+    },
+    "group": 2,
+    "height_rank": 0.9688,
+    "hill": true,
+    "rank": 3,
+    "water_d": 707.7,
+    "zoneline_d": null
+   },
+   "height": 0.0,
+   "id": "site3",
+   "kind": "site",
+   "level": 0,
+   "side": "",
+   "version": 2,
+   "width": 0.0,
+   "x": -139.19,
+   "y": -147.37,
+   "yaw": 0.0,
+   "z": 134.0653913230896
+  },
+  {
+   "accepts": ["site"],
+   "ground": {
+    "clearing": 1.0,
+    "free": {
+     "10": 59.75,
+     "5": 18.25,
+     "6": 19.75,
+     "8": 59.75
+    },
+    "group": 3,
+    "height_rank": 0.8577,
+    "hill": true,
+    "rank": 4,
+    "water_d": 632.5,
+    "zoneline_d": null
+   },
+   "height": 0.0,
+   "id": "site4",
+   "kind": "site",
+   "level": 0,
+   "side": "",
+   "version": 2,
+   "width": 0.0,
+   "x": -241.56,
+   "y": 160.16,
+   "yaw": 0.0,
+   "z": 122.73895951080323
+  },
+  {
+   "accepts": ["site"],
+   "ground": {
+    "clearing": 1.0,
+    "free": {
+     "10": 79.25,
+     "5": 0.0,
+     "6": 29.75,
+     "8": 48.0
+    },
+    "group": 4,
+    "height_rank": 0.7778,
+    "hill": true,
+    "rank": 5,
+    "water_d": 506.0,
+    "zoneline_d": null
+   },
+   "height": 0.0,
+   "id": "site5",
+   "kind": "site",
+   "level": 0,
+   "side": "",
+   "version": 2,
+   "width": 0.0,
+   "x": -102.29,
+   "y": 190.1,
+   "yaw": 0.0,
+   "z": 113.05630855941773
   }
  ],
  "spawn": [460.0,140.0,-2.608506679534912],
@@ -839,5 +1013,5 @@
   "shape": [32,32],
   "water_level": 0.0
  },
- "version": 1
+ "version": 2
 }

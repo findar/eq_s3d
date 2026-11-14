@@ -39,10 +39,12 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-VERSION = 1
+#: Version 2 (site-sockets step 13) adds the ``site`` Sockets; a version 1 file is refused.
+VERSION = 2
 
 #: Socket kinds. ``door`` is reserved (design question 3): it is read, but nothing makes one.
-KINDS = ("root", "hillside", "ground", "door")
+#: ``site`` is a point a Site may stand on (site-sockets design "Point Sockets").
+KINDS = ("root", "hillside", "ground", "site", "door")
 
 #: One character per cell type (the wilderness matrix's Node_Types).
 NODE_CODES: Dict[str, str] = {
@@ -183,7 +185,7 @@ class Socket:
     """A typed attach point a World offers (design "The Socket").
 
     ``x, y, z`` is the attach point (a hillside's approach foot, ``z`` the open ground there;
-    ground: the Spawn; root: the origin); ``yaw`` the way in faces, ``side`` its compass side
+    ground: the Spawn; root: the origin; site: the point, ``z`` the ground there); ``yaw`` the way in faces, ``side`` its compass side
     (N, S, E, W, or "" where it has none); ``width, height`` the opening (0 where it doesn't
     apply); ``level`` the Level (0 today); ``accepts`` what may attach (``"dungeon"``,
     ``"city"``, ``"site"``); ``ground`` the kind's own data, plain JSON with exact numbers.
@@ -391,7 +393,10 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
       point before any Apron lowers it), from the same landscape as ``terrain`` (task 20).
     - Sockets, in attach order: an outdoor dungeon's ``hill0`` (``hillside``, from
       ``outdoor_dungeon.hillside_socket``), then ``ground`` (Sites; its ``keep_clear`` is
-      empty until an Attachment adds to it).
+      empty until an Attachment adds to it), then the point Sockets ``site0``, ``site1``, ...
+      (``site``, from ``sites.points.site_points`` on the World's own seed, biome, terrain and
+      Spawn, in rank order; ``ground`` holds the point's data). On an outdoor dungeon the
+      points are handed the hillside Socket's footprint, so the ones over the hill come last.
 
     ``landform`` is the request (a ``Landform`` or its dict): an outdoor dungeon's defaults
     to ``DEFAULT_HOST_HILL`` and its ``zone_size`` to ``OUTDOOR_DUNGEON_ZONE_SIZE``. A
@@ -449,6 +454,11 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
                           accepts=("site",),
                           ground={"masks": ["rim_seal", "playable_interior"],
                                   "spawn": list(spawn), "keep_clear": []}))
+    from generators.sites.points import site_points
+    hill = sockets[0].ground["footprint"] if zone_type == "outdoor_dungeon" else None
+    for p in site_points(terrain, spawn, seed, biome, hill=hill):
+        sockets.append(Socket(p.id, "site", x=p.x, y=p.y, z=p.z, accepts=("site",),
+                              ground=p.ground()))
     recipe = {"zone_type": zone_type, "seed": seed, "biome": biome, "edges": edges,
               "zone_size": zone_size,
               "landform": None if placed is None else placed.to_dict()}

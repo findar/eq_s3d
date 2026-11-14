@@ -51,7 +51,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: generators/sites/points.py, tests/test_site_points.py
   - Reqs: 2.2–2.5
 
-- [ ] 4. The World offers point Sockets
+- [x] 4. The World offers point Sockets
   - Card: [cards/04-world-points.md](cards/04-world-points.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: generators/world.py, tests/test_world.py, scripts/record_worlds.py, tests/fixtures/worlds/, tests/test_world_corpus.py

@@ -46,6 +46,8 @@ def test_a_recording_loads_as_recorded(path):
 
 
 def test_the_corpus_covers_every_biome_side_water_case_and_socket_kind():
+    """... and point Sockets (site-sockets task 4): a Group of two or more points in each
+    landscape zone type, and an outdoor dungeon's points over its hill."""
     assert record_worlds.missing(list(CORPUS.values())) == {}
 
 

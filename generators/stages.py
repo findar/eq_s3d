@@ -29,8 +29,9 @@ import numpy as np
 from generators.world import Socket, World
 
 #: Socket kinds in the order they attach (Req 3.3): the Apron digs the ground before the
-#: Sites see it, and Sites keep off the Tunnel and Apron.
-ORDER = ("root", "hillside", "ground")
+#: Sites see it, and Sites keep off the Tunnel and Apron. A ``site`` Socket (a point a Site
+#: may stand on) comes last; nothing attaches to it here yet (site-sockets task 6).
+ORDER = ("root", "hillside", "ground", "site")
 
 #: A Kept_Clear shape: the capsule of radius ``r`` round ``(x0, y0)-(x1, y1)``.
 ClearShape = Tuple[float, float, float, float, float]

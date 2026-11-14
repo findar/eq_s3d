@@ -6,7 +6,9 @@ type, seed and world controls, saved as the World's stable JSON text in
 Attachment without making terrain, building a TER or running the zone gate. Together the
 recordings hold every biome, every approach side (N, S, E, W), water and none (for each
 landscape zone type), and every Socket kind the World stage makes (``door`` is reserved and
-nothing makes one, so it is not recorded).
+nothing makes one, so it is not recorded). Since World version 2 (site-sockets step 13) they
+also hold point Site Sockets in Groups of two or more, for each landscape zone type, and an
+outdoor dungeon's points over its hill.
 
 Usage::
 
@@ -44,8 +46,8 @@ SIDES = ("N", "S", "E", "W")
 #: SEED, not asked for; ``side`` is what that seed gives (the ``hill0`` Socket's side), and the
 #: test holds the file to it. Seeds were found by sweeping 1-12 (all-mountain edges: 1 E, 2 W,
 #: 4 S, 11 N; 11 is the only N among them). Water comes from a ``river`` edge: with
-#: none, no seed has water. Sizes: about 1 KB for a root World, 28 KB for a dry outdoor
-#: dungeon, 41 KB for a wet one, 79 KB for a dry wilderness and 142 KB for a wet one.
+#: none, no seed has water. Sizes: under 1 KB for a root World, 31 KB for a dry outdoor
+#: dungeon, 44 KB for a wet one, 83 KB for a dry wilderness and 147 KB for a wet one.
 RECORDINGS: List[Dict] = [
     {"name": "dungeon_root", "zone_type": "dungeon", "seed": 7},
     {"name": "city_root", "zone_type": "city", "seed": 7},
@@ -92,9 +94,11 @@ def is_wet(world: World) -> bool:
 
 def coverage(worlds: Sequence[World]) -> Dict[str, set]:
     """What a set of Worlds holds: zone types, biomes, approach sides (``hillside`` Sockets),
-    water (``(zone_type, wet)`` for the landscape zone types) and Socket kinds."""
+    water (``(zone_type, wet)`` for the landscape zone types), Socket kinds, and point cases
+    (``(zone_type, "group of 2+")`` for a Group of two or more points, ``(zone_type, "over
+    the hill")`` for a point over the hillside footprint)."""
     out: Dict[str, set] = {"zone_type": set(), "biome": set(), "side": set(), "water": set(),
-                           "kind": set()}
+                           "kind": set(), "points": set()}
     for w in worlds:
         zt = w.recipe["zone_type"]
         out["zone_type"].add(zt)
@@ -102,10 +106,17 @@ def coverage(worlds: Sequence[World]) -> Dict[str, set]:
             out["biome"].add(w.recipe["biome"])
         if zt in LANDSCAPE:
             out["water"].add((zt, is_wet(w)))
+        groups: Dict[int, int] = {}
         for s in w.sockets:
             out["kind"].add(s.kind)
             if s.kind == "hillside":
                 out["side"].add(s.side)
+            if s.kind == "site":
+                groups[s.ground["group"]] = groups.get(s.ground["group"], 0) + 1
+                if s.ground.get("hill"):
+                    out["points"].add((zt, "over the hill"))
+        if any(n >= 2 for n in groups.values()):
+            out["points"].add((zt, "group of 2+"))
     return out
 
 
@@ -116,7 +127,8 @@ def wanted() -> Dict[str, set]:
 
     return {"zone_type": set(DEFINED_ZONE_TYPES), "biome": set(V1_BIOMES), "side": set(SIDES),
             "water": {(zt, wet) for zt in LANDSCAPE for wet in (False, True)},
-            "kind": set(KINDS) - {"door"}}
+            "kind": set(KINDS) - {"door"},
+            "points": {(zt, "group of 2+") for zt in LANDSCAPE} | {("outdoor_dungeon", "over the hill")}}
 
 
 def missing(worlds: Sequence[World]) -> Dict[str, List]:
