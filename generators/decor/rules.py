@@ -37,12 +37,19 @@ build time such a line drops (archive decision 14), so an unmet line is a report
 failure: ``scripts/topology_rules.py check rules/decor`` prints them, and fails on them only
 with ``--strict`` (meant for after the tag review, task 4).
 
+**Decor layers** (step 15): ``layers/<name>.toml`` files, each a ``[layer]`` header (``name``,
+``description``) and any of ``rooms.toml``'s sections but ``default`` and ``moves``, merged onto
+the base at load time (``load_decor``'s ``layers``; the merge rules are in its docstring).
+``themes.toml`` says which layers a dungeon theme, and a race, takes (``layers_for``);
+``layer_names`` lists the folder.
+
 Every bad value is named by file, entry and field (``RuleSetError``), as step 9's and step
 10's loaders do. Nothing here places anything: that's ``generators/decor/placement.py``.
 """
 
 from __future__ import annotations
 
+import copy
 import random
 import tomllib
 from dataclasses import dataclass, field
@@ -55,7 +62,7 @@ from generators.room_scales import SCALES, Layer, combine
 from generators.semantics import ROOM_TYPES
 from generators.sites.rules import POI_PURPOSES as SITE_POI_PURPOSES, SITE_KINDS, SITES_DIR, SITES_FILE
 from generators.topology.graph import ROOM_KINDS
-from generators.topology.ruleset import CheckError, RuleSetError, _Checker, _is_number, _one_of, _read_toml
+from generators.topology.ruleset import CheckError, RuleSetError, _Checker, _is_number, _one_of, _read_toml, _show
 
 ROOMS_FILE, SETS_FILE = "rooms.toml", "sets.toml"
 
@@ -98,6 +105,9 @@ class Member:
     at: str
     count: Tuple[int, int] = (1, 1)
     category: str = "other"
+    #: Where it was written, for reports, when a decor layer touched its Group (else
+    #: ``("", "", "")``: ``rooms.toml``, ``groups.<name>``, ``members[i]``).
+    where: Tuple[str, str, str] = ("", "", "")
 
     @property
     def mount(self) -> str:
@@ -178,6 +188,8 @@ class DecorRules:
     zones: Mapping[str, Recipe] = field(default_factory=dict)
     #: Kinds a room holds at most once (``once``, task 22: what stock rooms hold once).
     once: FrozenSet[str] = frozenset()
+    #: The decor layers merged onto the base, in merge order (``load_decor``'s ``layers``).
+    layers: Tuple[str, ...] = ()
 
     # -- lookup ---------------------------------------------------------------
 
@@ -313,7 +325,9 @@ def _kinds(chk: _Checker, v: Any, where: str, fld: str, kinds: Mapping[str, str]
 
 
 def _line(chk: _Checker, item: Any, where: str, i: int, arrangements: Sequence[str], kinds: Mapping[str, str],
-          groups: Mapping[str, Any], file: str, fld: str = "props") -> Optional[Line]:
+          groups: Mapping[str, Any], file: str, fld: str = "props",
+          origin: Optional[Tuple[str, int]] = None) -> Optional[Line]:
+    """``origin`` is the (file, index) the line was written at, when a layer merged it."""
     p = f"{fld}[{i}]."
     t = chk.table(item, where, f"{fld}[{i}]", '{ kind = "torch", at = "on_wall", count = [1, 2] }')
     if t is None:
@@ -359,11 +373,13 @@ def _line(chk: _Checker, item: Any, where: str, i: int, arrangements: Sequence[s
     else:
         g = groups[group]
         category = g.category if isinstance(g, Group) else "other"
-    return Line(names, group, at, count, chance, by, at_least, category, (file, where, f"{fld}[{i}]"))
+    src, idx = origin if origin is not None else (file, i)
+    return Line(names, group, at, count, chance, by, at_least, category, (src, where, f"{fld}[{idx}]"))
 
 
 def _lines(chk: _Checker, raw: Any, where: str, arrangements: Sequence[str], kinds: Mapping[str, str],
-           groups: Mapping[str, Any], file: str) -> Tuple[Line, ...]:
+           groups: Mapping[str, Any], file: str,
+           origins: Optional[Sequence[Tuple[str, int]]] = None) -> Tuple[Line, ...]:
     tbl = chk.table(raw, where.rpartition(".")[0] or "top level", where.rpartition(".")[2] or where,
                     '{ props = [ { kind = "torch", at = "on_wall" } ] }')
     if tbl is None:
@@ -372,13 +388,18 @@ def _lines(chk: _Checker, raw: Any, where: str, arrangements: Sequence[str], kin
     arr = chk.array(tbl.get("props", []), where, "props", '[ { kind = "torch", at = "on_wall" } ]')
     out = []
     for i, item in enumerate(arr or ()):
-        got = _line(chk, item, where, i, arrangements, kinds, groups, file)
+        origin = origins[i] if origins is not None and i < len(origins) else None
+        got = _line(chk, item, where, i, arrangements, kinds, groups, file, origin=origin)
         if got is not None:
             out.append(got)
     return tuple(out)
 
 
-def _group(chk: _Checker, name: str, raw: Any, kinds: Mapping[str, str]) -> Optional[Group]:
+def _group(chk: _Checker, name: str, raw: Any, kinds: Mapping[str, str], start: int = 0,
+           origins: Optional[Sequence[Tuple[str, int]]] = None) -> Optional[Group]:
+    """``start``: members already in the Group before these (a layer's ``mode = "add"``), so
+    the anchor rule holds across both. ``origins``: each member's (file, index), when a layer
+    touched the Group."""
     where = f"groups.{name}"
     tbl = chk.table(raw, "groups", name, '{ members = [ { kind = "table", at = "anchor" }, ... ] }')
     if tbl is None:
@@ -401,19 +422,22 @@ def _group(chk: _Checker, name: str, raw: Any, kinds: Mapping[str, str]) -> Opti
         if at is not None and at not in MEMBER_AT:
             chk.fail(where, p + "at", at, _one_of(MEMBER_AT))
             at = None
-        elif at is not None and (at == "anchor") != (i == 0):
+        elif at is not None and (at == "anchor") != (i + start == 0):
             chk.fail(where, p + "at", at, '"anchor" for the first member and only the first',
                      raw=False)
             at = None
         count = _count(chk, t["count"], where, p + "count") if "count" in t else (1, 1)
-        if i == 0 and count not in (None, (1, 1)):
+        if i + start == 0 and count not in (None, (1, 1)):
             chk.fail(where, p + "count", t["count"], "1: a Group has one anchor")
             count = None
         if names is None or at is None or count is None:
             ok = False
             continue
-        members.append(Member(names, at, count, kinds[names[0]]))
-    if not arr:
+        src: Tuple[str, str, str] = ("", "", "")
+        if origins is not None and i < len(origins):
+            src = (origins[i][0], where, f"members[{origins[i][1]}]")
+        members.append(Member(names, at, count, kinds[names[0]], src))
+    if not arr and not start:
         chk.fail(where, "members", arr, "at least one member, the anchor first")
         return None
     return Group(name, tuple(members)) if ok else None
@@ -450,8 +474,7 @@ def _layer(chk: _Checker, raw: Any, where: str, allow_bare: bool = True) -> Laye
 
 def _weights(chk: _Checker, raw: Any) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]]]:
     tbl = chk.table(raw, "top level", "weights", "[weights.default]") or {}
-    sections = {"zone_types": VALID_ZONE_TYPES, "races": _races(), "themes": VALID_DUNGEON_THEMES,
-                "kinds": ROOM_KINDS, "types": sorted(ROOM_TYPES)}
+    sections = _weight_sections()
     chk.keys(tbl, "weights", ("default", "controls") + tuple(sections), required=("default", "controls"))
     out: Dict[str, Any] = {"default": Layer()}
     if "default" in tbl:
@@ -488,6 +511,12 @@ def _weights(chk: _Checker, raw: Any) -> Tuple[Dict[str, Any], Dict[str, Dict[st
             chk.fail("weights.controls", name, "nothing", "an entry for every Decor control (" + ", ".join(CONTROLS)
                      + ")", raw=True)
     return out, controls
+
+
+def _weight_sections() -> Dict[str, Sequence[str]]:
+    """The named Weights sections (Layers by name) and the names each may hold."""
+    return {"zone_types": VALID_ZONE_TYPES, "races": _races(), "themes": VALID_DUNGEON_THEMES,
+            "kinds": ROOM_KINDS, "types": sorted(ROOM_TYPES)}
 
 
 def _races() -> List[str]:
@@ -570,11 +599,90 @@ def _once(chk: _Checker, raw: Any, kinds: Mapping[str, str]) -> FrozenSet[str]:
     return frozenset(out)
 
 
-def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
-    """Load and check ``rooms.toml`` and ``sets.toml`` from ``path`` (a folder); raises
-    ``RuleSetError`` with every failure of both. Kinds and Sets are the catalogue's
+def _recipe_sections() -> Tuple[Tuple[str, Sequence[str]], ...]:
+    """The named recipe sections of ``rooms.toml`` and the names each may hold."""
+    return (("kinds", ROOM_KINDS), ("types", sorted(ROOM_TYPES)), ("zones", VALID_ZONE_TYPES),
+            ("sites", _site_kinds()))
+
+
+Origins = Mapping[str, Sequence[Tuple[str, int]]]
+
+
+def _parse_rooms(chk: _Checker, rooms: Mapping[str, Any], kinds: Mapping[str, str],
+                 origins: Optional[Origins] = None) -> Tuple[Any, ...]:
+    """``rooms.toml``'s raw tables (or a merged set's) into recipes, Groups, Dressing, Weights,
+    moves and once. ``origins``: entry -> each line's (file, index), for entries a layer touched."""
+    origins = origins or {}
+    chk.keys(rooms, "top level", ("default", "every", "kinds", "types", "zones", "sites", "groups", "dressing",
+                                  "weights", "moves", "once"),
+             required=("default", "every", "dressing", "weights"))
+    raw_groups = chk.table(rooms.get("groups", {}), "top level", "groups", "[groups.<name>]") or {}
+    groups: Dict[str, Any] = {}
+    for name, body in raw_groups.items():
+        got = _group(chk, name, body, kinds, origins=origins.get(f"groups.{name}"))
+        # A bad Group's own error names it: lines naming it shouldn't fail twice.
+        groups[name] = got if got is not None else name
+    default = Recipe("default", _lines(chk, rooms.get("default", {}), "default", ARRANGEMENTS, kinds, groups,
+                                       ROOMS_FILE))
+    every = Recipe("every", _lines(chk, rooms.get("every", {}), "every", ARRANGEMENTS, kinds, groups, ROOMS_FILE,
+                                   origins.get("every")))
+    named: Dict[str, Dict[str, Recipe]] = {}
+    for section, known in _recipe_sections():
+        tbl = chk.table(rooms.get(section, {}), "top level", section, f"[{section}.<name>]") or {}
+        out = {}
+        for name, body in tbl.items():
+            if name not in known:
+                chk.fail(section, name, "an unknown name", _one_of(known), raw=True)
+                continue
+            where = f"{section}.{name}"
+            out[name] = Recipe(where, _lines(chk, body, where, ARRANGEMENTS, kinds, groups, ROOMS_FILE,
+                                             origins.get(where)))
+        named[section] = out
+    dressing: Dict[str, Tuple[Line, ...]] = {}
+    tbl = chk.table(rooms.get("dressing", {}), "top level", "dressing", "[dressing.<POI purpose>]") or {}
+    for purpose, body in tbl.items():
+        if purpose not in POI_PURPOSES:
+            chk.fail("dressing", purpose, "an unknown POI purpose", _one_of(POI_PURPOSES), raw=True)
+            continue
+        where = f"dressing.{purpose}"
+        dressing[purpose] = _lines(chk, body, where, DRESSING_AT, kinds, groups, ROOMS_FILE, origins.get(where))
+    for purpose in ("boss", "treasure", "altar", "guard"):     # Req 8.1 names their Dressing
+        if purpose not in tbl:
+            chk.fail("dressing", purpose, "nothing", "Dressing for every POI Req 8.1 names (boss, treasure, "
+                     "altar, guard)", raw=True)
+    weights, controls = _weights(chk, rooms.get("weights", {}))
+    moves = _moves(chk, rooms.get("moves", {}))
+    once = _once(chk, rooms.get("once", []), kinds)
+    return default, named, every, groups, dressing, weights, controls, moves, once
+
+
+def _rules(parsed: Tuple[Any, ...], set_rules: SetRules, layers: Tuple[str, ...] = ()) -> DecorRules:
+    default, named, every, groups, dressing, weights, controls, moves, once = parsed
+    return DecorRules(default, named["kinds"], named["types"], named["sites"], every,
+                      {k: g for k, g in groups.items() if isinstance(g, Group)}, dressing, weights, controls, moves,
+                      set_rules, named["zones"], once, layers)
+
+
+def load_decor(path=DECOR_DIR, tags: Optional[Path] = None, layers: Sequence[str] = ()) -> DecorRules:
+    """Load and check ``rooms.toml`` and ``sets.toml`` from ``path`` (a folder), with the decor
+    ``layers`` named (``path/layers/<name>.toml``) merged onto ``rooms.toml``; raises
+    ``RuleSetError`` with every failure. Kinds and Sets are the catalogue's
     (``generators/decor/catalogue.py``) with whatever ``tags`` (default: the folder's
-    ``tags.toml``, else the shipped one) adds. The usable-model check is ``unmet``."""
+    ``tags.toml``, else the shipped one) adds. The usable-model check is ``unmet``.
+
+    **Layers** merge in the order given (a name given twice counts once, where it first
+    stands). A build's order is the theme's layers, then its race's (both from
+    ``themes.toml``, ``layers_for``), then the request's extra ones. The base is checked on its
+    own, then each layer file on its own (named by its file), then the merged set as a whole
+    (named ``rooms.toml + <layer>.toml ...``), every failure by file, entry and field.
+
+    A layer's entry (a recipe, a Group, a Dressing, a Weights entry) that is new is added. One
+    that the base or an earlier layer already has is refused, naming both files, unless the
+    entry says ``mode = "add"`` (its lines, or a Group's members, join the existing ones; a
+    Weights entry's Categories join the entry's, and a Category already there is refused) or
+    ``mode = "replace"`` (it stands instead). A ``mode`` on a new entry is allowed: there is
+    nothing to join or replace, so the entry is simply added. ``once`` kinds join the base's.
+    With no layers this is the base alone, as before layers existed."""
     path = Path(path)
     if tags is None:
         tags = path / TAGS_FILE if (path / TAGS_FILE).is_file() else DECOR_DIR / TAGS_FILE
@@ -591,54 +699,290 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None) -> DecorRules:
             raise RuleSetError(errors)
     raise_all()
 
-    # rooms.toml
-    chk = r_chk
-    chk.keys(rooms, "top level", ("default", "every", "kinds", "types", "zones", "sites", "groups", "dressing",
-                                  "weights", "moves", "once"),
-             required=("default", "every", "dressing", "weights"))
-    raw_groups = chk.table(rooms.get("groups", {}), "top level", "groups", "[groups.<name>]") or {}
-    groups: Dict[str, Any] = {}
-    for name, body in raw_groups.items():
-        got = _group(chk, name, body, kinds)
-        # A bad Group's own error names it: lines naming it shouldn't fail twice.
-        groups[name] = got if got is not None else name
-    default = Recipe("default", _lines(chk, rooms.get("default", {}), "default", ARRANGEMENTS, kinds, groups,
-                                       ROOMS_FILE))
-    every = Recipe("every", _lines(chk, rooms.get("every", {}), "every", ARRANGEMENTS, kinds, groups, ROOMS_FILE))
-    named: Dict[str, Dict[str, Recipe]] = {}
-    for section, known in (("kinds", ROOM_KINDS), ("types", sorted(ROOM_TYPES)), ("zones", VALID_ZONE_TYPES),
-                           ("sites", _site_kinds())):
-        tbl = chk.table(rooms.get(section, {}), "top level", section, f"[{section}.<name>]") or {}
-        out = {}
-        for name, body in tbl.items():
+    parsed = _parse_rooms(r_chk, rooms, kinds)
+    set_rules = _sets(s_chk, set_data, sets)
+    raise_all()
+    names = tuple(dict.fromkeys(layers))
+    if not names:
+        return _rules(parsed, set_rules)
+
+    known = layer_names(path)
+    merge = _Merge(rooms)
+    groups: Dict[str, Any] = dict(parsed[3])
+    errors: List[CheckError] = []
+    for n in names:
+        file = path / LAYERS_DIR / f"{n}.toml" if isinstance(n, str) and n else None
+        if file is None or not file.is_file():
+            errors.append(CheckError(f"{n}.toml", "layer", "name", _show(n),
+                                     f"a decor layer in {path.name}/{LAYERS_DIR}/: "
+                                     + (_one_of(sorted(known)) if known else "none yet")))
+            continue
+        errors.extend(_apply_layer(merge, file, kinds, groups))
+    if errors:
+        raise RuleSetError(errors)
+    chk = _Checker(" + ".join([ROOMS_FILE] + [f"{n}.toml" for n in names]))
+    merged = _parse_rooms(chk, merge.raw, kinds, merge.origins)
+    chk.raise_if_failed()
+    return _rules(merged, set_rules, names)
+
+
+# ---------------------------------------------------------------------------
+# Decor layers (step 15, Reqs 1 and 2.1; design "Decor layers")
+# ---------------------------------------------------------------------------
+
+LAYERS_DIR = "layers"
+THEMES_FILE = "themes.toml"
+#: What a layer's entry may do to one already there (archive decision 1).
+MODES: Tuple[str, ...] = ("add", "replace")
+#: The sections a layer may hold (Req 1.1): the base's, but ``default`` and ``moves``.
+LAYER_SECTIONS: Tuple[str, ...] = ("kinds", "types", "zones", "sites", "groups", "dressing", "every", "weights",
+                                   "once")
+
+
+class _Merge:
+    """The base's raw tables with layers merged onto them, and who wrote what."""
+
+    def __init__(self, rooms: Mapping[str, Any]):
+        self.raw: Dict[str, Any] = copy.deepcopy(dict(rooms))
+        self.owner: Dict[str, str] = {}                     # entry -> the file that wrote it (else rooms.toml)
+        self.origins: Dict[str, List[Tuple[str, int]]] = {}  # entry -> each line's (file, index)
+        self.cats: Dict[Tuple[str, str], str] = {}          # (Weights entry, Category) -> file
+
+    def _slot(self, path: Sequence[str]) -> Tuple[Dict[str, Any], Any]:
+        parent = self.raw
+        for k in path[:-1]:
+            if not isinstance(parent.get(k), dict):
+                parent[k] = {}
+            parent = parent[k]
+        return parent, parent.get(path[-1])
+
+    def entry(self, chk: _Checker, path: Sequence[str], body: Dict[str, Any], mode: Optional[str],
+              items: str) -> None:
+        """A recipe, Dressing (``items = "props"``) or Group (``"members"``)."""
+        where = ".".join(path)
+        parent, have = self._slot(path)
+        new = body.get(items) if isinstance(body.get(items), list) else []
+        mine = [(chk.file, i) for i in range(len(new))]
+        if have is None or mode == "replace":
+            parent[path[-1]] = body
+            self.owner[where], self.origins[where] = chk.file, mine
+            return
+        if mode != "add":
+            chk.fail(where, "mode", "nothing", f'mode = "add" (its {items} join the existing ones) or "replace" '
+                     f"(they stand instead): {where} is already in {self.owner.get(where, ROOMS_FILE)}", raw=True)
+            return
+        old = have.get(items) if isinstance(have.get(items), list) else []
+        self.origins[where] = list(self.origins.get(where, [(ROOMS_FILE, i) for i in range(len(old))])) + mine
+        parent[path[-1]] = {**have, items: list(old) + list(new)}
+
+    def weights(self, chk: _Checker, path: Sequence[str], body: Dict[str, Any], mode: Optional[str]) -> None:
+        where = ".".join(path)
+        parent, have = self._slot(path)
+        if have is None or mode == "replace":
+            parent[path[-1]] = body
+            self.owner[where] = chk.file
+            for c in body:
+                self.cats[(where, c)] = chk.file
+            return
+        if mode != "add":
+            chk.fail(where, "mode", "nothing", 'mode = "add" (its Categories join the entry\'s) or "replace" '
+                     f"(it stands instead): {where} is already in {self.owner.get(where, ROOMS_FILE)}", raw=True)
+            return
+        out = dict(have)
+        for c, v in body.items():
+            if c in have:
+                chk.fail(where, c, v, f"a Category not already in {where} "
+                         f"({self.cats.get((where, c), self.owner.get(where, ROOMS_FILE))} has it); "
+                         'mode = "replace" stands for the whole entry')
+            else:
+                out[c] = v
+                self.cats[(where, c)] = chk.file
+        parent[path[-1]] = out
+
+
+def _mode(chk: _Checker, raw: Any, where: str, fld: str, example: str
+          ) -> Tuple[Optional[Dict[str, Any]], Optional[str], bool]:
+    """A layer entry's table without its ``mode``, the mode, and whether the mode is good."""
+    parent, _, name = where.rpartition(".")
+    tbl = chk.table(raw, parent or "top level", fld or name, example)
+    if tbl is None:
+        return None, None, False
+    mode = tbl.get("mode")
+    if "mode" in tbl and mode not in MODES:
+        chk.fail(where, "mode", mode, _one_of(MODES) + " (or no mode: a new entry)")
+        return {k: v for k, v in tbl.items() if k != "mode"}, None, False
+    return {k: v for k, v in tbl.items() if k != "mode"}, mode, True
+
+
+def _apply_layer(merge: _Merge, file: Path, kinds: Mapping[str, str], groups: Dict[str, Any]) -> List[CheckError]:
+    """Check one layer file on its own and merge it into ``merge``; its failures, by its file.
+    ``groups`` (the Groups so far, by name) gains the layer's, so later lines may name them."""
+    chk = _Checker(file.name)
+    data = _read_toml(file, chk)
+    if data is None:
+        return chk.errors
+    chk.keys(data, "top level", ("layer",) + LAYER_SECTIONS, required=("layer",))
+    ly = (chk.table(data["layer"], "top level", "layer", "[layer] with name, description")
+          if "layer" in data else None)
+    if ly is not None:
+        chk.keys(ly, "layer", ("name", "description"), required=("name", "description"))
+        name = chk.text(ly, "name", "layer", required=False)
+        if name and name != file.stem:
+            chk.fail("layer", "name", name, f'"{file.stem}" (the file\'s name, so the theme map finds it)')
+        chk.text(ly, "description", "layer", required=False)
+
+    def entries(section: str) -> List[Tuple[str, Any]]:
+        if section not in data:
+            return []
+        return list((chk.table(data[section], "top level", section, f"[{section}.<name>]") or {}).items())
+
+    # Groups first, so lines may name them.
+    for gname, raw in entries("groups"):
+        where = f"groups.{gname}"
+        body, mode, ok = _mode(chk, raw, where, gname, '{ members = [ { kind = "table", at = "anchor" } ] }')
+        if body is None:
+            continue
+        _, have = merge._slot(("groups", gname))
+        start = len(have["members"]) if (mode == "add" and isinstance(have, dict)
+                                         and isinstance(have.get("members"), list)) else 0
+        got = _group(chk, gname, body, kinds, start=start)
+        if not (mode == "add" and gname in groups):
+            groups[gname] = got if got is not None else gname
+        if ok:
+            merge.entry(chk, ("groups", gname), body, mode, "members")
+
+    def recipe(path: Tuple[str, ...], raw: Any, arrangements: Sequence[str]) -> None:
+        where = ".".join(path)
+        body, mode, ok = _mode(chk, raw, where, path[-1], '{ props = [ { kind = "torch", at = "on_wall" } ] }')
+        if body is None:
+            return
+        _lines(chk, body, where, arrangements, kinds, groups, file.name)
+        if ok:
+            merge.entry(chk, path, body, mode, "props")
+
+    if "every" in data:
+        recipe(("every",), data["every"], ARRANGEMENTS)
+    for section, known in _recipe_sections():
+        for name, raw in entries(section):
             if name not in known:
                 chk.fail(section, name, "an unknown name", _one_of(known), raw=True)
                 continue
-            out[name] = Recipe(f"{section}.{name}", _lines(chk, body, f"{section}.{name}", ARRANGEMENTS, kinds,
-                                                           groups, ROOMS_FILE))
-        named[section] = out
-    dressing: Dict[str, Tuple[Line, ...]] = {}
-    tbl = chk.table(rooms.get("dressing", {}), "top level", "dressing", "[dressing.<POI purpose>]") or {}
-    for purpose, body in tbl.items():
+            recipe((section, name), raw, ARRANGEMENTS)
+    for purpose, raw in entries("dressing"):
         if purpose not in POI_PURPOSES:
             chk.fail("dressing", purpose, "an unknown POI purpose", _one_of(POI_PURPOSES), raw=True)
             continue
-        dressing[purpose] = _lines(chk, body, f"dressing.{purpose}", DRESSING_AT, kinds, groups, ROOMS_FILE)
-    for purpose in ("boss", "treasure", "altar", "guard"):     # Req 8.1 names their Dressing
-        if purpose not in tbl:
-            chk.fail("dressing", purpose, "nothing", "Dressing for every POI Req 8.1 names (boss, treasure, "
-                     "altar, guard)", raw=True)
-    weights, controls = _weights(chk, rooms.get("weights", {}))
-    moves = _moves(chk, rooms.get("moves", {}))
-    once = _once(chk, rooms.get("once", []), kinds)
+        recipe(("dressing", purpose), raw, DRESSING_AT)
 
-    # sets.toml
-    set_rules = _sets(s_chk, set_data, sets)
+    if "weights" in data:
+        tbl = chk.table(data["weights"], "top level", "weights", "[weights.themes.<theme>]") or {}
+        sections = _weight_sections()
+        chk.keys(tbl, "weights", ("default", "controls") + tuple(sections))
 
-    raise_all()
-    return DecorRules(default, named["kinds"], named["types"], named["sites"], every,
-                      {k: g for k, g in groups.items() if isinstance(g, Group)}, dressing, weights, controls, moves,
-                      set_rules, named["zones"], once)
+        def weight(path: Tuple[str, ...], raw: Any, allow_bare: bool = True) -> None:
+            where = ".".join(path)
+            body, mode, ok = _mode(chk, raw, where, path[-1], "{ light = 1.2, debris = 0.5 }")
+            if body is None:
+                return
+            layer = _layer(chk, body, where, allow_bare=allow_bare)
+            if layer.overrides and path[1] in ("default", "controls"):
+                chk.fail(where, "override", "true", "nothing: " + ("the default has no less specific Layer"
+                         if path[1] == "default" else "a control is on top of the blend"), raw=True)
+            if ok:
+                merge.weights(chk, path, body, mode)
+
+        if "default" in tbl:
+            weight(("weights", "default"), tbl["default"])
+        for section in ("controls",) + tuple(sections):
+            if section not in tbl:
+                continue
+            known = CONTROLS if section == "controls" else sections[section]
+            sub = chk.table(tbl[section], "weights", section, f"[weights.{section}.<name>]") or {}
+            for name, raw in sub.items():
+                if name not in known:
+                    chk.fail(f"weights.{section}", name, "an unknown " + ("control" if section == "controls"
+                             else "name"), _one_of(known), raw=True)
+                    continue
+                weight(("weights", section, name), raw, allow_bare=section != "controls")
+
+    if "once" in data:
+        added = _once(chk, data["once"], kinds)
+        base = merge.raw.get("once", [])
+        merge.raw["once"] = list(dict.fromkeys(list(base if isinstance(base, list) else [])
+                                               + [k for k in data["once"] if k in added]))
+    return chk.errors
+
+
+def layer_names(path=DECOR_DIR) -> Dict[str, str]:
+    """The decor layers in ``path/layers/``: name -> description, by name. Read from the folder,
+    so a dropped-in file shows up; a file that can't be read is listed with no description
+    (loading it names what's wrong)."""
+    out: Dict[str, str] = {}
+    for p in sorted((Path(path) / LAYERS_DIR).glob("*.toml")):
+        desc = ""
+        try:
+            with open(p, "rb") as f:
+                ly = tomllib.load(f).get("layer")
+            if isinstance(ly, dict) and isinstance(ly.get("description"), str):
+                desc = ly["description"]
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
+        out[p.stem] = desc
+    return out
+
+
+@dataclass(frozen=True)
+class DecorThemes:
+    """``themes.toml``: the decor layers each dungeon theme, and each race, takes."""
+    themes: Mapping[str, Tuple[str, ...]]
+    races: Mapping[str, Tuple[str, ...]]
+
+
+def load_decor_themes(path=DECOR_DIR) -> DecorThemes:
+    """Load and check ``path/themes.toml`` (no file: no theme takes a layer). A theme is a top-level
+    key, ``tomb = { layers = ["tomb"] }``; races go in ``[races]`` the same way. Every layer named
+    must be a file in ``path/layers/``."""
+    path = Path(path)
+    file = path / THEMES_FILE
+    if not file.is_file():
+        return DecorThemes({}, {})
+    chk = _Checker(THEMES_FILE)
+    data = _read_toml(file, chk)
+    chk.raise_if_failed()
+    known = layer_names(path)
+
+    def entries(tbl: Mapping[str, Any], where: str, names: Sequence[str]) -> Dict[str, Tuple[str, ...]]:
+        out = {}
+        for name, raw in tbl.items():
+            if name not in names:
+                chk.fail(where, name, "an unknown name", _one_of(names), raw=True)
+                continue
+            t = chk.table(raw, where, name, '{ layers = ["tomb"] }')
+            if t is None:
+                continue
+            at = name if where == "top level" else f"{where}.{name}"
+            chk.keys(t, at, ("layers",), required=("layers",))
+            got = chk.names(t["layers"], at, "layers", "layer") if "layers" in t else ()
+            for i, n in enumerate(got):
+                if n not in known:
+                    chk.fail(at, f"layers[{i}]", n, f"a decor layer in {path.name}/{LAYERS_DIR}/: "
+                             + (_one_of(sorted(known)) if known else "none yet"))
+            out[name] = tuple(dict.fromkeys(got))
+        return out
+
+    themes = entries({k: v for k, v in data.items() if k != "races"}, "top level", VALID_DUNGEON_THEMES)
+    races = entries(chk.table(data["races"], "top level", "races", '[races] goblin = { layers = ["x"] }') or {}
+                    if "races" in data else {}, "races", _races())
+    chk.raise_if_failed()
+    return DecorThemes(themes, races)
+
+
+def layers_for(theme: str = "", race: str = "", extra: Sequence[str] = (), path=DECOR_DIR) -> Tuple[str, ...]:
+    """The decor layers a build takes, in merge order: its theme's, then its race's (both from
+    ``themes.toml``), then ``extra`` (the request's), each name once, where it first stands."""
+    m = load_decor_themes(path)
+    return tuple(dict.fromkeys(tuple(m.themes.get(theme or "", ())) + tuple(m.races.get(race or "", ()))
+                               + tuple(extra)))
 
 
 # ---------------------------------------------------------------------------
@@ -652,7 +996,7 @@ def asks(rules: DecorRules) -> Iterator[Tuple[Tuple[str, str, str], Tuple[str, .
             yield line.where, line.kinds, line.mount
     for name, g in sorted(rules.groups.items()):
         for i, m in enumerate(g.members):
-            yield (ROOMS_FILE, f"groups.{name}", f"members[{i}]"), m.kinds, m.mount
+            yield (m.where if m.where[0] else (ROOMS_FILE, f"groups.{name}", f"members[{i}]")), m.kinds, m.mount
 
 
 def usable_kinds(catalogue: Catalogue) -> Dict[str, set]:
@@ -683,6 +1027,8 @@ def coverage(rules: DecorRules, room_types: Sequence[str], kind: str = "") -> Di
     return {t: rules.which_recipe(t, kind) for t in room_types}
 
 
-__all__ = ["ARRANGEMENTS", "AS_WRITTEN", "BARE", "CONTROLS", "DEFAULT_CONTROL", "DRESSING_AT", "DecorRules", "Group",
-           "Line", "MEMBER_AT", "MOUNTS_FILLING", "Member", "NEUTRAL", "POI_PURPOSES", "ROOMS_FILE", "Recipe",
-           "SETS_FILE", "SetRules", "asks", "coverage", "draw_count", "load_decor", "mount_of", "unmet", "usable_kinds"]
+__all__ = ["ARRANGEMENTS", "AS_WRITTEN", "BARE", "CONTROLS", "DEFAULT_CONTROL", "DRESSING_AT", "DecorRules",
+           "DecorThemes", "Group", "LAYERS_DIR", "LAYER_SECTIONS", "Line", "MEMBER_AT", "MODES", "MOUNTS_FILLING",
+           "Member", "NEUTRAL", "POI_PURPOSES", "ROOMS_FILE", "Recipe", "SETS_FILE", "SetRules", "THEMES_FILE", "asks",
+           "coverage", "draw_count", "layer_names", "layers_for", "load_decor", "load_decor_themes", "mount_of",
+           "unmet", "usable_kinds"]

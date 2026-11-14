@@ -14,3 +14,4 @@ Index entry: `tasks.md` task 1. Requirements 1 and 2.1. Design "Decor layers"; d
 Mirror `generators/topology/ruleset.py`'s layer merge and error wording, don't import its private merge if it doesn't fit. Keep `DecorRules` the one type callers read. Record the merge order (theme, race, request) in the docstring.
 
 ## Result
+✔ a3215af · 3136 passed

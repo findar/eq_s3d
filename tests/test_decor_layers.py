@@ -1,0 +1,272 @@
+"""Decor rules task 1 (Reqs 1, 2.1; design "Decor layers"): decor layers merged onto rooms.toml.
+
+Every layer here is a small file written in ``tmp_path``, onto a copy of the shipped base.
+"""
+
+import dataclasses
+import re
+import shutil
+
+import pytest
+
+from generators.decor.rules import (DECOR_DIR, LAYERS_DIR, ROOMS_FILE, SETS_FILE, THEMES_FILE, asks, layer_names,
+                                    layers_for, load_decor, load_decor_themes)
+from generators.topology.ruleset import RuleSetError
+
+HEAD = '[layer]\nname = "{name}"\ndescription = "{desc}"\n'
+
+
+def _folder(tmp_path):
+    d = tmp_path / "decor"
+    if not d.exists():
+        (d / LAYERS_DIR).mkdir(parents=True)
+        for f in (ROOMS_FILE, SETS_FILE):
+            shutil.copy(DECOR_DIR / f, d / f)
+    return d
+
+
+def _layer(d, name, body="", desc="a test layer", head=True):
+    """A layer file; top-level keys in ``body`` (``once = [...]``, before any table) go above the header."""
+    top = re.match(r"(?:[^\[\n][^\n]*\n)*", body).group(0)
+    text = top + (HEAD.format(name=name, desc=desc) if head else "") + body[len(top):]
+    (d / LAYERS_DIR / f"{name}.toml").write_text(text, encoding="utf-8")
+
+
+def _errors(d, layers):
+    with pytest.raises(RuleSetError) as exc:
+        load_decor(d, layers=layers)
+    return exc.value.errors
+
+
+def _where(errs):
+    return [(e.file, e.where, e.field) for e in errs]
+
+
+@pytest.fixture(scope="module")
+def base():
+    return load_decor()
+
+
+# --- no layers: today's rules --------------------------------------------------------------------
+
+
+def test_no_layers_and_an_empty_layer_change_nothing(tmp_path, base):
+    assert load_decor(layers=()) == base and base.layers == ()
+    d = _folder(tmp_path)
+    _layer(d, "empty")
+    got = load_decor(d, layers=["empty"])
+    assert got.layers == ("empty",)
+    for f in dataclasses.fields(base):
+        if f.name != "layers":
+            assert getattr(got, f.name) == getattr(base, f.name), f.name
+    assert {line.where[0] for line in base.lines()} == {ROOMS_FILE}
+
+
+# --- merge --------------------------------------------------------------------------------------------
+
+
+def test_new_entries_are_added_and_named_by_their_file(tmp_path, base):
+    d = _folder(tmp_path)
+    _layer(d, "bones", '[groups.bone_heap]\nmembers = [ { kind = "skull", at = "anchor" }, '
+                       '{ kind = "bones", at = "round", count = [1, 3] } ]\n'
+                       '[weights.kinds.deep]\nlight = 0.5\n'
+                       '[weights.types.barracks]\ndebris = 2\n')
+    r = load_decor(d, layers=["bones"])
+    assert [m.kinds for m in r.groups["bone_heap"].members] == [("skull",), ("bones",)]
+    assert r.weights["kinds"]["deep"].weights == {"light": (0.5,)}
+    assert r.weights_for("dungeon", room_type="barracks")["debris"] == pytest.approx(2 ** 0.5)
+    got = {w: k for w, k, _ in asks(r) if w[1] == "groups.bone_heap"}
+    assert set(got) == {("bones.toml", "groups.bone_heap", "members[0]"),
+                        ("bones.toml", "groups.bone_heap", "members[1]")}
+    # Nothing else moved.
+    assert r.types == base.types and r.every == base.every
+
+
+def test_an_entry_already_there_is_refused_naming_both_files(tmp_path):
+    d = _folder(tmp_path)
+    _layer(d, "a", '[types.barracks]\nprops = [ { kind = "skull", at = "scatter" } ]\n'
+                   '[weights.themes.tomb]\nlight = 0.2\n'
+                   '[groups.bunks]\nmembers = [ { kind = "bed", at = "anchor" } ]\n'
+                   '[dressing.boss]\nprops = [ { kind = "skull", at = "round" } ]\n')
+    errs = _errors(d, ["a"])
+    assert set(_where(errs)) == {("a.toml", "types.barracks", "mode"), ("a.toml", "weights.themes.tomb", "mode"),
+                                 ("a.toml", "groups.bunks", "mode"), ("a.toml", "dressing.boss", "mode")}
+    assert all(ROOMS_FILE in e.expected for e in errs)
+    # Between layers: the second names the first.
+    _layer(d, "a", '[types.ossuary]\nmode = "replace"\nprops = [ { kind = "skull", at = "scatter" } ]\n')
+    _layer(d, "b", '[types.ossuary]\nprops = [ { kind = "bones", at = "scatter" } ]\n')
+    errs = _errors(d, ["a", "b"])
+    assert _where(errs) == [("b.toml", "types.ossuary", "mode")] and "a.toml" in errs[0].expected
+
+
+def test_mode_add_appends_lines_and_mode_replace_stands_instead(tmp_path, base):
+    d = _folder(tmp_path)
+    _layer(d, "x", '[types.barracks]\nmode = "add"\nprops = [ { kind = "skull", at = "scatter", count = [1, 2] } ]\n'
+                   '[every]\nmode = "replace"\nprops = [ { kind = "torch", at = "on_wall" } ]\n'
+                   '[groups.bunks]\nmode = "add"\nmembers = [ { kind = "chest", at = "beside" } ]\n')
+    r = load_decor(d, layers=["x"])
+    old = base.types["barracks"].lines
+    assert r.types["barracks"].lines[:len(old)] == old
+    added = r.types["barracks"].lines[len(old):]
+    assert [(l.kinds, l.where) for l in added] == [(("skull",), ("x.toml", "types.barracks", "props[0]"))]
+    assert [(l.kinds, l.where) for l in r.every.lines] == [(("torch",), ("x.toml", "every", "props[0]"))]
+    members = r.groups["bunks"].members
+    assert [m.kinds for m in members] == [("bed",), ("bed",), ("chest",)]
+    assert [w for w, _, _ in asks(r) if w[1] == "groups.bunks"] == [
+        (ROOMS_FILE, "groups.bunks", "members[0]"), (ROOMS_FILE, "groups.bunks", "members[1]"),
+        ("x.toml", "groups.bunks", "members[0]")]
+
+
+def test_layers_merge_in_the_order_given(tmp_path, base):
+    d = _folder(tmp_path)
+    _layer(d, "a", '[every]\nmode = "add"\nprops = [ { kind = "skull", at = "scatter" } ]\n')
+    _layer(d, "b", '[every]\nmode = "add"\nprops = [ { kind = "bones", at = "scatter" } ]\n')
+    n = len(base.every.lines)
+    ab = load_decor(d, layers=["a", "b", "a"])
+    ba = load_decor(d, layers=["b", "a"])
+    assert ab.layers == ("a", "b") and ba.layers == ("b", "a")
+    assert [l.kinds for l in ab.every.lines[n:]] == [("skull",), ("bones",)]
+    assert [l.kinds for l in ba.every.lines[n:]] == [("bones",), ("skull",)]
+
+
+def test_weights_add_joins_categories_and_refuses_a_clash(tmp_path, base):
+    d = _folder(tmp_path)
+    _layer(d, "w", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.5\n')
+    r = load_decor(d, layers=["w"])
+    assert r.weights["themes"]["tomb"].weights == {**base.weights["themes"]["tomb"].weights, "container": (0.5,)}
+    _layer(d, "w", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.5\nlight = 0.3\n')
+    errs = _errors(d, ["w"])
+    assert _where(errs) == [("w.toml", "weights.themes.tomb", "light")] and ROOMS_FILE in errs[0].expected
+    # A Category one layer added clashes with the next, which names it.
+    _layer(d, "w", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.5\n')
+    _layer(d, "v", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.7\n')
+    errs = _errors(d, ["w", "v"])
+    assert _where(errs) == [("v.toml", "weights.themes.tomb", "container")] and "w.toml" in errs[0].expected
+    _layer(d, "w", '[weights.themes.tomb]\nmode = "replace"\nlight = 0.3\n')
+    assert load_decor(d, layers=["w"]).weights["themes"]["tomb"].weights == {"light": (0.3,)}
+    _layer(d, "w", '[weights.controls.normal]\nmode = "add"\nhanging = 2\n')
+    assert load_decor(d, layers=["w"]).controls["normal"] == {"hanging": 2.0}
+
+
+def test_once_kinds_join_the_bases(tmp_path, base):
+    d = _folder(tmp_path)
+    _layer(d, "o", 'once = ["throne", "forge"]\n')
+    assert load_decor(d, layers=["o"]).once == base.once | {"throne"}
+
+
+# --- each layer checked on its own, the merged set as a whole -----------------------------------------
+
+
+@pytest.mark.parametrize("body, where, fld", [
+    ('[types.ossuary]\nmode = "add"\nprops = [ { kind = "skul", at = "scatter" } ]\n', "types.ossuary",
+     "props[0].kind"),
+    ('[types.ossuary]\nmode = "add"\nprops = [ { kind = "skull", at = "up" } ]\n', "types.ossuary", "props[0].at"),
+    ('[types.ossuary]\nmode = "merge"\nprops = []\n', "types.ossuary", "mode"),
+    ('[types.boneyard]\nprops = []\n', "types", "boneyard"),
+    ('[dressing.lurk]\nprops = []\n', "dressing", "lurk"),
+    ('[default]\nprops = []\n', "top level", "default"),
+    ('[weights.themes.crypt]\nlight = 1\n', "weights.themes", "crypt"),
+    ('[weights.kinds.deep]\nlamps = 1\n', "weights.kinds.deep", "lamps"),
+    ('[weights.kinds.deep]\nlight = -1\n', "weights.kinds.deep", "light"),
+    ('[weights.controls.dense]\nmode = "add"\nhanging = { value = 2, override = true }\n',
+     "weights.controls.dense", "override"),
+    ('[groups.bunks]\nmode = "add"\nmembers = [ { kind = "bed", at = "anchor" } ]\n', "groups.bunks",
+     "members[0].at"),
+    ('[groups.heap]\nmembers = [ { kind = "skull", at = "round" } ]\n', "groups.heap", "members[0].at"),
+    ('[every]\nmode = "add"\nprops = [ { group = "no_group", at = "centre" } ]\n', "every", "props[0].group"),
+    ('once = ["throne", "thrones"]\n', "once", "thrones"),
+])
+def test_a_bad_layer_entry_is_named_by_its_file_entry_and_field(tmp_path, body, where, fld):
+    d = _folder(tmp_path)
+    _layer(d, "bad", body)
+    errs = _errors(d, ["bad"])
+    assert ("bad.toml", where, fld) in _where(errs), [str(e) for e in errs]
+
+
+def test_a_bad_layer_header_or_file_is_named(tmp_path):
+    d = _folder(tmp_path)
+    _layer(d, "hdr", '[layer]\nname = "other"\n', head=False)
+    assert {("hdr.toml", "layer", "name"), ("hdr.toml", "layer", "description")} <= set(_where(_errors(d, ["hdr"])))
+    _layer(d, "none", '[types.ossuary]\nmode = "add"\nprops = []\n', head=False)
+    assert ("none.toml", "top level", "layer") in _where(_errors(d, ["none"]))
+    _layer(d, "toml", "[types.ossuary\n")
+    errs = _errors(d, ["toml"])
+    assert errs[0].file == "toml.toml" and errs[0].field == "toml"
+
+
+def test_every_layers_failures_are_reported_at_once(tmp_path):
+    d = _folder(tmp_path)
+    _layer(d, "a", '[types.boneyard]\nprops = []\n')
+    _layer(d, "b", '[weights.kinds.deep]\nlamps = 1\n')
+    assert {("a.toml", "types", "boneyard"), ("b.toml", "weights.kinds.deep", "lamps")} <= set(
+        _where(_errors(d, ["a", "b"])))
+
+
+def test_the_merged_set_is_checked_as_a_whole(tmp_path):
+    """A layer can be sound alone and still leave the merged set broken: here, a default
+    without every Category. The merged set's failures name the base and its layers."""
+    d = _folder(tmp_path)
+    _layer(d, "m", '[weights.default]\nmode = "replace"\nlight = 1\n')
+    errs = _errors(d, ["m"])
+    assert errs and all(e.file == f"{ROOMS_FILE} + m.toml" for e in errs)
+    assert ("weights.default", "bare") in [(e.where, e.field) for e in errs]
+
+
+def test_an_unknown_layer_is_refused_naming_the_known(tmp_path):
+    d = _folder(tmp_path)
+    _layer(d, "real")
+    errs = _errors(d, ["real", "nope"])
+    assert _where(errs) == [("nope.toml", "layer", "name")] and "real" in errs[0].expected
+
+
+# --- listing and the theme map -------------------------------------------------------------------------
+
+
+def test_layer_names_lists_the_folder(tmp_path):
+    d = _folder(tmp_path)
+    assert layer_names(d) == {}
+    _layer(d, "b", desc="the second")
+    _layer(d, "a", desc="the first")
+    (d / LAYERS_DIR / "README.md").write_text("not a layer", encoding="utf-8")
+    assert list(layer_names(d).items()) == [("a", "the first"), ("b", "the second")]
+
+
+def test_the_shipped_theme_map_maps_nothing_yet():
+    m = load_decor_themes()
+    assert m.themes == {} and m.races == {}
+    assert layers_for("tomb", "goblin") == ()
+    assert layers_for("tomb", extra=["x", "x"]) == ("x",)
+
+
+def test_layers_for_takes_theme_then_race_then_request(tmp_path):
+    d = _folder(tmp_path)
+    for n in ("tomb", "goblin", "dark", "mine"):
+        _layer(d, n)
+    (d / THEMES_FILE).write_text('tomb = { layers = ["tomb", "dark"] }\n[races]\ngoblin = { layers = ["goblin", '
+                                 '"dark"] }\n', encoding="utf-8")
+    assert layers_for("tomb", "goblin", ["mine", "tomb"], path=d) == ("tomb", "dark", "goblin", "mine")
+    assert layers_for("temple", "orc", path=d) == ()
+    assert layers_for("", "goblin", path=d) == ("goblin", "dark")
+    assert load_decor(d, layers=layers_for("tomb", "goblin", path=d)).layers == ("tomb", "dark", "goblin")
+
+
+def test_a_bad_theme_map_is_named(tmp_path):
+    d = _folder(tmp_path)
+    _layer(d, "tomb")
+    (d / THEMES_FILE).write_text('crypt = { layers = ["tomb"] }\ntomb = { layers = ["tomb", "gone"] }\n'
+                                 '[races]\nhobbit = { layers = ["tomb"] }\n', encoding="utf-8")
+    with pytest.raises(RuleSetError) as exc:
+        load_decor_themes(d)
+    assert set(_where(exc.value.errors)) == {(THEMES_FILE, "top level", "crypt"), (THEMES_FILE, "tomb", "layers[1]"),
+                                             (THEMES_FILE, "races", "hobbit")}
+
+
+def test_the_layers_readme_example_loads(tmp_path):
+    """rules/decor/layers/README.md's example is a working layer."""
+    d = _folder(tmp_path)
+    text = (DECOR_DIR / LAYERS_DIR / "README.md").read_text(encoding="utf-8")
+    body = re.search(r"```toml\n(.*?)```", text, re.S).group(1)
+    name = re.search(r'name\s*=\s*"(\w+)"', body).group(1)
+    (d / LAYERS_DIR / f"{name}.toml").write_text(body, encoding="utf-8")
+    r = load_decor(d, layers=[name])
+    assert r.layers == (name,) and r.types["barracks"].lines[-1].group == "bone_heap"
