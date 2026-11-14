@@ -11,199 +11,27 @@
   <header id="controls">
     <div class="hgroup"><span class="brand">⚔ eq_s3d</span></div>
 
-    <!-- The Controls: six labelled groups, each a label/control grid. Every
-         control keeps its element id (main.ts reads them by id); a control
-         that doesn't apply hides, and a group left empty hides with it. -->
-    <details id="advanced" class="hgroup">
-      <summary class="secondary">Controls</summary>
-      <div class="adv-body" id="controls-panel">
-        <fieldset class="group" id="group-zone">
-          <legend>Zone</legend>
-          <label class="field"><span>Zone type</span>
-            <!-- Populated from /api/zone_types on load (disabled options carry
-                 their reason). These static options are the offline fallback. -->
-            <select id="zone-type">
-              <option value="dungeon">Dungeon</option>
-              <option value="city">City</option>
-              <option value="wilderness">Wilderness</option>
-              <option value="outdoor_dungeon">Outdoor dungeon</option>
-            </select>
-          </label>
-          <label class="field"><span>Rooms</span>
-            <input type="number" id="rooms" min="1" max="30" step="1" value="5" />
-          </label>
-          <label class="field"><span>Size</span>
-            <select id="size">
-              <option>small</option>
-              <option selected>medium</option>
-              <option>large</option>
-              <option>huge</option>
-            </select>
-          </label>
-          <label class="field"><span>Verticality</span>
-            <select id="verticality">
-              <option>flat</option>
-              <option selected>moderate</option>
-              <option>dramatic</option>
-            </select>
-          </label>
-          <label class="field"><span>Locks</span>
-            <input type="number" id="locks" min="0" max="5" step="1" value="0" />
-          </label>
-        </fieldset>
-
-        <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
-             only) the topology rule set and how the grown rooms lean. "From
-             theme" lets the dungeon theme pick its base set; the others are
-             the shipped base sets under rules/topology/ (the server 400s on
-             any other name). Graph is the default (graph-layout task 21);
-             Classic is TinyKeep. -->
-        <fieldset class="group" id="group-layout">
-          <legend>Layout</legend>
-          <label class="field"><span>Layout</span>
-            <select id="layout">
-              <option value="graph" selected>Graph</option>
-              <option value="classic">Classic</option>
-            </select>
-          </label>
-          <label class="field"><span>Rule set</span>
-            <select id="rule-set">
-              <option value="" selected>From theme</option>
-              <option value="classic_eq">classic_eq</option>
-              <option value="warren">warren</option>
-            </select>
-          </label>
-          <label class="field"><span>Finish</span>
-            <select id="finish">
-              <option value="" selected>From rules</option>
-              <option value="0">0</option><option value="1">1</option><option value="2">2</option>
-              <option value="3">3</option><option value="4">4</option><option value="5">5</option>
-              <option value="6">6</option><option value="7">7</option><option value="8">8</option>
-              <option value="9">9</option><option value="10">10</option>
-            </select>
-          </label>
-          <label class="field"><span>Structure</span>
-            <select id="structure">
-              <option value="" selected>From rules</option>
-              <option value="0">0</option><option value="1">1</option><option value="2">2</option>
-              <option value="3">3</option><option value="4">4</option><option value="5">5</option>
-              <option value="6">6</option><option value="7">7</option><option value="8">8</option>
-              <option value="9">9</option><option value="10">10</option>
-            </select>
-          </label>
-          <label class="field"><span>Clutter</span>
-            <select id="clutter">
-              <option value="" selected>From rules</option>
-              <option value="0">0</option><option value="1">1</option><option value="2">2</option>
-              <option value="3">3</option><option value="4">4</option><option value="5">5</option>
-              <option value="6">6</option><option value="7">7</option><option value="8">8</option>
-              <option value="9">9</option><option value="10">10</option>
-            </select>
-          </label>
-          <label class="field"><span>Overlay</span>
-            <select id="overlay">
-              <option value="" selected>From rules</option>
-              <option value="fresh_dig">Fresh dig</option>
-              <option value="natural_cave">Natural cave</option>
-              <option value="reclaimed">Reclaimed</option>
-              <option value="ruined">Ruined</option>
-            </select>
-          </label>
-        </fieldset>
-
-        <!-- Dungeon, city and outdoor dungeon only: the dungeon theme
-             (archetype) and the inhabiting race (its body height sizes the rooms). The values
-             are ai/schema.py VALID_DUNGEON_THEMES / VALID_DUNGEON_RACES,
-             hard-coded here (no route lists them; the server 400s on any
-             other value). "None" sends "", no theme or race. -->
-        <fieldset class="group" id="group-content">
-          <legend>Content</legend>
-          <label class="field"><span>Theme</span>
-            <select id="dungeon-theme">
-              <option value="" selected>None</option>
-              <option value="fortress">Fortress</option>
-              <option value="war_city">War city</option>
-              <option value="warren">Warren</option>
-              <option value="temple">Temple</option>
-              <option value="tomb">Tomb</option>
-              <option value="wizard_lair">Wizard lair</option>
-              <option value="corrupted_sanctum">Corrupted sanctum</option>
-              <option value="mine_delve">Mine delve</option>
-              <option value="sunken_ruin">Sunken ruin</option>
-              <option value="lava_forge">Lava forge</option>
-              <option value="ice_keep">Ice keep</option>
-            </select>
-          </label>
-          <label class="field"><span>Race</span>
-            <select id="dungeon-race">
-              <option value="" selected>None</option>
-              <option value="goblin">Goblin</option>
-              <option value="froglok">Froglok</option>
-              <option value="kobold">Kobold</option>
-              <option value="lizardman">Lizardman</option>
-              <option value="gnoll">Gnoll</option>
-              <option value="sarnak">Sarnak</option>
-              <option value="troll">Troll</option>
-              <option value="ogre">Ogre</option>
-              <option value="giant">Giant</option>
-              <option value="dragon">Dragon</option>
-            </select>
-          </label>
-        </fieldset>
-
-        <!-- Landscape zone types (wilderness, outdoor dungeon) only: what each
-             side of the map is (mountain and river sides are sealed; a zoneline
-             is a walkable exit off the map), how wooded the plains are, and the
-             Sites and who builds them. -->
-        <fieldset class="group" id="edges" hidden>
-          <legend>Landscape</legend>
-          <label class="field"><span>North edge</span><select id="edge-n"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label class="field"><span>East edge</span><select id="edge-e"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label class="field"><span>South edge</span><select id="edge-s"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label class="field"><span>West edge</span><select id="edge-w"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label class="field"><span>Trees</span><select id="trees"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
-          <label class="field" title="Camps, huts, farmsteads, towers, shrines and ruins in the landscape"><span>Sites</span><select id="sites"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
-          <label class="field" title="Who builds the Sites"><span>Inhabitants</span><select id="inhabitant"><option value="" selected>biome's mix</option><option>human</option><option>orc</option><option>gnoll</option><option>centaur</option></select></label>
-        </fieldset>
-
-        <!-- How many Props (stock furniture, lights, clutter) stand in the
-             rooms, and the decor seed that rerolls them alone. The Decor values
-             come from /api/controls on load; until then (or without it) the
-             list is empty and the server builds its default. A blank decor
-             seed uses the zone's. -->
-        <fieldset class="group" id="group-decor">
-          <legend>Decor</legend>
-          <label class="field" title="Furniture, lights and clutter in the rooms (needs the EQ install on the server)"><span>Decor</span>
-            <select id="decor"></select>
-          </label>
-          <label class="field" title="Rerolls the Props alone; blank uses the zone's seed"><span>Decor seed</span>
-            <input type="number" id="decor-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
-          </label>
-        </fieldset>
-
-        <!-- Every zone type: the rooms seed rerolls the rooms and Sites on
-             the same World. A blank rooms seed uses the zone's. -->
-        <fieldset class="group" id="group-seeds">
-          <legend>Seeds</legend>
-          <label class="field" title="Rerolls the rooms and Sites on the same land; blank uses the zone's seed"><span>Rooms seed</span>
-            <input type="number" id="rooms-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
-          </label>
-        </fieldset>
+    <!-- Generate mode: Describe (the description box) or Controls (the
+         Controls panel). Only the chosen one shows and the one Generate
+         button sends it; the mode is remembered per browser (main.ts). The
+         chevron folds the Controls panel away without leaving the mode. -->
+    <div class="hgroup">
+      <div id="mode-switch" class="segmented" role="radiogroup" aria-label="Generate from">
+        <button type="button" id="mode-describe" role="radio" aria-checked="false" title="Generate from a description">Describe</button>
+        <button type="button" id="mode-controls" role="radio" aria-checked="true" title="Generate from the Controls">Controls</button>
       </div>
-    </details>
+      <button type="button" id="controls-toggle" class="secondary chevron" aria-controls="controls-panel" aria-expanded="true" title="Show or hide the Controls">▾</button>
+    </div>
 
-    <input type="text" id="prompt" placeholder="e.g. a flooded temple with lots of chambers" />
+    <input type="text" id="prompt" placeholder="e.g. a flooded temple with lots of chambers" hidden />
 
-    <!-- Two explicit Generate actions: one for the free-text description
-         (prompt mode), one for the Controls panel (controls mode). The seed
-         box lives in the header because both modes send it. -->
+    <!-- The seed box sends with either mode. -->
     <div class="hgroup">
       <label class="inline">Seed
         <input type="number" id="seed" min="0" step="1"
                placeholder="blank = random" />
       </label>
-      <button id="generate-description" class="primary" title="Generate from the description (prompt mode)">Generate from description</button>
-      <button id="generate-controls" class="primary" title="Generate from the Controls panel (controls mode)">Generate from controls</button>
+      <button id="generate" class="primary" title="Generate a zone from the chosen mode">Generate</button>
     </div>
 
     <div class="hgroup">
@@ -212,6 +40,185 @@
     </div>
 
     <span id="status"></span>
+
+    <!-- The Controls: six labelled groups, each a label/control grid, shown
+         under the bar in Controls mode. Every control keeps its element id
+         (main.ts reads them by id); a control that doesn't apply hides, and
+         a group left empty hides with it. -->
+    <div class="adv-body" id="controls-panel">
+      <fieldset class="group" id="group-zone">
+        <legend>Zone</legend>
+        <label class="field"><span>Zone type</span>
+          <!-- Populated from /api/zone_types on load (disabled options carry
+               their reason). These static options are the offline fallback. -->
+          <select id="zone-type">
+            <option value="dungeon">Dungeon</option>
+            <option value="city">City</option>
+            <option value="wilderness">Wilderness</option>
+            <option value="outdoor_dungeon">Outdoor dungeon</option>
+          </select>
+        </label>
+        <label class="field"><span>Rooms</span>
+          <input type="number" id="rooms" min="1" max="30" step="1" value="5" />
+        </label>
+        <label class="field"><span>Size</span>
+          <select id="size">
+            <option>small</option>
+            <option selected>medium</option>
+            <option>large</option>
+            <option>huge</option>
+          </select>
+        </label>
+        <label class="field"><span>Verticality</span>
+          <select id="verticality">
+            <option>flat</option>
+            <option selected>moderate</option>
+            <option>dramatic</option>
+          </select>
+        </label>
+        <label class="field"><span>Locks</span>
+          <input type="number" id="locks" min="0" max="5" step="1" value="0" />
+        </label>
+      </fieldset>
+
+      <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
+           only) the topology rule set and how the grown rooms lean. "From
+           theme" lets the dungeon theme pick its base set; the others are
+           the shipped base sets under rules/topology/ (the server 400s on
+           any other name). Graph is the default (graph-layout task 21);
+           Classic is TinyKeep. -->
+      <fieldset class="group" id="group-layout">
+        <legend>Layout</legend>
+        <label class="field"><span>Layout</span>
+          <select id="layout">
+            <option value="graph" selected>Graph</option>
+            <option value="classic">Classic</option>
+          </select>
+        </label>
+        <label class="field"><span>Rule set</span>
+          <select id="rule-set">
+            <option value="" selected>From theme</option>
+            <option value="classic_eq">classic_eq</option>
+            <option value="warren">warren</option>
+          </select>
+        </label>
+        <label class="field"><span>Finish</span>
+          <select id="finish">
+            <option value="" selected>From rules</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
+          </select>
+        </label>
+        <label class="field"><span>Structure</span>
+          <select id="structure">
+            <option value="" selected>From rules</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
+          </select>
+        </label>
+        <label class="field"><span>Clutter</span>
+          <select id="clutter">
+            <option value="" selected>From rules</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
+          </select>
+        </label>
+        <label class="field"><span>Overlay</span>
+          <select id="overlay">
+            <option value="" selected>From rules</option>
+            <option value="fresh_dig">Fresh dig</option>
+            <option value="natural_cave">Natural cave</option>
+            <option value="reclaimed">Reclaimed</option>
+            <option value="ruined">Ruined</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <!-- Dungeon, city and outdoor dungeon only: the dungeon theme
+           (archetype) and the inhabiting race (its body height sizes the rooms). The values
+           are ai/schema.py VALID_DUNGEON_THEMES / VALID_DUNGEON_RACES,
+           hard-coded here (no route lists them; the server 400s on any
+           other value). "None" sends "", no theme or race. -->
+      <fieldset class="group" id="group-content">
+        <legend>Content</legend>
+        <label class="field"><span>Theme</span>
+          <select id="dungeon-theme">
+            <option value="" selected>None</option>
+            <option value="fortress">Fortress</option>
+            <option value="war_city">War city</option>
+            <option value="warren">Warren</option>
+            <option value="temple">Temple</option>
+            <option value="tomb">Tomb</option>
+            <option value="wizard_lair">Wizard lair</option>
+            <option value="corrupted_sanctum">Corrupted sanctum</option>
+            <option value="mine_delve">Mine delve</option>
+            <option value="sunken_ruin">Sunken ruin</option>
+            <option value="lava_forge">Lava forge</option>
+            <option value="ice_keep">Ice keep</option>
+          </select>
+        </label>
+        <label class="field"><span>Race</span>
+          <select id="dungeon-race">
+            <option value="" selected>None</option>
+            <option value="goblin">Goblin</option>
+            <option value="froglok">Froglok</option>
+            <option value="kobold">Kobold</option>
+            <option value="lizardman">Lizardman</option>
+            <option value="gnoll">Gnoll</option>
+            <option value="sarnak">Sarnak</option>
+            <option value="troll">Troll</option>
+            <option value="ogre">Ogre</option>
+            <option value="giant">Giant</option>
+            <option value="dragon">Dragon</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <!-- Landscape zone types (wilderness, outdoor dungeon) only: what each
+           side of the map is (mountain and river sides are sealed; a zoneline
+           is a walkable exit off the map), how wooded the plains are, and the
+           Sites and who builds them. -->
+      <fieldset class="group" id="edges" hidden>
+        <legend>Landscape</legend>
+        <label class="field"><span>North edge</span><select id="edge-n"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>East edge</span><select id="edge-e"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>South edge</span><select id="edge-s"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>West edge</span><select id="edge-w"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>Trees</span><select id="trees"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
+        <label class="field" title="Camps, huts, farmsteads, towers, shrines and ruins in the landscape"><span>Sites</span><select id="sites"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
+        <label class="field" title="Who builds the Sites"><span>Inhabitants</span><select id="inhabitant"><option value="" selected>biome's mix</option><option>human</option><option>orc</option><option>gnoll</option><option>centaur</option></select></label>
+      </fieldset>
+
+      <!-- How many Props (stock furniture, lights, clutter) stand in the
+           rooms, and the decor seed that rerolls them alone. The Decor values
+           come from /api/controls on load; until then (or without it) the
+           list is empty and the server builds its default. A blank decor
+           seed uses the zone's. -->
+      <fieldset class="group" id="group-decor">
+        <legend>Decor</legend>
+        <label class="field" title="Furniture, lights and clutter in the rooms (needs the EQ install on the server)"><span>Decor</span>
+          <select id="decor"></select>
+        </label>
+        <label class="field" title="Rerolls the Props alone; blank uses the zone's seed"><span>Decor seed</span>
+          <input type="number" id="decor-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
+        </label>
+      </fieldset>
+
+      <!-- Every zone type: the rooms seed rerolls the rooms and Sites on
+           the same World. A blank rooms seed uses the zone's. -->
+      <fieldset class="group" id="group-seeds">
+        <legend>Seeds</legend>
+        <label class="field" title="Rerolls the rooms and Sites on the same land; blank uses the zone's seed"><span>Rooms seed</span>
+          <input type="number" id="rooms-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
+        </label>
+      </fieldset>
+    </div>
   </header>
 
   <!-- 3D viewport -->

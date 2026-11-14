@@ -97,8 +97,7 @@ html, body {
 
 /* Buttons: one style per role. Primary is Generate; secondary is the rest. */
 button.primary,
-button.secondary,
-#advanced > summary {
+button.secondary {
   height: var(--ctl-h);
   display: inline-flex;
   align-items: center;
@@ -120,19 +119,46 @@ button.primary {
 }
 button.primary:hover:not(:disabled) { background: #8fc5ff; }
 button.primary:disabled { opacity: 0.5; cursor: default; }
-button.secondary,
-#advanced > summary {
+button.secondary {
   background: transparent;
   color: var(--muted);
   border: 1px solid #2a3040;
 }
-button.secondary:hover,
-#advanced > summary:hover { border-color: var(--accent); color: var(--text); }
+button.secondary:hover { border-color: var(--accent); color: var(--text); }
+button.secondary.chevron { width: var(--ctl-h); padding: 0; }
+
+/* Generate mode switch: a two-way segmented control. */
+.segmented {
+  display: inline-flex;
+  height: var(--ctl-h);
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.segmented > button {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 0 12px;
+  font-size: 13px;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.segmented > button + button { border-left: 1px solid #2a3040; }
+.segmented > button:hover { color: var(--text); }
+.segmented > button[aria-checked="true"] {
+  background: var(--accent-dim);
+  color: #e8f2ff;
+}
+.segmented > button:focus-visible,
+button.primary:focus-visible,
+button.secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 /* ---- Controls panel: six groups, each a label/control grid ---- */
-#advanced > summary { list-style: none; }
-#advanced > summary::-webkit-details-marker { display: none; }
-#advanced[open] > summary { border-color: var(--accent); color: var(--text); }
 .adv-body {
   position: absolute;          /* below the bar (#controls is the box) */
   top: 100%;

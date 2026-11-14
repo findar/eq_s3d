@@ -13,16 +13,17 @@ import { drawSockets } from "./sockets";
 // How a grown zone's rooms lean: "From rules", or a number or an overlay on top.
 const SCALE_CONTROLS = ["finish", "structure", "clutter", "overlay"];
 
-// The two generation modes, chosen explicitly by which button (or which
-// field's Enter) fired — the server no longer infers it from the body shape.
+// The two generation modes, chosen explicitly by the Describe | Controls
+// switch (or which field's Enter fired) — the server no longer infers it from
+// the body shape.
 type Mode = "prompt" | "controls";
 
 // ---- DOM ----
 const $ = (id: string) => document.getElementById(id)!;
 const canvas = $("viewport") as HTMLCanvasElement;
 const statusEl = $("status");
-const genDescBtn = $("generate-description") as HTMLButtonElement;
-const genCtrlBtn = $("generate-controls") as HTMLButtonElement;
+const generateBtn = $("generate") as HTMLButtonElement;
+const promptInput = $("prompt") as HTMLInputElement;
 const hintOverlay = $("hint-overlay");
 const seedInput = $("seed") as HTMLInputElement;
 const reproduceBtn = $("reproduce") as HTMLButtonElement;
@@ -442,13 +443,12 @@ function readLayout(): string {
 
 async function doGenerate(mode: Mode) {
   const seed = readSeed();
-  const prompt = ($("prompt") as HTMLInputElement).value.trim();
+  const prompt = promptInput.value.trim();
 
-  // In prompt mode a description is required; fall back to controls if empty so
-  // the on-load / accidental-empty case still produces a zone.
-  if (mode === "prompt" && prompt === "") {
-    mode = "controls";
-  }
+  // Prompt mode needs a description: with none, nothing is sent (Generate is
+  // disabled then; this catches Enter in an empty box). No silent fallback to
+  // the Controls, which are off screen in Describe mode.
+  if (mode === "prompt" && prompt === "") return;
 
   // Build the request body per the server's explicit-mode contract: prompt mode
   // sends {mode, prompt}, controls mode sends {mode, controls:{…}}; seed rides
@@ -542,8 +542,8 @@ async function doGenerate(mode: Mode) {
 
 // Send one generate request and show what it built.
 async function runGenerate(params: GenerateParams): Promise<void> {
-  genDescBtn.disabled = true;
-  genCtrlBtn.disabled = true;
+  generating = true;
+  syncGenerateButton();
   rerollDecorBtn.disabled = true;
   rerollRoomsBtn.disabled = true;
   statusEl.textContent = "generating…";
@@ -601,8 +601,8 @@ async function runGenerate(params: GenerateParams): Promise<void> {
     console.error(err);
     statusEl.textContent = "error — see console";
   } finally {
-    genDescBtn.disabled = false;
-    genCtrlBtn.disabled = false;
+    generating = false;
+    syncGenerateButton();
     rerollDecorBtn.disabled = !(lastResult && usesControl(lastResult.zone_type, "decor"));
     rerollRoomsBtn.disabled = !lastResult;
   }
@@ -734,9 +734,86 @@ async function refreshZoneTypes(): Promise<void> {
 ($("zone-type") as HTMLSelectElement).addEventListener("change", syncControlVisibility);
 ($("layout") as HTMLSelectElement).addEventListener("change", syncControlVisibility);
 
-// The two Generate actions choose the mode explicitly.
-genDescBtn.addEventListener("click", () => doGenerate("prompt"));
-genCtrlBtn.addEventListener("click", () => doGenerate("controls"));
+// ---- Generate mode ----
+// Describe shows the description box, Controls the Controls panel (folded
+// away by the chevron when the user wants the view); the one Generate button
+// sends the chosen mode. Both the mode and the panel's open state are
+// remembered per browser; storage can throw (private windows, blocked site
+// data), so every access is guarded and the page works without it.
+const MODE_KEY = "eq_s3d.mode";
+const OPEN_KEY = "eq_s3d.controlsOpen";
+
+function loadPref(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function savePref(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* the page works without it */ }
+}
+
+// Controls is the default with nothing remembered (archive decision 2).
+let mode: Mode = loadPref(MODE_KEY) === "prompt" ? "prompt" : "controls";
+let controlsOpen = loadPref(OPEN_KEY) !== "false";
+// True while a request is in flight: Generate stays disabled.
+let generating = false;
+
+const modeButtons: Record<Mode, HTMLButtonElement> = {
+  prompt: $("mode-describe") as HTMLButtonElement,
+  controls: $("mode-controls") as HTMLButtonElement,
+};
+const controlsToggle = $("controls-toggle") as HTMLButtonElement;
+const controlsPanel = $("controls-panel");
+
+// Generate is disabled while a request runs, and in Describe mode while the
+// description is empty (archive decision 3).
+function syncGenerateButton(): void {
+  generateBtn.disabled = generating || (mode === "prompt" && promptInput.value.trim() === "");
+  generateBtn.title = mode === "prompt"
+    ? (promptInput.value.trim() === "" ? "Type a description first" : "Generate from the description")
+    : "Generate from the Controls";
+}
+
+function applyMode(): void {
+  for (const m of ["prompt", "controls"] as Mode[]) {
+    const on = m === mode;
+    modeButtons[m].setAttribute("aria-checked", String(on));
+    modeButtons[m].tabIndex = on ? 0 : -1;
+  }
+  promptInput.hidden = mode !== "prompt";
+  controlsToggle.hidden = mode !== "controls";
+  controlsPanel.hidden = mode !== "controls" || !controlsOpen;
+  controlsToggle.setAttribute("aria-expanded", String(controlsOpen));
+  controlsToggle.textContent = controlsOpen ? "▾" : "▸";
+  syncGenerateButton();
+}
+
+function setMode(m: Mode, focus = false): void {
+  mode = m;
+  savePref(MODE_KEY, m);
+  applyMode();
+  if (focus) modeButtons[m].focus();
+}
+
+modeButtons.prompt.addEventListener("click", () => setMode("prompt"));
+modeButtons.controls.addEventListener("click", () => setMode("controls"));
+// Radio-group keys: the arrows move the choice. They stop here so they never
+// reach the camera (controls.ts only skips form fields).
+$("mode-switch").addEventListener("keydown", (e) => {
+  const ev = e as KeyboardEvent;
+  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(ev.key)) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    setMode(mode === "prompt" ? "controls" : "prompt", true);
+  }
+});
+controlsToggle.addEventListener("click", () => {
+  controlsOpen = !controlsOpen;
+  savePref(OPEN_KEY, String(controlsOpen));
+  applyMode();
+});
+promptInput.addEventListener("input", syncGenerateButton);
+applyMode();
+
+generateBtn.addEventListener("click", () => doGenerate(mode));
 
 // Reset View button — return the camera to its starting position/orientation
 $("reset-view").addEventListener("click", () => {
@@ -745,12 +822,16 @@ $("reset-view").addEventListener("click", () => {
 });
 
 // Enter routing is per field: Enter in the description → prompt mode; Enter in
-// any Controls-panel field (or the shared seed box) → controls mode.
-($("prompt") as HTMLInputElement).addEventListener("keydown", (e) => {
+// any Controls-panel field → controls mode; Enter in the shared seed box →
+// the chosen mode.
+promptInput.addEventListener("keydown", (e) => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate("prompt");
 });
+seedInput.addEventListener("keydown", (e) => {
+  if ((e as KeyboardEvent).key === "Enter") doGenerate(mode);
+});
 
-for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
+for (const id of ["zone-type", "rooms", "size", "verticality", "locks",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
                   "decor", "decor-seed", "rooms-seed"]) {
