@@ -865,68 +865,80 @@ def _group_order(usable: Sequence[Any], rng: random.Random) -> List[Any]:
 def _place_on_points(out: SitePlacement, t: _Terrain, rules: SiteRules, biome: str,
                      inhabitant: str, rng: random.Random, points: Sequence[Any],
                      keep_clear: Sequence[ClearShape]) -> None:
-    """Sites on point Sockets (step 13 design "The Sites stage on points"); ``out.target`` is
-    drawn. The ``SITES_SALT`` stream draws, after the target, in this order (every Site
-    build's bytes depend on it):
+    """Sites on point Sockets (step 13 design "The Sites stage on points"; Req 3.2 as revised
+    by task 16, archive decision 9: the kind first, then the point); ``out.target`` is drawn.
+    The ``SITES_SALT`` stream draws, after the target, in this order (every Site build's bytes
+    depend on it):
 
     1. the Group order: one draw per Group with a usable point (:func:`_group_order`);
-    2. then per point taken, in that order: its Inhabitant; if a kind fits, the kind, then
-       the way in (:func:`_approach`), then the arrangement (``_Arranger``'s draws).
+    2. then per Site tried: its Inhabitant; the kind, by the biome's and Inhabitant's weights
+       alone, among the kinds with a weight that fit some point left (a redraw, the kind that
+       found no point left out, each time the drawn kind's points all lack a way in); then,
+       on the point it stands on, the way in (:func:`_approach`, its draws per point tried)
+       and the arrangement (``_Arranger``'s draws).
 
     A kind fits a point when its ``radius + margin`` is within the point's Free radius at the
     recipe's slope, its disc meets no Kept_Clear shape and no earlier Site's way in, and keeps
-    ``CLEAR_WIDTH`` from every earlier Site's ground and margin; of those with a weight, one
-    is drawn by ``weight * (1 + likes)``. A point no kind fits, or with no way in, is passed
-    over; every point is taken at most once. A Site still to place when no point is left is
-    dropped (``NO_POINT``)."""
+    ``CLEAR_WIDTH`` from every earlier Site's ground and margin. The drawn kind stands in the
+    Group of the first point in the Group order it fits, on that Group's fitting point its
+    likes score best (the earlier point on a tie; no draw). A point with no way in is used up
+    and the next fitting point is tried; every point is taken at most once, and a point a kind
+    passed over stays for later Sites. A Site no kind fits any point left for is dropped
+    (``NO_POINT``); one whose arrangement fails is dropped, named, and its point used up."""
     from generators.sites.points import slope_key
 
     for p in points:
         if p.kind != "site":
             raise ValueError(f"Socket {p.id!r} ({p.kind}) is not a point Site Socket")
-    queue = iter(_group_order(usable_points(points, rules, keep_clear), rng))
+    left = list(_group_order(usable_points(points, rules, keep_clear), rng))
     grounds: List[ClearShape] = []      # earlier Sites' ground and margin
     ways: List[ClearShape] = []         # earlier Sites' ways in, beyond their margin
+
+    def fits(kind: str, p) -> bool:
+        recipe = rules.kinds[kind]
+        outer = recipe.ground.radius + recipe.ground.margin
+        if float(p.ground["free"].get(slope_key(recipe.ground.slope_deg), 0.0)) < outer:
+            return False
+        disc = (p.x, p.y, p.x, p.y, outer)
+        if any(gap(disc, s) < 0 for s in keep_clear) or any(gap(disc, w) < 0 for w in ways):
+            return False
+        return not any(gap(disc, s) < CLEAR_WIDTH for s in grounds)
+
     for _ in range(out.target):
-        site = None
-        for p in queue:
-            who = rules.draw_inhabitant(biome, rng, inhabitant)
-            weights = rules.kind_weights(biome, who)
-            free = p.ground["free"]
-            fits: Dict[str, float] = {}
-            for kind in sorted(weights):
-                if weights[kind] <= 0:
-                    continue
-                recipe = rules.kinds[kind]
-                outer = recipe.ground.radius + recipe.ground.margin
-                if float(free.get(slope_key(recipe.ground.slope_deg), 0.0)) < outer:
-                    continue
-                disc = (p.x, p.y, p.x, p.y, outer)
-                if any(gap(disc, s) < 0 for s in keep_clear) or any(gap(disc, w) < 0 for w in ways):
-                    continue
-                if any(gap(disc, s) < CLEAR_WIDTH for s in grounds):
-                    continue
-                fits[kind] = weights[kind] * (1.0 + _point_likes(recipe, p.ground))
-            if not fits:
-                continue
-            names = sorted(fits)
-            kind = rng.choices(names, weights=[fits[n] for n in names])[0]
+        who = rules.draw_inhabitant(biome, rng, inhabitant)
+        weights = rules.kind_weights(biome, who)
+        kinds = [k for k in sorted(weights) if weights[k] > 0]
+        placed = False
+        while not placed:
+            kinds = [k for k in kinds if any(fits(k, p) for p in left)]
+            if not kinds:
+                out.drops.append(Drop("site", "", NO_POINT))
+                break
+            kind = rng.choices(kinds, weights=[weights[k] for k in kinds])[0]
             recipe = rules.recipe_for(kind, who)
             outer = recipe.ground.radius + recipe.ground.margin
-            cx, cy = float(p.x), float(p.y)
-            # The way in keeps off earlier Sites' grounds and the Kept_Clear (an outdoor
-            # dungeon's rooms reach under the hill's flat ground, site-sockets P7).
-            a = _approach(t, cx, cy, outer, rng, avoid=tuple(grounds) + tuple(keep_clear))
-            if a is None:
-                continue
-            site = _arrange_site(out, t, rules, recipe, kind, who, cx, cy, a, rng, socket=p.id)
-            # The point is used either way; a Site whose arrangement failed is dropped, named.
-            if site is not None:
-                grounds.append((cx, cy, cx, cy, outer))
-                ways.append(approach_way(cx, cy, outer, a))
-            break
-        else:
-            out.drops.append(Drop("site", "", NO_POINT))
+            while True:
+                first = next((p for p in left if fits(kind, p)), None)
+                if first is None:          # every fitting point lacked a way in: redraw
+                    kinds.remove(kind)
+                    break
+                group = int(first.ground["group"])
+                cands = [p for p in left if int(p.ground["group"]) == group and fits(kind, p)]
+                p = max(cands, key=lambda q: _point_likes(rules.kinds[kind], q.ground))
+                left.remove(p)
+                cx, cy = float(p.x), float(p.y)
+                # The way in keeps off earlier Sites' grounds and the Kept_Clear (an outdoor
+                # dungeon's rooms reach under the hill's flat ground, site-sockets P7).
+                a = _approach(t, cx, cy, outer, rng, avoid=tuple(grounds) + tuple(keep_clear))
+                if a is None:
+                    continue
+                site = _arrange_site(out, t, rules, recipe, kind, who, cx, cy, a, rng, socket=p.id)
+                # The point is used either way; a Site whose arrangement failed is dropped, named.
+                if site is not None:
+                    grounds.append((cx, cy, cx, cy, outer))
+                    ways.append(approach_way(cx, cy, outer, a))
+                placed = True
+                break
 
 
 __all__ = ["APRON_DEPTH", "CLEAR_WIDTH", "ClearArea", "Drop", "NO_POINT", "POIPoint",

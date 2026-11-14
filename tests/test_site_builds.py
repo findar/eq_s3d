@@ -33,13 +33,13 @@ STEP9 = {
 # .eqg[:-4] sha256 of Sites builds at step 10 (room-decor task 11): Decor ``none``
 # (and Decor left unset, which the builder takes as none) must still give these, Site
 # Props or not (room-decor Req 12.2, P11). Recaptured by site-sockets task 6 (Sites stand
-# on the World's points).
+# on the World's points) and task 16 (the kind first, then the point).
 STEP10 = {
-    ("wild", 1955208177, "normal"): "ecd18b34a9365c092df72bba3e24dedf44e65696b73c8941c7db7b7178879aef",
-    ("wild", 31337, "dense"): "37af0c058fbcb7d323c84bf7f327edb1fee857761b5ed27ef77b67d7cd714fbb",
+    ("wild", 1955208177, "normal"): "fe855e0543925b4f76db2af32601d59300ac2d73ce651b5e91288673e415f0de",
+    ("wild", 31337, "dense"): "f2d5eb7a5430a9a3f4dc2a5e8c4b28c6e3fb6df3396d8859c2064d8acebdda67",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape), and by
     # site-sockets task 7 (Sites keep off the dungeon's rooms, not the hill).
-    ("od", 1001, "dense"): "5824418dc69a3f68c1fd6bc6e93968ce4f464116c8afc448055c10198ab7432d",
+    ("od", 1001, "dense"): "fdb0b3159a590dedb9ae357082dbf0ca7a4883091a844667bdf70fbd69d289d6",
 }
 
 
@@ -112,6 +112,48 @@ def test_same_inputs_same_eqg(tmp_path):
         f.cache_clear()
     b = _build(tmp_path, _spec("wild", 2024, "dense"), "b")
     assert a.eqg_path.read_bytes()[:-4] == b.eqg_path.read_bytes()[:-4]
+
+
+#: Outdoor-dungeon seeds of the gate sweep (site-sockets Req 5.3, 8.1). Seed 8 doesn't plan.
+OD_SWEEP = range(40)
+
+
+def _od_zone(key: tuple) -> dict:
+    """Plan, build and gate one outdoor dungeon as the pipeline does (first try only); its
+    Sites from the sidecar. ``plan`` False when the seed doesn't plan."""
+    import tempfile
+    from pathlib import Path
+
+    _tag, seed, sites = key
+    try:
+        spec = _spec("od", seed, sites)
+    except od.PLAN_ERRORS:
+        return {"plan": False}
+    with tempfile.TemporaryDirectory() as tmp:
+        r = ZoneBuilder(spec).build(output_dir=Path(tmp), write_glb=False)
+        gate = od.outdoor_dungeon_report(r.eqg_path, spec).passed
+        side = json.loads(r.sidecar_path.read_text(encoding="utf-8"))["sites"]["sites"]
+    return {"plan": True, "gate": bool(gate), "kinds": [s["kind"] for s in side]}
+
+
+@pytest.mark.slow
+def test_outdoor_dungeons_gate_first_try_with_a_site(shared_results):
+    """Site-sockets Req 5.3, 8.1: outdoor dungeons at seeds 0-39, built, at Normal and Dense
+    pass the gate first try on every seed that plans (step 12: 40 of 40), and at Normal get a
+    Site on at least 35 of them (step 10: 8 of 39)."""
+    keys = [("od_sweep", s, c) for c in ("normal", "dense") for s in OD_SWEEP][::-1]
+    got = dict(zip(keys, shared_results.get_many(keys, _od_zone)))
+    out = {}
+    for c in ("normal", "dense"):
+        zs = [got[("od_sweep", s, c)] for s in OD_SWEEP]
+        planned = [z for z in zs if z["plan"]]
+        out[c] = (len(planned), sum(z["gate"] for z in planned), sum(bool(z["kinds"]) for z in planned),
+                  [s for s, z in zip(OD_SWEEP, zs) if z["plan"] and not z["gate"]])
+    print("\noutdoor dungeons, seeds 0-39: " + "; ".join(
+        f"{c} {g}/{p} first try, a Site on {k}, failed {f}" for c, (p, g, k, f) in out.items()))
+    for c, (planned, passed, with_site, failed) in out.items():
+        assert planned >= 38 and passed == planned, (c, failed)
+    assert out["normal"][2] >= 35, out["normal"]
 
 
 OD_SEEDS = range(1000, 1012)
