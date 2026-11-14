@@ -9,28 +9,46 @@
 <body>
   <!-- Control bar -->
   <header id="controls">
-    <span class="brand">⚔ eq_s3d</span>
+    <div class="hgroup"><span class="brand">⚔ eq_s3d</span></div>
 
-    <input type="text" id="prompt" placeholder="e.g. a flooded temple with lots of chambers" />
+    <!-- Generate mode: Describe (the description box) or Controls (the
+         Controls panel). Only the chosen one shows and the one Generate
+         button sends it; the mode is remembered per browser (main.ts). The
+         chevron folds the Controls panel away without leaving the mode. -->
+    <div class="hgroup">
+      <div id="mode-switch" class="segmented" role="radiogroup" aria-label="Generate from">
+        <button type="button" id="mode-describe" role="radio" aria-checked="false" title="Generate from a description">Describe</button>
+        <button type="button" id="mode-controls" role="radio" aria-checked="true" title="Generate from the Controls">Controls</button>
+      </div>
+      <button type="button" id="controls-toggle" class="secondary chevron" aria-controls="controls-panel" aria-expanded="true" title="Show or hide the Controls">▾</button>
+    </div>
 
-    <!-- Two explicit Generate actions: one for the free-text description
-         (prompt mode), one for the Controls panel (controls mode). The seed
-         box lives in the header because both modes send it. -->
-    <button id="generate-description" title="Generate from the description (prompt mode)">Generate from description</button>
-    <button id="generate-controls" class="secondary" title="Generate from the Controls panel (controls mode)">Generate from controls</button>
+    <input type="text" id="prompt" placeholder="e.g. a flooded temple with lots of chambers" hidden />
 
-    <label>Seed
-      <input type="number" id="seed" min="0" step="1"
-             placeholder="blank = random" />
-    </label>
+    <!-- The seed box sends with either mode. -->
+    <div class="hgroup">
+      <label class="inline">Seed
+        <input type="number" id="seed" min="0" step="1"
+               placeholder="blank = random" />
+      </label>
+      <button id="generate" class="primary" title="Generate a zone from the chosen mode">Generate</button>
+    </div>
 
-    <button id="reset-view" class="secondary" title="Return to the starting view (R)">Reset View</button>
-    <button id="show-map" class="secondary" title="Top-down layout map (M)">Map</button>
+    <div class="hgroup">
+      <button id="reset-view" class="secondary" title="Return to the starting view (R)">Reset View</button>
+      <button id="show-map" class="secondary" title="Top-down layout map (M)">Map</button>
+    </div>
 
-    <details id="advanced">
-      <summary>Controls</summary>
-      <div class="adv-body">
-        <label>Zone type
+    <span id="status"></span>
+
+    <!-- The Controls: six labelled groups, each a label/control grid, shown
+         under the bar in Controls mode. Every control keeps its element id
+         (main.ts reads them by id); a control that doesn't apply hides, and
+         a group left empty hides with it. -->
+    <div class="adv-body" id="controls-panel">
+      <fieldset class="group" id="group-zone">
+        <legend>Zone</legend>
+        <label class="field"><span>Zone type</span>
           <!-- Populated from /api/zone_types on load (disabled options carry
                their reason). These static options are the offline fallback. -->
           <select id="zone-type">
@@ -40,10 +58,10 @@
             <option value="outdoor_dungeon">Outdoor dungeon</option>
           </select>
         </label>
-        <label>Rooms
+        <label class="field"><span>Rooms</span>
           <input type="number" id="rooms" min="1" max="30" step="1" value="5" />
         </label>
-        <label>Size
+        <label class="field"><span>Size</span>
           <select id="size">
             <option>small</option>
             <option selected>medium</option>
@@ -51,22 +69,85 @@
             <option>huge</option>
           </select>
         </label>
-        <label>Verticality
+        <label class="field"><span>Verticality</span>
           <select id="verticality">
             <option>flat</option>
             <option selected>moderate</option>
             <option>dramatic</option>
           </select>
         </label>
-        <label>Locks
+        <label class="field"><span>Locks</span>
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
-        <!-- Dungeon, city and outdoor dungeon only: the dungeon theme
-             (archetype) and the inhabiting race (its body height sizes the rooms). The values
-             are ai/schema.py VALID_DUNGEON_THEMES / VALID_DUNGEON_RACES,
-             hard-coded here (no route lists them; the server 400s on any
-             other value). "None" sends "", no theme or race. -->
-        <label>Theme
+      </fieldset>
+
+      <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
+           only) the topology rule set and how the grown rooms lean. "From
+           theme" lets the dungeon theme pick its base set; the others are
+           the shipped base sets under rules/topology/ (the server 400s on
+           any other name). Graph is the default (graph-layout task 21);
+           Classic is TinyKeep. -->
+      <fieldset class="group" id="group-layout">
+        <legend>Layout</legend>
+        <label class="field"><span>Layout</span>
+          <select id="layout">
+            <option value="graph" selected>Graph</option>
+            <option value="classic">Classic</option>
+          </select>
+        </label>
+        <label class="field"><span>Rule set</span>
+          <select id="rule-set">
+            <option value="" selected>From theme</option>
+            <option value="classic_eq">classic_eq</option>
+            <option value="warren">warren</option>
+          </select>
+        </label>
+        <label class="field"><span>Finish</span>
+          <select id="finish">
+            <option value="" selected>From rules</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
+          </select>
+        </label>
+        <label class="field"><span>Structure</span>
+          <select id="structure">
+            <option value="" selected>From rules</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
+          </select>
+        </label>
+        <label class="field"><span>Clutter</span>
+          <select id="clutter">
+            <option value="" selected>From rules</option>
+            <option value="0">0</option><option value="1">1</option><option value="2">2</option>
+            <option value="3">3</option><option value="4">4</option><option value="5">5</option>
+            <option value="6">6</option><option value="7">7</option><option value="8">8</option>
+            <option value="9">9</option><option value="10">10</option>
+          </select>
+        </label>
+        <label class="field"><span>Overlay</span>
+          <select id="overlay">
+            <option value="" selected>From rules</option>
+            <option value="fresh_dig">Fresh dig</option>
+            <option value="natural_cave">Natural cave</option>
+            <option value="reclaimed">Reclaimed</option>
+            <option value="ruined">Ruined</option>
+          </select>
+        </label>
+      </fieldset>
+
+      <!-- Dungeon, city and outdoor dungeon only: the dungeon theme
+           (archetype) and the inhabiting race (its body height sizes the rooms). The values
+           are ai/schema.py VALID_DUNGEON_THEMES / VALID_DUNGEON_RACES,
+           hard-coded here (no route lists them; the server 400s on any
+           other value). "None" sends "", no theme or race. -->
+      <fieldset class="group" id="group-content">
+        <legend>Content</legend>
+        <label class="field"><span>Theme</span>
           <select id="dungeon-theme">
             <option value="" selected>None</option>
             <option value="fortress">Fortress</option>
@@ -82,7 +163,7 @@
             <option value="ice_keep">Ice keep</option>
           </select>
         </label>
-        <label>Race
+        <label class="field"><span>Race</span>
           <select id="dungeon-race">
             <option value="" selected>None</option>
             <option value="goblin">Goblin</option>
@@ -97,114 +178,47 @@
             <option value="dragon">Dragon</option>
           </select>
         </label>
-        <!-- Dungeon, city and outdoor dungeon only: how many Props (stock
-             furniture, lights, clutter) stand in the rooms, and the decor seed
-             that rerolls them alone. The Decor values come from /api/controls
-             on load; until then (or without it) the list is empty and the
-             server builds its default. A blank decor seed uses the zone's. -->
-        <label title="Furniture, lights and clutter in the rooms (needs the EQ install on the server)">Decor
+      </fieldset>
+
+      <!-- Landscape zone types (wilderness, outdoor dungeon) only: what each
+           side of the map is (mountain and river sides are sealed; a zoneline
+           is a walkable exit off the map), how wooded the plains are, and the
+           Sites and who builds them. -->
+      <fieldset class="group" id="edges" hidden>
+        <legend>Landscape</legend>
+        <label class="field"><span>North edge</span><select id="edge-n"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>East edge</span><select id="edge-e"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>South edge</span><select id="edge-s"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>West edge</span><select id="edge-w"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
+        <label class="field"><span>Trees</span><select id="trees"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
+        <label class="field" title="Camps, huts, farmsteads, towers, shrines and ruins in the landscape"><span>Sites</span><select id="sites"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
+        <label class="field" title="Who builds the Sites"><span>Inhabitants</span><select id="inhabitant"><option value="" selected>biome's mix</option><option>human</option><option>orc</option><option>gnoll</option><option>centaur</option></select></label>
+      </fieldset>
+
+      <!-- How many Props (stock furniture, lights, clutter) stand in the
+           rooms, and the decor seed that rerolls them alone. The Decor values
+           come from /api/controls on load; until then (or without it) the
+           list is empty and the server builds its default. A blank decor
+           seed uses the zone's. -->
+      <fieldset class="group" id="group-decor">
+        <legend>Decor</legend>
+        <label class="field" title="Furniture, lights and clutter in the rooms (needs the EQ install on the server)"><span>Decor</span>
           <select id="decor"></select>
         </label>
-        <label title="Rerolls the Props alone; blank uses the zone's seed">Decor seed
+        <label class="field" title="Rerolls the Props alone; blank uses the zone's seed"><span>Decor seed</span>
           <input type="number" id="decor-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
         </label>
-        <!-- Every zone type: the rooms seed rerolls the rooms and Sites on
-             the same World. A blank rooms seed uses the zone's. -->
-        <label title="Rerolls the rooms and Sites on the same land; blank uses the zone's seed">Rooms seed
+      </fieldset>
+
+      <!-- Every zone type: the rooms seed rerolls the rooms and Sites on
+           the same World. A blank rooms seed uses the zone's. -->
+      <fieldset class="group" id="group-seeds">
+        <legend>Seeds</legend>
+        <label class="field" title="Rerolls the rooms and Sites on the same land; blank uses the zone's seed"><span>Rooms seed</span>
           <input type="number" id="rooms-seed" min="0" max="2147483647" step="1" placeholder="zone's" />
         </label>
-        <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph
-             only) the topology rule set. "From theme" lets the dungeon theme
-             pick its base set; the others are the shipped base sets under
-             rules/topology/ (the server 400s on any other name). Graph is
-             the default (graph-layout task 21); Classic is TinyKeep. -->
-        <label>Layout
-          <select id="layout">
-            <option value="graph" selected>Graph</option>
-            <option value="classic">Classic</option>
-          </select>
-        </label>
-        <label>Rule set
-          <select id="rule-set">
-            <option value="" selected>From theme</option>
-            <option value="classic_eq">classic_eq</option>
-            <option value="warren">warren</option>
-          </select>
-        </label>
-        <label>Finish
-          <select id="finish">
-            <option value="" selected>From rules</option>
-            <option value="0">0</option>
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-            <option value="7">7</option>
-            <option value="8">8</option>
-            <option value="9">9</option>
-            <option value="10">10</option>
-          </select>
-        </label>
-        <label>Structure
-          <select id="structure">
-            <option value="" selected>From rules</option>
-            <option value="0">0</option>
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-            <option value="7">7</option>
-            <option value="8">8</option>
-            <option value="9">9</option>
-            <option value="10">10</option>
-          </select>
-        </label>
-        <label>Clutter
-          <select id="clutter">
-            <option value="" selected>From rules</option>
-            <option value="0">0</option>
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-            <option value="7">7</option>
-            <option value="8">8</option>
-            <option value="9">9</option>
-            <option value="10">10</option>
-          </select>
-        </label>
-        <label>Overlay
-          <select id="overlay">
-            <option value="" selected>From rules</option>
-            <option value="fresh_dig">Fresh dig</option>
-            <option value="natural_cave">Natural cave</option>
-            <option value="reclaimed">Reclaimed</option>
-            <option value="ruined">Ruined</option>
-          </select>
-        </label>
-        <!-- Landscape zone types (wilderness, outdoor dungeon) only: what each
-             side of the map is (mountain and river sides are sealed; a zoneline
-             is a walkable exit off the map), and how wooded the plains are. -->
-        <fieldset id="edges" hidden>
-          <legend>Landscape</legend>
-          <label>N <select id="edge-n"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label>E <select id="edge-e"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label>S <select id="edge-s"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label>W <select id="edge-w"><option selected>mountain</option><option>river</option><option>zoneline</option></select></label>
-          <label>Trees <select id="trees"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
-          <label title="Camps, huts, farmsteads, towers, shrines and ruins in the landscape">Sites <select id="sites"><option>none</option><option>sparse</option><option selected>normal</option><option>dense</option></select></label>
-          <label title="Who builds the Sites">Inhabitants <select id="inhabitant"><option value="" selected>biome's mix</option><option>human</option><option>orc</option><option>gnoll</option><option>centaur</option></select></label>
-        </fieldset>
-      </div>
-    </details>
-
-    <span id="status"></span>
+      </fieldset>
+    </div>
   </header>
 
   <!-- 3D viewport -->
@@ -217,41 +231,55 @@
     <!-- Non-fatal advisories from the last response, in plain words. -->
     <div id="warnings" role="status"></div>
 
+    <!-- Before the first build: the note alone, not a column of dashes. -->
+    <p id="panel-empty" class="empty-note">No zone yet.</p>
+
+    <!-- What the shown build has. A section, row, button or toggle the build
+         has nothing for hides (main.ts updatePanel). -->
+    <div id="panel-body" hidden>
     <h3>Plan</h3>
     <div class="row"><span>Mode</span><span id="m-mode">—</span></div>
     <div class="row"><span>Zone type</span><span id="m-zone-type">—</span></div>
-    <div class="row"><span>Rooms</span><span id="m-rooms">—</span></div>
+    <div class="row" id="r-rooms"><span>Rooms</span><span id="m-rooms">—</span></div>
     <div id="m-plan-extra"></div>
 
     <h3>Zone</h3>
-    <div class="row"><span>Seed</span><span class="seed-row"><span id="m-seed">—</span><button id="reproduce" class="seed-btn" title="Reuse this seed: refill the seed box and copy it to the clipboard" disabled>⟳ reproduce</button></span></div>
+    <div class="row seed"><span>Seed</span><span id="m-seed">—</span><button id="reproduce" class="seed-btn" title="Reuse this seed: refill the seed box and copy it to the clipboard" disabled>⟳ reproduce</button></div>
     <div class="row"><span>Generated by</span><span id="m-build" title="Server commit that produced this zone">—</span></div>
     <div class="row"><span>Vertices</span><span id="m-verts">—</span></div>
     <div class="row"><span>Polygons</span><span id="m-polys">—</span></div>
     <div class="row"><span>Materials</span><span id="m-mats">—</span></div>
     <div class="row"><span>Lights</span><span id="m-lights">—</span></div>
     <div class="row"><span>Regions</span><span id="m-regions">—</span></div>
-    <div class="row"><span>Gates</span><span id="m-gates">—</span></div>
+    <div class="row" id="r-gates"><span>Gates</span><span id="m-gates">—</span></div>
 
     <!-- The sidecar's seeds block: the stage seeds this build used, resolved. -->
+    <section id="s-seeds">
     <h3>Seeds</h3>
-    <div class="row"><span>Rooms</span><span class="seed-row"><span id="m-rooms-seed">—</span><button id="reroll-rooms" class="seed-btn" title="Rebuild this zone with a fresh rooms seed: same land, new rooms and Sites" disabled>⟳ reroll rooms</button></span></div>
-    <div class="row"><span>Decor</span><span class="seed-row"><span id="m-decor-seed">—</span><button id="reroll-decor" class="seed-btn" title="Rebuild this zone with a fresh decor seed: same zone, new Props" disabled>⟳ reroll decor</button></span></div>
+    <div class="row seed" id="r-rooms-seed"><span>Rooms</span><span id="m-rooms-seed">—</span><button id="reroll-rooms" class="seed-btn" title="Rebuild this zone with a fresh rooms seed: same land, new rooms and Sites" disabled>⟳ reroll rooms</button></div>
+    <div class="row seed" id="r-decor-seed"><span>Decor</span><span id="m-decor-seed">—</span><button id="reroll-decor" class="seed-btn" title="Rebuild this zone with a fresh decor seed: same zone, new Props" disabled>⟳ reroll decor</button></div>
+    </section>
 
+    <section id="s-props">
     <h3>Props</h3>
     <div class="row"><span>Decor</span><span id="m-decor">—</span></div>
-    <div id="m-props"><span style="color:#555;font-size:11px">—</span></div>
+    <div id="m-props"></div>
+    </section>
 
     <h3>Bounds (u)</h3>
     <div class="row"><span>Width X</span><span id="m-wx">—</span></div>
     <div class="row"><span>Width Y</span><span id="m-wy">—</span></div>
     <div class="row"><span>Height Z</span><span id="m-wz">—</span></div>
 
+    <section id="s-pacing">
     <h3>Pacing</h3>
-    <div id="m-pacing"><span style="color:#555;font-size:11px">—</span></div>
+    <div id="m-pacing"></div>
+    </section>
 
+    <section id="s-content">
     <h3>Content</h3>
-    <div id="m-content"><span style="color:#555;font-size:11px">—</span></div>
+    <div id="m-content"></div>
+    </section>
 
     <!-- The latest build's files: native download links, probed per build. -->
     <section id="artifacts" aria-labelledby="artifacts-h">
@@ -263,11 +291,11 @@
 
     <h3>Overlays</h3>
     <label class="toggle"><input type="checkbox" id="t-wire" /> Wireframe</label>
-    <label class="toggle"><input type="checkbox" id="t-lights" checked /> Lights</label>
-    <label class="toggle"><input type="checkbox" id="t-regions" checked /> Regions</label>
-    <label class="toggle"><input type="checkbox" id="t-gates" checked /> Gates (lock/key)</label>
+    <label class="toggle" hidden><input type="checkbox" id="t-lights" checked /> Lights</label>
+    <label class="toggle" hidden><input type="checkbox" id="t-regions" checked /> Regions</label>
+    <label class="toggle" hidden><input type="checkbox" id="t-gates" checked /> Gates (lock/key)</label>
     <label class="toggle"><input type="checkbox" id="t-labels" checked /> Room IDs</label>
-    <label class="toggle" title="Show or hide the zone's trees (wilderness builds with trees)"><input type="checkbox" id="t-trees" checked disabled /> Trees</label>
+    <label class="toggle" title="Show or hide the zone's trees (wilderness builds with trees)" hidden><input type="checkbox" id="t-trees" checked /> Trees</label>
 
     <h3>Controls</h3>
     <p class="hint">Click viewport to capture mouse.<br>
@@ -276,6 +304,7 @@
       R or "Reset View" to return to start<br>
       M for top-down map<br>
       Esc release mouse</p>
+    </div>
   </aside>
 
   <div id="hint-overlay">Click to look around · WASD to move</div>

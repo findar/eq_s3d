@@ -14,3 +14,4 @@ Turn `CONTROL_ZONE_TYPES` into a predicate per control over the zone type, Layou
 Don't drop a control the server reads: compare with `server/app.py`'s request model and `ai/expand.py` before hiding one. A value that defaults on the server (e.g. Decor) must give the same build whether sent or left out; if not, keep sending it and say so in the commit.
 
 ## Result
+✔ 79fc0af · 3106 passed · frontend builds · not checked in the browser by the agent (the lead looks)

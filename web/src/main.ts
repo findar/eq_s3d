@@ -13,16 +13,17 @@ import { drawSockets } from "./sockets";
 // How a grown zone's rooms lean: "From rules", or a number or an overlay on top.
 const SCALE_CONTROLS = ["finish", "structure", "clutter", "overlay"];
 
-// The two generation modes, chosen explicitly by which button (or which
-// field's Enter) fired — the server no longer infers it from the body shape.
+// The two generation modes, chosen explicitly by the Describe | Controls
+// switch (or which field's Enter fired) — the server no longer infers it from
+// the body shape.
 type Mode = "prompt" | "controls";
 
 // ---- DOM ----
 const $ = (id: string) => document.getElementById(id)!;
 const canvas = $("viewport") as HTMLCanvasElement;
 const statusEl = $("status");
-const genDescBtn = $("generate-description") as HTMLButtonElement;
-const genCtrlBtn = $("generate-controls") as HTMLButtonElement;
+const generateBtn = $("generate") as HTMLButtonElement;
+const promptInput = $("prompt") as HTMLInputElement;
 const hintOverlay = $("hint-overlay");
 const seedInput = $("seed") as HTMLInputElement;
 const reproduceBtn = $("reproduce") as HTMLButtonElement;
@@ -65,6 +66,11 @@ controls.onLockChange = (locked) => {
   zoneScene.setLabelsVisible((e.target as HTMLInputElement).checked)
 );
 const treesToggle = $("t-trees") as HTMLInputElement;
+
+// Show or hide an overlay toggle's whole row (its <label>).
+function showToggle(id: string, on: boolean): void {
+  ($(id).closest("label") as HTMLElement).hidden = !on;
+}
 treesToggle.addEventListener("change", () =>
   zoneScene.setVegetationVisible(treesToggle.checked)
 );
@@ -163,6 +169,8 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   $("m-mode").textContent = modeLabel;
   $("m-zone-type").textContent = result.zone_type;
   $("m-rooms").textContent = String(result.rooms);
+  // A wilderness lays out no rooms: its plan's count is a default nobody set.
+  $("r-rooms").hidden = !usesControl(result.zone_type, "rooms");
 
   renderWarnings(result.warnings);
 
@@ -170,9 +178,11 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   extra.innerHTML = "";
   if (result.plan) {
     const p = result.plan;
+    // Size and verticality only where the zone type reads them.
     const rows: [string, string][] = [
-      ["Size", p.size],
-      ["Verticality", p.verticality],
+      ...(usesControl(p.zone_type, "size") ? [["Size", p.size] as [string, string]] : []),
+      ...(usesControl(p.zone_type, "verticality")
+        ? [["Verticality", p.verticality] as [string, string]] : []),
       ...(p.walls ? [["Walls", p.walls] as [string, string]] : []),
       ...(p.features && p.layout === "graph" ? [["Features", p.features] as [string, string]] : []),
       ...SCALE_CONTROLS.flatMap((id) => p[id] != null && p[id] !== ""
@@ -180,7 +190,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     ];
     if (usesControl(p.zone_type, "edges") && p.sites) {
       rows.push(["Sites", p.sites]);
-      rows.push(["Inhabitants", p.inhabitant || "biome's mix"]);
+      if (p.sites !== "none") rows.push(["Inhabitants", p.inhabitant || "biome's mix"]);
     }
     if (usesControl(p.zone_type, "decor") && p.decor) rows.push(["Decor", p.decor]);
     if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
@@ -199,8 +209,11 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   const roomsSeed = seeds?.rooms_seed ?? result.plan?.rooms_seed ?? null;
   const decorSeed = seeds?.decor_seed ?? result.plan?.decor_seed ?? null;
   $("m-rooms-seed").textContent = roomsSeed != null ? String(roomsSeed) : "—";
-  $("m-decor-seed").textContent = usesControl(result.zone_type, "decor") && decorSeed != null
-    ? String(decorSeed) : "—";
+  $("m-decor-seed").textContent = decorSeed != null ? String(decorSeed) : "—";
+  // The decor row and its reroll only when the build has Decor (placed Props).
+  $("r-rooms-seed").hidden = roomsSeed == null;
+  $("r-decor-seed").hidden = !sidecar.decor;
+  $("s-seeds").hidden = roomsSeed == null && !sidecar.decor;
   $("m-build").textContent = result.build_commit ?? "unknown";
   $("m-verts").textContent = result.vertices.toLocaleString();
   $("m-polys").textContent = result.polygons.toLocaleString();
@@ -208,6 +221,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   $("m-lights").textContent = String(sidecar.lights.length);
   $("m-regions").textContent = String(sidecar.regions.length);
   $("m-gates").textContent = String((sidecar.gates ?? []).length);
+  $("r-gates").hidden = (sidecar.gates ?? []).length === 0;
   $("m-wx").textContent = wx;
   $("m-wy").textContent = wy;
   $("m-wz").textContent = wz;
@@ -217,6 +231,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   // Pacing: role counts + max depth
   const pacing = $("m-pacing");
   pacing.innerHTML = "";
+  $("s-pacing").hidden = !(sidecar.rooms && sidecar.rooms.length);
   if (sidecar.rooms && sidecar.rooms.length) {
     const counts: Record<string, number> = {};
     let maxDepth = 0;
@@ -245,6 +260,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
   content.innerHTML = "";
   const cnt = sidecar.content ?? sidecar.theme;
   const themed = !!(cnt && cnt.dungeon_theme);
+  $("s-content").hidden = !(themed && sidecar.rooms && sidecar.rooms.length);
   if (themed && sidecar.rooms && sidecar.rooms.length) {
     const tbits: string[] = [cnt!.dungeon_theme!];
     if (cnt!.dungeon_race && cnt!.dungeon_race !== "default")
@@ -287,15 +303,13 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
         (sample.encounter_intent ? `intent: ${sample.encounter_intent}` : "");
       content.appendChild(note);
     }
-  } else {
-    content.innerHTML = `<span style="color:#555;font-size:11px">no theme (plain dungeon)</span>`;
   }
 }
 
 // Props: the sidecar's decor block (control, decor seed, counts) and the
 // placed Props by Category and by kind, read from the build: the rooms' and
 // (wilderness, outdoor dungeon) the Sites'. A build without the install on
-// the server has none, with a warning.
+// the server has none, with a warning; the section shows only with Props.
 function addRow(parent: HTMLElement, k: string, v: string, title = ""): void {
   const div = document.createElement("div");
   div.className = "row";
@@ -312,14 +326,10 @@ function updatePropsPanel(result: GenerateResult, sidecar: ZoneSidecar): void {
   const decorEl = $("m-decor");
   const list = $("m-props");
   list.innerHTML = "";
-  const rooms = usesControl(result.zone_type, "decor");
-  rerollDecorBtn.disabled = !rooms;
+  rerollDecorBtn.disabled = !usesControl(result.zone_type, "decor");
   const d = sidecar.decor;
-  if (!d) {
-    decorEl.textContent = rooms ? "none" : "—";
-    list.innerHTML = `<span style="color:#555;font-size:11px">${rooms ? "no Props" : "no rooms or Sites"}</span>`;
-    return;
-  }
+  $("s-props").hidden = !d;
+  if (!d) return;
   decorEl.textContent = `${d.control} · seed ${d.seed}`;
   addRow(list, "Props", String(d.props));
   addRow(list, "Lights", String(d.lights));
@@ -360,16 +370,16 @@ function readSeed(): number | undefined {
 }
 
 // The zone types each Controls-panel control applies to; for the others it is
-// hidden (the server ignores it there). "edges" is the landscape fieldset (map
-// edges and trees); the rest are the room-graph controls. Mirrors the server's
-// expand path: rooms and locks reach an outdoor dungeon's layout, size only a
-// dungeon's or city's; verticality a dungeon's (classic or graph layout), a
-// city's and an outdoor dungeon's (step 7: it scales the Levels the hill
-// holds); layout (and, under it, the rule
-// set) a dungeon's or outdoor dungeon's (server LAYOUT_ZONE_TYPES); the
-// dungeon theme and race every room-graph type's (server CONTENT_ZONE_TYPES:
-// a city goes through the same semantic layer as a dungeon). Keys are the
-// control's element id.
+// hidden and not sent (the server ignores it there). "edges" is the Landscape
+// group (map edges, trees, Sites); the rest are the room-graph controls.
+// Mirrors the server's expand path: rooms and locks reach an outdoor dungeon's
+// layout, size only a dungeon's or city's; verticality a dungeon's (classic or
+// graph layout), a city's and an outdoor dungeon's (step 7: it scales the
+// Levels the hill holds); layout a dungeon's or outdoor dungeon's (server
+// LAYOUT_ZONE_TYPES); the dungeon theme and race every room-graph type's
+// (server CONTENT_ZONE_TYPES: a city goes through the same semantic layer as a
+// dungeon). Keys are the control's element id. `applies` adds the rules that
+// hang on another control.
 const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   rooms: ["dungeon", "city", "outdoor_dungeon"],
   locks: ["dungeon", "city", "outdoor_dungeon"],
@@ -381,13 +391,21 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   "dungeon-race": ["dungeon", "city", "outdoor_dungeon"],
   // Replaced by /api/controls' decor.zone_types on load (refreshControls).
   decor: ["dungeon", "city", "wilderness", "outdoor_dungeon"],
-  "decor-seed": ["dungeon", "city", "wilderness", "outdoor_dungeon"],
   // Every zone type (server: rooms_seed on any plan).
   "rooms-seed": ["dungeon", "city", "wilderness", "outdoor_dungeon"],
 };
 
 function usesControl(zoneType: string, control: string): boolean {
   return CONTROL_ZONE_TYPES[control].includes(zoneType);
+}
+
+// What the visibility rules read: the zone type and the controls that gate
+// others (Layout, Decor, Sites).
+interface ControlState { zoneType: string; layout: string; decor: string; sites: string }
+
+function readControlState(): ControlState {
+  const v = (id: string) => ($(id) as HTMLSelectElement).value;
+  return { zoneType: v("zone-type"), layout: v("layout"), decor: v("decor"), sites: v("sites") };
 }
 
 // Map edges: one selector per side.
@@ -401,39 +419,61 @@ function readEdges(): Record<string, string> {
   return edges;
 }
 
-function syncControlVisibility(): void {
-  const zoneType = ($("zone-type") as HTMLSelectElement).value;
-  for (const control of Object.keys(CONTROL_ZONE_TYPES)) {
-    const el = $(control);
-    // The fieldset itself, or the <label> wrapping an input. The inline
-    // display beats the panel's `label { display: flex }`.
-    const box = (control === "edges" ? el : el.closest("label") ?? el) as HTMLElement;
-    const on = usesControl(zoneType, control);
-    box.hidden = !on;
-    box.style.display = on ? "" : "none";
+// The Landscape group's controls: shown (and sent) on a landscape zone type.
+const LANDSCAPE_CONTROLS = ["edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites"];
+
+// Whether a control applies: the server would read it for the zone type and
+// the gating choices on screen. A control that doesn't apply is hidden and not
+// sent (Req 2.1, 2.3).
+function applies(id: string, s: ControlState): boolean {
+  if (id === "zone-type") return true;
+  // The rule set and how the grown rooms lean: the graph engine only.
+  if (id === "rule-set" || SCALE_CONTROLS.includes(id)) {
+    return applies("layout", s) && s.layout === "graph";
   }
-  // The rule set and wall style only mean something under the graph engine.
-  const graphOn = usesControl(zoneType, "layout") && readLayout() === "graph";
-  for (const id of ["rule-set", ...SCALE_CONTROLS]) {
-    const box = $(id).closest("label") as HTMLElement;
-    box.hidden = !graphOn;
-    box.style.display = graphOn ? "" : "none";
+  if (LANDSCAPE_CONTROLS.includes(id)) return usesControl(s.zoneType, "edges");
+  // Who builds the Sites: only when there are Sites.
+  if (id === "inhabitant") return usesControl(s.zoneType, "edges") && s.sites !== "none";
+  // The decor seed rerolls Props: none to reroll under Decor None.
+  if (id === "decor-seed") return usesControl(s.zoneType, "decor") && s.decor !== "none";
+  return usesControl(s.zoneType, id);
+}
+
+function syncControlVisibility(): void {
+  const state = readControlState();
+  // `hidden` does the hiding: the stylesheet's `[hidden]` rule beats the grid
+  // display of a `label.field` and the flex of a `fieldset.group`.
+  for (const field of document.querySelectorAll<HTMLElement>("#controls-panel label.field")) {
+    const control = field.querySelector("select, input");
+    if (control) field.hidden = !applies(control.id, state);
+  }
+  // A group with nothing showing hides.
+  for (const group of document.querySelectorAll<HTMLElement>("#controls-panel fieldset.group")) {
+    const fields = [...group.querySelectorAll<HTMLElement>("label.field")];
+    group.hidden = fields.every((f) => f.hidden);
   }
 }
 
-function readLayout(): string {
-  return ($("layout") as HTMLSelectElement).value;
-}
+// The bar wraps by whole groups when narrow; keep --header-h at its real
+// height so the viewport, side panel and banner start below it, and let the
+// scene re-fit its canvas.
+const headerEl = $("controls");
+new ResizeObserver(() => {
+  const h = Math.ceil(headerEl.getBoundingClientRect().height);
+  if (document.documentElement.style.getPropertyValue("--header-h") !== `${h}px`) {
+    document.documentElement.style.setProperty("--header-h", `${h}px`);
+    window.dispatchEvent(new Event("resize"));
+  }
+}).observe(headerEl);
 
 async function doGenerate(mode: Mode) {
   const seed = readSeed();
-  const prompt = ($("prompt") as HTMLInputElement).value.trim();
+  const prompt = promptInput.value.trim();
 
-  // In prompt mode a description is required; fall back to controls if empty so
-  // the on-load / accidental-empty case still produces a zone.
-  if (mode === "prompt" && prompt === "") {
-    mode = "controls";
-  }
+  // Prompt mode needs a description: with none, nothing is sent (Generate is
+  // disabled then; this catches Enter in an empty box). No silent fallback to
+  // the Controls, which are off screen in Describe mode.
+  if (mode === "prompt" && prompt === "") return;
 
   // Build the request body per the server's explicit-mode contract: prompt mode
   // sends {mode, prompt}, controls mode sends {mode, controls:{…}}; seed rides
@@ -444,52 +484,57 @@ async function doGenerate(mode: Mode) {
     params = { mode, prompt, ...(seed !== undefined ? { seed } : {}) };
     console.log(`[input] description: "${prompt}"${seedNote}`);
   } else {
-    const zoneType = ($("zone-type") as HTMLSelectElement).value;
-    // Rooms/locks are free number inputs; clamp to the server's accepted ranges
-    // and fall back to a sane default if blank/unparseable so an out-of-range
-    // value never trips the backend's validation.
+    const state = readControlState();
+    const zoneType = state.zoneType;
+    const on = (id: string) => applies(id, state);
+    const sel = (id: string) => ($(id) as HTMLSelectElement).value;
+    // Only controls that apply are sent (Req 2.3); the server ignores the rest
+    // and builds the same zone, sidecar and all, without them (two exceptions
+    // below). Rooms/locks are free number
+    // inputs; clamp to the server's accepted ranges and fall back to a sane
+    // default if blank/unparseable so an out-of-range value never trips the
+    // backend's validation.
     const roomsRaw = parseInt(($("rooms") as HTMLInputElement).value, 10);
-    const rooms = Number.isFinite(roomsRaw)
-      ? Math.min(30, Math.max(1, roomsRaw))
-      : 5;
+    const rooms = !on("rooms") ? undefined
+      : Number.isFinite(roomsRaw) ? Math.min(30, Math.max(1, roomsRaw)) : 5;
     const locksRaw = parseInt(($("locks") as HTMLInputElement).value, 10);
-    const locks = Number.isFinite(locksRaw)
-      ? Math.min(5, Math.max(0, locksRaw))
-      : 0;
-    const size = ($("size") as HTMLSelectElement).value;
-    const verticality = ($("verticality") as HTMLSelectElement).value;
-    const landscape = usesControl(zoneType, "edges");
-    const edges = landscape ? readEdges() : undefined;
-    const trees = landscape ? ($("trees") as HTMLSelectElement).value : undefined;
-    // Sites and who builds them: landscape only; "" is the biome's mix.
-    const sites = landscape ? ($("sites") as HTMLSelectElement).value : undefined;
-    const inhabitant = landscape ? ($("inhabitant") as HTMLSelectElement).value : undefined;
-    // Hidden controls are left out (the server's defaults: graph on a
-    // dungeon / outdoor dungeon, the theme's set); the rule set rides only
-    // with the graph engine.
-    const layout = usesControl(zoneType, "layout") ? readLayout() : undefined;
-    const ruleSet = layout === "graph"
-      ? ($("rule-set") as HTMLSelectElement).value : undefined;
-    // Scale controls: "" is the rules alone. Hidden, they are left out.
-    const scales: Record<string, string> = layout === "graph"
-      ? Object.fromEntries(SCALE_CONTROLS.map((id) => [id, ($(id) as HTMLSelectElement).value]))
-      : {};
-    // Theme and race: "" (None) is sent as-is; hidden, they are left out.
-    const dungeonTheme = usesControl(zoneType, "dungeon-theme")
-      ? ($("dungeon-theme") as HTMLSelectElement).value : undefined;
-    const dungeonRace = usesControl(zoneType, "dungeon-race")
-      ? ($("dungeon-race") as HTMLSelectElement).value : undefined;
-    // Decor and its seed: room-graph types only. An empty list (no
-    // /api/controls) or a blank seed is left out: the server's defaults.
-    const decor = usesControl(zoneType, "decor")
-      ? ($("decor") as HTMLSelectElement).value || undefined : undefined;
-    const decorSeed = usesControl(zoneType, "decor-seed") ? readDecorSeed() : undefined;
+    const locks = !on("locks") ? undefined
+      : Number.isFinite(locksRaw) ? Math.min(5, Math.max(0, locksRaw)) : 0;
+    const size = on("size") ? sel("size") : undefined;
+    const verticality = on("verticality") ? sel("verticality") : undefined;
+    const edges = on("edge-n") ? readEdges() : undefined;
+    const trees = on("trees") ? sel("trees") : undefined;
+    // Sites and who builds them: landscape only; "" is the biome's mix. With
+    // Sites None the Inhabitants box hides but is still sent: the build is the
+    // same either way, but the sidecar's sites block records it.
+    const sites = on("sites") ? sel("sites") : undefined;
+    const inhabitant = on("sites") ? sel("inhabitant") : undefined;
+    // Left out, the server's defaults: graph on a dungeon / outdoor dungeon,
+    // the theme's set; the rule set rides only with the graph engine.
+    const layout = on("layout") ? sel("layout") : undefined;
+    const ruleSet = on("rule-set") ? sel("rule-set") : undefined;
+    // Scale controls: "" is the rules alone.
+    const scales: Record<string, string> = Object.fromEntries(
+      SCALE_CONTROLS.filter(on).map((id) => [id, sel(id)]));
+    // Theme and race: "" (None) is sent as-is.
+    const dungeonTheme = on("dungeon-theme") ? sel("dungeon-theme") : undefined;
+    const dungeonRace = on("dungeon-race") ? sel("dungeon-race") : undefined;
+    // Decor and its seed. An empty list (no /api/controls) or a blank seed is
+    // left out: the server's defaults. Under Decor None the seed box hides but
+    // is still sent: no Props either way, but the sidecar's seeds block
+    // records it.
+    const decor = on("decor") ? sel("decor") || undefined : undefined;
+    const decorSeed = on("decor") ? readDecorSeed() : undefined;
     // The rooms seed: blank is left out (the zone's).
-    const roomsSeed = usesControl(zoneType, "rooms-seed") ? readStageSeed("rooms-seed") : undefined;
+    const roomsSeed = on("rooms-seed") ? readStageSeed("rooms-seed") : undefined;
     params = {
       mode,
       controls: {
-        zone_type: zoneType, room_count: rooms, size, verticality, locks,
+        zone_type: zoneType,
+        ...(rooms !== undefined ? { room_count: rooms } : {}),
+        ...(size !== undefined ? { size } : {}),
+        ...(verticality !== undefined ? { verticality } : {}),
+        ...(locks !== undefined ? { locks } : {}),
         ...(edges ? { edges } : {}),
         ...(trees ? { trees } : {}),
         ...(sites ? { sites } : {}),
@@ -506,8 +551,11 @@ async function doGenerate(mode: Mode) {
       ...(seed !== undefined ? { seed } : {}),
     };
     console.log(
-      `[input] controls: zone_type=${zoneType} rooms=${rooms} size=${size} ` +
-      `verticality=${verticality} locks=${locks}` +
+      `[input] controls: zone_type=${zoneType}` +
+      (rooms !== undefined ? ` rooms=${rooms}` : "") +
+      (size !== undefined ? ` size=${size}` : "") +
+      (verticality !== undefined ? ` verticality=${verticality}` : "") +
+      (locks !== undefined ? ` locks=${locks}` : "") +
       (edges ? ` edges=${JSON.stringify(edges)}` : "") +
       (trees ? ` trees=${trees}` : "") +
       (sites ? ` sites=${sites}` : "") +
@@ -527,8 +575,8 @@ async function doGenerate(mode: Mode) {
 
 // Send one generate request and show what it built.
 async function runGenerate(params: GenerateParams): Promise<void> {
-  genDescBtn.disabled = true;
-  genCtrlBtn.disabled = true;
+  generating = true;
+  syncGenerateButton();
   rerollDecorBtn.disabled = true;
   rerollRoomsBtn.disabled = true;
   statusEl.textContent = "generating…";
@@ -555,12 +603,19 @@ async function runGenerate(params: GenerateParams): Promise<void> {
     const box = await zoneScene.loadZone(result.glb_url);
     // The Trees toggle only means something when the GLB has a vegetation
     // node; keep the user's last choice across builds.
-    treesToggle.disabled = !zoneScene.hasVegetation();
+    showToggle("t-trees", zoneScene.hasVegetation());
     zoneScene.setVegetationVisible(treesToggle.checked);
     const sidecar = await fetchSidecar(result.zone_url);
     currentSidecar = sidecar;
     zoneScene.applyOverlays(sidecar);
+    // An overlay toggle shows only when the build has what it toggles;
+    // Wireframe and Room IDs always.
+    showToggle("t-lights", zoneScene.hasLights());
+    showToggle("t-regions", zoneScene.hasRegions());
+    showToggle("t-gates", zoneScene.hasGates());
     updatePanel(result, sidecar);
+    $("panel-empty").hidden = true;
+    $("panel-body").hidden = false;
     if (!mapModal.classList.contains("hidden")) openMap();
 
     // Place the camera near the zone's lowest/entry corner at a sensible
@@ -586,8 +641,8 @@ async function runGenerate(params: GenerateParams): Promise<void> {
     console.error(err);
     statusEl.textContent = "error — see console";
   } finally {
-    genDescBtn.disabled = false;
-    genCtrlBtn.disabled = false;
+    generating = false;
+    syncGenerateButton();
     rerollDecorBtn.disabled = !(lastResult && usesControl(lastResult.zone_type, "decor"));
     rerollRoomsBtn.disabled = !lastResult;
   }
@@ -660,10 +715,7 @@ async function refreshControls(): Promise<void> {
       sel.appendChild(opt);
     }
     sel.value = decor.values.includes(prev) ? prev : decor.default;
-    if (decor.zone_types?.length) {
-      CONTROL_ZONE_TYPES.decor = decor.zone_types;
-      CONTROL_ZONE_TYPES["decor-seed"] = decor.zone_types;
-    }
+    if (decor.zone_types?.length) CONTROL_ZONE_TYPES.decor = decor.zone_types;
   } catch (err) {
     console.warn("[controls]", err);    // empty list: the server's default
   }
@@ -716,12 +768,91 @@ async function refreshZoneTypes(): Promise<void> {
   syncControlVisibility();
 }
 
-($("zone-type") as HTMLSelectElement).addEventListener("change", syncControlVisibility);
-($("layout") as HTMLSelectElement).addEventListener("change", syncControlVisibility);
+// The controls that gate others: re-run the visibility rules on each change.
+for (const id of ["zone-type", "layout", "decor", "sites"]) {
+  $(id).addEventListener("change", syncControlVisibility);
+}
 
-// The two Generate actions choose the mode explicitly.
-genDescBtn.addEventListener("click", () => doGenerate("prompt"));
-genCtrlBtn.addEventListener("click", () => doGenerate("controls"));
+// ---- Generate mode ----
+// Describe shows the description box, Controls the Controls panel (folded
+// away by the chevron when the user wants the view); the one Generate button
+// sends the chosen mode. Both the mode and the panel's open state are
+// remembered per browser; storage can throw (private windows, blocked site
+// data), so every access is guarded and the page works without it.
+const MODE_KEY = "eq_s3d.mode";
+const OPEN_KEY = "eq_s3d.controlsOpen";
+
+function loadPref(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function savePref(key: string, value: string): void {
+  try { localStorage.setItem(key, value); } catch { /* the page works without it */ }
+}
+
+// Controls is the default with nothing remembered (archive decision 2).
+let mode: Mode = loadPref(MODE_KEY) === "prompt" ? "prompt" : "controls";
+let controlsOpen = loadPref(OPEN_KEY) !== "false";
+// True while a request is in flight: Generate stays disabled.
+let generating = false;
+
+const modeButtons: Record<Mode, HTMLButtonElement> = {
+  prompt: $("mode-describe") as HTMLButtonElement,
+  controls: $("mode-controls") as HTMLButtonElement,
+};
+const controlsToggle = $("controls-toggle") as HTMLButtonElement;
+const controlsPanel = $("controls-panel");
+
+// Generate is disabled while a request runs, and in Describe mode while the
+// description is empty (archive decision 3).
+function syncGenerateButton(): void {
+  generateBtn.disabled = generating || (mode === "prompt" && promptInput.value.trim() === "");
+  generateBtn.title = mode === "prompt"
+    ? (promptInput.value.trim() === "" ? "Type a description first" : "Generate from the description")
+    : "Generate from the Controls";
+}
+
+function applyMode(): void {
+  for (const m of ["prompt", "controls"] as Mode[]) {
+    const on = m === mode;
+    modeButtons[m].setAttribute("aria-checked", String(on));
+    modeButtons[m].tabIndex = on ? 0 : -1;
+  }
+  promptInput.hidden = mode !== "prompt";
+  controlsToggle.hidden = mode !== "controls";
+  controlsPanel.hidden = mode !== "controls" || !controlsOpen;
+  controlsToggle.setAttribute("aria-expanded", String(controlsOpen));
+  controlsToggle.textContent = controlsOpen ? "▾" : "▸";
+  syncGenerateButton();
+}
+
+function setMode(m: Mode, focus = false): void {
+  mode = m;
+  savePref(MODE_KEY, m);
+  applyMode();
+  if (focus) modeButtons[m].focus();
+}
+
+modeButtons.prompt.addEventListener("click", () => setMode("prompt"));
+modeButtons.controls.addEventListener("click", () => setMode("controls"));
+// Radio-group keys: the arrows move the choice. They stop here so they never
+// reach the camera (controls.ts only skips form fields).
+$("mode-switch").addEventListener("keydown", (e) => {
+  const ev = e as KeyboardEvent;
+  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(ev.key)) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    setMode(mode === "prompt" ? "controls" : "prompt", true);
+  }
+});
+controlsToggle.addEventListener("click", () => {
+  controlsOpen = !controlsOpen;
+  savePref(OPEN_KEY, String(controlsOpen));
+  applyMode();
+});
+promptInput.addEventListener("input", syncGenerateButton);
+applyMode();
+
+generateBtn.addEventListener("click", () => doGenerate(mode));
 
 // Reset View button — return the camera to its starting position/orientation
 $("reset-view").addEventListener("click", () => {
@@ -730,12 +861,16 @@ $("reset-view").addEventListener("click", () => {
 });
 
 // Enter routing is per field: Enter in the description → prompt mode; Enter in
-// any Controls-panel field (or the shared seed box) → controls mode.
-($("prompt") as HTMLInputElement).addEventListener("keydown", (e) => {
+// any Controls-panel field → controls mode; Enter in the shared seed box →
+// the chosen mode.
+promptInput.addEventListener("keydown", (e) => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate("prompt");
 });
+seedInput.addEventListener("keydown", (e) => {
+  if ((e as KeyboardEvent).key === "Enter") doGenerate(mode);
+});
 
-for (const id of ["zone-type", "rooms", "size", "verticality", "locks", "seed",
+for (const id of ["zone-type", "rooms", "size", "verticality", "locks",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
                   "decor", "decor-seed", "rooms-seed"]) {

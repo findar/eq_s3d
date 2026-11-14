@@ -64,8 +64,12 @@ export class ZoneScene {
   }
 
   resize(): void {
-    const w = window.innerWidth - 240;
-    const h = window.innerHeight - 52;
+    // The canvas's laid-out size: the bar above it can wrap to more than one
+    // row on a narrow window (main.ts keeps --header-h), so 52 is only a
+    // fallback.
+    const canvas = this.renderer.domElement;
+    const w = canvas.clientWidth || window.innerWidth - 240;
+    const h = canvas.clientHeight || window.innerHeight - 52;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h, false);
@@ -262,6 +266,11 @@ export class ZoneScene {
   hasVegetation(): boolean {
     return this.vegetation !== null;
   }
+
+  /** Whether the last applyOverlays drew any light, region or gate marker. */
+  hasLights(): boolean { return this.lightGroup.children.length > 0; }
+  hasRegions(): boolean { return this.regionGroup.children.length > 0; }
+  hasGates(): boolean { return this.gateGroup.children.length > 0; }
 
   setVegetationVisible(on: boolean): void {
     if (this.vegetation) this.vegetation.visible = on;
