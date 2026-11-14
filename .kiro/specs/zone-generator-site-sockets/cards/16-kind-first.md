@@ -39,3 +39,4 @@ mix still misses because farmsteads fit too few points, stop and report the fit 
 than widening points. Record the draw order on the stream in `_place_on_points`'s docstring.
 
 ## Result
+✔ dd22f3b, 63dec10 · 3106 passed

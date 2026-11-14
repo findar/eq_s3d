@@ -17,3 +17,4 @@ Index entry: `tasks.md` task 11. Requirements 4, 5.3, 8. Design "Holding the clu
 If one target is just out while the other two are in, stop and report the three numbers (design "Risks": two Sites is a small sample); don't tune Group sizes against the test. Share builds through `shared_results` as the file does now (step 12 task 21). Prefer fixing a root cause over loosening a band (steering).
 
 ## Result
+✔ ddcb8b1 · 3106 passed (full 22.9 min, fast 2294 in 5.7 min, idle)
