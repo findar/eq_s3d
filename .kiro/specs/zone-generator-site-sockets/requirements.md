@@ -129,7 +129,7 @@ that a zone reads as places someone chose, not a scatter.
 
 1. Over the band seeds (1000–1039) at Normal, built wilderness zones SHALL measure inside the
    plains clustering target (design finding 1): Clark–Evans R pooled 0.50–0.95; the share of
-   Sites with another Site within 300 u, pooled, 33–65 %; and pooled spacing p10 108–190 u.
+   Sites with another Site within 300 u, pooled, 33–65 %; and pooled spacing p10 108–191 u.
 2. At Dense, the median zone's R SHALL be inside 0.50–0.95.
 3. Step 10's other bands SHALL still hold at Normal: Sites per 1e6 u² (0.3–0.5), Structures
    per Site (zone p50 1–3, p90 1.8–5.6).

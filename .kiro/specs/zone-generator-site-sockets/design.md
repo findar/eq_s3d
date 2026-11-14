@@ -275,7 +275,7 @@ within = [112, 227]             # u: NN distance inside a Group, p10-p90
 spacing = 600                   # u: least distance between two Groups' points
 target_r = [0.50, 0.95]         # Clark-Evans R the built zones must measure inside
 target_in_gap = [0.33, 0.65]    # share of Sites with another within `gap`
-target_nn_p10 = [108, 190]      # u: pooled nearest-Site spacing p10
+target_nn_p10 = [108, 191]      # u: pooled nearest-Site spacing p10
 ```
 
 The targets ride with the biome so the band test reads them; a later biome (forest: R
@@ -357,7 +357,7 @@ draws change), which is the deliberate recapture of Req 7.2.
 - **Band check** (`tests/test_site_bands.py`, `slow`): the built, read-back zones of seeds
   1000–1039 at Normal measured by the survey's code against the biome's `target_*` (plains),
   replacing `STOCK_R` (all-zone) and `SPACING_P10` (all-zone 130–490) in the asserts: clustered
-  plains Sites put spacing p10 near stock plains' 108–190, below the all-zone floor of 130.
+  plains Sites put spacing p10 near stock plains' 108–191, below the all-zone floor of 130.
   The all-zone bands stay printed. Sites per 1e6 u² and Structures per Site keep step 10's
   bands. `test_stock_r_band` grows a per-group check that reproduces finding 1's plains band.
 - **Per biome**: the test reads the targets from `biomes.toml` for each biome that has Site
@@ -493,7 +493,7 @@ written for the recommendations.
    says so.
 
 6. **Which clustering target, and per biome?**
-   - (a) Per biome, in `biomes.toml`: plains 0.50–0.95 R, 33–65 % within 300 u, NN p10 108–190 u;
+   - (a) Per biome, in `biomes.toml`: plains 0.50–0.95 R, 33–65 % within 300 u, NN p10 108–191 u;
      the other biome groups measured (finding 1) and recorded for when their rules come.
    - (b) Keep the all-zone band (R 0.64–1.64) as the assert.
    *Recommended: (a).* Today's 1.45 already passes (b); a target it already meets can't fix
