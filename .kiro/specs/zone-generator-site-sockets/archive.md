@@ -10,8 +10,24 @@ this file to pick up a task; it holds the "why".
 
 ## Decisions
 
-None yet: the design's eight open questions go to the user before any task starts. Their
-answers are recorded here, one line or two each, with what they change.
+Decided 2026-11-14. The user said "Pick one and go" (choosing step 13 and its answers was
+delegated); the lead took each recommendation after review.
+
+1. **Clustering comes from the World offering points in groups** (copying stock's hamlets),
+   not a "near another Site" preference.
+2. **Reroll rooms moves Sites** among the World's spare points (step 12's "new Sites on the
+   same ground" holds).
+3. **An outdoor dungeon keeps its own rooms, corridors, Tunnel and Apron clear** (+16 u), not
+   the whole hill: step 10's P8 is reworded from "Host_Hill clear" to "the dungeon under it
+   clear". A camp then fits on 39 of 39 seeds.
+4. **An outdoor dungeon gets at least one Site at Normal and Dense**; no fixed point by the
+   approach (the World doesn't know the Apron).
+5. **The recipes' `spacing` field is retired.**
+6. **Clustering targets are per biome in `biomes.toml`** (plains bands now; other biomes keep
+   the all-zone band until measured).
+7. **The map shows every point**, used ones filled, unused hollow; `mapview.py` writes its
+   world-to-pixel mapping on the SVG.
+8. **A Site-caused gate failure is not a stage reroll in this step** (`pipeline.py` untouched).
 
 ## Follow-ups
 

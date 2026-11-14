@@ -1,9 +1,8 @@
 # Requirements Document
 
-> **STATUS: roadmap step 13, drafted** 2026-11-14 at master `2448243`. The design's open
-> questions go to the user before any task starts; the requirements below are written for the
-> recommended answers and name the question where an answer would change them. Task index:
-> `tasks.md` (card format).
+> **STATUS: roadmap step 13, ready.** Drafted 2026-11-14 at master `2448243`; the design's
+> open questions were decided the same day on their recommendations (`archive.md`
+> "Decisions"). Task index: `tasks.md` (card format).
 
 ## Introduction
 

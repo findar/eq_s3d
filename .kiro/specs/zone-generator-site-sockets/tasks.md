@@ -23,9 +23,8 @@ L (split it); recaptured golden hashes and re-recorded fixtures don't count.
 `Depends` lists task numbers. `Owns` lists the files and folders the task may
 edit; two ready tasks with disjoint `Owns` can run in parallel.
 
-**Not started: the design's open questions go to the user first** (design "Open
-questions"). The cards are written for the recommended answers; an answer that
-differs changes the cards it names before they run.
+**The design's open questions were decided on 2026-11-14** (`archive.md` "Decisions"),
+each on its recommendation, so the cards stand as written.
 
 Bytes: dungeon, city and Sites `none` builds never move, nor any Zone_Spec hash
 (Req 7.1). Wilderness builds with Sites move once, at task 6; outdoor dungeons
