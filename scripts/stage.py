@@ -1,5 +1,5 @@
 r"""Run one stage of a zone from the previous stage's hand-off (world-sockets task 10, Req 5.4;
-design "Testing in isolation").
+design "Testing in isolation"; site-sockets task 10, Req 6.5: version 2 files).
 
 A build writes its hand-offs into its build directory (``<name>.world.json``,
 ``<name>.attach.json``, ``<name>.rooms.json``). Each command here runs one stage from the
@@ -7,7 +7,8 @@ previous one's file, writes its own (the same text a full build writes for the s
 a GLB of that stage alone, and prints its time:
 
 ``world``   zone type, World inputs and a seed -> ``<name>.world.json`` and
-            ``<name>.world.glb`` (the terrain, its Sockets marked as columns).
+            ``<name>.world.glb`` (the terrain, its Sockets marked as columns and each point
+            ``site`` Socket as a small post, ``points``).
 ``attach``  a World file, plan fields and a rooms seed -> ``<name>.attach.json`` and
             ``<name>.attach.glb`` (the attached rooms alone, as the box mesh of the layout,
             and the Sites as their ground and Structures).
@@ -28,7 +29,9 @@ Usage::
     python scripts/stage.py rooms output/stage/sw.attach.json --out output/stage
     python scripts/stage.py decor output/stage/sw.rooms.json --out output/stage
 
-Every file is written through an ``OutputRoot`` on ``--out``, as builds write theirs.
+Every file is written through an ``OutputRoot`` on ``--out``, as builds write theirs. The
+World and Attachments files are version 2; a file of another version is refused with the
+reader's message, naming the file.
 """
 
 from __future__ import annotations
@@ -61,7 +64,8 @@ from generators import world as world_mod  # noqa: E402
 Part = Tuple[np.ndarray, np.ndarray, np.ndarray]        # vertices (V, 3), faces (F, 3), colours (V, 4)
 
 SOCKET_RGB = {"root": (220, 30, 30), "hillside": (230, 140, 20), "ground": (40, 120, 230),
-              "door": (160, 40, 200)}
+              "door": (160, 40, 200), "site": (240, 210, 30)}
+POST_SIZE, POST_HEIGHT = 4.0, 30.0      # a point Socket's marker post (a marker, not a Site)
 WATER_RGB = (60, 110, 200)
 RIM_RGB = (120, 115, 110)
 SITE_GROUND_RGB = (200, 180, 120)
@@ -167,10 +171,18 @@ def sockets_part(world) -> Part:
     shapes as slabs."""
     parts = []
     for s in world.sockets:
+        if s.kind == "site":
+            continue
         parts.append(_box(s.x, s.y, s.z, s.yaw, 8.0, 8.0, 120.0, SOCKET_RGB.get(s.kind, (255, 0, 255))))
         for shape in (s.ground or {}).get("keep_clear", []):
             parts.append(_capsule(shape, s.z, 2.0, KEEP_CLEAR_RGB))
     return _merge(parts)
+
+
+def points_part(world) -> Part:
+    """A small post on each point (``site``) Socket, attached or not."""
+    return _merge([_box(s.x, s.y, s.z, 0.0, POST_SIZE, POST_SIZE, POST_HEIGHT, SOCKET_RGB["site"])
+                   for s in world.sockets if s.kind == "site"])
 
 
 def sites_part(placement) -> Part:
@@ -239,6 +251,15 @@ def make_plan(name: str, zone_type: str, pairs: Sequence[str] = ()):
     plan = ZonePlan(name=name, zone_type=zone_type, **kw)
     plan.validate()
     return plan
+
+
+def _read(loader, path: Path):
+    """``loader(path)``; a refused file (another version, say) stops the command with the
+    reader's message, which names the file."""
+    try:
+        return loader(path)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
 
 
 def _stem(path: Path, suffix: str) -> str:
@@ -441,10 +462,12 @@ def _edges(text: Optional[str]) -> Optional[Dict[str, str]]:
 def cmd_world(args) -> List[Path]:
     root = OutputRoot(Path(args.out))
     world = world_stage(args.zone_type, args.seed, args.biome, _edges(args.edges), args.zone_size)
-    meshes = {"sockets": sockets_part(world)}
+    meshes = {"sockets": sockets_part(world), "points": points_part(world)}
     if world.terrain is not None:
         meshes = {"terrain": terrain_part(world), **meshes}
-    kinds = ", ".join(f"{s.id} ({s.kind})" for s in world.sockets)
+    kinds = ", ".join(f"{s.id} ({s.kind})" for s in world.sockets if s.kind != "site")
+    points = sum(s.kind == "site" for s in world.sockets)
+    kinds += f"; {points} point Sockets" if points else ""
     print(f"world {args.name}: {args.zone_type}, seed {args.seed}, Sockets {kinds}")
     return [root.write_text(f"{args.name}.world.json", world.to_json()),
             root.write_bytes(f"{args.name}.world.glb", glb_bytes(meshes))]
@@ -453,7 +476,7 @@ def cmd_world(args) -> List[Path]:
 def cmd_attach(args) -> List[Path]:
     root = OutputRoot(Path(args.out))
     path = Path(args.world)
-    world = world_mod.load(path)
+    world = _read(world_mod.load, path)
     name = args.name or _stem(path, ".world.json")
     plan = make_plan(name, world.recipe["zone_type"], args.plan)
     attachments, specs = attach_stage(world, plan, args.rooms_seed)
@@ -469,7 +492,9 @@ def cmd_attach(args) -> List[Path]:
         if a.kind == "ground":
             meshes[f"sites_{a.socket}"] = sites_part(a.sites)
     for a in attachments:
-        what = (f"{len(a.sites.sites)} Sites" if a.kind == "ground" else
+        what = (f"{len(a.sites.sites)} Sites"
+                + (f" on {', '.join(s.socket for s in a.sites.sites)}" if a.sites.sites else "")
+                if a.kind == "ground" else
                 f"{len(stages._layout_dict(a.layout)['rooms'])} rooms")
         print(f"attach {name}: {a.socket} ({a.kind}) seed {a.seed}: {what}"
               + (f"; warnings {', '.join(a.warnings)}" if a.warnings else ""))
@@ -482,8 +507,8 @@ def cmd_rooms(args) -> List[Path]:
     path = Path(args.attach)
     name = args.name or _stem(path, ".attach.json")
     wpath = Path(args.world) if args.world else path.with_name(f"{_stem(path, '.attach.json')}.world.json")
-    world = world_mod.load(wpath)
-    attachments = stages.load_attachments(path)
+    world = _read(world_mod.load, wpath)
+    attachments = _read(stages.load_attachments, path)
     plan = make_plan(name, world.recipe["zone_type"], args.plan)
     if args.decor:
         plan.decor = args.decor
