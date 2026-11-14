@@ -32,6 +32,18 @@ delegated); the lead took each recommendation after review.
    kind by weight x likes at each point drifted the mix off stock (wilderness farmsteads 13 % ->
    5 %, outdoor dungeons 51 % ruins). The kind is drawn by weight alone, then stood on the next
    fitting point in the Group order, likes choosing within the Group. Req 3.2 revised; task 16.
+10. **Kind-first is judged against the weights, not stock** (lead, 2026-11-14, task 16's first
+    run). Kind-first reproduces the weights (built mix within noise of them), but the weights
+    themselves sit ~32 points from stock plains (farmsteads 13 % vs ~27 %, ruins 11 % vs ~1 %):
+    a step 10 gap, now a follow-up. Outdoor dungeons are fit-limited (ruins expected ~36 %;
+    farmsteads fit 1 of 39 seeds): gate is "largest share below task 6's 51 %". Dense clustering
+    asserts the pooled measures; per-zone R (about 4 Sites a zone) is printed, not asserted.
+11. **Stock clustering is held at Normal, the stock density** (lead, 2026-11-14, task 11). The
+    plains bands come from stock zones at 0.3-0.5 Sites per 1e6 u², which Normal reproduces
+    (0.41). Dense is denser than any stock zone, so no stock clustering figure exists for it:
+    with kind-first, Dense pooled R is 1.03 (big recipes open new Groups). Dense asserts that
+    Sites still group (within 300 u 33-65 %, NN p10 108-191, pooled R below the pre-points
+    1.30); its R is printed. Supersedes decision 10's Dense clause.
 
 From the tasks:
 
@@ -41,6 +53,15 @@ From the tasks:
   footprint); spares share the one `n_offer` budget with the points off the hill.
 
 ## Follow-ups
+
+Found while working this step:
+
+- **Site weights vs stock plains** (task 16): the biome/Inhabitant weights' expected mix is ~32
+  points from stock (task 11's sorting of stock Sites by their Structures): farmsteads 13 % vs
+  ~27 %, ruins 11 % vs ~1 %. Retune `biomes.toml` weights against a proper stock kind survey.
+- **Outdoor-dungeon points favour small recipes** (task 16): most usable points are hill points
+  where only ruins and watchtowers fit (farmsteads fit on 1 of 39 seeds, huts 16). Offering
+  flatter points would let bigger recipes stand.
 
 Carried in from step 10 (`zone-generator-wilderness-pois/archive.md` "Follow-ups") by step 12,
 because point Site Sockets are where they get fixed; this step closes them:
