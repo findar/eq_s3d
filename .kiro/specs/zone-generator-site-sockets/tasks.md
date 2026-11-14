@@ -75,7 +75,7 @@ with Sites at tasks 6 and 7. Every other task keeps bytes and proves it with
   - Owns: generators/stages.py (`entrance_keep_clear` only), generators/outdoor_dungeon.py (`keep_clear_shapes` deleted), generators/sites/placement.py (`site_target`'s floor only), tests/test_attach_ground.py, tests/test_world_corpus.py + tests/test_site_builds.py (their `keep_clear_shapes` uses); recaptures: tests/test_layout_engine.py (outdoor-dungeon `.eqg` hash only), tests/test_site_builds.py (outdoor-dungeon hashes only), tests/fixtures/rooms/ (`outdoor_*` recordings with Sites)
   - Reqs: 5, 7.2
 
-- [ ] 8. Retire the area path and recipe spacing
+- [x] 8. Retire the area path and recipe spacing
   - Card: [cards/08-retire-spacing.md](cards/08-retire-spacing.md)
   - Type: agent · Size: M · Depends: 7
   - Owns: generators/sites/placement.py, generators/sites/rules.py, rules/sites/sites.toml, tests/test_site_placement.py, tests/test_site_rules.py
