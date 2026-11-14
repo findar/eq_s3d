@@ -114,6 +114,48 @@ def test_same_inputs_same_eqg(tmp_path):
     assert a.eqg_path.read_bytes()[:-4] == b.eqg_path.read_bytes()[:-4]
 
 
+#: Outdoor-dungeon seeds of the gate sweep (site-sockets Req 5.3, 8.1). Seed 8 doesn't plan.
+OD_SWEEP = range(40)
+
+
+def _od_zone(key: tuple) -> dict:
+    """Plan, build and gate one outdoor dungeon as the pipeline does (first try only); its
+    Sites from the sidecar. ``plan`` False when the seed doesn't plan."""
+    import tempfile
+    from pathlib import Path
+
+    _tag, seed, sites = key
+    try:
+        spec = _spec("od", seed, sites)
+    except od.PLAN_ERRORS:
+        return {"plan": False}
+    with tempfile.TemporaryDirectory() as tmp:
+        r = ZoneBuilder(spec).build(output_dir=Path(tmp), write_glb=False)
+        gate = od.outdoor_dungeon_report(r.eqg_path, spec).passed
+        side = json.loads(r.sidecar_path.read_text(encoding="utf-8"))["sites"]["sites"]
+    return {"plan": True, "gate": bool(gate), "kinds": [s["kind"] for s in side]}
+
+
+@pytest.mark.slow
+def test_outdoor_dungeons_gate_first_try_with_a_site(shared_results):
+    """Site-sockets Req 5.3, 8.1: outdoor dungeons at seeds 0-39, built, at Normal and Dense
+    pass the gate first try on every seed that plans (step 12: 40 of 40), and at Normal get a
+    Site on at least 35 of them (step 10: 8 of 39)."""
+    keys = [("od_sweep", s, c) for c in ("normal", "dense") for s in OD_SWEEP][::-1]
+    got = dict(zip(keys, shared_results.get_many(keys, _od_zone)))
+    out = {}
+    for c in ("normal", "dense"):
+        zs = [got[("od_sweep", s, c)] for s in OD_SWEEP]
+        planned = [z for z in zs if z["plan"]]
+        out[c] = (len(planned), sum(z["gate"] for z in planned), sum(bool(z["kinds"]) for z in planned),
+                  [s for s, z in zip(OD_SWEEP, zs) if z["plan"] and not z["gate"]])
+    print("\noutdoor dungeons, seeds 0-39: " + "; ".join(
+        f"{c} {g}/{p} first try, a Site on {k}, failed {f}" for c, (p, g, k, f) in out.items()))
+    for c, (planned, passed, with_site, failed) in out.items():
+        assert planned >= 38 and passed == planned, (c, failed)
+    assert out["normal"][2] >= 35, out["normal"]
+
+
 OD_SEEDS = range(1000, 1012)
 
 

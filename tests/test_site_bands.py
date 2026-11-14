@@ -23,6 +23,16 @@ mean nearest-Site distance over 0.5 / sqrt(Sites per u^2), the mean a random pla
 density would give (R < 1 clustered, about 1 random, > 1 dispersed). It doesn't depend on the
 count. Stock's band is ``STOCK_R``; ``test_stock_r_band`` recomputes it.
 
+Site-sockets task 11 (Req 4; archive decisions 6 and 11): Sites now stand in the World's Groups,
+so the clustering asserts are the biome's own targets from ``biomes.toml`` (plains: R pooled,
+the share of Sites with another within the Group gap, pooled NN p10), at Normal, the control
+that reproduces stock's density. ``STOCK_R`` and ``SPACING_P10`` (all 21 zones) are printed,
+not asserted: clustered plains Sites put the p10 near stock plains' 108-191, under the all-zone
+floor of 130. Dense is denser than any stock zone, so there is no stock figure for it: it
+asserts that Sites still group (the gap share and NN p10 targets, pooled R below the
+pre-points ``DENSE_R_BEFORE``) and prints R. ``test_points_cluster_on_worlds_alone`` is the
+same check on placement only (no TER, build or gate) for the fast suite.
+
 The gate's first-try rate (build, then the pipeline's ``bowl_report`` on the TER read back)
 holds at Normal and Dense, and a build stays within step 9's time (Sites none) plus 5 s.
 
@@ -38,6 +48,7 @@ from statistics import median
 
 import numpy as np
 import pytest
+from scipy.spatial import cKDTree
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -47,7 +58,9 @@ from core.pfs import PfsArchive  # noqa: E402
 from core.zon import ZonFile  # noqa: E402
 from generators.builder import ZoneBuilder  # noqa: E402
 from generators.pipeline import load_ter_from_eqg  # noqa: E402
-from generators.sites.rules import STRUCTURE_KINDS  # noqa: E402
+from generators import stages  # noqa: E402
+from generators.sites.rules import STRUCTURE_KINDS, load_sites  # noqa: E402
+from generators.world import world_of  # noqa: E402
 import generators.wilderness.build as wb  # noqa: E402
 from site_survey import (NOT_STRUCTURE, PLAN_CELL, Ground, _samples, cluster,  # noqa: E402
                          site_measures)
@@ -62,8 +75,14 @@ SPACING_P10 = (130.0, 490.0)   # all 21 zones
 #: ``python -m pytest tests/test_site_bands.py -k stock_r -s`` (needs EQ_PATH).
 STOCK_R = (0.64, 1.64)
 MIN_SITES_R = 3                # a zone's R needs this many Sites
+#: Dense's pooled R on area-placed Sites, before point Sockets (master 4605d8d, seeds
+#: 1000-1039 built): Dense Sites must still group tighter than that (archive decision 11).
+DENSE_R_BEFORE = 1.30
 
-EQ = Path(os.environ.get("EQ_PATH", r"F:\everquest_rof2"))
+BIOME = "plains"               # the biome the wilderness builds (the only one with Site rules)
+GROUPS = load_sites().biomes[BIOME].groups
+
+EQ =Path(os.environ.get("EQ_PATH", r"F:\everquest_rof2"))
 
 SEEDS = range(1000, 1040)
 
@@ -168,13 +187,67 @@ def clark_evans(m: dict) -> float:
     return float(m["spacing"].mean() / (0.5 / np.sqrt(m["sites"] / m["ground"])))
 
 
+def clustering(zones) -> dict:
+    """The clustering target's measures pooled over ``zones`` (each ``(sites, ground u^2,
+    nearest-Site distances)``; zones with under 2 Sites have none): R pooled (each Site's
+    nearest distance over its own zone's random expectation), the share of Sites with another
+    within the Group gap, and the NN p10 (u)."""
+    rel = [np.asarray(nn) / (0.5 / np.sqrt(n / g)) for n, g, nn in zones if n >= 2]
+    nn = np.concatenate([np.asarray(nn) for n, _g, nn in zones if n >= 2])
+    return {"r": float(np.mean(np.concatenate(rel))), "in_gap": float(np.mean(nn <= GROUPS.gap)),
+            "nn_p10": float(np.percentile(nn, 10)), "n": len(nn)}
+
+
+def _targets(c: dict, label: str) -> list:
+    """The biome's three clustering targets on ``clustering``'s measures, failures named."""
+    return [b for b in (_band(f"{label} R pooled", c["r"], GROUPS.target_r),
+                        _band(f"{label} share within {GROUPS.gap:.0f} u", c["in_gap"], GROUPS.target_in_gap),
+                        _band(f"{label} NN p10", c["nn_p10"], GROUPS.target_nn_p10)) if b]
+
+
+def _grouped(c: dict, label: str) -> list:
+    """Dense's check (archive decision 11): the gap share and NN p10 targets, and R pooled
+    below the pre-points figure."""
+    bad = [b for b in (_band(f"{label} share within {GROUPS.gap:.0f} u", c["in_gap"], GROUPS.target_in_gap),
+                       _band(f"{label} NN p10", c["nn_p10"], GROUPS.target_nn_p10)) if b]
+    if not c["r"] < DENSE_R_BEFORE:
+        bad.append(f"{label} R pooled {c['r']:.2f} not below {DENSE_R_BEFORE}")
+    return bad
+
+
+def _placed(seed: int, control: str):
+    """``seed``'s wilderness Sites from its World and the Sites stage alone (no TER, build or
+    gate): ``(sites, the reached ground's area, nearest-Site distances)``."""
+    spec = wb.wilderness_spec(f"b{seed}", seed)
+    world = world_of(spec)
+    p = stages.attach_sites(world, world.socket("ground"), stages.rooms_seed(seed, None),
+                            biome=BIOME, control=control).sites
+    xy = np.array([(s.x, s.y) for s in p.sites]).reshape(-1, 2)
+    nn = cKDTree(xy).query(xy, k=2)[0][:, 1] if len(xy) >= 2 else np.zeros(0)
+    return len(xy), p.walkable_area, nn
+
+
+def test_points_cluster_on_worlds_alone():
+    """Req 4.4: placement only, seeds 1000-1039: Normal inside the biome's clustering targets,
+    Dense still grouped (archive decision 11)."""
+    got = {c: clustering([_placed(s, c) for s in SEEDS]) for c in ("normal", "dense")}
+    print("\nplacement only: " + "; ".join(
+        f"{c} R pooled {m['r']:.2f}, within {GROUPS.gap:.0f} u {m['in_gap']:.0%}, NN p10 "
+        f"{m['nn_p10']:.0f} ({m['n']} Sites)" for c, m in got.items()))
+    bad = _targets(got["normal"], "Normal") + _grouped(got["dense"], "Dense")
+    assert not bad, bad
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(not EQ.exists(), reason="EQ install not present (set EQ_PATH)")
 def test_stock_r_band():
     """``STOCK_R`` from the stock zones, by the survey's own code (``site_survey.main``'s
-    per-zone steps; towns left out, ground cached under output/site_survey/cache)."""
+    per-zone steps; towns left out, ground cached under output/site_survey/cache); and the
+    plains targets in ``biomes.toml`` as the plains zones' min-max of R, of the share within
+    the Group gap and of NN p10 (design finding 1, ``scripts/site_clustering.py``)."""
     import site_survey as ss
-    agent, rs = AgentModel(), {}
+    from site_clustering import BIOME as ZONE_BIOME
+    agent, rs, plains = AgentModel(), {}, []
     for zone in ss.ZONES:
         if zone in ss.TOWNS:
             continue
@@ -184,11 +257,21 @@ def test_stock_r_band():
         m = site_measures(cluster(ss.placed(EQ, zone)), ground, np.zeros((0, 2)), np.zeros((0, 2)))
         if m["sites"] >= MIN_SITES_R:
             rs[zone] = clark_evans(m)
+            if ZONE_BIOME.get(zone) == BIOME:
+                plains.append((rs[zone], float(np.mean(m["spacing"] <= GROUPS.gap)),
+                               float(np.percentile(m["spacing"], 10))))
     v = list(rs.values())
     print(f"\nstock R: {len(v)} zones, p10 {np.percentile(v, 10):.2f}, median {median(v):.2f}, "
           f"p90 {np.percentile(v, 90):.2f}; " + ", ".join(f"{z} {r:.2f}" for z, r in rs.items()))
+    r, in_gap, p10 = (np.array(c) for c in zip(*plains))
+    print(f"{BIOME}: {len(plains)} zones, R {r.min():.3f}-{r.max():.3f}, within {GROUPS.gap:.0f} u "
+          f"{in_gap.min():.3f}-{in_gap.max():.3f}, NN p10 {p10.min():.1f}-{p10.max():.1f}")
     assert len(v) == 20
     assert np.percentile(v, [10, 90]) == pytest.approx(STOCK_R, abs=0.005)
+    assert len(plains) == 5
+    assert (r.min(), r.max()) == pytest.approx(GROUPS.target_r, abs=0.005)
+    assert (in_gap.min(), in_gap.max()) == pytest.approx(GROUPS.target_in_gap, abs=0.005)
+    assert (p10.min(), p10.max()) == pytest.approx(GROUPS.target_nn_p10, abs=0.5)
 
 
 def _band(name, value, band):
@@ -209,10 +292,8 @@ def test_p9_normal_zones_measure_inside_the_stock_bands(shared_results):
     allst = np.concatenate([m["structs"] for m in zs])
     split = [s for s, z in zip(SEEDS, built) if z["m"]["sites"] != z["placed"]]
     r_zone = [clark_evans(m) for m in zs if m["sites"] >= MIN_SITES_R]
-    # Pooled over every zone with 2+ Sites: each Site's nearest distance over its own zone's
-    # random expectation.
-    r_pool = float(np.mean(np.concatenate(
-        [m["spacing"] / (0.5 / np.sqrt(m["sites"] / m["ground"])) for m in zs if m["sites"] >= 2])))
+    c = clustering([(m["sites"], m["ground"], m["spacing"]) for m in zs])
+    r_pool = c["r"]
     print(f"\nNormal, seeds {SEEDS.start}-{SEEDS.stop - 1}: Sites/1e6 median {median(per):.2f} "
           f"pooled {pooled:.2f} (p10 {np.percentile(per, 10):.2f}, p90 {np.percentile(per, 90):.2f}); "
           f"Structures zone p50 median {median(p50):.1f}, zone p90 median {median(p90):.1f} "
@@ -222,15 +303,32 @@ def test_p9_normal_zones_measure_inside_the_stock_bands(shared_results):
           f"pooled p50 {np.percentile(spacing, 50):.0f}, p10 {np.percentile(spacing, 10):.0f}, "
           f"closest {spacing.min():.0f}; Clark-Evans R median {median(r_zone):.2f} over "
           f"{len(r_zone)} zones with {MIN_SITES_R}+ Sites, pooled {r_pool:.2f}; "
-          f"read back split on seeds {split}")
+          f"within {GROUPS.gap:.0f} u {c['in_gap']:.0%}; read back split on seeds {split}")
+    # Printed, not asserted: step 10's all-zone bands (see the module docstring).
+    print("all-zone bands, printed: " + "; ".join(
+        b or "in" for b in (_band("spacing p10, pooled", float(np.percentile(spacing, 10)), SPACING_P10),
+                            _band(f"Clark-Evans R, median of {len(r_zone)} zones", median(r_zone), STOCK_R),
+                            _band("Clark-Evans R, pooled", r_pool, STOCK_R))))
     bad = [b for b in (_band("Sites per 1e6 u^2, median zone", median(per), PER_AREA),
                        _band("Sites per 1e6 u^2, pooled", pooled, PER_AREA),
                        _band("Structures per Site, zone p50", median(p50), STRUCTS_P50),
-                       _band("Structures per Site, zone p90", median(p90), STRUCTS_P90),
-                       _band("spacing p10, pooled", float(np.percentile(spacing, 10)), SPACING_P10),
-                       _band(f"Clark-Evans R, median of {len(r_zone)} zones", median(r_zone), STOCK_R),
-                       _band("Clark-Evans R, pooled", r_pool, STOCK_R))
-           if b]
+                       _band("Structures per Site, zone p90", median(p90), STRUCTS_P90))
+           if b] + _targets(c, "Normal")
+    assert not bad, bad
+
+
+@pytest.mark.slow
+def test_dense_sites_still_group(shared_results):
+    """Archive decision 11: Dense (denser than any stock zone, so no stock figure) keeps its
+    Sites grouped: the share within the Group gap and the NN p10 inside the biome's targets,
+    and R pooled below the pre-points ``DENSE_R_BEFORE``. R is printed."""
+    zs = [z["m"] for z in _zones(shared_results, "dense", SEEDS)]
+    c = clustering([(m["sites"], m["ground"], m["spacing"]) for m in zs])
+    r_zone = [clark_evans(m) for m in zs if m["sites"] >= MIN_SITES_R]
+    print(f"\nDense, seeds {SEEDS.start}-{SEEDS.stop - 1}: {c['n']} Sites, R pooled {c['r']:.2f}, "
+          f"median zone R {median(r_zone):.2f} ({len(r_zone)} zones), within {GROUPS.gap:.0f} u "
+          f"{c['in_gap']:.0%}, NN p10 {c['nn_p10']:.0f}")
+    bad = _grouped(c, "Dense")
     assert not bad, bad
 
 
