@@ -41,7 +41,7 @@ Tasks 1–3 own the same files and run one after another, in one worktree.
   - Owns: web/index.html, web/src/style.css, web/src/main.ts
   - Reqs: 1
 
-- [ ] 3. Show only what applies
+- [x] 3. Show only what applies
   - Card: [cards/03-applies.md](cards/03-applies.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: web/index.html, web/src/style.css, web/src/main.ts, web/src/scene.ts
