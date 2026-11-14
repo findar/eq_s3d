@@ -774,14 +774,30 @@ def sites_seed(seed: int) -> int:
     return _salted_seed(int(seed) & 0x7FFFFFFF, *SITES_SALT)
 
 
-def site_target(rng: random.Random, band: Tuple[float, float], area: float) -> int:
+def site_target(rng: random.Random, band: Tuple[float, float], area: float,
+                least: int = 0) -> int:
     """How many Sites to try: a density drawn in ``band`` (Sites per 1e6 u^2) times ``area``,
-    rounded so the expected value is kept: the floor, plus one with the fraction's chance. A
-    small zone (an outdoor dungeon's open ground, ~0.8e6 u^2) then gets a Site on some seeds
-    where plain rounding gave it none."""
+    rounded so the expected value is kept: the floor, plus one with the fraction's chance;
+    then at least ``least`` (an outdoor dungeon at Normal and Dense tries one, site-sockets
+    Req 5.2). The floor is applied after both draws, so the stream is the same either way."""
     want = rng.uniform(*band) * area / 1e6
     whole = int(math.floor(want))
-    return whole + (1 if rng.random() < want - whole else 0)
+    return max(whole + (1 if rng.random() < want - whole else 0), int(least))
+
+
+#: The Sites controls under which an outdoor dungeon tries at least one Site (Req 5.2).
+DUNGEON_FLOOR_CONTROLS = ("normal", "dense")
+
+
+def _dungeon_floor(control: str, keep_clear: Sequence[ClearShape],
+                   points: Optional[Sequence[Any]]) -> int:
+    """1 on an outdoor dungeon at Normal or Dense, else 0 (Sparse keeps step 10's draw).
+    An outdoor dungeon is ground with Kept_Clear shapes (an earlier Attachment's: the
+    dungeon's Tunnel, Apron, rooms and corridors); a wilderness's ground has none. Not the
+    points' ``hill`` flag: on some seeds the World offers no point over the hill."""
+    if control not in DUNGEON_FLOOR_CONTROLS or points is None:
+        return 0
+    return int(bool(keep_clear))
 
 
 def _redraw_kind(rules: SiteRules, biome: str, inhabitant: str, tried: set,
@@ -840,7 +856,7 @@ def place_sites(terrain, ground, seed: int, biome: str = "plains",
     out = SitePlacement(sites=[], drops=[], target=0, walkable_area=area, control=control, band=band)
     if band[1] <= 0 or area <= 0:
         return out
-    out.target = site_target(rng, band, area)
+    out.target = site_target(rng, band, area, least=_dungeon_floor(control, shapes, points))
 
     if points is not None:
         _place_on_points(out, t, rules, biome, inhabitant, rng, points, shapes)
@@ -1023,7 +1039,9 @@ def _place_on_points(out: SitePlacement, t: _Terrain, rules: SiteRules, biome: s
             recipe = rules.recipe_for(kind, who)
             outer = recipe.ground.radius + recipe.ground.margin
             cx, cy = float(p.x), float(p.y)
-            a = _approach(t, cx, cy, outer, rng, avoid=grounds)
+            # The way in keeps off earlier Sites' grounds and the Kept_Clear (an outdoor
+            # dungeon's rooms reach under the hill's flat ground, site-sockets P7).
+            a = _approach(t, cx, cy, outer, rng, avoid=tuple(grounds) + tuple(keep_clear))
             if a is None:
                 continue
             site = _arrange_site(out, t, rules, recipe, kind, who, cx, cy, a, rng, socket=p.id)

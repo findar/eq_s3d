@@ -236,7 +236,7 @@ class Terrain:
     playable-interior masks, and the water level (``None`` for no water).
 
     ``bowl_heights`` is the bowl's grid BEFORE the water bed sinks (``land.bowl.heights``,
-    what ``outdoor_dungeon.keep_clear_shapes`` digs the Apron on), or ``None`` when it is
+    what ``stages.entrance_keep_clear`` digs the Apron on), or ``None`` when it is
     the same as ``heights`` (no water quads); :attr:`undrowned` reads whichever applies.
     It is optional so a file written without it still loads."""
     origin: Tuple[float, float]

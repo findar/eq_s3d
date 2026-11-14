@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import zlib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from functools import lru_cache
 from typing import Dict, List, Mapping, Optional, Tuple
 
@@ -500,11 +500,12 @@ class _SpecRef:
 def sites_for(spec: ZoneSpec, ter: Optional[TerFile] = None) -> Sites:
     """The Sites for a wilderness (or outdoor-dungeon) spec: the ``ground`` Socket of the
     spec's World (``world_of``) attached after the outdoor dungeon's Entrance, whose Apron
-    is applied as a Terrain edit and whose hill, Tunnel and Apron are Kept_Clear
+    is applied as a Terrain edit and whose Tunnel, Apron, rooms and corridors are Kept_Clear
     (``stages.entrance_attachment``, ``stages.apply_edits``, ``stages.attach_sites``).
 
     ``ter`` (the built TER) is not read: the World with the Apron applied holds the same
-    grid. Pure; cached on the World's inputs, the Entrance and the controls, so the builder,
+    grid. Pure; cached on the World's inputs, the Entrance, the dungeon's rooms and
+    corridors and the controls, so the builder,
     the trees and the gate share one result."""
     from generators.sites.rules import DENSITIES
 
@@ -515,9 +516,14 @@ def sites_for(spec: ZoneSpec, ter: Optional[TerFile] = None) -> Sites:
                          f"expected one of {', '.join(DENSITIES)}")
     edges = normalise_edges(payload.get("edges"))
     landform, zone_size = _landform_args(payload)
+    # The dungeon's key: its Entrance, rooms and corridors (they are its Kept_Clear), so two
+    # specs sharing a seed and Entrance but not their rooms never share cached Sites.
     entrance = None
     if control != "none" and "dungeon" in payload:
-        entrance = json.dumps(payload["dungeon"]["entrance"], sort_keys=True)
+        entrance = json.dumps({"entrance": payload["dungeon"]["entrance"],
+                               "rooms": [asdict(r) for r in spec.rooms],
+                               "corridors": [asdict(c) for c in spec.corridors]},
+                              sort_keys=True)
     return _sites(int(spec.seed) & 0x7FFFFFFF,
                   tuple((s, edges[s]) for s in DEFAULT_SIDES),
                   payload.get("biome", DEFAULT_BIOME), control,
@@ -528,8 +534,9 @@ def sites_for(spec: ZoneSpec, ter: Optional[TerFile] = None) -> Sites:
 
 
 def _ground_world(spec: ZoneSpec, entrance: Optional[str]):
-    """The spec's World with its Entrance's Attachment applied: what the ground Socket
-    attaches to."""
+    """The spec's World with its Entrance's Attachment applied (``entrance``: ``sites_for``'s
+    key; the rooms and corridors are read off ``spec``): what the ground Socket attaches
+    to."""
     from generators import stages
     from generators.world import world_of
 
@@ -538,7 +545,7 @@ def _ground_world(spec: ZoneSpec, entrance: Optional[str]):
         return world
     from generators.outdoor_dungeon import Entrance
     att = stages.entrance_attachment(world, world.socket("hill0"),
-                                     Entrance.from_dict(json.loads(entrance)))
+                                     Entrance.from_dict(json.loads(entrance)["entrance"]), spec)
     return stages.apply_edits(world, [att])
 
 
