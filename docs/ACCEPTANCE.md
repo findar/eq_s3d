@@ -1685,3 +1685,179 @@ Known issues (not regressions; open follow-ups in the spec's `archive.md`):
 
 - [ ] **[DEFERRED]** Seeing the Props, their lights and their collision in the RoF2 client
       needs a takeover install. It moves to M6's in-engine smoke load.
+
+---
+
+## Step 12 — World Sockets
+
+> Roadmap step 12 (`zone-generator-world-sockets`). A zone is now made in stages: the
+> **World** (the terrain, from the zone's seed) offers **Sockets**, the rooms and Sites
+> **attach** to them, then **Decor** places the Props. An outdoor dungeon has a `hillside`
+> Socket (`hill0`, the hill its Tunnel goes into) and a `ground` Socket (the open ground its
+> Sites stand on); a wilderness has one `ground` Socket; a dungeon or city has one `root`
+> Socket at the origin. Each stage has its own seed: **seed** (the World), **Rooms seed**
+> (the rooms and the Sites) and **Decor seed** (the Props), the last two defaulting to the
+> first. The side panel's **Seeds** section shows the rooms and decor seeds with
+> **reroll rooms** and **reroll decor** buttons; the Controls panel has a **Rooms seed** box
+> (every zone type). Corridors now take wall lights too. A build writes its stage hand-offs
+> (`<name>.world.json`, `.attach.json`, `.rooms.json`) into its build folder, and
+> `scripts/stage.py` reruns one stage from the one before. Restart the Server on the merged
+> code first and check the side panel shows no stale-code banner.
+
+### Cases
+
+Pin the seed. Leave the description box empty and set only what the row names: Layout,
+Size, Verticality, Locks, Decor (Normal) and the other controls stay at their defaults, and
+**Rooms is the page's default 5** unless the row says otherwise. Every case was built on this
+code through the Server's own route (`POST /api/generate`) on its first attempt with the gate
+passing. Sockets are the sidecar's `sockets` block, the seeds its `seeds` block, the Spawn
+`outdoor_dungeon.outdoor_spawn`, and a corridor's Props `corridors[].props` (`from_room`,
+`to_room`).
+
+| # | Controls | Seed | Rooms seed | What it shows |
+|---|----------|------|------------|---------------|
+| a | **Outdoor dungeon**, 8 rooms | 2 | blank (2) | Hill `hill0` on the **W** side; the Tunnel's Mouth at (−140, 0), Spawn at (−340, 140, 13.0). Rooms on two levels (room_0, 1, 3 and 4 at Z 35, room_6 at 21; room_2, 5 and 7 at Z −67 to −81). Two lit corridors: NIHTORCH804 between room_1 and room_4, TORCH1 between room_1 and room_3. 33 Props |
+| b | **Outdoor dungeon**, 8 rooms | 2 | **12345** | **Rooms reroll:** a's hill, ground and terrain textures, the same trees (16, the same kinds), and the same Spawn (−340, 140, 13.0). The rooms are laid out and dressed anew (room_0, 1, 2 and 5 at Z 22, room_4 at 36, room_3, 6 and 7 at −80 to −88; flagstone floors become cave rock) and the Mouth moves along the same hill to (−180, −40). No lit corridors this time; 35 Props |
+| c | **Wilderness** | 7 | blank (7) | Two Sites: a centaur shrine at (−910, 1056) and a gnoll camp at (488, 316). Step 11's case q |
+| d | **Wilderness** | 7 | **12345** | **Rooms reroll:** c's ground and water, and its 100 trees. The Sites are new: the centaur shrine now at (1097, −615), and a human shrine at (659, −613) in place of the gnoll camp |
+| e | Dungeon, Layout Graph, **16 rooms** | 2 | blank (2) | **Step 11's zone, unchanged:** step 11's case d. The same rooms, walls and corridors; NTHRONE in `room_5`, GENTAPESTRY602 in `room_12`, MISTBANNER ×2 in `room_13`. 70 Props, 32 lights (was 72 and 36): corridors now carry lights (TORCH1 between room_9 and room_6 and between room_11 and room_13, NIHTORCH801 between room_5 and room_3), and rooms carry one wall light fewer at most |
+| f | Dungeon, Layout Graph, 16 rooms, Decor **None** | 2 | blank | e's rooms, walls and corridors with no Props. Should match a step 11 build of this exactly |
+| g | **City**, 12 rooms | 1 | blank (1) | **Step 11's zone, unchanged:** step 11's case m, the same streets and buildings. 103 Props, 45 lights (was 89 and 30): three lit corridors, two torches each (TORCH1 room_0–room_5, TORCHPOINT room_5–room_10, SLTORCH101 room_1–room_5) |
+| h | Dungeon | 34 | blank | **Corridor torches:** NIHTORCH804 in the corridors room_1–room_0 and room_1–room_3, POTORCHAINS504T in the high corridor room_4–room_2 (Z about 110) |
+| i | Dungeon | 5 | blank | **Corridor torches:** NIHTORCH802 room_2–room_4, TORCHPOINT room_2–room_1, NIHTORCH804 room_1–room_3 |
+| j | **City** | 15 | blank | **Corridor torches in a row:** TORCHPOINT ×3 along room_1–room_4, NIHTORCH801 ×4 along room_1–room_2, one NIHTORCH801 in room_0–room_4 |
+| k | **City** | 18 | blank | NIHTORCH802 ×3 along room_2–room_3, NIHTORCH804 ×4 along room_1–room_2 |
+| l | **City** | 30 | blank | Three lit streets: NIHTORCH801 ×2 room_1–room_4, TORCH1 ×3 room_3–room_4, NIHTORCH801 ×2 room_0–room_4 |
+| m | **Outdoor dungeon** | 18 | blank | **Spawn moved most** (task 20): Spawn (−340, 140) now at Z −8.34 (was −7.50). Hill W |
+| n | **Outdoor dungeon** | 25 | blank | Spawn (140, −340) at Z 24.20 (was 23.76). Hill **S**. One lit corridor: WALLTORCHARMSTUB200 room_1–room_3 |
+| o | **Outdoor dungeon** | 26 | blank | Spawn (−340, 140) at Z 26.92 (was 27.25). Hill W |
+| p | **Outdoor dungeon** | 3 | blank | Spawn (−340, 140) at Z −5.01 (was −4.71). Hill W; the Mouth at (−100, −40) |
+| q | **Outdoor dungeon**, 8 rooms, Theme **Fortress**, Race **Troll**, Verticality **Flat** | 3 | blank | **The Apron under the Spawn:** the troll's tall Tunnel digs its Apron trench right under the Spawn: Spawn (−340, 140) at Z −36.11, about 31 u below p's ground there. The Mouth is at (−300, 120). Four lit corridors |
+
+a and b, and c and d, are the reroll pairs: open them side by side, or build a (or c) and press
+**reroll rooms**. The ⟳ button gives a fresh rooms seed, so its rooms differ from b's; the World
+stays a's either way. From the command line (Theme and Race are page-only, so q needs the
+page):
+
+```bash
+python main.py generate sockets_a --zone-type outdoor_dungeon --seed 2 --rooms 8
+python main.py generate sockets_b --zone-type outdoor_dungeon --seed 2 --rooms 8 --rooms-seed 12345
+python main.py generate sockets_d --zone-type wilderness --seed 7 --rooms-seed 12345
+python main.py generate sockets_e --seed 2 --rooms 16 --layout graph
+python main.py generate sockets_j --zone-type city --seed 15 --rooms 5
+```
+
+These give the same rooms, Sites, Sockets and Props as the page (checked for b, d, e and j).
+The `.eqg` files contain the client's own models and textures (Decor): don't commit or share
+them.
+
+### S.1 — Rerolling the rooms keeps the World
+
+- [ ] **[MUST] Same hill, new rooms** — In a then b, the terrain is the same: the same hills,
+      the same Rim and ground textures, the same groves (a tree or two may stand a little aside, clear of the new Mouth or Sites), and you spawn at the same spot. The hill the
+      Tunnel goes into is the same (west). Only the dungeon inside is new, and its Mouth sits
+      somewhere else on that hillside, with its Apron dug in front of it.
+- [ ] **[MUST] Same ground, new Sites** — In c then d, the ground, the water and the groves are
+      the same. The Sites stand in new places and may be different Sites (d has two shrines
+      where c had a shrine and a camp). Each stands on the ground as before: level enough, not
+      in water, not in a tree.
+- [ ] **[MUST] The button** — On a, **reroll rooms** builds the same hill with new rooms, and
+      the Seeds section shows the new rooms seed with the decor seed unchanged. Pressing it
+      again gives new rooms again. On a wilderness it moves the Sites.
+- [ ] **[MUST] Walkable after a reroll** — In b and d, walk from the Spawn to the Mouth, through
+      every room, and to each Site. Nothing is cut off or floating.
+- [ ] **[MUST] Rooms seed box** — Typing 12345 in the Controls panel's Rooms seed box with seed
+      2 gives b again; blank gives a.
+
+### S.2 — Zones step 11 built look the same
+
+- [ ] **[MUST] Dungeon** — e and f are step 11's d and b: the same rooms in the same places,
+      the same walls, corridors and stairs, and the room Props you knew (the throne, the
+      tapestry and banners). The rooms are no darker than before.
+- [ ] **[MUST] City** — g is step 11's m: the same streets and buildings, still lit and
+      lived-in.
+- [ ] **[SHOULD] Nothing else moved** — Any dungeon, city or wilderness seed you remember from
+      step 11 builds the same zone; only its lights differ (corridors lit, rooms' wall lights
+      a little fewer). Only outdoor dungeons move otherwise, and only by their Spawn height (S.5).
+
+### S.3 — Sockets on the map
+
+- [ ] **[MUST] Diamonds** — Press **M** on a. The map shows an **orange** diamond `hill0` on
+      the west hill with a short tick pointing west (the way out of the hill), and a **green**
+      diamond `ground` at the Spawn. On c a single green `ground` diamond. On e and g a
+      **grey** `root` diamond at the origin, by the first room.
+- [ ] **[MUST] Hover text** — Hovering a diamond names it: `hillside hill0 (W): dungeon, 8
+      rooms`, `ground ground: sites, 0` on a; `ground ground: sites, 2` on c; `root root:
+      dungeon, 16 rooms` on e.
+- [ ] **[MUST] Where the map says** — In 3D, the dungeon's Tunnel does go into the hill the
+      orange diamond marks, on the side its tick points to.
+- [ ] **[SHOULD] Downloads unchanged** — The map's SVG and PNG downloads don't carry the
+      diamonds (they are drawn on the dialog only).
+
+### S.4 — Corridor lights
+
+- [ ] **[MUST] On the wall** — In h, i and a, each corridor torch hangs on a corridor wall at
+      about head height, flame toward the corridor, back flush to the wall: not in the
+      doorway, not floating, not sunk.
+- [ ] **[MUST] In a row** — In j, k and l, a street's torches run along it evenly spaced, on
+      its walls, and none stands in the way through.
+- [ ] **[MUST] High corridors** — h's torch in the corridor between room_4 and room_2 (high
+      up) hangs on that corridor's own wall, not on a room below it.
+- [ ] **[SHOULD] Lit, not floodlit** — The corridors read as lit passages; rooms aren't darker
+      than in step 11 and corridors aren't brighter than rooms.
+
+### S.5 — Outdoor dungeons stand on one landscape
+
+- [ ] **[MUST] Feet on the ground** — In m, n, o and p you appear at the Spawn standing on the
+      grass: not hovering, not sunk to the ankles. Each moved under a unit, so compare with
+      step 11 only if you remember a float or a sink there.
+- [ ] **[MUST] Spawn in the Apron** — In q you appear at the bottom of the Apron's trench,
+      in front of the troll-sized Mouth, standing on the dug floor. You are not left floating
+      where the ground was before the dig, and not under the floor.
+- [ ] **[MUST] Gate held** — Every case builds on its first attempt (`validated` in the side
+      panel).
+
+### S.6 — The stage commands
+
+From the repo root, with `EQ_PATH` set:
+
+```bash
+python scripts/stage.py world od3 --zone-type outdoor_dungeon --seed 3 --out output/stage
+python scripts/stage.py attach output/stage/od3.world.json --plan room_count=5 --rooms-seed 9 --out output/stage
+python scripts/stage.py rooms output/stage/od3.attach.json --out output/stage
+python scripts/stage.py decor output/stage/od3.rooms.json --out output/stage
+```
+
+- [ ] **[MUST] One stage at a time** — `world` says `Sockets hill0 (hillside), ground
+      (ground)`; `attach` says `hill0 (hillside) seed 9: 5 rooms` and `ground (ground) seed 9:
+      0 Sites`; `rooms` says `8 RoomContexts` (5 rooms and 3 corridors); `decor` ends
+      `room check: ok`.
+- [ ] **[MUST] A loop of seconds** — Each command's own time ("world took …") is about a
+      second or less for world, attach and rooms, and a few seconds for decor (0.1, 0.7,
+      1.7 and 5.4 s measured, on a busy machine). Imports add several seconds a launch.
+- [ ] **[MUST] Each stage looks like its stage** — `od3.world.glb` is the terrain with its
+      Sockets as columns; `od3.attach.glb` the rooms as boxes; `od3.rooms.glb` the terrain
+      with the dungeon cut in; `od3.decor.glb` the rooms with their Props. Rerun `attach`
+      with another `--rooms-seed`, then `rooms` and `decor`: new rooms, the same terrain.
+- [ ] **[SHOULD] The build's hand-offs** — A build folder holds `<name>.world.json`,
+      `<name>.attach.json` and `<name>.rooms.json`, and `stage.py attach` on that World file
+      (same plan fields) writes the same `attach.json`.
+
+Known issues (not regressions; open follow-ups in the spec's `archive.md`):
+
+- Outdoor dungeons get Sites on only some seeds: every outdoor dungeon case above has
+  `ground ground: sites, 0`.
+- Stair and Bridge corridors get no lights or Props.
+- The page's Socket markers work out where to draw from the rooms' labels on the map; if the
+  map's labels change, the markers quietly disappear (a console warning).
+- Sites still spread at random where stock plains cluster them.
+- City decor sits near the tops of its bands.
+- The thorough suite at this step (task 16): 3044 passed, none failed (36 min, while the
+  cases above were built alongside). Step 11's `test_properties_mapgeom.py::test_reachable_only`
+  and step 10's three thorough-profile failures fail on some draws only and passed in this run;
+  they stay open.
+
+### S.7 — In-client check (deferred to M6)
+
+- [ ] **[DEFERRED]** Corridor lights and the moved Spawns in the RoF2 client need a takeover
+      install. It moves to M6's in-engine smoke load.
