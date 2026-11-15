@@ -2,7 +2,7 @@ r"""Check, dry-run and draw topology rule sets (roadmap step 6, Req 3.2-3.5).
 
 Thin over the library: loading and checking are ``generators/topology/
 ruleset.py``'s, growing is ``rewrite.py``'s, drawing is ``draw.py``'s. The
-authoring guide is ``docs/TOPOLOGY_RULES.md``.
+authoring guides are ``docs/TOPOLOGY_RULES.md`` and, for decor, ``docs/DECOR_RULES.md``.
 
 Usage::
 
@@ -18,6 +18,7 @@ Usage::
     python scripts/topology_rules.py check rules/decor                # the decor files, with unmet Tags
     python scripts/topology_rules.py check rules/decor --strict       # ... failing on unmet Tags
     python scripts/topology_rules.py draw-decor --out output/rules/   # each decor recipe's plan
+    python scripts/topology_rules.py draw-decor --layer tomb          # ... with decor layers merged on
 
 ``<set>`` is a base set name in ``rules/topology/`` or a path to a ``.toml``
 file. ``--theme T`` merges the layers ``themes.toml`` gives theme T (those
@@ -61,8 +62,9 @@ from generators.sites.rules import (  # noqa: E402
 )
 from generators.decor import catalogue as decor_catalogue  # noqa: E402
 from generators.decor.rules import (  # noqa: E402
-    BARE, ROOMS_FILE as DECOR_ROOMS_FILE, SETS_FILE as DECOR_SETS_FILE, DecorRules, asks, draw_count, load_decor,
-    unmet,
+    BARE, LAYER_SECTIONS as DECOR_LAYER_SECTIONS, LAYERS_DIR as DECOR_LAYERS_DIR, ROOMS_FILE as DECOR_ROOMS_FILE,
+    SETS_FILE as DECOR_SETS_FILE, THEMES_FILE as DECOR_THEMES_FILE, DecorRules, asks, draw_count, layer_names,
+    load_decor, load_decor_themes, unmet,
 )
 from generators.semantics import ROOM_TYPES  # noqa: E402
 from generators.transitions import TRANSITIONS_FILE, load_transitions  # noqa: E402
@@ -86,6 +88,10 @@ def _kind_of(path: Path) -> str:
     if (path.name in (DECOR_ROOMS_FILE, DECOR_SETS_FILE, decor_catalogue.TAGS_FILE, decor_catalogue.CATALOGUE_FILE)
             and (path.parent / DECOR_ROOMS_FILE).is_file()):
         return "decor"
+    if path.name == DECOR_THEMES_FILE and (path.parent / DECOR_ROOMS_FILE).is_file():
+        return "decor"          # the decor theme map, checked with its folder
+    if path.parent.name == DECOR_LAYERS_DIR and (path.parent.parent / DECOR_ROOMS_FILE).is_file():
+        return "decor"          # a decor layer, checked with its folder
     if path.name in (SITES_FILE, INHABITANTS_FILE, BIOMES_FILE) and (path.parent / SITES_FILE).is_file():
         return "sites"
     if path.name == THEMES:
@@ -159,6 +165,8 @@ def _expand(paths: Sequence[Path]) -> List[Path]:
             out += sorted(p.glob("*.toml"))
         elif kind in ("sites", "decor"):
             folder = p if p.is_dir() else p.parent
+            if kind == "decor" and folder.name == DECOR_LAYERS_DIR:
+                folder = folder.parent
             if folder not in out:
                 out.append(folder)
         else:
@@ -175,12 +183,90 @@ def _decor_catalogue(folder: Path):
     return decor_catalogue.load(pick(decor_catalogue.CATALOGUE_FILE), pick(decor_catalogue.TAGS_FILE))
 
 
+def _decor_layer_entries(path: Path) -> List[str]:
+    """What a decor layer file holds, as dotted entry names (``types.ossuary (add)``), for the
+    check's report; the loader has already checked it."""
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    out: List[str] = []
+
+    def name(where: str, body) -> str:
+        mode = body.get("mode") if isinstance(body, dict) else None
+        return f"{where} ({mode})" if mode else where
+
+    for section in DECOR_LAYER_SECTIONS:
+        tbl = data.get(section)
+        if section == "once" and tbl:
+            out.append(f"once ({', '.join(tbl)})")
+        elif section == "every" and isinstance(tbl, dict):
+            out.append(name("every", tbl))
+        elif section == "weights" and isinstance(tbl, dict):
+            for sub, entries in tbl.items():
+                if sub == "default":
+                    out.append(name("weights.default", entries))
+                elif isinstance(entries, dict):
+                    out += [name(f"weights.{sub}.{k}", v) for k, v in entries.items()]
+        elif isinstance(tbl, dict):
+            out += [name(f"{section}.{k}", v) for k, v in tbl.items()]
+    return out
+
+
+def _decor_merged(folder: Path, tags: Optional[Path], label: str, layers: Sequence[str]
+                  ) -> Tuple[int, List[str], Optional[DecorRules]]:
+    """(failures, report lines, the merged rules) for the base with ``layers`` merged on."""
+    try:
+        return 0, [], load_decor(folder, tags, layers=layers)
+    except RuleSetError as exc:
+        return 1, [f"FAIL  {label}: {len(exc.errors)} problem(s)"] + [f"      {e}" for e in exc.errors], None
+
+
 def check_decor(folder: Path, strict: bool = False) -> Tuple[int, List[str]]:
     """(failures, report lines) for a decor folder: its files checked, which recipe each
-    room type takes, and every recipe line with no usable model (a failure only when ``strict``)."""
+    room type takes, and every recipe line with no usable model (a failure only when ``strict``);
+    then each layer in ``layers/`` merged onto the base on its own, and each theme and race
+    ``themes.toml`` maps, with its layers merged (Req 3.3)."""
     out: List[str] = []
     tags = folder / decor_catalogue.TAGS_FILE
-    rules = load_decor(folder, tags if tags.is_file() else None)
+    tags = tags if tags.is_file() else None
+    rules = load_decor(folder, tags)
+    failures, report = _check_decor_base(folder, rules, strict)
+    out += report
+    for name in layer_names(folder):
+        label = f"{folder.name}/{DECOR_LAYERS_DIR}/{name}.toml"
+        failed, report, merged = _decor_merged(folder, tags, label, [name])
+        failures += failed
+        out += report
+        if merged is None:
+            continue
+        entries = _decor_layer_entries(folder / DECOR_LAYERS_DIR / f"{name}.toml")
+        out.append(f"ok    {label}: decor layer, {len(entries)} entr{'y' if len(entries) == 1 else 'ies'}"
+                   + (f": {', '.join(entries)}" if entries else ""))
+        mine = [e for e in unmet(merged, _decor_catalogue(folder)) if e.file == f"{name}.toml"]
+        if mine:
+            out.append(f"{'FAIL ' if strict else 'unmet'} {label}: {len(mine)} of its lines ask for Tags no "
+                       f"use = \"yes\" model has")
+            out.extend(f"      {e}" for e in mine)
+            failures += 1 if strict else 0
+    try:
+        themes = load_decor_themes(folder)
+    except RuleSetError as exc:
+        return failures + 1, out + [f"FAIL  {folder.name}/{DECOR_THEMES_FILE}: {len(exc.errors)} problem(s)"] + [
+            f"      {e}" for e in exc.errors]
+    if (folder / DECOR_THEMES_FILE).is_file():
+        out.append(f"ok    {folder.name}/{DECOR_THEMES_FILE}: decor theme map, {len(themes.themes)} theme(s), "
+                   f"{len(themes.races)} race(s)")
+    for what, table in (("theme", themes.themes), ("race", themes.races)):
+        for name, layers in sorted(table.items()):
+            label = f"{what} {name} ({' + '.join([DECOR_ROOMS_FILE] + [f'{n}.toml' for n in layers])})"
+            failed, report, merged = _decor_merged(folder, tags, label, layers)
+            failures += failed
+            out += report or [f"ok    {label}: merged"]
+    return failures, out
+
+
+def _check_decor_base(folder: Path, rules: DecorRules, strict: bool) -> Tuple[int, List[str]]:
+    """The base's report lines: its recipes, and its lines no usable model meets."""
+    out: List[str] = []
     falls = sorted(t for t in ROOM_TYPES if t not in rules.types)
     out.append(f"ok    {folder.name}/: decor, {len(rules.types)} type, {len(rules.kinds)} kind and "
                f"{len(rules.sites)} Site recipes, {len(rules.groups)} groups, Dressing for "
@@ -212,7 +298,7 @@ def cmd_check(files: Sequence[str], strict: bool = False) -> int:
         kind = _kind_of(p)
         try:
             if kind == "decor":
-                failed, report = check_decor(p if p.is_dir() else p.parent, strict)
+                failed, report = check_decor(p, strict)    # _expand gave the folder
                 failures += failed
                 lines.extend(report)
             elif kind == "sites":
@@ -700,22 +786,40 @@ def _decor_row(rules: DecorRules, label: str, **room) -> str:
     return f"<tr><th>{_esc(label)}</th><td>{total:.1f}</td><td>{weights[BARE]:.0%}</td>{cells}</tr>"
 
 
-def cmd_draw_decor(out: Path) -> int:
+def cmd_draw_decor(out: Path, layers: Sequence[str] = ()) -> int:
     """decor.html: Props per room by zone type, race and theme; each recipe's sample plan; the
-    Dressing, the Sets, and the lines no usable model meets yet."""
+    Dressing, the Sets, and the lines no usable model meets yet. ``layers`` (``--layer``, in
+    order) are merged onto the base for the whole page; a theme or race ``themes.toml`` maps
+    also takes its own layers first in its row, as its builds do."""
     from generators.topology.draw import _esc
-    rules = load_decor()
+    layers = tuple(dict.fromkeys(layers))
+    rules = load_decor(layers=layers)
+    themes = load_decor_themes()
+    merged = {layers: rules}
+
+    def rules_with(own: Sequence[str]) -> DecorRules:
+        key = tuple(dict.fromkeys(tuple(own) + layers))
+        if key not in merged:
+            merged[key] = load_decor(layers=key)
+        return merged[key]
+
+    def label(what: str, name: str, own: Sequence[str]) -> str:
+        return f"{what} {name}" + (f" (+ {', '.join(own)})" if own else "")
+
     head = ("<tr><th></th><th>Props a room</th><th>bare</th>"
             + "".join(f"<th>{_esc(c)}</th>" for c in decor_catalogue.CATEGORIES) + "</tr>")
     body = ["<h2>Props per room</h2><p>The mean a room takes (Dressing aside) and its Category shares, with the "
             "default recipe and every room's lines, Scales at 5, Decor Normal. Design finding 1's dungeon rooms "
-            "hold 2.9-4.2-6.8 a room (p25-p50-p75 over zones), cities 4.0-9.4-12.5.</p><table>" + head]
+            "hold 2.9-4.2-6.8 a room (p25-p50-p75 over zones), cities 4.0-9.4-12.5. A theme or race the theme "
+            "map gives layers is drawn with them (+ its layers).</p><table>" + head]
     for zt in ("dungeon", "city", "outdoor_dungeon"):
         body.append(_decor_row(rules, f"zone type {zt}", zone_type=zt))
-    for race in sorted(rules.weights["races"]):
-        body.append(_decor_row(rules, f"race {race}", zone_type="dungeon", race=race))
-    for theme in sorted(rules.weights["themes"]):
-        body.append(_decor_row(rules, f"theme {theme}", zone_type="dungeon", theme=theme))
+    for race in sorted(set(rules.weights["races"]) | set(themes.races)):
+        own = themes.races.get(race, ())
+        body.append(_decor_row(rules_with(own), label("race", race, own), zone_type="dungeon", race=race))
+    for theme in sorted(set(rules.weights["themes"]) | set(themes.themes)):
+        own = themes.themes.get(theme, ())
+        body.append(_decor_row(rules_with(own), label("theme", theme, own), zone_type="dungeon", theme=theme))
     for control in ("sparse", "dense"):
         body.append(_decor_row(rules, f"Decor {control}", zone_type="dungeon", control=control))
     body.append("</table><h2>By recipe</h2><table>" + head)
@@ -752,7 +856,8 @@ def cmd_draw_decor(out: Path) -> int:
             ".row{display:flex;flex-wrap:wrap;gap:12px}figure{margin:0}"
             "figcaption{text-align:center;color:#555}table{border-collapse:collapse}"
             "td,th{border:1px solid #ccc;padding:3px 8px;text-align:right}</style><h1>Decor recipes</h1>"
-            "<p>A schematic plan of each recipe in a 120 x 90 u room with its doors on the west wall, at a drawn "
+            + (f"<p><b>Decor layers merged:</b> {_esc(', '.join(layers))}</p>" if layers else "")
+            + "<p>A schematic plan of each recipe in a 120 x 90 u room with its doors on the west wall, at a drawn "
             "count: not placement. Colour is the Category: "
             + ", ".join(f"<span style='color:{c}'>{_esc(k)}</span>" for k, c in DECOR_COLOURS.items())
             + ". Squares are wall Props, dashed circles ceiling ones; a Group stands in a line. Hover for names.</p>"
@@ -760,7 +865,8 @@ def cmd_draw_decor(out: Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
     path = out / "decor.html"
     path.write_text(page, encoding="utf-8")
-    print(f"wrote {path} ({len(recipes)} recipes, {len(missing)} unmet lines)")
+    print(f"wrote {path} ({len(recipes)} recipes, {len(missing)} unmet lines"
+          + (f"; layers {', '.join(layers)}" if layers else "") + ")")
     return 0
 
 
@@ -795,7 +901,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     t = sub.add_parser("draw-sites", help="write sites.html: each Site recipe's plan, and chances by biome")
     t.add_argument("--out", type=Path, required=True)
     e = sub.add_parser("draw-decor", help="write decor.html: each decor recipe's plan, and Props per room")
-    e.add_argument("--out", type=Path, required=True)
+    e.add_argument("--out", type=Path, default=ROOT / "output" / "rules", help="default: output/rules/")
+    e.add_argument("--layer", action="append", default=[], metavar="NAME",
+                   help="a decor layer (rules/decor/layers/NAME.toml) merged onto the base; repeatable, in order")
     a = ap.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # the checker's "›"
@@ -812,7 +920,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if a.cmd == "draw-sites":
             return cmd_draw_sites(a.out)
         if a.cmd == "draw-decor":
-            return cmd_draw_decor(a.out)
+            return cmd_draw_decor(a.out, a.layer)
         return cmd_draw(a.set, a.theme, a.out, a.example_rooms)
     except RuleSetError as exc:
         print(f"the rule set failed its checks ({len(exc.errors)} problem(s)):")
