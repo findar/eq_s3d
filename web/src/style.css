@@ -219,6 +219,10 @@ label.field > input { width: 100%; }
   position: fixed;
   inset: var(--header-h) 240px 0 0;
   display: block;
+  /* A canvas doesn't stretch to its inset box: without these it keeps its 300x150 default, and
+     scene.ts (which sizes the renderer from the canvas's laid-out size) stays that small. */
+  width: calc(100vw - 240px);
+  height: calc(100vh - var(--header-h));
 }
 
 /* ---- Panel ---- */
