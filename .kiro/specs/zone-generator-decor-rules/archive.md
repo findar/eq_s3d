@@ -7,6 +7,11 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1–2 | Decor layers in the loader (`load_decor(..., layers)`, `layer_names`, `layers_for`, `mode` add/replace, clashes refused) and through the build: `ZonePlan.decor_layers`, `--decor-layer`, `controls.decor_layers`, `/api/controls` `decor_layers`, sidecar `decor.layers`; no layer, same bytes | `f37d4a6` … `6610254` |
+| 3 | `layers/tomb.toml` (the tomb's Weights; tomb builds byte-identical, TOMB golden), `themes.toml`, `docs/DECOR_RULES.md`, `topology_rules.py check` and `draw-decor --layer` | `5f97273` … `7d807b5` |
+| 4 | `generators/decor/room_view.py` and `POST /api/room_decor`: one room re-decorated from the saved RoomContexts, rules read fresh; `builder.BareCap` and `settle_room` shared with the build | `2f01c97` … `ee563e3` |
+| 5–6 | The Decor rules control, and the Room view in the page (Props by recipe line, POIs, drops, two-way hover, reroll, Decor, Decor rules, re-read rules, cutaway) | `4a5c1c1` … `6a20f77` |
+| 7–9 | First look, acceptance section (`docs/ACCEPTANCE.md` R.1–R.5) and thorough run, acceptance; at acceptance the 3D view's size (a step 14 regression) and the map dialog's size were fixed | `b21a901` … `f48fcc6` |
 
 ## Decisions
 
@@ -26,5 +31,13 @@ authoring guide, tooling, and the single-room view to see a layer's effect.
 - **`scripts/stage.py` `decor_stage` keeps its own copy of the bare cap** and doesn't settle Props
   (import, origin, wall), so its positions differ from a build's (task 4). It could call
   `builder.BareCap` and `settle_room`.
+- **The tomb layer does nothing outside a tomb** (found at task 8): it holds only
+  `weights.themes.tomb`, which only tomb-themed rooms read, so Decor rules "tomb" on a Temple build
+  gives the same Props, while the sidecar lists the layer. Layer-level Weights, or offering only
+  layers that can change the build, would fix it.
+- **A pre-existing thorough failure in room placement** (task 8):
+  `test_room_placement.py::test_f4_placement_keeps_the_way_clear_and_never_fails` with w=112,
+  d=118, voronoi, seed 33757, one E door, a far-end boss dais: "doors joined, no pocket". Same on
+  `74991ef`, before step 15.
 - **The room view's first call in a fresh server process is slow** (16 s quiet, the install's
   archives read once); rerolls after it are under 1 s median (task 4).

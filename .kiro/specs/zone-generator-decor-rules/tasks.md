@@ -82,7 +82,7 @@ build on its header, Controls and side panel.
   - Card: [cards/09-human-acceptance.md](cards/09-human-acceptance.md)
   - Type: human · Depends: 8
 
-- [ ] 10. Close step 15
+- [x] 10. Close step 15
   - Card: [cards/10-close.md](cards/10-close.md)
   - Type: agent · Size: S · Depends: 9 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-decor-rules/, .kiro/specs/zone-generator/

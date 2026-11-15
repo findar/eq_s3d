@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 15, ready.** Drafted 2026-11-14 at master `8ebca55` from the user's
+> **STATUS: roadmap step 15, DONE (signed off 2026-11-15).** Drafted 2026-11-14 at master `8ebca55` from the user's
 > requests the same day: "as we polish generation, i want to be able to visualize a single
 > room and how it lays out decoration", then "how we define the rules for generating decor in
 > rooms. i want these to be similar to the room graph rules, something that a user could write
