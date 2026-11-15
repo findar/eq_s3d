@@ -9,6 +9,7 @@ import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
 import { showArtifacts, loadMapSvg } from "./artifacts";
 import { drawSockets } from "./sockets";
+import { RoomView } from "./roomview";
 
 // How a grown zone's rooms lean: "From rules", or a number or an overlay on top.
 const SCALE_CONTROLS = ["finish", "structure", "clutter", "overlay"];
@@ -44,6 +45,13 @@ let lastResult: GenerateResult | null = null;
 // ---- Scene + controls ----
 const zoneScene = new ZoneScene(canvas);
 const controls = new FirstPersonControls(zoneScene.camera, canvas);
+
+// The Room view (roomview.ts): one room re-decorated, over the viewport.
+const roomView = new RoomView({
+  decorSelect: $("decor") as HTMLSelectElement,
+  layerSelect: $("decor-layers") as HTMLSelectElement,
+  beforeOpen: () => closeMap(),
+});
 
 controls.onLockChange = (locked) => {
   hintOverlay.classList.toggle("hidden", locked);
@@ -590,6 +598,7 @@ async function doGenerate(mode: Mode) {
 async function runGenerate(params: GenerateParams): Promise<void> {
   generating = true;
   syncGenerateButton();
+  roomView.close();
   rerollDecorBtn.disabled = true;
   rerollRoomsBtn.disabled = true;
   statusEl.textContent = "generating…";
@@ -627,6 +636,7 @@ async function runGenerate(params: GenerateParams): Promise<void> {
     showToggle("t-regions", zoneScene.hasRegions());
     showToggle("t-gates", zoneScene.hasGates());
     updatePanel(result, sidecar);
+    roomView.setBuild({ zone: result.id, version: result.version, sidecar });
     $("panel-empty").hidden = true;
     $("panel-body").hidden = false;
     if (!mapModal.classList.contains("hidden")) openMap();
@@ -944,6 +954,7 @@ async function openMap() {
     // opened in between is redrawn with them (runGenerate).
     const svg = mapBody.querySelector("svg");
     if (svg && currentSidecar) drawSockets(svg, currentSidecar);
+    if (svg) roomView.wireMap(svg);
     mapDownload.href = currentMapUrl;
     mapModal.classList.remove("hidden");
   } catch (err) {
@@ -997,6 +1008,8 @@ function animate() {
   const now = performance.now();
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  // While the Room view is open the zone neither moves nor draws.
+  if (roomView.isOpen) return;
   controls.update(dt);
   zoneScene.render();
 }

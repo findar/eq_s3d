@@ -271,6 +271,14 @@
     <div id="m-props"></div>
     </section>
 
+    <!-- The build's rooms (only with Decor): each opens the Room view, which
+         re-decorates that room alone (roomview.ts). A click on a room in the
+         map dialog opens it too. -->
+    <section id="s-rooms" hidden>
+    <h3>Rooms</h3>
+    <div id="m-room-list"></div>
+    </section>
+
     <h3>Bounds (u)</h3>
     <div class="row"><span>Width X</span><span id="m-wx">—</span></div>
     <div class="row"><span>Width Y</span><span id="m-wy">—</span></div>
@@ -316,6 +324,10 @@
 
   <!-- Build-mismatch warning (stale server / frontend out of sync) -->
   <div id="build-warning" class="hidden" role="alert"></div>
+
+  <!-- Room view: one room re-decorated and drawn alone, over the viewport and
+       side panel while open. roomview.ts builds its toolbar, scene and list. -->
+  <div id="room-view" hidden></div>
 
   <!-- Top-down map modal -->
   <div id="map-modal" class="hidden">
