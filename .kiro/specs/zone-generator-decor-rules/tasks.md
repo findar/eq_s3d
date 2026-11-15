@@ -78,7 +78,7 @@ build on its header, Controls and side panel.
   - Type: agent · Size: S · Depends: 7
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 9. HUMAN: acceptance pass
+- [x] 9. HUMAN: acceptance pass
   - Card: [cards/09-human-acceptance.md](cards/09-human-acceptance.md)
   - Type: human · Depends: 8
 
