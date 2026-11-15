@@ -41,6 +41,9 @@ export interface RoomViewOptions {
   beforeOpen?: () => void;
 }
 
+/** Walls are cut away this far above the room's floor (head height and a wall light's reach). */
+const CUT_HEIGHT = 14;
+
 // The keys the zone's camera reads (controls.ts), plus M (the map): stopped
 // while the room view is open so they never reach the zone.
 const BLOCKED_KEYS = new Set([
@@ -181,6 +184,9 @@ export class RoomView {
   private levelSel!: HTMLSelectElement;
   private layerSel!: HTMLSelectElement;
   private labelsBox!: HTMLInputElement;
+  private cutBox!: HTMLInputElement;
+  /** Walls are cut away above this plane (floor + CUT_HEIGHT) while `cutBox` is ticked. */
+  private cut = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
   private buttons: HTMLButtonElement[] = [];
 
   // Three.js, alive only while open
@@ -237,6 +243,13 @@ export class RoomView {
     this.labelsBox.type = "checkbox";
     this.labelsBox.addEventListener("change", () => { this.labels.visible = this.labelsBox.checked; });
     labelWrap.append(this.labelsBox, " Labels");
+    const cutWrap = el("label", "rv-check");
+    cutWrap.title = "Cut the walls away above head height, so the room can be seen into";
+    this.cutBox = el("input");
+    this.cutBox.type = "checkbox";
+    this.cutBox.checked = true;
+    this.cutBox.addEventListener("change", () => this.applyCut());
+    cutWrap.append(this.cutBox, " Cutaway");
     const close = el("button", "secondary", "Close");
     close.title = "Back to the zone (Esc)";
     close.addEventListener("click", () => this.close());
@@ -244,7 +257,7 @@ export class RoomView {
     lvl.appendChild(this.levelSel);
     const lay = el("label", "rv-field", "Decor rules ");
     lay.appendChild(this.layerSel);
-    bar.append(this.title, this.seedEl, reroll, lvl, lay, reread, labelWrap, el("span", "rv-spacer"), close);
+    bar.append(this.title, this.seedEl, reroll, lvl, lay, reread, labelWrap, cutWrap, el("span", "rv-spacer"), close);
 
     const body = el("div", "rv-body");
     this.stage = el("div", "rv-stage");
@@ -369,6 +382,7 @@ export class RoomView {
 
   private start(): void {
     const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.localClippingEnabled = true;
     renderer.setPixelRatio(window.devicePixelRatio);
     this.stage.prepend(renderer.domElement);
     const scene = new THREE.Scene();
@@ -411,6 +425,19 @@ export class RoomView {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+  }
+
+  /** Clip (or stop clipping) the room's own mesh at the cut plane. */
+  private applyCut(): void {
+    const planes = this.cutBox.checked ? [this.cut] : [];
+    this.content.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.userData.roomShell) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        mat.clippingPlanes = planes;
+        mat.needsUpdate = true;
+      }
+    });
   }
 
   /** Point the orbit camera at the room's box from the south, above. */
@@ -516,6 +543,17 @@ export class RoomView {
       this.labels.add(label);
     });
 
+    // The room's own mesh (not a Prop) is cut away above head height: the walls
+    // between the camera and the room would otherwise hide what's in it.
+    this.cut.constant = (report.room.box[2] ?? 0) + CUT_HEIGHT;
+    model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh || !m.material) return;
+      let inProp = false;
+      for (let a: THREE.Object3D | null = o; a; a = a.parent) if (/^prop_\d+$/.test(a.name)) inProp = true;
+      if (!inProp) m.userData.roomShell = true;
+    });
+    this.applyCut();
     if (first) this.frame(report.room.box);
     if (![...this.levelSel.options].some((o) => o.value === report.control)) {
       const o = el("option", "", report.control);
