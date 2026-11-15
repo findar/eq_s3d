@@ -622,6 +622,7 @@ _ALLOWED_WEB_INPUT_IDS = {
     "finish", "structure", "clutter", "overlay",  # how rooms lean (room layouts spec task 21)
     "dungeon-theme", "dungeon-race",  # graph-layout spec task 14
     "decor", "decor-seed",  # Props in rooms (room-decor spec task 10)
+    "decor-layers",  # decor layers on top of the theme's (decor-rules spec task 5)
     "rooms-seed",  # rooms and Sites on the same World (world-sockets spec task 8)
 }
 
