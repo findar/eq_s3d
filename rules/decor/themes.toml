@@ -13,9 +13,11 @@
 # names (decor_layers), each once, where it first stands. How a layer merges onto rooms.toml
 # is in generators/decor/rules.py (load_decor).
 #
-# No theme takes a layer yet: the first one (tomb) arrives with step 15's worked example.
-#
-# tomb = { layers = ["tomb"] }
+# docs/DECOR_RULES.md is the guide; layers/tomb.toml its worked example.
+
+tomb = { layers = ["tomb"] }
+
+# A race takes a layer the same way, under [races]:
 #
 # [races]
 # goblin = { layers = ["goblin_clutter"] }
