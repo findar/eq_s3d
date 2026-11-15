@@ -251,6 +251,99 @@ export interface ZoneSidecar {
   // The traced outline (pipeline map post-pass): bounds are
   // [x0, y0, z0, x1, y1, z1] of the Floor_Region.
   outline?: { bounds: number[] } | null;
+  // The layout engine's report; on a graph layout each room's outline rings
+  // (world x, y), which the map dialog hit-tests a click against.
+  layout?: { rooms?: Record<string, { outline?: number[][][] }> } | null;
+}
+
+// ---- The room view (decor-rules Req 4, 5) ----
+
+// POST /api/room_decor: one room of a build re-decorated. Left out, the seed,
+// level and layers are what the build's Decor ran with (its sidecar);
+// decor_layers [] is the theme's alone, [name] one layer on top.
+export interface RoomDecorParams {
+  zone: string;
+  version: number | string;
+  room: string;
+  decor_seed?: number;
+  control?: string;
+  decor_layers?: string[];
+}
+
+// A Prop in the report: the sidecar's shape plus the recipe line it came from.
+export interface RoomProp extends ZoneProp {
+  line: string;                // "rooms.toml kinds.chamber props[0]"
+  at?: string;
+  poi?: number | null;
+  group?: number | null;
+  w?: number;
+  d?: number;
+  h?: number;
+}
+
+export interface RoomPoi {
+  index: number;
+  purpose: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  dressing: string[];          // model keys of its Props
+  props: number[];             // their indices in `props`
+  dropped: string[];           // reasons
+}
+
+export interface RoomDrop {
+  step: string;
+  line: string;
+  what: string;
+  reason: string;
+  poi: number | null;
+}
+
+export interface RoomDecorReport {
+  zone: string;
+  version: string;
+  glb_url: string;             // the room alone; Prop n is node `prop_<n>`
+  room: {
+    id: string; source: string; room_type: string; kind: string;
+    theme: string; race: string; zone_type: string;
+    box: number[];             // x0, y0, z0, x1, y1, z1
+  };
+  seed: number;
+  control: string;
+  layers: string[];
+  sets: string[];
+  bare: boolean;
+  props: RoomProp[];
+  pois: RoomPoi[];
+  drops: RoomDrop[];
+  check: string[];
+  install: boolean;
+  bare_replayed: number;
+  notes: string[];
+  took_ms: number;
+}
+
+export async function fetchRoomDecor(params: RoomDecorParams): Promise<RoomDecorReport> {
+  const res = await fetch("/api/room_decor", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    // FastAPI's detail: a string, or {message, errors} for a failing rule file.
+    let msg = `room decor failed (${res.status})`;
+    try {
+      const body = await res.json();
+      const d = body?.detail;
+      if (typeof d === "string") msg += `: ${d}`;
+      else if (d?.message) msg += `: ${d.message}` + (d.errors?.length ? `\n${d.errors.join("\n")}` : "");
+      else if (d) msg += `: ${JSON.stringify(d)}`;
+    } catch { /* not JSON: the status alone */ }
+    throw new Error(msg);
+  }
+  return res.json();
 }
 
 // What attached to a Socket: a dungeon or city ({kind, rooms}), the ground's

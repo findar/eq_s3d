@@ -63,7 +63,7 @@ build on its header, Controls and side panel.
   - Owns: web/index.html, web/src/main.ts, web/src/api.ts, tests/test_hygiene.py (the web control id allowlist only)
   - Reqs: 2.2, 2.3
 
-- [ ] 6. The room view in the page
+- [x] 6. The room view in the page
   - Card: [cards/06-room-view.md](cards/06-room-view.md)
   - Type: agent · Size: M · Depends: 4, 5
   - Owns: web/src/roomview.ts, web/src/main.ts, web/index.html, web/src/style.css, web/src/api.ts
