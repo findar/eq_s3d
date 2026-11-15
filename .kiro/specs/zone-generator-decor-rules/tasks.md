@@ -57,10 +57,10 @@ build on its header, Controls and side panel.
   - Owns: generators/decor/room_view.py, scripts/decor_room.py, server/app.py, tests/test_room_view.py
   - Reqs: 4
 
-- [ ] 5. The Decor rules control
+- [x] 5. The Decor rules control
   - Card: [cards/05-control.md](cards/05-control.md)
   - Type: agent · Size: S · Depends: 2
-  - Owns: web/index.html, web/src/main.ts, web/src/api.ts
+  - Owns: web/index.html, web/src/main.ts, web/src/api.ts, tests/test_hygiene.py (the web control id allowlist only)
   - Reqs: 2.2, 2.3
 
 - [ ] 6. The room view in the page

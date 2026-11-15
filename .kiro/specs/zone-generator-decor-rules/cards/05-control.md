@@ -14,3 +14,4 @@ A **Decor rules** control in the Controls' Decor group (step 14's layout): "From
 Build on step 14's visibility predicate; don't add a second mechanism.
 
 ## Result
+✔ 4a5c1c1 · 3155 passed · frontend builds · not checked in the browser by the agent
