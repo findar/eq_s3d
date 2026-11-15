@@ -664,6 +664,71 @@ class DecorBuild:
         return ("decor", np.vstack(verts), np.vstack(faces), np.vstack(cols), np.vstack(norms))
 
 
+class BareCap:
+    """The zone-wide cap on bare rooms: at most ceil(the rooms' summed bare chances) of
+    ``todo`` go bare (a five-room city at 0.2 a room has one). Independent draws left two or
+    three of five bare, and four cities in 40 under stock's lowest Props per room (task 14).
+    Rooms are placed in ``todo``'s order through ``place``; a room that draws bare past the cap
+    is placed in full. The room view (``generators.decor.room_view``) replays it over the
+    rooms before the one it shows, so that room comes out as the build placed it."""
+
+    def __init__(self, todo, rules, control: str):
+        import math
+        from generators.decor.rules import BARE
+        self.left = math.ceil(sum(
+            rules.weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
+            for c in todo if c.source == "room") - 1e-9)
+
+    def place(self, ctx, rules, catalogue, control: str, decor_seed):
+        """``placement.place`` under the cap."""
+        from generators.decor.placement import place
+        d = place(ctx, rules, catalogue, control, decor_seed)
+        if d.bare and ctx.source == "room":
+            if self.left > 0:
+                self.left -= 1
+            else:
+                d = place(ctx, rules, catalogue, control, decor_seed, may_be_bare=False)
+        return d
+
+
+def settle_room(ctx, d, catalogue, importer, mesh, imported: dict):
+    """A placed room's Props as the build keeps them: each one's model imported (one that
+    can't be drops, ``not importable``), decor's room check on the footprints placement
+    reserved, then each moved so its model fills its footprint and a wall Prop onto the built
+    wall ``mesh`` (``room_context._Mesh``; None leaves wall Props where placement put them;
+    one with no wall there drops, ``OFF_THE_WALL``). ``imported`` (model file -> its import)
+    gathers the imports. Returns the Decorated, the check's problems and each kept Prop's model
+    file."""
+    from dataclasses import replace
+    from generators.decor.placement import Drop, check, size_of
+    from generators.decor.stock import NotImportable
+
+    kept, files = [], []
+    for p in d.props:
+        try:
+            stock = importer.get(p.key)
+        except NotImportable as e:
+            d.drops.append(Drop(p.step, p.line, p.key, f"not importable: {e}"[:200], p.poi))
+            continue
+        imported.setdefault(stock.model_file, stock)
+        kept.append(p)
+        files.append(stock.model_file)
+    d = replace(d, props=kept)
+    problems = check(ctx, d)            # on the footprints placement reserved
+    props, used = [], []
+    for p, f in zip(kept, files):
+        # Its origin where its model fills its footprint, a wall Prop on the wall mesh.
+        q = _at_origin(p, imported[f].ter)
+        if q.mount == "wall" and mesh is not None:
+            q = _on_wall(q, imported[f].ter, size_of(catalogue.models[q.key]).side, mesh)
+        if q is None:
+            d.drops.append(Drop(p.step, p.line, p.key, OFF_THE_WALL, p.poi))
+            continue
+        props.append(q)
+        used.append(f)
+    return replace(d, props=props), problems, used
+
+
 def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
               eq_path=None, rooms: bool = True) -> Optional[DecorBuild]:
     """Props for a built zone's rooms (dungeon, city, outdoor dungeon) and
@@ -674,11 +739,7 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     the same whatever the Props (Req 6.4). ``rooms=False`` places the Sites
     alone (the wilderness gate's view). A Prop whose model can't be imported
     drops, recorded as ``not importable``."""
-    import math
-    from dataclasses import replace
-    from generators.decor.placement import Drop, check, place, size_of
-    from generators.decor.rules import BARE
-    from generators.decor.stock import NotImportable, eq_path_from_env
+    from generators.decor.stock import eq_path_from_env
     from generators.room_context import _Mesh, contexts, site_contexts
 
     control = spec.decor or "none"
@@ -698,50 +759,10 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     todo = (contexts(spec, mesh) if rooms else []) + (site_contexts(spec, ter) if sited else [])
 
     imported = {}                           # model file -> its import
-
-    def settled(p, fname):
-        """Its origin where its model fills its footprint, a wall Prop on the wall mesh
-        (None: no wall there to hang on)."""
-        p = _at_origin(p, imported[fname].ter)
-        if p.mount == "wall" and mesh is not None:
-            p = _on_wall(p, imported[fname].ter, size_of(catalogue.models[p.key]).side, mesh)
-        return p
-
-    # At most ceil(the rooms' summed bare chances) rooms go bare: a five-room city at 0.2 a
-    # room has one. Independent draws left two or three of five bare, and four cities in 40
-    # under stock's lowest Props per room (task 14). Later rooms that draw bare past the cap
-    # are placed in full.
-    bare_left = math.ceil(sum(
-        rules.weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
-        for c in todo if c.source == "room") - 1e-9)
+    cap = BareCap(todo, rules, control)
     for ctx in todo:
-        d = place(ctx, rules, catalogue, control, spec.decor_seed)
-        if d.bare and ctx.source == "room":
-            if bare_left > 0:
-                bare_left -= 1
-            else:
-                d = place(ctx, rules, catalogue, control, spec.decor_seed, may_be_bare=False)
-        kept, files = [], []
-        for p in d.props:
-            try:
-                stock = importer.get(p.key)
-            except NotImportable as e:
-                d.drops.append(Drop(p.step, p.line, p.key, f"not importable: {e}"[:200], p.poi))
-                continue
-            imported.setdefault(stock.model_file, stock)
-            kept.append(p)
-            files.append(stock.model_file)
-        d = replace(d, props=kept)
-        problems = check(ctx, d)            # on the footprints placement reserved
-        props, used = [], []
-        for p, f in zip(kept, files):
-            q = settled(p, f)
-            if q is None:
-                d.drops.append(Drop(p.step, p.line, p.key, OFF_THE_WALL, p.poi))
-                continue
-            props.append(q)
-            used.append(f)
-        d = replace(d, props=props)
+        d = cap.place(ctx, rules, catalogue, control, spec.decor_seed)
+        d, problems, used = settle_room(ctx, d, catalogue, importer, mesh, imported)
         out.placed.extend(zip(used, d.props))
         out.rooms.append((ctx, d, problems))
     # The models (and their textures) of the Props kept, each once.
