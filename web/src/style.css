@@ -380,12 +380,12 @@ label.field > input { width: 100%; }
   padding: 14px;
   overflow: auto;
 }
+/* The map fills the window, as wide as 86vw or as tall as 78vh, whichever it meets first, and keeps
+   its shape (--map-aspect, set by openMap). It used to stop at its drawn size (720 px across). */
 #map-body svg {
   display: block;
-  max-width: 86vw;
-  max-height: 78vh;
+  width: min(86vw, calc(78vh * var(--map-aspect, 1.7)));
   height: auto;
-  width: auto;
 }
 
 /* ---- Files (Artifacts panel) ---- */

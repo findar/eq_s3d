@@ -954,7 +954,12 @@ async function openMap() {
     // opened in between is redrawn with them (runGenerate).
     const svg = mapBody.querySelector("svg");
     if (svg && currentSidecar) drawSockets(svg, currentSidecar);
-    if (svg) roomView.wireMap(svg);
+    if (svg) {
+      // Its shape, so the CSS can fit it to the window both ways (larger as well as smaller).
+      const vb = svg.viewBox.baseVal;
+      if (vb && vb.width > 0 && vb.height > 0) svg.style.setProperty("--map-aspect", String(vb.width / vb.height));
+      roomView.wireMap(svg);
+    }
     mapDownload.href = currentMapUrl;
     mapModal.classList.remove("hidden");
   } catch (err) {
