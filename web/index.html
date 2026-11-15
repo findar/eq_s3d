@@ -199,11 +199,16 @@
            rooms, and the decor seed that rerolls them alone. The Decor values
            come from /api/controls on load; until then (or without it) the
            list is empty and the server builds its default. A blank decor
-           seed uses the zone's. -->
+           seed uses the zone's. Decor rules adds a decor layer to the theme's. -->
       <fieldset class="group" id="group-decor">
         <legend>Decor</legend>
         <label class="field" title="Furniture, lights and clutter in the rooms (needs the EQ install on the server)"><span>Decor</span>
           <select id="decor"></select>
+        </label>
+        <!-- Decor layers (rules/decor/layers/) on top of the theme's, from
+             /api/controls; hidden while the folder has none. -->
+        <label class="field" title="Extra decor rules on top of the theme's"><span>Decor rules</span>
+          <select id="decor-layers"><option value="" selected>From theme</option></select>
         </label>
         <label class="field" title="Rerolls the Props alone; blank uses the zone's seed"><span>Decor seed</span>
           <input type="number" id="decor-seed" min="0" max="2147483647" step="1" placeholder="zone's" />

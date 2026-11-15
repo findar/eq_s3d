@@ -29,6 +29,8 @@ export interface GenerateControls {
   // (a value from /api/controls) and the decor seed that rerolls the Props alone.
   decor?: string;
   decor_seed?: number;
+  // Decor layers (rules/decor/layers/) on top of the theme's; absent for none.
+  decor_layers?: string[];
   // Every zone type: the rooms seed that rerolls the rooms and Sites alone.
   rooms_seed?: number;
 }
@@ -178,6 +180,9 @@ export interface ZoneDecor {
   bare: number;
   drops: number;
   check: string[];
+  // The decor layers merged on, in merge order (theme's, race's, the
+  // request's); absent when none were.
+  layers?: string[];
 }
 
 // One control's list (/api/controls): its values in order, the default and
@@ -188,8 +193,15 @@ export interface ControlListing {
   zone_types: string[];
 }
 
+// One decor layer /api/controls lists: its name and description.
+export interface DecorLayerListing {
+  name: string;
+  description: string;
+}
+
 export interface ControlsListing {
   decor?: ControlListing;
+  decor_layers?: DecorLayerListing[];
 }
 
 export async function fetchControls(): Promise<ControlsListing> {
