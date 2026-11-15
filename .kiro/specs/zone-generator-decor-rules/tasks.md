@@ -45,10 +45,10 @@ build on its header, Controls and side panel.
   - Owns: ai/schema.py, generators/builder.py, server/app.py, main.py, tests/test_decor_layers_build.py, tests/test_hygiene.py (the CLI option list only)
   - Reqs: 2.2–2.5
 
-- [ ] 3. The tomb layer, the guide and the tools
+- [x] 3. The tomb layer, the guide and the tools
   - Card: [cards/03-example.md](cards/03-example.md)
   - Type: agent · Size: M · Depends: 2
-  - Owns: rules/decor/rooms.toml, rules/decor/layers/, rules/decor/themes.toml, docs/DECOR_RULES.md, scripts/topology_rules.py, tests/test_decor_layers.py
+  - Owns: rules/decor/rooms.toml, rules/decor/layers/, rules/decor/themes.toml, docs/DECOR_RULES.md, scripts/topology_rules.py, tests/test_decor_layers.py, tests/test_decor_builds.py (the TOMB golden only), tests/test_decor_rules.py (the tomb figures only), scripts/stage.py (decor_stage's layers only)
   - Reqs: 3
 
 - [ ] 4. Re-decorate one room: module and route
