@@ -8,6 +8,7 @@ Merge what it depends on; the lead restarts the server on master and serves the 
 Open a few rooms of a dungeon, a city and a tomb in the room view: can you see why each Prop is where it is; does reroll, Decor and re-read rules answer quickly; does the tomb layer read as `rules/decor/layers/tomb.toml` says; does `docs/DECOR_RULES.md` let you write a layer of your own?
 
 ## Checklist
-- [ ] Walk the cases the lead serves.
+- [x] Walk the cases the lead serves.
 
 ## Result
+✔ signed off by the user ("Looks good"), 2026-11-15

@@ -69,7 +69,7 @@ build on its header, Controls and side panel.
   - Owns: web/src/roomview.ts, web/src/main.ts, web/index.html, web/src/style.css, web/src/api.ts
   - Reqs: 5
 
-- [ ] 7. HUMAN: first look
+- [x] 7. HUMAN: first look
   - Card: [cards/07-first-look.md](cards/07-first-look.md)
   - Type: human · Depends: 3, 6
 
