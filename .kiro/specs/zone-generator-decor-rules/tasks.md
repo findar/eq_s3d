@@ -51,10 +51,10 @@ build on its header, Controls and side panel.
   - Owns: rules/decor/rooms.toml, rules/decor/layers/, rules/decor/themes.toml, docs/DECOR_RULES.md, scripts/topology_rules.py, tests/test_decor_layers.py, tests/test_decor_builds.py (the TOMB golden only), tests/test_decor_rules.py (the tomb figures only), scripts/stage.py (decor_stage's layers only)
   - Reqs: 3
 
-- [ ] 4. Re-decorate one room: module and route
+- [x] 4. Re-decorate one room: module and route
   - Card: [cards/04-room-route.md](cards/04-room-route.md)
   - Type: agent · Size: M · Depends: 2
-  - Owns: generators/decor/room_view.py, scripts/decor_room.py, server/app.py, tests/test_room_view.py
+  - Owns: generators/decor/room_view.py, scripts/decor_room.py, server/app.py, tests/test_room_view.py, generators/builder.py
   - Reqs: 4
 
 - [ ] 5. The Decor rules control
