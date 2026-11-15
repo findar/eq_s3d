@@ -73,7 +73,7 @@ build on its header, Controls and side panel.
   - Card: [cards/07-first-look.md](cards/07-first-look.md)
   - Type: human · Depends: 3, 6
 
-- [ ] 8. Acceptance section, thorough run
+- [x] 8. Acceptance section, thorough run
   - Card: [cards/08-acceptance.md](cards/08-acceptance.md)
   - Type: agent · Size: S · Depends: 7
   - Owns: docs/ACCEPTANCE.md
