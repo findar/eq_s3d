@@ -22,3 +22,9 @@ authoring guide, tooling, and the single-room view to see a layer's effect.
    (question 4), **in the page** (question 5), **rooms only** (question 6).
 
 ## Follow-ups
+
+- **`scripts/stage.py` `decor_stage` keeps its own copy of the bare cap** and doesn't settle Props
+  (import, origin, wall), so its positions differ from a build's (task 4). It could call
+  `builder.BareCap` and `settle_room`.
+- **The room view's first call in a fresh server process is slow** (16 s quiet, the install's
+  archives read once); rerolls after it are under 1 s median (task 4).
