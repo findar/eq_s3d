@@ -14,3 +14,4 @@ Index entry: `tasks.md` task 6. Requirement 5. Design "The room view" (Page); de
 Movement keys stay suppressed while typing, and WASD must not move the zone's camera while the room view is open. Dispose the room scene's geometry and textures on close. Lessons-learned "Web viewer": the preview uses per-material base colours.
 
 ## Result
+✔ e6db020 · 3178 passed · frontend builds · not checked in the browser by the agent beyond a scripted smoke run (task 7 looks)
