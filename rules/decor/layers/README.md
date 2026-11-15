@@ -26,3 +26,5 @@ Weights entry, `mode = "add"` adds Categories the entry doesn't name yet and ref
 `"replace"` stands for the whole entry. Each layer is checked on its own and the merged set as a
 whole. `../themes.toml` says which themes and races take which layers; a build request can name
 more (`decor_layers`).
+
+The full guide is `docs/DECOR_RULES.md`; `tomb.toml` here is its worked example.

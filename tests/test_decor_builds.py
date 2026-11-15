@@ -45,6 +45,12 @@ DECORATED = {
 }
 
 
+#: A decorated Theme Tomb build's ``.eqg`` hash (decor-rules task 3), captured before the
+#: tomb's decor moved into ``rules/decor/layers/tomb.toml``: the move keeps its bytes.
+TOMB = (dict(zone_type="dungeon", dungeon_theme="tomb"), 4,
+        "42fd23bc7d6991891eed6dfc77f1f75c331c768cc2a9e87edd527a923ad7047c")
+
+
 def _spec(fields, seed, decor, name="dec"):
     spec = plan_to_spec(ZonePlan(name=name, **fields).validate(), seed=seed)
     spec.decor = decor
@@ -239,6 +245,15 @@ def test_same_inputs_same_eqg(tmp_path):
     a = ZoneBuilder(_spec(fields, seed, "normal")).build(output_dir=tmp_path / "a", write_glb=False)
     b = ZoneBuilder(_spec(fields, seed, "normal")).build(output_dir=tmp_path / "b", write_glb=False)
     assert _eqg_hash(a.eqg_path) == _eqg_hash(b.eqg_path)
+
+
+@pytest.mark.slow
+@needs_install
+def test_a_tomb_build_keeps_its_bytes(tmp_path):
+    """The Theme Tomb golden: a decorated tomb build's ``.eqg`` (footer aside)."""
+    fields, seed, golden = TOMB
+    result = ZoneBuilder(_spec(fields, seed, "normal")).build(output_dir=tmp_path, write_glb=False)
+    assert _eqg_hash(result.eqg_path) == golden
 
 
 @pytest.mark.slow

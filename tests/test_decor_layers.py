@@ -1,16 +1,20 @@
 """Decor rules task 1 (Reqs 1, 2.1; design "Decor layers"): decor layers merged onto rooms.toml.
 
-Every layer here is a small file written in ``tmp_path``, onto a copy of the shipped base.
+Every layer here is a small file written in ``tmp_path``, onto a copy of the shipped base, but
+the shipped tomb layer (task 3, Req 3.1), the worked example: base + tomb is the rules as they were
+before it moved out of rooms.toml.
 """
 
 import dataclasses
 import re
 import shutil
+import tomllib
+from collections.abc import Mapping
 
 import pytest
 
-from generators.decor.rules import (DECOR_DIR, LAYERS_DIR, ROOMS_FILE, SETS_FILE, THEMES_FILE, asks, layer_names,
-                                    layers_for, load_decor, load_decor_themes)
+from generators.decor.rules import (DECOR_DIR, LAYERS_DIR, ROOMS_FILE, SETS_FILE, THEMES_FILE, Group, Line, Member,
+                                    Recipe, asks, layer_names, layers_for, load_decor, load_decor_themes)
 from generators.topology.ruleset import RuleSetError
 
 HEAD = '[layer]\nname = "{name}"\ndescription = "{desc}"\n'
@@ -85,11 +89,11 @@ def test_new_entries_are_added_and_named_by_their_file(tmp_path, base):
 def test_an_entry_already_there_is_refused_naming_both_files(tmp_path):
     d = _folder(tmp_path)
     _layer(d, "a", '[types.barracks]\nprops = [ { kind = "skull", at = "scatter" } ]\n'
-                   '[weights.themes.tomb]\nlight = 0.2\n'
+                   '[weights.themes.temple]\nlight = 0.2\n'
                    '[groups.bunks]\nmembers = [ { kind = "bed", at = "anchor" } ]\n'
                    '[dressing.boss]\nprops = [ { kind = "skull", at = "round" } ]\n')
     errs = _errors(d, ["a"])
-    assert set(_where(errs)) == {("a.toml", "types.barracks", "mode"), ("a.toml", "weights.themes.tomb", "mode"),
+    assert set(_where(errs)) == {("a.toml", "types.barracks", "mode"), ("a.toml", "weights.themes.temple", "mode"),
                                  ("a.toml", "groups.bunks", "mode"), ("a.toml", "dressing.boss", "mode")}
     assert all(ROOMS_FILE in e.expected for e in errs)
     # Between layers: the second names the first.
@@ -131,19 +135,19 @@ def test_layers_merge_in_the_order_given(tmp_path, base):
 
 def test_weights_add_joins_categories_and_refuses_a_clash(tmp_path, base):
     d = _folder(tmp_path)
-    _layer(d, "w", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.5\n')
+    _layer(d, "w", '[weights.themes.temple]\nmode = "add"\ncontainer = 0.5\n')
     r = load_decor(d, layers=["w"])
-    assert r.weights["themes"]["tomb"].weights == {**base.weights["themes"]["tomb"].weights, "container": (0.5,)}
-    _layer(d, "w", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.5\nlight = 0.3\n')
+    assert r.weights["themes"]["temple"].weights == {**base.weights["themes"]["temple"].weights, "container": (0.5,)}
+    _layer(d, "w", '[weights.themes.temple]\nmode = "add"\ncontainer = 0.5\nlight = 0.3\n')
     errs = _errors(d, ["w"])
-    assert _where(errs) == [("w.toml", "weights.themes.tomb", "light")] and ROOMS_FILE in errs[0].expected
+    assert _where(errs) == [("w.toml", "weights.themes.temple", "light")] and ROOMS_FILE in errs[0].expected
     # A Category one layer added clashes with the next, which names it.
-    _layer(d, "w", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.5\n')
-    _layer(d, "v", '[weights.themes.tomb]\nmode = "add"\ncontainer = 0.7\n')
+    _layer(d, "w", '[weights.themes.temple]\nmode = "add"\ncontainer = 0.5\n')
+    _layer(d, "v", '[weights.themes.temple]\nmode = "add"\ncontainer = 0.7\n')
     errs = _errors(d, ["w", "v"])
-    assert _where(errs) == [("v.toml", "weights.themes.tomb", "container")] and "w.toml" in errs[0].expected
-    _layer(d, "w", '[weights.themes.tomb]\nmode = "replace"\nlight = 0.3\n')
-    assert load_decor(d, layers=["w"]).weights["themes"]["tomb"].weights == {"light": (0.3,)}
+    assert _where(errs) == [("v.toml", "weights.themes.temple", "container")] and "w.toml" in errs[0].expected
+    _layer(d, "w", '[weights.themes.temple]\nmode = "replace"\nlight = 0.3\n')
+    assert load_decor(d, layers=["w"]).weights["themes"]["temple"].weights == {"light": (0.3,)}
     _layer(d, "w", '[weights.controls.normal]\nmode = "add"\nhanging = 2\n')
     assert load_decor(d, layers=["w"]).controls["normal"] == {"hanging": 2.0}
 
@@ -231,11 +235,11 @@ def test_layer_names_lists_the_folder(tmp_path):
     assert list(layer_names(d).items()) == [("a", "the first"), ("b", "the second")]
 
 
-def test_the_shipped_theme_map_maps_nothing_yet():
+def test_the_shipped_theme_map_gives_the_tomb_its_layer():
     m = load_decor_themes()
-    assert m.themes == {} and m.races == {}
-    assert layers_for("tomb", "goblin") == ()
-    assert layers_for("tomb", extra=["x", "x"]) == ("x",)
+    assert m.themes == {"tomb": ("tomb",)} and m.races == {}
+    assert layers_for("tomb", "goblin") == ("tomb",) and layers_for("temple", "goblin") == ()
+    assert layers_for("tomb", extra=["x", "tomb", "x"]) == ("tomb", "x")
 
 
 def test_layers_for_takes_theme_then_race_then_request(tmp_path):
@@ -270,3 +274,88 @@ def test_the_layers_readme_example_loads(tmp_path):
     (d / LAYERS_DIR / f"{name}.toml").write_text(body, encoding="utf-8")
     r = load_decor(d, layers=[name])
     assert r.layers == (name,) and r.types["barracks"].lines[-1].group == "bone_heap"
+
+
+# --- the worked example: the tomb layer (task 3, Req 3.1) ------------------------------------------
+
+
+def _unfiled(x):
+    """``x`` with the file each line and Group member was written in blanked: a line moved from
+    rooms.toml to a layer is the same line."""
+    if isinstance(x, (Line, Member)):
+        return dataclasses.replace(x, where=("",) + tuple(x.where[1:]))
+    if isinstance(x, Recipe):
+        return dataclasses.replace(x, lines=_unfiled(x.lines))
+    if isinstance(x, Group):
+        return dataclasses.replace(x, members=_unfiled(x.members))
+    if isinstance(x, tuple):
+        return tuple(_unfiled(v) for v in x)
+    if isinstance(x, Mapping):
+        return {k: _unfiled(v) for k, v in x.items()}
+    return x
+
+
+def _inlined(tmp_path, names):
+    """A decor folder whose rooms.toml is the shipped base with each layer's tables pasted back
+    in, its ``[layer]`` header dropped: the rules before the layers moved out of rooms.toml."""
+    d = _folder(tmp_path)
+    text = (DECOR_DIR / ROOMS_FILE).read_text(encoding="utf-8")
+    for n in names:
+        body = (DECOR_DIR / LAYERS_DIR / f"{n}.toml").read_text(encoding="utf-8")
+        assert not re.search(r"^mode\s*=", body, re.M), f"{n}.toml changes a base entry: it can't be pasted back"
+        text += "\n" + re.sub(r"^\[layer\]\n(?:(?!\[).*\n)*", "", body, flags=re.M)
+    (d / ROOMS_FILE).write_text(text, encoding="utf-8")
+    tomllib.loads(text)
+    return d
+
+
+def _tomb_rooms():
+    """(room type, kind) for every room a tomb grows: its kinds' types and its arc's."""
+    from generators.semantics import ARCHETYPES, kind_types
+    arch = ARCHETYPES["tomb"]
+    pairs = {(t, k) for k, types in kind_types("tomb").items() for t in types}
+    return sorted(pairs | {(t, "") for t in (arch.entrance_type, arch.climax_type, arch.hub_type, *arch.arc)})
+
+
+def test_base_and_tomb_are_the_rules_before_the_move(tmp_path):
+    """The tomb build loads base + tomb (the theme map), and that set is the one rooms.toml held
+    with the tomb's tables in it: every field alike (but ``layers``), so a tomb room gets the same
+    recipes and Weights, and a tomb build the same bytes (the TOMB golden in test_decor_builds)."""
+    names = layers_for("tomb")
+    assert names == ("tomb",)
+    got = load_decor(layers=names)
+    before = load_decor(_inlined(tmp_path, names))
+    assert got.layers == names and before.layers == ()
+    for f in dataclasses.fields(got):
+        if f.name != "layers":
+            assert _unfiled(getattr(got, f.name)) == _unfiled(getattr(before, f.name)), f.name
+    base = load_decor()
+    for room_type, kind in _tomb_rooms():
+        room = dict(zone_type="dungeon", theme="tomb", kind=kind, room_type=room_type)
+        assert got.weights_for(**room) == before.weights_for(**room)
+        assert _unfiled(got.recipe_for(room_type, kind)) == _unfiled(before.recipe_for(room_type, kind))
+        assert got.weights_for(**room) != base.weights_for(**room)      # the tomb's look did move
+
+
+def test_the_tomb_layer_holds_only_what_tomb_rooms_alone_reach():
+    """A recipe a tomb room reaches that another theme's rooms reach too stays in rooms.toml
+    (the theme map gives the layer to tombs only): checked with ``coverage`` across every theme."""
+    from ai.schema import VALID_DUNGEON_THEMES
+    from generators.decor.rules import coverage
+    from generators.semantics import ARCHETYPES, kind_types
+    rules = load_decor(layers=["tomb"])
+    reach = {}
+    for theme in VALID_DUNGEON_THEMES:
+        arch = ARCHETYPES[theme]
+        for kind, types in kind_types(theme).items():
+            for t in types:
+                reach.setdefault(rules.which_recipe(t, kind), set()).add(theme)
+        arc = (arch.entrance_type, arch.climax_type, arch.hub_type, *arch.arc)
+        for recipe in coverage(rules, arc).values():
+            reach.setdefault(recipe, set()).add(theme)
+    with open(DECOR_DIR / LAYERS_DIR / "tomb.toml", "rb") as f:
+        data = tomllib.load(f)
+    moved = [f"{s}.{n}" for s in ("kinds", "types", "zones") for n in data.get(s, {})]
+    assert all(reach.get(m) == {"tomb"} for m in moved), {m: reach.get(m) for m in moved}
+    assert set(data.get("weights", {})) <= {"themes"} and set(data["weights"]["themes"]) == {"tomb"}
+    assert "tomb" not in load_decor().weights["themes"]

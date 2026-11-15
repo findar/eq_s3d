@@ -421,13 +421,18 @@ def decor_stage(recipe, rooms, control: Optional[str] = None, decor_seed: Option
     problems)]``."""
     from generators.decor.catalogue import load as load_catalogue
     from generators.decor.placement import check, place
-    from generators.decor.rules import BARE, DEFAULT_CONTROL, load_decor
+    from generators.decor.rules import BARE, DEFAULT_CONTROL, layers_for, load_decor
 
     control = control or recipe.get("decor") or DEFAULT_CONTROL
     if control == "none":
         control = DEFAULT_CONTROL
     seed = decor_seed if decor_seed is not None else recipe.get("decor_seed")
-    rules, cat = load_decor(), load_catalogue()
+    # The build's decor layers (builder.decor_layers_of): its theme's and race's from the theme map.
+    # A room's and a corridor's context carry the zone's theme and race (a Site's carry its biome
+    # and inhabitant instead), so the first of them stands for the build.
+    zone = next((c for c in rooms if c.source in ("room", "corridor")), None)
+    layers = layers_for(zone.theme, zone.race) if zone is not None else ()
+    rules, cat = load_decor(layers=layers), load_catalogue()
     bare_left = math.ceil(sum(
         rules.weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
         for c in rooms if c.source == "room") - 1e-9)

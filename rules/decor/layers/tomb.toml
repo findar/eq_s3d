@@ -1,0 +1,23 @@
+# rules/decor/layers/tomb.toml -- the tomb theme's decor (decor-rules step 15, the worked example).
+#
+# themes.toml maps `tomb = { layers = ["tomb"] }`, so every Theme Tomb build merges this file onto
+# rooms.toml; any other build can try it with `--decor-layer tomb` or the page's Decor rules
+# control. docs/DECOR_RULES.md walks through it.
+#
+# What moved here is what only a tomb's rooms reach. A tomb's rooms take the room types entry_hall,
+# passage, ossuary, ritual_chamber, collapsed_gallery and vault (generators/semantics.py), and every
+# one of those recipes is also reached by another theme's rooms (an ossuary in a temple, a corrupted
+# sanctum, a sunken ruin, an ice keep; a vault in a mine or a lava forge), so the recipes stay in
+# rooms.toml. The theme's Weights are the tomb's alone.
+
+[layer]
+name        = "tomb"
+description = "Befallen's look: bones and debris, hanging chains, almost no light"
+
+# Befallen: 1% light, 68% debris. Squared, as every Weights Layer is (rooms.toml "Weights by
+# Layer"): 2.5 next to the default's 1 gives about 1.6.
+[weights.themes.tomb]
+light = 0.1
+furniture = 0.4
+debris = 2.5
+hanging = 2
