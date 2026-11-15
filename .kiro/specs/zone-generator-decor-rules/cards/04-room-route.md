@@ -15,3 +15,4 @@ Index entry: `tasks.md` task 4. Requirement 4. Design "The room view"; decision 
 Lessons-learned: `fullmatch` for path segments; `Path.resolve` and the `\\?\` prefix (go through `core/paths`). The build cache (`_decor_data`) must not be what the route reads: rules are fresh per call. The install (`EQ_PATH`) may be missing: answer with boxes, as `decor_room.py --boxes` does, and say so in the report.
 
 ## Result
+✔ 2f01c97 · 3178 passed

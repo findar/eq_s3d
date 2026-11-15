@@ -31,7 +31,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 from core.env import env_value
 from core.paths import OutputRoot, assert_output_allowed, new_zone_id
@@ -970,6 +970,123 @@ def generate(req: GenerateRequest):
         format_passed=bool(vb.format.passed) if vb.format is not None else False,
         build_commit=BUILD_INFO["short"],
     )
+
+
+# ---------------------------------------------------------------------------
+# The room view (decor-rules Req 4): re-decorate one room of a build
+# ---------------------------------------------------------------------------
+
+class RoomDecorRequest(BaseModel):
+    """One room of an accepted build to re-decorate. ``decor_seed``, ``control`` and
+    ``decor_layers`` default to what the build's Decor ran with (its sidecar). ``decor_layers``
+    names extra layers on top of the dungeon theme's and race's, as ``/api/generate``'s does
+    (``[]``: the theme's alone)."""
+    model_config = ConfigDict(extra="ignore")
+
+    zone: StrictStr
+    version: StrictInt | StrictStr = 1
+    room: StrictStr
+    decor_seed: Optional[StrictInt] = None
+    control: Optional[StrictStr] = None
+    decor_layers: Optional[list[StrictStr]] = None
+
+
+#: The room view's per-build inputs (RoomContexts, sidecar defaults, the built wall mesh),
+#: by (zone, version): (rooms file mtime, ``room_view.Build``). The rules are never kept.
+_ROOM_BUILDS: dict[tuple[str, str], tuple[int, Any]] = {}
+ROOM_BUILDS_KEPT = 4
+#: Room GLBs kept per room in a build folder (older rerolls are removed).
+ROOM_GLBS_KEPT = 8
+
+
+def _room_eq_path() -> Optional[Path]:
+    """The install the room view reads models from: the build's (``EQ_PATH``)."""
+    from generators.decor.stock import eq_path_from_env
+    return eq_path_from_env()
+
+
+def _room_build(zone: str, version: str, build_dir: Path):
+    """The build's room view inputs, read once per (zone, version) while its rooms file is
+    unchanged."""
+    from generators.decor.room_view import _file, load_build
+    rooms = _file(build_dir, zone, ".rooms.json")
+    if not rooms.is_file():
+        raise HTTPException(404, f"build {zone}/{version} has no RoomContexts "
+                                 "(built with Decor none, or without the install)")
+    mtime = rooms.stat().st_mtime_ns
+    key = (zone, version)
+    hit = _ROOM_BUILDS.get(key)
+    if hit is None or hit[0] != mtime:
+        build = load_build(build_dir, zone)
+        _ROOM_BUILDS.pop(key, None)
+        while len(_ROOM_BUILDS) >= ROOM_BUILDS_KEPT:
+            _ROOM_BUILDS.pop(next(iter(_ROOM_BUILDS)))
+        _ROOM_BUILDS[key] = hit = (mtime, build)
+    return hit[1]
+
+
+@app.post("/api/room_decor")
+def room_decor(req: RoomDecorRequest):
+    """Re-decorate one room of an accepted build (decor-rules Req 4) from the build's saved
+    RoomContexts, with the rule files read fresh, and answer its report (the Props with their
+    recipe lines, the POIs with their Dressing, the drops with their reasons) with a
+    ``glb_url``: the room alone, written into the build folder and served by the build-file
+    route. Every id is a safe path segment inside the output root (400 otherwise); an unknown
+    build or room is a 404; a rule file that fails its check is a 400 listing the failures."""
+    from ai import schema
+    from generators.decor.room_view import NoRoom, decorate_room
+    from generators.decor.rules import CONTROLS, layers_for
+    from generators.topology.ruleset import RuleSetError
+    from core.paths import OutsideOutputError
+
+    zone = req.zone
+    version = f"v{req.version}" if isinstance(req.version, int) else req.version
+    if not re.fullmatch(r"v[0-9]{1,6}", version):
+        raise HTTPException(400, "version must be a build version (1, or \"v1\")")
+    if not all(_safe_segment(s) for s in (zone, version, req.room)):
+        raise HTTPException(400, "zone and room must each be one safe name (letters, digits, _ . -)")
+    if req.decor_seed is not None and not (SEED_MIN <= req.decor_seed <= SEED_MAX):
+        raise HTTPException(400, f"decor_seed must be between {SEED_MIN} and {SEED_MAX}")
+    if req.control is not None and req.control not in CONTROLS:
+        raise HTTPException(400, f"control must be one of {', '.join(CONTROLS)}")
+    rules_dir = schema.RULES_DECOR_DIR
+    extra: Optional[tuple] = None
+    if req.decor_layers is not None:
+        try:
+            extra = schema.decor_layers(req.decor_layers, rules_dir)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    root = OutputRoot(OUTPUT_DIR)
+    try:
+        build_dir = root.path(zone, version)
+    except OutsideOutputError:
+        raise HTTPException(400, "zone and version must name a build inside the output folder")
+    if not build_dir.is_dir():
+        raise HTTPException(404, f"no build {zone}/{version}")
+    build = _room_build(zone, version, build_dir)
+
+    control = req.control or build.control
+    seed = req.decor_seed if req.decor_seed is not None else build.seed
+    try:
+        layers = build.layers if extra is None else layers_for(build.theme, build.race, extra, rules_dir)
+        glb, report = decorate_room(build.contexts, req.room, seed=seed, control=control, layers=layers,
+                                    eq_path=_room_eq_path(), mesh=build.mesh, rules_dir=rules_dir)
+    except NoRoom:
+        raise HTTPException(404, f"build {zone}/{version} has no room {req.room!r}; it has "
+                                 + ", ".join(c.id for c in build.contexts))
+    except RuleSetError as exc:
+        raise HTTPException(400, {"message": "the decor rules fail their check",
+                                  "errors": [str(e) for e in exc.errors]})
+
+    fname = f"room_{req.room}_{hashlib.sha1(glb).hexdigest()[:10]}.glb"
+    target = root.write_bytes(f"{zone}/{version}/{fname}", glb)
+    olds = sorted((p for p in build_dir.glob(f"room_{req.room}_*.glb") if p.name != target.name),
+                  key=lambda p: p.stat().st_mtime_ns)
+    for old in olds[:max(0, len(olds) - (ROOM_GLBS_KEPT - 1))]:
+        root.path(zone, version, old.name).unlink(missing_ok=True)
+    return {"zone": zone, "version": version, **report,
+            "glb_url": f"/api/zones/{zone}/{version}/{fname}"}
 
 
 def _eqmap_layer(stem: str, name: str) -> Optional[int]:
