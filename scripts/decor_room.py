@@ -23,7 +23,8 @@ Usage::
     python scripts/decor_room.py <file> --layer tomb     # one more decor layer (repeatable)
 
 The rules take the layers a build would: the theme's and race's (``rules/decor/themes.toml``;
-from the recording's plan, else the room's own), then each ``--layer``.
+from the recording's plan, else a corridor's context, which carries the zone's), then each
+``--layer``.
     python scripts/decor_room.py <file> --any-use       # preview: count use = "review" models too
 """
 
@@ -42,7 +43,7 @@ from generators.decor.catalogue import load as load_catalogue  # noqa: E402
 from ai import schema  # noqa: E402
 from generators.decor.rules import CONTROLS, DEFAULT_CONTROL, layers_for  # noqa: E402
 from generators.decor.room_view import (  # noqa: E402,F401 - Meshes, prop_parts, room_parts: scripts/stage.py's
-    Meshes, any_use, decorate_room, eq_path_of, prop_parts, room_parts, write_glb)
+    Meshes, any_use, decorate_room, eq_path_of, prop_parts, room_parts, write_glb, zone_theme_race)
 from generators.room_context import load  # noqa: E402
 
 
@@ -67,9 +68,8 @@ def main(argv=None) -> int:
         raise SystemExit(f"no room {room!r}; the file holds {', '.join(c.id for c in rooms)}")
     # The layers a build of it takes: its theme's and race's (themes.toml), then --layer's.
     ctx = next(c for c in rooms if c.id == room)
-    plan = _recipe.get("plan") or {}
-    layers = layers_for(plan.get("dungeon_theme", ctx.theme) or "", plan.get("dungeon_race", ctx.race) or "",
-                        args.layer, schema.RULES_DECOR_DIR)
+    theme, race = zone_theme_race(_recipe, rooms, ctx)
+    layers = layers_for(theme, race, args.layer, schema.RULES_DECOR_DIR)
     eq = None if args.boxes else eq_path_of(args.eq_path)
     cat = load_catalogue()
     glb, report = decorate_room(rooms, room, seed=args.decor_seed, control=args.control, layers=layers,

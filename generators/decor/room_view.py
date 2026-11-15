@@ -428,6 +428,18 @@ class Build:
     recipe: Dict[str, Any] = field(default_factory=dict)
 
 
+def zone_theme_race(recipe: Dict[str, Any], contexts: Sequence[RoomContext],
+                    ctx: Optional[RoomContext] = None) -> Tuple[str, str]:
+    """The dungeon theme and race a RoomContext file's build had, which pick its decor layers
+    (``layers_for``): a recording's plan's, else a corridor's context's (a corridor carries the
+    zone's own; a room's may carry its room theme instead), else ``ctx``'s."""
+    plan = recipe.get("plan") or {}
+    if "dungeon_theme" in plan or "dungeon_race" in plan:
+        return plan.get("dungeon_theme") or "", plan.get("dungeon_race") or ""
+    ref = next((c for c in contexts if c.source == "corridor"), ctx)
+    return (ref.theme or "", ref.race or "") if ref is not None else ("", "")
+
+
 def _file(build_dir: Path, name: str, suffix: str) -> Path:
     for stem in dict.fromkeys((name, name.lower())):
         p = build_dir / f"{stem}{suffix}"
@@ -476,4 +488,4 @@ def load_build(build_dir: Path, name: str, with_mesh: bool = True) -> Build:
 
 
 __all__ = ["Build", "CATEGORY_RGB", "Meshes", "NoRoom", "any_use", "decorate_room", "eq_path_of", "glb_bytes",
-           "load_build", "meshes_for", "prop_part", "prop_parts", "room_parts", "shipped_catalogue", "wall_mesh", "write_glb"]
+           "load_build", "meshes_for", "prop_part", "prop_parts", "room_parts", "shipped_catalogue", "wall_mesh", "write_glb", "zone_theme_race"]

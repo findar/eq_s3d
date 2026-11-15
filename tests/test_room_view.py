@@ -161,11 +161,12 @@ def built(tmp_path_factory):
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from generators.pipeline import generate_validated
-    from tests.test_decor_builds import DECORATED
+    from tests.test_decor_builds import DECORATED, TOMB
 
     root = tmp_path_factory.mktemp("rv") / "web"
     names = []
-    for label, (fields, seed) in sorted(DECORATED.items()):
+    builds = sorted(DECORATED.items()) + [("tomb", TOMB[:2])]
+    for label, (fields, seed) in builds:
         plan = ZonePlan(name=f"rv_{label}", **fields).validate()
         vb = generate_validated(lambda s, rs=None, plan=plan: plan_to_spec(plan, seed=s),
                                 zone_type=fields["zone_type"], zone_id=plan.name, seed=seed,
@@ -196,8 +197,26 @@ def test_the_builds_seed_gives_the_builds_props(built, client, monkeypatch):
     root, names = built
     monkeypatch.setattr(app_module, "OUTPUT_DIR", root)
     monkeypatch.setattr(app_module, "_ROOM_BUILDS", {})
+    layers = {}
     for name, build_dir in names:
-        _same_props(client, name, build_dir)
+        layers[name] = _same_props(client, name, build_dir)["decor"].get("layers", [])
+    assert layers["rv_tomb"] == ["tomb"], "the Theme Tomb build merged the theme map's layer"
+
+
+@pytest.mark.slow
+@needs_install
+def test_the_command_takes_the_theme_maps_layers(built, tmp_path):
+    """``scripts/decor_room.py`` on a tomb build's rooms file merges the tomb layer, as the
+    build did (its theme from a corridor's context)."""
+    import importlib.util
+    _root, names = built
+    build_dir = dict(names)["rv_tomb"]
+    spec = importlib.util.spec_from_file_location("decor_room", ROOT / "scripts" / "decor_room.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.main([str(build_dir / "rv_tomb.rooms.json"), "--room", "room_0", "--out", str(tmp_path), "--boxes"])
+    rep = json.loads((tmp_path / "rv_tomb_room_0.decor.json").read_text(encoding="utf-8"))
+    assert rep["layers"] == ["tomb"]
 
 
 THEMED_LAYER = "rv_theme_test"
