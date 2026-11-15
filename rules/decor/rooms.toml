@@ -165,11 +165,7 @@ debris = 1.5
 
 # --- what the place is ----------------------------------------------------------------------
 
-[weights.themes.tomb]           # Befallen: 1% light, 68% debris
-light = 0.1
-furniture = 0.4
-debris = 2.5
-hanging = 2
+# The tomb's are in layers/tomb.toml (themes.toml maps it), the worked example of a decor layer.
 
 [weights.themes.temple]
 light = 1.8

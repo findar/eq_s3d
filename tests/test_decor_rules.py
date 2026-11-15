@@ -16,7 +16,7 @@ import pytest
 
 from generators.decor.catalogue import CATEGORIES, DECOR_DIR, KINDS, Catalogue, Model, Tags
 from generators.decor.rules import (BARE, CONTROLS, MOUNTS_FILLING, ROOMS_FILE, SETS_FILE, asks, coverage,
-                                    draw_count, load_decor, unmet)
+                                    draw_count, layers_for, load_decor, unmet)
 from generators.room_layouts import load_layouts
 from generators.semantics import ROOM_TYPES
 from generators.topology.graph import ROOM_KINDS
@@ -295,7 +295,7 @@ def test_the_figures_sit_in_finding_1s_bands(rules):
         assert 0.23 <= c["furniture"] / ctotal <= 0.36 and c["debris"] / ctotal <= 0.07
     assert rules.weights_for("dungeon")[BARE] == pytest.approx(0.26)
     # The dead keep a dark, littered room (Befallen: 1% light, 68% debris).
-    tomb = rules.expected("dungeon", theme="tomb")
+    tomb = load_decor(layers=layers_for("tomb")).expected("dungeon", theme="tomb")
     assert tomb["light"] / sum(tomb.values()) < 0.2 and tomb["debris"] / sum(tomb.values()) > 0.5
 
 
