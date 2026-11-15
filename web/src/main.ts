@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import {
   generateZone, fetchControls, fetchSidecar, fetchVersion, fetchZoneTypes,
-  type GenerateParams, type GenerateResult, type ZoneSidecar,
+  type DecorLayerListing, type GenerateParams, type GenerateResult, type ZoneSidecar,
 } from "./api";
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
@@ -331,6 +331,7 @@ function updatePropsPanel(result: GenerateResult, sidecar: ZoneSidecar): void {
   $("s-props").hidden = !d;
   if (!d) return;
   decorEl.textContent = `${d.control} · seed ${d.seed}`;
+  if (d.layers?.length) addRow(list, "Decor rules", d.layers.join(", "), "Decor layers merged on, in order");
   addRow(list, "Props", String(d.props));
   addRow(list, "Lights", String(d.lights));
   addRow(list, "Models", String(d.models));
@@ -399,6 +400,10 @@ function usesControl(zoneType: string, control: string): boolean {
   return CONTROL_ZONE_TYPES[control].includes(zoneType);
 }
 
+// How many decor layers /api/controls listed (refreshControls): with none the
+// Decor rules control has nothing to offer past "From theme", so it hides.
+let decorLayerCount = 0;
+
 // What the visibility rules read: the zone type and the controls that gate
 // others (Layout, Decor, Sites).
 interface ControlState { zoneType: string; layout: string; decor: string; sites: string }
@@ -436,6 +441,10 @@ function applies(id: string, s: ControlState): boolean {
   if (id === "inhabitant") return usesControl(s.zoneType, "edges") && s.sites !== "none";
   // The decor seed rerolls Props: none to reroll under Decor None.
   if (id === "decor-seed") return usesControl(s.zoneType, "decor") && s.decor !== "none";
+  // Decor rules: the same, and only when /api/controls lists some layers.
+  if (id === "decor-layers") {
+    return decorLayerCount > 0 && usesControl(s.zoneType, "decor") && s.decor !== "none";
+  }
   return usesControl(s.zoneType, id);
 }
 
@@ -525,6 +534,8 @@ async function doGenerate(mode: Mode) {
     // records it.
     const decor = on("decor") ? sel("decor") || undefined : undefined;
     const decorSeed = on("decor") ? readDecorSeed() : undefined;
+    // Decor rules: "From theme" ("") sends nothing.
+    const decorLayer = on("decor-layers") ? sel("decor-layers") : "";
     // The rooms seed: blank is left out (the zone's).
     const roomsSeed = on("rooms-seed") ? readStageSeed("rooms-seed") : undefined;
     params = {
@@ -546,6 +557,7 @@ async function doGenerate(mode: Mode) {
         ...(dungeonRace !== undefined ? { dungeon_race: dungeonRace } : {}),
         ...(decor !== undefined ? { decor } : {}),
         ...(decorSeed !== undefined ? { decor_seed: decorSeed } : {}),
+        ...(decorLayer ? { decor_layers: [decorLayer] } : {}),
         ...(roomsSeed !== undefined ? { rooms_seed: roomsSeed } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
@@ -567,6 +579,7 @@ async function doGenerate(mode: Mode) {
       (dungeonRace !== undefined ? ` race=${dungeonRace || "(none)"}` : "") +
       (decor !== undefined ? ` decor=${decor}` : "") +
       (decorSeed !== undefined ? ` decor_seed=${decorSeed}` : "") +
+      (decorLayer ? ` decor_layers=${decorLayer}` : "") +
       (roomsSeed !== undefined ? ` rooms_seed=${roomsSeed}` : "") + seedNote,
     );
   }
@@ -699,27 +712,50 @@ rerollDecorBtn.addEventListener("click", () => {
 
 // Fill the Decor list from the server (/api/controls), keeping the user's
 // choice when it survives, else the server's default; the zone types it
-// applies to come from there too.
+// applies to come from there too. The Decor rules list gets "From theme" and
+// each listed layer (its description as the option's title).
 async function refreshControls(): Promise<void> {
   try {
     const listing = await fetchControls();
+    fillDecorLayers(listing.decor_layers ?? []);
     const decor = listing.decor;
-    if (!decor?.values?.length) return;
-    const sel = $("decor") as HTMLSelectElement;
-    const prev = sel.value;
-    sel.innerHTML = "";
-    for (const v of decor.values) {
-      const opt = document.createElement("option");
-      opt.value = v;
-      opt.textContent = v.charAt(0).toUpperCase() + v.slice(1);
-      sel.appendChild(opt);
+    if (decor?.values?.length) {
+      const sel = $("decor") as HTMLSelectElement;
+      const prev = sel.value;
+      sel.innerHTML = "";
+      for (const v of decor.values) {
+        const opt = document.createElement("option");
+        opt.value = v;
+        opt.textContent = v.charAt(0).toUpperCase() + v.slice(1);
+        sel.appendChild(opt);
+      }
+      sel.value = decor.values.includes(prev) ? prev : decor.default;
+      if (decor.zone_types?.length) CONTROL_ZONE_TYPES.decor = decor.zone_types;
     }
-    sel.value = decor.values.includes(prev) ? prev : decor.default;
-    if (decor.zone_types?.length) CONTROL_ZONE_TYPES.decor = decor.zone_types;
   } catch (err) {
     console.warn("[controls]", err);    // empty list: the server's default
   }
   syncControlVisibility();
+}
+
+function fillDecorLayers(layers: DecorLayerListing[]): void {
+  const sel = $("decor-layers") as HTMLSelectElement;
+  const prev = sel.value;
+  sel.innerHTML = "";
+  const theme = document.createElement("option");
+  theme.value = "";
+  theme.textContent = "From theme";
+  theme.title = "The theme's decor rules alone";
+  sel.appendChild(theme);
+  for (const layer of layers) {
+    const opt = document.createElement("option");
+    opt.value = layer.name;
+    opt.textContent = layer.name.replace(/_/g, " ");
+    opt.title = layer.description;
+    sel.appendChild(opt);
+  }
+  sel.value = layers.some((l) => l.name === prev) ? prev : "";
+  decorLayerCount = layers.length;
 }
 
 // Populate the zone-type dropdown from the server's single source of truth.
@@ -873,7 +909,7 @@ seedInput.addEventListener("keydown", (e) => {
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
-                  "decor", "decor-seed", "rooms-seed"]) {
+                  "decor", "decor-layers", "decor-seed", "rooms-seed"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });
