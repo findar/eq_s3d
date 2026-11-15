@@ -2090,3 +2090,122 @@ Known issues (not regressions):
 - The Controls panel covers the top of the 3D view while open; collapse it with ▾ to see the
   whole zone.
 - The page still has no type check (`@types/three` deferred).
+
+## Step 15 — Decor rule sets and the room view
+
+> Roadmap step 15 (`zone-generator-decor-rules`). Decor rules now come in layers: files in
+> `rules/decor/layers/` merged onto `rules/decor/rooms.toml`, given to a theme by
+> `rules/decor/themes.toml` or chosen in the Controls' **Decor rules** select. The tomb's
+> Weights moved into `layers/tomb.toml`, and tomb builds came out byte-identical. A room of any
+> decorated build opens in the **Room view**, which shows that room alone with every Prop's
+> reason. `docs/DECOR_RULES.md` is the guide to writing a layer. Restart the Server on the
+> merged code first and check no stale-code banner shows. The first room after a restart takes
+> about 15 seconds; the ones after it open in under a second.
+
+Build each case in Controls (Decor **Normal**, Decor rules **From theme** unless the case says
+otherwise):
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout Graph, Rooms 16 | 2 |
+| b | City | | 5 |
+| c | Dungeon | Theme Tomb, Rooms 10 | 4 |
+| d | Dungeon | Theme Temple, Rooms 10, Decor rules **tomb** | 4 |
+| e | Dungeon | Layout Classic, Rooms 10 | 4 |
+
+### R.1 — Opening and closing a room
+
+- [ ] **[MUST] From the side panel** — Case a: the side panel's **Rooms** list shows each room
+      with its Prop count (room_14 at 0). Click room_5: the room view replaces the 3D view,
+      framed on that room alone.
+- [ ] **[MUST] From the map** — Open the map (M) and click a room: its room view opens. Do it on
+      case a (Graph) and on case e (Classic).
+- [ ] **[MUST] Close puts the zone back** — Close (or Esc): the zone is back with the camera
+      where you left it and the overlays as they were.
+- [ ] **[MUST] Keys** — With a room open, WASD and R don't move the zone's camera behind it;
+      typing in the page's boxes moves nothing.
+- [ ] **[MUST] Camera** — Drag turns around the room, scroll zooms, and up stays up.
+- [ ] **[SHOULD] Cutaway** — The walls are cut away above head height, so the floor and the
+      Props show from outside. Untick **Cutaway**: the walls stand whole. Tick it: cut again.
+
+### R.2 — Why each Prop is where it is
+
+- [ ] **[MUST] Props by recipe line** — Case a room_5 (the deep room, the boss): the list groups
+      Props under lines such as `rooms.toml dressing.boss props[0]`, each with a count and the
+      kinds it placed. The throne and two braziers stand at the boss's POI on the dais.
+- [ ] **[MUST] Hover both ways** — Hover a line: its Props light up in the room. Hover a Prop:
+      its line lights up in the list.
+- [ ] **[MUST] POIs and Dressing** — room_5 lists its boss POI with the Dressing it got (throne,
+      braziers); room_15 lists its treasure POI (chests). Labels on shows the POI markers'
+      names in the room.
+- [ ] **[MUST] Drops say why** — Case a room_11 lists two drops (`laid_table` and `crate_stack`,
+      "no spot"); case b room_2 lists two lamps dropped with "no spot".
+- [ ] **[MUST] A bare room** — Case a room_14 opens with no Props; its Props row reads `0 (bare)`.
+- [ ] **[MUST] Same as the zone** — For any room, the Props in the room view are the ones the
+      zone shows in that room: same kinds, same places.
+- [ ] **[SHOULD] Other kinds of room** — Case a room_0 (entrance), room_6 (chamber, 8 Props),
+      room_13 (hall); case b room_3 (16 Props, `zones.city` lines); case c room_5 (vault: boss
+      and treasure) and room_7 (collapsed gallery, 11 Props). Each list reads as an account of
+      that room.
+
+### R.3 — The toolbar
+
+- [ ] **[MUST] Reroll** — ⟳ gives the room a fresh decor seed: different Props, the room itself
+      unchanged, in under a second.
+- [ ] **[MUST] Decor level** — Sparse gives fewer Props than Dense in the same room.
+- [ ] **[MUST] Decor rules** — On case a, **As built** shows what the build placed; **tomb**
+      re-decorates the room with that layer added (see the known issue: on a non-tomb room it
+      changes nothing yet).
+- [ ] **[MUST] Re-read rules** — Edit a count in `rules/decor/rooms.toml` (case a room_6's
+      `kinds.chamber` line), press **re-read rules**: the room shows the change with the same
+      seed and no restart. Put the file back and re-read again: as before.
+- [ ] **[MUST] A broken rule file** — Break `rooms.toml` (an unknown `at`), re-read: the room
+      view shows the check's error naming the file, and stays usable. Put it back.
+
+### R.4 — Layers in builds
+
+- [ ] **[MUST] Tomb from the theme** — Case c's side panel Props section shows layers `tomb`. Its
+      rooms read as Befallen: bones, debris and hanging chains, almost no lights.
+- [ ] **[MUST] Nothing named, nothing changed** — Case a and case b show no layers, and build
+      the same zones as before step 15 (the same rooms and Props).
+- [ ] **[MUST] Chosen in Controls** — Case d's side panel shows layers `tomb`; switch Decor rules
+      back to From theme and build again: no layers. Decor rules shows only where Decor does,
+      and goes when Decor is None.
+
+### R.5 — Writing a layer
+
+Follow `docs/DECOR_RULES.md` ("Layers and `mode`", "The loop: check, draw") to write a small
+layer, for example `rules/decor/layers/try_bones.toml`:
+
+```toml
+[layer]
+name        = "try_bones"
+description = "Bones on chamber floors"
+
+[kinds.chamber]
+mode  = "add"
+props = [ { kind = ["bone_pile", "skull"], at = "scatter", count = [2, 3] } ]
+```
+
+- [ ] **[MUST] Check** — `python scripts/topology_rules.py check rules/decor` lists the new file
+      `ok` with its one entry. Take `mode` out: it fails, naming both files.
+- [ ] **[MUST] In the page** — Reload the page (no Server restart): Decor rules lists
+      `try_bones` with its description, in Controls and in the room view.
+- [ ] **[MUST] In the room** — Case a room_6 with Decor rules `try_bones`: a line
+      `try_bones.toml kinds.chamber props[0]` places bones, beside the base's lines.
+- [ ] **[SHOULD] The guide is enough** — Could you have written that layer from the guide
+      alone? Note what was missing.
+- [ ] **[MUST] Clean up** — Delete the file; reload: the option is gone.
+
+Known issues (not regressions):
+
+- **The tomb layer does nothing outside a tomb.** It holds only `weights.themes.tomb`, which only
+  tomb-themed rooms read, so choosing it on a temple (case d) builds the same Props as without
+  it; the side panel still lists it. A layer meant for any build writes entries every room
+  reaches (`kinds`, `types`, `every`).
+- Builds cache the merged rules per Server process: after editing a layer, restart the Server
+  before building with it. The room view always reads the files fresh.
+- The stage command (`scripts/stage.py`) keeps its own copy of the per-room decor step, so its
+  Prop positions differ slightly from a build's.
+- Sites (wilderness and outdoor-dungeon Points) don't open in the room view; rooms only, by
+  design for this step.
