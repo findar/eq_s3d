@@ -49,7 +49,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Owns: generators/rebuild.py, generators/builder.py, generators/pipeline.py, server/app.py, tests/test_partial_rebuild.py, tests/test_versions.py (the how assertions only)
   - Reqs: 2.2, 2.3, 4.1
 
-- [ ] 4. Keep the shell's gate result
+- [x] 4. Keep the shell's gate result
   - Card: [cards/04-shell.md](cards/04-shell.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: analyzer/traverse.py, generators/rebuild.py, generators/pipeline.py, generators/outdoor_dungeon.py, tests/test_partial_rebuild.py
