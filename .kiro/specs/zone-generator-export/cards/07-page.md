@@ -12,10 +12,10 @@ An Export row in the side panel's files section, for the version on screen:
 `web/src/api.ts` types the two routes.
 
 ## Done when
-- [ ] The frontend builds. → verify: `cd web; npx vite build`
-- [ ] A scripted run against a Server on this branch exports the open version to `arena` and gets
+- [x] The frontend builds. → verify: `cd web; npx vite build`
+- [x] A scripted run against a Server on this branch exports the open version to `arena` and gets
       the bundle link (say in the commit how you checked).
-- [ ] `python -m pytest tests/ -q` is green; the Result says it was not looked at in the browser
+- [x] `python -m pytest tests/ -q` is green; the Result says it was not looked at in the browser
       by the agent beyond that run.
 
 ## Pitfalls
@@ -23,3 +23,4 @@ Movement keys stay suppressed while typing in the picker. The row shows only whe
 (step 14's visibility rule). Exporting takes about a second: show it busy.
 
 ## Result
+✔ f05cde7 · 3317 passed · frontend builds · checked by a scripted run, not looked at in the browser by the agent
