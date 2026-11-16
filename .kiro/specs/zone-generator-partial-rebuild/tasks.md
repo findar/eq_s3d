@@ -37,7 +37,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Owns: generators/zone_spec.py, ai/schema.py, ai/expand.py, generators/builder.py, generators/decor/room_view.py, tests/test_room_decor_seeds.py
   - Reqs: 3
 
-- [ ] 2. Versions of one zone
+- [x] 2. Versions of one zone
   - Card: [cards/02-versions.md](cards/02-versions.md)
   - Type: agent · Size: M · Depends: —
   - Owns: server/app.py, generators/pipeline.py, tests/test_versions.py

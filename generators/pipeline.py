@@ -422,9 +422,11 @@ def _seeds_used(spec: ZoneSpec, seed: int) -> Dict[str, Optional[int]]:
 # Scratch-directory lifecycle (plain pathlib for now; OutputRoot in task 19.5)
 # ---------------------------------------------------------------------------
 
-def _scratch_dir(output_dir: Path, zone_id: str, k: int) -> Path:
-    """Per-attempt scratch directory: ``output_dir/.attempts/<zone_id>/a<k>/``."""
-    return output_dir / ".attempts" / zone_id / f"a{k}"
+def _scratch_dir(output_dir: Path, zone_id: str, k: int, version: int = 1) -> Path:
+    """Per-attempt scratch directory: ``output_dir/.attempts/<zone_id>/a<k>/`` for v1, and
+    ``.../v<version>a<k>/`` for a later version, so two rebuilds of one zone running at
+    once (each with its own version number) never share a scratch folder."""
+    return output_dir / ".attempts" / zone_id / (f"a{k}" if version == 1 else f"v{version}a{k}")
 
 
 def _move_into(root: OutputRoot, scratch: Path, final: Path) -> None:
@@ -509,6 +511,8 @@ def generate_validated(
     warnings: Sequence[str] = (),
     planned_zone_type: Optional[str] = None,
     mode: Optional[str] = None,
+    request: Optional[Mapping] = None,
+    version_meta: Optional[Mapping] = None,
 ) -> ValidatedBuild:
     """
     Build a zone and guarantee (for gated zone types) that it passes the
@@ -534,6 +538,12 @@ def generate_validated(
     * on FAIL: log one JSONL line (with the failed ``checks``), ``rmtree`` the
       scratch, then the pinned / attempt-cap / timeout logic;
     * a builder EXCEPTION removes the scratch in a ``finally`` and re-raises.
+
+    Saved inputs (partial-rebuild Req 1.4): every accepted build also gets
+    ``<name>.spec.json`` (the spec it built, with its decor layers) and, when the caller
+    passes ``request`` (the Server), ``<name>.request.json``: that request with the seeds
+    the accepted attempt used (:func:`_write_inputs`). ``version_meta`` (a rebuild's
+    ``{n, parent, changed, how}``) rides in the Sidecar as ``version``; v1 passes none.
 
     Behaviour by scope:
 
@@ -570,11 +580,12 @@ def generate_validated(
     pinned = seed is not None
     base_warnings = list(warnings)
     final_dir = output_dir / zone_id / f"v{version}"
+    started = time.monotonic()
 
     # -- Ungated / validation-disabled: single build through the scratch path.
     if not gated:
         use_seed = seed if pinned else _fresh_seed(rng)
-        scratch = _scratch_dir(output_dir, zone_id, 1)
+        scratch = _scratch_dir(output_dir, zone_id, 1, version)
         try:
             spec = _with_decor(spec_factory(use_seed))
             result = ZoneBuilder(spec).build(
@@ -589,11 +600,12 @@ def generate_validated(
             map_meta = _write_map_artifacts(root, result, scratch, None, agent,
                                             all_warnings)
             _write_handoffs(root, result, scratch)
+            _write_inputs(root, spec, scratch, use_seed, request, started)
             moved = _finalize_build(
                 root, result, scratch, final_dir, fmt=fmt,
                 warnings=all_warnings, validated=False, attempts=1,
                 seed=use_seed, planned_zone_type=planned_zone_type, mode=mode,
-                map_meta=map_meta,
+                map_meta=map_meta, version_meta=version_meta,
             )
             _remove_scratch(root, output_dir, zone_id, scratch)
         except Exception:
@@ -632,7 +644,7 @@ def generate_validated(
             use_seed = seed if pinned else _fresh_seed(rng)
             rooms_draw = decor_draw = None
             rerolls = 0
-        scratch = _scratch_dir(output_dir, zone_id, attempt)
+        scratch = _scratch_dir(output_dir, zone_id, attempt, version)
         stage = STAGE_ZONE
         seeds = {"seed": use_seed, "rooms_seed": rooms_draw, "decor_seed": decor_draw}
         rooms_pinned = decor_pinned = True
@@ -661,11 +673,12 @@ def generate_validated(
                                                 report.surface, agent,
                                                 all_warnings)
                 _write_handoffs(root, result, scratch)
+                _write_inputs(root, spec, scratch, use_seed, request, started)
                 moved = _finalize_build(
                     root, result, scratch, final_dir, fmt=fmt,
                     warnings=all_warnings, validated=True, attempts=attempt,
                     seed=use_seed, planned_zone_type=planned_zone_type,
-                    mode=mode, map_meta=map_meta,
+                    mode=mode, map_meta=map_meta, version_meta=version_meta,
                 )
                 _remove_scratch(root, output_dir, zone_id, scratch)
                 if attempt > 1:
@@ -825,13 +838,42 @@ def _write_handoffs(root: OutputRoot, result: BuildResult, scratch: Path) -> Non
         root.write_bytes(str(scratch / fname), text.encode("utf-8"))
 
 
+def _write_inputs(root: OutputRoot, spec: ZoneSpec, scratch: Path, seed: int,
+                  request: Optional[Mapping], started: float) -> None:
+    """Write what a rebuild needs into ``scratch`` (partial-rebuild Req 1.4), for the
+    accepted build only, as the hand-offs are:
+
+    * ``<name>.spec.json``: ``ZoneSpec.to_dict`` (what ``ZoneSpec.save`` writes) plus
+      ``decor_layers``, the request's extra decor layers, which ride beside the spec
+      (``builder.with_decor_layers``), not in it.
+    * ``<name>.request.json`` when ``request`` is given: the request with the seeds the
+      accepted attempt built with, ``seed`` the zone's and ``rooms_seed`` / ``decor_seed``
+      the spec's stage seeds (``None``: the zone's seed stands in; a stage the pipeline
+      rerolled names the seed it drew), so sending it again builds the same zone. Plus
+      ``seeds`` (all three resolved, as the Sidecar's), ``took_ms`` (the pipeline's wall
+      time to here, every attempt included) and ``created`` (UTC, ISO 8601).
+    """
+    scratch = scratch.resolve()
+    name = spec.name.lower()
+    spec_doc = {**spec.to_dict(), "decor_layers": list(getattr(spec, "decor_layers", ()) or ())}
+    root.write_text(str(scratch / f"{name}.spec.json"), json.dumps(spec_doc, indent=2))
+    if request is None:
+        return
+    doc = {**dict(request), "seed": seed, "rooms_seed": spec.rooms_seed,
+           "decor_seed": spec.decor_seed, "seeds": _seeds_used(spec, seed),
+           "took_ms": int(round((time.monotonic() - started) * 1000)),
+           "created": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    root.write_text(str(scratch / f"{name}.request.json"), json.dumps(doc, indent=2))
+
+
 def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
                     final_dir: Path, *,
                     fmt: FormatReport, warnings: Sequence[str], validated: bool,
                     attempts: int, seed: int,
                     planned_zone_type: Optional[str] = None,
                     mode: Optional[str] = None,
-                    map_meta: Optional[dict] = None) -> BuildResult:
+                    map_meta: Optional[dict] = None,
+                    version_meta: Optional[Mapping] = None) -> BuildResult:
     """Move a passing/ungated build out of scratch into ``final_dir``.
 
     Moves every file from ``scratch`` into ``final_dir`` through
@@ -890,6 +932,9 @@ def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
         # from the map post-pass (M2 Req 8.4).
         if map_meta is not None:
             data.update(map_meta)
+        # A rebuild's ``version`` block (partial-rebuild Req 1.2); a v1 build has none.
+        if version_meta is not None:
+            data["version"] = dict(version_meta)
         # Rewrite in place, confined to the Output_Directory.
         root.write_text(str(sidecar), json.dumps(data, indent=2))
 
