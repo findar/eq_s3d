@@ -76,11 +76,13 @@ export class FirstPersonControls {
     );
   }
 
-  /** Set the camera start position and the yaw it should face. */
-  setStart(pos: THREE.Vector3, lookYaw = 0): void {
+  /** Set the camera start position and the yaw it should face, and move the
+   *  camera there unless `move` is false (another version of the same zone
+   *  keeps the camera where it is; Reset View goes to the new start). */
+  setStart(pos: THREE.Vector3, lookYaw = 0, move = true): void {
     this.startPos.copy(pos);
     this.startYaw = lookYaw;
-    this.reset();
+    if (move) this.reset();
   }
 
   /** Snap the camera back to the starting position and orientation. */

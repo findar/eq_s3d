@@ -129,6 +129,12 @@ button.secondary {
 }
 button.secondary:hover { border-color: var(--accent); color: var(--text); }
 button.secondary.chevron { width: var(--ctl-h); padding: 0; }
+/* The version arrows: square, disabled at the ends. */
+#version-nav { gap: 4px; }
+#version-nav button.secondary { width: var(--ctl-h); padding: 0; }
+#version-nav button.secondary:disabled { opacity: 0.4; cursor: default; }
+#version-label { font-size: 13px; min-width: 2.5em; text-align: center; font-variant-numeric: tabular-nums; }
+#version-nav.busy #version-label { color: var(--muted); }
 
 /* Generate mode switch: a two-way segmented control. */
 .segmented {
