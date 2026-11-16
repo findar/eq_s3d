@@ -340,6 +340,9 @@ class TraversalReport:
     # (M2 Pipeline post-pass). Not serialised; ``None`` on other report paths.
     surface: Optional["WalkSurface"] = field(default=None, repr=False,
                                              compare=False)
+    # The room gate's mesh part this report was judged against (``report_with_props``),
+    # so a caller can keep it for a later build of the same TER. Not serialised.
+    shell: Optional["Shell"] = field(default=None, repr=False, compare=False)
 
     @property
     def passed(self) -> bool:
@@ -418,9 +421,18 @@ def load_ter_from_eqg(eqg_path: str | Path) -> Tuple[TerFile, str]:
     The builder packs the ground mesh as ``ter_<zone>.ter`` (RoF2 convention),
     so try that first, then any .ter in the archive.
     """
+    ter_data, zone_name = ter_bytes_from_eqg(eqg_path)
+    return TerFile.from_bytes(ter_data, name=zone_name), zone_name
+
+
+def ter_bytes_from_eqg(eqg_path: str | Path, *,
+                       arc: Optional[PfsArchive] = None) -> Tuple[bytes, str]:
+    """The raw bytes of the TER :func:`load_ter_from_eqg` loads, and the zone name.
+    ``arc`` is the archive already read from ``eqg_path``, if the caller has it."""
     path = Path(eqg_path)
     zone_name = path.stem.lower()
-    arc = PfsArchive.from_file(path)
+    if arc is None:
+        arc = PfsArchive.from_file(path)
 
     ter_data = arc.get(f"ter_{zone_name}.ter")
     if ter_data is None:
@@ -430,22 +442,23 @@ def load_ter_from_eqg(eqg_path: str | Path) -> Tuple[TerFile, str]:
         if not ter_files:
             raise ValueError(f"No .ter mesh found in {path}")
         ter_data = ter_files[0].data
-
-    ter = TerFile.from_bytes(ter_data, name=zone_name)
-    return ter, zone_name
+    return ter_data, zone_name
 
 
-def placed_models(eqg_path: str | Path) -> List["Placed"]:
+def placed_models(eqg_path: str | Path, *,
+                  arc: Optional[PfsArchive] = None) -> List["Placed"]:
     """Every ZON object the ``.eqg`` places with the model it places
     (``analyzer.footprints.placed_from_zon``), the terrain's own object left
     out. Empty when there is no archive at ``eqg_path`` (a test handing
-    ``validate`` its own mesh), it has no ZON, or the ZON places only terrain."""
+    ``validate`` its own mesh), it has no ZON, or the ZON places only terrain.
+    ``arc`` is the archive already read from ``eqg_path``, if the caller has it."""
     from analyzer.footprints import placed_from_zon
     from core.zon import ZonFile
 
-    if not Path(eqg_path).is_file():
-        return []
-    arc = PfsArchive.from_file(Path(eqg_path))
+    if arc is None:
+        if not Path(eqg_path).is_file():
+            return []
+        arc = PfsArchive.from_file(Path(eqg_path))
     zon_name = next((f for f in arc.list_files() if f.lower().endswith(".zon")), None)
     if zon_name is None:
         return []
@@ -2818,6 +2831,199 @@ def _diagnose_unreachable(surf: WalkSurface, agent: AgentModel,
 # Top-level validation
 # ---------------------------------------------------------------------------
 
+@dataclass
+class Shell:
+    """The part of the room gate the mesh alone decides (partial-rebuild Req 4.2): the walk
+    surface, the faces reached from the entrance, the seed face, every room's reachability,
+    the outline checks, the corridor results and the mesh's collidable triangles. Props
+    change none of it (the TER is the same whatever the Props), so a kept ``Shell`` judges a
+    new set of Props with :func:`report_with_props` alone.
+
+    :func:`shell_report` makes one; :func:`validate` is ``report_with_props(shell_report(...))``.
+    The lists here are the shell's own: ``report_with_props`` hands out copies."""
+    zone_name: str
+    agent: AgentModel
+    surface: "WalkSurface" = field(repr=False)
+    seed_face: Optional[int] = None
+    reachable: frozenset = field(default=frozenset(), repr=False)
+    total_rooms: int = 0
+    reachable_rooms: int = 0
+    rooms: List[RoomResult] = field(default_factory=list)
+    outlines: List[OutlineResult] = field(default_factory=list)
+    notes: List[str] = field(default_factory=list)
+    checked_corridors: bool = False
+    corridors: List[CorridorResult] = field(default_factory=list)
+    conflicts: List[Tuple[str, str]] = field(default_factory=list)
+    # The TER this shell was made from, kept until ``mesh`` is first read (the
+    # collidable triangles are only needed when there are placed models).
+    ter: Optional[TerFile] = field(default=None, repr=False)
+    # What a caller files the shell under when it keeps it (``generators.rebuild``).
+    key: Optional[object] = field(default=None, repr=False)
+    _mesh: Optional[np.ndarray] = field(default=None, repr=False)
+
+    @property
+    def mesh(self) -> np.ndarray:
+        """The mesh's own collidable triangles (T, 3, 3), ``footprints.collidable_triangles``."""
+        if self._mesh is None:
+            from analyzer.footprints import collidable_triangles
+            self._mesh = collidable_triangles(self.ter)
+            self.ter = None
+        return self._mesh
+
+    def keep(self) -> "Shell":
+        """This shell made ready to be kept across builds: its mesh triangles drawn now and
+        the TER let go (it holds a Python object per vertex and polygon)."""
+        self.mesh  # noqa: B018 - the property fills ``_mesh``
+        return self
+
+    def nbytes(self) -> int:
+        """About how much memory the shell holds: its arrays, the adjacency lists and the
+        reached set (ints and list slots at CPython's sizes; small ints are shared, so this
+        is an upper bound)."""
+        surf = self.surface
+        arrays = sum(a.nbytes for a in (surf.verts, surf.faces, surf.normals,
+                                         surf.centroids, surf.standable, surf.component))
+        adj = sys.getsizeof(surf.adjacency) + sum(
+            sys.getsizeof(v) + 28 * (len(v) + 1) for v in surf.adjacency.values())
+        reached = sys.getsizeof(self.reachable) + 28 * len(self.reachable)
+        mesh = self._mesh.nbytes if self._mesh is not None else 0
+        return int(arrays + adj + reached + mesh)
+
+
+def shell_report(ter: TerFile, spec: ZoneSpec, agent: Optional[AgentModel] = None,
+                 check_corridors: bool = False, *, zone_name: str = "",
+                 bowl: Optional[BowlGateParams] = None) -> Shell:
+    """The room gate on ``ter`` without the placed models (:class:`Shell`): what
+    :func:`validate` computes before it judges the Props, in the same order."""
+    agent = agent or AgentModel()
+    surf = build_walk_surface(ter, agent)
+    shell = Shell(zone_name=zone_name, agent=agent, surface=surf,
+                  total_rooms=len(spec.rooms), ter=ter)
+
+    # Flood seed. The dungeon/city path (``bowl is None``) uses the spec's safe
+    # point EXACTLY as before — no behaviour change. A wilderness build may hand
+    # the bowl gate a Spawn point to seed from instead; when it doesn't, the
+    # safe point is used, so even a supplied ``bowl`` without a spawn_point keeps
+    # the historic seed.
+    if bowl is not None and bowl.spawn_point is not None:
+        safe = np.array(bowl.spawn_point, dtype=np.float64)
+    else:
+        safe = np.array(spec.safe_point, dtype=np.float64)
+    # XY search radius for the start face: generous so a safe point placed at the
+    # entrance room centre still lands on its floor.
+    seed_face = _nearest_standable_face(surf, safe, xy_radius=400.0)
+    shell.seed_face = seed_face
+    if seed_face is None:
+        shell.notes.append("no standable face anywhere in the mesh")
+        for room in spec.rooms:
+            shell.rooms.append(RoomResult(room.id, room.role, False, 0, 0,
+                                          "mesh has no walkable surface"))
+        if check_corridors:
+            shell.checked_corridors = True
+            for cor in spec.corridors:
+                shell.corridors.append(CorridorResult(
+                    cor.id, cor.from_room, cor.to_room, False,
+                    "no floor in from_room"))
+        return shell
+
+    reachable = flood_reachable(surf, seed_face)
+    shell.reachable = frozenset(reachable)
+
+    # First pass: determine reachability per room (needed before graph diagnosis,
+    # which asks "is this unreachable room adjacent to a reachable one?").
+    room_faces_by_id: Dict[str, np.ndarray] = {}
+    reached_by_id: Dict[str, List[int]] = {}
+    for room in spec.rooms:
+        rf = _faces_in_room(surf, room, spec.rooms)
+        room_faces_by_id[room.id] = rf
+        reached_by_id[room.id] = [int(f) for f in rf if int(f) in reachable]
+    reachable_room_ids = {rid for rid, rl in reached_by_id.items() if rl}
+
+    for room in spec.rooms:
+        room_faces = room_faces_by_id[room.id]
+        reached_here = reached_by_id[room.id]
+        is_reachable = len(reached_here) > 0
+        reason = ""
+        if not is_reachable:
+            # Prefer the corridor-graph explanation (names the offending
+            # corridor + the exact failure: cliff ramp / oversized step);
+            # fall back to the mesh-geometry guess.
+            reason = _diagnose_via_graph(room.id, spec, agent, reachable_room_ids)
+            if not reason:
+                reason = _diagnose_unreachable(surf, agent, room_faces, reachable)
+        shell.rooms.append(RoomResult(
+            room_id=room.id,
+            role=room.role,
+            reachable=is_reachable,
+            floor_faces=int(len(room_faces)),
+            reached_faces=len(reached_here),
+            reason=reason,
+        ))
+        if is_reachable:
+            shell.reachable_rooms += 1
+
+    shell.outlines = outline_checks(surf, spec, agent)
+
+    if check_corridors:
+        shell.checked_corridors = True
+        results = corridor_continuity(surf, spec, agent)
+        conflicts = corridor_conflicts(surf, spec, agent)
+        shell.conflicts = conflicts
+        # Attach the conflict reason to each corridor in a conflicting pair
+        # (design decision 16). A corridor can already carry a continuity reason;
+        # the conflict reason only replaces an empty one so continuity diagnoses
+        # aren't lost. ``corridors_passed`` fails on either count regardless.
+        conflict_partner: Dict[str, str] = {}
+        for ci, cj in conflicts:
+            conflict_partner.setdefault(ci, cj)
+            conflict_partner.setdefault(cj, ci)
+        for cr in results:
+            if cr.corridor_id in conflict_partner and not cr.reason:
+                cr.reason = f"conflicts with corridor {conflict_partner[cr.corridor_id]}"
+        shell.corridors = results
+
+    return shell
+
+
+def report_with_props(shell: Shell, spec: ZoneSpec, placed: Sequence["Placed"], *,
+                      zone_name: Optional[str] = None) -> TraversalReport:
+    """``shell``'s verdict with ``placed`` judged against it
+    (``analyzer.footprints.check_room_props``), as the :class:`TraversalReport`
+    :func:`validate` returns: each Prop failure is one more failed entry in
+    ``report.outlines``. The shell is not changed; with no seed face (no walkable
+    surface) the Props aren't judged, as before. ``zone_name`` names the report
+    (default the shell's: a kept shell may come from another zone with the same TER)."""
+    surf = shell.surface
+    report = TraversalReport(
+        zone_name=shell.zone_name if zone_name is None else zone_name,
+        agent=shell.agent,
+        total_rooms=shell.total_rooms,
+        reachable_rooms=shell.reachable_rooms,
+        rooms=[replace(r) for r in shell.rooms],
+        total_faces=len(surf.faces),
+        standable_faces=int(surf.standable.sum()),
+        seed_face=shell.seed_face,
+        notes=list(shell.notes),
+        surface=surf,
+        shell=shell,
+    )
+    if shell.checked_corridors:
+        report.checked_corridors = True
+        report.corridors = [replace(c) for c in shell.corridors]
+        report.conflicts = list(shell.conflicts)
+    if shell.seed_face is None:
+        return report
+    report.reachable_faces = len(shell.reachable)
+    report.outlines = [replace(o) for o in shell.outlines]
+    if placed:
+        from analyzer.footprints import check_room_props
+
+        for f in check_room_props(surf, shell.reachable, spec, placed, shell.mesh,
+                                  shell.seed_face, shell.agent):
+            report.outlines.append(OutlineResult(f.where or "props", False, str(f)))
+    return report
+
+
 def validate(eqg_path: str | Path,
              spec: Optional[ZoneSpec] = None,
              spec_path: Optional[str | Path] = None,
@@ -2853,6 +3059,9 @@ def validate(eqg_path: str | Path,
     Each failure is one more failed entry in ``report.outlines``, its
     ``room_id`` the room it's in. With no placed model in the room graph the
     report is exactly what it was without this check.
+
+    It is :func:`shell_report` (the mesh's part) then :func:`report_with_props` (the
+    Props' part); a partial rebuild keeps the shell and runs the second alone.
     """
     agent = agent or AgentModel()
     ter, zone_name = load_ter_from_eqg(eqg_path)
@@ -2868,108 +3077,10 @@ def validate(eqg_path: str | Path,
             )
         spec = ZoneSpec.load(spec_path)
 
-    surf = build_walk_surface(ter, agent)
-    report = TraversalReport(
-        zone_name=zone_name,
-        agent=agent,
-        total_rooms=len(spec.rooms),
-        reachable_rooms=0,
-        total_faces=len(surf.faces),
-        standable_faces=int(surf.standable.sum()),
-        surface=surf,
-    )
-
-    # Flood seed. The dungeon/city path (``bowl is None``) uses the spec's safe
-    # point EXACTLY as before — no behaviour change. A wilderness build may hand
-    # the bowl gate a Spawn point to seed from instead; when it doesn't, the
-    # safe point is used, so even a supplied ``bowl`` without a spawn_point keeps
-    # the historic seed.
-    if bowl is not None and bowl.spawn_point is not None:
-        safe = np.array(bowl.spawn_point, dtype=np.float64)
-    else:
-        safe = np.array(spec.safe_point, dtype=np.float64)
-    # XY search radius for the start face: generous so a safe point placed at the
-    # entrance room centre still lands on its floor.
-    seed_face = _nearest_standable_face(surf, safe, xy_radius=400.0)
-    report.seed_face = seed_face
-    if seed_face is None:
-        report.notes.append("no standable face anywhere in the mesh")
-        for room in spec.rooms:
-            report.rooms.append(RoomResult(room.id, room.role, False, 0, 0,
-                                           "mesh has no walkable surface"))
-        if check_corridors:
-            report.checked_corridors = True
-            for cor in spec.corridors:
-                report.corridors.append(CorridorResult(
-                    cor.id, cor.from_room, cor.to_room, False,
-                    "no floor in from_room"))
-        return report
-
-    reachable = flood_reachable(surf, seed_face)
-    report.reachable_faces = len(reachable)
-
-    # First pass: determine reachability per room (needed before graph diagnosis,
-    # which asks "is this unreachable room adjacent to a reachable one?").
-    room_faces_by_id: Dict[str, np.ndarray] = {}
-    reached_by_id: Dict[str, List[int]] = {}
-    for room in spec.rooms:
-        rf = _faces_in_room(surf, room, spec.rooms)
-        room_faces_by_id[room.id] = rf
-        reached_by_id[room.id] = [int(f) for f in rf if int(f) in reachable]
-    reachable_room_ids = {rid for rid, rl in reached_by_id.items() if rl}
-
-    for room in spec.rooms:
-        room_faces = room_faces_by_id[room.id]
-        reached_here = reached_by_id[room.id]
-        is_reachable = len(reached_here) > 0
-        reason = ""
-        if not is_reachable:
-            # Prefer the corridor-graph explanation (names the offending
-            # corridor + the exact failure: cliff ramp / oversized step);
-            # fall back to the mesh-geometry guess.
-            reason = _diagnose_via_graph(room.id, spec, agent, reachable_room_ids)
-            if not reason:
-                reason = _diagnose_unreachable(surf, agent, room_faces, reachable)
-        report.rooms.append(RoomResult(
-            room_id=room.id,
-            role=room.role,
-            reachable=is_reachable,
-            floor_faces=int(len(room_faces)),
-            reached_faces=len(reached_here),
-            reason=reason,
-        ))
-        if is_reachable:
-            report.reachable_rooms += 1
-
-    report.outlines = outline_checks(surf, spec, agent)
-    if placed is None:
+    shell = shell_report(ter, spec, agent, check_corridors, zone_name=zone_name, bowl=bowl)
+    if shell.seed_face is not None and placed is None:
         placed = placed_models(eqg_path)
-    if placed:
-        from analyzer.footprints import check_room_props, collidable_triangles
-
-        for f in check_room_props(surf, reachable, spec, placed, collidable_triangles(ter),
-                                  seed_face, agent):
-            report.outlines.append(OutlineResult(f.where or "props", False, str(f)))
-
-    if check_corridors:
-        report.checked_corridors = True
-        results = corridor_continuity(surf, spec, agent)
-        conflicts = corridor_conflicts(surf, spec, agent)
-        report.conflicts = conflicts
-        # Attach the conflict reason to each corridor in a conflicting pair
-        # (design decision 16). A corridor can already carry a continuity reason;
-        # the conflict reason only replaces an empty one so continuity diagnoses
-        # aren't lost. ``corridors_passed`` fails on either count regardless.
-        conflict_partner: Dict[str, str] = {}
-        for ci, cj in conflicts:
-            conflict_partner.setdefault(ci, cj)
-            conflict_partner.setdefault(cj, ci)
-        for cr in results:
-            if cr.corridor_id in conflict_partner and not cr.reason:
-                cr.reason = f"conflicts with corridor {conflict_partner[cr.corridor_id]}"
-        report.corridors = results
-
-    return report
+    return report_with_props(shell, spec, placed or ())
 
 
 # ---------------------------------------------------------------------------

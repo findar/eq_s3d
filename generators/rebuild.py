@@ -21,16 +21,91 @@ no version folder, as in any pinned build.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
+from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from core.pfs import PfsArchive
 from generators.builder import SavedStages, StaleStages, with_decor_layers
 from generators.zone_spec import ZoneSpec
 
-__all__ = ["NoSavedStages", "StaleStages", "rebuild_decor", "room_ids", "room_seeds_after",
-           "saved_spec", "saved_stages"]
+__all__ = ["SHELLS", "NoSavedStages", "ShellCache", "StaleStages", "rebuild_decor", "room_ids",
+           "room_seeds_after", "saved_spec", "saved_stages"]
+
+
+class ShellCache:
+    """The kept gate results of a few TERs, for this process (partial-rebuild Req 4.2, 4.4):
+    per TER, the room gate's mesh part (``analyzer.traverse.Shell``) and the map outline
+    (``mapgeom.extract_outline``'s result). A bounded LRU: a 16-room shell holds tens of MB.
+
+    The key is the TER bytes' hash (not the version: two versions with one TER share it),
+    with the agent and what the gate reads of the spec besides the mesh (the rooms, the
+    corridors, the safe point and the race whose height a transition is judged by), so a
+    kept result is only ever reused for the same question. A shell never outlives the
+    process: the first rebuild after a restart runs the full gate."""
+
+    def __init__(self, size: int = 4):
+        self.size = size
+        self._entries: "OrderedDict[tuple, Dict[str, Any]]" = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def key(ter_bytes: bytes, spec: ZoneSpec, agent: Any) -> Tuple[str, str, str]:
+        from analyzer.traverse import AgentModel
+
+        doc = spec.to_dict()
+        asks = json.dumps({"rooms": doc["rooms"], "corridors": doc["corridors"],
+                           "safe_point": doc["safe_point"],
+                           "dungeon_race": doc.get("dungeon_race")},
+                          sort_keys=True, default=str)
+        return (hashlib.sha256(ter_bytes).hexdigest(), repr(agent or AgentModel()),
+                hashlib.sha256(asks.encode("utf-8")).hexdigest())
+
+    def _get(self, key, what: str):
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None or entry.get(what) is None:
+                return None
+            self._entries.move_to_end(key)
+            return entry[what]
+
+    def _put(self, key, what: str, value) -> None:
+        with self._lock:
+            entry = self._entries.setdefault(key, {})
+            entry[what] = value
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.size:
+                self._entries.popitem(last=False)
+
+    def shell(self, key):
+        """The kept ``Shell`` for ``key``, or ``None``."""
+        return self._get(key, "shell")
+
+    def keep_shell(self, key, shell) -> None:
+        """Keep ``shell`` under ``key`` (its mesh drawn and its TER let go first)."""
+        shell.key = key
+        self._put(key, "shell", shell.keep())
+
+    def outline(self, key):
+        """The kept map outline (an ``OutlineSet``, before ``with_solids``) for ``key``."""
+        return self._get(key, "outline")
+
+    def keep_outline(self, key, outline) -> None:
+        self._put(key, "outline", outline)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+#: The Server process's kept shells and outlines.
+SHELLS = ShellCache()
 
 
 class NoSavedStages(LookupError):

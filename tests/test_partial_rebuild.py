@@ -18,15 +18,22 @@ they live in ``tmp_path`` only.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
 
+import analyzer.traverse as traverse_mod
 import generators.builder as builder_mod
 import generators.pipeline as pipeline_mod
 import generators.rebuild as rebuild_mod
 import server.app as app_mod
+from analyzer.footprints import Placed
+from analyzer.traverse import _door_strips
 from generators.decor.stock import eq_path_from_env
+from generators.outdoor_dungeon import outdoor_dungeon_report
+from generators.zone_spec import ZoneSpec
+from tests.test_gate_props import _door, crate
 
 pytestmark = [pytest.mark.slow,
               pytest.mark.skipif(eq_path_from_env() is None,
@@ -179,7 +186,7 @@ def test_a_gate_failure_on_the_pinned_decor_seed_is_reported(server, monkeypatch
         builds.append(k.get("saved"))
         return real_build(self, *a, **k)
 
-    def failing(eqg_path, spec, agent):
+    def failing(eqg_path, spec, agent, **_kw):
         return pipeline_mod._plan_failure_report(spec.name, ValueError("forced"))
 
     before = sorted(p.name for p in (root / zone).iterdir())
@@ -244,3 +251,86 @@ def test_room_seeds_through_versions_and_the_room_view(server, monkeypatch):
     assert b.json()["version_info"]["changed"] == ["decor_seed", "room_decor_seeds"]
     assert "room_decor_seeds" not in _json(root, zone, m, "request")["controls"]
     assert "room_decor_seeds" not in _json(root, zone, m, "zone")["seeds"]
+
+
+# ---------------------------------------------------------------------------
+# The kept shell (task 4, Reqs 4.2-4.5)
+# ---------------------------------------------------------------------------
+
+def _v1_spec(root, zone):
+    doc = rebuild_mod.saved_spec(_dir(root, zone, 1), zone)
+    layers = tuple(doc.pop("decor_layers", None) or ())
+    return builder_mod.with_decor_layers(ZoneSpec.from_dict(doc), layers)
+
+
+def _over_a_throat(spec):
+    """A Prop (``decor_`` named, as the builder names Props) filling a room's first door
+    but for a gap narrower than the clear width: the room gate's ``throat_narrow``."""
+    rid = next(r.id for r in spec.rooms if _door_strips(r, spec))
+    _side, c0, c1, at, yaw = _door(spec, rid)
+    return Placed("decor_forced", "props_crate.mod", crate(c1 - c0 - 2.0), *at, yaw)
+
+
+@pytest.mark.parametrize("force", [False, True], ids=["passes", "prop_fails"])
+@pytest.mark.parametrize("label", [k for k in CASES if k != "wilderness"])
+def test_kept_shell_gives_the_full_gates_verdict(server, label, force, monkeypatch):
+    """The gate a partial rebuild runs (the Props judged against a kept shell) equals the
+    full gate on the same build, failures included, and so does the stage it blames."""
+    client, root, v1 = server
+    zone = v1(label)
+    eqg = _dir(root, zone, 1) / f"{zone}.eqg"
+    spec = _v1_spec(root, zone)
+    placed = traverse_mod.placed_models(eqg)
+    if force:
+        placed = placed + [_over_a_throat(spec)]
+    monkeypatch.setattr(traverse_mod, "placed_models", lambda _p, **_k: list(placed))
+    monkeypatch.setattr(pipeline_mod, "placed_models", lambda _p, **_k: list(placed))
+
+    if label == "outdoor_dungeon":
+        full = outdoor_dungeon_report(eqg, spec, None)
+    else:
+        full = traverse_mod.validate(eqg, spec=spec, check_corridors=True)
+    assert full.passed is not force, full.summary()
+    if force:
+        assert any(not o.ok and o.reason.startswith("throat_narrow") and "decor_forced" in o.reason
+                   for o in full.outlines), full.summary()
+
+    rebuild_mod.SHELLS.clear()
+    first = pipeline_mod._traversal_report(eqg, spec, None, reuse=True)     # none kept: made
+    kept = rebuild_mod.SHELLS.shell(first.shell.key)
+    assert kept is first.shell
+    again = pipeline_mod._traversal_report(eqg, spec, None, reuse=True)     # the kept one
+    assert again.shell is kept
+    for rep in (first, again):
+        assert rep == full
+        assert rep.summary() == full.summary()
+        assert (rep.passed, rep.corridors_passed) == (full.passed, full.corridors_passed)
+
+    bare = pipeline_mod._report_without_props(eqg, spec, None, again)
+    bare_full = pipeline_mod._report_without_props(eqg, spec, None, replace(full, shell=None))
+    assert bare == bare_full and bare.passed is bare_full.passed
+
+
+def test_shells_are_keyed_by_the_ter_and_bounded(server, monkeypatch):
+    """Two versions with one TER find one shell and one outline; a rebuild reuses both (no
+    walk surface built, no outline traced); the cache holds at most its size."""
+    client, root, v1 = server
+    zone = v1("city")
+    first = _rebuild(client, monkeypatch, {"zone": zone, "version": 1, "decor_seed": 31})
+    assert first.status_code == 200, first.text
+    n = first.json()["version"]
+
+    def boom(*_a, **_k):
+        raise AssertionError("the kept shell or outline was not reused")
+
+    with monkeypatch.context() as m:
+        m.setattr(pipeline_mod, "shell_report", boom)
+        m.setattr(pipeline_mod, "extract_outline", boom)
+        r = _rebuild(client, monkeypatch, {"zone": zone, "version": n, "decor_seed": 32})
+    assert r.status_code == 200, r.text
+    assert r.json()["version_info"]["how"] == "partial"
+
+    cache = rebuild_mod.ShellCache(size=2)
+    for k in range(3):
+        cache.keep_outline((str(k),), object())
+    assert len(cache) == 2 and cache.outline(("0",)) is None and cache.outline(("2",)) is not None

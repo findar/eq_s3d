@@ -61,13 +61,17 @@ from typing import Callable, Collection, Dict, List, Mapping, Optional, Sequence
 
 from analyzer.rof2check import FormatReport, check_eqg
 from analyzer.traverse import (
-    AgentModel, RoomResult, TraversalReport, load_ter_from_eqg, placed_models, validate,
+    AgentModel, RoomResult, TraversalReport, load_ter_from_eqg, placed_models, report_with_props,
+    shell_report, ter_bytes_from_eqg, validate,
 )
 from core.paths import OutputRoot
+from core.pfs import PfsArchive
+from core.ter import TerFile
 from generators.builder import BuildResult, SavedStages, ZoneBuilder
 from generators.eqmap import build_map_file, prop_marks, site_marks, write_map_files
 from generators.mapgeom import extract_outline, outline_summary, with_solids
 from generators.mapview import render_map_svg
+from generators.rebuild import SHELLS
 from generators.outdoor_dungeon import (PLAN_ERRORS, is_outdoor_dungeon,
                                         outdoor_dungeon_report)
 from generators.zone_spec import ZoneSpec
@@ -195,8 +199,8 @@ class GenerationFailed(Exception):
 # Failure logging
 # ---------------------------------------------------------------------------
 
-def _traversal_report(eqg_path: Path, spec: ZoneSpec,
-                      agent: Optional[AgentModel]) -> TraversalReport:
+def _traversal_report(eqg_path: Path, spec: ZoneSpec, agent: Optional[AgentModel], *,
+                      reuse: bool = False) -> TraversalReport:
     """The traversability verdict for a built zone.
 
     Room-graph zones: every room reachable + corridor continuity
@@ -205,14 +209,48 @@ def _traversal_report(eqg_path: Path, spec: ZoneSpec,
     reachable from Spawn, Rim sealed except at zonelines — as one "bowl" room.
     Outdoor dungeon (a wilderness payload with a dungeon): that bowl room plus
     the dungeon's rooms reached from the outdoor Spawn and its corridors.
+
+    The room gate (room-graph zones and an outdoor dungeon's rooms) is :func:`_room_gate`:
+    ``reuse`` (a partial rebuild) judges the Props against a kept shell of this TER when
+    there is one. An outdoor dungeon's bowl, and an open wilderness's, always run in full:
+    the bowl judges the Sites' Props, which the decor seed places too.
     """
     if is_outdoor_dungeon(spec):
-        return outdoor_dungeon_report(eqg_path, spec, agent)
+        return outdoor_dungeon_report(eqg_path, spec, agent,
+                                      rooms=_room_gate(eqg_path, spec, agent, reuse))
     if spec.wilderness is not None:
         from generators.wilderness.build import bowl_report
-        ter, _ = load_ter_from_eqg(eqg_path)
-        return bowl_report(spec, ter, agent)
-    return validate(eqg_path, spec=spec, agent=agent, check_corridors=True)
+        data, name = ter_bytes_from_eqg(eqg_path)
+        return bowl_report(spec, TerFile.from_bytes(data, name=name), agent)
+    return _room_gate(eqg_path, spec, agent, reuse)
+
+
+def _room_gate(eqg_path: Path, spec: ZoneSpec, agent: Optional[AgentModel],
+               reuse: bool) -> TraversalReport:
+    """``validate(eqg_path, spec=spec, agent=agent, check_corridors=True)``, as its two parts
+    (``shell_report`` then ``report_with_props``): the same verdict either way. With
+    ``reuse`` the shell kept for this TER (``generators.rebuild.SHELLS``) stands in for the
+    first part; with none kept it is made and kept for next time. The report's ``shell``
+    carries its cache key, so an accepted build can keep it (:func:`_keep_shell`)."""
+    arc = PfsArchive.from_file(eqg_path)          # read once, for the TER and the ZON
+    data, zone_name = ter_bytes_from_eqg(eqg_path, arc=arc)
+    key = SHELLS.key(data, spec, agent)
+    shell = SHELLS.shell(key) if reuse else None
+    if shell is None:
+        shell = shell_report(TerFile.from_bytes(data, name=zone_name), spec, agent, True,
+                             zone_name=zone_name)
+        shell.key = key
+        if reuse:
+            SHELLS.keep_shell(key, shell)
+    placed = placed_models(eqg_path, arc=arc) if shell.seed_face is not None else ()
+    return report_with_props(shell, spec, placed, zone_name=zone_name)
+
+
+def _keep_shell(report: TraversalReport) -> None:
+    """Keep an accepted build's room-gate shell for a later partial rebuild of its TER."""
+    shell = getattr(report, "shell", None)
+    if shell is not None and shell.key is not None and SHELLS.shell(shell.key) is None:
+        SHELLS.keep_shell(shell.key, shell)
 
 
 def _plan_failure_report(zone_id: str, error: Exception) -> TraversalReport:
@@ -367,8 +405,17 @@ def _report_without_props(eqg_path: Path, spec: ZoneSpec, agent: Optional[AgentM
     kept = [p for p in placed if not p.name.startswith(PROP_OBJECT_PREFIX)]
     if len(kept) == len(placed):
         return report
+    shell = getattr(report, "shell", None)
+
+    def rooms_without_props() -> TraversalReport:
+        # The room gate's mesh part is the same whatever the Props: judge the rest
+        # against the shell the gate just used (``validate``'s own two parts).
+        if shell is None:
+            return validate(eqg_path, spec=spec, agent=agent, check_corridors=True, placed=kept)
+        return report_with_props(shell, spec, kept, zone_name=report.zone_name)
+
     if is_outdoor_dungeon(spec):
-        bare = validate(eqg_path, spec=spec, agent=agent, check_corridors=True, placed=kept)
+        bare = rooms_without_props()
         ids = {r.id for r in spec.rooms}
         world = [r for r in report.rooms if r.room_id not in ids]
         bare.rooms = world + bare.rooms
@@ -377,7 +424,7 @@ def _report_without_props(eqg_path: Path, spec: ZoneSpec, agent: Optional[AgentM
         return bare
     if spec.wilderness is not None:
         return None
-    return validate(eqg_path, spec=spec, agent=agent, check_corridors=True, placed=kept)
+    return rooms_without_props()
 
 
 def _in_attachments(report: TraversalReport, attachments: Sequence) -> bool:
@@ -668,7 +715,9 @@ def generate_validated(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
                 saved=stages,
             )
-            report = _traversal_report(result.eqg_path, spec, agent)
+            # A partial rebuild judges its Props against the shell kept for its TER.
+            report = (_traversal_report(result.eqg_path, spec, agent) if stages is None
+                      else _traversal_report(result.eqg_path, spec, agent, reuse=True))
             fmt = check_eqg(result.eqg_path, spec,
                             sidecar_path=scratch / f"{spec.name.lower()}.zone.json",
                             agent=agent)
@@ -676,9 +725,13 @@ def generate_validated(
 
             if passed:
                 all_warnings = base_warnings + list(result.warnings)
+                _keep_shell(report)
                 map_meta = _write_map_artifacts(root, result, scratch,
                                                 report.surface, agent,
-                                                all_warnings)
+                                                all_warnings, keep=True,
+                                                reuse=stages is not None,
+                                                ter_bytes=(stages.ter_bytes if stages
+                                                           is not None else None))
                 _write_handoffs(root, result, scratch)
                 _write_inputs(root, spec, scratch, use_seed, request, started)
                 moved = _finalize_build(
@@ -765,7 +818,8 @@ def _cause(e: BaseException) -> str:
 
 def _write_map_artifacts(root: OutputRoot, result: BuildResult, scratch: Path,
                          surface, agent: Optional[AgentModel],
-                         warnings: List[str]) -> dict:
+                         warnings: List[str], *, keep: bool = False,
+                         reuse: bool = False, ter_bytes: Optional[bytes] = None) -> dict:
     """Write ``<name>.map.svg`` and ``maps/<name>*.txt`` into ``scratch``.
 
     Runs after the gates pass, before the move out of scratch (design
@@ -774,13 +828,29 @@ def _write_map_artifacts(root: OutputRoot, result: BuildResult, scratch: Path,
     (``outline_unavailable:<cause>``); a writer failure keeps the outline SVG
     and removes ``maps/`` (``eqmap_unavailable:<cause>``). Warnings are
     appended to ``warnings``; returns the Sidecar's ``map_files``/``outline``.
+
+    The outline traced from the TER is kept per TER (``generators.rebuild.SHELLS``) with
+    ``keep``, and with ``reuse`` (a partial rebuild) a kept one is used instead of tracing
+    it again (Req 4.4); the map files are drawn again with this build's Props. ``ter_bytes``
+    are the build's TER bytes when the caller has them (a partial rebuild's are the
+    parent's, ``ZoneBuilder.build`` checks they are), so the ``.eqg`` isn't read for them.
     """
     spec = result.spec
     name = spec.name.lower()
     scratch = scratch.resolve()
     try:
-        ter, _ = load_ter_from_eqg(result.eqg_path)
-        outline = with_solids(extract_outline(ter, spec.safe_point, agent, surface=surface), spec)
+        if ter_bytes is None:
+            data, zone_name = ter_bytes_from_eqg(result.eqg_path)
+        else:
+            data, zone_name = ter_bytes, Path(result.eqg_path).stem.lower()
+        key = SHELLS.key(data, spec, agent) if keep or reuse else None
+        traced = SHELLS.outline(key) if reuse else None
+        if traced is None:
+            ter = TerFile.from_bytes(data, name=zone_name)
+            traced = extract_outline(ter, spec.safe_point, agent, surface=surface)
+            if key is not None:
+                SHELLS.keep_outline(key, traced)
+        outline = with_solids(traced, spec)
     except Exception as e:                       # EmptyFloorRegion or a bug
         logger.warning("outline extraction failed for %s", name, exc_info=True)
         outline = None
