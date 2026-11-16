@@ -38,7 +38,7 @@ task proves it with
   - Owns: analyzer/zonelist.py, analyzer/data/rof2_zones.json, tests/test_zonelist.py
   - Reqs: 1.1
 
-- [ ] 2. Ground the takeover and the doors
+- [x] 2. Ground the takeover and the doors
   - Card: [cards/02-grounding.md](cards/02-grounding.md)
   - Type: agent · Size: S · Depends: —
   - Owns: docs/RESEARCH.md, .kiro/specs/zone-generator-export/archive.md, tests/test_export_grounding.py

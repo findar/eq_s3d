@@ -26,5 +26,17 @@ the choice and these decisions at the first look (task 8).
    else; fog, clip planes, sky and `ztype` stay stock (follow-up).
 6. **Nothing is ever executed or copied into the install**: the SQL is a file to review; the
    install steps are the user's.
+7. **Load rule** (task 2): the client tries `<short>.eqg` first and falls back to the `.s3d`
+   (its `dbg.txt`; `clz.eqg` + loose `clz.zon` loads the same way `arena` ships), so stock
+   `arena` is `arena.eqg` + `arena.zon`. The install steps move aside `arena.eqg`, `arena.zon`,
+   `arena.s3d`, `arena_obj.s3d`, `arena_EnvironmentEmitters.txt`, keep `arena_chr.*`. Task 10
+   checks for "Loaded arena.EQG." in `Logs\dbg.txt`.
+8. **Door model** (task 2): no door model is global, so the build packs `BBDOOR1`
+   (`ecommons_obj.s3d`, mesh `b29f16cdfe7d32a6`, 12 tris, 1 x 10 x 10.05, hinge at the origin)
+   through the decor importer as `obj_bbdoor1.mod`, listed in the `.zon` models and not placed;
+   rows name it `OBJ_BBDOOR1`.
+9. **Door fields** (task 2): `opentype 0` (90° swing), `size` 100 per unit scale (500 for a
+   50-unit corridor), `heading` in EQ 0-512 units (`deg * 512 / 360`, clockwise), `incline 0`,
+   `keyitem` a per-tier placeholder, `lockpick 0`, every other column its stock default.
 
 ## Follow-ups
