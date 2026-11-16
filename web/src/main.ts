@@ -10,6 +10,7 @@ import {
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
 import { showArtifacts, loadMapSvg } from "./artifacts";
+import { setExportBuild } from "./exportrow";
 import { drawSockets } from "./sockets";
 import { RoomView } from "./roomview";
 
@@ -766,6 +767,8 @@ async function showBuild(
   currentSidecar = sidecar;
   // Rebuild the Files list (and drop the previous build's map + PNG).
   showArtifacts(result.artifacts ?? [], result.id);
+  // The Export row exports this version; an earlier version's Export clears.
+  setExportBuild(result.id, result.version);
   mapDownload.download = `${result.id}.map.svg`;
   lastSeed = result.seed;
   lastResult = result;
