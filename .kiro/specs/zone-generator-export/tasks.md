@@ -56,10 +56,10 @@ task proves it with
   - Owns: generators/sqlexport.py, tests/test_sqlexport.py
   - Reqs: 3
 
-- [ ] 5. Door models in builds with Gates
+- [x] 5. Door models in builds with Gates
   - Card: [cards/05-door-models.md](cards/05-door-models.md)
   - Type: agent · Size: M · Depends: 2
-  - Owns: generators/doors.py, generators/builder.py, tests/test_door_models.py, recaptured golden hashes of builds with Gates
+  - Owns: generators/doors.py, generators/builder.py, tests/test_door_models.py, tests/test_layout_engine.py, tests/test_properties_build.py, recaptured golden hashes of builds with Gates
   - Reqs: 3.3, 5
 
 - [ ] 6. Route, bundle and CLI
