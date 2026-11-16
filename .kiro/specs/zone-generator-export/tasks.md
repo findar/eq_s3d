@@ -62,10 +62,10 @@ task proves it with
   - Owns: generators/doors.py, generators/builder.py, tests/test_door_models.py, tests/test_layout_engine.py, tests/test_properties_build.py, recaptured golden hashes of builds with Gates
   - Reqs: 3.3, 5
 
-- [ ] 6. Route, bundle and CLI
+- [x] 6. Route, bundle and CLI
   - Card: [cards/06-route.md](cards/06-route.md)
   - Type: agent · Size: M · Depends: 3, 4
-  - Owns: server/app.py, main.py, generators/export.py (the SQL call and the bundle), tests/test_export_route.py
+  - Owns: server/app.py, main.py, generators/export.py (the SQL call and the bundle), tests/test_export_route.py, tests/test_export.py (the sql_written assert), tests/test_hygiene.py (the CLI option allowlist)
   - Reqs: 1.2, 4.1, 4.3, 4.4
 
 - [ ] 7. The Export row in the page

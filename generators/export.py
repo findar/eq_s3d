@@ -24,15 +24,19 @@ the expected name (``check_eqg(..., expected_name=short)``). The build's own
 files are only read; nothing outside ``<build dir>/export/<short>/`` is written,
 and writing the same Export again replaces that folder.
 
-The SQL script and the bundle (tasks 4 and 6) hang off :func:`_after_check`,
-the one place that runs only when the format check passes. Until then
-``ExportResult.sql_written`` stays false.
+When the format check passes, :func:`_after_check` (the one place that runs only
+then) adds ``<short>.sql`` (``sqlexport.export_sql``) and ``INSTALL.txt`` and sets
+``ExportResult.sql_written``. :func:`write_bundle` zips the export into
+``<short>.bundle.zip`` in the same folder, on request (the route and the CLI).
 """
 
 from __future__ import annotations
 
+import io
 import json
+import math
 import re
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -42,10 +46,22 @@ from analyzer.zonelist import DEFAULT_TARGET, closest, is_known
 from core.paths import OutputRoot
 from core.pfs import PfsArchive
 from core.zon import ZonFile
+from generators.doors import DOOR_MODEL, DOOR_WIDTH
+from generators.sqlexport import SqlExportError, export_sql
 from generators.zone_spec import ZoneSpec
 
 #: The sub-folder of a build directory that holds its Exports.
 EXPORT_DIR = "export"
+
+#: The install notes in every export folder and bundle.
+INSTALL_FILE = "INSTALL.txt"
+
+#: Stock files a takeover moves aside in the client folder (archive.md decision 7);
+#: ``{s}`` is the short name. ``<short>_chr.*`` (the zone's NPC models) stays.
+MOVE_ASIDE = ("{s}.eqg", "{s}.zon", "{s}.s3d", "{s}_obj.s3d", "{s}_EnvironmentEmitters.txt")
+
+#: One time stamp for every bundle entry, so a bundle's bytes depend on its files alone.
+_ZIP_TIME = (1999, 3, 16, 0, 0, 0)
 
 _MAP_FILE = r"(_[0-9]+)?\.txt"
 
@@ -73,8 +89,9 @@ class ExportResult:
     dir: Path                         # <build dir>/export/<short>
     files: List[Path] = field(default_factory=list)   # every file written, archive first
     format: Optional[FormatReport] = None
-    sql_written: bool = False         # task 4/6: the SQL script
+    sql_written: bool = False         # <short>.sql was written (the format check passed)
     warnings: List[str] = field(default_factory=list)
+    clear_spawns: bool = False        # the SQL also deletes the zone's spawns
 
     @property
     def eqg_path(self) -> Path:
@@ -83,6 +100,19 @@ class ExportResult:
     @property
     def sidecar_path(self) -> Path:
         return self.dir / f"{self.shortname}.zone.json"
+
+    @property
+    def sql_path(self) -> Path:
+        return self.dir / f"{self.shortname}.sql"
+
+    @property
+    def bundle_path(self) -> Path:
+        return self.dir / bundle_name(self.shortname)
+
+
+def bundle_name(short: str) -> str:
+    """The bundle's file name in the export folder."""
+    return f"{short}.bundle.zip"
 
 
 def resolve_shortname(shortname: Optional[str]) -> str:
@@ -165,12 +195,105 @@ def _export_sidecar(build_dir: Path, name: str, short: str, map_names: dict,
     return doc
 
 
-def _after_check(result: ExportResult, spec: ZoneSpec, root: OutputRoot) -> None:
-    """Runs only when the exported archive passed the Format_Checker (Req 2.2).
+def bounds_min_z(sidecar_path: Path, spec: ZoneSpec) -> float:
+    """The build's lowest Z: the sidecar's ``bounds.min`` when it has one, else the
+    lowest room floor of the spec (0 for a spec with no rooms)."""
+    try:
+        doc = json.loads(Path(sidecar_path).read_text(encoding="utf-8"))
+        z = float(doc["bounds"]["min"][2])
+        if math.isfinite(z):
+            return z
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
+        pass
+    return min((r.bounds[0][2] for r in spec.rooms), default=0.0)
 
-    Task 6 adds the SQL script (``sqlexport.export_sql``, then
-    ``result.sql_written = True``) and the bundle here."""
-    return None
+
+def install_text(short: str) -> str:
+    """``INSTALL.txt``: how to put an Export of ``short`` into a client and onto a
+    server (CRLF, ASCII). Decision 7 (archive.md) names the stock files to move aside."""
+    aside = [m.format(s=short) for m in MOVE_ASIDE]
+    lines = [
+        f"eq_s3d export: a takeover of the existing zone '{short}'",
+        "",
+        f"This bundle replaces the zone '{short}' in a RoF2 client and on an EQEmu",
+        "server. Nothing in it has been copied into a client or run against a",
+        "database: every step below is yours.",
+        "",
+        "Files",
+        f"  {short}.eqg          the zone: terrain, models, textures, its .zon inside",
+        f"  maps\\{short}*.txt    the in-game map layers",
+        f"  {short}.sql          the server rows: safe point, underworld, doors",
+        f"  {short}.zone.json    the build's notes: rooms, gates, advisory data",
+        "",
+        "1. Client. Work on a COPY of your RoF2 folder, never your only install.",
+        "   In the copy, move these stock files out of the folder (keep them to",
+        "   put the zone back; skip any that aren't there):",
+        *[f"     {a}" for a in aside],
+        f"   Keep {short}_chr.s3d and {short}_chr.txt: they hold the zone's NPC",
+        "   models, not its geometry.",
+        f"   Then copy {short}.eqg into the folder, and maps\\{short}*.txt into its",
+        "   maps folder.",
+        "",
+        "2. Server. Back up the rows the script changes first; its header names",
+        f"   them (the zone row and doors rows of '{short}', and its spawn rows when",
+        "   the export clears spawns). Read the script, replace the placeholder",
+        "   key item ids it names, then apply it by hand, for example:",
+        f"     mysql -u <user> -p <database> < {short}.sql",
+        "",
+        f"3. Check. Zone into '{short}' and look for \"Loaded {short}.EQG.\" in the",
+        "   client's Logs\\dbg.txt.",
+        "",
+        "To undo: move the stock files back into the client folder and restore",
+        "the server rows from your backup.",
+        "",
+    ]
+    return "\r\n".join(lines)
+
+
+def _after_check(result: ExportResult, spec: ZoneSpec, root: OutputRoot) -> None:
+    """Runs only when the exported archive passed the Format_Checker (Req 2.2):
+    writes ``<short>.sql`` and ``INSTALL.txt`` and sets ``result.sql_written``.
+    A spec the SQL can't express leaves no script and a ``sql: ...`` warning."""
+    short = result.shortname
+    try:
+        sql = export_sql(spec, short, bounds_min_z=bounds_min_z(result.sidecar_path, spec),
+                         door_model=DOOR_MODEL, door_width=DOOR_WIDTH,
+                         clear_spawns=result.clear_spawns)
+    except SqlExportError as exc:
+        result.warnings.append(f"sql: {exc}")
+        return
+    for rel, data in ((f"{short}.sql", sql.encode("utf-8")),
+                      (INSTALL_FILE, install_text(short).encode("ascii"))):
+        result.files.append(root.write_bytes(f"{EXPORT_DIR}/{short}/{rel}", data))
+    result.sql_written = True
+
+
+def bundle_files(export_dir: Path, short: str) -> List[str]:
+    """What a bundle of the export in ``export_dir`` holds, relative to it: the
+    archive, the maps, the SQL, the sidecar and ``INSTALL.txt``. Raises
+    :class:`ExportError` naming any part missing (no SQL: the format check failed)."""
+    export_dir = Path(export_dir)
+    maps_dir = export_dir / "maps"
+    maps = sorted(f"maps/{p.name}" for p in maps_dir.glob("*.txt")) if maps_dir.is_dir() else []
+    rels = [f"{short}.eqg", *maps, f"{short}.sql", f"{short}.zone.json", INSTALL_FILE]
+    missing = [r for r in rels if not (export_dir / r).is_file()]
+    if missing:
+        raise ExportError(f"export {short} lacks {', '.join(missing)}")
+    return rels
+
+
+def write_bundle(build_dir: Path, short: str) -> Path:
+    """Zip the build's Export of ``short`` into ``export/<short>/<short>.bundle.zip``
+    and return its path. Only that file is written."""
+    root = OutputRoot(Path(build_dir))
+    export_dir = root.path(EXPORT_DIR, short)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for rel in bundle_files(export_dir, short):
+            info = zipfile.ZipInfo(rel, date_time=_ZIP_TIME)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(info, (export_dir / rel).read_bytes())
+    return root.write_bytes(f"{EXPORT_DIR}/{short}/{bundle_name(short)}", buf.getvalue())
 
 
 def export_build(build_dir: Path, shortname: Optional[str] = None, *,
@@ -207,7 +330,7 @@ def export_build(build_dir: Path, shortname: Optional[str] = None, *,
     out_dir = root.path(EXPORT_DIR, short)
     root.remove_tree(out_dir)            # a repeat Export replaces its folder
     root.mkdir(EXPORT_DIR, short)
-    result = ExportResult(shortname=short, dir=out_dir)
+    result = ExportResult(shortname=short, dir=out_dir, clear_spawns=bool(clear_spawns))
 
     def write(rel: str, data: bytes) -> None:
         result.files.append(root.write_bytes(f"{EXPORT_DIR}/{short}/{rel}", data))

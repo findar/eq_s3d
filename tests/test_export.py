@@ -77,7 +77,7 @@ def test_archive_is_the_build_renamed(one, which, short):
     name = vb.spec.name.lower()
     assert res.shortname == short and res.dir == vb.build_dir.resolve() / EXPORT_DIR / short
     assert res.format.passed, res.format.messages
-    assert res.sql_written is False
+    assert res.sql_written is True
 
     src = {f.name: f.data for f in PfsArchive.from_file(vb.result.eqg_path).files}
     got = {f.name: f.data for f in PfsArchive.from_file(res.eqg_path).files}

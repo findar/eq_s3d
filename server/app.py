@@ -1474,6 +1474,144 @@ def get_zone_file(zone_id: str, version: str, filename: str,
                                                      "application/octet-stream"))
 
 
+# ---------------------------------------------------------------------------
+# The Export (step 17 Req 1.2, 4): a build renamed for a zone it takes over
+# ---------------------------------------------------------------------------
+#
+# ``POST /api/export`` writes ``<build>/export/<short>/`` (generators.export) and answers
+# its files' URLs; ``/api/zones/<zone>/v<n>/export/<short>/<file>`` (and ``.../maps/<file>``)
+# serves them with the build route's checks, and ``<short>.bundle.zip`` is zipped there on
+# its first request.
+
+#: One Export at a time: a repeat Export replaces its folder, so two at once would race.
+_EXPORT_LOCK = threading.Lock()
+
+
+class ExportRequest(BaseModel):
+    """A build to export. ``shortname`` blank or absent is the default (``arena``)."""
+    model_config = ConfigDict(extra="ignore")
+
+    zone: StrictStr
+    version: StrictInt | StrictStr = 1
+    shortname: Optional[StrictStr] = None
+    clear_spawns: bool = False
+
+
+@app.get("/api/shortnames")
+def list_shortnames():
+    """The Known_Zone_List for the export picker: installed zones first, then by name."""
+    from analyzer.zonelist import DEFAULT_TARGET, known_shortnames
+    zones = sorted(known_shortnames().values(), key=lambda z: (not z.in_install, z.shortname))
+    return {"default": DEFAULT_TARGET,
+            "zones": [{"shortname": z.shortname, "long_name": z.long_name,
+                       "container": z.container, "in_install": z.in_install} for z in zones]}
+
+
+def _export_artifacts(base: str, export_dir: Path, short: str) -> list[dict]:
+    """The export folder's files with their URLs: archive, map layers, SQL, sidecar,
+    install notes; then the bundle (made on request) when the SQL is there."""
+    out: list[dict] = []
+
+    def add(kind: str, rel: str, layer: Optional[int] = None) -> None:
+        if (export_dir / rel).is_file():
+            out.append({"kind": kind, "filename": rel, "url": f"{base}/{rel}", "layer": layer})
+
+    add("eqg", f"{short}.eqg")
+    maps_dir = export_dir / MAPS_SUBDIR
+    if maps_dir.is_dir():
+        layers = sorted((layer, p.name) for p in maps_dir.glob("*.txt")
+                        if (layer := _eqmap_layer(p.stem, short)) is not None)
+        for layer, fname in layers:
+            add("eqmap", f"{MAPS_SUBDIR}/{fname}", layer)
+    add("sql", f"{short}.sql")
+    add("sidecar", f"{short}.zone.json")
+    add("install", "INSTALL.txt")
+    if (export_dir / f"{short}.sql").is_file():
+        name = f"{short}.bundle.zip"
+        out.append({"kind": "bundle", "filename": name, "url": f"{base}/{name}", "layer": None})
+    return out
+
+
+@app.post("/api/export")
+def export_zone(req: ExportRequest):
+    """Export a build as a takeover of an existing zone (step 17 Req 4.1). 400 for an
+    unknown short name (``close`` holds up to 5 near names) or a bad id, 404 for an
+    unknown build. A failed format check is still a 200: ``format.passed`` is false,
+    ``sql_written`` is false and no bundle is offered."""
+    from generators.export import EXPORT_DIR, ExportError, UnknownShortname, export_build, resolve_shortname
+    try:
+        short = resolve_shortname(req.shortname)
+    except UnknownShortname as exc:
+        raise HTTPException(400, {"message": str(exc), "shortname": exc.shortname,
+                                  "close": exc.close})
+    seg = _version_segment(req.version)
+    zone_dir = _zone_dir(req.zone)
+    build_dir = _version_dirs(zone_dir).get(int(seg[1:]))
+    if build_dir is None:
+        raise HTTPException(404, f"no build {req.zone}/{seg}")
+    with _EXPORT_LOCK:
+        try:
+            res = export_build(build_dir, short, clear_spawns=req.clear_spawns)
+        except ExportError as exc:
+            raise HTTPException(404, f"build {req.zone}/{seg} can't be exported: {exc}")
+    base = f"/api/zones/{req.zone}/{seg}/{EXPORT_DIR}/{short}"
+    return {"zone": req.zone, "version": seg, "shortname": short,
+            "clear_spawns": req.clear_spawns, "sql_written": res.sql_written,
+            "format": res.format.to_dict() if res.format is not None else None,
+            "warnings": list(res.warnings),
+            "files": _export_artifacts(base, res.dir, short)}
+
+
+def _export_file_allowed(short: str, filename: str, subdir: Optional[str]) -> bool:
+    """The export folder's allow-list: its own named files at the top, map ``.txt`` in maps/."""
+    if subdir is not None:
+        return subdir == MAPS_SUBDIR and filename.lower().endswith(MAPS_FILE_EXTS)
+    return filename in (f"{short}.eqg", f"{short}.zone.json", f"{short}.sql",
+                        f"{short}.bundle.zip", "INSTALL.txt")
+
+
+@app.api_route("/api/zones/{zone_id}/{version}/export/{short}/{filename}",
+               methods=["GET", "HEAD"])
+@app.api_route("/api/zones/{zone_id}/{version}/export/{short}/{subdir}/{filename}",
+               methods=["GET", "HEAD"])
+def get_export_file(zone_id: str, version: str, short: str, filename: str,
+                    subdir: Optional[str] = None):
+    """Serve one file of a build's Export, as :func:`get_zone_file` serves the build's: each
+    segment one safe component, the name on the export folder's allow-list, the resolved
+    path inside the export folder; any failed check is a bodiless 400, a missing file a
+    bodiless 404. ``<short>.bundle.zip`` is (re)made from the folder when it is missing or
+    older than a part; an export without SQL has no bundle (404)."""
+    from generators.export import EXPORT_DIR, ExportError, write_bundle
+    parts = (zone_id, version, short) + ((subdir,) if subdir is not None else ()) + (filename,)
+    if not all(_safe_segment(seg) for seg in parts):
+        return Response(status_code=400)
+    if not VERSION_RE.fullmatch(version) or not _export_file_allowed(short, filename, subdir):
+        return Response(status_code=400)
+
+    build_dir = (OUTPUT_DIR / zone_id / version).resolve()
+    export_dir = (build_dir / EXPORT_DIR / short).resolve()
+    candidate = (export_dir / Path(*parts[3:])).resolve()
+    if (not OutputRoot(OUTPUT_DIR).contains(candidate) or build_dir not in export_dir.parents
+            or export_dir not in candidate.parents):
+        return Response(status_code=400)
+
+    if subdir is None and filename == f"{short}.bundle.zip" and export_dir.is_dir():
+        with _EXPORT_LOCK:
+            parts_mtime = max((p.stat().st_mtime_ns for p in export_dir.rglob("*")
+                               if p.is_file() and p != candidate), default=0)
+            if not candidate.is_file() or candidate.stat().st_mtime_ns < parts_mtime:
+                try:
+                    write_bundle(build_dir, short)
+                except ExportError:
+                    return Response(status_code=404)
+
+    if not candidate.is_file():
+        return Response(status_code=404)
+    return FileResponse(str(candidate),
+                        media_type=_MEDIA_BY_EXT.get(_file_extension(filename),
+                                                     "application/octet-stream"))
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

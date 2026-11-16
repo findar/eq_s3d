@@ -641,6 +641,8 @@ _ALLOWED_CLI_OPTIONS = {
     "--decor", "--decor-seed",  # Props in rooms (room-decor spec task 10)
     "--decor-layer",  # decor layers on top of the theme's (decor-rules spec task 2)
     "--rooms-seed",  # rooms and Sites on the same World (world-sockets spec task 8)
+    # the export command (export spec task 6), not generate's
+    "--shortname", "--clear-spawns",
     # housekeeping the task allows
     "--output", "--ter-version", "--no-validate",
     # deprecated aliases that share a dest (still a legacy input surface)
