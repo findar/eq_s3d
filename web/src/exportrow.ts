@@ -56,6 +56,22 @@ function renderPicker(): void {
   if (shown.some((z) => z.shortname === chosen)) pickEl.value = chosen;
   else if (shown.length) pickEl.selectedIndex = 0;
   syncNote();
+  revealChosen();
+}
+
+/** Scroll the list (not the page) so the picked zone is in view. The row may still be hidden
+ *  or laid out when this runs, so it waits a frame; a hidden list measures 0 and is left alone. */
+function revealChosen(): void {
+  requestAnimationFrame(scrollToChosen);
+}
+
+function scrollToChosen(): void {
+  const o = pickEl.options[pickEl.selectedIndex];
+  if (!o || pickEl.clientHeight === 0) return;
+  const top = o.offsetTop - pickEl.offsetTop;
+  if (top < pickEl.scrollTop || top + o.offsetHeight > pickEl.scrollTop + pickEl.clientHeight) {
+    pickEl.scrollTop = Math.max(0, top - (pickEl.clientHeight - o.offsetHeight) / 2);
+  }
 }
 
 /** The short name Export sends: the picked one, or the typed text when nothing matches. */
@@ -170,6 +186,7 @@ export function setExportBuild(zone: string, version: number): void {
   seq += 1;
   clearResult();
   syncButton();
+  revealChosen();
 }
 
 filterEl.addEventListener("input", renderPicker);
@@ -185,6 +202,11 @@ pickEl.addEventListener("change", () => {
   syncNote();
 });
 pickEl.addEventListener("keydown", (e) => { if (e.key === "Enter") runExport(); });
+// The row is hidden until a build opens and sits below the fold: reveal the picked zone each
+// time the list comes into view.
+new IntersectionObserver((entries) => {
+  if (entries.some((e) => e.isIntersecting)) scrollToChosen();
+}).observe(pickEl);
 pickEl.addEventListener("dblclick", () => runExport());
 runBtn.addEventListener("click", () => runExport());
 
