@@ -381,7 +381,9 @@ def test_locks_do_not_touch_geometry(s, zone_type, n, locks):
     the binary geometry. So for one fixed plan and one fixed seed, the number of
     locked gates MUST NOT change what gets built: a build with ``locks`` in
     [1, 5] and a build with ``locks=0`` produce the exact same mesh (TER) and
-    the exact same zone layout (ZON). This asserts the north-star "layouts are
+    the exact same zone layout (ZON objects, lights, regions and models; the one
+    difference allowed is the unplaced Door model a build with Gates lists last,
+    export spec task 5). This asserts the north-star "layouts are
     suggestions ... they must not alter geometry or collision" invariant
     directly — if gating leaked into the mesh or placement, the two builds would
     diverge. (The ``.eqg`` bytes themselves are NOT compared: the PFS footer
@@ -412,9 +414,19 @@ def test_locks_do_not_touch_geometry(s, zone_type, n, locks):
         f"locks changed the TER mesh (seed={s}, theme={zone_type}, rooms={n}, "
         f"locks={locks}): gating leaked into geometry"
     )
-    assert gated_zon == open_zon, (
-        f"locks changed the ZON layout (seed={s}, theme={zone_type}, rooms={n}, "
-        f"locks={locks}): gating leaked into placement"
+    # The ZON: objects, lights and regions the same, and the models the same but
+    # for the Door model a build with Gates lists last, unplaced, when it has an
+    # install (export spec task 5): a door is a runtime record, never an object.
+    from core.zon import ZonFile
+    from generators.doors import DOOR_FILE
+    gz, oz = ZonFile.from_bytes(gated_zon), ZonFile.from_bytes(open_zon)
+    gated_models = gz.models[:-1] if gz.models[-1:] == [DOOR_FILE] else gz.models
+    where = f"(seed={s}, theme={zone_type}, rooms={n}, locks={locks})"
+    assert (gz.objects, gz.lights, gz.regions) == (oz.objects, oz.lights, oz.regions), (
+        f"locks changed the ZON layout {where}: gating leaked into placement"
+    )
+    assert gated_models == oz.models, (
+        f"locks changed the ZON models {where}: gating leaked into placement"
     )
 
 from tests.strategies import spec_zone_types

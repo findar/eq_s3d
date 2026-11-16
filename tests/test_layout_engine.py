@@ -19,12 +19,14 @@ own; rule that out before suspecting the code.)
 
 import hashlib
 import json
+from collections.abc import Mapping
 
 import pytest
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.builder import ZoneBuilder
+from generators.decor.stock import eq_path_from_env
 from generators.layout import LayoutGenerator
 
 
@@ -39,7 +41,7 @@ def _spec_hash(spec) -> str:
 # default: these goldens pin the classic engine. Every room-graph golden
 # (not wilderness) was recaptured once, deliberately, by verticality step 7
 # task 17: rooms and corridors moved to stock scale for their race.
-GOLDENS = {
+_GOLDENS = {
     # Plain dungeon with elevation (moderate verticality).
     "dungeon": (
         dict(zone_type="dungeon", room_count=8, layout="classic"), 7,
@@ -82,6 +84,36 @@ GOLDENS = {
         "e9c7e4dc2365d3ebe140f41c4f18c73ca37a2be312b0f8777be90fbe954956d7",
         "64ef46885fcafcf07b370e1e09063c740e795ea38a8083f75a6010c85547b1e0"),
 }
+
+# The .eqg goldens above are the bytes with no install. With one (EQ_PATH), a
+# build with Gates also packs the Door model (export spec task 5): recaptured
+# once, deliberately, for exactly the labels with locks. Builds with no Gates
+# don't move.
+WITH_INSTALL = {
+    "temple_locks": "41cacaf3c8420dec932ef0eb8f6fe03abaa8653895bf1ca68d306976d783caf8",
+    "outdoor_dungeon": "48b436d9cab0eb8db37f602bb3c4b0459cdd1c2854d2533a817dd2aa5fa1394e",
+}
+
+
+class _Goldens(Mapping):
+    """``GOLDENS[label]``: the entry, with the with-install ``.eqg`` hash when
+    ``EQ_PATH`` names an install AT THE TIME OF THE LOOKUP, so a test that points
+    ``EQ_PATH`` at nothing first still reads the no-install bytes."""
+
+    def __getitem__(self, label):
+        fields, seed, spec_golden, eqg_golden = _GOLDENS[label]
+        if label in WITH_INSTALL and eq_path_from_env() is not None:
+            eqg_golden = WITH_INSTALL[label]
+        return fields, seed, spec_golden, eqg_golden
+
+    def __iter__(self):
+        return iter(_GOLDENS)
+
+    def __len__(self):
+        return len(_GOLDENS)
+
+
+GOLDENS = _Goldens()
 
 
 @pytest.mark.parametrize("label", sorted(GOLDENS))
