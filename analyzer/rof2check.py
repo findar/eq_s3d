@@ -50,8 +50,11 @@ shader (TER and models) to be in :data:`KNOWN_SHADERS`; ``diffuse_textures``
 also covers each model's materials.
 
 ``passed = all(c.passed for c in checks)`` (Req 9.1). ``name_consistent`` is the
-build half of umbrella Req 9.7 only — M1 has no Known_Zone_List membership
-check (that is the Export half, M6).
+build half of umbrella Req 9.7 by default. Given ``expected_name`` (an Export's
+Target_Shortname, step 17), the checks expect that name instead of the spec's
+Build_Name, ``name_consistent`` compares the Sidecar's ``shortname`` rather than
+its ``name``, and it also requires the name to be on the Known_Zone_List (the
+Export half of 9.7). Without ``expected_name`` nothing changes.
 """
 
 from __future__ import annotations
@@ -569,13 +572,20 @@ def _check_bounds_sane(ter: TerFile) -> FormatCheck:
     return _ok(name)
 
 
-def _check_name_consistent(spec: ZoneSpec, entries: List[RawEntry],
+def _check_name_consistent(build: str, entries: List[RawEntry],
                            archive_stem: str, ter_name: str, zon_name: str,
                            zon: Optional[ZonFile],
-                           sidecar_name: Optional[str]) -> FormatCheck:
+                           sidecar_name: Optional[str], *,
+                           sidecar_key: str = "name",
+                           known: Optional[bool] = None) -> FormatCheck:
+    """``build`` is the expected name (lower case). ``sidecar_key`` names the
+    Sidecar field ``sidecar_name`` came from. ``known`` is the Known_Zone_List
+    membership of ``build`` for an Export (``None`` at build time: not checked)."""
     name = "name_consistent"
-    build = spec.name.lower()
     problems: List[str] = []
+
+    if known is False:
+        problems.append(f"short name {build!r} is not on the Known_Zone_List")
 
     if archive_stem.lower() != build:
         problems.append(f"archive stem {archive_stem!r} != {build!r}")
@@ -594,7 +604,7 @@ def _check_name_consistent(spec: ZoneSpec, entries: List[RawEntry],
             problems.append(f"ZON model ref {zon.models[0]!r} != {expected_ref!r}")
 
     if sidecar_name is not None and sidecar_name.lower() != build:
-        problems.append(f"Sidecar name {sidecar_name!r} != {build!r}")
+        problems.append(f"Sidecar {sidecar_key} {sidecar_name!r} != {build!r}")
 
     if problems:
         return _fail(name, "; ".join(problems))
@@ -619,7 +629,8 @@ def _wrap(name: str, fn: Callable[[], FormatCheck]) -> FormatCheck:
 
 def check_eqg(eqg_path: Path, spec: ZoneSpec, *,
               sidecar_path: Optional[Path] = None,
-              agent: Optional[AgentModel] = None) -> FormatReport:
+              agent: Optional[AgentModel] = None,
+              expected_name: Optional[str] = None) -> FormatReport:
     """Run the eleven RoF2 format checks on a built ``.eqg``.
 
     NEVER raises. Returns a :class:`FormatReport` with one :class:`FormatCheck`
@@ -640,10 +651,18 @@ def check_eqg(eqg_path: Path, spec: ZoneSpec, *,
     agent:
         Optional :class:`AgentModel` (slope cap for ``safe_point``); a default is
         used when omitted.
+    expected_name:
+        An Export's Target_Shortname (umbrella Req 9.7, second half). When
+        given, the archive, TER/ZON entries and ZON model reference must use it
+        instead of ``spec.name``, ``name_consistent`` reads the Sidecar's
+        ``shortname`` and also requires the name to be on the Known_Zone_List.
+        ``None`` (every build-time caller) keeps the build checks unchanged.
     """
     agent = agent or AgentModel()
     eqg_path = Path(eqg_path)
-    build = spec.name.lower()
+    exporting = expected_name is not None
+    build = (expected_name.strip() if exporting else spec.name).lower()
+    sidecar_key = "shortname" if exporting else "name"
     ter_name = f"ter_{build}.ter"
     zon_name = f"{build}.zon"
     archive_stem = eqg_path.stem
@@ -760,9 +779,16 @@ def check_eqg(eqg_path: Path, spec: ZoneSpec, *,
         try:
             sp = Path(sidecar_path)
             if sp.exists():
-                sidecar_name = json.loads(sp.read_text()).get("name")
+                sidecar_name = json.loads(sp.read_text()).get(sidecar_key)
         except Exception:  # noqa: BLE001 — a bad Sidecar is a name_consistent fail, caught below
             sidecar_name = None
+    known: Optional[bool] = None
+    if exporting:
+        try:
+            from analyzer.zonelist import is_known
+            known = is_known(build)
+        except Exception:  # noqa: BLE001 — an unreadable list fails the check
+            known = False
     if not archive_readable:
         # The directory could not be read: names cannot be compared.
         checks.append(_skip("name_consistent", "pfs_reads"))
@@ -770,8 +796,9 @@ def check_eqg(eqg_path: Path, spec: ZoneSpec, *,
         checks.append(
             _wrap("name_consistent",
                   lambda: _check_name_consistent(
-                      spec, entries, archive_stem, ter_name, zon_name,
-                      zon_obj, sidecar_name))
+                      build, entries, archive_stem, ter_name, zon_name,
+                      zon_obj, sidecar_name, sidecar_key=sidecar_key,
+                      known=known))
         )
 
     # Keep the canonical order (checks were appended in order, but be explicit).
