@@ -368,6 +368,10 @@ class ZoneSpec:
     # Features and the Sites' placement. ``None``: ``seed``. The World, textures and trees
     # stay on ``seed``. Left out of ``to_dict()`` while unset, so the spec hash holds.
     rooms_seed: Optional[int] = None
+    # Rooms that keep their own decor seed (partial-rebuild Req 3): room id -> the seed its
+    # Props are placed with. Whether a room is bare is still drawn with the zone's decor seed
+    # (``builder.decor_for``). Left out of ``to_dict()`` while empty.
+    room_decor_seeds: Dict[str, int] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -399,6 +403,7 @@ class ZoneSpec:
             **({"decor": self.decor} if self.decor is not None else {}),
             **({"decor_seed": self.decor_seed} if self.decor_seed is not None else {}),
             **({"rooms_seed": self.rooms_seed} if self.rooms_seed is not None else {}),
+            **({"room_decor_seeds": dict(self.room_decor_seeds)} if self.room_decor_seeds else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -433,6 +438,7 @@ class ZoneSpec:
             decor=d.get("decor"),
             decor_seed=d.get("decor_seed"),
             rooms_seed=d.get("rooms_seed"),
+            room_decor_seeds={str(k): int(v) for k, v in (d.get("room_decor_seeds") or {}).items()},
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)

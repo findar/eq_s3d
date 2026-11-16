@@ -556,6 +556,7 @@ class DecorBuild:
         self.models: Dict[str, TerFile] = {}
         self.textures: Dict[str, bytes] = {}
         self.placed: list = []
+        self.room_seeds: Dict[str, int] = {}   # rooms placed with their own decor seed
 
     def lights(self) -> List[ZonLight]:
         """One ZON point light per light-bearing Prop, at its flame (Req 9.1)."""
@@ -586,6 +587,8 @@ class DecorBuild:
                                      "dropped": dropped})
             out[ctx.id] = {"props": [p.to_dict() for p in d.props], "dressing": dressing,
                            "decor_drops": [x.to_dict() for x in d.drops], "bare": d.bare}
+            if ctx.id in self.room_seeds:
+                out[ctx.id]["decor_seed"] = self.room_seeds[ctx.id]
         return out
 
     def corridor_records(self, corridors) -> List[dict]:
@@ -679,15 +682,22 @@ class BareCap:
             rules.weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
             for c in todo if c.source == "room") - 1e-9)
 
-    def place(self, ctx, rules, catalogue, control: str, decor_seed):
-        """``placement.place`` under the cap."""
+    def place(self, ctx, rules, catalogue, control: str, decor_seed, room_seed=None):
+        """``placement.place`` under the cap. ``room_seed`` (partial-rebuild Req 3) is the
+        room's own decor seed: whether it is bare is still drawn with the zone's
+        ``decor_seed`` (and counted against the cap as always), so no other room's draw moves;
+        a room the zone's draw leaves bare stays exactly as the zone drew it (its own seed
+        isn't used), and a room that isn't bare is placed in full with ``room_seed``."""
         from generators.decor.placement import place
         d = place(ctx, rules, catalogue, control, decor_seed)
         if d.bare and ctx.source == "room":
             if self.left > 0:
                 self.left -= 1
-            else:
-                d = place(ctx, rules, catalogue, control, decor_seed, may_be_bare=False)
+                return d
+            if room_seed is None:
+                return place(ctx, rules, catalogue, control, decor_seed, may_be_bare=False)
+        if room_seed is not None and ctx.source == "room":
+            d = place(ctx, rules, catalogue, control, room_seed, may_be_bare=False)
         return d
 
 
@@ -760,8 +770,10 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
 
     imported = {}                           # model file -> its import
     cap = BareCap(todo, rules, control)
+    own = spec.room_decor_seeds or {}
+    out.room_seeds = {c.id: own[c.id] for c in todo if c.source == "room" and c.id in own}
     for ctx in todo:
-        d = cap.place(ctx, rules, catalogue, control, spec.decor_seed)
+        d = cap.place(ctx, rules, catalogue, control, spec.decor_seed, out.room_seeds.get(ctx.id))
         d, problems, used = settle_room(ctx, d, catalogue, importer, mesh, imported)
         out.placed.extend(zip(used, d.props))
         out.rooms.append((ctx, d, problems))
@@ -977,6 +989,8 @@ class ZoneBuilder:
             "seed": zone_seed,
             "rooms_seed": zone_seed if self.spec.rooms_seed is None else self.spec.rooms_seed,
             "decor_seed": zone_seed if self.spec.decor_seed is None else self.spec.decor_seed}
+        if self.spec.room_decor_seeds:
+            side_meta["seeds"]["room_decor_seeds"] = dict(self.spec.room_decor_seeds)
         # The layout block (graph-layout Req 7.5): engine, rule set, rooms'
         # kinds and sizes, and the built graph's shape, classic or grown.
         layout_meta = layout_sidecar(self.spec)

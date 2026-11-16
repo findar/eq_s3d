@@ -170,7 +170,8 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
 
 
 def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:
-    """The plan's Decor control, decor seed and rooms seed on the spec, only when chosen:
+    """The plan's Decor control, decor seed, rooms seed and room decor seeds on the spec, only
+    when chosen:
     an unset control is built at the default by the pipeline and as none by a
     bare ``ZoneBuilder`` (room-decor decision 28), so a plan naming neither
     gives the spec it always did."""
@@ -180,6 +181,8 @@ def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:
         spec.decor_seed = plan.decor_seed
     if plan.rooms_seed is not None:
         spec.rooms_seed = plan.rooms_seed
+    if plan.room_decor_seeds:
+        spec.room_decor_seeds = dict(plan.room_decor_seeds)
     return spec
 
 
