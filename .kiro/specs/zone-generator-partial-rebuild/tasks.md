@@ -46,7 +46,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
 - [ ] 3. Rebuild from the saved stages
   - Card: [cards/03-partial.md](cards/03-partial.md)
   - Type: agent · Size: M · Depends: 1, 2
-  - Owns: generators/rebuild.py, generators/builder.py, generators/pipeline.py, server/app.py, tests/test_partial_rebuild.py
+  - Owns: generators/rebuild.py, generators/builder.py, generators/pipeline.py, server/app.py, tests/test_partial_rebuild.py, tests/test_versions.py (the how assertions only)
   - Reqs: 2.2, 2.3, 4.1
 
 - [ ] 4. Keep the shell's gate result

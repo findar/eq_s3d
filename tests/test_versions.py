@@ -91,7 +91,7 @@ def test_rebuild_is_the_next_version_and_equals_a_generate(server, change, monke
     n = body["version"]
     assert n >= 2 and body["id"] == zone and body["glb_url"] == f"/api/zones/{zone}/v{n}/{zone}.glb"
     (key, value), = change.items()
-    block = {"n": n, "parent": 1, "changed": [key], "how": "full"}
+    block = {"n": n, "parent": 1, "changed": [key], "how": "full" if key == "rooms_seed" else "partial"}
     assert body["version_info"] == block
     side = _sidecar(root, zone, n)
     assert side["version"] == block and side["seeds"][key] == value
@@ -145,7 +145,7 @@ def test_versions_lists_every_version(server):
     assert [v["n"] for v in versions] == on_disk
     v1, v2 = versions[0], versions[1]
     assert (v1["parent"], v1["changed"], v1["how"]) == (None, [], None)
-    assert v2["parent"] is not None and v2["how"] == "full" and v2["changed"]
+    assert v2["parent"] is not None and v2["how"] == "partial" and v2["changed"]
     for v in versions:
         assert isinstance(v["took_ms"], int) and v["created"]
         assert v["eqg_url"] == f"/api/zones/{zone}/v{v['n']}/{zone}.eqg"
