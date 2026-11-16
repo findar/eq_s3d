@@ -5,10 +5,12 @@ CLI entry point for eq_s3d.
 
 Commands:
     generate   — procedurally generate a zone from parameters
+    export     — export a build as a takeover of an existing zone (default arena)
 
 Usage::
 
     python main.py generate myrealm --zone-type dungeon --rooms 5
+    python main.py export output/myrealm/v1 --shortname arena
 """
 
 from __future__ import annotations
@@ -275,6 +277,46 @@ def cmd_generate(args) -> None:
         print(f"  Traversability: ungated zone type '{zone_type}' (not validated)")
 
 
+def cmd_export(args) -> None:
+    """Export a build directory (step 17 Req 4.3): the archive, maps, SQL, sidecar,
+    INSTALL.txt and the bundle in ``<build dir>/export/<short>/``. An unknown short name
+    or a build directory that isn't one exits 2 before anything is written; a build that
+    can't be exported or fails the format check exits 1."""
+    from generators.export import (ExportError, UnknownShortname, export_build,
+                                   resolve_shortname, write_bundle)
+    try:
+        short = resolve_shortname(args.shortname)
+    except UnknownShortname as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
+    build_dir = Path(args.build_dir)
+    if not build_dir.is_dir():
+        print(f"error: no build directory {build_dir}", file=sys.stderr)
+        sys.exit(2)
+    try:
+        assert_output_allowed(build_dir, env_value("EQ_PATH"))
+        res = export_build(build_dir, short, clear_spawns=args.clear_spawns)
+    except OutsideOutputError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
+    except ExportError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Exported {build_dir} as '{short}' -> {res.dir}")
+    for w in res.warnings:
+        print(f"  warning: {w}")
+    if not res.format.passed:
+        print("  Format check FAILED; no SQL or bundle written:", file=sys.stderr)
+        for msg in res.format.messages:
+            print(f"    - {msg}", file=sys.stderr)
+        sys.exit(1)
+    bundle = write_bundle(build_dir, short)
+    for p in res.files + [bundle]:
+        print(f"  {p.relative_to(res.dir).as_posix()}")
+    print(f"  Read {res.dir / 'INSTALL.txt'} before installing; apply the SQL by hand.")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="eq_s3d", description="Agentic EverQuest zone generator")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -362,7 +404,19 @@ def main(argv: list[str] | None = None) -> None:
                         "zone — for debugging broken seeds on purpose)")
     g.set_defaults(func=cmd_generate)
 
+    e = sub.add_parser("export", help="Export a build as a takeover of an existing zone")
+    e.add_argument("build_dir", help="The build directory, e.g. output/myrealm/v1")
+    e.add_argument("--shortname", default=None,
+                   help="The existing zone to take over (default arena; any case; "
+                        "unknown names exit 2)")
+    e.add_argument("--clear-spawns", dest="clear_spawns", action="store_true",
+                   help="The SQL also deletes the zone's spawns")
+    e.set_defaults(func=cmd_export)
+
     args = parser.parse_args(argv)
+    if args.command == "export":
+        args.func(args)
+        return
     if (getattr(args, "edges", None) is not None
             and canonical_zone_type(args.zone_type) not in LANDSCAPE_ZONE_TYPES):
         parser.error("--edges only applies to --zone-type wilderness or "
