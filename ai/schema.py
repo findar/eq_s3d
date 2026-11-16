@@ -137,13 +137,29 @@ def rooms_seed(value: Any) -> Optional[int]:
     return decor_seed(value, "rooms_seed")
 
 
-def room_decor_seeds(value: Any) -> Dict[str, int]:
+class RoomSeeds(dict):
+    """A plan's ``room_decor_seeds``: a read-only dict that hashes by its items, so a plan's
+    fields stay hashable values (the test sweeps key builds on ``asdict(plan)``)."""
+
+    def __hash__(self):
+        return hash(frozenset(self.items()))
+
+    def __reduce__(self):
+        return (RoomSeeds, (dict(self),))
+
+    def _read_only(self, *_a, **_k):
+        raise TypeError("room_decor_seeds is read-only; validate a new plan")
+
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = __ior__ = _read_only
+
+
+def room_decor_seeds(value: Any) -> "RoomSeeds":
     """Rooms that keep their own decor seed (partial-rebuild Req 3): None or {} for none, else
     a mapping of room id (a safe name: letters, digits, ``_ . -``) to a whole 0..2^31-1.
     Anything else raises ``ValueError``."""
     import re
     if value is None or value == "":
-        return {}
+        return RoomSeeds()
     if not isinstance(value, Mapping):
         raise ValueError(f"room_decor_seeds {value!r} is not a mapping of room id to decor seed")
     out: Dict[str, int] = {}
@@ -153,7 +169,7 @@ def room_decor_seeds(value: Any) -> Dict[str, int]:
         out[room] = decor_seed(seed, f"room_decor_seeds[{room!r}]")
         if out[room] is None:
             raise ValueError(f"room_decor_seeds[{room!r}] must be a whole number from 0 to {SEED_MAX}")
-    return out
+    return RoomSeeds(out)
 
 
 def available_inhabitants(inhabitants_file: Optional[Path] = None) -> List[str]:
@@ -259,7 +275,7 @@ class ZonePlan:
     rooms_seed: Optional[int] = None
     # Rooms that keep their own decor seed (room id -> seed); their bare decision is still the
     # zone's. ``to_dict`` leaves it out while empty.
-    room_decor_seeds: Dict[str, int] = field(default_factory=dict)
+    room_decor_seeds: Dict[str, int] = field(default_factory=lambda: RoomSeeds())
 
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
@@ -353,8 +369,9 @@ class ZonePlan:
         layers = out.pop("decor_layers", ())
         if layers:
             out["decor_layers"] = list(layers)
-        if not out.get("room_decor_seeds"):
-            out.pop("room_decor_seeds", None)
+        seeds = out.pop("room_decor_seeds", None)
+        if seeds:
+            out["room_decor_seeds"] = dict(seeds)
         return out
 
     @classmethod

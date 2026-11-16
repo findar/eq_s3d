@@ -122,3 +122,15 @@ def test_a_rooms_own_seed_moves_that_room_alone(tmp_path, label):
     # A reroll of the room in the build without the seed previews what Use in zone keeps.
     rep = _room_view(base_dir, target, room_seed=OWN)
     assert rep["props"] == after[target][0] and rep["seed"] == OWN
+
+
+def test_a_plans_fields_stay_hashable():
+    """The sweeps key builds on ``asdict(plan)`` (``tests/conftest.gated_key``)."""
+    import pickle
+    from dataclasses import asdict
+    from tests.conftest import gated_key
+    plan = ZonePlan(name="x", room_decor_seeds={"room_3": 7}).validate()
+    hash(asdict(plan)["room_decor_seeds"])
+    hash(gated_key(dict(zone_type="dungeon"), 1, 1, 1.0))
+    hash(gated_key(dict(zone_type="dungeon", room_decor_seeds={"room_3": 7}), 1, 1, 1.0))
+    assert pickle.loads(pickle.dumps(plan)).room_decor_seeds == {"room_3": 7}
