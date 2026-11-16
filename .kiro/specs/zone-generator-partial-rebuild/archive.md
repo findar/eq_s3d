@@ -24,5 +24,7 @@ the lead proposed from the timings ("Sounds good").
    still comes from the zone's decor seed, so no other room changes.
 5. **Not in this step:** Sessions, chat edits, the `RuleEditInterpreter`, undo/redo (the rest of
    M4). They build on the versions.
+6. **A room the zone's draw leaves bare stays as the zone drew it** (task 1): its own decor seed
+   isn't used, so Use in zone can't change the bare cap. Only rooms take a room decor seed.
 
 ## Follow-ups

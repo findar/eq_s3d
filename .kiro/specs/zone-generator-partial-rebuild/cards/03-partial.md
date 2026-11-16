@@ -11,6 +11,10 @@ geometry and texture drawing skipped), the full gate still, then format check, m
 finalize into `v<n+1>` with `how: "partial"`. `/api/rebuild` takes `room_decor: {room,
 decor_seed}` and sends decor changes here; `rooms_seed` stays full. Measure each zone type's
 partial rebuild against a full one (warm, median of 5) and put the numbers in the commit body.
+Also (left by task 1): `POST /api/room_decor` must call `decorate_room(seed=build.seed,
+room_seed=req.decor_seed, room_seeds=build.room_seeds, ...)` so "As built" takes a room's own
+seed and a reroll keeps the zone's bare decision; today it passes `seed=req.decor_seed or
+build.seed`.
 
 ## Done when
 - [ ] A partial rebuild's `.eqg` equals a full Generate of the same request and seeds (footer
