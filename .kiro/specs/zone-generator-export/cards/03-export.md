@@ -25,3 +25,4 @@ Use `PfsArchive.add` so each CRC is EQ's own for the new name (lessons-learned "
 footer time differs between two writes (lessons-learned): compare entries, not files.
 
 ## Result
+✔ 2937141 · 3281 passed

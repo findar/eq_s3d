@@ -44,7 +44,7 @@ task proves it with
   - Owns: docs/RESEARCH.md, .kiro/specs/zone-generator-export/archive.md, tests/test_export_grounding.py
   - Reqs: 3.3
 
-- [ ] 3. The exported archive and files
+- [x] 3. The exported archive and files
   - Card: [cards/03-export.md](cards/03-export.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/export.py, analyzer/rof2check.py, tests/test_export.py
