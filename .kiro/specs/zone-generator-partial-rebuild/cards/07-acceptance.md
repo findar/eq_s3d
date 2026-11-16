@@ -18,3 +18,4 @@ version holds. Run the thorough profile once.
 Write what a person sees, not what a test checks. Don't commit while the thorough run runs.
 
 ## Result
+✔ HASH · 3248 passed, thorough profile (on master 46a2877)

@@ -65,7 +65,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Card: [cards/06-first-look.md](cards/06-first-look.md)
   - Type: human · Depends: 4, 5
 
-- [ ] 7. Acceptance section, thorough run
+- [x] 7. Acceptance section, thorough run
   - Card: [cards/07-acceptance.md](cards/07-acceptance.md)
   - Type: agent · Size: S · Depends: 6
   - Owns: docs/ACCEPTANCE.md

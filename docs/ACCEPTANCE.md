@@ -2211,3 +2211,75 @@ Known issues (not regressions):
   Prop positions differ slightly from a build's.
 - Sites (wilderness and outdoor-dungeon Points) don't open in the room view; rooms only, by
   design for this step.
+
+## Step 16 — Partial rebuild
+
+> Roadmap step 16 (`zone-generator-partial-rebuild`). A zone now keeps its **versions**: every
+> reroll makes the next one (`v2`, `v3` ...) beside the last, and the header's ◂ `v2` ▸ steps
+> through them. A decor change (**reroll decor**, or **Use in zone** from the room view) is
+> rebuilt from the parent's saved stages, so the rooms, the textures and the walkability check
+> of the empty zone are kept and only the Props are placed and checked again. **reroll rooms**
+> builds the whole zone again. Each room can now keep a decor seed of its own. Restart the
+> Server on the merged code first and check no stale-code banner shows.
+
+Build each case in Controls (Decor **Normal**, Decor rules **From theme**, Seeds blank):
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout Graph, Rooms 16 | 2 |
+| b | City | | 5 |
+| c | Outdoor dungeon | Rooms 5 | 2 |
+| d | Wilderness | | 4 |
+
+### V.1 — Versions
+
+- [ ] **[MUST] A first build is v1** — Case a: the header shows `v1` with no arrows, and the side
+      panel's Version row reads `v1 of 1`.
+- [ ] **[MUST] Reroll decor makes v2** — Press **reroll decor** in the side panel's Seeds: the
+      page shows it busy (`rebuilding from v1…`) with v1 still on screen, then opens `v2`. The
+      Version row reads `v2 of 2 · from v1 · decor seed`; the Decor seed changed, the Rooms seed
+      didn't.
+- [ ] **[MUST] Same rooms, new Props** — v2's rooms, corridors, walls and textures are v1's; only
+      the Props moved.
+- [ ] **[MUST] Stepping** — ◂ opens v1, ▸ opens v2 again: each loads its own zone, side panel and
+      map (M), and the camera stays where it was. ◂ is greyed on v1 and ▸ on the newest.
+- [ ] **[MUST] Rerolling an older version** — On v1, reroll decor: the new version is `v3`,
+      `from v1`. Versions are never overwritten.
+- [ ] **[MUST] Reroll rooms** — Press **reroll rooms**: the next version has a new layout, and
+      its Version row ends `rooms seed`. It takes as long as a Generate.
+- [ ] **[SHOULD] Files** — Each version's files (`.eqg`, map files, sidecar) download from its own
+      side panel, and on disk sit in their own folder, `output/web/<zone>/v<n>/`, with
+      `.request.json` and `.spec.json` beside them.
+
+### V.2 — Quick decor rerolls
+
+- [ ] **[MUST] Quick** — Case a, reroll decor three times. Each takes about 3 seconds, against
+      about 10 for a Generate of the same zone. Case b about 1 second; case c about 4; case d
+      about 1.5.
+- [ ] **[MUST] Every zone type** — Reroll decor on cases b, c and d: each opens a new version with
+      the same ground or rooms and new Props. On c and d the Sites keep their places and their
+      buildings; only the Props on and around them change.
+- [ ] **[SHOULD] After a restart** — Restart the Server and reroll decor on an existing zone: it
+      works, and the first one is slower (a few seconds more), the ones after it quick again.
+
+### V.3 — Use in zone
+
+- [ ] **[MUST] Greyed until rerolled** — Case a, step back to v1 (◂) and open room_6 (a chamber,
+      8 Props) in the room view: **Use in zone** is greyed. Press ⟳ until you like the room: it
+      turns on.
+- [ ] **[MUST] One room changes** — Press **Use in zone**: the page builds the next version
+      from v1 (`· room decor`) and reopens room_6 on it with the Props you chose. Close the room view:
+      room_6 is as you chose it, and every other room's Props are as they were.
+- [ ] **[MUST] It sticks** — Open room_6 again on that version: **As built** shows the chosen
+      room, and Use in zone is greyed. Use in zone on a second room keeps the first one's choice.
+- [ ] **[MUST] Reroll decor starts over** — Reroll decor after that: every room's Props change,
+      room_6's choice included (a new decor seed is a new start for every room).
+- [ ] **[SHOULD] Undo by stepping** — ◂ goes back to the version before the choice.
+- [ ] **[SHOULD] A bare room stays bare** — Case a v1, room_14 (bare): ⟳ leaves it empty. Whether
+      a room is bare is the zone's decision, so a room's own seed doesn't change it.
+
+Known issues (not regressions):
+
+- An outdoor dungeon's decor reroll still checks its outdoor part in full (its Sites' Props come
+  from the decor seed), so case c stays near 4 seconds.
+- Kept checks live only as long as the Server: the first rebuild after a restart takes longer.
