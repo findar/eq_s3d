@@ -19,8 +19,10 @@ or:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import subprocess
+import threading
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -287,7 +289,7 @@ async def _validation_to_400(request: Request, exc: RequestValidationError):
     integer fields) or ``"<field>: <message>"`` — always a 400 naming the field
     (``loc[-1]``), never a 422. Other routes keep FastAPI's default handling.
     """
-    if not request.url.path.startswith("/api/generate"):
+    if not request.url.path.startswith(("/api/generate", "/api/rebuild")):
         # Preserve the default 422 for every other route.
         return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
@@ -771,8 +773,29 @@ def generate(req: GenerateRequest):
     # Server (design "Server"). Drawn from the shared ``new_zone_id`` helper
     # (``gen_<ts>_<hex6>``, lowercase) so the CLI and Server share one id shape
     # and one home for it (task 19.3 / 19.4).
-    zone_id = new_zone_id()
+    return _generate(req, new_zone_id(), 1)
 
+
+def _saved_request(req: GenerateRequest, mode: str) -> dict:
+    """The request as ``<name>.request.json`` keeps it (partial-rebuild Req 1.4), before the
+    pipeline adds the seeds it built with: the body's fields, with ``controls`` as sent but
+    for its stage seeds (the pipeline writes the resolved ones at the top level, where a
+    resend applies them the same way)."""
+    body = req.model_dump(exclude_none=True)
+    body["mode"] = mode
+    if "controls" in body:
+        body["controls"] = {k: v for k, v in body["controls"].items()
+                            if k not in ("decor_seed", "rooms_seed")}
+    return body
+
+
+def _generate(req: GenerateRequest, zone_id: str, version: int, *,
+              saved: Optional[dict] = None,
+              version_meta: Optional[dict] = None) -> GenerateResponse:
+    """Generate (``version`` 1 of a new ``zone_id``) or a rebuild's full path (the next
+    version of an existing zone; ``saved`` is its parent's ``request.json``). A prompt-mode
+    rebuild takes the plan the parent's planner produced from ``saved``: the planner is
+    never called again."""
     # --- Mode + seed resolution: every 400 here happens BEFORE any build/write.
     mode = _resolve_mode(req)
 
@@ -801,16 +824,28 @@ def generate(req: GenerateRequest):
         prompt = (req.prompt or "").strip()
         if not prompt:
             raise HTTPException(400, "a description is required for mode=prompt")
-        planner_name = get_planner().name
-        plan = make_plan(prompt, name=zone_id)
+        replan = saved is not None and isinstance(saved.get("plan"), dict)
+        if replan:
+            # A rebuild: the parent's plan as it was built (named, substituted,
+            # canonical), so the planner isn't asked again.
+            planner_name = saved.get("planner")
+            plan = ZonePlan.from_dict(saved["plan"])
+            planned_zone_type = saved.get("planned_zone_type")
+            if planned_zone_type is not None:
+                warnings.append(
+                    f"zone_type_substituted:{planned_zone_type}->{plan.zone_type}")
+        else:
+            planner_name = get_planner().name
+            plan = make_plan(prompt, name=zone_id)
         # Guard the Build_Name: no planner output chooses the directory/file stem.
         plan.name = zone_id
 
         # A prompt-planned DISABLED zone type is not refused — it is substituted
         # to dungeon so the prompt still yields a zone, with a
         # ``zone_type_substituted:<planned>->dungeon`` warning for the UI and the
-        # planned zone type recorded in the Sidecar (Req 3.3).
-        if not is_enabled(plan.zone_type):
+        # planned zone type recorded in the Sidecar (Req 3.3). A rebuild's saved
+        # plan was substituted when it was planned.
+        if not replan and not is_enabled(plan.zone_type):
             planned_zone_type = plan.zone_type
             plan.zone_type = DEFAULT_ZONE_TYPE
             # The plan's layout was resolved for the planned type; re-resolve
@@ -829,6 +864,9 @@ def generate(req: GenerateRequest):
             # member of the Enabled set.
             plan.zone_type = canonical_zone_type(plan.zone_type)
 
+        # The plan as planned, before this request's stage seeds: what a rebuild
+        # starts from (``request.json``), so a seed it names replaces this one's.
+        saved_plan = plan.to_dict()
         # A decor seed rerolls the Props of whatever the prompt planned (a
         # wilderness has none, so it changes nothing there).
         if req.decor_seed is not None:
@@ -898,6 +936,7 @@ def generate(req: GenerateRequest):
             raise HTTPException(400, str(exc))
         plan.name = zone_id
         plan_dict = plan.to_dict()
+        saved_plan = plan_dict
         zone_type = plan.zone_type
         rooms = plan.room_count
 
@@ -910,6 +949,8 @@ def generate(req: GenerateRequest):
     # Build + traversability gate. On gated themes a failing dungeon seed is
     # never returned: the pipeline retries on fresh seeds (bounded by attempts +
     # timeout) and returns the first passing zone, or raises GenerationFailed.
+    request = {**_saved_request(req, mode), "plan": saved_plan, "planner": planner_name,
+               **({"planned_zone_type": planned_zone_type} if planned_zone_type else {})}
     try:
         vb = generate_validated(
             factory,
@@ -917,11 +958,14 @@ def generate(req: GenerateRequest):
             zone_id=zone_id,
             seed=req.seed,
             output_dir=OUTPUT_DIR,
+            version=version,
             write_glb=True,
             failure_log=FAILURE_LOG,
             warnings=warnings,
             planned_zone_type=planned_zone_type,
             mode=mode,
+            request=request,
+            version_meta=version_meta,
         )
     except GenerationFailed as e:
         # Exhaustion / pinned-seed failure -> clean error, never a broken GLB.
@@ -945,9 +989,10 @@ def generate(req: GenerateRequest):
     # point at the per-build route. The pipeline may have appended its own
     # advisories (e.g. a builder backend_fallback) to ``vb.warnings``; return
     # that merged list.
+    base = f"/api/zones/{zone_id}/v{version}"
     return GenerateResponse(
         id=zone_id,
-        version=1,
+        version=version,
         mode=mode,
         zone_type=zone_type,
         rooms=rooms,
@@ -955,11 +1000,11 @@ def generate(req: GenerateRequest):
         vertices=result.vertex_count,
         polygons=result.polygon_count,
         materials=result.material_count,
-        glb_url=f"/api/zones/{zone_id}/v1/{zone_id}.glb",
-        zone_url=f"/api/zones/{zone_id}/v1/{zone_id}.zone.json",
-        map_url=f"/api/zones/{zone_id}/v1/{zone_id}.map.svg",
-        eqg_url=f"/api/zones/{zone_id}/v1/{zone_id}.eqg",
-        artifacts=_build_artifacts(vb.build_dir, zone_id, 1),
+        glb_url=f"{base}/{zone_id}.glb",
+        zone_url=f"{base}/{zone_id}.zone.json",
+        map_url=f"{base}/{zone_id}.map.svg",
+        eqg_url=f"{base}/{zone_id}.eqg",
+        artifacts=_build_artifacts(vb.build_dir, zone_id, version),
         source=mode,
         planner=planner_name,
         plan=plan_dict,
@@ -970,6 +1015,188 @@ def generate(req: GenerateRequest):
         format_passed=bool(vb.format.passed) if vb.format is not None else False,
         build_commit=BUILD_INFO["short"],
     )
+
+
+# ---------------------------------------------------------------------------
+# Versions of one zone (partial-rebuild Req 1, 2)
+# ---------------------------------------------------------------------------
+
+#: The stage seeds a rebuild can change, in the order ``changed`` lists them.
+REBUILD_SEEDS = ("decor_seed", "rooms_seed")
+
+VERSION_RE = re.compile(r"v([1-9][0-9]{0,5})")
+
+
+class RebuildRequest(BaseModel):
+    """The next version of a zone from one of its versions, changing what it names (at
+    least one). ``version`` is ``2`` or ``"v2"``."""
+    model_config = ConfigDict(extra="ignore")
+
+    zone: StrictStr
+    version: StrictInt | StrictStr
+    decor_seed: Optional[StrictInt] = None
+    rooms_seed: Optional[StrictInt] = None
+
+
+class VersionInfo(BaseModel):
+    """A version's ``version`` block: its number, the version it was rebuilt from, the
+    inputs that differ from that one, and how (``"full"``: planned again from the
+    request; ``"partial"``: from the parent's saved stages)."""
+    n: int
+    parent: Optional[int] = None
+    changed: list[str] = Field(default_factory=list)
+    how: Optional[str] = None
+
+
+class RebuildResponse(GenerateResponse):
+    version_info: VersionInfo
+
+
+#: Version numbers taken by a rebuild still running, per zone (under ``_VERSIONS_LOCK``).
+_VERSIONS_LOCK = threading.Lock()
+_VERSIONS_TAKEN: dict[str, set[int]] = {}
+
+
+def _version_dirs(zone_dir: Path) -> dict[int, Path]:
+    """A zone folder's version folders by number (``v<n>``; anything else is ignored)."""
+    out: dict[int, Path] = {}
+    if zone_dir.is_dir():
+        for d in zone_dir.iterdir():
+            m = VERSION_RE.fullmatch(d.name)
+            if m and d.is_dir():
+                out[int(m.group(1))] = d
+    return out
+
+
+def _take_version(zone: str, zone_dir: Path) -> int:
+    """The zone's next version number, held for the caller until ``_release_version``: one
+    past every version on disk and every number another rebuild of the zone holds, taken
+    under one lock, so two rebuilds at once never share a number (or a scratch folder)."""
+    with _VERSIONS_LOCK:
+        taken = _VERSIONS_TAKEN.setdefault(zone, set())
+        n = max(set(_version_dirs(zone_dir)) | taken, default=0) + 1
+        taken.add(n)
+        return n
+
+
+def _release_version(zone: str, n: int) -> None:
+    with _VERSIONS_LOCK:
+        taken = _VERSIONS_TAKEN.get(zone, set())
+        taken.discard(n)
+        if not taken:
+            _VERSIONS_TAKEN.pop(zone, None)
+
+
+def _version_segment(version: int | str) -> str:
+    """``2`` or ``"v2"`` -> ``"v2"``; anything else is a 400."""
+    seg = f"v{version}" if isinstance(version, int) else version
+    if not VERSION_RE.fullmatch(seg):
+        raise HTTPException(400, "version must be a build version (2, or \"v2\")")
+    return seg
+
+
+def _zone_dir(zone: str) -> Path:
+    """The zone's folder under the output root: a 400 for a name that isn't one safe
+    segment or resolves outside the root, a 404 when there is no such zone."""
+    from core.paths import OutsideOutputError
+    if not _safe_segment(zone):
+        raise HTTPException(400, "zone must be one safe name (letters, digits, _ . -)")
+    try:
+        zone_dir = OutputRoot(OUTPUT_DIR).path(zone)
+    except OutsideOutputError:
+        raise HTTPException(400, "zone must name a zone inside the output folder")
+    if not zone_dir.is_dir():
+        raise HTTPException(404, f"no zone {zone}")
+    return zone_dir
+
+
+def _read_json(path: Path) -> Optional[dict]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+@app.post("/api/rebuild", response_model=RebuildResponse)
+def rebuild(req: RebuildRequest):
+    """The next version of ``zone`` from ``version`` (partial-rebuild Req 2.1): the parent's
+    ``request.json`` sent again through Generate's path with its seed pinned and the stage
+    seeds this body names changed, built as ``v<n+1>`` of the same zone. Both seeds take
+    the full path here (``how: "full"``). An unknown zone or version (or one built before
+    versions, with no ``request.json``) is a 404; a body naming no change, or only seeds
+    the parent already has, a 400; a gate failure a 503 that writes nothing, as Generate's."""
+    zone_dir = _zone_dir(req.zone)
+    parent_seg = _version_segment(req.version)
+    parent_n = int(parent_seg[1:])
+    for key in REBUILD_SEEDS:
+        value = getattr(req, key)
+        if value is not None and not (SEED_MIN <= value <= SEED_MAX):
+            raise HTTPException(400, f"{key} must be between {SEED_MIN} and {SEED_MAX}")
+    if all(getattr(req, key) is None for key in REBUILD_SEEDS):
+        raise HTTPException(400, f"a rebuild names a change: one of {', '.join(REBUILD_SEEDS)}")
+
+    parent_dir = _version_dirs(zone_dir).get(parent_n)
+    if parent_dir is None:
+        raise HTTPException(404, f"no version {req.zone}/{parent_seg}")
+    saved = _read_json(parent_dir / f"{req.zone}.request.json")
+    if saved is None:
+        raise HTTPException(404, f"version {req.zone}/{parent_seg} has no saved request "
+                                 "(built before versions)")
+
+    resolved = saved.get("seeds") or {}
+    changed = [key for key in REBUILD_SEEDS
+               if getattr(req, key) is not None and getattr(req, key) != resolved.get(key)]
+    if not changed:
+        raise HTTPException(400, f"version {parent_seg} already has that seed: nothing changes")
+
+    body = dict(saved)
+    for key in changed:
+        body[key] = getattr(req, key)
+    try:
+        gen_req = GenerateRequest.model_validate(body)
+    except ValueError:
+        raise HTTPException(400, f"version {req.zone}/{parent_seg} has an unreadable saved request")
+
+    n = _take_version(req.zone, zone_dir)
+    info = VersionInfo(n=n, parent=parent_n, changed=changed, how="full")
+    try:
+        resp = _generate(gen_req, req.zone, n, saved=saved, version_meta=info.model_dump())
+    finally:
+        _release_version(req.zone, n)
+    return RebuildResponse(**resp.model_dump(), version_info=info)
+
+
+@app.get("/api/zones/{zone}/versions")
+def list_versions(zone: str):
+    """Every finished version of a zone, by number (partial-rebuild Req 1.3): ``n``,
+    ``parent``, ``changed``, ``how`` (from its sidecar's ``version`` block; v1 has none),
+    its ``seeds``, ``created`` and ``took_ms`` (from its ``request.json``; ``created``
+    falls back to the sidecar's time) and the URLs that open it."""
+    zone_dir = _zone_dir(zone)
+    versions = []
+    for n, vdir in sorted(_version_dirs(zone_dir).items()):
+        sidecar_path = vdir / f"{zone}.zone.json"
+        sidecar = _read_json(sidecar_path)
+        if sidecar is None:
+            continue                       # not a finished build
+        block = sidecar.get("version") or {}
+        saved = _read_json(vdir / f"{zone}.request.json") or {}
+        created = saved.get("created")
+        if created is None:
+            created = datetime.fromtimestamp(sidecar_path.stat().st_mtime,
+                                             tz=timezone.utc).isoformat(timespec="seconds")
+        base = f"/api/zones/{zone}/v{n}"
+        versions.append({
+            "n": n, "parent": block.get("parent"), "changed": list(block.get("changed", [])),
+            "how": block.get("how"), "seeds": sidecar.get("seeds"),
+            "created": created, "took_ms": saved.get("took_ms"),
+            "glb_url": f"{base}/{zone}.glb", "zone_url": f"{base}/{zone}.zone.json",
+            "map_url": f"{base}/{zone}.map.svg", "eqg_url": f"{base}/{zone}.eqg",
+        })
+    if not versions:
+        raise HTTPException(404, f"zone {zone} has no finished version")
+    return {"zone": zone, "versions": versions}
 
 
 # ---------------------------------------------------------------------------
