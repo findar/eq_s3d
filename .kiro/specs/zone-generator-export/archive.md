@@ -38,9 +38,17 @@ the choice and these decisions at the first look (task 8).
 9. **Door fields** (task 2): `opentype 0` (90° swing), `size` 100 per unit scale (500 for a
    50-unit corridor), `heading` in EQ 0-512 units (`deg * 512 / 360`, clockwise), `incline 0`,
    `keyitem` a per-tier placeholder, `lockpick 0`, every other column its stock default.
+   **Revised by task 4:** `lockpick 32767` (EQEmu `zone/doors.cpp` treats no value specially: a
+   player picks when skill >= lockpick, so 0 and -1 are pickable); `keyitem` 990000 + tier,
+   named in the script's header for the user to replace.
 10. **The short-name list** (task 1): 496 zones from the install, long names from the client's own
    zone table (485 filled). Equipment archives (`*equip*`) and `sky` are dropped as companions;
    a stem with both a zone `.s3d` and `.eqg` (`arena`, `nektulos`, `tutoriala`, `tutorialb`) is
    recorded as `eqg`, which matches the client's load order (decision 7).
+11. **A door seals its corridor at an opening** (lead, from task 4's sweep: 30 of 120 locks on 40
+   seeds sat on a Z-route jog shorter than the corridor is wide, where a door across the jog can't
+   close the way). The row goes at the corridor's opening nearest the lock, across the doorway,
+   not at the lock point (amendment A3). The Gate's lock stays where layout put it, for the map
+   and the sidecar.
 
 ## Follow-ups

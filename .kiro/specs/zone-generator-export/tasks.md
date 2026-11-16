@@ -76,7 +76,7 @@ task proves it with
 
 - [ ] 8. HUMAN: first look
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
-  - Type: human · Depends: 5, 7
+  - Type: human · Depends: 5, 7, 12
 
 - [ ] 9. Acceptance section, thorough run
   - Card: [cards/09-acceptance.md](cards/09-acceptance.md)
@@ -91,3 +91,9 @@ task proves it with
   - Card: [cards/11-close.md](cards/11-close.md)
   - Type: agent · Size: S · Depends: 10 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-export/, .kiro/specs/zone-generator/
+
+- [ ] 12. Doors that seal their corridor
+  - Card: [cards/12-door-openings.md](cards/12-door-openings.md)
+  - Type: agent · Size: S · Depends: 4
+  - Owns: generators/sqlexport.py, tests/test_sqlexport.py
+  - Reqs: 3.3 (A3)

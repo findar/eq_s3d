@@ -38,6 +38,10 @@ SQL_Exporter, Gate). Added here:
   names found in a RoF2 install (names and container only, no client art), committed once; the
   install scan at run time only sets `in_install` (umbrella 8.2 stands). Long names are filled
   where a source gives them and empty otherwise.
+- **A3 — A door stands where it seals.** Umbrella 10.2 puts each door at its Gate's lock. A lock
+  on a short jog of a Z-shaped corridor can't be sealed by one door, so the door row goes at the
+  corridor's opening nearest the lock, across the doorway (decision 11). The Gate's lock is
+  unchanged.
 
 ## Requirements
 
@@ -59,7 +63,7 @@ SQL_Exporter, Gate). Added here:
 1. Umbrella 10.1–10.3, 10.5–10.8, 10.10, as amended by A1.
 2. The `zone` UPDATE also sets `underworld` below the build's lowest floor (decision 5), so a
    stock value above our geometry can't kill a player who walks in.
-3. One `doors` row per Gate, at its lock, naming a Door model the client can draw in our zone
+3. One `doors` row per Gate, at the opening nearest its lock (A3), naming a Door model the client can draw in our zone
    (task 2 decides which); a build with no Gates gets the DELETE and no inserts.
 4. Proven on an in-memory SQLite database of the pinned `zone`/`doors` columns (decision 4)
    holding stock rows: applying the script once or twice leaves the target's one row with our
