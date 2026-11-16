@@ -12,9 +12,9 @@
 // (a layer on top of the theme's) and re-read rules (same seed, rules read
 // fresh). Use in zone keeps the room's decor seed in the zone: the next version
 // is built with it (main.ts, /api/rebuild room_decor) and the view reopens on
-// that room of the new version. Close drops the scene and returns to the zone untouched: its camera
-// doesn't move while this is open (movement keys stop here) and main.ts skips
-// its render loop.
+// that room of the new version. Close drops the scene and returns to the zone
+// untouched: its camera doesn't move while this is open (movement keys stop
+// here) and main.ts skips its render loop.
 //
 // Opened from the side panel's room list (setBuild fills it) and from a click
 // on a room in the map dialog (wireMap: the click goes through the SVG's world
@@ -496,7 +496,7 @@ export class RoomView {
     else if (!r) why = "Decorating…";
     else if (r.seed === built) why = `The zone already has seed ${r.seed} for this room: reroll first`;
     else if (this.layerSel.value !== AS_BUILT || r.control !== this.build?.sidecar.decor?.control) {
-      why = "Only the decor seed goes into the zone: set Decor and Decor rules back to the build's";
+      why = "Only the decor seed goes into the zone: set Decor to the build's and Decor rules to As built";
     } else if (r.bare) why = "The zone's draw leaves this room bare: no Props to keep";
     this.useBtn.disabled = this.busy || !!why;
     this.useBtn.title = why || `Build the next version of the zone with seed ${r!.seed} in ${this.roomId}` +
