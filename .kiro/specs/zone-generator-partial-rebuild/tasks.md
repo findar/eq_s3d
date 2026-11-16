@@ -31,7 +31,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
 
 ## Tasks
 
-- [ ] 1. Room decor seeds
+- [x] 1. Room decor seeds
   - Card: [cards/01-room-seeds.md](cards/01-room-seeds.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/zone_spec.py, ai/schema.py, ai/expand.py, generators/builder.py, generators/decor/room_view.py, tests/test_room_decor_seeds.py

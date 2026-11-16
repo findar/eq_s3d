@@ -30,7 +30,7 @@ import struct
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -311,28 +311,39 @@ def shipped_catalogue() -> Catalogue:
 
 
 def _decorated(contexts: Sequence[RoomContext], k: int, rules, catalogue, control: str,
-               seed: Optional[int]):
+               seed: Optional[int], room_seed: Optional[int] = None):
     """Room ``k`` placed as ``builder.decor_for`` places it: on its own stream, under the
     zone's bare cap. The cap only matters when the room draws bare, so only then are the rooms
-    before it replayed (each on its own stream with the same seed) to find what is left of it."""
+    before it replayed (each on its own stream with the same seed) to find what is left of it.
+
+    ``room_seed`` is the room's own decor seed (partial-rebuild Req 3) and follows
+    ``builder.BareCap.place``'s one rule: the bare decision is drawn with the zone's ``seed``
+    (the replay above, which no room's own seed moves), a room left bare stays as the zone drew
+    it, and one that isn't is placed in full with ``room_seed``. Returns (the Decorated, the
+    rooms replayed, the decor seed its Props came from: ``room_seed``, else ``seed``)."""
     from generators.builder import BareCap
     ctx = contexts[k]
     d = place(ctx, rules, catalogue, control, seed)
+    own = room_seed if ctx.source == "room" else None
     if not (d.bare and ctx.source == "room"):
-        return d, 0
+        if own is not None:
+            d = place(ctx, rules, catalogue, control, own, may_be_bare=False)
+        return d, 0, (own if own is not None else seed)
     cap = BareCap(contexts, rules, control)
     replayed = 0
     for c in contexts[:k]:
         if c.source == "room":
             cap.place(c, rules, catalogue, control, seed)
             replayed += 1
-    return cap.place(ctx, rules, catalogue, control, seed), replayed
+    d = cap.place(ctx, rules, catalogue, control, seed, own)
+    return d, replayed, (seed if d.bare or own is None else own)
 
 
 def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Optional[int],
                   control: str, layers: Sequence[str] = (), eq_path: Optional[Path] = None,
                   mesh=None, rules_dir: Optional[Path] = None, catalogue: Optional[Catalogue] = None,
-                  preview_any_use: bool = False) -> Tuple[bytes, dict]:
+                  preview_any_use: bool = False, room_seed: Optional[int] = None,
+                  room_seeds: Optional[Mapping[str, int]] = None) -> Tuple[bytes, dict]:
     """Decorate room ``room_id`` of a build's ``contexts`` (all of them, in build order) and
     draw it alone: (GLB bytes, report).
 
@@ -342,7 +353,15 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
     ``rules_dir`` (default ``ai.schema.RULES_DECOR_DIR``) on every call; a failing rule file
     raises ``RuleSetError``. ``eq_path`` is the install (None: boxes, said in the report);
     ``mesh`` the built TER's ``room_context._Mesh`` that wall Props settle onto (None: they
-    stay where placement put them). Raises ``NoRoom`` for an id the contexts don't hold."""
+    stay where placement put them). Raises ``NoRoom`` for an id the contexts don't hold.
+
+    Room decor seeds (partial-rebuild Req 3): ``room_seeds`` are the build's own (its
+    sidecar's ``seeds.room_decor_seeds``, ``Build.room_seeds``); ``room_seed`` places this room
+    with a seed of its own (a reroll). "As built" (``room_seed`` None) takes the room's own
+    seed from ``room_seeds`` when the build has one. Either way ``seed`` stays the zone's: the
+    room's bare decision is drawn with it, as the build draws it. The report's ``seed`` is the
+    decor seed the room's Props came from, ``zone_seed`` the one its bare decision came from
+    and ``room_seed`` the room's own (None: it has none)."""
     from ai import schema
     from generators.builder import settle_room
     from generators.decor.rules import load_decor
@@ -358,7 +377,8 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
     cat = catalogue if catalogue is not None else shipped_catalogue()
     if preview_any_use:
         cat = any_use(cat)
-    d, replayed = _decorated(contexts, k, rules, cat, control, seed)
+    own = room_seed if room_seed is not None else (room_seeds or {}).get(room_id)
+    d, replayed, used = _decorated(contexts, k, rules, cat, control, seed, own)
     notes: List[str] = []
     meshes = meshes_for(eq_path)
     if eq_path is not None:
@@ -390,7 +410,9 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
         "room": {"id": ctx.id, "source": ctx.source, "room_type": ctx.room_type, "kind": ctx.kind,
                  "theme": ctx.theme, "race": ctx.race, "zone_type": ctx.zone_type,
                  "box": list(ctx.box)},
-        "seed": int(seed) if seed is not None else int(ctx.seed),
+        "seed": int(used) if used is not None else int(ctx.seed),
+        "zone_seed": int(seed) if seed is not None else int(ctx.seed),
+        "room_seed": int(own) if own is not None else None,
         "control": control,
         "layers": list(rules.layers),
         "sets": list(d.sets),
@@ -426,6 +448,7 @@ class Build:
     race: str = ""
     mesh: Any = None
     recipe: Dict[str, Any] = field(default_factory=dict)
+    room_seeds: Dict[str, int] = field(default_factory=dict)   # rooms with their own decor seed
 
 
 def zone_theme_race(recipe: Dict[str, Any], contexts: Sequence[RoomContext],
@@ -484,7 +507,9 @@ def load_build(build_dir: Path, name: str, with_mesh: bool = True) -> Build:
                  seed=int(seed) if seed is not None else None,
                  layers=tuple(decor.get("layers") or ()),
                  theme=content.get("dungeon_theme") or "", race=content.get("dungeon_race") or "",
-                 mesh=mesh, recipe=dict(recipe))
+                 mesh=mesh, recipe=dict(recipe),
+                 room_seeds={str(r): int(v) for r, v in
+                             ((side.get("seeds") or {}).get("room_decor_seeds") or {}).items()})
 
 
 __all__ = ["Build", "CATEGORY_RGB", "Meshes", "NoRoom", "any_use", "decorate_room", "eq_path_of", "glb_bytes",

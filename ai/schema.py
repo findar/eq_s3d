@@ -137,6 +137,41 @@ def rooms_seed(value: Any) -> Optional[int]:
     return decor_seed(value, "rooms_seed")
 
 
+class RoomSeeds(dict):
+    """A plan's ``room_decor_seeds``: a read-only dict that hashes by its items, so a plan's
+    fields stay hashable values (the test sweeps key builds on ``asdict(plan)``)."""
+
+    def __hash__(self):
+        return hash(frozenset(self.items()))
+
+    def __reduce__(self):
+        return (RoomSeeds, (dict(self),))
+
+    def _read_only(self, *_a, **_k):
+        raise TypeError("room_decor_seeds is read-only; validate a new plan")
+
+    __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = __ior__ = _read_only
+
+
+def room_decor_seeds(value: Any) -> "RoomSeeds":
+    """Rooms that keep their own decor seed (partial-rebuild Req 3): None or {} for none, else
+    a mapping of room id (a safe name: letters, digits, ``_ . -``) to a whole 0..2^31-1.
+    Anything else raises ``ValueError``."""
+    import re
+    if value is None or value == "":
+        return RoomSeeds()
+    if not isinstance(value, Mapping):
+        raise ValueError(f"room_decor_seeds {value!r} is not a mapping of room id to decor seed")
+    out: Dict[str, int] = {}
+    for room, seed in value.items():
+        if not isinstance(room, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", room):
+            raise ValueError(f"room_decor_seeds key {room!r} is not a room id")
+        out[room] = decor_seed(seed, f"room_decor_seeds[{room!r}]")
+        if out[room] is None:
+            raise ValueError(f"room_decor_seeds[{room!r}] must be a whole number from 0 to {SEED_MAX}")
+    return RoomSeeds(out)
+
+
 def available_inhabitants(inhabitants_file: Optional[Path] = None) -> List[str]:
     """The Inhabitant names in ``rules/sites/inhabitants.toml`` (sorted)."""
     path = inhabitants_file or Path(__file__).resolve().parent.parent / "rules" / "sites" / "inhabitants.toml"
@@ -238,6 +273,9 @@ class ZonePlan:
     decor_layers: Tuple[str, ...] = ()
     # The Attach stage's seed: None is the zone's seed; else rerolls the rooms and Sites alone.
     rooms_seed: Optional[int] = None
+    # Rooms that keep their own decor seed (room id -> seed); their bare decision is still the
+    # zone's. ``to_dict`` leaves it out while empty.
+    room_decor_seeds: Dict[str, int] = field(default_factory=lambda: RoomSeeds())
 
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
@@ -320,6 +358,7 @@ class ZonePlan:
         self.decor_seed = decor_seed(self.decor_seed)
         self.decor_layers = decor_layers(self.decor_layers)
         self.rooms_seed = rooms_seed(self.rooms_seed)
+        self.room_decor_seeds = room_decor_seeds(self.room_decor_seeds)
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -330,6 +369,9 @@ class ZonePlan:
         layers = out.pop("decor_layers", ())
         if layers:
             out["decor_layers"] = list(layers)
+        seeds = out.pop("room_decor_seeds", None)
+        if seeds:
+            out["room_decor_seeds"] = dict(seeds)
         return out
 
     @classmethod
