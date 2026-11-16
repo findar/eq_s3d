@@ -43,7 +43,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Owns: server/app.py, generators/pipeline.py, tests/test_versions.py
   - Reqs: 1, 2.1, 2.2 (full path)
 
-- [ ] 3. Rebuild from the saved stages
+- [x] 3. Rebuild from the saved stages
   - Card: [cards/03-partial.md](cards/03-partial.md)
   - Type: agent · Size: M · Depends: 1, 2
   - Owns: generators/rebuild.py, generators/builder.py, generators/pipeline.py, server/app.py, tests/test_partial_rebuild.py, tests/test_versions.py (the how assertions only)
@@ -55,7 +55,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Owns: analyzer/traverse.py, generators/rebuild.py, generators/pipeline.py, generators/outdoor_dungeon.py, tests/test_partial_rebuild.py
   - Reqs: 4.2–4.5
 
-- [ ] 5. Versions and Use in zone in the page
+- [x] 5. Versions and Use in zone in the page
   - Card: [cards/05-page.md](cards/05-page.md)
   - Type: agent · Size: M · Depends: 1, 2
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
