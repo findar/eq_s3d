@@ -465,6 +465,81 @@ export async function fetchZoneVersions(zone: string): Promise<ZoneVersions> {
   return res.json();
 }
 
+// ---- Export: a build as a takeover of an existing zone (export spec Req 4) ----
+
+// One known RoF2 zone (GET /api/shortnames), installed ones first.
+export interface KnownZone {
+  shortname: string;
+  long_name: string;
+  container: string;           // "s3d" | "eqg"
+  in_install: boolean;         // its archive is in the server's EQ install
+}
+
+export interface ShortnameListing {
+  default: string;             // "arena"
+  zones: KnownZone[];
+}
+
+export async function fetchShortnames(): Promise<ShortnameListing> {
+  const res = await fetch("/api/shortnames");
+  if (!res.ok) throw new Error(await errorDetail(res, "short names fetch"));
+  return res.json();
+}
+
+// POST /api/export: the version to export and the zone it replaces (blank or
+// absent = the default); clear_spawns adds the spawn cleanup to the SQL.
+export interface ExportParams {
+  zone: string;
+  version: number | string;
+  shortname?: string;
+  clear_spawns?: boolean;
+}
+
+// One file of an Export, in order: eqg, eqmap by layer, sql, sidecar, install,
+// then the bundle (zipped on its first request; absent without the SQL).
+export interface ExportFile {
+  kind: string;                // "eqg" | "eqmap" | "sql" | "sidecar" | "install" | "bundle"
+  filename: string;            // relative to export/<short>/ ("maps/<short>_1.txt")
+  url: string;
+  layer: number | null;        // eqmap only
+}
+
+export interface ExportResult {
+  zone: string;
+  version: string;             // "v3"
+  shortname: string;
+  clear_spawns: boolean;
+  sql_written: boolean;        // false when the format check failed
+  format: { passed: boolean; checks: { name: string; passed: boolean; messages: string[] }[] } | null;
+  warnings: string[];
+  files: ExportFile[];
+}
+
+// The 400 for an unknown short name: the message, the name and up to 5 close ones.
+export class ExportNameError extends Error {
+  constructor(message: string, readonly shortname: string, readonly close: string[]) {
+    super(message);
+  }
+}
+
+export async function exportZone(params: ExportParams): Promise<ExportResult> {
+  const res = await fetch("/api/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (res.status === 400) {
+    let d: any = null;
+    try { d = (await res.clone().json())?.detail; } catch { /* not JSON */ }
+    if (d && typeof d === "object" && typeof d.message === "string") {
+      throw new ExportNameError(d.message, String(d.shortname ?? ""),
+        Array.isArray(d.close) ? d.close.map(String) : []);
+    }
+  }
+  if (!res.ok) throw new Error(await errorDetail(res, "export"));
+  return res.json();
+}
+
 export async function fetchVersion(): Promise<VersionInfo> {
   const res = await fetch("/api/version", { cache: "no-store" });
   if (!res.ok) throw new Error(`version fetch failed (${res.status})`);

@@ -624,6 +624,9 @@ _ALLOWED_WEB_INPUT_IDS = {
     "decor", "decor-seed",  # Props in rooms (room-decor spec task 10)
     "decor-layers",  # decor layers on top of the theme's (decor-rules spec task 5)
     "rooms-seed",  # rooms and Sites on the same World (world-sockets spec task 8)
+    # The Export row (export spec task 7): it exports a finished build and
+    # never feeds a generate (umbrella Req 8.6).
+    "export-filter", "export-shortname", "export-clear-spawns",
 }
 
 # The CLI ``generate`` option/flag names the geometry slice is allowed to add,

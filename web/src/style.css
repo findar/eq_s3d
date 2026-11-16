@@ -404,6 +404,47 @@ label.field > input { width: 100%; }
   font-size: 12px;
 }
 #artifact-list li { margin: 3px 0; }
+
+/* ---- Export row (exportrow.ts): picker, spawn tick, note, Export, its files ---- */
+#export-row { margin-top: 12px; font-size: 12px; }
+#export-row h4 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--accent-dim);
+  margin: 0 0 6px;
+}
+.export-field { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 6px; }
+#export-filter,
+#export-shortname {
+  width: 100%;
+  min-width: 0;
+  background: #10131c;
+  color: var(--text);
+  border: 1px solid #2a3040;
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 11px;
+}
+#export-filter { padding: 3px 6px; }
+#export-shortname { margin-top: 4px; padding: 2px; }
+#export-shortname option.absent { color: var(--muted); }
+#export-filter:focus,
+#export-shortname:focus { outline: none; border-color: var(--accent); }
+.export-note { font-size: 10.5px; color: var(--muted); line-height: 1.5; margin: 4px 0 6px; }
+.export-note b { color: var(--warn); font-weight: normal; }
+#export-run { width: 100%; padding: 4px 6px; font-size: 11px; }
+#export-run[aria-busy="true"] { cursor: progress; }
+#export-msg { white-space: pre-line; font-size: 11px; color: var(--muted); margin: 6px 0 2px; }
+#export-msg:empty { display: none; }
+#export-msg.warn { color: var(--warn); }
+#export-msg.error { color: #ff8a8a; }
+#export-list { list-style: none; font-size: 12px; }
+#export-list li { margin: 3px 0; }
+#export-list li.bundle { font-weight: 600; }
+#export-list a { color: var(--accent); text-decoration: none; }
+#export-list a:hover { text-decoration: underline; }
+#export-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 #artifact-list li.empty { color: #555; font-size: 11px; }
 #artifact-list a {
   color: var(--accent);

@@ -311,6 +311,23 @@
       <ul id="artifact-list">
         <li class="empty">No build yet.</li>
       </ul>
+
+      <!-- Export the version on screen as a takeover of an existing zone
+           (export spec Req 4.2; exportrow.ts). The filter narrows the list on
+           short or long name; installed zones come first and arena is picked
+           at first. Export lists the bundle and each file under it. -->
+      <div id="export-row">
+        <h4>Export</h4>
+        <label class="export-field"><span>Replaces</span>
+          <input type="text" id="export-filter" placeholder="filter: short or long name" autocomplete="off" spellcheck="false" />
+        </label>
+        <select id="export-shortname" size="5" aria-label="Zone this export replaces"></select>
+        <label class="toggle" title="Also delete the zone's existing spawns in the SQL"><input type="checkbox" id="export-clear-spawns" /> Spawn cleanup</label>
+        <p class="export-note" id="export-note">Installing replaces <b id="export-note-zone">arena</b>'s client files and server rows. The tool writes only to output/.</p>
+        <button type="button" id="export-run" class="seed-btn" title="Export this version under the chosen zone's short name">Export</button>
+        <div id="export-msg" role="status"></div>
+        <ul id="export-list"></ul>
+      </div>
     </section>
 
     <h3>Overlays</h3>

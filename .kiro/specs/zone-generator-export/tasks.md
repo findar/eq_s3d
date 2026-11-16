@@ -68,7 +68,7 @@ task proves it with
   - Owns: server/app.py, main.py, generators/export.py (the SQL call and the bundle), tests/test_export_route.py, tests/test_export.py (the sql_written assert), tests/test_hygiene.py (the CLI option allowlist)
   - Reqs: 1.2, 4.1, 4.3, 4.4
 
-- [ ] 7. The Export row in the page
+- [x] 7. The Export row in the page
   - Card: [cards/07-page.md](cards/07-page.md)
   - Type: agent · Size: M · Depends: 6
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
