@@ -20,6 +20,23 @@ function materialsOf(mesh: THREE.Mesh): THREE.Material[] {
   return Array.isArray(m) ? m : [m];
 }
 
+/** Remove every child of `group`, disposing its geometries, materials and textures. */
+function clearDisposed(group: THREE.Object3D): void {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    child.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      mesh.geometry?.dispose();
+      for (const mat of materialsOf(mesh)) {
+        for (const v of Object.values(mat)) {
+          if (v instanceof THREE.Texture) v.dispose();
+        }
+        mat.dispose();
+      }
+    });
+  }
+}
+
 export class ZoneScene {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
@@ -75,14 +92,23 @@ export class ZoneScene {
     this.renderer.setSize(w, h, false);
   }
 
-  /** Load a GLB zone. Returns the bounding box for camera placement. */
-  async loadZone(glbUrl: string): Promise<THREE.Box3> {
-    // Clear previous
-    this.zoneGroup.clear();
-    if (this.wireframe) { this.wireframe = null; }
-
+  /** Load a GLB zone. Returns the bounding box for camera placement. The
+   *  zone on screen stays until the new one has loaded (a rebuild or another
+   *  version), then is disposed. `isCurrent`, asked once the GLB is in: false
+   *  drops it (a later load overtook this one) and answers null. */
+  async loadZone(glbUrl: string, isCurrent: () => boolean = () => true): Promise<THREE.Box3 | null> {
     const gltf = await this.loader.loadAsync(glbUrl);
     const model = gltf.scene;
+    if (!isCurrent()) {
+      const holder = new THREE.Group();
+      holder.add(model);
+      clearDisposed(holder);
+      return null;
+    }
+
+    // Drop the previous zone only now, so a failed or slow load leaves it up.
+    clearDisposed(this.zoneGroup);
+    if (this.wireframe) { this.wireframe = null; }
     this.vegetation = model.getObjectByName("vegetation") ?? null;
 
     // Textured terrain (one primitive per material, embedded diffuse): the
@@ -118,10 +144,9 @@ export class ZoneScene {
 
   /** Render light + region overlays from the sidecar, applying the centering offset. */
   applyOverlays(sidecar: ZoneSidecar): void {
-    this.lightGroup.clear();
-    this.regionGroup.clear();
-    this.gateGroup.clear();
-    this.labelGroup.clear();
+    for (const g of [this.lightGroup, this.regionGroup, this.gateGroup, this.labelGroup]) {
+      clearDisposed(g);
+    }
 
     const offset: THREE.Vector3 =
       this.zoneGroup.userData.offset ?? new THREE.Vector3();

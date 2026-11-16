@@ -10,9 +10,11 @@
 // lights its Props and hovering a Prop lights its entries. The toolbar
 // re-decorates: ⟳ reroll (a fresh decor seed), Decor (the level), Decor rules
 // (a layer on top of the theme's) and re-read rules (same seed, rules read
-// fresh). Close drops the scene and returns to the zone untouched: its camera
-// doesn't move while this is open (movement keys stop here) and main.ts skips
-// its render loop.
+// fresh). Use in zone keeps the room's decor seed in the zone: the next version
+// is built with it (main.ts, /api/rebuild room_decor) and the view reopens on
+// that room of the new version. Close drops the scene and returns to the zone
+// untouched: its camera doesn't move while this is open (movement keys stop
+// here) and main.ts skips its render loop.
 //
 // Opened from the side panel's room list (setBuild fills it) and from a click
 // on a room in the map dialog (wireMap: the click goes through the SVG's world
@@ -39,6 +41,9 @@ export interface RoomViewOptions {
   layerSelect: HTMLSelectElement;
   /** Called before the view opens (close the map dialog, release the mouse). */
   beforeOpen?: () => void;
+  /** Use in zone: build the next version with `room` keeping `decorSeed`, then
+   *  show it (setBuild with the room to reopen). Rejects with the error's words. */
+  useInZone?: (room: string, decorSeed: number) => Promise<void>;
 }
 
 /** Walls are cut away this far above the room's floor (head height and a wall light's reach). */
@@ -185,6 +190,7 @@ export class RoomView {
   private layerSel!: HTMLSelectElement;
   private labelsBox!: HTMLInputElement;
   private cutBox!: HTMLInputElement;
+  private useBtn!: HTMLButtonElement;
   /** Walls are cut away above this plane (floor + CUT_HEIGHT) while `cutBox` is ticked. */
   private cut = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
   private buttons: HTMLButtonElement[] = [];
@@ -238,6 +244,8 @@ export class RoomView {
     this.layerSel.addEventListener("change", () => this.request({}));
     const reread = this.button("re-read rules", "Same seed, the rule files read again",
       () => this.request({}));
+    this.useBtn = this.button("Use in zone", "", () => this.useInZone());
+    this.useBtn.classList.add("rv-use");
     const labelWrap = el("label", "rv-check");
     this.labelsBox = el("input");
     this.labelsBox.type = "checkbox";
@@ -257,7 +265,7 @@ export class RoomView {
     lvl.appendChild(this.levelSel);
     const lay = el("label", "rv-field", "Decor rules ");
     lay.appendChild(this.layerSel);
-    bar.append(this.title, this.seedEl, reroll, lvl, lay, reread, labelWrap, cutWrap, el("span", "rv-spacer"), close);
+    bar.append(this.title, this.seedEl, reroll, lvl, lay, reread, this.useBtn, labelWrap, cutWrap, el("span", "rv-spacer"), close);
 
     const body = el("div", "rv-body");
     this.stage = el("div", "rv-stage");
@@ -293,10 +301,14 @@ export class RoomView {
   // ---- The build and its room list ----
 
   /** The shown build (null: none; closes the view). Fills the side panel's
-   *  room list (#m-room-list, in #s-rooms) when the build has Decor. */
-  setBuild(build: RoomBuild | null): void {
-    this.close();
+   *  room list (#m-room-list, in #s-rooms) when the build has Decor.
+   *  `reopenRoom`: with the view open, it stays open and shows that room of
+   *  the new build (Use in zone made it). */
+  setBuild(build: RoomBuild | null, reopenRoom?: string): void {
+    const reopen = !!(build && reopenRoom && this.isOpen);
+    if (!reopen) this.close();
     this.build = build;
+    if (reopen) this.open(reopenRoom!);
     const section = document.getElementById("s-rooms");
     const listEl = document.getElementById("m-room-list");
     if (!section || !listEl) return;
@@ -463,6 +475,49 @@ export class RoomView {
     for (const b of this.buttons) b.disabled = on;
     this.levelSel.disabled = on;
     this.layerSel.disabled = on;
+    this.syncUse();
+  }
+
+  /** The decor seed the open build has for a room: its own, else the zone's. */
+  private builtSeed(roomId: string): number | null {
+    const s = this.build?.sidecar;
+    if (!s) return null;
+    return s.rooms?.find((r) => r.id === roomId)?.decor_seed ??
+      s.seeds?.room_decor_seeds?.[roomId] ?? s.seeds?.decor_seed ?? s.decor?.seed ?? null;
+  }
+
+  /** Use in zone is enabled once the room shows a decor seed the build doesn't
+   *  have for it, with the build's Decor level and rules (only the seed is kept). */
+  private syncUse(): void {
+    const r = this.report;
+    const built = this.builtSeed(this.roomId);
+    let why = "";
+    if (!this.opts.useInZone) why = "Not available";
+    else if (!r) why = "Decorating…";
+    else if (r.seed === built) why = `The zone already has seed ${r.seed} for this room: reroll first`;
+    else if (this.layerSel.value !== AS_BUILT || r.control !== this.build?.sidecar.decor?.control) {
+      why = "Only the decor seed goes into the zone: set Decor to the build's and Decor rules to As built";
+    } else if (r.bare) why = "The zone's draw leaves this room bare: no Props to keep";
+    this.useBtn.disabled = this.busy || !!why;
+    this.useBtn.title = why || `Build the next version of the zone with seed ${r!.seed} in ${this.roomId}` +
+      (built !== null ? ` (it has ${built})` : "");
+  }
+
+  /** Keep the shown seed in the zone (main.ts rebuilds and reopens the room). */
+  private async useInZone(): Promise<void> {
+    const r = this.report;
+    if (!this.build || !r || this.busy || !this.opts.useInZone) return;
+    const seq = ++this.seq;
+    this.setBusy(true, `Keeping seed ${r.seed} in the zone… (a rebuild takes a few seconds)`);
+    try {
+      await this.opts.useInZone(this.roomId, r.seed);
+      // The new version reopened the room (its request took over), unless it didn't.
+      if (seq === this.seq) this.setBusy(false);
+    } catch (err) {
+      if (seq !== this.seq) return;
+      console.error("[room view]", err);
+      this.setBusy(false, String((err as Error).message ?? err));
+    }
   }
 
   /** Re-decorate the room. `over` names what changes (a fresh seed); the
@@ -563,8 +618,11 @@ export class RoomView {
     this.levelSel.value = report.control;
     const r = report.room;
     this.title.textContent = `${r.id}` + (r.room_type ? ` · ${r.room_type}` : r.kind ? ` · ${r.kind}` : "");
-    this.seedEl.textContent = `seed ${report.seed}`;
+    const built = this.builtSeed(r.id);
+    this.seedEl.textContent = `seed ${report.seed}` +
+      (built !== null && built !== report.seed ? ` (zone has ${built})` : "");
     this.fillList(report);
+    this.syncUse();
   }
 
   private fillList(report: RoomDecorReport): void {

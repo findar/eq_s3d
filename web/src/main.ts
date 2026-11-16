@@ -2,8 +2,10 @@
 
 import * as THREE from "three";
 import {
-  generateZone, fetchControls, fetchSidecar, fetchVersion, fetchZoneTypes,
-  type DecorLayerListing, type GenerateParams, type GenerateResult, type ZoneSidecar,
+  generateZone, fetchControls, fetchSidecar, fetchVersion, fetchZoneTypes, rebuildZone,
+  fetchZoneVersions,
+  type DecorLayerListing, type GenerateParams, type GenerateResult, type RebuildParams,
+  type ZoneSidecar, type ZoneVersionEntry,
 } from "./api";
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
@@ -30,6 +32,10 @@ const seedInput = $("seed") as HTMLInputElement;
 const reproduceBtn = $("reproduce") as HTMLButtonElement;
 const rerollDecorBtn = $("reroll-decor") as HTMLButtonElement;
 const rerollRoomsBtn = $("reroll-rooms") as HTMLButtonElement;
+const versionNav = $("version-nav");
+const versionLabel = $("version-label");
+const versionPrev = $("version-prev") as HTMLButtonElement;
+const versionNext = $("version-next") as HTMLButtonElement;
 
 // Latest generated map URL, shown by the Map modal.
 let currentMapUrl: string | null = null;
@@ -37,10 +43,16 @@ let currentMapUrl: string | null = null;
 let currentSidecar: ZoneSidecar | null = null;
 // Seed of the last successful generation, for the "reproduce" affordance.
 let lastSeed: number | null = null;
-// The request and result of the last successful generation, for "Reroll
-// decor": the same request with its seed pinned and a fresh decor seed.
-let lastParams: GenerateParams | null = null;
+// The result of the version on screen: the rerolls and Use in zone rebuild
+// from it (/api/rebuild {zone: id, version}).
 let lastResult: GenerateResult | null = null;
+// The open zone's versions (GET /api/zones/<zone>/versions), in order.
+let versions: ZoneVersionEntry[] = [];
+// Every answer this page has had, by "<zone>/v<n>": opening that version again
+// shows it as built. A version made elsewhere is filled from its listing.
+const results = new Map<string, GenerateResult>();
+// The latest showBuild; a load still in flight from an earlier one is dropped.
+let showSeq = 0;
 
 // ---- Scene + controls ----
 const zoneScene = new ZoneScene(canvas);
@@ -51,6 +63,13 @@ const roomView = new RoomView({
   decorSelect: $("decor") as HTMLSelectElement,
   layerSelect: $("decor-layers") as HTMLSelectElement,
   beforeOpen: () => closeMap(),
+  // Use in zone: the room's decor seed kept in the next version, which opens
+  // with the room view still on that room.
+  useInZone: async (room, decorSeed) => {
+    console.log(`[input] use in zone: ${room} decor_seed=${decorSeed}`);
+    const err = await runRebuild({ room_decor: { room, decor_seed: decorSeed } }, room);
+    if (err) throw new Error(err);
+  },
 });
 
 controls.onLockChange = (locked) => {
@@ -594,82 +613,252 @@ async function doGenerate(mode: Mode) {
   await runGenerate(params);
 }
 
-// Send one generate request and show what it built.
-async function runGenerate(params: GenerateParams): Promise<void> {
+// While a request runs (Generate, a rebuild, opening a version): Generate,
+// the rerolls and the version arrows are disabled; the zone on screen stays
+// until the new one has loaded.
+function beginBusy(text: string): void {
   generating = true;
   syncGenerateButton();
-  roomView.close();
   rerollDecorBtn.disabled = true;
   rerollRoomsBtn.disabled = true;
-  statusEl.textContent = "generating…";
+  statusEl.textContent = text;
+  statusEl.title = "";
+  syncVersionNav();
+}
+
+function endBusy(): void {
+  generating = false;
+  syncGenerateButton();
+  rerollDecorBtn.disabled = !(lastResult && usesControl(lastResult.zone_type, "decor"));
+  rerollRoomsBtn.disabled = !lastResult;
+  syncVersionNav();
+}
+
+// Say a request failed in the status line (its words in the tooltip and the
+// console) and answer the words.
+function failed(what: string, err: unknown): string {
+  console.error(err);
+  const msg = String((err as Error)?.message ?? err);
+  statusEl.textContent = `${what} — see console`;
+  statusEl.title = msg;
+  return msg;
+}
+
+const versionKey = (zone: string, n: number) => `${zone}/v${n}`;
+
+// Send one generate request and show what it built.
+async function runGenerate(params: GenerateParams): Promise<void> {
+  if (generating) return;
+  beginBusy("generating…");
+  roomView.close();
 
   // Cheap re-check so a stale-server warning shows exactly when it matters.
   await refreshVersion();
 
   try {
     const result = await generateZone(params);
-    currentMapUrl = result.map_url;
-    currentSidecar = null;
-    // Rebuild the Files list (and drop the previous build's map + PNG); a map
-    // dialog left open re-renders with this build's SVG (and, once the sidecar
-    // is in, its Sockets).
-    showArtifacts(result.artifacts ?? [], result.id);
-    mapDownload.download = `${result.id}.map.svg`;
-    if (!mapModal.classList.contains("hidden")) openMap();
-    lastSeed = result.seed;
-    lastParams = params;
-    lastResult = result;
-    reproduceBtn.disabled = false;
+    results.set(versionKey(result.id, result.version), result);
     statusEl.textContent = "loading…";
-
-    const box = await zoneScene.loadZone(result.glb_url);
-    // The Trees toggle only means something when the GLB has a vegetation
-    // node; keep the user's last choice across builds.
-    showToggle("t-trees", zoneScene.hasVegetation());
-    zoneScene.setVegetationVisible(treesToggle.checked);
-    const sidecar = await fetchSidecar(result.zone_url);
-    currentSidecar = sidecar;
-    zoneScene.applyOverlays(sidecar);
-    // An overlay toggle shows only when the build has what it toggles;
-    // Wireframe and Room IDs always.
-    showToggle("t-lights", zoneScene.hasLights());
-    showToggle("t-regions", zoneScene.hasRegions());
-    showToggle("t-gates", zoneScene.hasGates());
-    updatePanel(result, sidecar);
-    roomView.setBuild({ zone: result.id, version: result.version, sidecar });
-    $("panel-empty").hidden = true;
-    $("panel-body").hidden = false;
-    if (!mapModal.classList.contains("hidden")) openMap();
-
-    // Place the camera near the zone's lowest/entry corner at a sensible
-    // eye height, looking toward the centre. World is Z-up and the mesh is
-    // centred on the origin, so the centre is roughly (0,0,0).
-    const size = box.getSize(new THREE.Vector3());
-    const groundZ = -size.z / 2;        // bottom of the centred mesh
-    const eye = Math.min(60, size.z * 0.3);
-    // Stand back along -Y, near the floor, looking toward +Y (yaw = +90°).
-    const start = new THREE.Vector3(0, -size.y * 0.45, groundZ + eye);
-    const startYaw = Math.PI / 2;       // face +Y (into the zone)
-    controls.setStart(start, startYaw);
-
+    if (!(await showBuild(result, false))) return;
+    await refreshVersions(result.id);
     console.info(
       `[generate] seed=${result.seed} zone_type=${result.zone_type} rooms=${result.rooms} ` +
       `mode=${result.mode}` +
       (result.planner ? ` planner=${result.planner}` : "") +
       ` build=${result.build_commit ?? "unknown"}`,
     );
-
-    statusEl.textContent = `seed ${result.seed} · ${result.polygons.toLocaleString()} polys`;
   } catch (err) {
-    console.error(err);
-    statusEl.textContent = "error — see console";
+    failed("error", err);
   } finally {
-    generating = false;
-    syncGenerateButton();
-    rerollDecorBtn.disabled = !(lastResult && usesControl(lastResult.zone_type, "decor"));
-    rerollRoomsBtn.disabled = !lastResult;
+    endBusy();
   }
 }
+
+// The next version of the open one (/api/rebuild), opened once it's in with the
+// camera where it is. `reopenRoom`: the room view stays open and shows that
+// room of the new version (Use in zone). Answers the error's words, or null.
+async function runRebuild(
+  change: Omit<RebuildParams, "zone" | "version">, reopenRoom?: string,
+): Promise<string | null> {
+  if (generating || !lastResult) return "another request is running";
+  const from = lastResult;
+  const params: RebuildParams = { zone: from.id, version: from.version, ...change };
+  beginBusy(`rebuilding from v${from.version}…`);
+  if (!reopenRoom) roomView.close();
+  await refreshVersion();
+  try {
+    const result = await rebuildZone(params);
+    results.set(versionKey(result.id, result.version), result);
+    statusEl.textContent = `loading v${result.version}…`;
+    await refreshVersions(result.id);
+    await showBuild(result, true, reopenRoom);
+    const info = result.version_info;
+    console.info(
+      `[rebuild] ${result.id} v${from.version} -> v${result.version}` +
+      (info ? ` (${info.changed.join(", ")}, ${info.how ?? "?"})` : ""),
+    );
+    return null;
+  } catch (err) {
+    return failed("rebuild failed", err);
+  } finally {
+    endBusy();
+  }
+}
+
+// A version of the open zone, from the listing: the answer this page had for
+// it, else the open one's with that version's URLs (its Files have the same
+// names under v<n>/; one the version lacks shows unavailable).
+function resultFor(entry: ZoneVersionEntry): GenerateResult | null {
+  if (!lastResult) return null;
+  const known = results.get(versionKey(lastResult.id, entry.n));
+  if (known) return known;
+  const base = lastResult;
+  const from = `/v${base.version}/`, to = `/v${entry.n}/`;
+  return {
+    ...base,
+    version: entry.n,
+    seed: entry.seeds?.seed ?? base.seed,
+    glb_url: entry.glb_url,
+    zone_url: entry.zone_url,
+    map_url: entry.map_url,
+    eqg_url: entry.eqg_url,
+    artifacts: (base.artifacts ?? []).map((a) => ({ ...a, url: a.url.replace(from, to) })),
+    warnings: [],
+    build_commit: undefined,
+  };
+}
+
+// Open another version of the zone on screen, keeping the camera.
+async function openVersion(n: number): Promise<void> {
+  if (generating || !lastResult || n === lastResult.version) return;
+  const entry = versions.find((v) => v.n === n);
+  const result = entry ? resultFor(entry) : null;
+  if (!result) return;
+  console.log(`[input] open version: ${result.id} v${n}`);
+  beginBusy(`opening v${n}…`);
+  roomView.close();
+  try {
+    const known = results.has(versionKey(result.id, n));
+    await showBuild(result, true, undefined, !known);
+  } catch (err) {
+    failed(`v${n} unavailable`, err);
+  } finally {
+    endBusy();
+  }
+}
+
+// Show a build: its sidecar and GLB load first (the zone on screen stays until
+// then), then the map, Files, overlays and panel switch to it. `keepCamera`:
+// another version of the same zone, so the camera stays (Reset View goes to
+// the new start). `fromSidecar`: a result filled from the listing, whose
+// counts come from the sidecar. False when a later showBuild overtook it.
+async function showBuild(
+  result: GenerateResult, keepCamera: boolean, reopenRoom?: string, fromSidecar = false,
+): Promise<boolean> {
+  const seq = ++showSeq;
+  const sidecar = await fetchSidecar(result.zone_url);
+  if (seq !== showSeq) return false;
+  if (fromSidecar && sidecar.metrics) result = { ...result, ...sidecar.metrics };
+  const box = await zoneScene.loadZone(result.glb_url, () => seq === showSeq);
+  if (!box) return false;
+
+  currentMapUrl = result.map_url;
+  currentSidecar = sidecar;
+  // Rebuild the Files list (and drop the previous build's map + PNG).
+  showArtifacts(result.artifacts ?? [], result.id);
+  mapDownload.download = `${result.id}.map.svg`;
+  lastSeed = result.seed;
+  lastResult = result;
+  reproduceBtn.disabled = false;
+
+  // The Trees toggle only means something when the GLB has a vegetation
+  // node; keep the user's last choice across builds (and the wireframe's).
+  showToggle("t-trees", zoneScene.hasVegetation());
+  zoneScene.setVegetationVisible(treesToggle.checked);
+  zoneScene.setWireframe(($("t-wire") as HTMLInputElement).checked);
+  zoneScene.applyOverlays(sidecar);
+  // An overlay toggle shows only when the build has what it toggles;
+  // Wireframe and Room IDs always.
+  showToggle("t-lights", zoneScene.hasLights());
+  showToggle("t-regions", zoneScene.hasRegions());
+  showToggle("t-gates", zoneScene.hasGates());
+  updatePanel(result, sidecar);
+  syncVersionNav();
+  roomView.setBuild({ zone: result.id, version: result.version, sidecar }, reopenRoom);
+  $("panel-empty").hidden = true;
+  $("panel-body").hidden = false;
+  // A map dialog left open re-renders with this build's SVG and Sockets.
+  if (!mapModal.classList.contains("hidden")) openMap();
+
+  // Place the camera near the zone's lowest/entry corner at a sensible
+  // eye height, looking toward the centre. World is Z-up and the mesh is
+  // centred on the origin, so the centre is roughly (0,0,0).
+  const size = box.getSize(new THREE.Vector3());
+  const groundZ = -size.z / 2;        // bottom of the centred mesh
+  const eye = Math.min(60, size.z * 0.3);
+  // Stand back along -Y, near the floor, looking toward +Y (yaw = +90°).
+  const start = new THREE.Vector3(0, -size.y * 0.45, groundZ + eye);
+  const startYaw = Math.PI / 2;       // face +Y (into the zone)
+  controls.setStart(start, startYaw, !keepCamera);
+
+  statusEl.textContent = `v${result.version} · seed ${result.seed} · ` +
+    `${result.polygons.toLocaleString()} polys`;
+  return true;
+}
+
+// ---- Versions ----
+// The header's v<n> with ◂ ▸ through the zone's versions, shown only when it
+// has more than one; the side panel's Version row says where the open one
+// came from.
+const CHANGED_WORDS: Record<string, string> = {
+  decor_seed: "decor seed",
+  rooms_seed: "rooms seed",
+  room_decor: "room decor",
+};
+
+async function refreshVersions(zone: string): Promise<void> {
+  try {
+    versions = (await fetchZoneVersions(zone)).versions;
+  } catch (err) {
+    console.warn("[versions]", err);   // a server without versions: the one alone
+    versions = [];
+  }
+  syncVersionNav();
+}
+
+function syncVersionNav(): void {
+  const n = lastResult?.version ?? 0;
+  const i = versions.findIndex((v) => v.n === n);
+  versionNav.hidden = versions.length <= 1;
+  versionNav.classList.toggle("busy", generating);
+  versionLabel.textContent = `v${n}`;
+  versionPrev.disabled = generating || i <= 0;
+  versionNext.disabled = generating || i < 0 || i >= versions.length - 1;
+
+  // The Version row: v3 of 3 · from v2 · decor seed (the sidecar's block,
+  // else the listing's).
+  const block = currentSidecar?.version ?? versions[i];
+  const last = versions.length ? versions[versions.length - 1].n : n;
+  const row = $("r-version");
+  row.hidden = versions.length <= 1 && !block?.parent;
+  const bits = [`v${n} of ${Math.max(last, n)}`];
+  if (block?.parent) bits.push(`from v${block.parent}`);
+  if (block?.changed?.length) {
+    bits.push(block.changed.map((c) => CHANGED_WORDS[c] ?? c.replace(/_/g, " ")).join(", "));
+  }
+  $("m-version").textContent = bits.join(" · ");
+  row.title = block?.how === "partial" ? "Rebuilt from its parent's saved stages"
+    : block?.how === "full" ? "Built again in full from its parent's request" : "";
+}
+
+// ◂ ▸: the version before or after the open one in the listing.
+function stepVersion(d: number): void {
+  const i = versions.findIndex((v) => v.n === lastResult?.version);
+  const next = versions[i + d];
+  if (i >= 0 && next) openVersion(next.n);
+}
+versionPrev.addEventListener("click", () => stepVersion(-1));
+versionNext.addEventListener("click", () => stepVersion(1));
 
 // A stage seed box: blank or non-numeric -> undefined (the zone's seed).
 function readStageSeed(id: string): number | undefined {
@@ -683,41 +872,23 @@ function readDecorSeed(): number | undefined {
   return readStageSeed("decor-seed");
 }
 
-// Reroll rooms: the last request again, its zone seed pinned to what it built
-// and a fresh rooms seed, so the World stays and the rooms and Sites change
-// (world-sockets Req 4.3). A controls.rooms_seed would win over the top-level
-// one, so it is dropped; a decor seed the request carried rides along.
+// Reroll rooms: the next version of the open one with a fresh rooms seed, so
+// the World stays and the rooms and Sites change (world-sockets Req 4.3; a
+// full rebuild).
 rerollRoomsBtn.addEventListener("click", () => {
-  if (!lastParams || !lastResult) return;
+  if (!lastResult) return;
   const roomsSeed = Math.floor(Math.random() * 2147483648);
-  const controls = lastParams.controls ? { ...lastParams.controls } : undefined;
-  if (controls) delete controls.rooms_seed;
-  const params: GenerateParams = {
-    ...lastParams,
-    ...(controls ? { controls } : {}),
-    seed: lastResult.seed,
-    rooms_seed: roomsSeed,
-  };
-  console.log(`[input] reroll rooms: seed=${lastResult.seed} rooms_seed=${roomsSeed}`);
-  runGenerate(params);
+  console.log(`[input] reroll rooms: ${lastResult.id} v${lastResult.version} rooms_seed=${roomsSeed}`);
+  runRebuild({ rooms_seed: roomsSeed });
 });
 
-// Reroll decor: the last request again, its zone seed pinned to what it built
-// and a fresh decor seed, so only the Props change (room-decor Req 10.2).
-// A controls.decor_seed would win over the top-level one, so it is dropped.
+// Reroll decor: the next version of the open one with a fresh decor seed, so
+// only the Props change (room-decor Req 10.2; a partial rebuild).
 rerollDecorBtn.addEventListener("click", () => {
-  if (!lastParams || !lastResult) return;
+  if (!lastResult) return;
   const decorSeed = Math.floor(Math.random() * 2147483648);
-  const controls = lastParams.controls ? { ...lastParams.controls } : undefined;
-  if (controls) delete controls.decor_seed;
-  const params: GenerateParams = {
-    ...lastParams,
-    ...(controls ? { controls } : {}),
-    seed: lastResult.seed,
-    decor_seed: decorSeed,
-  };
-  console.log(`[input] reroll decor: seed=${lastResult.seed} decor_seed=${decorSeed}`);
-  runGenerate(params);
+  console.log(`[input] reroll decor: ${lastResult.id} v${lastResult.version} decor_seed=${decorSeed}`);
+  runRebuild({ decor_seed: decorSeed });
 });
 
 // Fill the Decor list from the server (/api/controls), keeping the user's
@@ -986,7 +1157,7 @@ const MOVE_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyR", "Space",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight",
 ]);
-for (const id of ["artifacts", "map-dialog"]) {
+for (const id of ["artifacts", "map-dialog", "version-nav"]) {
   $(id).addEventListener("keydown", (e) => {
     if (MOVE_KEYS.has((e as KeyboardEvent).code)) e.stopPropagation();
   });

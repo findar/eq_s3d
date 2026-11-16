@@ -150,6 +150,8 @@ export interface ZoneRoom {
   dressing?: { poi: number; purpose: string; name: string; props: string[]; dropped: string[] }[];
   decor_drops?: { step: string; line: string; what: string; reason: string; poi: number | null }[];
   bare?: boolean;
+  // The room's own decor seed, when it keeps one (else the zone's decor seed).
+  decor_seed?: number;
 }
 
 // One placed Prop (generators/decor/placement.py Prop.to_dict).
@@ -245,7 +247,13 @@ export interface ZoneSidecar {
   // on older sidecars).
   sites?: { sites?: { kind?: string; socket?: string | null; props?: ZoneProp[] }[] };
   // Every stage seed the build used, resolved (world-sockets Req 4.4).
-  seeds?: { seed: number | null; rooms_seed: number | null; decor_seed: number | null };
+  // room_decor_seeds: the rooms that keep their own decor seed (room id -> seed).
+  seeds?: {
+    seed: number | null; rooms_seed: number | null; decor_seed: number | null;
+    room_decor_seeds?: Record<string, number>;
+  };
+  // Which version this is (partial-rebuild Req 1.2): v2 and later; v1 has none.
+  version?: ZoneVersionBlock;
   // The World's Sockets and what attached to each (world-sockets task 6).
   sockets?: ZoneSocket[];
   // The traced outline (pipeline map post-pass): bounds are
@@ -310,7 +318,9 @@ export interface RoomDecorReport {
     theme: string; race: string; zone_type: string;
     box: number[];             // x0, y0, z0, x1, y1, z1
   };
-  seed: number;
+  seed: number;                // the seed the Props came from
+  zone_seed?: number;          // the build's zone decor seed (the bare draw's)
+  room_seed?: number | null;   // the room's own seed (a reroll's, or the one it keeps)
   control: string;
   layers: string[];
   sets: string[];
@@ -377,6 +387,81 @@ export async function generateZone(params: GenerateParams): Promise<GenerateResu
     const text = await res.text();
     throw new Error(`generate failed (${res.status}): ${text}`);
   }
+  return res.json();
+}
+
+// ---- Versions of one zone (partial-rebuild Req 1, 2) ----
+
+// A version's `version` block (the sidecar's on v2 and later, the rebuild
+// answer's version_info): its number, the version it was rebuilt from, the
+// inputs that differ from that one ("decor_seed", "rooms_seed", "room_decor")
+// and how ("full": planned again; "partial": from the parent's saved stages).
+export interface ZoneVersionBlock {
+  n: number;
+  parent: number | null;
+  changed: string[];
+  how: string | null;
+}
+
+// POST /api/rebuild: the next version of `zone` from `version`, changing what
+// it names (at least one). room_decor keeps one room's decor seed in the zone.
+export interface RebuildParams {
+  zone: string;
+  version: number | string;
+  decor_seed?: number;
+  rooms_seed?: number;
+  room_decor?: { room: string; decor_seed: number };
+}
+
+export interface RebuildResult extends GenerateResult {
+  version_info: ZoneVersionBlock;
+}
+
+// One finished version in GET /api/zones/<zone>/versions, in order.
+export interface ZoneVersionEntry {
+  n: number;
+  parent: number | null;
+  changed: string[];
+  how: string | null;
+  seeds: ZoneSidecar["seeds"] | null;
+  created: string;
+  took_ms: number | null;
+  glb_url: string;
+  zone_url: string;
+  map_url: string;
+  eqg_url: string;
+}
+
+export interface ZoneVersions {
+  zone: string;
+  versions: ZoneVersionEntry[];
+}
+
+// FastAPI's error detail as words: a string, or {message, errors}.
+async function errorDetail(res: Response, what: string): Promise<string> {
+  let msg = `${what} failed (${res.status})`;
+  try {
+    const d = (await res.json())?.detail;
+    if (typeof d === "string") msg += `: ${d}`;
+    else if (d?.message) msg += `: ${d.message}`;
+    else if (d) msg += `: ${JSON.stringify(d)}`;
+  } catch { /* not JSON: the status alone */ }
+  return msg;
+}
+
+export async function rebuildZone(params: RebuildParams): Promise<RebuildResult> {
+  const res = await fetch("/api/rebuild", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, "rebuild"));
+  return res.json();
+}
+
+export async function fetchZoneVersions(zone: string): Promise<ZoneVersions> {
+  const res = await fetch(`/api/zones/${encodeURIComponent(zone)}/versions`, { cache: "no-store" });
+  if (!res.ok) throw new Error(await errorDetail(res, "versions fetch"));
   return res.json();
 }
 
