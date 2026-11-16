@@ -213,18 +213,22 @@ class DecorRules:
     # -- Weights by Layer -----------------------------------------------------
 
     def layers_for(self, zone_type: str = "", race: str = "", theme: str = "", kind: str = "",
-                   room_type: str = "") -> Tuple[Layer, ...]:
-        """A room's Layers, least specific first. A name with no table has none."""
+                   room_type: str = "", source: str = "room") -> Tuple[Layer, ...]:
+        """A room's Layers, least specific first. A name with no table has none. The decor
+        layers' own Weights (``[weights.layer]``) stand after the theme's, in merge order, for
+        every room and corridor; a Site keeps its biome's look and takes none."""
         w = self.weights
+        own = w.get(LAYER_WEIGHTS, {}) if source != "site" else {}
         found = (w["zone_types"].get(zone_type), w["races"].get(race), w["themes"].get(theme),
+                 *(own.get(n) for n in self.layers),
                  w["kinds"].get(kind), w["types"].get(room_type))
         return (w["default"],) + tuple(x for x in found if x is not None)
 
     def weights_for(self, zone_type: str = "", race: str = "", theme: str = "", kind: str = "",
-                    room_type: str = "", control: str = DEFAULT_CONTROL) -> Dict[str, float]:
+                    room_type: str = "", control: str = DEFAULT_CONTROL, source: str = "room") -> Dict[str, float]:
         """Each Category's multiplier for this room (and ``bare``, its chance of taking only
         its Dressing): the Layers' blend, the control on top."""
-        layers = self.layers_for(zone_type, race, theme, kind, room_type)
+        layers = self.layers_for(zone_type, race, theme, kind, room_type, source)
         on_top = self.controls[control]
         out = {c: combine(c, layers)[0] * on_top.get(c, 1.0) for c in CATEGORIES}
         out[BARE] = min(1.0, combine(BARE, layers)[0])
@@ -255,7 +259,7 @@ class DecorRules:
                  control: str = DEFAULT_CONTROL, source: str = "room") -> Dict[str, float]:
         """The mean Props a room takes by Category (Dressing aside), as ``draw_count`` draws them:
         what design finding 1's bands are checked against."""
-        weights = self.weights_for(zone_type, race, theme, kind, room_type, control)
+        weights = self.weights_for(zone_type, race, theme, kind, room_type, control, source)
         out = {c: 0.0 for c in CATEGORIES}
         for recipe in self.recipe_for(room_type, kind, source, zone_type):
             for line in recipe.lines:
@@ -472,10 +476,14 @@ def _layer(chk: _Checker, raw: Any, where: str, allow_bare: bool = True) -> Laye
     return Layer(weights, tuple(overrides))
 
 
-def _weights(chk: _Checker, raw: Any) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]]]:
+def _weights(chk: _Checker, raw: Any, merged: Sequence[str] = ()
+             ) -> Tuple[Dict[str, Any], Dict[str, Dict[str, float]]]:
+    """The Weights by Layer and the controls. ``merged``: the decor layers merged in, whose own
+    ``[weights.layer]`` entries arrive as ``weights.layers.<layer>`` (only a layer file writes one)."""
     tbl = chk.table(raw, "top level", "weights", "[weights.default]") or {}
     sections = _weight_sections()
-    chk.keys(tbl, "weights", ("default", "controls") + tuple(sections), required=("default", "controls"))
+    chk.keys(tbl, "weights", ("default", "controls", LAYER_WEIGHTS) + tuple(sections),
+             required=("default", "controls"))
     out: Dict[str, Any] = {"default": Layer()}
     if "default" in tbl:
         default = _layer(chk, tbl["default"], "weights.default")
@@ -495,6 +503,15 @@ def _weights(chk: _Checker, raw: Any) -> Tuple[Dict[str, Any], Dict[str, Dict[st
                 continue
             layers[name] = _layer(chk, body, f"weights.{section}.{name}")
         out[section] = layers
+    own: Dict[str, Layer] = {}
+    sub = chk.table(tbl.get(LAYER_WEIGHTS, {}), "weights", LAYER_WEIGHTS, "[weights.layer] in a layer file") or {}
+    for name, body in sub.items():
+        if name not in merged:
+            chk.fail("weights", LAYER_WEIGHTS, name, "nothing here: a layer's own Weights are its file's "
+                     "[weights.layer]", raw=True)
+            continue
+        own[name] = _layer(chk, body, f"weights.{LAYER_WEIGHTS}.{name}")
+    out[LAYER_WEIGHTS] = own
     controls: Dict[str, Dict[str, float]] = {}
     sub = chk.table(tbl.get("controls", {}), "weights", "controls", "[weights.controls.<name>]") or {}
     for name, body in sub.items():
@@ -609,7 +626,7 @@ Origins = Mapping[str, Sequence[Tuple[str, int]]]
 
 
 def _parse_rooms(chk: _Checker, rooms: Mapping[str, Any], kinds: Mapping[str, str],
-                 origins: Optional[Origins] = None) -> Tuple[Any, ...]:
+                 origins: Optional[Origins] = None, layers: Sequence[str] = ()) -> Tuple[Any, ...]:
     """``rooms.toml``'s raw tables (or a merged set's) into recipes, Groups, Dressing, Weights,
     moves and once. ``origins``: entry -> each line's (file, index), for entries a layer touched."""
     origins = origins or {}
@@ -650,7 +667,7 @@ def _parse_rooms(chk: _Checker, rooms: Mapping[str, Any], kinds: Mapping[str, st
         if purpose not in tbl:
             chk.fail("dressing", purpose, "nothing", "Dressing for every POI Req 8.1 names (boss, treasure, "
                      "altar, guard)", raw=True)
-    weights, controls = _weights(chk, rooms.get("weights", {}))
+    weights, controls = _weights(chk, rooms.get("weights", {}), layers)
     moves = _moves(chk, rooms.get("moves", {}))
     once = _once(chk, rooms.get("once", []), kinds)
     return default, named, every, groups, dressing, weights, controls, moves, once
@@ -721,7 +738,7 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None, layers: Sequence[str
     if errors:
         raise RuleSetError(errors)
     chk = _Checker(" + ".join([ROOMS_FILE] + [f"{n}.toml" for n in names]))
-    merged = _parse_rooms(chk, merge.raw, kinds, merge.origins)
+    merged = _parse_rooms(chk, merge.raw, kinds, merge.origins, names)
     chk.raise_if_failed()
     return _rules(merged, set_rules, names)
 
@@ -731,6 +748,8 @@ def load_decor(path=DECOR_DIR, tags: Optional[Path] = None, layers: Sequence[str
 # ---------------------------------------------------------------------------
 
 LAYERS_DIR = "layers"
+#: Where a layer's own ``[weights.layer]`` lands in the merged Weights: ``weights.layers.<layer>``.
+LAYER_WEIGHTS = "layers"
 THEMES_FILE = "themes.toml"
 #: What a layer's entry may do to one already there (archive decision 1).
 MODES: Tuple[str, ...] = ("add", "replace")
@@ -877,7 +896,7 @@ def _apply_layer(merge: _Merge, file: Path, kinds: Mapping[str, str], groups: Di
     if "weights" in data:
         tbl = chk.table(data["weights"], "top level", "weights", "[weights.themes.<theme>]") or {}
         sections = _weight_sections()
-        chk.keys(tbl, "weights", ("default", "controls") + tuple(sections))
+        chk.keys(tbl, "weights", ("default", "controls", "layer") + tuple(sections))
 
         def weight(path: Tuple[str, ...], raw: Any, allow_bare: bool = True) -> None:
             where = ".".join(path)
@@ -893,6 +912,16 @@ def _apply_layer(merge: _Merge, file: Path, kinds: Mapping[str, str], groups: Di
 
         if "default" in tbl:
             weight(("weights", "default"), tbl["default"])
+        if "layer" in tbl:
+            # The layer's own Weights: every room and corridor of a build that takes the layer.
+            body, mode, ok = _mode(chk, tbl["layer"], "weights.layer", "layer", "{ light = 1.2, debris = 0.5 }")
+            if body is not None:
+                if mode:
+                    chk.fail("weights.layer", "mode", mode, "nothing: a layer's own Weights are its alone",
+                             raw=True)
+                _layer(chk, body, "weights.layer")
+                if ok and not mode:
+                    merge.weights(chk, ("weights", LAYER_WEIGHTS, file.stem), body, None)
         for section in ("controls",) + tuple(sections):
             if section not in tbl:
                 continue

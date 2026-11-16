@@ -202,8 +202,8 @@ def _decor_layer_entries(path: Path) -> List[str]:
             out.append(name("every", tbl))
         elif section == "weights" and isinstance(tbl, dict):
             for sub, entries in tbl.items():
-                if sub == "default":
-                    out.append(name("weights.default", entries))
+                if sub in ("default", "layer"):          # one entry each: the default, the layer's own
+                    out.append(name(f"weights.{sub}", entries))
                 elif isinstance(entries, dict):
                     out += [name(f"weights.{sub}.{k}", v) for k, v in entries.items()]
         elif isinstance(tbl, dict):

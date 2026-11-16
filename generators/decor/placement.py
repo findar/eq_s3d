@@ -1892,7 +1892,7 @@ def place(context: RoomContext, rules: Optional[DecorRules] = None, catalogue: O
     if control == "none":
         return p.out
     weights = rules.weights_for(context.zone_type, context.race, context.theme, context.kind,
-                                context.room_type, control)
+                                context.room_type, control, context.source)
     if context.source == CORRIDOR:
         p.corridor(weights.get("light", 1.0))
         return p.out

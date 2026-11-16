@@ -119,12 +119,14 @@ light = 0.6
 
 [weights.zone_types.city]               # Layers, least specific first:
 light = { value = 1.1, override = true }
-[weights.races.goblin]                  #   zone_types, races, themes, kinds, types
+[weights.races.goblin]                  #   zone_types, races, themes, (layers), kinds, types
 light = 1.6
 ```
 
 Each entry names some of the Categories (and `bare`, not in a control). A value
 is a number of 0 or more (`bare` at most 1), or `{ value = 3, override = true }`.
+A layer file may also hold `[weights.layer]`, its own Weights (see "Layers and
+`mode`").
 
 ## Lookup and how the Weights blend
 
@@ -135,7 +137,8 @@ falls back silently, so check which one a type takes (`check rules/decor` says
 how many types have their own, and `draw-decor` lists "takes ..." per type).
 
 **The Weights.** A room's Layers are the default, then its zone type's, race's,
-theme's, room kind's and room type's entries, where they exist. For each
+theme's entries, then each decor layer's own `[weights.layer]` (in merge order),
+then its room kind's and room type's entries, where they exist. For each
 Category the weight is the **geometric mean of the Layers that name it**, the
 blend step 9's Scales use. So a value stands against the default's 1: write the
 number you would want alone, squared. A theme's `debris = 2.5` gives a plain
@@ -166,7 +169,18 @@ props = [ { group = "bone_heap", at = "scatter", chance = 0.5 } ]
 
 [weights.kinds.deep]                     # new Weights entry
 light = 0.5
+
+[weights.layer]                          # the layer's own look: every room of a build taking it
+debris = 1.5
 ```
+
+**The layer's own Weights.** `[weights.layer]` is the look a layer gives a
+build, whatever its theme: every room and corridor of a build that takes the
+layer gets it, in the blend after the theme's entry (so a room kind's or type's
+entry still says more). A Site keeps its biome's look and takes none. It is the
+layer's alone, so it takes no `mode`, and `rooms.toml` can't hold one. Use it
+for a look ("dark", "ruined"); use `weights.themes.<theme>` only for what a
+layer should add to one theme's rooms.
 
 **Merging.** For each entry (a recipe, `every`, a Group, a Dressing, a Weights
 entry):
@@ -211,7 +225,7 @@ theme's decor, moved out of `rooms.toml` in step 15 and mapped
 name        = "tomb"
 description = "Befallen's look: bones and debris, hanging chains, almost no light"
 
-[weights.themes.tomb]
+[weights.layer]
 light = 0.1
 furniture = 0.4
 debris = 2.5
@@ -233,11 +247,16 @@ shows each of those recipes reached by another theme as well:
 | `types.entry_hall`, `types.passage` | most themes |
 
 Moving the ossuary recipe would strip a temple's ossuary of its bones. So the
-recipes stay in the base and the layer holds the tomb's Weights: a tomb room's
-light falls to 0.32 of a plain room's, its debris rises to 1.58.
+recipes stay in the base and the layer holds the tomb's Weights, as its own
+`[weights.layer]`: a tomb room's light falls to 0.32 of a plain room's, its
+debris rises to 1.58. Because they are the layer's own, any build that takes the
+layer gets them: Decor rules "tomb" on a temple darkens it the same way. (In
+step 15 they first moved as `[weights.themes.tomb]`, which only tomb-themed
+rooms read, so the layer did nothing on any other build.)
 
 **How it was proved the same.** Base + tomb loads the same `DecorRules` as the
-base with the tomb's table pasted back in (`tests/test_decor_layers.py`), so a
+base with the tomb's table pasted back in as the theme's entry
+(`tests/test_decor_layers.py`), so a
 tomb room gets the same recipes and Weights as before; and a decorated Theme
 Tomb build gives the same `.eqg` bytes as before the move (the `TOMB` golden in
 `tests/test_decor_builds.py`, captured first). The sidecar's `decor` block now
@@ -288,7 +307,7 @@ python scripts/topology_rules.py draw-decor --layer tomb      # ... with layers 
 
    ```
    ok    decor/: decor, 24 type, 7 kind and 6 Site recipes, 7 groups, ...
-   ok    decor/layers/tomb.toml: decor layer, 1 entry: weights.themes.tomb
+   ok    decor/layers/tomb.toml: decor layer, 1 entry: weights.layer
    ok    decor/themes.toml: decor theme map, 1 theme(s), 0 race(s)
    ok    theme tomb (rooms.toml + tomb.toml): merged
    ```
@@ -343,6 +362,9 @@ nope.toml › layer › name: found "nope", expected a decor layer in decor/laye
    name it.
 3. For each entry, ask whether the base already has it. New: just write it.
    There: `mode = "add"` to extend, `"replace"` to stand instead.
+   A look over the whole build (lighter, darker, more debris) goes in
+   `[weights.layer]`: a `weights.themes.<theme>` entry reaches only that
+   theme's rooms, so on any other build it does nothing.
 4. Use kinds the catalogue has `use = "yes"` models for at the line's Mount.
 5. Run `check rules/decor`, then `draw-decor --layer <name>` and compare the
    Props per room and the shares with the base page.

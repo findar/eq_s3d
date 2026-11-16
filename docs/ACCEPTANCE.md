@@ -2152,10 +2152,11 @@ otherwise):
 
 - [ ] **[MUST] Reroll** — ⟳ gives the room a fresh decor seed: different Props, the room itself
       unchanged, in under a second.
-- [ ] **[MUST] Decor level** — Sparse gives fewer Props than Dense in the same room.
+- [ ] **[MUST] Decor level** — Sparse gives fewer Props than Dense in the same room (case a room_6:
+      6 against 8).
 - [ ] **[MUST] Decor rules** — On case a, **As built** shows what the build placed; **tomb**
-      re-decorates the room with that layer added (see the known issue: on a non-tomb room it
-      changes nothing yet).
+      re-decorates the room with that layer added: fewer lights, more debris and hanging
+      chains.
 - [ ] **[MUST] Re-read rules** — Edit a count in `rules/decor/rooms.toml` (case a room_6's
       `kinds.chamber` line), press **re-read rules**: the room shows the change with the same
       seed and no restart. Put the file back and re-read again: as before.
@@ -2168,8 +2169,9 @@ otherwise):
       rooms read as Befallen: bones, debris and hanging chains, almost no lights.
 - [ ] **[MUST] Nothing named, nothing changed** — Case a and case b show no layers, and build
       the same zones as before step 15 (the same rooms and Props).
-- [ ] **[MUST] Chosen in Controls** — Case d's side panel shows layers `tomb`; switch Decor rules
-      back to From theme and build again: no layers. Decor rules shows only where Decor does,
+- [ ] **[MUST] Chosen in Controls** — Case d's side panel shows layers `tomb`, and its rooms are
+      darker and more cluttered than the same temple built with From theme (fewer light Props,
+      more debris); that build shows no layers. Decor rules shows only where Decor does,
       and goes when Decor is None.
 
 ### R.5 — Writing a layer
@@ -2197,12 +2199,12 @@ props = [ { kind = ["bone_pile", "skull"], at = "scatter", count = [2, 3] } ]
       alone? Note what was missing.
 - [ ] **[MUST] Clean up** — Delete the file; reload: the option is gone.
 
+Since the step 15 close: a layer's own Weights (`[weights.layer]`) reach every room and corridor of
+a build that takes it, so the tomb layer now changes case d (it held only the tomb theme's
+Weights at sign-off and changed nothing there). Tomb builds (case c) are byte-identical.
+
 Known issues (not regressions):
 
-- **The tomb layer does nothing outside a tomb.** It holds only `weights.themes.tomb`, which only
-  tomb-themed rooms read, so choosing it on a temple (case d) builds the same Props as without
-  it; the side panel still lists it. A layer meant for any build writes entries every room
-  reaches (`kinds`, `types`, `every`).
 - Builds cache the merged rules per Server process: after editing a layer, restart the Server
   before building with it. The room view always reads the files fresh.
 - The stage command (`scripts/stage.py`) keeps its own copy of the per-room decor step, so its

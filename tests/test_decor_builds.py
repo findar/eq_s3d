@@ -258,6 +258,29 @@ def test_a_tomb_build_keeps_its_bytes(tmp_path):
 
 @pytest.mark.slow
 @needs_install
+def test_the_tomb_layer_darkens_a_temple(tmp_path):
+    """The shipped tomb layer chosen on a Theme Temple build changes its Props (its own Weights
+    reach every room, not only tomb-themed ones): fewer lights, the rooms the same. Before the
+    fix it gave the temple's Props unchanged."""
+    from generators.builder import with_decor_layers
+
+    def props(layers):
+        spec = with_decor_layers(_spec(dict(zone_type="dungeon", dungeon_theme="temple"), 4, "normal"), layers)
+        result = ZoneBuilder(spec).build(output_dir=tmp_path / "+".join(layers or ("plain",)), write_glb=False)
+        side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+        return side, [(p["kind"], p["category"]) for r in side["rooms"] for p in r["props"]]
+
+    side, plain = props(())
+    side_t, tomb = props(("tomb",))
+    assert side_t["decor"]["layers"] == ["tomb"]
+    assert tomb != plain
+    lights = lambda ps: sum(c == "light" for _, c in ps)
+    assert lights(tomb) < lights(plain), (lights(tomb), lights(plain))
+    assert [r["center"] for r in side_t["rooms"]] == [r["center"] for r in side["rooms"]]
+
+
+@pytest.mark.slow
+@needs_install
 def test_decor_seed_changes_only_props(tmp_path):
     """A decor seed rerolls Props and leaves the TER alone (Req 10.2, P10)."""
     fields, seed = DECORATED["dungeon"]

@@ -26,15 +26,18 @@ authoring guide, tooling, and the single-room view to see a layer's effect.
 4. **The room view re-decorates the build's saved RoomContexts with rules read fresh**
    (question 4), **in the page** (question 5), **rooms only** (question 6).
 
+5. **A layer has its own Weights, `[weights.layer]`** (2026-11-15, after the close, user: "Yes,
+   fix it"). Every room and corridor of a build that takes the layer gets them, after the theme's
+   entry in the blend; Sites keep their biome's look. The tomb layer holds its look there, so
+   Decor rules "tomb" darkens any build; tomb builds stay byte-identical.
+
 ## Follow-ups
 
 - **`scripts/stage.py` `decor_stage` keeps its own copy of the bare cap** and doesn't settle Props
   (import, origin, wall), so its positions differ from a build's (task 4). It could call
   `builder.BareCap` and `settle_room`.
-- **The tomb layer does nothing outside a tomb** (found at task 8): it holds only
-  `weights.themes.tomb`, which only tomb-themed rooms read, so Decor rules "tomb" on a Temple build
-  gives the same Props, while the sidecar lists the layer. Layer-level Weights, or offering only
-  layers that can change the build, would fix it.
+- ~~**The tomb layer does nothing outside a tomb**~~ (found at task 8): fixed after the close by
+  decision 5 (a layer's own `[weights.layer]`).
 - **A pre-existing thorough failure in room placement** (task 8):
   `test_room_placement.py::test_f4_placement_keeps_the_way_clear_and_never_fails` with w=112,
   d=118, voronoi, seed 33757, one E door, a far-end boss dais: "doors joined, no pocket". Same on

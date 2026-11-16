@@ -152,6 +152,29 @@ def test_weights_add_joins_categories_and_refuses_a_clash(tmp_path, base):
     assert load_decor(d, layers=["w"]).controls["normal"] == {"hanging": 2.0}
 
 
+def test_a_layers_own_weights_reach_every_room_of_its_build_but_not_sites(tmp_path, base):
+    """``[weights.layer]`` stands after the theme's entry for any room or corridor of a build
+    that takes the layer, whatever its theme; a Site keeps its biome's look. Only a layer file
+    writes one, and it takes no ``mode``."""
+    d = _folder(tmp_path)
+    _layer(d, "dim", "[weights.layer]\nlight = 0.25\n")
+    r = load_decor(d, layers=["dim"])
+    for theme in ("temple", "tomb", ""):
+        room = dict(zone_type="dungeon", theme=theme, kind="chamber", room_type="shrine")
+        own = r.weights["layers"]["dim"]
+        got = r.layers_for(**room)
+        assert own in got and tuple(x for x in got if x is not own) == base.layers_for(**room)
+        assert r.weights_for(**room)["light"] < base.weights_for(**room)["light"]
+        assert r.weights_for(**room, source="corridor") == r.weights_for(**room)
+    site = dict(zone_type="outdoor_dungeon", race="orc", theme="plains", room_type="camp", source="site")
+    assert r.weights_for(**site) == base.weights_for(**site)
+    _layer(d, "dim", '[weights.layer]\nmode = "add"\nlight = 0.25\n')
+    assert _where(_errors(d, ["dim"])) == [("dim.toml", "weights.layer", "mode")]
+    rooms = (d / ROOMS_FILE).read_text(encoding="utf-8") + "\n[weights.layers.dim]\nlight = 0.25\n"
+    (d / ROOMS_FILE).write_text(rooms, encoding="utf-8")
+    assert _where(_errors(d, []))[0][:2] == (ROOMS_FILE, "weights")
+
+
 def test_once_kinds_join_the_bases(tmp_path, base):
     d = _folder(tmp_path)
     _layer(d, "o", 'once = ["throne", "forge"]\n')
@@ -295,15 +318,17 @@ def _unfiled(x):
     return x
 
 
-def _inlined(tmp_path, names):
+def _inlined(tmp_path, names, theme=""):
     """A decor folder whose rooms.toml is the shipped base with each layer's tables pasted back
-    in, its ``[layer]`` header dropped: the rules before the layers moved out of rooms.toml."""
+    in, its ``[layer]`` header dropped: the rules before the layers moved out of rooms.toml. A
+    layer's own ``[weights.layer]`` goes back as the ``theme``'s entry, where it stood."""
     d = _folder(tmp_path)
     text = (DECOR_DIR / ROOMS_FILE).read_text(encoding="utf-8")
     for n in names:
         body = (DECOR_DIR / LAYERS_DIR / f"{n}.toml").read_text(encoding="utf-8")
         assert not re.search(r"^mode\s*=", body, re.M), f"{n}.toml changes a base entry: it can't be pasted back"
-        text += "\n" + re.sub(r"^\[layer\]\n(?:(?!\[).*\n)*", "", body, flags=re.M)
+        body = re.sub(r"^\[layer\]\n(?:(?!\[).*\n)*", "", body, flags=re.M)
+        text += "\n" + body.replace("[weights.layer]", f"[weights.themes.{theme}]")
     (d / ROOMS_FILE).write_text(text, encoding="utf-8")
     tomllib.loads(text)
     return d
@@ -324,11 +349,15 @@ def test_base_and_tomb_are_the_rules_before_the_move(tmp_path):
     names = layers_for("tomb")
     assert names == ("tomb",)
     got = load_decor(layers=names)
-    before = load_decor(_inlined(tmp_path, names))
+    before = load_decor(_inlined(tmp_path, names, theme="tomb"))
     assert got.layers == names and before.layers == ()
     for f in dataclasses.fields(got):
-        if f.name != "layers":
+        if f.name not in ("layers", "weights"):
             assert _unfiled(getattr(got, f.name)) == _unfiled(getattr(before, f.name)), f.name
+    # The Weights alike but for where the tomb's look stands: the layer's own entry, once the theme's.
+    themes = dict(before.weights["themes"])
+    assert got.weights["layers"] == {"tomb": themes.pop("tomb")}
+    assert {**got.weights, "layers": {}} == {**before.weights, "themes": themes}
     base = load_decor()
     for room_type, kind in _tomb_rooms():
         room = dict(zone_type="dungeon", theme="tomb", kind=kind, room_type=room_type)
@@ -357,5 +386,5 @@ def test_the_tomb_layer_holds_only_what_tomb_rooms_alone_reach():
         data = tomllib.load(f)
     moved = [f"{s}.{n}" for s in ("kinds", "types", "zones") for n in data.get(s, {})]
     assert all(reach.get(m) == {"tomb"} for m in moved), {m: reach.get(m) for m in moved}
-    assert set(data.get("weights", {})) <= {"themes"} and set(data["weights"]["themes"]) == {"tomb"}
+    assert set(data.get("weights", {})) == {"layer"}         # the tomb's look: its own Weights
     assert "tomb" not in load_decor().weights["themes"]
