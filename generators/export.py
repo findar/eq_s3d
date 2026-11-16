@@ -46,6 +46,7 @@ from analyzer.zonelist import DEFAULT_TARGET, closest, is_known
 from core.paths import OutputRoot
 from core.pfs import PfsArchive
 from core.zon import ZonFile
+from generators.doors import DOOR_MODEL, DOOR_WIDTH
 from generators.sqlexport import SqlExportError, export_sql
 from generators.zone_spec import ZoneSpec
 
@@ -256,6 +257,7 @@ def _after_check(result: ExportResult, spec: ZoneSpec, root: OutputRoot) -> None
     short = result.shortname
     try:
         sql = export_sql(spec, short, bounds_min_z=bounds_min_z(result.sidecar_path, spec),
+                         door_model=DOOR_MODEL, door_width=DOOR_WIDTH,
                          clear_spawns=result.clear_spawns)
     except SqlExportError as exc:
         result.warnings.append(f"sql: {exc}")
