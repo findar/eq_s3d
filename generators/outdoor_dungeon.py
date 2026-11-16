@@ -1030,18 +1030,24 @@ def build_outdoor_dungeon_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -
 SITE_CLEAR = FOOTPRINT_CLEAR_WIDTH
 
 
-def outdoor_dungeon_report(eqg_path, spec: ZoneSpec, agent=None):
+def outdoor_dungeon_report(eqg_path, spec: ZoneSpec, agent=None, *, rooms=None):
     """The gate on a built outdoor dungeon, as one ``TraversalReport``: the
     wilderness bowl check on the open ground (its "bowl" room), then every
     dungeon room reached from the outdoor Spawn (the spec's safe point) and
-    every corridor continuous, on the same merged TER."""
+    every corridor continuous, on the same merged TER.
+
+    ``rooms`` is the room gate's report when the caller already has it (the
+    pipeline judges a partial rebuild's Props against a kept shell); else it is
+    ``validate``'s. The bowl always runs here in full: it judges the Sites'
+    Props, which the decor seed places too."""
     from analyzer.traverse import AgentModel, load_ter_from_eqg, validate
     from generators.wilderness.build import bowl_report
 
     agent = agent or AgentModel()
     ter, _ = load_ter_from_eqg(eqg_path)
     bowl = bowl_report(spec, ter, agent)
-    report = validate(eqg_path, spec=spec, agent=agent, check_corridors=True)
+    report = rooms if rooms is not None else validate(eqg_path, spec=spec, agent=agent,
+                                                      check_corridors=True)
     report.rooms = list(bowl.rooms) + list(report.rooms)
     report.total_rooms += bowl.total_rooms
     report.reachable_rooms += bowl.reachable_rooms
