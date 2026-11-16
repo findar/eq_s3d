@@ -375,3 +375,115 @@ export is dungeon-first, matching where the traversability gate already runs.
 Sources: martinlindhe/eqformat_map (format + test vectors), crande25/eql-maps
 (mesh-derived generation method), EQ official forums (coordinate inversion),
 Fanra's EQ wiki (maps folder / layer files). Content rephrased for compliance.
+
+---
+
+## Step 17: takeover and doors
+
+Export spec task 2 (`.kiro/specs/zone-generator-export/`). Read from the RoF2 install at
+`F:\everquest_rof2` (read only) on 2026-11-16, plus EQEmu's server source and docs.
+`tests/test_export_grounding.py` pins the install facts below (it skips without `EQ_PATH`).
+The decisions are 7 to 9 in the spec's `archive.md`.
+
+### 1. Which archive the client loads for a short name
+
+**Four short names ship both a zone `.s3d` and an `.eqg`:** `arena`, `nektulos`, `tutoriala`
+and `tutorialb` (zone archives only; companions such as `_obj`/`_chr` left out). Each `.s3d`
+holds a full `<short>.wld` (arena 2,600 polygons, tutoriala 73,633), so neither copy is a stub.
+
+| short | `.eqg` holds | loose `<short>.zon` |
+|---|---|---|
+| arena | `ter_arena.ter`, 55 `.mod`, no `.zon` | EQGZ, 56 models (`TER_arena.TER` + all 55 `.mod`), 129 objects |
+| tutoriala | `ter_jail.ter`, no `.zon` | EQGZ, 29 models, 147 objects |
+| tutorialb | `ter_mines.ter`, no `.zon` | EQGZ, 134 models, 938 objects |
+| nektulos | its own `nektulos.zon`, no `.ter` | EQTZ (v4 text header, 254 bytes) |
+
+So for `arena` the loose `.zon` is the missing half of the `.eqg` zone: its model table names
+`TER_arena.TER` and every `.mod` in `arena.eqg`, and nothing outside it. Across the install there
+are 167 loose `.zon` files: 163 EQGZ beside an `.eqg` (3 of them also beside an `.s3d`), 2 EQGZ
+with no archive, and 2 EQTZ, both beside an `.eqg` (one of them `nektulos`).
+
+**The client tries `<short>.eqg` first.** The client's own log (`Logs\dbg.txt`, from the user's
+October sessions) has one line per zone-in, "Attempting to load `<short>`.EQG.", for every zone
+entered: `clz`, `tox`, `erudnext`, `crushbone`, `mistmoore`, `unrest`. When the `.eqg` exists it
+logs "Loaded `<short>`.EQG." (`clz`); when it doesn't (the other five, all `.s3d`-only) it goes on
+to "Loading zone specific files." and loads the `.s3d`. `clz` (character select) is built
+exactly as `arena` is: `clz.eqg` holding `ter_basemain.ter` and no `.zon`, plus a loose EQGZ
+`clz.zon` naming only files in it; the client loads it. EQEmu's map builder takes the same order
+(zone-utilities `azone/map.cpp`: standard `.eqg`, then v4 `.eqg`, then `.s3d`; its EQG loader
+reads a `.zon` inside the archive and falls back to the loose `<short>.zon` only when the archive
+has none).
+
+**Conclusion:** with both present the client loads `arena.eqg` + `arena.zon`, not
+`arena.s3d`. **Not seen directly for `arena`**: the log has no arena visit. Task 10 confirms it:
+zone into `arena` and look for "Loaded arena.EQG." in `Logs\dbg.txt`. Also unverified: which
+`.zon` wins when our `.eqg` carries one inside and a loose `arena.zon` is still there (azone
+prefers the one inside; the client is unknown).
+
+**Install steps that work either way:** move aside `arena.eqg`, `arena.zon`, `arena.s3d`,
+`arena_obj.s3d` and `arena_EnvironmentEmitters.txt` (it places four brazier-flame emitters at
+the stock zone's coordinates), then copy in our `arena.eqg` (its `.zon` inside) and our
+`maps\arena*.txt`. Keep `arena_chr.s3d` and `arena_chr.txt`: they hold the zone's NPC models,
+not geometry.
+
+### 2. What a doors row's `name` names, and our Door model
+
+**The name is a model the client already holds for the zone.** EQEmu's docs give names such as
+`IT11161` and `POPCREATE501`; the server only copies `name` into the spawn packet
+(`zone/doors.cpp`), so the client draws whatever model of that name it has loaded.
+
+- **`.s3d` zones:** the actor's tag without `_ACTORDEF`, from the zone's `_obj` archive. The
+  decor catalogue (`rules/decor/catalogue.json`) lists 199 actors named DOOR/GATE/PORTC across
+  163 `_obj.s3d` archives; 155 of them are never placed in any `objects.wld`, as expected of
+  models the server places as doors (e.g. `ARENADOOR200` in `arena_obj.s3d`, `DOOR1` in
+  `freporte_obj.s3d`).
+- **`.eqg` zones:** the `.mod` file name without `.MOD`, keeping its `OBJ_` prefix; an EQEmu
+  forum thread shows `dreadspire` rows named `OBJ_BDRM_LDOOR`, and `dreadspire.eqg` holds
+  `obj_bdrm_ldoor.mod`. 207 of the 1,057 `.eqg` archives hold 1,177 `.mod` files named
+  DOOR/GATE/PORTC, most starting `obj_` (not all: `pok_door.mod`, `bazaardoor.mod`). In
+  `arena`, `tutoriala`, `tutorialb` and `dreadspire` every door `.mod` is also in the `.zon`
+  model table (and placed once there as an object).
+- **Shared door archives** exist but load per zone, not globally: `doors.eqg` (8
+  `obj_switch_door_*` models, 1.1 MB) and `pok_book.eqg` load only for zones whose
+  `<short>_assets.txt` names them (146 such lists; `doors.eqg` is in 2). `arena` has none.
+
+**Nothing global is a door.** `Resources\GlobalLoad.txt` names no door archive (its object
+archive is `Global_obj`, the rest item and character archives), and `global_obj.s3d` holds one
+actor, `POKTELE500` (the old PoK stone). The `GEquip*` item models (`IT…`) are global, but no
+item model is known to be a plain door.
+
+**Decision: pack the Door model into our `.eqg`.** The model is **`BBDOOR1`**, the classic plain
+door, from **`ecommons_obj.s3d`** (`ecommons_obj.wld`; the same mesh ships in `kithicor_obj`,
+`nro_obj`, `oasis_obj` and `qeynos_obj`), catalogue mesh hash `b29f16cdfe7d32a6`. It is a
+12-triangle slab **1 x 10 x 10.05 units** (x thick, y wide, z tall) with its hinge edge at the
+origin (x -1..0, y -10..0, z 0..10.05) and one 256x256 texture, `bbdoor1.bmp`. Through the decor
+importer (`generators.decor.stock.Importer`) it packs as a 1,134-byte `.mod` plus a 262,272-byte
+DDS. It's era-right for the Classic default and goes through the importer Props already use.
+Task 5 packs it as `obj_bbdoor1.mod` (the stock `OBJ_` convention) and lists it in the `.zon`
+model table with no placed object; the rows name it `OBJ_BBDOOR1`. **Unverified until task 10:**
+that the client draws a door from a `.mod` listed in the `.zon` but not placed there, and that
+the `OBJ_` stem (not the file name) is the lookup key in our own zone.
+
+### 3. The doors row for a plain locked door
+
+From the pinned columns (`common/repositories/base/base_doors_repository.h`, 37 columns),
+`zone/doors.cpp`, and EQEmu's "Door Open Types" page:
+
+| column | value | why |
+|---|---|---|
+| `opentype` | `0` | 0-4 and 8 are the standard 90° swing (opens backward), 5-7 the same opening forward; 50, 53 and 54 draw nothing, 57 teleports, 59/60 lift |
+| `size` | `100` per 1.0 scale | default 100, a uniform scale of the model. `BBDOOR1` is 10 units, so a 50-unit corridor wants `size = 500` (task 4 computes it from the corridor) |
+| `heading` | 0-512 float | EQ units, not degrees: `doors.cpp` wraps it with `fmod(h, 512)` and turns it by `h * pi/256`, rotating by `-h` about Z (clockwise seen from above). Degrees convert as `deg * 512 / 360` |
+| `incline` | `0` | int, a tilt of the model; 0 stands it upright |
+| `keyitem` | a placeholder item id per tier | locked: the door opens freely only when `keyitem`, `lockpick` and `guild` are all 0 |
+| `lockpick` | `0` | with a key set, 0 means anyone with Pick Lock skill and a pick can open it (`lockpick <= skill`); the docs' "-1 = unpickable" has no special case in `doors.cpp` |
+| rest | stock defaults | `nokeyring 0`, `triggerdoor 0`, `door_param 0`, `invert_state 0`, `dest_zone 'NONE'`, `client_version_mask 4294967295`, `close_timer_ms 5000`, `min/max_expansion -1`, `version 0` |
+
+The hinge is at the model's origin, so the row's position is one jamb of the opening, not its
+centre: the slab runs along local -y from `pos`, turned by `heading` (task 4 offsets it).
+
+Sources: the RoF2 install (archives and `Logs\dbg.txt`); EQEmu/Server
+`common/repositories/base/base_doors_repository.h` and `zone/doors.cpp` (master,
+2026-11-16); docs.eqemu.dev "doors" schema and "Door Open Types"; EQEmu/zone-utilities
+`src/azone/map.cpp` and `src/common/eqg_loader.cpp`; EQEmulator forum threads on doors in
+newer zones (via search snippets; the pages refused direct reads). Content rephrased.
