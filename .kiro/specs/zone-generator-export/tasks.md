@@ -50,7 +50,7 @@ task proves it with
   - Owns: generators/export.py, analyzer/rof2check.py, tests/test_export.py
   - Reqs: 2
 
-- [ ] 4. The SQL script
+- [x] 4. The SQL script
   - Card: [cards/04-sql.md](cards/04-sql.md)
   - Type: agent · Size: M · Depends: 1, 2
   - Owns: generators/sqlexport.py, tests/test_sqlexport.py

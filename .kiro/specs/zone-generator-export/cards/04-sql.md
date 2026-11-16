@@ -22,3 +22,4 @@ SQLite and MySQL differ (`START TRANSACTION` vs `BEGIN`): write MySQL, and let t
 that keyword. Never open a database connection outside the test.
 
 ## Result
+✔ c376e91 · 3268 passed
