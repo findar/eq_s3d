@@ -12,14 +12,15 @@ companions dropped. Commit the written list. Long names: fill them if the instal
 source (say which in the commit), else leave them empty.
 
 ## Done when
-- [ ] The committed list holds `arena` and the classic zones (`qeynos`, `freporte`, `befallen`,
+- [x] The committed list holds `arena` and the classic zones (`qeynos`, `freporte`, `befallen`,
       `blackburrow`, `crushbone`) and no companion (`*_obj`, `*_chr`, `gequip*`). → verify: `python -m pytest tests/test_zonelist.py -q`
-- [ ] With no install configured every entry has `in_install` false; with `F:\everquest_rof2`
+- [x] With no install configured every entry has `in_install` false; with `F:\everquest_rof2`
       `arena` is true (skip when the install is absent). Same command.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 The list holds names and container only: no client bytes. Never write under `EQ_PATH`. Don't read
 `.env` yourself; find the install the way `ZoneInspector` does.
 
 ## Result
+✔ 8624b5c · 3252 passed

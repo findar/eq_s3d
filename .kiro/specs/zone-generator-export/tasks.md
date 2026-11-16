@@ -32,7 +32,7 @@ task proves it with
 
 ## Tasks
 
-- [ ] 1. Known short names
+- [x] 1. Known short names
   - Card: [cards/01-zonelist.md](cards/01-zonelist.md)
   - Type: agent · Size: S · Depends: —
   - Owns: analyzer/zonelist.py, analyzer/data/rof2_zones.json, tests/test_zonelist.py
