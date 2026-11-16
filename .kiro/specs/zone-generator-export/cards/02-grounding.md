@@ -22,13 +22,14 @@ A grounding test (`tests/test_export_grounding.py`, skipped without an install) 
 the code will rely on: the chosen Door model exists where you say.
 
 ## Done when
-- [ ] The three answers are in `docs/RESEARCH.md` with the evidence (counts, archive names).
-- [ ] `archive.md` "Decisions" gains one line each for the load rule, the Door model and the
+- [x] The three answers are in `docs/RESEARCH.md` with the evidence (counts, archive names).
+- [x] `archive.md` "Decisions" gains one line each for the load rule, the Door model and the
       door fields.
-- [ ] `python -m pytest tests/test_export_grounding.py -q` passes (skips without the install).
+- [x] `python -m pytest tests/test_export_grounding.py -q` passes (skips without the install).
 
 ## Pitfalls
 Read only: never write under `EQ_PATH`. Built `.eqg` files and client art never get committed.
 Don't guess the client's behaviour: if the install can't show it, say it is unverified.
 
 ## Result
+✔ c2e85f0 · grounding test passes
