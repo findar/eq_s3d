@@ -21,3 +21,4 @@ Never place the door as geometry or a ZON object. The model comes from the insta
 like decor; nothing from the install is committed.
 
 ## Result
+✔ a5acaab · 3258 passed
