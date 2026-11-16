@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import subprocess
 import threading
@@ -52,6 +53,8 @@ from ai.schema import (
     scale_control, VALID_SITES, available_inhabitants,
     DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR, decor_seed, rooms_seed,
 )
+
+logger = logging.getLogger("eq_s3d.server")
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -791,11 +794,15 @@ def _saved_request(req: GenerateRequest, mode: str) -> dict:
 
 def _generate(req: GenerateRequest, zone_id: str, version: int, *,
               saved: Optional[dict] = None,
-              version_meta: Optional[dict] = None) -> GenerateResponse:
-    """Generate (``version`` 1 of a new ``zone_id``) or a rebuild's full path (the next
-    version of an existing zone; ``saved`` is its parent's ``request.json``). A prompt-mode
-    rebuild takes the plan the parent's planner produced from ``saved``: the planner is
-    never called again."""
+              version_meta: Optional[dict] = None,
+              partial: Optional[tuple] = None) -> GenerateResponse:
+    """Generate (``version`` 1 of a new ``zone_id``) or a rebuild (the next version of an
+    existing zone; ``saved`` is the request it is built from, its parent's ``request.json``
+    with the change applied). A prompt-mode rebuild takes the plan the parent's planner
+    produced from ``saved``: the planner is never called again. ``partial`` is a partial
+    rebuild's ``(parent_dir, changes)``: the request is handled as here (its warnings, plan
+    and saved request), and the zone is built from the parent's saved stages
+    (``generators.rebuild.rebuild_decor``) instead of planned again."""
     # --- Mode + seed resolution: every 400 here happens BEFORE any build/write.
     mode = _resolve_mode(req)
 
@@ -951,22 +958,27 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
     # timeout) and returns the first passing zone, or raises GenerationFailed.
     request = {**_saved_request(req, mode), "plan": saved_plan, "planner": planner_name,
                **({"planned_zone_type": planned_zone_type} if planned_zone_type else {})}
+    pipeline = dict(
+        zone_type=zone_type,
+        zone_id=zone_id,
+        seed=req.seed,
+        output_dir=OUTPUT_DIR,
+        version=version,
+        write_glb=True,
+        failure_log=FAILURE_LOG,
+        warnings=warnings,
+        planned_zone_type=planned_zone_type,
+        mode=mode,
+        request=request,
+        version_meta=version_meta,
+    )
     try:
-        vb = generate_validated(
-            factory,
-            zone_type=zone_type,
-            zone_id=zone_id,
-            seed=req.seed,
-            output_dir=OUTPUT_DIR,
-            version=version,
-            write_glb=True,
-            failure_log=FAILURE_LOG,
-            warnings=warnings,
-            planned_zone_type=planned_zone_type,
-            mode=mode,
-            request=request,
-            version_meta=version_meta,
-        )
+        if partial is not None:
+            from generators.rebuild import rebuild_decor
+            parent_dir, changes = partial
+            vb = rebuild_decor(parent_dir, changes, generate=generate_validated, **pipeline)
+        else:
+            vb = generate_validated(factory, **pipeline)
     except GenerationFailed as e:
         # Exhaustion / pinned-seed failure -> clean error, never a broken GLB.
         raise HTTPException(
@@ -1036,6 +1048,18 @@ class RebuildRequest(BaseModel):
     version: StrictInt | StrictStr
     decor_seed: Optional[StrictInt] = None
     rooms_seed: Optional[StrictInt] = None
+    room_decor: Optional["RoomDecorChange"] = None
+
+
+class RoomDecorChange(BaseModel):
+    """One room keeping a decor seed of its own (the room view's Use in zone)."""
+    model_config = ConfigDict(extra="forbid")
+
+    room: StrictStr
+    decor_seed: StrictInt
+
+
+RebuildRequest.model_rebuild()
 
 
 class VersionInfo(BaseModel):
@@ -1120,12 +1144,21 @@ def _read_json(path: Path) -> Optional[dict]:
 
 @app.post("/api/rebuild", response_model=RebuildResponse)
 def rebuild(req: RebuildRequest):
-    """The next version of ``zone`` from ``version`` (partial-rebuild Req 2.1): the parent's
-    ``request.json`` sent again through Generate's path with its seed pinned and the stage
-    seeds this body names changed, built as ``v<n+1>`` of the same zone. Both seeds take
-    the full path here (``how: "full"``). An unknown zone or version (or one built before
-    versions, with no ``request.json``) is a 404; a body naming no change, or only seeds
-    the parent already has, a 400; a gate failure a 503 that writes nothing, as Generate's."""
+    """The next version of ``zone`` from ``version`` (partial-rebuild Req 2), changing what the
+    body names: ``decor_seed``, ``rooms_seed`` and ``room_decor: {room, decor_seed}`` (one room
+    keeping a decor seed of its own; a new ``decor_seed`` clears every room's).
+
+    A ``rooms_seed`` change is a full rebuild (``how: "full"``): the parent's ``request.json``
+    sent again through Generate's path with its seed pinned. A ``decor_seed`` or ``room_decor``
+    change alone is a partial one (``how: "partial"``, ``generators.rebuild``): the same
+    request handling, then the build from the parent's saved spec, TER and textures; a parent
+    whose saved stages are missing or no longer what this code builds takes the full path.
+    Either way the new version's ``request.json`` names its seeds and room decor seeds, so a
+    Generate of it builds the same zone. An unknown zone, version or room (or a version built
+    before versions, with no ``request.json``) is a 404; a body naming no change, only seeds
+    the parent already has, or ``room_decor`` with ``rooms_seed`` a 400; a gate failure a 503
+    that writes nothing, as Generate's (a pinned decor seed is never rerolled)."""
+    from generators import rebuild as partial
     zone_dir = _zone_dir(req.zone)
     parent_seg = _version_segment(req.version)
     parent_n = int(parent_seg[1:])
@@ -1133,8 +1166,17 @@ def rebuild(req: RebuildRequest):
         value = getattr(req, key)
         if value is not None and not (SEED_MIN <= value <= SEED_MAX):
             raise HTTPException(400, f"{key} must be between {SEED_MIN} and {SEED_MAX}")
-    if all(getattr(req, key) is None for key in REBUILD_SEEDS):
-        raise HTTPException(400, f"a rebuild names a change: one of {', '.join(REBUILD_SEEDS)}")
+    one = req.room_decor
+    if one is not None:
+        if not _safe_segment(one.room):
+            raise HTTPException(400, "room_decor.room must be one safe name (letters, digits, _ . -)")
+        if not (SEED_MIN <= one.decor_seed <= SEED_MAX):
+            raise HTTPException(400, f"room_decor.decor_seed must be between {SEED_MIN} and {SEED_MAX}")
+        if req.rooms_seed is not None:
+            raise HTTPException(400, "room_decor names a room of this version: not with rooms_seed")
+    if one is None and all(getattr(req, key) is None for key in REBUILD_SEEDS):
+        raise HTTPException(400, "a rebuild names a change: one of "
+                                 f"{', '.join(REBUILD_SEEDS)}, room_decor")
 
     parent_dir = _version_dirs(zone_dir).get(parent_n)
     if parent_dir is None:
@@ -1143,25 +1185,59 @@ def rebuild(req: RebuildRequest):
     if saved is None:
         raise HTTPException(404, f"version {req.zone}/{parent_seg} has no saved request "
                                  "(built before versions)")
+    if one is not None:
+        spec_doc = _read_json(parent_dir / f"{req.zone}.spec.json")
+        if spec_doc is None:
+            raise HTTPException(404, f"version {req.zone}/{parent_seg} has no saved spec")
+        if one.room not in partial.room_ids(spec_doc):
+            raise HTTPException(404, f"version {req.zone}/{parent_seg} has no room {one.room!r}")
 
     resolved = saved.get("seeds") or {}
     changed = [key for key in REBUILD_SEEDS
                if getattr(req, key) is not None and getattr(req, key) != resolved.get(key)]
+    plan = dict(saved.get("plan") or {})
+    old_rooms = {str(k): v for k, v in (plan.get("room_decor_seeds") or {}).items()}
+    changes = {"decor_seed": req.decor_seed if "decor_seed" in changed else None,
+               "room_decor": one.model_dump() if one is not None else None}
+    new_rooms = partial.room_seeds_after(old_rooms, changes) if "rooms_seed" not in changed else old_rooms
+    if new_rooms != old_rooms:
+        changed.append("room_decor_seeds")
     if not changed:
         raise HTTPException(400, f"version {parent_seg} already has that seed: nothing changes")
 
+    # The request the new version is built from (and saves): the parent's, with the changed
+    # seeds at the top level and the room decor seeds in its plan (and controls).
     body = dict(saved)
-    for key in changed:
-        body[key] = getattr(req, key)
+    for key in REBUILD_SEEDS:
+        if key in changed:
+            body[key] = getattr(req, key)
+    if "room_decor_seeds" in changed:
+        for part in ("plan", "controls"):
+            if isinstance(body.get(part), dict):
+                d = {k: v for k, v in body[part].items() if k != "room_decor_seeds"}
+                if new_rooms:
+                    d["room_decor_seeds"] = new_rooms
+                body[part] = d
     try:
         gen_req = GenerateRequest.model_validate(body)
     except ValueError:
         raise HTTPException(400, f"version {req.zone}/{parent_seg} has an unreadable saved request")
 
+    how = "full" if "rooms_seed" in changed else "partial"
     n = _take_version(req.zone, zone_dir)
-    info = VersionInfo(n=n, parent=parent_n, changed=changed, how="full")
     try:
-        resp = _generate(gen_req, req.zone, n, saved=saved, version_meta=info.model_dump())
+        info = VersionInfo(n=n, parent=parent_n, changed=changed, how=how)
+        resp = None
+        if how == "partial":
+            try:
+                resp = _generate(gen_req, req.zone, n, saved=body, version_meta=info.model_dump(),
+                                 partial=(parent_dir, changes))
+            except (partial.NoSavedStages, partial.StaleStages) as exc:
+                logger.warning("partial rebuild of %s/%s fell back to full: %s",
+                               req.zone, parent_seg, exc)
+                info = VersionInfo(n=n, parent=parent_n, changed=changed, how="full")
+        if resp is None:
+            resp = _generate(gen_req, req.zone, n, saved=body, version_meta=info.model_dump())
     finally:
         _release_version(req.zone, n)
     return RebuildResponse(**resp.model_dump(), version_info=info)
@@ -1294,11 +1370,15 @@ def room_decor(req: RoomDecorRequest):
     build = _room_build(zone, version, build_dir)
 
     control = req.control or build.control
-    seed = req.decor_seed if req.decor_seed is not None else build.seed
     try:
         layers = build.layers if extra is None else layers_for(build.theme, build.race, extra, rules_dir)
-        glb, report = decorate_room(build.contexts, req.room, seed=seed, control=control, layers=layers,
-                                    eq_path=_room_eq_path(), mesh=build.mesh, rules_dir=rules_dir)
+        # The zone's decor seed draws the room's bare decision, as the build drew it; a
+        # ``decor_seed`` here is the room's own (a reroll), and "As built" (none) takes the
+        # room's own seed from the build when it has one (partial-rebuild Req 3.2, 3.4).
+        glb, report = decorate_room(build.contexts, req.room, seed=build.seed, control=control,
+                                    layers=layers, eq_path=_room_eq_path(), mesh=build.mesh,
+                                    rules_dir=rules_dir, room_seed=req.decor_seed,
+                                    room_seeds=build.room_seeds)
     except NoRoom:
         raise HTTPException(404, f"build {zone}/{version} has no room {req.room!r}; it has "
                                  + ", ".join(c.id for c in build.contexts))

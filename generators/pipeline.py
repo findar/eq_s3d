@@ -64,7 +64,7 @@ from analyzer.traverse import (
     AgentModel, RoomResult, TraversalReport, load_ter_from_eqg, placed_models, validate,
 )
 from core.paths import OutputRoot
-from generators.builder import BuildResult, ZoneBuilder
+from generators.builder import BuildResult, SavedStages, ZoneBuilder
 from generators.eqmap import build_map_file, prop_marks, site_marks, write_map_files
 from generators.mapgeom import extract_outline, outline_summary, with_solids
 from generators.mapview import render_map_svg
@@ -513,6 +513,7 @@ def generate_validated(
     mode: Optional[str] = None,
     request: Optional[Mapping] = None,
     version_meta: Optional[Mapping] = None,
+    stages: Optional[SavedStages] = None,
 ) -> ValidatedBuild:
     """
     Build a zone and guarantee (for gated zone types) that it passes the
@@ -544,6 +545,10 @@ def generate_validated(
     passes ``request`` (the Server), ``<name>.request.json``: that request with the seeds
     the accepted attempt used (:func:`_write_inputs`). ``version_meta`` (a rebuild's
     ``{n, parent, changed, how}``) rides in the Sidecar as ``version``; v1 passes none.
+
+    ``stages`` (a partial rebuild, ``generators.rebuild.rebuild_decor``): the parent's TER
+    and textures, handed to every attempt's ``ZoneBuilder.build``; the gates, format check,
+    map files and finalize run as for any build.
 
     Behaviour by scope:
 
@@ -590,6 +595,7 @@ def generate_validated(
             spec = _with_decor(spec_factory(use_seed))
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
+                saved=stages,
             )
             # Ungated builds still RUN the Format_Checker and RECORD it (the
             # format block in the Sidecar), even though they are not retried.
@@ -660,6 +666,7 @@ def generate_validated(
             seeds = _seeds_used(spec, use_seed)
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
+                saved=stages,
             )
             report = _traversal_report(result.eqg_path, spec, agent)
             fmt = check_eqg(result.eqg_path, spec,
