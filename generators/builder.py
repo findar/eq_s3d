@@ -794,6 +794,24 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
 ARCHIVES_KEPT = 32
 
 
+class StaleStages(ValueError):
+    """A parent build's saved stages don't match what this code builds from its spec (the TER
+    differs, or a texture is missing): a partial rebuild from them would not equal a full one."""
+
+
+class SavedStages:
+    """A parent build's TER and surface textures, as its ``.eqg`` packs them, for a partial
+    rebuild (partial-rebuild Req 4.1, ``generators.rebuild``): ``ter_bytes`` the
+    ``ter_<name>.ter`` entry, ``textures`` the archive's DDS by lower-case file name and
+    ``modes`` the Texture_Mode that drew each surface material (the parent sidecar's
+    Texture_Manifest)."""
+
+    def __init__(self, ter_bytes: bytes, textures: Dict[str, bytes], modes: Dict[str, str]):
+        self.ter_bytes = ter_bytes
+        self.textures = {k.lower(): v for k, v in textures.items()}
+        self.modes = dict(modes)
+
+
 class ZoneBuilder:
     """
     Build a complete zone from a ZoneSpec.
@@ -820,7 +838,17 @@ class ZoneBuilder:
     def build(self,
               output_dir: str | Path = "output",
               write_glb: bool = True,
-              ter_version: int = 2) -> "BuildResult":
+              ter_version: int = 2,
+              saved: Optional[SavedStages] = None) -> "BuildResult":
+        """Build the zone into ``output_dir``.
+
+        ``saved`` (a partial rebuild, ``generators.rebuild``): the parent build's TER and
+        surface textures. Texture drawing is skipped: each surface material's DDS and
+        Texture_Mode are the parent's. The geometry still runs, because the stages after it
+        read the mesh at the precision it was built in (a TER read back from the ``.eqg``
+        holds float32, which moves Props), and it must give the parent's TER bytes, else
+        ``StaleStages``. Everything after (Sites, trees, Decor, the ZON, the Pack, the
+        sidecar, the GLB) runs as in any build."""
         # Build_Name gate (Req 8.2): validate BEFORE any mkdir / write, so an
         # invalid name produces no partial output. The Build_Name is the one
         # stem every artifact is named by.
@@ -848,6 +876,9 @@ class ZoneBuilder:
         #    the UVs), from the texture mode that will draw it.
         assign_texel_densities(self.spec)
         ter, backend_name, warnings = self._build_geometry(name, ter_version)
+        ter_bytes = ter.to_bytes()
+        if saved is not None and ter_bytes != saved.ter_bytes:
+            raise StaleStages(f"{name}: the parent's TER is not the one its spec builds")
 
         # An outdoor dungeon's layout warnings (rooms_reduced) ride with the
         # build's warnings.
@@ -881,7 +912,7 @@ class ZoneBuilder:
         eqg = EqgZone(name)
         eqg.set_placement(zon)
         # Store TER with the correct ter_ filename
-        eqg.add_model(ter_filename, ter.to_bytes())
+        eqg.add_model(ter_filename, ter_bytes)
         # Keep a handle so GLB export can use the geometry (pack=False avoids
         # writing a duplicate <zone>.ter — the model is already added above)
         eqg.set_terrain(ter, pack=False)
@@ -892,6 +923,14 @@ class ZoneBuilder:
         modes: Dict[str, str] = {}
         dds_by_name: Dict[str, bytes] = {}
         for mat_name, mat_spec in self.spec.materials.items():
+            if saved is not None:
+                dds = saved.textures.get(mat_spec.texture.lower())
+                if dds is None:
+                    raise StaleStages(f"{name}: the parent has no texture {mat_spec.texture}")
+                modes[mat_name] = saved.modes.get(mat_name, "procedural")
+                eqg.add_texture(mat_spec.texture, dds)
+                dds_by_name[mat_name] = dds
+                continue
             dds, modes[mat_name] = texture_with_mode(
                 mat_spec.description,
                 mat_spec.color,
