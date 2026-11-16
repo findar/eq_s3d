@@ -903,10 +903,14 @@ class ZoneBuilder:
             self.spec, world, None if sites is None else sites.placement)
         # Props in rooms (room-decor task 9): on top of the built TER too.
         decor = decor_for(self.spec, ter, warnings)
+        # The Door model a build with Gates packs, unplaced (export task 5); None without
+        # Gates (the build is unchanged) or without an install (then with a warning).
+        from generators.doors import doors_for
+        door = doors_for(self.spec, warnings, importer_for=_importer)
 
         # 2. Placement → ZON. The terrain is registered as the ZON's first model
         #    (RoF2 convention: ZON model[0] == "TER_<zone>.TER").
-        zon = self._build_zon(ter_filename, veg, sites, decor)
+        zon = self._build_zon(ter_filename, veg, sites, decor, door)
 
         # 3. Assemble archive. Store the terrain under its ter_ filename.
         eqg = EqgZone(name)
@@ -960,6 +964,11 @@ class ZoneBuilder:
                 eqg.add_model(fname, decor.models[fname].to_bytes())
             for fname in sorted(decor.textures):
                 eqg.add_texture(fname, decor.textures[fname])
+        # The Door model and its texture, copied from the install (export task 5).
+        if door is not None:
+            eqg.add_model(door.model_file, door.model.to_bytes())
+            for fname in sorted(door.textures):
+                eqg.add_texture(fname, door.textures[fname])
 
         # 5. Pack .eqg (confinement-checked through the OutputRoot).
         eqg_path = out_dir / f"{name}.eqg"
@@ -1226,7 +1235,8 @@ class ZoneBuilder:
         ter = box.build(self.spec, ter_name, ter_version)
         return ter, box.name, warnings
 
-    def _build_zon(self, ter_filename: str, veg=None, sites=None, decor=None) -> ZonFile:
+    def _build_zon(self, ter_filename: str, veg=None, sites=None, decor=None,
+                   door=None) -> ZonFile:
         zon = ZonFile()
 
         # The terrain mesh is the ZON's first model (RoF2 convention):
@@ -1277,6 +1287,11 @@ class ZoneBuilder:
                     name=f"decor_{i:04d}", model_id=prop_id[fname],
                     x=p.x, y=p.y, z=p.z, yaw=p.yaw, scale=p.scale,
                 ))
+
+        # The Door model (export task 5): listed last, never placed. A door is a runtime
+        # record (an EQEmu ``doors`` row naming it), not a ZON object.
+        if door is not None:
+            zon.models.append(door.model_file)
 
         for light in self.spec.lights:
             zon.lights.append(ZonLight(
