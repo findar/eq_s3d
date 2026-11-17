@@ -393,12 +393,12 @@ def build_walk_surface(ter: TerFile, agent: AgentModel) -> WalkSurface:
                     continue
                 # True XY contact test: do the triangles actually touch?
                 dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
-                if pt is None or dist > eps:
+                if pt is None or dist > eps + 1e-6:  # CONTACT_TOL, as analyzer.traverse (order-independent ties)
                     continue
                 # Floors must agree in height WHERE they touch, not at centroids.
                 zi = _plane_z_at(tris[fi], pt[0], pt[1])
                 zj = _plane_z_at(tris[fj], pt[0], pt[1])
-                if abs(zi - zj) <= agent.max_step_up:
+                if abs(zi - zj) <= agent.max_step_up + 1e-6:
                     adjacency[fi].add(fj)
                     adjacency[fj].add(fi)
 

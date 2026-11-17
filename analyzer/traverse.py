@@ -593,6 +593,14 @@ def _tri_tri_xy_contact(ti: np.ndarray, tj: np.ndarray):
     return best_d, best_pt
 
 
+#: Slack on the seam-contact limits (``adjacency_eps`` and ``max_step_up``). Both are
+#: inclusive, and the contact point and its interpolated heights carry rounding that
+#: depends on each face's vertex order: two flat floors exactly 3 u apart compared as
+#: 3.0 or 3.0000000000000004, so whether they joined changed with face order. The map
+#: outline already allows the same slack (``generators.mapgeom._Z_TOL``).
+CONTACT_TOL = 1e-6
+
+
 def _plane_z_at(tri: np.ndarray, px: float, py: float) -> float:
     """
     Height of the plane through ``tri`` at (px, py), via barycentric
@@ -859,12 +867,12 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
                     continue
                 # True XY contact test: do the triangles actually touch?
                 dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
-                if pt is None or dist > eps:
+                if pt is None or dist > eps + CONTACT_TOL:
                     continue
                 # Floors must agree in height WHERE they touch, not at centroids.
                 zi = _plane_z_at(tris[fi], pt[0], pt[1])
                 zj = _plane_z_at(tris[fj], pt[0], pt[1])
-                if abs(zi - zj) <= agent.max_step_up:
+                if abs(zi - zj) <= agent.max_step_up + CONTACT_TOL:
                     adjacency[fi].add(fj)
                     adjacency[fj].add(fi)
                     _union(pos_of[fi], pos_of[fj])
@@ -1639,11 +1647,11 @@ def _local_adjacency(surf: WalkSurface, agent: AgentModel,
             if find(fi) == find(fj):
                 continue
             dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
-            if pt is None or dist > eps:
+            if pt is None or dist > eps + CONTACT_TOL:
                 continue
             zi = _plane_z_at(tris[fi], pt[0], pt[1])
             zj = _plane_z_at(tris[fj], pt[0], pt[1])
-            if abs(zi - zj) <= agent.max_step_up:
+            if abs(zi - zj) <= agent.max_step_up + CONTACT_TOL:
                 adj[fi].add(fj)
                 adj[fj].add(fi)
                 parent[find(fi)] = find(fj)

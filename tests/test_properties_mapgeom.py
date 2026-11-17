@@ -554,6 +554,32 @@ def test_canonical_outline(world, salt):
             assert math.dist(p, q) >= 0.01
 
 
+def test_canonical_outline_at_exact_limits_and_stacked_floors():
+    """The thorough profile's failing world (2026-11-17), as plain quads.
+
+    A floor exactly 2 u (``adjacency_eps``) and 3 u (``max_step_up``) from the safe
+    floor joined it or not by rounding that followed the face order, and a slab
+    stacked three times left a stray 0.5 u ledge on its diagonal.
+    """
+    slabs = [(0, 0, 10, 1, 7), (0, -1, 10, 0, 7), (-12, -1, -11, 0, 6),
+             (-12, -10, -11, -1, 10), (0, 1, 10, 2, 7), (0, 1, 10, 2, 7),
+             (-11, -7, 1, -3, 10), (0, 1, 10, 2, 7)]
+    verts, polys = [], []
+    for x0, y0, x1, y1, z in slabs:
+        b = len(verts)
+        verts += [Vertex(x=float(x), y=float(y), z=float(z))
+                  for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
+        polys += [Polygon(v1=b, v2=b + 1, v3=b + 2, material=0, flags=0),
+                  Polygon(v1=b, v2=b + 2, v3=b + 3, material=0, flags=0)]
+    ter = TerFile(name="synthetic", vertices=verts, polygons=polys)
+    safe = (5.0, 0.5, 7.25)
+    a = extract_outline(ter, safe)
+    for salt in range(8):
+        assert extract_outline(_scramble(ter, random.Random(salt)), safe).polylines == a.polylines
+    assert {pl.points[0][2] for pl in a.polylines} == {7.0, 10.0}   # the z 10 floor joins
+    assert len(a.polylines) == 2                                     # no stray diagonal
+
+
 # ---------------------------------------------------------------------------
 # Property 7: depth bands
 # ---------------------------------------------------------------------------

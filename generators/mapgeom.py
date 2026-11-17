@@ -234,13 +234,21 @@ def _candidate_edges(V: np.ndarray, F: np.ndarray, region: np.ndarray):
     key = np.minimum(wa, wb) * nW + np.maximum(wa, wb)
     order = np.argsort(key, kind="stable")
     sk = key[order]
-    _, start, counts = np.unique(sk, return_index=True, return_counts=True)
-    pair_start = start[counts == 2]
-    i0, i1 = order[pair_start], order[pair_start + 1]
-    interior = side[i0] * side[i1] < 0               # the two faces on opposite sides
+    # A seam is interior when floor lies on both sides of it. Usually that is two faces, but
+    # stacked copies of a floor (coincident duplicate faces) share it among more: cancel every
+    # edge of a welded edge whose faces sit on both sides. Counting only pairs left such a
+    # diagonal as a candidate, and its probe overshooting the slab's corner made a stray
+    # ledge whose length depended on the face order.
+    _, grp = np.unique(sk, return_inverse=True)
+    grp = grp.reshape(-1)
+    s_sorted = side[order]
+    has_pos = np.zeros(int(grp.max()) + 1, bool)
+    has_neg = np.zeros_like(has_pos)
+    np.logical_or.at(has_pos, grp, s_sorted > 0)
+    np.logical_or.at(has_neg, grp, s_sorted < 0)
+    interior = has_pos[grp] & has_neg[grp]
     cancel = np.zeros(len(ea), bool)
-    cancel[i0[interior]] = True
-    cancel[i1[interior]] = True
+    cancel[order[interior]] = True
     k = ~cancel
     return ef[k], ea[k], eb[k], ec[k]
 
