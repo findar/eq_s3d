@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 16, ready.** Drafted 2026-11-15 at master `56b14c5` after the user chose
+> **STATUS: roadmap step 16, DONE** (signed off 2026-11-17; see `archive.md`). Drafted 2026-11-15 at master `56b14c5` after the user chose
 > "Partial rebuild (M4)" as step 16 and agreed to the shape proposed ("Sounds good"): versions
 > of one zone, rebuilding from the saved stages, re-checking only what changed, and one room's
 > decor kept into the zone from the room view. Task index: `tasks.md` (card format). Decisions:

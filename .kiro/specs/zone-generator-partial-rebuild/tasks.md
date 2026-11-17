@@ -74,7 +74,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Card: [cards/08-human-acceptance.md](cards/08-human-acceptance.md)
   - Type: human · Depends: 7
 
-- [ ] 9. Close step 16
+- [x] 9. Close step 16
   - Card: [cards/09-close.md](cards/09-close.md)
   - Type: agent · Size: S · Depends: 8 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-partial-rebuild/, .kiro/specs/zone-generator/

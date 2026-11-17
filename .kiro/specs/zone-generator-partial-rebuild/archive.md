@@ -7,6 +7,14 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | A room can keep its own decor seed; a plan's room seeds stay hashable | `7a00516`, `d847e28`, `189c626` |
+| 2 | A rebuild makes the next version of the same zone | `3eb99c9`, `5057439` |
+| 3 | A decor rebuild builds from the parent's saved stages, equal to a full build | `1f74017`, `e32bfb6`, `24667e2` |
+| 4 | The shell's gate result and the map outline kept per TER; the gate re-checks only the Props | `44ad8c8`, `ea1284d`, `6ff5156` |
+| 5 | Versions in the header, rerolls and Use in zone in the page | `9f9d9b2`, `0a9d27d`, `24667e2` |
+| 6, 8 | First look and acceptance pass, signed off 2026-11-17 | `4e401c9` |
+| 7 | Acceptance section; thorough 3248 passed; live timings in the commit | `ce72a95`, `b005e80` |
+| 9 | Close | this commit |
 
 ## Decisions
 
@@ -28,3 +36,6 @@ the lead proposed from the timings ("Sounds good").
    isn't used, so Use in zone can't change the bare cap. Only rooms take a room decor seed.
 
 ## Follow-ups
+
+- The rest of M4 on these versions: Sessions, chat edits through the `RuleEditInterpreter`, undo/redo (decision 5).
+- Carried from step 15, still open: `scripts/stage.py` `decor_stage` keeping its own copy of the bare cap; the room view's slow first call in a fresh server; Sites not in the room view.
