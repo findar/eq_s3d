@@ -74,7 +74,7 @@ task proves it with
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
   - Reqs: 4.2
 
-- [ ] 8. HUMAN: first look
+- [x] 8. HUMAN: first look
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
   - Type: human · Depends: 5, 7, 12
 

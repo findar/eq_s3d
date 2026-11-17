@@ -11,6 +11,7 @@ you like it and Use in zone. Does a decor reroll feel quick; is stepping through
 does Use in zone change only that room?
 
 ## Checklist
-- [ ] Walk the cases the lead serves.
+- [x] Walk the cases the lead serves.
 
 ## Result
+✔ signed off by the user, 2026-11-17 ("Signed off now continue")

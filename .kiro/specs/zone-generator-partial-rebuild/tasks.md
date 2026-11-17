@@ -61,7 +61,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
   - Reqs: 5
 
-- [ ] 6. HUMAN: first look
+- [x] 6. HUMAN: first look
   - Card: [cards/06-first-look.md](cards/06-first-look.md)
   - Type: human · Depends: 4, 5
 
@@ -70,7 +70,7 @@ Bytes: Generate and every build with no room decor seeds stay byte-identical in 
   - Type: agent · Size: S · Depends: 6
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 8. HUMAN: acceptance pass
+- [x] 8. HUMAN: acceptance pass
   - Card: [cards/08-human-acceptance.md](cards/08-human-acceptance.md)
   - Type: human · Depends: 7
 

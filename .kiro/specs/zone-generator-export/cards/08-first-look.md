@@ -10,6 +10,7 @@ export it to `arena`, download the bundle, and read `INSTALL.txt` and the SQL. I
 something you would apply to your server? Do the install steps read right?
 
 ## Checklist
-- [ ] Walk the cases the lead serves.
+- [x] Walk the cases the lead serves.
 
 ## Result
+✔ signed off by the user, 2026-11-17 ("Signed off now continue")
