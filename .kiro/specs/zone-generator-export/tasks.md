@@ -78,7 +78,7 @@ task proves it with
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
   - Type: human · Depends: 5, 7, 12
 
-- [ ] 9. Acceptance section, thorough run
+- [x] 9. Acceptance section, thorough run
   - Card: [cards/09-acceptance.md](cards/09-acceptance.md)
   - Type: agent · Size: S · Depends: 8
   - Owns: docs/ACCEPTANCE.md
