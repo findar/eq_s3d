@@ -2321,10 +2321,11 @@ unless a case says otherwise):
 - [ ] **[MUST] Picking moves the note and the button** — Pick `befallen — Befallen`: the note
       reads "Installing replaces **befallen**'s ..." and the button **Export to befallen**. Pick
       arena again before X.2.
-- [ ] **[SHOULD] Installed first** — Zones in your install come first. With `EQ_PATH` unset, every
-      zone reads `(not installed)` and is greyed, but still exports.
+- [ ] **[SHOULD] Installed first** — Zones in your install come first. With no install configured
+      (`EQ_PATH` in neither the environment nor `.env`), every zone reads `(not installed)` and
+      is greyed, but still exports.
 - [ ] **[MUST] Busy** — Press **Export to arena**: the button greys and reads `Exporting…`, and
-      the message under it says `Exporting…`, for a second or two. A second press while busy
+      the message under it says `Exporting…`, until the result shows. A second press while busy
       does nothing.
 - [ ] **[MUST] The result** — The message reads `<zone> v1 → arena`, and under it a list:
       **Bundle (.zip)** first (in bold), then **Zone archive (.eqg)**, **EQ map layer 0 (.txt)**
