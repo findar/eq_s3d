@@ -159,7 +159,7 @@ def test_apply_once_and_twice_without_spawn_cleanup(times):
     assert [d["keyitem"] for d in doors] == [KEYITEM_PLACEHOLDER_BASE,
                                              KEYITEM_PLACEHOLDER_BASE + 1]
     assert all(d["lockpick"] == LOCKPICK_UNPICKABLE for d in doors)
-    assert [d["pos_z"] for d in doors] == [0.0, 10.0]
+    assert [d["pos_z"] for d in doors] == [0.0, 0.0]          # each at its doorway's floor
     assert len(_dump(con, "doors", "zone=? AND version=1", (SHORT,))) == 3
 
     assert _others(con) == before_others
@@ -187,25 +187,40 @@ def test_spawn_cleanup_empties_only_the_targets_spawns(times):
     assert len(_dump(con, "doors", "zone=? AND version=0", (SHORT,))) == 2
 
 
-def test_doors_span_the_corridor_from_one_jamb():
-    """The hinge is at the row's position; turned by -heading (EQ: clockwise, 512 a turn) the
+def _slab(d, door_width=10.0):
+    """A door row's hinge and far end in plan. The hinge is at the row's position; turned by
+    -heading (EQ: clockwise, 512 a turn, task 4's convention, unverified in the client) the
     slab's far end (local -y, door width x scale) lands on the opposite jamb."""
+    reach = door_width * d["size"] / 100.0
+    a = -d["heading"] * 2 * math.pi / 512.0           # local (0, -reach) turned by a
+    near = (d["pos_x"], d["pos_y"])
+    return near, (d["pos_x"] + reach * math.sin(a), d["pos_y"] - reach * math.cos(a))
+
+
+def test_doors_span_the_doorway_from_one_jamb():
     con = _db()
     _apply(con, export_sql(_spec(), SHORT, bounds_min_z=MIN_Z))
     doors = _dump(con, "doors", "zone=? AND version=0", (SHORT,))
-    # gate_0: corridor along X, width 50, lock (200, 0).  gate_1: along Y, width 30, lock (400, 200).
-    for d, (lx, ly, width, heading) in zip(doors, [(200, 0, 50, 0.0),
-                                                  (400, 200, 30, QUARTER_TURN)]):
+    # Both locks sit midway, so each door takes the from end's doorway: corr_0 leaves room a
+    # through its E wall (x 100, along X, width 50); corr_1 leaves b through its N wall
+    # (y 100, along Y, width 30) on the ramp's low end.
+    for d, (mx, my, width, heading) in zip(doors, [(100, 0, 50, 0.0),
+                                                  (400, 100, 30, QUARTER_TURN)]):
         assert d["heading"] == heading
         assert d["size"] == round(100 * width / 10.0)
         assert (d["opentype"], d["incline"]) == (0, 0)
-        reach = 10.0 * d["size"] / 100.0
-        a = -d["heading"] * 2 * math.pi / 512.0       # local (0, -reach) turned by a
-        far = (d["pos_x"] + reach * math.sin(a), d["pos_y"] - reach * math.cos(a))
-        near = (d["pos_x"], d["pos_y"])
+        near, far = _slab(d)
         mid = ((near[0] + far[0]) / 2, (near[1] + far[1]) / 2)
-        assert mid == pytest.approx((lx, ly))
+        assert mid == pytest.approx((mx, my))
         assert math.dist(near, far) == pytest.approx(width)
+    # A lock nearer the far end moves the door there, onto that doorway's own floor.
+    spec = _spec()
+    spec.gates[0].lock_y = 280                        # gate_1, on corr_1 near room c
+    _apply(con, export_sql(spec, SHORT, bounds_min_z=MIN_Z))
+    d = _dump(con, "doors", "zone=? AND version=0 AND doorid=2", (SHORT,))[0]
+    near, far = _slab(d)
+    assert ((near[0] + far[0]) / 2, near[1], far[1]) == pytest.approx((400, 300, 300))
+    assert d["pos_z"] == 20.0
     # A wider door model makes a smaller scale.
     sql = export_sql(_spec(), SHORT, bounds_min_z=MIN_Z, door_width=25.0, door_model="OBJ_X")
     assert "'OBJ_X'" in sql and ", 200, " in sql            # 100 * 50 / 25
@@ -274,3 +289,65 @@ def test_unknown_short_name_is_refused_by_name():
     with pytest.raises(SqlExportError):
         export_sql(_spec(), "arena'; DROP TABLE zone; --", bounds_min_z=MIN_Z)
     assert "short_name='arena'" in export_sql(_spec(), " ARENA ", bounds_min_z=MIN_Z)
+
+
+# ---------------------------------------------------------------------------
+# Amendment A3 (task 12): on generated dungeons each door stands in a doorway the geometry cut.
+
+SWEEP_SEEDS = range(40)
+
+
+def _doorways(spec):
+    """Every doorway geometry cuts, as (room, along_x, plane, c0, c1, floor) with
+    ``geometry._door_openings``: c0..c1 the span along the wall, floor its ceiling less the
+    corridor's height (every corridor here is one height)."""
+    from generators.geometry import _door_openings
+
+    height = {c.height for c in spec.corridors}
+    assert len(height) == 1
+    h = height.pop()
+    out = []
+    for room in spec.rooms:
+        (x0, y0, _), (x1, y1, _) = room.bounds
+        planes = {"E": (True, x1), "W": (True, x0), "N": (False, y1), "S": (False, y0)}
+        for side, cuts in _door_openings(room, spec).items():
+            along_x, plane = planes[side]
+            out += [(room.id, along_x, plane, c0, c1, top - h) for c0, c1, top in cuts]
+    return out
+
+
+def test_doors_stand_in_their_corridors_doorways_on_40_dungeons():
+    from generators.layout import LayoutGenerator
+
+    placed = 0
+    for seed in SWEEP_SEEDS:
+        spec = LayoutGenerator(zone_type="dungeon", seed=seed).generate(
+            "sweep", room_count=12, locks=3)
+        sql = export_sql(spec, SHORT, bounds_min_z=MIN_Z)
+        con = _db()
+        _apply(con, sql)
+        doors = _dump(con, "doors", "zone=? AND version=0", (SHORT,))
+        gates = sorted(spec.gates, key=lambda g: (g.tier, g.id))
+        assert len(doors) == len(gates) == 3, seed
+        corridors = {c.id: c for c in spec.corridors}
+        doorways = _doorways(spec)
+        for d, g in zip(doors, gates):
+            cor = corridors[g.corridor_id]
+            near, far = _slab(d)
+            along_x = d["heading"] == 0.0
+            plane = near[0] if along_x else near[1]
+            span = sorted((near[1], far[1]) if along_x else (near[0], far[0]))
+            assert abs((far[0] if along_x else far[1]) - plane) < 1e-6, seed
+            hits = [w for w in doorways
+                    if w[0] in (cor.from_room, cor.to_room) and w[1] == along_x
+                    and abs(w[2] - plane) <= 1.0                         # on the doorway's line
+                    and abs(w[3] - span[0]) <= 1.0 and abs(w[4] - span[1]) <= 1.0   # jamb to jamb
+                    and abs(w[5] - d["pos_z"]) <= 0.01]                 # on its floor
+            assert hits, (seed, g.id, d)
+            placed += 1
+        # The Gates' locks are still where the layout put them, for the map and the sidecar.
+        for g in gates:
+            cor = corridors[g.corridor_id]
+            assert (g.lock_x, g.lock_y) == ((cor.from_x + cor.to_x) / 2,
+                                            (cor.from_y + cor.to_y) / 2)
+    assert placed == 3 * len(SWEEP_SEEDS)

@@ -13,8 +13,8 @@ script, inside one transaction:
   version-0 row, nothing else (archive decision 5). No zone id is used or
   changed (A1); rows are found by short name.
 * ``DELETE FROM doors`` for the short name's version 0, then one ``INSERT``
-  per Gate: the Door model at the lock, sized to span the corridor and turned
-  across it (archive decisions 8 and 9).
+  per Gate: the Door model at the corridor's doorway nearest the lock, sized
+  to span it and turned across it (archive decisions 8, 9 and 11).
 * With spawn cleanup, deletes of the short name's ``spawn2``, ``grid``,
   ``grid_entries`` and ``ground_spawns`` rows (version 0 where the table has
   one). ``grid`` and ``grid_entries`` key on the zone id, which the script reads
@@ -34,14 +34,21 @@ model origin, running along local -y (RESEARCH "Step 17", section 2). EQEmu
 turns a door by ``-heading`` about Z, heading in 0-512 units (clockwise seen
 from above), so:
 
-* a corridor running along X gets heading 0 and the row sits at the doorway's
-  +y jamb (``lock_y + width/2``), the slab reaching to the -y jamb;
-* a corridor running along Y gets heading 128 (90 degrees) and the row sits at
-  the +x jamb (``lock_x + width/2``), the slab reaching to the -x jamb.
+* a doorway in an E/W wall (the corridor runs along X there) gets heading 0
+  and the row sits on the wall plane at the doorway's +y jamb
+  (``cross + width/2``), the slab reaching to the -y jamb;
+* a doorway in an N/S wall gets heading 128 (90 degrees) and the row sits on
+  the wall plane at the +x jamb, the slab reaching to the -x jamb.
 
-``size`` is 100 per unit scale, so ``size = 100 * width / door_width``.
-Which way the corridor runs at the lock is the leg of its planned route
-(:func:`generators.routing.corridor_route`) nearest the lock.
+Which way the slab turns in the client is unverified (task 10); this keeps
+task 4's convention. ``size`` is 100 per unit scale, so
+``size = 100 * width / door_width``.
+
+Which doorway (amendment A3, archive decision 11): a lock on a short Z-route
+jog can't be sealed by one door, so the row goes at the corridor's opening
+nearest the Gate's lock (:func:`corridor_openings`, found as the geometry cuts
+doorways), at that opening's own floor height. The Gate's lock itself is left
+as the layout put it.
 
 ``lockpick``. EQEmu ``zone/doors.cpp`` (master, 2026-11-16) treats it as the
 Pick Lock skill a player needs: a door is unlocked only when key, lockpick and
@@ -55,9 +62,9 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 
-from .zone_spec import CorridorSpec, GateSpec, ZoneSpec
+from .zone_spec import CorridorSpec, GateSpec, RoomSpec, ZoneSpec
 
 #: The pinned EQEmu ``doors`` columns (``common/repositories/base/
 #: base_doors_repository.h``, EQEmu/Server master, 2026-11-16), in order, with
@@ -157,20 +164,82 @@ def _lit(v) -> str:
     return str(int(v))
 
 
-def _leg_along_x(cor: CorridorSpec, rooms: Dict, x: float, y: float) -> bool:
-    """Whether the corridor runs along X where it passes nearest (x, y)."""
+class Opening(NamedTuple):
+    """Where a corridor passes through a room's wall: the doorway the geometry cuts.
+
+    ``along_x`` is the end leg's axis (True: the corridor runs along X there, so the doorway
+    spans Y). ``plane`` is the wall's coordinate on that axis, ``cross`` the doorway's centre
+    on the other one, and ``z`` the corridor floor where it crosses the wall plane.
+    """
+
+    end: str                 # "from" | "to"
+    room: Optional[RoomSpec]
+    along_x: bool
+    plane: float
+    cross: float
+    z: float
+
+    @property
+    def xy(self) -> Tuple[float, float]:
+        return (self.plane, self.cross) if self.along_x else (self.cross, self.plane)
+
+
+def corridor_openings(cor: CorridorSpec, rooms: Dict[str, RoomSpec]) -> List[Opening]:
+    """The corridor's two doorways, found as ``geometry._door_openings`` cuts them.
+
+    Each end leg of the planned route (:func:`generators.routing.corridor_route`) leaves its
+    room through the wall on that leg's axis, on the side of the room centre the corridor's
+    end point lies. The doorway sits on that wall's plane (the end point itself is inset 2 u,
+    ``LayoutGenerator._wall_point``), centred on the leg, a corridor width wide. Its floor is
+    the leg's floor interpolated at the plane, so each end takes its own room's height (a
+    ramp carried on an end leg has risen a little by the wall). With no room recorded, the
+    end point stands for the wall.
+    """
+    from .geometry import MeshBuilder
     from .routing import corridor_route
 
     route = corridor_route(cor, rooms)
-    best, along = math.inf, route.axes[0]
-    for k, ax in enumerate(route.axes):
-        (x0, y0), (x1, y1) = route.waypoints[k], route.waypoints[k + 1]
-        cx = min(max(x, min(x0, x1)), max(x0, x1))
-        cy = min(max(y, min(y0, y1)), max(y0, y1))
-        d = math.hypot(x - cx, y - cy)
-        if d < best - 1e-9:
-            best, along = d, ax
-    return along
+    wps = list(route.waypoints)
+    zs, _ = MeshBuilder._waypoint_zs(wps, None if route.carry < 0 else route.carry,
+                                     cor.from_z, cor.to_z)
+    hw = cor.width / 2
+    out = []
+    for end, room_id in (("from", cor.from_room), ("to", cor.to_room)):
+        k = 0 if end == "from" else len(wps) - 2
+        along_x = route.axes[k]
+        built = MeshBuilder._leg_ends(wps, k, hw, zs)
+        if built is None:
+            zb = zs[k + 1] if end == "from" else zs[k]
+            built, (za, zb) = (wps[k], wps[k + 1]), (zb, zb)
+        else:
+            za, zb = zs[k], zs[k + 1]
+        (ax, ay), (bx, by) = built
+        ex, ey = wps[0] if end == "from" else wps[-1]
+        room = rooms.get(room_id) if room_id else None
+        if along_x:
+            pa, pb, cross, plane = ax, bx, ay, ex
+            if room is not None:
+                (x0, _, _), (x1, _, _) = room.bounds
+                plane = x1 if ex >= room.center_x else x0
+        else:
+            pa, pb, cross, plane = ay, by, ax, ey
+            if room is not None:
+                (_, y0, _), (_, y1, _) = room.bounds
+                plane = y1 if ey >= room.center_y else y0
+        t = min(1.0, max(0.0, (plane - pa) / (pb - pa))) if abs(pb - pa) > 1e-9 else 0.0
+        out.append(Opening(end, room, along_x, plane, cross, za + (zb - za) * t))
+    return out
+
+
+def _sealing_opening(cor: CorridorSpec, rooms: Dict[str, RoomSpec],
+                     x: float, y: float) -> Opening:
+    """The corridor's opening nearest (x, y). The layout puts a lock midway between the end
+    points, so a tie is usual: it goes to the shallower room (lower ``graph_depth``, the side
+    a player reaches first), then to the ``from`` end."""
+    def key(o: Opening):
+        depth = o.room.graph_depth if o.room is not None else 0
+        return (round(math.hypot(o.xy[0] - x, o.xy[1] - y), 3), depth, o.end != "from")
+    return min(corridor_openings(cor, rooms), key=key)
 
 
 def _door_rows(spec: ZoneSpec, short: str, door_model: str,
@@ -182,7 +251,7 @@ def _door_rows(spec: ZoneSpec, short: str, door_model: str,
     for n, g in enumerate(gates, start=1):
         lx = _num(f"gates[{g.id}].lock_x", g.lock_x)
         ly = _num(f"gates[{g.id}].lock_y", g.lock_y)
-        lz = _num(f"gates[{g.id}].lock_z", g.lock_z)
+        _num(f"gates[{g.id}].lock_z", g.lock_z)   # the lock stays in the spec; checked anyway
         cor = corridors.get(g.corridor_id)
         if cor is None:
             raise SqlExportError(f"gates[{g.id}].corridor_id",
@@ -193,16 +262,20 @@ def _door_rows(spec: ZoneSpec, short: str, door_model: str,
             raise SqlExportError(f"corridors[{cor.id}].width",
                                  f"corridors[{cor.id}].width is not positive: {width!r}")
         hw = width / 2
-        if _leg_along_x(cor, rooms, lx, ly):
-            heading, px, py = 0.0, lx, ly + hw
+        op = _sealing_opening(cor, rooms, lx, ly)
+        if op.along_x:
+            heading, px, py = 0.0, op.plane, op.cross + hw
         else:
-            heading, px, py = QUARTER_TURN, lx + hw, ly
+            heading, px, py = QUARTER_TURN, op.cross + hw, op.plane
+        px = _num(f"gates[{g.id}] door x", px)
+        py = _num(f"gates[{g.id}] door y", py)
+        pz = _num(f"gates[{g.id}] door z", op.z)
         size = int(round(100.0 * width / door_width))
         size = min(max(size, 1), 65535)               # uint16_t
         row = {name: default for name, default in DOORS_COLUMNS if name != "id"}
         row.update(
             doorid=n, zone=short, version=0, name=door_model,
-            pos_y=py, pos_x=px, pos_z=lz, heading=heading,
+            pos_y=py, pos_x=px, pos_z=pz, heading=heading,
             opentype=0, incline=0, size=size,
             lockpick=LOCKPICK_UNPICKABLE,
             keyitem=KEYITEM_PLACEHOLDER_BASE + int(g.tier),
