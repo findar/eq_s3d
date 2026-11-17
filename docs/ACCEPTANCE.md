@@ -2283,3 +2283,152 @@ Known issues (not regressions):
 - An outdoor dungeon's decor reroll still checks its outdoor part in full (its Sites' Props come
   from the decor seed), so case c stays near 4 seconds.
 - Kept checks live only as long as the Server: the first rebuild after a restart takes longer.
+
+---
+
+## Step 17 — Export
+
+> Roadmap step 17 (`zone-generator-export`). A build can now be **exported** as a takeover of an
+> existing zone, `arena` by default: a copy of the build renamed for that zone's short name, a
+> SQL script for that zone's server rows, and a bundle with install notes. The export is written
+> beside the build, in `output/web/<zone>/v<n>/export/<short>/`; the build's own files never
+> change, and nothing is copied into an EverQuest folder or run against a database. Restart the
+> Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no
+> stale-code banner shows.
+
+Build each case in Controls (Decor **Normal**, Decor rules **From theme**, Seeds blank, Rooms 5
+unless a case says otherwise):
+
+| Case | Zone | Settings | Seed | Gates |
+|---|---|---|---|---|
+| a | Dungeon | Locks 2 | 2 | 2 (tiers 0 and 1) |
+| b | City | | 5 | none |
+| c | Outdoor dungeon | Rooms 5 | 2 | none |
+| d | Wilderness | | 4 | none |
+
+### X.1 — The Export row
+
+- [ ] **[MUST] Where it is** — Case a: at the bottom of the side panel's Files section sits
+      **Export**: a **Replaces** filter box, a list of zones, a **Spawn cleanup** tick (off), the
+      note "Installing replaces **arena**'s client files and server rows. The tool writes only to
+      output/.", and a button **Export to arena**. With no build open the row isn't shown.
+- [ ] **[MUST] arena is picked** — The list shows `arena — The Arena` selected and scrolled into
+      view, without scrolling the page.
+- [ ] **[MUST] Filtering** — Type `guk` in Replaces: the list narrows to the Guk zones
+      (`gukbottom — Lower Guk`, `guktop` ...). Type `knowledge`: only `poknowledge — Plane of
+      Knowledge` (it matched the long name). Case doesn't matter (`GUK` works). Clear the box:
+      the whole list is back, and the zone you last picked is still picked.
+- [ ] **[MUST] Picking moves the note and the button** — Pick `befallen — Befallen`: the note
+      reads "Installing replaces **befallen**'s ..." and the button **Export to befallen**. Pick
+      arena again before X.2.
+- [ ] **[SHOULD] Installed first** — Zones in your install come first. With no install configured
+      (`EQ_PATH` in neither the environment nor `.env`), every zone reads `(not installed)` and
+      is greyed, but still exports.
+- [ ] **[MUST] Busy** — Press **Export to arena**: the button greys and reads `Exporting…`, and
+      the message under it says `Exporting…`, until the result shows. A second press while busy
+      does nothing.
+- [ ] **[MUST] The result** — The message reads `<zone> v1 → arena`, and under it a list:
+      **Bundle (.zip)** first (in bold), then **Zone archive (.eqg)**, **EQ map layer 0 (.txt)**
+      and **EQ map layer 1 (.txt)**, **Server rows (.sql)**, **Zone sidecar (.json)**, **Install
+      notes (.txt)**. Each one downloads. Hovering one shows its file name (`arena.eqg`,
+      `maps/arena.txt` ...). No warning shows.
+- [ ] **[MUST] Spawn cleanup** — Tick Spawn cleanup and export again: the message ends
+      `· spawn cleanup`. Untick it before X.3.
+- [ ] **[MUST] An unknown name** — Type `arenna` in Replaces (the list empties; the button reads
+      **Export to arenna**) and press Enter: the message, in red, reads "unknown short name
+      'arenna'; closest: arena, arena2, barren, warrens, arelis". Nothing is written.
+- [ ] **[SHOULD] A new version clears it** — Reroll decor (v2): the list of files goes away and
+      the button exports v2. Step back to v1 (◂): export again to see v1's files.
+- [ ] **[SHOULD] Every zone type** — Export cases b, c and d to arena: each lists the same files
+      (case c has three map layers, b and d one), and none warns.
+
+### X.2 — What the bundle holds
+
+Open case a's **Bundle (.zip)** (or the folder `output/web/<zone>/v1/export/arena/`).
+
+- [ ] **[MUST] The files** — `arena.eqg`, `maps/arena.txt` and `maps/arena_1.txt`, `arena.sql`,
+      `arena.zone.json` and `INSTALL.txt`. No `gen_...` name is left in any file name.
+- [ ] **[MUST] INSTALL.txt** — It says the bundle replaces the zone 'arena' and that nothing has
+      been copied into a client or run against a database. It lists the files, then three steps:
+      **1. Client** (work on a COPY of the RoF2 folder; move aside `arena.eqg`, `arena.zon`,
+      `arena.s3d`, `arena_obj.s3d`, `arena_EnvironmentEmitters.txt`; keep `arena_chr.s3d` and
+      `arena_chr.txt`; copy in `arena.eqg` and the map files), **2. Server** (back up the rows
+      the header names, replace the placeholder key ids, apply it by hand with `mysql`),
+      **3. Check** (zone into 'arena', look for "Loaded arena.EQG." in `Logs\dbg.txt`), and how
+      to undo. It opens cleanly in Notepad.
+- [ ] **[MUST] The SQL header** — `arena.sql` starts with `--` comments: it takes over the
+      EXISTING zone 'arena' (version 0), finds rows by short name and changes no zone id, names
+      the rows to back up (the zone row, its doors rows), says "2 here" doors and that spawns are
+      left alone, that fog, clip planes and sky stay as they are, and lists the placeholder key
+      items (`tier 0: keyitem 990000`, `tier 1: keyitem 990001`) and "lockpick 32767; only the
+      key opens them".
+- [ ] **[MUST] One transaction** — The statements sit between `START TRANSACTION;` and
+      `COMMIT;`: one `UPDATE zone` setting only `safe_x`, `safe_y`, `safe_z` and `underworld`
+      (`WHERE short_name='arena' AND version=0`), one `DELETE FROM doors WHERE zone='arena' AND
+      version=0`, then one `INSERT INTO doors` per Gate.
+- [ ] **[MUST] Safe point and underworld** — Case a: safe point 17.977, -9.335, 5.000, in the
+      entrance room on its floor (compare the map, M); `underworld` -102.500, about 100 below the
+      lowest floor.
+- [ ] **[MUST] The door rows** — Two rows, both `name 'OBJ_BBDOOR1'`, `lockpick 32767`,
+      `opentype 0`, `size 180` (the 18-u corridor), `keyitem` 990000 and 990001. Each stands at
+      the doorway of its Gate's corridor nearest the lock, on that room's floor: door 1 at
+      x 207.2, y -30.8, z 102 (heading 128, a north/south wall: room_2's floor is 102); door 2 at
+      x 209.2, y 9.0, z 101.3 (heading 0, an east/west wall, at room_2's end of the ramp from
+      room_4). On the map (M, Gates on) each door is at a room's opening of the corridor with a
+      lock, not out in the middle of the corridor. (Rows list `pos_y` before `pos_x`.)
+- [ ] **[MUST] No Gates, no doors** — Cases b, c and d: the header says "0 here" with no key
+      items listed, and the script has the `UPDATE zone` and the `DELETE FROM doors` but no
+      `INSERT`.
+- [ ] **[SHOULD] Spawn cleanup** — With the tick on, the header also names the spawn rows to back
+      up and says "and deletes its spawns", and the script ends with deletes from `spawn2`,
+      `grid_entries`, `grid` and `ground_spawns` before `COMMIT;`. Without it those tables are
+      never named.
+
+### X.3 — One build, two exports
+
+- [ ] **[MUST] Two names, two folders** — Case a: export to arena, then to `befallen`. On disk,
+      `output/web/<zone>/v1/export/` holds `arena/` and `befallen/`, each with its own files
+      named for its zone (`befallen.eqg`, `befallen.sql` ...); arena's files are still there.
+- [ ] **[MUST] The build is untouched** — The build's own files in `output/web/<zone>/v1/` (its
+      `.eqg`, maps, sidecar, `.spec.json`) have the same dates and sizes as before the exports,
+      and the zone still loads in the viewer as before.
+- [ ] **[SHOULD] Exporting again replaces** — Export to arena a second time: the `arena/` folder
+      is rewritten (new dates), with the same files.
+
+### X.4 — In the client
+
+Never on your only install. Make a SCRATCH COPY of the RoF2 folder (for example
+`F:\everquest_rof2_scratch`) and do every step there.
+
+- [ ] **[MUST] The copy** — Follow INSTALL.txt step 1 in the scratch copy: move the five stock
+      arena files out (keep them), copy in case a's `arena.eqg` and its map files.
+- [ ] **[MUST] It loads** — Start the scratch copy's client, zone into `arena`: no crash, and
+      `Logs\dbg.txt` has "Loaded arena.EQG.". Without the SQL on your server you arrive at
+      stock arena's safe point, which may be off our floor (you fall): that's expected. Walk or
+      warp to the safe point in the SQL.
+- [ ] **[MUST] Our zone** — The rooms, corridors, walls and textures are case a's as in the
+      viewer, and the floors hold you (collision works). The map (in-game map window) shows our
+      layout.
+- [ ] **[SHOULD] Cases b, c, d** — Do the same with each one's `arena.eqg` in turn: each loads
+      and is walkable.
+
+Applying the SQL is OPTIONAL, and only on a test server you can restore (back up the rows its
+header names first, as INSTALL.txt says). With case a's script applied:
+
+- [ ] **[SHOULD] Safe point** — Zoning into arena puts you on the entrance room's floor.
+- [ ] **[SHOULD] Doors stand and swing right** — A door stands in each locked corridor's doorway
+      nearest its lock, upright on the floor, filling the doorway. Note which way each one swings
+      (into the room or into the corridor) and whether it opens from the side you meet it on;
+      the direction is not yet confirmed, so record what you see.
+- [ ] **[SHOULD] Locked** — Without the key the door doesn't open, and Pick Lock never opens it.
+      With a key item set in place of the placeholder (990000 / 990001) on the row, and that item
+      on you, it opens.
+- [ ] **[SHOULD] Undo** — Restore the server rows from your backup and the stock arena files in
+      the scratch copy: stock arena loads again.
+
+Known issues (not regressions):
+
+- Which way a door swings is unverified until this pass: the rows keep one convention (hinge at
+  the doorway's +y or +x jamb). Report the direction you see.
+- Fog, clip planes, sky and zone type stay stock arena's, so the sky and draw distance are
+  arena's, not tuned for the zone.
