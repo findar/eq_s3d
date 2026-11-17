@@ -92,7 +92,7 @@ task proves it with
   - Type: agent · Size: S · Depends: 10 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-export/, .kiro/specs/zone-generator/
 
-- [ ] 12. Doors that seal their corridor
+- [x] 12. Doors that seal their corridor
   - Card: [cards/12-door-openings.md](cards/12-door-openings.md)
   - Type: agent · Size: S · Depends: 4
   - Owns: generators/sqlexport.py, tests/test_sqlexport.py
