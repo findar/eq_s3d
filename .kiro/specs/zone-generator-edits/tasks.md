@@ -78,11 +78,11 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Type: agent · Size: S · Depends: 5
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 9. HUMAN: first look
+- [x] 9. HUMAN: first look
   - Card: [cards/09-first-look.md](cards/09-first-look.md)
   - Type: human · Depends: 5, 8
 
-- [ ] 10. Close step 18
+- [x] 10. Close step 18
   - Card: [cards/10-close.md](cards/10-close.md)
   - Type: agent · Size: S · Depends: 6, 7, 9 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-edits/, .kiro/specs/zone-generator/

@@ -11,6 +11,7 @@ Confirm step 18's choice and shape (`archive.md` "Decisions"). Walk "Step 18 —
 they were.
 
 ## Checklist
-- [ ] Walk the section.
+- [ ] Walk the section. (skipped)
 
 ## Result
+— skipped at the user's word, 2026-11-18 ("Skip and continue more work"); the section not walked, the shape not confirmed in person

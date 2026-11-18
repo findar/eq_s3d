@@ -7,6 +7,13 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1, 6 | `ai/edits.py`: the op vocabulary, `validate` (schema / target), `resolve_target` and the rule interpreter with `HELP`; `ai/llm_edits.py`: an optional LLM interpreter falling back to the rules | `5876e89`, `0f1743b` |
+| 2, 7 | Resize grounded (decision 6) and built: `generators/resize.py` widens, narrows, heightens and lowers a room, clamped by bisection with the share applied in the note; outdoor dungeons refused | `9e2d0a3`, `5f907f7` |
+| 3 | `generators/edits.py` `apply_edits`: purpose, locks (the shared `layout.gate_*` rule, solvability-checked), room and decor rerolls, decor level, regenerate; partial ops byte-identical to full builds | `927575a` |
+| 4 | `POST /api/edit`, `main.py --edit`, `rebuild.build_spec`, the sidecar's `edit` block and the listing's `edit` field, a per-zone 429 | `30d6799`, `8d8c792` |
+| 5 | The page's Feedback section: Apply, notes, Undo and Redo over parent links, the Affected_Set tint | `707ae93` |
+| 8 | `docs/ACCEPTANCE.md` "Step 18 — Edits"; thorough 3515 passed, 1 pre-existing failure | `c102750`, `3151de9` |
+| 9 | Skipped at the user's word (2026-11-18) | — |
 
 ## Decisions
 
@@ -82,3 +89,8 @@ shape. The user confirms the choice and these decisions at the first look (task 
   touches site models.
 - The page's room tint is an overlay from the sidecar: graph rooms fill their outline, classic
   and city rooms get a disc at the centre; corridors aren't tinted (task 5).
+- `add_room`, `remove_room`, `add_region`, `remove_region`, `set_verticality` and `set_topology`
+  answer "not yet supported" (A3).
+- Not looked at in person (task 9 skipped): decor, lights, regions, lock points and city POIs
+  after a resize; the tint; the unconfirmed report of "the boss room" resolving to room_0 on a
+  classic dungeon (not reproduced on 16 classic builds).

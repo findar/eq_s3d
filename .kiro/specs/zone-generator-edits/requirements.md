@@ -1,6 +1,7 @@
 # Requirements Document
 
-> **STATUS: roadmap step 18, ready.** Drafted 2026-11-18 at master `bac2371`. The user chose
+> **STATUS: roadmap step 18, DONE** (closed 2026-11-18; the acceptance pass skipped at the user's
+> word, so nothing was walked in person; see `archive.md`). Drafted 2026-11-18 at master `bac2371`. The user chose
 > "Rest of m4" for step 18 (multi-zone worlds wait on the user's review of their design). The
 > lead chose the shape below; the user confirms it at the first look (task 9). Task index:
 > `tasks.md` (card format). Decisions: `archive.md`.
