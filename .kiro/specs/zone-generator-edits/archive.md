@@ -22,5 +22,15 @@ shape. The user confirms the choice and these decisions at the first look (task 
 4. **An edit's `how` is honest:** a partial edit that changes the TER is caught by `StaleStages`
    and built in full; either way the version equals a full build of the edited spec.
 5. **Per-zone build lock:** a second edit or rebuild on a zone while one builds is a 429.
+6. **Resize lands, all four ops (task 2).** Floors stay put. Scale the room's box about its centre,
+   move each touching corridor's end on the room by the wall's shift (keeping its cross position),
+   then re-run `wall_styles.apply_walls`/`apply_walls_by_finish` and `room_layouts.apply_features`
+   at `rooms_seed or seed`, keeping each Transition's saved look. A full rebuild re-dresses the
+   saved spec unchanged only with that look kept. Clamp by bisection: no new 3D overlap, the door
+   stays on its wall, the route and its leg directions stay the same, the grade stays at or under
+   max(0.5, the old grade), a stair or bridge keeps its layout, and the room stays as tall as its
+   corridors. Neighbours can change too. Put them in the Affected_Set: a room whose
+   `geometry._door_openings` or `_bridge_slots` change, and a corridor whose `bridge_layout` or
+   `stair_layout` change. In 162 resized builds that prediction matched the built triangles every time.
 
 ## Follow-ups
