@@ -37,7 +37,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Owns: ai/edits.py, tests/test_edit_interpreter.py
   - Reqs: 1.1–1.4
 
-- [ ] 2. Ground the resize ops
+- [x] 2. Ground the resize ops
   - Card: [cards/02-resize-grounding.md](cards/02-resize-grounding.md)
   - Type: agent · Size: S · Depends: —
   - Owns: .kiro/specs/zone-generator-edits/archive.md, .kiro/specs/zone-generator-edits/cards/07-resize.md
