@@ -61,5 +61,18 @@ shape. The user confirms the choice and these decisions at the first look (task 
    cover were fixed against the original boxes. Decor, lights, regions, lock points and city
    POIs follow the room only in the full rebuild and aren't in the clamp checks: look at them
    at the first look.
+10. **The edit route (task 4).** `POST /api/edit {zone, version, text | ops, seed?}` answers 200
+   with `applied`, `parent`, `version`, `interpreter`, `text`, `ops` (drawn seeds filled in),
+   `notes`, `affected`, `how`, `help`, `invalid`, `rejected`, `diagnostics`, `build`; 400/404/429
+   otherwise. Partial edits build from the parent's stages through `rebuild.build_spec`, full
+   ones without; `regenerate` plans again from the request. A fresh draw seed per request unless
+   `seed` is sent. The listing entry carries `edit: {text, ops}` (not `VersionInfo`, so rebuild
+   sidecars are unchanged). An edit is refused (429) while an edit or rebuild of the zone
+   builds; two rebuilds still run together (step 16's tests). No `edit_outside_bands` yet: no
+   quality bands exist. A `rooms_seed` rebuild of an edited version plans again from the
+   request and drops purpose and lock edits (follow-up).
 
 ## Follow-ups
+
+- A `rooms_seed` rebuild of an edited version drops its purpose and lock edits (decision 10).
+- `edit_outside_bands` waits on quality bands (umbrella 19.7).

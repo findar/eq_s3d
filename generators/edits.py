@@ -288,7 +288,7 @@ def _set_purpose(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random)
     if room.get("semantic_type") == op["type"]:
         raise _Rejected(f"set_purpose: {room['id']} is already a {op['type']}")
     room["semantic_type"] = op["type"]
-    return _Done(["semantic_type"], f"{room['id']} is now a {op['type']}", rooms=[room["id"]])
+    return _Done(["semantic_type"], f"{room['id']} is now {'an' if op['type'][:1] in 'aeiou' else 'a'} {op['type']}", rooms=[room["id"]])
 
 
 def _reroll_room(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random) -> _Done:
