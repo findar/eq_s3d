@@ -76,3 +76,9 @@ shape. The user confirms the choice and these decisions at the first look (task 
 
 - A `rooms_seed` rebuild of an edited version drops its purpose and lock edits (decision 10).
 - `edit_outside_bands` waits on quality bands (umbrella 19.7).
+- A pre-existing thorough failure: `test_site_models.py::test_property_p3_closed_round_trips_counts_skirt_and_openings`
+  with `kv=('tent', 'canvas')`, `material_set='crude_timber'`, `seed=963196`: the gate's opening
+  measure reads the tent as enterable (only huts and lean-tos should be). Nothing in step 18
+  touches site models.
+- The page's room tint is an overlay from the sidecar: graph rooms fill their outline, classic
+  and city rooms get a disc at the centre; corridors aren't tinted (task 5).

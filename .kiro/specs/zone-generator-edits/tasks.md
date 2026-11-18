@@ -73,7 +73,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Owns: generators/resize.py, generators/edits.py (the resize rows only), tests/test_resize.py
   - Reqs: 2.7
 
-- [ ] 8. Acceptance section
+- [x] 8. Acceptance section
   - Card: [cards/08-acceptance.md](cards/08-acceptance.md)
   - Type: agent · Size: S · Depends: 5
   - Owns: docs/ACCEPTANCE.md

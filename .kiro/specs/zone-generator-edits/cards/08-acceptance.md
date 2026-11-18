@@ -9,7 +9,8 @@ without resize the boss room's purpose → lock the way into the crypt → redec
 
 ## Done when
 - [x] The section is written. → verify: `git show HEAD -- docs/ACCEPTANCE.md`
-- [ ] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
+- [x] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
       named in the commit body.
 
 ## Result
+✔ c102750 · thorough 3515 passed, 1 failed (pre-existing `test_site_models` p3, a canvas tent read as enterable)
