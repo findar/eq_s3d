@@ -55,7 +55,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Owns: server/app.py, main.py, generators/rebuild.py, tests/test_edit_route.py, tests/test_hygiene.py (the CLI option allowlist only)
   - Reqs: 3
 
-- [ ] 5. The Feedback section in the page
+- [x] 5. The Feedback section in the page
   - Card: [cards/05-page.md](cards/05-page.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
