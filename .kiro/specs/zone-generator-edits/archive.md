@@ -39,5 +39,19 @@ shape. The user confirms the choice and these decisions at the first look (task 
    `set_verticality` takes `level` or `delta`. `validate` returns bad ops with `why`: `schema`
    (invalid, `applied: false` per umbrella 18.9) or `target` (a rejection note, the rest
    apply, 18.5). Every op is recognised there; which apply is `generators/edits.py`'s call.
+8. **The edit engine (task 3, `generators/edits.py`).** `apply_edits(doc, ops, seed, version)`
+   returns `EditResult(doc, affected_rooms, affected_corridors, notes, how, changed, applied,
+   rejected, seed)`; `.affected` is the sidecar's `{rooms, corridors}`. `how` is `partial` when
+   every applied op is, `full` when any is (`regenerate`, resize), `None` when nothing applied
+   (the route's `applied: false`). `changed` lists the spec fields touched, in op order.
+   `applied` carries any drawn seed (`random.Random(f"{seed}:{version}:{i}")`; a retry passes
+   the next seed). Each op is re-checked against the spec as edited so far; one that can't
+   apply is a note and the rest still apply. `regenerate` returns the doc unchanged plus
+   `.seed` (the route plans again from the parent's request) and skips the edit's other ops.
+   `add_lock` locks the target's way in from the entrance, its key before every other lock, a
+   `solvable()` check or rejected; `remove_lock` with no target removes every lock. The layout
+   and `add_lock` share `layout.gate_*`. Resize goes through `_resize` (task 7 replaces it).
+   Every partial op builds byte-identical with the parent's stages and in full (Graph dungeon
+   seed 2, city seed 5), so none needs the `StaleStages` fallback today.
 
 ## Follow-ups
