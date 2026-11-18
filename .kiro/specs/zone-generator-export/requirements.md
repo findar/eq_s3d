@@ -1,6 +1,7 @@
 # Requirements Document
 
-> **STATUS: roadmap step 17, ready.** Drafted 2026-11-16 at master `b005e80`. The user said
+> **STATUS: roadmap step 17, DONE** (closed 2026-11-17; the acceptance pass skipped at the user's
+> word, so the in-client load is unchecked; see `archive.md`). Drafted 2026-11-16 at master `b005e80`. The user said
 > "Keep working and we can validate this in the next step" with step 16's human checks still
 > open, so the lead chose the next step: umbrella milestone M6, the export (the last milestone
 > not started). The user confirms the choice at the first look (task 8). Task index: `tasks.md`

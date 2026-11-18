@@ -7,6 +7,11 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1–2 | The known short names (496 from the install, long names from the client's zone table) and the grounding: the client's load order (`.eqg` before `.s3d`), the files the install steps move aside, the door model (`BBDOOR1`) and door fields | `8624b5c`, `c2e85f0` |
+| 3–6 | Export a version under a known short name (default `arena`) beside the build: renamed archive and files, Export format checks, the SQL script (zone row's safe point and `underworld`, the target's `doors` replaced, optional spawn cleanup), install notes, a zip bundle, `POST /api/export` and the CLI; builds with Gates pack the door model | `2937141`, `c376e91`, `a5acaab`, `9fa6d57` |
+| 7 | The Export row in the side panel's Files section: a filtered short-name picker, spawn cleanup, the bundle and each file listed | `f05cde7`, `bce52a0` |
+| 8–10 | First look signed off; the acceptance section in `docs/ACCEPTANCE.md`; the acceptance pass and in-client load skipped at the user's word | `6a363d9`, `1726c03` |
+| 12 | Each door seals its corridor across the doorway nearest its lock (A3) | `d980bbe` |
 
 ## Decisions
 
@@ -52,3 +57,12 @@ the choice and these decisions at the first look (task 8).
    and the sidecar.
 
 ## Follow-ups
+
+- **The in-client load was never done** (task 10 skipped, 2026-11-17): no exported zone has been
+  zoned into in the RoF2 client ("Loaded arena.EQG." in `Logs\dbg.txt`), and the SQL has not
+  been applied to an EQEmu server. Walk `docs/ACCEPTANCE.md` "Step 17 — Export" when there's time.
+- Door swing direction unchecked in the client (decision 9's heading and the hinge side).
+- The zone row sets only the safe point and `underworld`; fog, clip planes, sky and `ztype` stay
+  stock (decision 5). Key items are placeholders (990000 + tier) for the user to replace.
+- Control values set by script don't reach the page's state (seen while checking task 7).
+- Pre-existing frontend type errors (`tsc`), with `@types/three` still deferred.

@@ -83,11 +83,11 @@ task proves it with
   - Type: agent · Size: S · Depends: 8
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 10. HUMAN: acceptance pass and in-client load
+- [x] 10. HUMAN: acceptance pass and in-client load
   - Card: [cards/10-human-acceptance.md](cards/10-human-acceptance.md)
   - Type: human · Depends: 9
 
-- [ ] 11. Close step 17
+- [x] 11. Close step 17
   - Card: [cards/11-close.md](cards/11-close.md)
   - Type: agent · Size: S · Depends: 10 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-export/, .kiro/specs/zone-generator/

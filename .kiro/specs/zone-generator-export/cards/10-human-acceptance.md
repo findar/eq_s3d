@@ -13,3 +13,4 @@ server you can restore.
 - [ ] Walk the acceptance section.
 
 ## Result
+— skipped at the user's word, 2026-11-17 ("Skip acceptance, continue work"); not walked, and the in-client load not done
