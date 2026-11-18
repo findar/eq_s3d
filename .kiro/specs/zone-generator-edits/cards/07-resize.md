@@ -57,3 +57,4 @@ rebuild, so confirm them in the viewer at the first look. Lessons-learned "Bound
 the corridor run" and "Same-axis room pairs need a Z-route".
 
 ## Result
+✔ 5f907f7 · 3488 passed (full) + test_edits/test_resize green after removing the 4 stale rows

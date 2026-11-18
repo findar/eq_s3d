@@ -67,7 +67,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Owns: ai/llm_edits.py, tests/test_llm_edits.py
   - Reqs: 1.5
 
-- [ ] 7. Resize ops (if task 2 says yes)
+- [x] 7. Resize ops (if task 2 says yes)
   - Card: [cards/07-resize.md](cards/07-resize.md)
   - Type: agent · Size: M · Depends: 2, 3
   - Owns: generators/resize.py, generators/edits.py (the resize rows only), tests/test_resize.py
