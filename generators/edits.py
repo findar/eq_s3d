@@ -283,12 +283,17 @@ def _remove_lock(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random)
 # The other ops
 # ---------------------------------------------------------------------------
 
+def _a(word: str) -> str:
+    """``word`` with its article: "an ossuary", "a crypt"."""
+    return f"{'an' if word[:1].lower() in 'aeiou' else 'a'} {word}"
+
+
 def _set_purpose(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random) -> _Done:
     room = _room(doc, op["target"])
     if room.get("semantic_type") == op["type"]:
-        raise _Rejected(f"set_purpose: {room['id']} is already a {op['type']}")
+        raise _Rejected(f"set_purpose: {room['id']} is already {_a(op['type'])}")
     room["semantic_type"] = op["type"]
-    return _Done(["semantic_type"], f"{room['id']} is now {'an' if op['type'][:1] in 'aeiou' else 'a'} {op['type']}", rooms=[room["id"]])
+    return _Done(["semantic_type"], f"{room['id']} is now {_a(op['type'])}", rooms=[room["id"]])
 
 
 def _reroll_room(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random) -> _Done:

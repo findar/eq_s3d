@@ -2432,3 +2432,76 @@ Known issues (not regressions):
   the doorway's +y or +x jamb). Report the direction you see.
 - Fog, clip planes, sky and zone type stay stock arena's, so the sky and draw distance are
   arena's, not tuned for the zone.
+
+## Step 18 — Edits
+
+> Roadmap step 18 (`zone-generator-edits`, the rest of umbrella M4). Typed feedback on the open
+> version ("make the boss room bigger") is read into edits, applied to that version's saved
+> spec, and built as the next version of the same zone. **Undo** opens the version this one
+> came from and **Redo** the newest one made from it; nothing is ever deleted. Restart the
+> Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no
+> stale-code banner shows. With no LLM key the rule interpreter reads the text; with one, an
+> LLM may, falling back to the rules.
+
+Build each case in Controls (Decor **Normal**, Decor rules **From theme**, Seeds blank unless a
+case pins one):
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout **Graph**, Rooms 8 | 2 |
+| b | City | | 5 |
+| c | Outdoor dungeon | Rooms 5 | 2 |
+
+### X.1 — The Feedback section
+
+- [ ] **[MUST] Where it is** — Case a: the side panel opens with **Feedback**: a text box
+      ("e.g. make the boss room bigger"), **Apply**, **↶ Undo** and **↷ Redo**. Apply is grey
+      until you type; Undo and Redo are grey on v1. With no build open the section isn't shown.
+- [ ] **[MUST] Typing doesn't fly** — Click in the box and type `wasd qe` and a space: the text
+      appears and the camera doesn't move. Click the 3D view and W moves again.
+- [ ] **[MUST] Not understood** — Type `paint it purple please` and press Enter: the message
+      reads "Not applied: v1 stays open.", a note says what wasn't understood, and the help lists
+      the edits it knows. v1 stays open and no new version appears in the header.
+
+### X.2 — Edits
+
+Start each from case a's v1 unless it says otherwise. After each, the header shows the new
+version (◂ `v2` ▸), the message starts `v1 → v2 (full rebuild)` or `(partial rebuild)`, the
+Version row names the text, and the edited rooms are tinted until the next change.
+
+- [ ] **[MUST] Bigger boss room** — `make the boss room bigger`: a full rebuild; the note reads
+      "widened room_5 by 25%" (or a smaller share "of the 25% asked" with what stopped it). Walk
+      to the boss room: it's wider, its doors still open onto their corridors, and the floor is
+      walkable to every wall. **Every other room looks as it did in v1** (step back with ◂ to
+      compare); a room next door may show a moved doorway lintel, and it is tinted too.
+- [ ] **[MUST] Taller and locked** — From v2, `make the boss room taller and lock the way into
+      the boss room`: both apply (two notes; the lock's names the corridor and the key's room).
+      The ceiling is higher; on the map the new Gate stands on the corridor into the boss room
+      and its key in an earlier room. The door model stands in that doorway.
+- [ ] **[MUST] Less decor** — From v3, `less decor`: a partial rebuild in a few seconds; every
+      room has fewer Props, the rooms' shapes are unchanged.
+- [ ] **[MUST] A new purpose** — From v1, `make the entrance a crypt`: a partial rebuild that
+      branches from v1 (its Version row says "from v1"); the note reads "room_0 is now an
+      ossuary" (crypt is read as ossuary), the entrance's Props change to an ossuary's, nothing
+      else does.
+- [ ] **[SHOULD] Redecorate one room** — `redecorate the boss room`: only that room's Props
+      change.
+- [ ] **[SHOULD] Refused, with a reason** — `make the entrance a crypt` on the crypt version:
+      "Not applied", and "room_0 is already an ossuary". Case c, `make the boss room
+      bigger`: "rooms under a hill can't be resized yet".
+- [ ] **[SHOULD] A city** — Case b, `make the boss room bigger` and `lock the way into the boss
+      room`: both apply; the city's other buildings and streets are unchanged.
+- [ ] **[SHOULD] Start over** — `start over`: a new layout as the next version (full), not a new
+      zone.
+
+### X.3 — Undo and redo
+
+- [ ] **[MUST] Undo** — On v3 (made from v2, made from v1): **↶ Undo** opens v2, then v1, where
+      it greys. Each version loads as it was built (model, map, side panel).
+- [ ] **[MUST] Redo** — On v1, **↷ Redo** opens the newest version made from v1 (v5 if you made
+      the crypt edit from v1 last), not simply v2. On a version nothing was made from it greys.
+      Hover either button: its tooltip names the version it would open.
+- [ ] **[MUST] History** — Hover the header's `v<n>`: the tooltip lists every version with its
+      parent and its edit text.
+- [ ] **[SHOULD] Nothing lost** — After undoing, make a new edit: a new version appears; the
+      versions you undid are still there (◂ ▸ reaches them).
