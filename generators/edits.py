@@ -15,7 +15,8 @@ the notes, and how the next version is built.
     remove_lock      ``gates``                                           partial
     regenerate       none: a new zone from the parent's request,         full
                      at ``EditResult.seed``
-    resize ops       not yet supported (task 7 fills ``_resize``)        full
+    resize ops       one room's box, its corridors' ends, the rooms'     full
+                     walls and features (``generators.resize``)
 
 ``partial`` means the parent's saved stages (its TER and textures) build the edited spec; a
 partial edit that turns out to change the TER is caught by the build's ``StaleStages`` and built
@@ -45,7 +46,7 @@ __all__ = ["EditResult", "FULL", "PARTIAL", "RESIZE_OPS", "UNSUPPORTED", "apply_
 PARTIAL = "partial"
 FULL = "full"
 
-#: The resize ops: task 7 applies them through ``_resize``.
+#: The resize ops: ``_resize`` applies them through ``generators.resize``.
 RESIZE_OPS = ("widen_room", "narrow_room", "taller_room", "lower_room")
 
 #: Ops ``ai.edits`` recognises that no build applies yet (amendment A3).
@@ -330,10 +331,18 @@ def _regenerate(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random) 
 
 
 def _resize(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random) -> _Done:
-    """The resize ops' seam (task 7, archive decision 6): change the room's box and its
-    corridors, return ``_Done(changed, note, rooms, corridors, how=FULL)`` with the size asked
-    for and applied in the note, or raise ``_Rejected`` when nothing fits."""
-    raise _Rejected(f"{op['op']} is not yet supported")
+    """The resize ops (task 7, archive decision 6): ``generators.resize.resize_room`` changes
+    the room's box and its corridors; the note gives the size asked for and applied. Nothing
+    fits: rejected."""
+    from generators.resize import OPS, resize_room
+    res = resize_room(doc, op["target"], op["op"], op["by"])
+    if not res.applied:
+        raise _Rejected(res.notes[0])
+    doc.clear()
+    doc.update(res.doc)
+    changed = ["width", "depth"] if OPS[op["op"]][2] == "plan" else ["height"]
+    return _Done(changed, "; ".join(res.notes), rooms=res.affected["rooms"],
+                 corridors=res.affected["corridors"], how=FULL)
 
 
 def _unsupported(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random) -> _Done:
