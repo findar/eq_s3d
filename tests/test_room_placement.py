@@ -7,7 +7,7 @@ import random
 
 import numpy as np
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import example, given, settings, strategies as st
 
 from generators.outline import draw_outline
 from generators.room_features import CUT, DAIS, PILLAR, PLINTH, ROUGH, SQUARE
@@ -45,6 +45,8 @@ ASKS = [Ask(DAIS, "far_end", poi="boss"), Ask(PLINTH, "centre", height_h=1.0), A
 @given(w=st.floats(48.0, 200.0), d=st.floats(48.0, 200.0), complex=SHAPES, seed=st.integers(0, 10 ** 6),
        picks=st.lists(st.tuples(st.sampled_from("NSEW"), st.floats(0.0, 1.0)), min_size=1, max_size=4),
        asks=st.lists(st.sampled_from(ASKS), min_size=1, max_size=4))
+# A voronoi room whose own outline cuts off a thin finger: that pocket isn't the dais's doing.
+@example(w=112.0, d=118.0, complex="voronoi", seed=33757, picks=[("E", 0.0)], asks=[ASKS[0]])
 def test_f4_placement_keeps_the_way_clear_and_never_fails(w, d, complex, seed, picks, asks):
     doors = _doors(w, d, picks)
     room = _room(w, d, complex, doors, seed)

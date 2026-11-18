@@ -79,6 +79,7 @@ class RoomGrid:
             self.taken |= self.rect(s)
         self.door_cells = [self._door_cell(d) for d in doors]
         self.spine = self._spine(doors)
+        self.cut_already = self._cut_off(self._free(self.taken))
 
     def rect(self, r) -> np.ndarray:
         return (self.gx >= r[0]) & (self.gx <= r[2]) & (self.gy >= r[1]) & (self.gy <= r[3])
@@ -157,15 +158,29 @@ class RoomGrid:
         inner = ~binary_dilation(np.pad(~self.floor, 1, constant_values=True), iterations=margin)[1:-1, 1:-1]
         return bool((cells <= inner).all() and not (cells & (self.spine | self.taken)).any())
 
+    def _free(self, solid: np.ndarray) -> np.ndarray:
+        """The floor a body can stand on with ``solid`` taken: a body's radius from walls and
+        solids, a cell stricter than the gate. The Spine reaches the doors, which stand in the
+        wall's own margin."""
+        reach = int(math.ceil(BODY_RADIUS / CELL)) + 1
+        walls = np.pad(~self.floor, 1, constant_values=True)
+        placed = binary_dilation(solid, iterations=reach) if solid.any() else solid
+        return (self.floor & ~placed) & (~binary_dilation(walls, iterations=reach)[1:-1, 1:-1] | self.spine)
+
+    def _cut_off(self, free: np.ndarray) -> np.ndarray:
+        """The free floor not joined to a door. Measured on the bare room (``cut_already``): what
+        the outline itself cuts off, a voronoi room's thin finger say, which placement can't
+        make worse and so isn't counted against a Feature."""
+        labels, _n = label(free)
+        marks = {int(labels[c]) for c in self.door_cells} - {0}
+        return free & ~np.isin(labels, list(marks))
+
     def doors_stay_joined(self, cells: np.ndarray, raised: bool = False) -> bool:
         """With these cells taken too, are the doors joined, and no floor cut off? As the
         gate has it: a body's radius from walls and solids. Floor behind a dais isn't cut off,
-        since you can walk over the dais to it."""
-        reach = int(math.ceil(BODY_RADIUS / CELL)) + 1      # a cell stricter than the gate
-        walls = np.pad(~self.floor, 1, constant_values=True)
-        placed = binary_dilation(self.taken | cells, iterations=reach)
-        # The Spine reaches the doors, which stand in the wall's own margin.
-        free = (self.floor & ~placed) & (~binary_dilation(walls, iterations=reach)[1:-1, 1:-1] | self.spine)
+        since you can walk over the dais to it, and nor is floor the outline cut off already."""
+        reach = int(math.ceil(BODY_RADIUS / CELL)) + 1
+        free = self._free(self.taken | cells)
         labels, _n = label(free)
         marks = {int(labels[c]) for c in self.door_cells}
         if len(marks) > 1 or 0 in marks:
@@ -174,7 +189,7 @@ class RoomGrid:
         labels, n = label(free | (binary_dilation(over, iterations=reach) & self.floor) if over.any() else free)
         marks = {int(labels[c]) for c in self.door_cells}
         joined = next(iter(marks), 0)
-        sizes = np.bincount(labels[free], minlength=n + 1)
+        sizes = np.bincount(labels[free & ~self.cut_already], minlength=n + 1)
         return not any(sizes[k] * CELL * CELL >= POCKET for k in range(1, n + 1) if k != joined)
 
 
