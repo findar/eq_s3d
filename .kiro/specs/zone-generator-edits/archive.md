@@ -53,5 +53,13 @@ shape. The user confirms the choice and these decisions at the first look (task 
    and `add_lock` share `layout.gate_*`. Resize goes through `_resize` (task 7 replaces it).
    Every partial op builds byte-identical with the parent's stages and in full (Graph dungeon
    seed 2, city seed 5), so none needs the `StaleStages` fallback today.
+9. **Resize (task 7, `generators/resize.py`).** `resize_room(doc, room, op, by)` scales by
+   `1 + by` or `1 - by` as decision 6 describes, `how: full`, `changed` `[width, depth]` or
+   `[height]`. A clamp's note gives the share applied of the share asked and what blocked more
+   ("widened room_6 by 4% of the 25% asked; any more and corr_5 would overlap room_6"). Outdoor
+   dungeons refuse resize ("rooms under a hill can't be resized yet"): their Tunnel and hill
+   cover were fixed against the original boxes. Decor, lights, regions, lock points and city
+   POIs follow the room only in the full rebuild and aren't in the clamp checks: look at them
+   at the first look.
 
 ## Follow-ups
