@@ -107,6 +107,90 @@ def relations_broken(rooms: List[RoomSpec],
     return broken
 
 
+# ---------------------------------------------------------------------------
+# The gating rule (``LayoutGenerator._apply_gating`` and ``generators.edits``'s
+# ``add_lock``): lock only edges of the BFS tree rooted at the entrance, and put
+# each key in a room reachable before its lock.
+# ---------------------------------------------------------------------------
+
+def gate_tree(edges: List[Tuple[int, int]], entrance: int):
+    """The BFS tree of the room graph from ``entrance``: ``(parent, order,
+    children)``. ``parent[entrance]`` is None; ``order`` is the visit order;
+    ``children[i]`` lists room i's tree children in that order. Rooms the
+    entrance can't reach are in none of them."""
+    from collections import defaultdict, deque
+
+    adj = defaultdict(list)
+    for i, j in edges:
+        adj[i].append(j)
+        adj[j].append(i)
+
+    parent: Dict[int, Optional[int]] = {entrance: None}
+    order = [entrance]
+    q = deque([entrance])
+    while q:
+        cur = q.popleft()
+        for nxt in adj[cur]:
+            if nxt not in parent:
+                parent[nxt] = cur
+                order.append(nxt)
+                q.append(nxt)
+
+    children = defaultdict(list)
+    for c in order:
+        if parent[c] is not None:
+            children[parent[c]].append(c)
+    return parent, order, children
+
+
+def gate_subtree(children, node: int) -> set:
+    """The rooms behind a lock on ``node``'s tree edge in: its subtree."""
+    s = set()
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        s.add(cur)
+        stack.extend(children[cur])
+    return s
+
+
+def gate_lockable(far: set, n: int) -> bool:
+    """A lock gates a meaningful subtree: at least one room, and not all but
+    the entrance's side of it."""
+    return 1 <= len(far) < n - 1
+
+
+def gate_key_room(depths: List[int], entrance: int, far: set,
+                  locked_far: set) -> int:
+    """The room a lock's key goes in: not behind this lock (``far``) nor any
+    lock placed before it (``locked_far``), not the entrance if another will
+    do; the one closest to the entrance (``depths``: each room's graph depth),
+    first by index on a tie."""
+    n = len(depths)
+    forbidden = set(far) | locked_far
+    candidates = [i for i in range(n) if i not in forbidden and i != entrance]
+    if not candidates:
+        candidates = [i for i in range(n) if i not in far]
+    return min(candidates, key=lambda i: depths[i])
+
+
+def gate_spec(gate_id: str, cor: CorridorSpec, key_room: RoomSpec,
+              tier: int) -> "GateSpec":
+    """A Gate: its lock at the middle of ``cor``, its key 5 u over
+    ``key_room``'s floor at its centre."""
+    return GateSpec(
+        id=gate_id,
+        corridor_id=cor.id,
+        lock_x=(cor.from_x + cor.to_x) / 2,
+        lock_y=(cor.from_y + cor.to_y) / 2,
+        lock_z=(cor.from_z + cor.to_z) / 2,
+        key_room_id=key_room.id,
+        key_x=key_room.center_x, key_y=key_room.center_y,
+        key_z=key_room.floor_z + 5.0,
+        tier=tier,
+    )
+
+
 # Stacked builds (step 7): the floor variation ramps give WITHIN a Level, as a
 # band this wide centred on the Level's height. Job B's floor-to-floor height
 # grows by it, so two Levels keep the Slab whatever the variation does
@@ -606,42 +690,12 @@ class LayoutGenerator:
         deeper locked subtree. This guarantees every key is obtainable before
         the door it opens — nested or sequential, never a deadlock.
         """
-        from collections import defaultdict, deque
-
         n = len(rooms)
         if n < 3 or not edges:
             return
 
-        adj = defaultdict(list)
-        for i, j in edges:
-            adj[i].append(j)
-            adj[j].append(i)
-
-        # BFS tree from the entrance → parent[] + traversal order.
-        parent = {entrance: None}
-        order = [entrance]
-        q = deque([entrance])
-        while q:
-            cur = q.popleft()
-            for nxt in adj[cur]:
-                if nxt not in parent:
-                    parent[nxt] = cur
-                    order.append(nxt)
-                    q.append(nxt)
-
-        children = defaultdict(list)
-        for c in order:
-            if parent[c] is not None:
-                children[parent[c]].append(c)
-
-        def subtree(node: int) -> set:
-            s = set()
-            stack = [node]
-            while stack:
-                cur = stack.pop()
-                s.add(cur)
-                stack.extend(children[cur])
-            return s
+        parent, order, children = gate_tree(edges, entrance)
+        depths = [r.graph_depth for r in rooms]
 
         # Candidate lock edges: tree edges that gate a meaningful subtree.
         tree_edges = [(c, parent[c]) for c in order if parent[c] is not None]
@@ -655,8 +709,8 @@ class LayoutGenerator:
         for child, par in tree_edges:
             if len(chosen) >= n_locks:
                 break
-            far = subtree(child)
-            if len(far) < 1 or len(far) >= n - 1:
+            far = gate_subtree(children, child)
+            if not gate_lockable(far, n):
                 continue
             chosen.append((child, par, far))
 
@@ -668,26 +722,10 @@ class LayoutGenerator:
             if corr_id is None:
                 continue
 
-            # Key goes in a room reachable before this lock: not behind this
-            # lock, nor behind any deeper lock. Prefer closest to the entrance.
-            forbidden = set(far) | locked_far
-            candidates = [i for i in range(n) if i not in forbidden and i != entrance]
-            if not candidates:
-                candidates = [i for i in range(n) if i not in far]
-            key_room = min(candidates, key=lambda i: rooms[i].graph_depth)
+            key_room = gate_key_room(depths, entrance, far, locked_far)
 
             cor = next(c for c in spec.corridors if c.id == corr_id)
-            kr = rooms[key_room]
-            spec.gates.append(GateSpec(
-                id=f"gate_{tier}",
-                corridor_id=corr_id,
-                lock_x=(cor.from_x + cor.to_x) / 2,
-                lock_y=(cor.from_y + cor.to_y) / 2,
-                lock_z=(cor.from_z + cor.to_z) / 2,
-                key_room_id=kr.id,
-                key_x=kr.center_x, key_y=kr.center_y, key_z=kr.floor_z + 5.0,
-                tier=tier,
-            ))
+            spec.gates.append(gate_spec(f"gate_{tier}", cor, rooms[key_room], tier))
             locked_far |= far
 
     # ------------------------------------------------------------------
