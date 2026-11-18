@@ -3,14 +3,15 @@
 import * as THREE from "three";
 import {
   generateZone, fetchControls, fetchSidecar, fetchVersion, fetchZoneTypes, rebuildZone,
-  fetchZoneVersions,
-  type DecorLayerListing, type GenerateParams, type GenerateResult, type RebuildParams,
-  type ZoneSidecar, type ZoneVersionEntry,
+  fetchZoneVersions, editZone,
+  type DecorLayerListing, type EditResult, type GenerateParams, type GenerateResult,
+  type RebuildParams, type ZoneSidecar, type ZoneVersionEntry,
 } from "./api";
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
 import { showArtifacts, loadMapSvg } from "./artifacts";
 import { setExportBuild } from "./exportrow";
+import { initFeedback, setFeedbackBuild, setFeedbackBusy } from "./feedback";
 import { drawSockets } from "./sockets";
 import { RoomView } from "./roomview";
 
@@ -706,6 +707,44 @@ async function runRebuild(
   }
 }
 
+// Feedback (feedback.ts): the edit route on the open version. An accepted edit
+// opens the new version with the camera where it is and tints the rooms it
+// touched until the next edit, undo, redo or version change (showBuild clears
+// it); one that isn't keeps the open version. Rejects with the error's words.
+async function runEdit(text: string): Promise<EditResult> {
+  if (generating || !lastResult) throw new Error("another request is running");
+  const from = lastResult;
+  beginBusy(`editing v${from.version}…`);
+  roomView.close();
+  zoneScene.clearHighlight();
+  await refreshVersion();
+  try {
+    const res = await editZone({ zone: from.id, version: from.version, text });
+    if (res.applied && res.build) {
+      const result = res.build;
+      results.set(versionKey(result.id, result.version), result);
+      statusEl.textContent = `loading v${result.version}…`;
+      await refreshVersions(result.id);
+      if (await showBuild(result, true) && currentSidecar) {
+        const tinted = zoneScene.highlightRooms(res.affected.rooms, currentSidecar);
+        console.info(`[edit] ${from.id} v${from.version} -> v${result.version} (${res.how}) ` +
+          `ops=${res.ops.map((o) => o.op).join(",")} tinted=${tinted.join(",") || "none"}`);
+      }
+    } else {
+      statusEl.textContent = `v${from.version} · edit not applied`;
+      console.info(`[edit] ${from.id} v${from.version}: not applied`);
+    }
+    return res;
+  } catch (err) {
+    failed("edit failed", err);
+    throw err;
+  } finally {
+    endBusy();
+  }
+}
+
+initFeedback({ edit: runEdit, open: (n) => { openVersion(n); } });
+
 // A version of the open zone, from the listing: the answer this page had for
 // it, else the open one's with that version's URLs (its Files have the same
 // names under v<n>/; one the version lacks shows unavailable).
@@ -763,6 +802,8 @@ async function showBuild(
   const box = await zoneScene.loadZone(result.glb_url, () => seq === showSeq);
   if (!box) return false;
 
+  // Another version is on screen: an edit's room tint was for the one before.
+  zoneScene.clearHighlight();
   currentMapUrl = result.map_url;
   currentSidecar = sidecar;
   // Rebuild the Files list (and drop the previous build's map + PNG).
@@ -839,8 +880,9 @@ function syncVersionNav(): void {
   versionNext.disabled = generating || i < 0 || i >= versions.length - 1;
 
   // The Version row: v3 of 3 · from v2 · decor seed (the sidecar's block,
-  // else the listing's).
+  // else the listing's); an edit's version names its text.
   const block = currentSidecar?.version ?? versions[i];
+  const made = i >= 0 ? versions[i].edit : null;
   const last = versions.length ? versions[versions.length - 1].n : n;
   const row = $("r-version");
   row.hidden = versions.length <= 1 && !block?.parent;
@@ -849,9 +891,34 @@ function syncVersionNav(): void {
   if (block?.changed?.length) {
     bits.push(block.changed.map((c) => CHANGED_WORDS[c] ?? c.replace(/_/g, " ")).join(", "));
   }
+  if (made) bits.push(editWords(made));
   $("m-version").textContent = bits.join(" · ");
   row.title = block?.how === "partial" ? "Rebuilt from its parent's saved stages"
     : block?.how === "full" ? "Built again in full from its parent's request" : "";
+
+  // The header's tooltip lists every version: where it came from and its edit.
+  versionLabel.title = versions.length
+    ? versions.map((v) => {
+      const parts = [`v${v.n}${v.n === n ? " (open)" : ""}`];
+      if (v.parent) parts.push(`from v${v.parent}`);
+      if (v.edit) parts.push(editWords(v.edit));
+      else if (v.changed.length) parts.push(v.changed.map((c) => CHANGED_WORDS[c] ?? c.replace(/_/g, " ")).join(", "));
+      return parts.join(" · ");
+    }).join("\n")
+    : "The version of this zone on screen";
+
+  const zone = lastResult?.id ?? null;
+  setFeedbackBuild(lastResult ? n : null, block?.parent ?? null, versions, zone !== feedbackZone);
+  feedbackZone = zone;
+  setFeedbackBusy(generating);
+}
+
+// The zone the Feedback section last showed: a new one clears its notes.
+let feedbackZone: string | null = null;
+
+// An edit as words: its text in quotes, else its ops.
+function editWords(e: NonNullable<ZoneVersionEntry["edit"]>): string {
+  return e.text ? `“${e.text}”` : (e.ops ?? []).map((o) => o.op.replace(/_/g, " ")).join(", ");
 }
 
 // ◂ ▸: the version before or after the open one in the listing.
@@ -1160,7 +1227,7 @@ const MOVE_KEYS = new Set([
   "KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyR", "Space",
   "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "ShiftLeft", "ShiftRight",
 ]);
-for (const id of ["artifacts", "map-dialog", "version-nav"]) {
+for (const id of ["artifacts", "map-dialog", "version-nav", "s-feedback"]) {
   $(id).addEventListener("keydown", (e) => {
     if (MOVE_KEYS.has((e as KeyboardEvent).code)) e.stopPropagation();
   });

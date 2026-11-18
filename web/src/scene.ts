@@ -13,6 +13,9 @@ const REGION_COLORS: Record<string, number> = {
   generic: 0x808080,
 };
 
+// The tint of the rooms an accepted edit touched.
+const HIGHLIGHT = 0x4dd0e1;
+
 /** A mesh's material(s) as a list (three allows one or an array). */
 function materialsOf(mesh: THREE.Mesh): THREE.Material[] {
   const m = mesh.material;
@@ -47,6 +50,8 @@ export class ZoneScene {
   private regionGroup = new THREE.Group();
   private gateGroup = new THREE.Group();
   private labelGroup = new THREE.Group();
+  // The rooms an accepted edit touched (highlightRooms).
+  private highlightGroup = new THREE.Group();
   private wireframe: THREE.LineSegments | null = null;
   // The GLB's `vegetation` node (wilderness trees), or null when it has none.
   private vegetation: THREE.Object3D | null = null;
@@ -75,6 +80,7 @@ export class ZoneScene {
     this.scene.add(this.regionGroup);
     this.scene.add(this.gateGroup);
     this.scene.add(this.labelGroup);
+    this.scene.add(this.highlightGroup);
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -285,6 +291,80 @@ export class ZoneScene {
     const worldH = worldW * (canvas.height / canvas.width);
     sprite.scale.set(worldW, worldH, 1);
     return sprite;
+  }
+
+  /**
+   * Tint rooms of the loaded zone (an edit's Affected_Set, zone-generator-edits
+   * Req 4.4). The GLB is one terrain mesh with no per-room nodes, so the tint is
+   * an overlay drawn from the sidecar: a room with an outline (a graph layout's
+   * wall rings) gets its floor filled and its rings traced; one without (a
+   * classic layout or a city, whose sidecar keeps only the centre) a disc about
+   * its centre, sized to half the way to the nearest other room. The traces draw
+   * through walls so a tinted room can be found from anywhere. Returns the ids
+   * drawn; an id the sidecar doesn't know is skipped.
+   */
+  highlightRooms(ids: string[], sidecar: ZoneSidecar): string[] {
+    this.clearHighlight();
+    const offset: THREE.Vector3 =
+      this.zoneGroup.userData.offset ?? new THREE.Vector3();
+    const rooms = sidecar.rooms ?? [];
+    const outlines = sidecar.layout?.rooms ?? {};
+    const drawn: string[] = [];
+    const fill = new THREE.MeshBasicMaterial({
+      color: HIGHLIGHT, transparent: true, opacity: 0.38, depthWrite: false,
+      side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+    });
+    const line = new THREE.LineBasicMaterial({
+      color: HIGHLIGHT, transparent: true, opacity: 0.9, depthTest: false,
+    });
+    for (const id of ids) {
+      const room = rooms.find((r) => r.id === id);
+      if (!room) continue;
+      const z = room.center[2] + offset.z;
+      const rings = (outlines[id]?.outline ?? []).filter((ring) => ring.length >= 3)
+        .map((ring) => ring.map(([x, y]) => new THREE.Vector2(x + offset.x, y + offset.y)));
+      if (rings.length) {
+        // The largest ring is the room's edge; the rest (pillars) are holes in its floor.
+        const area = (r: THREE.Vector2[]) => Math.abs(THREE.ShapeUtils.area(r));
+        const outer = rings.reduce((a, b) => (area(b) > area(a) ? b : a));
+        const shape = new THREE.Shape(outer);
+        for (const ring of rings) if (ring !== outer) shape.holes.push(new THREE.Path(ring));
+        const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), fill);
+        mesh.position.z = z + 0.5;
+        this.highlightGroup.add(mesh);
+        for (const ring of rings) {
+          const pts = ring.map((p) => new THREE.Vector3(p.x, p.y, z + 2));
+          const loop = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), line);
+          loop.renderOrder = 10;
+          this.highlightGroup.add(loop);
+        }
+      } else {
+        let nearest = Infinity;
+        for (const r of rooms) {
+          if (r.id === id) continue;
+          nearest = Math.min(nearest, Math.hypot(r.center[0] - room.center[0], r.center[1] - room.center[1]));
+        }
+        const radius = Math.max(30, Math.min(120, Number.isFinite(nearest) ? nearest * 0.45 : 80));
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), fill);
+        disc.position.set(room.center[0] + offset.x, room.center[1] + offset.y, z + 0.5);
+        this.highlightGroup.add(disc);
+        const pts = Array.from({ length: 48 }, (_, i) => {
+          const a = (i / 48) * Math.PI * 2;
+          return new THREE.Vector3(disc.position.x + Math.cos(a) * radius,
+            disc.position.y + Math.sin(a) * radius, z + 2);
+        });
+        const loop = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), line);
+        loop.renderOrder = 10;
+        this.highlightGroup.add(loop);
+      }
+      drawn.push(id);
+    }
+    return drawn;
+  }
+
+  /** Drop the room tint (the next edit, undo, redo or any other version). */
+  clearHighlight(): void {
+    clearDisposed(this.highlightGroup);
   }
 
   /** Whether the loaded zone has a `vegetation` node to toggle. */
