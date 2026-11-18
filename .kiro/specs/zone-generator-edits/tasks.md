@@ -43,7 +43,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Owns: .kiro/specs/zone-generator-edits/archive.md, .kiro/specs/zone-generator-edits/cards/07-resize.md
   - Reqs: A3, 2.7
 
-- [ ] 3. Apply the spec-only ops
+- [x] 3. Apply the spec-only ops
   - Card: [cards/03-apply.md](cards/03-apply.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/edits.py, generators/layout.py (lifting the gating rule into a function only), tests/test_edits.py
