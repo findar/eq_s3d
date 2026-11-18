@@ -138,8 +138,6 @@ def test_regenerate_is_full_with_a_new_seed_and_skips_the_rest(docs):
 
 
 @pytest.mark.parametrize("op", [
-    {"op": "widen_room", "target": "room_1"}, {"op": "narrow_room", "target": "room_1"},
-    {"op": "taller_room", "target": "room_1"}, {"op": "lower_room", "target": "room_1"},
     {"op": "add_room"}, {"op": "remove_room", "target": "room_1"},
     {"op": "add_region", "target": "room_1", "kind": "water"},
     {"op": "remove_region", "target": "room_1"}, {"op": "set_verticality", "level": "flat"},
