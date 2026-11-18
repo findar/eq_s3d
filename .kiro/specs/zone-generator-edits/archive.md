@@ -32,5 +32,12 @@ shape. The user confirms the choice and these decisions at the first look (task 
    corridors. Neighbours can change too. Put them in the Affected_Set: a room whose
    `geometry._door_openings` or `_bridge_slots` change, and a corridor whose `bridge_layout` or
    `stair_layout` change. In 162 resized builds that prediction matched the built triangles every time.
+7. **Op parameters (task 1, `ai/edits.py`).** Resize ops take `by`, the fraction of the room's size
+   added or taken away (widen and taller 0.1–1.0, default 0.25; narrow 0.05–0.5 and lower
+   0.05–0.4, default 0.2); task 7 converts it to task 2's scale factor. Out-of-range values are
+   clamped (Req 1.1), not rejected. `remove_lock` with no target removes every lock;
+   `set_verticality` takes `level` or `delta`. `validate` returns bad ops with `why`: `schema`
+   (invalid, `applied: false` per umbrella 18.9) or `target` (a rejection note, the rest
+   apply, 18.5). Every op is recognised there; which apply is `generators/edits.py`'s call.
 
 ## Follow-ups
