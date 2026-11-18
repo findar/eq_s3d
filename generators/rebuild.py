@@ -3,7 +3,7 @@ generators/rebuild.py
 ---------------------
 A partial rebuild (partial-rebuild Req 2.2, 4.1, task 3): the next version of a zone built
 from a version's saved stages when only its Props change (a new decor seed, or one room's own
-decor seed).
+decor seed), or an edit's spec (zone-generator-edits, ``build_spec``).
 
     parent v<n>/<name>.spec.json  ->  ZoneSpec (+ decor layers), the change applied
     parent v<n>/<name>.eqg        ->  its TER bytes and surface textures (SavedStages)
@@ -32,8 +32,8 @@ from core.pfs import PfsArchive
 from generators.builder import SavedStages, StaleStages, with_decor_layers
 from generators.zone_spec import ZoneSpec
 
-__all__ = ["SHELLS", "NoSavedStages", "ShellCache", "StaleStages", "rebuild_decor", "room_ids",
-           "room_seeds_after", "saved_spec", "saved_stages"]
+__all__ = ["SHELLS", "NoSavedStages", "ShellCache", "StaleStages", "build_spec", "rebuild_decor",
+           "room_ids", "room_seeds_after", "saved_spec", "saved_stages"]
 
 
 class ShellCache:
@@ -190,12 +190,25 @@ def rebuild_decor(parent_dir: Path, changes: Mapping[str, Any], *, zone_id: str,
     room the parent has none of, ``StaleStages`` (from the build) when the parent's TER
     isn't what this code builds from its spec, and ``GenerationFailed`` (pinned) when the
     build fails a gate."""
+    doc = _apply(saved_spec(parent_dir, zone_id.lower()), changes)
+    return build_spec(parent_dir, doc, zone_id=zone_id, generate=generate, **pipeline)
+
+
+def build_spec(parent_dir: Path, doc: Mapping[str, Any], *, zone_id: str, stages: bool = True,
+               generate: Optional[Callable[..., Any]] = None, **pipeline: Any):
+    """Build the next version of ``zone_id`` from a whole spec dict ``doc`` (a version's
+    ``<name>.spec.json`` as an edit left it, ``decor_layers`` included), its seed pinned.
+    With ``stages`` the parent's saved stages (``parent_dir``'s TER and textures) build it,
+    as ``rebuild_decor`` does; without, it is a full build of ``doc``. Either way the result
+    is the same zone byte for byte, footer aside, or ``StaleStages`` when the parent's TER
+    isn't what ``doc`` builds (zone-generator-edits decision 4: the caller builds it again
+    without ``stages``). Raises as ``rebuild_decor``."""
     if generate is None:
         from generators.pipeline import generate_validated as generate
     name = zone_id.lower()
-    doc = _apply(saved_spec(parent_dir, name), changes)
+    doc = dict(doc)
     layers = tuple(doc.pop("decor_layers", None) or ())
-    stages = saved_stages(parent_dir, name)
+    saved = saved_stages(parent_dir, name) if stages else None
     seed = doc.get("seed")
     if seed is None:
         raise NoSavedStages(f"{name}.spec.json has no seed")
@@ -209,4 +222,4 @@ def rebuild_decor(parent_dir: Path, changes: Mapping[str, Any], *, zone_id: str,
         # A fresh copy per attempt: a build writes into its spec.
         return with_decor_layers(ZoneSpec.from_dict(json.loads(text)), layers)
 
-    return generate(factory, zone_id=zone_id, stages=stages, **pipeline)
+    return generate(factory, zone_id=zone_id, stages=saved, **pipeline)

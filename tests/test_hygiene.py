@@ -646,6 +646,8 @@ _ALLOWED_CLI_OPTIONS = {
     "--rooms-seed",  # rooms and Sites on the same World (world-sockets spec task 8)
     # the export command (export spec task 6), not generate's
     "--shortname", "--clear-spawns",
+    # an edit of a Server zone (zone-generator-edits task 4), not generate's
+    "--edit",
     # housekeeping the task allows
     "--output", "--ter-version", "--no-validate",
     # deprecated aliases that share a dest (still a legacy input surface)
