@@ -405,6 +405,32 @@ label.field > input { width: 100%; }
 }
 #artifact-list li { margin: 3px 0; }
 
+/* ---- Feedback (feedback.ts): text + Apply, Undo / Redo, the route's notes ---- */
+.feedback-field { display: grid; grid-template-columns: 1fr auto; column-gap: 6px; align-items: center; }
+#feedback-text {
+  width: 100%;
+  min-width: 0;
+  background: #10131c;
+  color: var(--text);
+  border: 1px solid #2a3040;
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+#feedback-text:focus { outline: none; border-color: var(--accent); }
+#feedback-apply { padding: 3px 10px; font-size: 11px; }
+#feedback-apply[aria-busy="true"] { cursor: progress; }
+.feedback-steps { display: flex; gap: 6px; margin-top: 6px; }
+.feedback-steps .seed-btn { flex: 1; padding: 3px 6px; font-size: 11px; }
+#feedback-msg { list-style: none; font-size: 11px; color: var(--muted); margin: 6px 0 2px; line-height: 1.45; }
+#feedback-msg:empty { display: none; }
+#feedback-msg li { margin: 2px 0; }
+#feedback-msg li.head { color: var(--text); }
+#feedback-msg li.refusal { color: var(--warn); }
+#feedback-msg li.help { white-space: pre-line; }
+#feedback-msg.warn li.head { color: var(--warn); }
+#feedback-msg.error li { color: #ff8a8a; }
+
 /* ---- Export row (exportrow.ts): picker, spawn tick, note, Export, its files ---- */
 #export-row { margin-top: 12px; font-size: 12px; }
 #export-row h4 {

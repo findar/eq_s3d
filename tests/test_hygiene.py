@@ -627,6 +627,9 @@ _ALLOWED_WEB_INPUT_IDS = {
     # The Export row (export spec task 7): it exports a finished build and
     # never feeds a generate (umbrella Req 8.6).
     "export-filter", "export-shortname", "export-clear-spawns",
+    # The Feedback box (zone-generator-edits task 5): feedback on a finished
+    # version, sent to the edit route; it never feeds a generate.
+    "feedback-text",
 }
 
 # The CLI ``generate`` option/flag names the geometry slice is allowed to add,

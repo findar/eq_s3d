@@ -426,6 +426,8 @@ export interface ZoneVersionEntry {
   seeds: ZoneSidecar["seeds"] | null;
   created: string;
   took_ms: number | null;
+  // The edit that made this version ({text, ops}; text null when ops were sent), else null.
+  edit?: { text: string | null; ops: EditOp[] } | null;
   glb_url: string;
   zone_url: string;
   map_url: string;
@@ -462,6 +464,60 @@ export async function rebuildZone(params: RebuildParams): Promise<RebuildResult>
 export async function fetchZoneVersions(zone: string): Promise<ZoneVersions> {
   const res = await fetch(`/api/zones/${encodeURIComponent(zone)}/versions`, { cache: "no-store" });
   if (!res.ok) throw new Error(await errorDetail(res, "versions fetch"));
+  return res.json();
+}
+
+// ---- Edits: feedback on a version (zone-generator-edits Req 3, 4; decision 10) ----
+
+// One edit op (ai/edits.py): {op, target?, ...its parameters}.
+export interface EditOp {
+  op: string;
+  target?: string;
+  [param: string]: unknown;
+}
+
+// POST /api/edit: feedback `text` (or `ops`, exactly one) on `version` of `zone`.
+export interface EditParams {
+  zone: string;
+  version: number | string;
+  text?: string;
+  ops?: EditOp[];
+  seed?: number;
+}
+
+// An op that didn't apply, and why.
+export interface EditRefusal {
+  op: unknown;
+  reason: string;
+}
+
+// What an edit did. applied: `version` was written and `build` opens it. Not applied:
+// nothing changed, and `help`, `invalid`, `rejected` or `diagnostics` says why.
+export interface EditResult {
+  applied: boolean;
+  zone: string;
+  parent: number;
+  version: number | null;
+  interpreter: string | null;
+  text: string | null;
+  ops: EditOp[];
+  notes: string[];
+  affected: { rooms: string[]; corridors: string[] };
+  how: string | null;
+  help: string | null;
+  invalid: EditRefusal[];
+  rejected: EditRefusal[];
+  diagnostics: { seed: number; attempt: number; checks: string[]; reasons: string[] }[];
+  build: RebuildResult | null;
+}
+
+export async function editZone(params: EditParams): Promise<EditResult> {
+  const res = await fetch("/api/edit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(await errorDetail(res, "edit"));
   return res.json();
 }
 

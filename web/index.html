@@ -251,6 +251,23 @@
     <!-- What the shown build has. A section, row, button or toggle the build
          has nothing for hides (main.ts updatePanel). -->
     <div id="panel-body" hidden>
+    <!-- Feedback on the version on screen (zone-generator-edits Req 4; feedback.ts):
+         Apply (or Enter) builds the next version from the text, and the route's notes
+         show under it. Undo opens the parent version, Redo the newest one made from
+         this one. -->
+    <section id="s-feedback" aria-labelledby="feedback-h">
+    <h3 id="feedback-h">Feedback</h3>
+    <div class="feedback-field">
+      <input type="text" id="feedback-text" placeholder="e.g. make the boss room bigger" autocomplete="off" spellcheck="false" aria-label="Feedback on this version" />
+      <button type="button" id="feedback-apply" class="seed-btn" title="Build the next version of this zone from the feedback" disabled>Apply</button>
+    </div>
+    <div class="feedback-steps">
+      <button type="button" id="feedback-undo" class="seed-btn" disabled>↶ Undo</button>
+      <button type="button" id="feedback-redo" class="seed-btn" disabled>↷ Redo</button>
+    </div>
+    <ul id="feedback-msg" role="status"></ul>
+    </section>
+
     <h3>Plan</h3>
     <div class="row"><span>Mode</span><span id="m-mode">—</span></div>
     <div class="row"><span>Zone type</span><span id="m-zone-type">—</span></div>
