@@ -31,7 +31,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
 
 ## Tasks
 
-- [ ] 1. Edit ops and the rule interpreter
+- [x] 1. Edit ops and the rule interpreter
   - Card: [cards/01-interpreter.md](cards/01-interpreter.md)
   - Type: agent · Size: M · Depends: —
   - Owns: ai/edits.py, tests/test_edit_interpreter.py
