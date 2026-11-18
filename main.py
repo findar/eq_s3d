@@ -6,17 +6,20 @@ CLI entry point for eq_s3d.
 Commands:
     generate   — procedurally generate a zone from parameters
     export     — export a build as a takeover of an existing zone (default arena)
+    --edit     — the next version of a Server zone from feedback on one of its versions
 
 Usage::
 
     python main.py generate myrealm --zone-type dungeon --rooms 5
     python main.py export output/myrealm/v1 --shortname arena
+    python main.py --edit gen_20261118_ab12cd 1 "make the boss room a forge"
 """
 
 from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import sys
 from pathlib import Path
 
@@ -317,9 +320,51 @@ def cmd_export(args) -> None:
     print(f"  Read {res.dir / 'INSTALL.txt'} before installing; apply the SQL by hand.")
 
 
+def cmd_edit(zone: str, version: str, text: str) -> None:
+    """``--edit <zone> <version> "<text>"`` (zone-generator-edits Req 3.6): the edit route's
+    own path (``server.app.edit_zone``) on a zone in the Server's output folder. Prints the new
+    version, its ops and notes; an edit that applies nothing exits 1 with why, a bad zone or
+    version exits 2."""
+    from fastapi import HTTPException
+
+    import server.app as app_mod
+
+    v = int(version) if version.isdigit() else version
+    try:
+        req = app_mod.EditRequest(zone=zone, version=v, text=text)
+        res = app_mod.edit_zone(req)
+    except HTTPException as exc:
+        print(f"error: {exc.detail}", file=sys.stderr)
+        sys.exit(2 if exc.status_code in (400, 404) else 1)
+    except ValueError as exc:                        # the request model refused it
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(2)
+    if res.applied:
+        print(f"Edited {zone} v{res.parent} -> v{res.version} ({res.how}, "
+              f"interpreter {res.interpreter})")
+        for op in res.ops:
+            print(f"  op: {json.dumps(op)}")
+    else:
+        print(f"Nothing applied to {zone} v{res.parent}", file=sys.stderr)
+    for note in res.notes:
+        print(f"  note: {note}", file=sys.stderr if not res.applied else sys.stdout)
+    for d in res.diagnostics:
+        print(f"  gate: seed {d['seed']} failed [{', '.join(d['checks']) or 'validation'}]",
+              file=sys.stderr)
+    if res.help:
+        print(f"  {res.help}", file=sys.stderr)
+    if res.applied:
+        print(f"  Files: {app_mod.OUTPUT_DIR / zone / f'v{res.version}'}")
+    else:
+        sys.exit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="eq_s3d", description="Agentic EverQuest zone generator")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument("--edit", nargs=3, metavar=("ZONE", "VERSION", "TEXT"), default=None,
+                        help="Make the next version of a Server zone (output/web/<zone>) from "
+                             "feedback on VERSION (2 or v2), e.g. --edit <zone> 1 \"less decor\"")
+    sub = parser.add_subparsers(dest="command")
 
     g = sub.add_parser("generate", help="Procedurally generate a zone")
     g.add_argument("name", type=_build_name_arg,
@@ -414,6 +459,13 @@ def main(argv: list[str] | None = None) -> None:
     e.set_defaults(func=cmd_export)
 
     args = parser.parse_args(argv)
+    if args.edit is not None:
+        if args.command is not None:
+            parser.error("--edit takes no command")
+        cmd_edit(*args.edit)
+        return
+    if args.command is None:
+        parser.error("a command is required (generate, export) or --edit")
     if args.command == "export":
         args.func(args)
         return

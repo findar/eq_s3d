@@ -49,7 +49,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Owns: generators/edits.py, generators/layout.py (lifting the gating rule into a function only), tests/test_edits.py
   - Reqs: 2.1–2.6
 
-- [ ] 4. The edit route and CLI
+- [x] 4. The edit route and CLI
   - Card: [cards/04-route.md](cards/04-route.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: server/app.py, main.py, generators/rebuild.py, tests/test_edit_route.py, tests/test_hygiene.py (the CLI option allowlist only)

@@ -46,6 +46,7 @@ from generators.zone_types import (
 )
 from analyzer.style_builder import REFERENCE_ZONES
 from ai.planner import make_plan, get_planner
+from ai.llm_edits import get_edit_interpreter
 from ai.expand import plan_to_spec
 from ai.schema import (
     LAYOUT_ZONE_TYPES, VALID_DUNGEON_RACES, VALID_DUNGEON_THEMES, VALID_LAYOUTS,
@@ -292,7 +293,7 @@ async def _validation_to_400(request: Request, exc: RequestValidationError):
     integer fields) or ``"<field>: <message>"`` — always a 400 naming the field
     (``loc[-1]``), never a 422. Other routes keep FastAPI's default handling.
     """
-    if not request.url.path.startswith(("/api/generate", "/api/rebuild")):
+    if not request.url.path.startswith(("/api/generate", "/api/rebuild", "/api/edit")):
         # Preserve the default 422 for every other route.
         return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
@@ -795,14 +796,20 @@ def _saved_request(req: GenerateRequest, mode: str) -> dict:
 def _generate(req: GenerateRequest, zone_id: str, version: int, *,
               saved: Optional[dict] = None,
               version_meta: Optional[dict] = None,
-              partial: Optional[tuple] = None) -> GenerateResponse:
+              partial: Optional[tuple] = None,
+              edited: Optional[tuple] = None,
+              raise_failed: bool = False) -> GenerateResponse:
     """Generate (``version`` 1 of a new ``zone_id``) or a rebuild (the next version of an
     existing zone; ``saved`` is the request it is built from, its parent's ``request.json``
     with the change applied). A prompt-mode rebuild takes the plan the parent's planner
     produced from ``saved``: the planner is never called again. ``partial`` is a partial
     rebuild's ``(parent_dir, changes)``: the request is handled as here (its warnings, plan
     and saved request), and the zone is built from the parent's saved stages
-    (``generators.rebuild.rebuild_decor``) instead of planned again."""
+    (``generators.rebuild.rebuild_decor``) instead of planned again. ``edited`` is an edit's
+    ``(parent_dir, spec_doc, stages)``: the zone is built from that spec dict
+    (``generators.rebuild.build_spec``), from the parent's saved stages when ``stages``.
+    ``raise_failed``: a ``GenerationFailed`` goes to the caller (an edit tries its next
+    candidate) instead of becoming a 503."""
     # --- Mode + seed resolution: every 400 here happens BEFORE any build/write.
     mode = _resolve_mode(req)
 
@@ -977,9 +984,16 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
             from generators.rebuild import rebuild_decor
             parent_dir, changes = partial
             vb = rebuild_decor(parent_dir, changes, generate=generate_validated, **pipeline)
+        elif edited is not None:
+            from generators.rebuild import build_spec
+            parent_dir, spec_doc, use_stages = edited
+            vb = build_spec(parent_dir, spec_doc, stages=use_stages, generate=generate_validated,
+                            **pipeline)
         else:
             vb = generate_validated(factory, **pipeline)
     except GenerationFailed as e:
+        if raise_failed:
+            raise
         # Exhaustion / pinned-seed failure -> clean error, never a broken GLB.
         raise HTTPException(
             503,
@@ -1079,6 +1093,9 @@ class RebuildResponse(GenerateResponse):
 #: Version numbers taken by a rebuild still running, per zone (under ``_VERSIONS_LOCK``).
 _VERSIONS_LOCK = threading.Lock()
 _VERSIONS_TAKEN: dict[str, set[int]] = {}
+#: Zones an edit is working on (under ``_VERSIONS_LOCK``): no other edit or rebuild of the zone
+#: starts until it finishes (zone-generator-edits decision 5, the 429).
+_EDITING: set[str] = set()
 
 
 def _version_dirs(zone_dir: Path) -> dict[int, Path]:
@@ -1092,11 +1109,14 @@ def _version_dirs(zone_dir: Path) -> dict[int, Path]:
     return out
 
 
-def _take_version(zone: str, zone_dir: Path) -> int:
+def _take_version(zone: str, zone_dir: Path, *, edit: bool = False) -> int:
     """The zone's next version number, held for the caller until ``_release_version``: one
     past every version on disk and every number another rebuild of the zone holds, taken
-    under one lock, so two rebuilds at once never share a number (or a scratch folder)."""
+    under one lock, so two rebuilds at once never share a number (or a scratch folder). A
+    rebuild (not ``edit``) of a zone an edit is working on is a 429."""
     with _VERSIONS_LOCK:
+        if zone in _EDITING and not edit:
+            raise HTTPException(429, f"zone {zone} has an edit building; try again when it finishes")
         taken = _VERSIONS_TAKEN.setdefault(zone, set())
         n = max(set(_version_dirs(zone_dir)) | taken, default=0) + 1
         taken.add(n)
@@ -1243,12 +1263,247 @@ def rebuild(req: RebuildRequest):
     return RebuildResponse(**resp.model_dump(), version_info=info)
 
 
+# ---------------------------------------------------------------------------
+# Edits (zone-generator-edits Req 3): the next version of a zone from feedback on a version
+# ---------------------------------------------------------------------------
+
+#: How many candidates an edit that draws seeds (``regenerate``, ``reroll_*``) builds before it
+#: gives up: each failed gate tries the next seed, as Generate retries (umbrella 19.8).
+EDIT_CANDIDATES = 5
+
+
+class EditRequest(BaseModel):
+    """Feedback on one version of a zone: ``text`` (read by the edit interpreter) or ``ops``
+    (validated as they are, ``ai.edits``), exactly one. ``version`` is ``2`` or ``"v2"``.
+    ``seed`` salts the ops' random draws (omit for a fresh one)."""
+    model_config = ConfigDict(extra="ignore")
+
+    zone: StrictStr
+    version: StrictInt | StrictStr
+    text: Optional[StrictStr] = None
+    ops: Optional[list[Any]] = None
+    seed: Optional[StrictInt] = None
+
+
+class EditResponse(BaseModel):
+    """What an edit did. ``applied``: a new version was written (``version``, ``how``,
+    ``build``: its files as a rebuild's response). Not applied: nothing on disk changed, and
+    ``help`` (no ops were given or understood), ``invalid`` (ops that fail the op schema),
+    ``rejected`` (ops that can't apply here, each with its reason) or ``diagnostics`` (every
+    candidate failed the gate) says why. ``notes`` always lists what happened to each op."""
+    applied: bool
+    zone: str
+    parent: int
+    version: Optional[int] = None
+    interpreter: Optional[str] = None
+    text: Optional[str] = None
+    ops: list[dict[str, Any]] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    affected: dict[str, list[str]] = Field(default_factory=lambda: {"rooms": [], "corridors": []})
+    how: Optional[str] = None
+    help: Optional[str] = None
+    invalid: list[dict[str, Any]] = Field(default_factory=list)
+    rejected: list[dict[str, Any]] = Field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = Field(default_factory=list)
+    build: Optional[RebuildResponse] = None
+
+
+def _edit_diagnostics(e: GenerationFailed) -> list[dict]:
+    """A failed candidate's gate report: each attempt's seed, failed checks and reasons."""
+    return [{"seed": f.seed, "attempt": f.attempt, "checks": list(f.checks),
+             "reasons": list(f.reasons), "reachable_rooms": f.reachable_rooms,
+             "total_rooms": f.total_rooms} for f in e.failures]
+
+
+def _set_in_request(body: dict, key: str, value: Any) -> None:
+    """``key`` set to ``value`` (``None``: taken out) in the request's ``plan`` and
+    ``controls``, as a rebuild sets ``room_decor_seeds``."""
+    for part in ("plan", "controls"):
+        if isinstance(body.get(part), dict):
+            d = {k: v for k, v in body[part].items() if k != key}
+            if value is not None:
+                d[key] = value
+            body[part] = d
+
+
+def _edited_request(saved: dict, result) -> dict:
+    """The request an edit's version saves: the parent's, with what the edit changed that a
+    request can say (the decor seed, the room decor seeds, the decor level); a ``regenerate``
+    is the parent's request at the new seed, its stage seeds left to follow it."""
+    body = dict(saved)
+    doc = result.doc
+    if result.seed is not None:
+        body["seed"] = result.seed
+        for key in REBUILD_SEEDS:
+            body.pop(key, None)
+        _set_in_request(body, "room_decor_seeds", None)
+        return body
+    if "decor_seed" in result.changed:
+        body["decor_seed"] = doc.get("decor_seed")
+    if "decor_seed" in result.changed or "room_decor_seeds" in result.changed:
+        _set_in_request(body, "room_decor_seeds", doc.get("room_decor_seeds") or None)
+    if "decor" in result.changed:
+        _set_in_request(body, "decor", doc.get("decor"))
+    return body
+
+
+def _build_edit(zone: str, n: int, parent_n: int, parent_dir: Path, saved: dict, result):
+    """Build one candidate of an edit as version ``n``: ``regenerate`` plans again from the
+    parent's request at the new seed; a partial edit builds the edited spec from the parent's
+    saved stages, and in full when they are missing or the edit changed the TER
+    (``StaleStages``, decision 4); a full edit builds the edited spec in full. Returns
+    ``(GenerateResponse, VersionInfo)``; a gate failure raises ``GenerationFailed``."""
+    from generators import rebuild as partial
+    body = _edited_request(saved, result)
+    try:
+        gen_req = GenerateRequest.model_validate(body)
+    except ValueError:
+        raise HTTPException(400, f"version {zone}/v{parent_n} has an unreadable saved request")
+    info = VersionInfo(n=n, parent=parent_n, changed=list(result.changed), how=result.how)
+
+    def build(**how):
+        return _generate(gen_req, zone, n, saved=body, version_meta=info.model_dump(),
+                         raise_failed=True, **how)
+
+    if result.seed is not None:
+        return build(), info
+    if result.how == "partial":
+        try:
+            return build(edited=(parent_dir, result.doc, True)), info
+        except (partial.NoSavedStages, partial.StaleStages) as exc:
+            logger.warning("partial edit of %s/v%s built in full: %s", zone, parent_n, exc)
+            info = VersionInfo(n=n, parent=parent_n, changed=list(result.changed), how="full")
+    return build(edited=(parent_dir, result.doc, False)), info
+
+
+def _write_edit_block(zone: str, n: int, block: dict) -> None:
+    """The ``edit`` block into version ``n``'s sidecar (Req 3.3)."""
+    root = OutputRoot(OUTPUT_DIR)
+    path = root.path(zone, f"v{n}", f"{zone}.zone.json")
+    data = _read_json(path) or {}
+    data["edit"] = block
+    root.write_text(str(path), json.dumps(data, indent=2))
+
+
+def edit_zone(req: EditRequest) -> EditResponse:
+    """The edit route's work, shared with the CLI's ``--edit`` (Req 3.6)."""
+    zone_dir = _zone_dir(req.zone)
+    parent_seg = _version_segment(req.version)
+    parent_n = int(parent_seg[1:])
+    if (req.text is None) == (req.ops is None):
+        raise HTTPException(400, "an edit names text or ops (exactly one)")
+    if req.seed is not None and not (SEED_MIN <= req.seed <= SEED_MAX):
+        raise HTTPException(400, f"seed must be between {SEED_MIN} and {SEED_MAX}")
+    parent_dir = _version_dirs(zone_dir).get(parent_n)
+    if parent_dir is None:
+        raise HTTPException(404, f"no version {req.zone}/{parent_seg}")
+    saved = _read_json(parent_dir / f"{req.zone}.request.json")
+    if saved is None:
+        raise HTTPException(404, f"version {req.zone}/{parent_seg} has no saved request "
+                                 "(built before versions)")
+    spec_doc = _read_json(parent_dir / f"{req.zone}.spec.json")
+    if spec_doc is None:
+        raise HTTPException(404, f"version {req.zone}/{parent_seg} has no saved spec")
+
+    with _VERSIONS_LOCK:
+        if req.zone in _EDITING or _VERSIONS_TAKEN.get(req.zone):
+            raise HTTPException(429, f"zone {req.zone} is building; try again when it finishes")
+        _EDITING.add(req.zone)
+    try:
+        return _edit_locked(req, zone_dir, parent_n, parent_dir, saved, spec_doc)
+    finally:
+        with _VERSIONS_LOCK:
+            _EDITING.discard(req.zone)
+
+
+def _edit_locked(req: EditRequest, zone_dir: Path, parent_n: int, parent_dir: Path,
+                 saved: dict, spec_doc: dict) -> EditResponse:
+    """``edit_zone`` once it holds the zone: read the ops, apply them, build the candidates."""
+    import random
+
+    from ai.edits import HELP, _clean, validate as validate_ops
+    from generators.edits import apply_edits
+
+    out: dict[str, Any] = {"applied": False, "zone": req.zone, "parent": parent_n}
+    rejected: list[dict] = []
+    if req.text is not None:
+        ops, notes, name = get_edit_interpreter().interpret(req.text, spec_doc)
+        out.update(interpreter=name, text=_clean(req.text))
+    else:
+        ops, bad = validate_ops(req.ops, spec_doc)
+        notes = [b["reason"] for b in bad]
+        invalid = [{"op": b["op"], "reason": b["reason"]} for b in bad if b["why"] == "schema"]
+        if invalid:
+            return EditResponse(**out, notes=notes, invalid=invalid)
+        rejected = [{"op": b["op"], "reason": b["reason"]} for b in bad]
+    if not ops:
+        return EditResponse(**out, notes=notes, rejected=rejected,
+                            help=None if rejected else HELP)
+
+    base = req.seed if req.seed is not None else random.SystemRandom().randint(SEED_MIN, SEED_MAX)
+    result = apply_edits(spec_doc, ops, base, parent_n)
+    if result.how is None:
+        return EditResponse(**out, notes=notes + result.notes,
+                            rejected=rejected + [{"op": r["op"], "reason": r["reason"]}
+                                                 for r in result.rejected])
+
+    n = _take_version(req.zone, zone_dir, edit=True)
+    diagnostics: list[dict] = []
+    built = None
+    try:
+        for k in range(EDIT_CANDIDATES):
+            if k:
+                # The next seed; an edit that draws nothing builds exactly one candidate.
+                nxt = apply_edits(spec_doc, ops, (base + k) % (SEED_MAX + 1), parent_n)
+                if nxt.applied == result.applied:
+                    break
+                result = nxt
+            try:
+                built = _build_edit(req.zone, n, parent_n, parent_dir, saved, result)
+            except GenerationFailed as e:
+                diagnostics += _edit_diagnostics(e)
+                continue
+            break
+        notes = notes + result.notes
+        rejected += [{"op": r["op"], "reason": r["reason"]} for r in result.rejected]
+        if built is None:
+            return EditResponse(**out, ops=result.applied, notes=notes, rejected=rejected,
+                                affected=result.affected, diagnostics=diagnostics)
+        resp, info = built
+        _write_edit_block(req.zone, n, {"text": out.get("text"), "ops": result.applied,
+                                        "interpreter": out.get("interpreter"), "notes": notes,
+                                        "affected": result.affected})
+    finally:
+        _release_version(req.zone, n)
+    out.update(applied=True, version=n, how=info.how)
+    return EditResponse(**out, ops=result.applied, notes=notes, rejected=rejected,
+                        affected=result.affected, diagnostics=diagnostics,
+                        build=RebuildResponse(**resp.model_dump(), version_info=info))
+
+
+@app.post("/api/edit", response_model=EditResponse)
+def edit(req: EditRequest):
+    """The next version of ``zone`` from ``version`` and feedback on it (zone-generator-edits
+    Req 3): ``text`` goes through the edit interpreter (``ai.llm_edits.get_edit_interpreter``),
+    ``ops`` are validated without it. The ops apply to the version's saved spec
+    (``generators.edits.apply_edits``) and the result is built as the next version, with
+    step 16's ``version`` block and an ``edit`` block (``{text, ops, interpreter, notes,
+    affected}``) in its sidecar.
+
+    ``applied: false`` (HTTP 200) when nothing was built: no ops (``help``), invalid ops,
+    every op rejected, or every candidate failing the gate; nothing on disk changes then. An
+    unknown zone or version is a 404, a bad body a 400, and an edit of a zone that is already
+    building (an edit, or a rebuild) a 429 (decision 5)."""
+    return edit_zone(req)
+
+
 @app.get("/api/zones/{zone}/versions")
 def list_versions(zone: str):
     """Every finished version of a zone, by number (partial-rebuild Req 1.3): ``n``,
     ``parent``, ``changed``, ``how`` (from its sidecar's ``version`` block; v1 has none),
     its ``seeds``, ``created`` and ``took_ms`` (from its ``request.json``; ``created``
-    falls back to the sidecar's time) and the URLs that open it."""
+    falls back to the sidecar's time), ``edit`` (an edit's ``{text, ops}``, from its sidecar's
+    ``edit`` block; ``None`` for a version no edit made) and the URLs that open it."""
     zone_dir = _zone_dir(zone)
     versions = []
     for n, vdir in sorted(_version_dirs(zone_dir).items()):
@@ -1257,6 +1512,7 @@ def list_versions(zone: str):
         if sidecar is None:
             continue                       # not a finished build
         block = sidecar.get("version") or {}
+        made = sidecar.get("edit") if isinstance(sidecar.get("edit"), dict) else None
         saved = _read_json(vdir / f"{zone}.request.json") or {}
         created = saved.get("created")
         if created is None:
@@ -1267,6 +1523,8 @@ def list_versions(zone: str):
             "n": n, "parent": block.get("parent"), "changed": list(block.get("changed", [])),
             "how": block.get("how"), "seeds": sidecar.get("seeds"),
             "created": created, "took_ms": saved.get("took_ms"),
+            "edit": ({"text": made.get("text"), "ops": list(made.get("ops") or [])}
+                     if made is not None else None),
             "glb_url": f"{base}/{zone}.glb", "zone_url": f"{base}/{zone}.zone.json",
             "map_url": f"{base}/{zone}.map.svg", "eqg_url": f"{base}/{zone}.eqg",
         })
