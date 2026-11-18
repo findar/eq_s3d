@@ -61,7 +61,7 @@ Bytes: Generate and every rebuild stay byte-identical (Req 5). Every task proves
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
   - Reqs: 4
 
-- [ ] 6. The optional LLM interpreter
+- [x] 6. The optional LLM interpreter
   - Card: [cards/06-llm.md](cards/06-llm.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: ai/llm_edits.py, tests/test_llm_edits.py
