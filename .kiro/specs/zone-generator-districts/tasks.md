@@ -50,7 +50,7 @@ touches generation proves it with
   - Owns: generators/layout.py, tests/test_district_layout.py
   - Reqs: 3, 7
 
-- [ ] 4. The plan and the prompt
+- [x] 4. The plan and the prompt
   - Card: [cards/04-plan.md](cards/04-plan.md)
   - Type: agent · Size: M · Depends: 3
   - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, ai/llm_planner.py, ai/prompts/, tests/test_district_plan.py
