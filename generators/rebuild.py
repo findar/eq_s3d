@@ -33,7 +33,8 @@ from generators.builder import SavedStages, StaleStages, with_decor_layers
 from generators.zone_spec import ZoneSpec
 
 __all__ = ["SHELLS", "NoSavedStages", "ShellCache", "StaleStages", "build_spec", "rebuild_decor",
-           "room_ids", "room_seeds_after", "saved_spec", "saved_stages"]
+           "parent_quality_reason", "room_ids", "room_seeds_after", "saved_spec",
+           "saved_stages"]
 
 
 class ShellCache:
@@ -191,7 +192,23 @@ def rebuild_decor(parent_dir: Path, changes: Mapping[str, Any], *, zone_id: str,
     isn't what this code builds from its spec, and ``GenerationFailed`` (pinned) when the
     build fails a gate."""
     doc = _apply(saved_spec(parent_dir, zone_id.lower()), changes)
+    pipeline.setdefault("quality_reason", parent_quality_reason(parent_dir, zone_id.lower()))
     return build_spec(parent_dir, doc, zone_id=zone_id, generate=generate, **pipeline)
+
+
+def parent_quality_reason(parent_dir: Path, name: str) -> str:
+    """The reason a decor rebuild of ``parent_dir`` is marked with if it fails the bands
+    (zone-generator-quality A4: it keeps its parent's room graph, so its parent's reason):
+    the parent sidecar's ``quality.reason``; ``quality_outside_bands_pinned`` (the rebuild's
+    seed is pinned) when the parent passed or has no ``quality`` entry."""
+    from generators.pipeline import REASON_PINNED
+    try:
+        side = json.loads((Path(parent_dir) / f"{name}.zone.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return REASON_PINNED
+    q = side.get("quality") if isinstance(side, dict) else None
+    reason = q.get("reason") if isinstance(q, dict) else None
+    return reason if isinstance(reason, str) and reason else REASON_PINNED
 
 
 def build_spec(parent_dir: Path, doc: Mapping[str, Any], *, zone_id: str, stages: bool = True,
@@ -202,9 +219,15 @@ def build_spec(parent_dir: Path, doc: Mapping[str, Any], *, zone_id: str, stages
     as ``rebuild_decor`` does; without, it is a full build of ``doc``. Either way the result
     is the same zone byte for byte, footer aside, or ``StaleStages`` when the parent's TER
     isn't what ``doc`` builds (zone-generator-edits decision 4: the caller builds it again
-    without ``stages``). Raises as ``rebuild_decor``."""
+    without ``stages``). Raises as ``rebuild_decor``.
+
+    Quality (zone-generator-quality A4): the build is measured, never redrawn. A failing one
+    is marked with ``pipeline["quality_reason"]``, by default ``edit_outside_bands`` (an
+    edit; ``rebuild_decor`` passes its parent's reason)."""
+    from generators.pipeline import REASON_EDIT
     if generate is None:
         from generators.pipeline import generate_validated as generate
+    pipeline.setdefault("quality_reason", REASON_EDIT)
     name = zone_id.lower()
     doc = dict(doc)
     layers = tuple(doc.pop("decor_layers", None) or ())
