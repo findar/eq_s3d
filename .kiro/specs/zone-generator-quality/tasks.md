@@ -33,7 +33,7 @@ alone; say so in the commit body).
 
 ## Tasks
 
-- [ ] 1. The quality meter
+- [x] 1. The quality meter
   - Card: [cards/01-meter.md](cards/01-meter.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/quality.py, tests/test_quality.py
