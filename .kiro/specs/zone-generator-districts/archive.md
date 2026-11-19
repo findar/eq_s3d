@@ -23,5 +23,12 @@ user's design review). The user confirms at the first look (task 9).
 5. **District adjacency is a tree** (task 1, `c2c0a14`): only the cut edges link Districts, so
    two sibling Districts that shared a loop corridor lose it, and every Threshold is a bridge
    (task 3's gating relies on it). Umbrella 23.3 allowed a cycle of Districts.
+6. **"Next to" means across a Threshold** (task 2, `de2e44e`): `sequential` checks each District
+   against its parent; `factional` relaxes to per-Threshold contrast, then to distinct, with a note.
+7. **Three variant levels** (as built, `abandoned`, `ruined`), in the Material_Name; light moods
+   `lit`, `dim`, `faint`. A pinned single Purpose is `pinned=True` (task 4 decides when).
+8. **With Districts, a zone tint drives regions and lights but not the palette**: a lava temple
+   split into Districts keeps its lava pools and light but loses its lava floor. Judged at the
+   first look.
 
 ## Follow-ups
