@@ -57,7 +57,7 @@ alone; say so in the commit body).
   - Owns: server/app.py, main.py, tests/test_quality_route.py
   - Reqs: 4
 
-- [ ] 5. The page
+- [x] 5. The page
   - Card: [cards/05-page.md](cards/05-page.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
