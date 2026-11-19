@@ -44,7 +44,7 @@ touches generation proves it with
   - Owns: generators/districts.py, generators/semantics.py, tests/test_district_purposes.py
   - Reqs: 2
 
-- [ ] 3. Districts in the layout
+- [x] 3. Districts in the layout
   - Card: [cards/03-layout.md](cards/03-layout.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: generators/layout.py, tests/test_district_layout.py
