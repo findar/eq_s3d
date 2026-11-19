@@ -64,7 +64,9 @@ bands (start from the umbrella table; widen where ordinary output fails), puts t
   gains `quality`. Ungated builds measure and record too.
 - `stages` (partial rebuilds) and edits: measure only (A4). The edit path sets
   `edit_outside_bands`; a decor rebuild of a degraded parent keeps the parent's reason.
-- `PLAN_ERRORS` during a quality Draw count as a failed Draw (score infinity), not an attempt.
+- `PLAN_ERRORS` during a quality Draw count as an attempt exactly as before the gate (logged to
+  the failure log with checks `["plan"]`, stage `zone`; counted in `attempts` and against
+  `max_attempts`), and also as one of the 32 quality Draws (score infinity, never chosen).
 
 ## Route, CLI, listing
 

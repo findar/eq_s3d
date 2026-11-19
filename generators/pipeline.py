@@ -566,34 +566,61 @@ class _DrawBudget:
     done: bool = False
 
 
+class _DrawsStopped(Exception):
+    """A plan error during the Draws used up the attempt budget or the timeout with no
+    measured spec to build: the generate fails as it would have before the Draws."""
+
+    def __init__(self, timed_out: bool):
+        super().__init__("draws stopped")
+        self.timed_out = timed_out
+
+
 def _quality_draw(make: Callable[[int], ZoneSpec], first: int, rng: Optional[random.Random],
                   budget: _DrawBudget, start: float, timeout_s: float,
-                  bands: Optional[Mapping], verticality: Optional[str]):
+                  bands: Optional[Mapping], verticality: Optional[str],
+                  plan_failed: Callable[[int, BaseException], bool]):
     """Draw specs (``make(s)``, not built) from seed ``first`` on, fresh seeds after it, until
     one passes the bands, the budget is spent or the timeout runs out (Draw time counts
     against it). Returns ``(spec, s)``: the passing spec, else the lowest score (the earliest
-    on a tie). A ``PLAN_ERRORS`` Draw is a failed Draw (score infinity); when every Draw of
-    this call was one, the last error is raised, a rejected attempt as before."""
+    on a tie).
+
+    A ``PLAN_ERRORS`` Draw is a rejected attempt exactly as before the Draws (lead's call,
+    task 3): ``plan_failed(s, error)`` logs it (checks ``["plan"]``, stage ``zone``), moves
+    the caller on to its next attempt and says whether the attempt cap and timeout still
+    allow one. It is also one of the ``QUALITY_DRAWS`` (score infinity, never chosen). When
+    they don't allow one: the best measured spec so far is built, or with none
+    :class:`_DrawsStopped` is raised. With the Draws spent and nothing measured yet, the
+    next spec drawn is built whatever it scores (a retry with no quality Draws)."""
     best = None                                   # (score, spec, seed)
-    error: Optional[BaseException] = None
     s = first
     while True:
         try:
             spec = make(s)
             report = measure(spec, bands=bands, verticality=verticality)
         except PLAN_ERRORS as e:
-            spec, report, error = None, None, e
-        if report is not None and report.passed:
+            budget.left -= 1
+            go_on = plan_failed(s, e)
+            if budget.left <= 0 or (time.monotonic() - start) >= timeout_s:
+                budget.done = True
+            if not go_on:
+                budget.done = True
+                if best is None:
+                    raise _DrawsStopped((time.monotonic() - start) >= timeout_s)
+                break
+            if budget.done and best is not None:
+                break
+            s = _fresh_seed(rng)
+            continue
+        if report.passed:
             return spec, s
-        if report is not None and (best is None or report.score < best[0]):
+        if best is None or report.score < best[0]:
             best = (report.score, spec, s)
         budget.left -= 1
         if budget.left <= 0 or (time.monotonic() - start) >= timeout_s:
             budget.done = True
+        if budget.done:
             break
         s = _fresh_seed(rng)
-    if best is None:
-        raise error
     logger.info("quality draws spent: building seed %s, score %.3f", best[2], best[0])
     return best[1], best[2]
 
@@ -676,7 +703,9 @@ def generate_validated(
     the report rides on ``ValidatedBuild.quality`` and in the Sidecar as ``quality``, marked
     degraded with a reason when it fails. A gated unpinned generate Draws before it builds
     (:func:`_quality_draw`): at most ``QUALITY_DRAWS`` failing specs per generate, Draw time
-    inside ``timeout_s``; a rooms reroll draws its ``rooms_seed`` the same way. Once the
+    inside ``timeout_s``; a rooms reroll draws its ``rooms_seed`` the same way. A Draw that
+    can't be planned (``PLAN_ERRORS``) is a rejected attempt as before, logged and counted in
+    ``attempts`` and ``max_attempts``, and also one of the Draws. Once the
     Draws are spent (or the timeout ran out during them), attempts build as before. A failing
     build's reason: ``quality_reason`` when given (a rebuild or an edit: measured only, never
     drawn, A4), else ``quality_outside_bands_pinned`` for a pinned seed, else
@@ -785,6 +814,21 @@ def generate_validated(
     # Quality Draws: an unpinned generate's only (a rebuild or an edit measures, A4).
     draws = _DrawBudget(done=pinned or quality_reason is not None or stages is not None)
 
+    def plan_failed(draw_seeds: Dict[str, Optional[int]], error: BaseException) -> bool:
+        """A Draw that can't be planned: a rejected attempt, logged as the ``PLAN_ERRORS``
+        handler below logs one; the loop moves on to its next attempt. Whether the
+        attempt cap and the timeout allow another (the checks after every attempt)."""
+        nonlocal attempt
+        failures.append(log_validation_failure(
+            failure_log, zone_id=zone_id, zone_type=zone_type,
+            seed=draw_seeds["seed"], attempt=attempt,
+            report=_plan_failure_report(zone_id, error), checks=["plan"],
+            stage=STAGE_ZONE, seeds=draw_seeds,
+        ))
+        go_on = attempt < max_attempts and (time.monotonic() - start) < timeout_s
+        attempt += 1
+        return go_on
+
     while True:
         attempt += 1
         if next_stage == STAGE_ZONE:
@@ -799,11 +843,17 @@ def generate_validated(
             if not draws.done and next_stage == STAGE_ZONE:
                 spec, use_seed = _quality_draw(
                     spec_factory, use_seed, rng, draws, start, timeout_s,
-                    quality_bands, verticality)
+                    quality_bands, verticality,
+                    lambda s, e: plan_failed({"seed": s, "rooms_seed": None,
+                                              "decor_seed": None}, e))
+                scratch = _scratch_dir(output_dir, zone_id, attempt, version)
             elif not draws.done and next_stage == STAGE_ROOMS:
                 spec, rooms_draw = _quality_draw(
                     lambda r: spec_factory(use_seed, rooms_seed=r), rooms_draw, rng, draws,
-                    start, timeout_s, quality_bands, verticality)
+                    start, timeout_s, quality_bands, verticality,
+                    lambda r, e: plan_failed({"seed": use_seed, "rooms_seed": r,
+                                              "decor_seed": None}, e))
+                scratch = _scratch_dir(output_dir, zone_id, attempt, version)
             else:
                 spec = (spec_factory(use_seed) if rooms_draw is None
                         else spec_factory(use_seed, rooms_seed=rooms_draw))
@@ -876,6 +926,11 @@ def generate_validated(
                 stage=STAGE_ZONE, seeds=seeds,
             ))
             _remove_scratch(root, output_dir, zone_id, scratch)
+        except _DrawsStopped as e:
+            # A plan error in the Draws spent the attempt cap or the timeout, as it would
+            # have without Draws (each one was logged as a rejected attempt).
+            _remove_scratch(root, output_dir, zone_id, scratch)
+            raise GenerationFailed(zone_id, zone_type, failures, timed_out=e.timed_out)
         except Exception:
             # Builder crash mid-attempt: leave nothing behind, re-raise.
             _remove_scratch(root, output_dir, zone_id, scratch)

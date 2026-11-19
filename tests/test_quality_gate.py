@@ -171,33 +171,56 @@ def test_timeout_during_draws_builds_the_best_so_far(meter, tmp_path, monkeypatc
     assert _block_ok(vb)["reason"] == pl.REASON_DEGRADED
 
 
-def test_plan_error_during_a_draw_is_a_failed_draw(meter, tmp_path):
-    err = PLAN_ERRORS[0] if isinstance(PLAN_ERRORS, tuple) else PLAN_ERRORS
+ERR = PLAN_ERRORS[0] if isinstance(PLAN_ERRORS, tuple) else PLAN_ERRORS
 
+
+def _log(tmp_path):
+    p = tmp_path / "fail.jsonl"
+    return [json.loads(ln) for ln in p.read_text().splitlines()] if p.exists() else []
+
+
+def test_plan_error_during_a_draw_is_a_rejected_attempt_and_a_draw(meter, tmp_path):
+    # Lead's call (task 3): logged and counted as an attempt as before, and one of the Draws.
     def make(i):
-        if i < 2:
-            raise err("no room for it")
-        return _good(0, tag=i)
+        if i in (1, 3):
+            raise ERR("no room for it")
+        return _good(0 if i == 4 else 5, tag=i)
     f = Factory(make)
     vb = _run(f, tmp_path)
-    assert len(f.seeds) == 3 and meter == [2] and vb.attempts == 1
-    assert not (tmp_path / "fail.jsonl").exists()             # not a rejected attempt
+    assert len(f.seeds) == 5 and meter == [4] and vb.attempts == 3
+    lines = _log(tmp_path)
+    assert [(l["attempt"], l["checks"], l["stage"]) for l in lines] == [
+        (1, ["plan"], "zone"), (2, ["plan"], "zone")]
+    assert [l["seed"] for l in lines] == [f.seeds[1], f.seeds[3]]
+
+
+def test_plan_errors_in_the_draws_spend_the_attempt_cap(meter, tmp_path):
+    def make(i):
+        raise ERR("never")
+    with pytest.raises(pl.GenerationFailed) as err:
+        _run(Factory(make), tmp_path, max_attempts=3)
+    assert err.value.attempts == 3 and meter == []
+    # With a measured spec in hand, the cap builds it instead.
+    f = Factory(lambda i: _good(2, tag=i) if i == 0 else (_ for _ in ()).throw(ERR("x")))
+    vb = _run(f, tmp_path, zone_id="qg2", max_attempts=3)
+    assert meter == [0] and _block_ok(vb)["reason"] == pl.REASON_DEGRADED
 
 
 def test_quality_draw_unit():
-    """``_quality_draw``: a rooms reroll's ``make`` draws the same way; all-PLAN_ERRORS
-    raises the last error; the budget is shared and marks itself done."""
-    err = PLAN_ERRORS[0] if isinstance(PLAN_ERRORS, tuple) else PLAN_ERRORS
+    """``_quality_draw``: a plan error counts as a Draw; with the Draws spent and nothing
+    measured, the next spec is taken whatever it scores."""
     rng = __import__("random").Random(0)
-    budget = pl._DrawBudget(left=3)
-    asked = []
+    budget = pl._DrawBudget(left=2)
+    calls = []
 
-    def boom(s):
-        asked.append(s)
-        raise err("x")
-    with pytest.raises(err):
-        pl._quality_draw(boom, 11, rng, budget, 0.0, 1e9, BANDS, None)
-    assert asked[0] == 11 and len(asked) == 3 and budget.done
+    def make(s):
+        calls.append(s)
+        if len(calls) <= 2:
+            raise ERR("x")
+        return _good(7)
+    spec, s = pl._quality_draw(make, 11, rng, budget, 0.0, 1e9, BANDS, None,
+                               lambda s, e: True)
+    assert calls[0] == 11 and len(calls) == 3 and budget.done and spec.q_value == 7
 
 
 def test_ungated_build_measures_and_records(meter, tmp_path):
