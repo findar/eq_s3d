@@ -9,13 +9,13 @@ District, Threshold flags on corridors, `spec.districts`, Threshold Gates first 
 crossing-split check (Req 3.3). Both layouts.
 
 ## Done when
-- [ ] For dungeon seeds on classic and graph, 8–30 rooms, locks 0–3, Districts on: Districts as
+- [x] For dungeon seeds on classic and graph, 8–30 rooms, locks 0–3, Districts on: Districts as
       Req 1; exactly one climax per District and one entrance; Threshold corridors flagged and no
       other; Gates on Thresholds first with keys reachable; walkability and solvability gates
       pass. → verify: `python -m pytest tests/test_district_layout.py -q`
-- [ ] How often the crossing split fails a districted Draw, over at least 200 Draws per layout,
+- [x] How often the crossing split fails a districted Draw, over at least 200 Draws per layout,
       is in the commit body; above about 2%, the fallback in design "Layout" is used and recorded.
-- [ ] Districts off, and Districts on below 8 rooms, give byte-identical specs to master: the
+- [x] Districts off, and Districts on below 8 rooms, give byte-identical specs to master: the
       byte check in `tasks.md` passes; `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
@@ -25,3 +25,4 @@ crossing-split check (Req 3.3). Both layouts.
 the pruned graph. Look at a few districted maps (`generators/mapview.py`) before ticking.
 
 ## Result
+✔ 195b918 · 3677 passed
