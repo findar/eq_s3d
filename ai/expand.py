@@ -12,14 +12,18 @@ same ZoneSpec the dropdowns produce — so everything downstream is unchanged.
 from __future__ import annotations
 
 import random
-from typing import Mapping, Optional
+from typing import Dict, List, Mapping, Optional
 
+from generators import districts as _districts
 from generators import semantics
 from generators.layout import LayoutGenerator
 from generators.layout_engine import GraphEngine
 from generators.zone_spec import ZoneSpec, RegionSpec
 from generators.zone_types import STYLE_PROFILE
-from .schema import DEFAULT_SITES, SCALE_CONTROLS, ZonePlan, LAYOUT_ZONE_TYPES
+from .schema import (
+    DEFAULT_SITES, DISTRICT_ZONE_TYPES, MAX_DISTRICT_PROPOSALS, SCALE_CONTROLS, ZonePlan,
+    LAYOUT_ZONE_TYPES,
+)
 
 # size -> shift of every room's position in its race's bands (step 7 task 17:
 # rooms are sized from the race's body height, so Size moves them within the
@@ -54,7 +58,8 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                  edges: Optional[Mapping[str, str]] = None,
                  trees: Optional[str] = None,
                  trees_source: str = "cli",
-                 sites_source: Optional[str] = None) -> ZoneSpec:
+                 sites_source: Optional[str] = None,
+                 warnings: Optional[List[str]] = None) -> ZoneSpec:
     """Build a ZoneSpec from a validated ZonePlan.
 
     ``edges`` declares the Rim of a wilderness or outdoor-dungeon zone
@@ -70,8 +75,19 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     ``sites_source`` says who set them (``"controls"`` or ``"cli"``); left
     ``None`` it is ``"prompt"`` when a prompt plan moved them off their
     defaults, else ``"default"``.
+
+    The plan's Districts (districts spec Req 4) reach the layout on a dungeon only (A2);
+    on any other zone type the switch is kept on the plan but ignored. ``warnings`` is an
+    optional accumulator, as for ``ZonePlan.validate``: it gains that A2 note and the
+    layout's own notes (``districts_reduced``, ``district_purposes_relaxed``, ...; every
+    entry of ``LayoutGenerator.warnings``), for the caller's response and Sidecar. Call
+    it with a fresh list per spec: a retry on a new seed makes new notes.
     """
-    plan.validate()
+    plan.validate(warnings)
+    notes: List[str] = [] if warnings is None else warnings
+    if plan.districts and plan.zone_type not in DISTRICT_ZONE_TYPES:
+        notes.append(f"districts_ignored: Districts apply to dungeons only; "
+                     f"this {plan.zone_type} builds without them")
     rng_seed = seed if seed is not None else random.randint(0, 2 ** 31 - 1)
     rooms_seed = rng_seed if plan.rooms_seed is None else plan.rooms_seed
 
@@ -143,7 +159,12 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         dungeon_theme=plan.dungeon_theme,
         dungeon_race=plan.dungeon_race,
         elemental_tint=(plan.elemental_tint or None),
+        **_district_args(plan, rooms_seed, notes),
     )
+    notes.extend(gen.warnings)
+    pinned = plan.pinned_purpose()
+    if pinned and len(spec.districts) >= 2:
+        notes.append(f"district_purpose_pinned: every District is {pinned}")
     spec.seed = rng_seed        # the World's; the layout ran on the rooms seed
     spec.layout = layout_block(gen.layout_record, spec)
 
@@ -167,6 +188,58 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     if spec.layout is not None and plan.zone_type == "dungeon":
         _dress_rooms(spec, plan, rooms_seed)
     return _decor(spec, plan)
+
+
+def _district_args(plan: ZonePlan, seed: int, notes: List[str]) -> Dict[str, object]:
+    """``LayoutGenerator.generate``'s District arguments for *plan*: none (the switch off,
+    or a zone type other than a dungeon), else the switch, the proposals and the
+    relationship. A dungeon too small to split gets a note (umbrella 23.1's count is the
+    layout's: the plan's proposal count never overrides it)."""
+    if not (plan.districts and plan.zone_type in DISTRICT_ZONE_TYPES):
+        return {}
+    if plan.room_count < _districts.MIN_ROOMS:
+        notes.append(f"districts_too_few_rooms: {plan.room_count} rooms; Districts need "
+                     f"{_districts.MIN_ROOMS} or more")
+    return {"districts": True,
+            "district_plan": layout_proposals(plan, seed),
+            "district_relationship": plan.district_relationship}
+
+
+def layout_proposals(plan: ZonePlan, seed: int) -> List[Dict[str, str]]:
+    """The plan's District proposals as the layout takes them: named Purposes only, in
+    District id order (``generators.districts.assign_district_purposes`` notes an empty
+    one as unknown).
+
+    A pinned plan (``ZonePlan.pinned_purpose``) proposes its Purpose for every District,
+    up to three, so however many the room count resolves all share it (23.10). Open
+    proposals at the end are dropped: the layout chooses those Districts by the
+    relationship (23.11). An open proposal before a named one is filled here: District 0
+    by the plan's dungeon theme when no other proposal names it, else (and for any later
+    one) a Purpose next to the one before it (District 0: the first named) in the relationship's table (the
+    contrast table for ``factional``, the compatibility table otherwise), drawn from a
+    generator salted off *seed* and unused by the other proposals."""
+    pinned = plan.pinned_purpose()
+    if pinned:
+        return [{"purpose": pinned}] * MAX_DISTRICT_PROPOSALS
+    names = [p["purpose"] for p in plan.district_plan]
+    while names and not names[-1]:
+        names.pop()
+    if "" in names:
+        rng = random.Random(seed ^ 0xD157)
+        table = (_districts.CONTRASTS if plan.district_relationship == "factional"
+                 else _districts.COMPATIBLE)
+        for d, name in enumerate(names):
+            if name:
+                continue
+            used = {n for n in names if n}
+            if d == 0 and plan.dungeon_theme and plan.dungeon_theme not in used:
+                names[0] = plan.dungeon_theme
+                continue
+            near = names[d - 1] if d else next(n for n in names if n)
+            pool = [p for p in table[near] if p not in used] or \
+                [p for p in _districts.PURPOSES if p not in used]
+            names[d] = rng.choice(pool)
+    return [{"purpose": n} for n in names]
 
 
 def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:

@@ -17,7 +17,10 @@ import json
 from typing import Optional
 
 from core.env import env_value
-from .schema import ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_ZONE_TYPES
+from .schema import (
+    ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_DISTRICT_RELATIONSHIPS, VALID_DUNGEON_THEMES,
+    VALID_ZONE_TYPES,
+)
 
 
 _SYSTEM_PROMPT = """You are a level designer for EverQuest-style zones.
@@ -32,10 +35,27 @@ Rules:
 - regions: list any special volumes implied by the description
   (water, lava, ice, pvp, zoneline, generic). Empty if none.
 - mood: a short atmosphere note (e.g. "dark and damp").
+- districts: true only for a dungeon whose description names 2-3 contrasting
+  areas ("the living and the dead", "two factions", "upper and lower halls",
+  "a temple fallen to the dead", "overrun by kobolds"); omit it otherwise.
+- district_plan: with districts, one object per named area, the entrance's
+  area first: {{"purpose": <one of {purposes}, or "" when the words name
+  none>}}. The same purpose in every entry gives every area that purpose.
+- district_relationship: with districts, one of {relationships}
+  (abandoned_vs_active: the areas past the entrance's have fallen or been
+  overrun). With districts, room_count is at least 8 (3 areas: 14).
 
 Respond with ONLY the JSON object, no prose.
 Honour real-EQ proportions provided in the style guidance.
 """
+
+
+def system_prompt() -> str:
+    """The planner's system prompt, the vocabularies filled in."""
+    return _SYSTEM_PROMPT.format(
+        zone_types=", ".join(VALID_ZONE_TYPES),
+        purposes=", ".join(VALID_DUNGEON_THEMES),
+        relationships=", ".join(VALID_DISTRICT_RELATIONSHIPS))
 
 
 class LLMPlanner:
@@ -50,7 +70,7 @@ class LLMPlanner:
 
     def plan(self, prompt: str, name: str = "zone",
              style_hint: str = "") -> ZonePlan:
-        system = _SYSTEM_PROMPT.format(zone_types=", ".join(VALID_ZONE_TYPES))
+        system = system_prompt()
         if style_hint:
             system += f"\nStyle guidance:\n{style_hint}\n"
 

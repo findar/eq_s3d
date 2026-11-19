@@ -9,13 +9,13 @@ planner's contrasting-area phrases (23.9); the LLM planner's schema and prompt c
 fields.
 
 ## Done when
-- [ ] A plan round-trips the three fields; a saved plan without them loads off; unknown Purposes
+- [x] A plan round-trips the three fields; a saved plan without them loads off; unknown Purposes
       or relationship are kept out by validation with a note (23.12). → verify:
       `python -m pytest tests/test_district_plan.py -q`
-- [ ] "a temple fallen to the dead", "two factions of goblins", "the upper and lower mines" turn
+- [x] "a temple fallen to the dead", "two factions of goblins", "the upper and lower mines" turn
       Districts on with the count, Purposes and relationship the phrase names; a prompt with no
       phrase leaves them off. Same command.
-- [ ] `python -m pytest tests/ -q` is green (including the property tests on plans and planner
+- [x] `python -m pytest tests/ -q` is green (including the property tests on plans and planner
       words).
 
 ## Pitfalls
@@ -24,3 +24,4 @@ outside its scope); don't let a District phrase move the zone type or Purpose ma
 District field on a wilderness or city plan is kept but ignored by `plan_to_spec` with a note.
 
 ## Result
+✔ ff0021a · 3703 passed
