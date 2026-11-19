@@ -44,6 +44,17 @@ VALID_DUNGEON_RACES = [
 ]
 VALID_ELEMENTAL_TINTS = ["lava", "ice", "water"]
 
+# Districts (districts spec Req 4.1, umbrella 23): off by default (A1); a plan
+# proposes up to three District Purposes (``{"purpose": name}``, an archetype
+# from VALID_DUNGEON_THEMES, or "" for a District the relationship chooses) and
+# one relationship ("" is the default, sequential). The relationships mirror
+# generators.districts.RELATIONSHIPS (written out, as the archetypes are; a
+# test keeps the two equal). Dungeons only (A2): ``plan_to_spec`` ignores them
+# on any other zone type with a note.
+VALID_DISTRICT_RELATIONSHIPS = ["sequential", "factional", "abandoned_vs_active"]
+MAX_DISTRICT_PROPOSALS = 3
+DISTRICT_ZONE_TYPES = ("dungeon",)
+
 # Layout engine (graph-layout Req 7): ``classic`` is the TinyKeep layout,
 # ``graph`` grows the room graph by a rule set. Only these zone types take it;
 # every other type ignores the two fields.
@@ -135,6 +146,56 @@ def rooms_seed(value: Any) -> Optional[int]:
     """A rooms seed: None (the zone's seed lays the rooms and Sites out), or a whole
     0..2^31-1 (world-sockets Req 4.1)."""
     return decor_seed(value, "rooms_seed")
+
+
+def district_switch(value: Any) -> bool:
+    """The Districts switch: a bool, or a form-style string ("true"/"on"/"1")."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def district_plan(value: Any, warnings: Optional[List[str]] = None) -> List[Dict[str, str]]:
+    """A plan's District proposals (umbrella 23.9, 23.11, 23.12): None or "" for none, else
+    a list of Purposes, each a name or a ``{"purpose": name}`` mapping, in District id
+    order. Each comes back as ``{"purpose": name}``; "" leaves that District to the
+    relationship. An unknown Purpose is ignored (its District left open) and anything past
+    ``MAX_DISTRICT_PROPOSALS`` dropped, each with a note in *warnings*. A value that is not
+    a list raises ``ValueError``."""
+    if value is None or value == "":
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"district_plan {value!r} is not a list of District Purposes")
+    out: List[Dict[str, str]] = []
+    for d, item in enumerate(value):
+        if d >= MAX_DISTRICT_PROPOSALS:
+            if warnings is not None:
+                warnings.append(f"district_plan_truncated: {len(value)} proposed, "
+                                f"the first {MAX_DISTRICT_PROPOSALS} kept")
+            break
+        raw = item.get("purpose", "") if isinstance(item, Mapping) else item
+        name = raw.strip().lower() if isinstance(raw, str) else ""
+        known = raw is None or (isinstance(raw, str) and (not name or name in VALID_DUNGEON_THEMES))
+        if not known:
+            if warnings is not None:
+                warnings.append(f"district_purpose_unknown: {raw!r} ignored (District {d})")
+            name = ""
+        out.append({"purpose": name})
+    return out
+
+
+def district_relationship(value: Any, warnings: Optional[List[str]] = None) -> str:
+    """A plan's District relationship: "" (the default, sequential) or one of
+    ``VALID_DISTRICT_RELATIONSHIPS``; anything else is ignored with a note (23.12)."""
+    if value is None:
+        return ""
+    name = value.strip().lower() if isinstance(value, str) else ""
+    if not isinstance(value, str) or (name and name not in VALID_DISTRICT_RELATIONSHIPS):
+        if warnings is not None:
+            warnings.append(f"district_relationship_unknown: {value!r} ignored, "
+                            f"using {VALID_DISTRICT_RELATIONSHIPS[0]}")
+        name = ""
+    return name
 
 
 class RoomSeeds(dict):
@@ -277,6 +338,15 @@ class ZonePlan:
     # zone's. ``to_dict`` leaves it out while empty.
     room_decor_seeds: Dict[str, int] = field(default_factory=lambda: RoomSeeds())
 
+    # Districts (districts spec Req 4.1; dungeons only, A2). Off by default (A1). The
+    # proposals are ``{"purpose": name}`` in District id order ("" leaves one to the
+    # relationship); two or more naming one Purpose and nothing else pin it (23.10).
+    # ``to_dict`` leaves all three out while they are at their defaults, so a plan
+    # without them is the dict it always was, and a saved one loads with them off.
+    districts: bool = False
+    district_plan: List[Dict[str, str]] = field(default_factory=list)
+    district_relationship: str = ""          # "" (sequential) or VALID_DISTRICT_RELATIONSHIPS
+
     # Free-text mood/notes, passed through for texture descriptions / future use
     mood: str = ""
 
@@ -359,7 +429,18 @@ class ZonePlan:
         self.decor_layers = decor_layers(self.decor_layers)
         self.rooms_seed = rooms_seed(self.rooms_seed)
         self.room_decor_seeds = room_decor_seeds(self.room_decor_seeds)
+        self.districts = district_switch(self.districts)
+        self.district_plan = district_plan(self.district_plan, warnings)
+        self.district_relationship = district_relationship(self.district_relationship, warnings)
         return self
+
+    def pinned_purpose(self) -> str:
+        """The Purpose this plan pins on every District (umbrella 23.10), or "": two or more
+        proposals, all naming the same Purpose, none left open."""
+        names = [p["purpose"] for p in self.district_plan]
+        if len(names) >= 2 and names[0] and all(n == names[0] for n in names):
+            return names[0]
+        return ""
 
     def to_dict(self) -> Dict[str, Any]:
         # The emitted dict carries ``zone_type`` and never a legacy ``theme``
@@ -372,6 +453,9 @@ class ZonePlan:
         seeds = out.pop("room_decor_seeds", None)
         if seeds:
             out["room_decor_seeds"] = dict(seeds)
+        if not (self.districts or self.district_plan or self.district_relationship):
+            for key in ("districts", "district_plan", "district_relationship"):
+                out.pop(key, None)
         return out
 
     @classmethod
@@ -548,6 +632,37 @@ ZONE_PLAN_JSON_SCHEMA = {
                            "rooms and at the Sites (bare rooms: "
                            "sparse; cluttered or richly furnished: dense); omit "
                            "for normal.",
+        },
+        "districts": {
+            "type": "boolean",
+            "description": "Dungeon only: split the dungeon into 2-3 contrasting "
+                           "areas (Districts) joined by one corridor each. Set it "
+                           "when the description names contrasting areas (the "
+                           "living and the dead, two factions, upper and lower "
+                           "halls, a temple fallen to the dead); omit otherwise.",
+        },
+        "district_plan": {
+            "type": "array",
+            "maxItems": MAX_DISTRICT_PROPOSALS,
+            "items": {
+                "type": "object",
+                "properties": {"purpose": {"type": "string",
+                                           "enum": VALID_DUNGEON_THEMES + [""]}},
+                "required": ["purpose"],
+            },
+            "description": "With districts: one entry per named area (2-3), the "
+                           "entrance's area first, each the dungeon_theme the "
+                           "words name for that area, or an empty string when "
+                           "they name none. The same purpose in every entry "
+                           "gives every area that purpose.",
+        },
+        "district_relationship": {
+            "type": "string",
+            "enum": VALID_DISTRICT_RELATIONSHIPS,
+            "description": "With districts: sequential (one area leads into the "
+                           "next), factional (opposed sides), or "
+                           "abandoned_vs_active (the areas past the entrance's "
+                           "have fallen, been overrun or abandoned).",
         },
     },
     "required": ["zone_type", "room_count", "size"],

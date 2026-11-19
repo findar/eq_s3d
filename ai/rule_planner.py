@@ -15,9 +15,11 @@ dungeons).
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
-from .schema import DECOR_ZONE_TYPES, DEFAULT_SITES, SITES_ZONE_TYPES, ZonePlan
+from .schema import (
+    DECOR_ZONE_TYPES, DEFAULT_SITES, DISTRICT_ZONE_TYPES, SITES_ZONE_TYPES, ZonePlan,
+)
 
 
 # Keyword → zone_type. Cave-like words fold into the dungeon bucket: the cave
@@ -155,6 +157,51 @@ _DECOR_WORDS = {
               "lots of furniture"],
 }
 
+# Districts (districts spec Req 4.2, umbrella 23.9): a bundled contrasting-area
+# phrase turns Districts on, proposing one Purpose per named area and one
+# relationship. Each row: a regex (whole words, on the lower-cased prompt), the
+# relationship, and the areas in District id order. An area is ``THEME`` (the
+# prompt's own archetype, as ``_match_archetype`` finds it; open when it finds
+# none), ``TAKER`` (what the phrase's last captured word names, through
+# ``_TAKER_WORDS``; open when it names none), an archetype, or "" (open: the
+# relationship chooses). ``COUNT`` in a row's areas repeats the area before it up
+# to the count the phrase's number word names (2 or 3). The first row that
+# matches wins. These words never feed the zone type or the archetype.
+THEME, TAKER, COUNT = "<theme>", "<taker>", "<count>"
+_DISTRICT_PHRASES: List[Tuple[str, str, Tuple[str, ...]]] = [
+    (r"\b(?:the )?living and (?:the )?dead\b", "factional", (THEME, "tomb")),
+    (r"\b(?:the )?dead and (?:the )?living\b", "factional", ("tomb", THEME)),
+    (r"\b(two|three|2|3) (?:rival |warring )?(?:factions|clans|tribes|houses|sides)\b",
+     "factional", (THEME, "", COUNT)),
+    (r"\b(?:rival|warring) (?:factions|clans|tribes|houses)\b", "factional", (THEME, "")),
+    (r"\bupper,? middle,? and lower\b", "sequential", (THEME, THEME, THEME)),
+    (r"\bupper and lower\b", "sequential", (THEME, THEME)),
+    (r"\b(?:fallen|lost) to (?:the )?([a-z]+)", "abandoned_vs_active", (THEME, TAKER)),
+    (r"\b(?:overrun|overtaken|taken|seized|infested) (?:by|with) (?:the )?([a-z]+)",
+     "abandoned_vs_active", (THEME, TAKER)),
+    (r"\bold and new\b", "abandoned_vs_active", (THEME, THEME)),
+]
+
+# What took a fallen or overrun place: the word after "fallen to" / "overrun by"
+# -> the Purpose of the area it holds. A word missing here is also tried
+# against the archetype words; otherwise that area is left open.
+_TAKER_WORDS: Dict[str, Tuple[str, ...]] = {
+    "tomb": ("dead", "undead", "ghosts", "ghouls", "skeletons", "zombies", "liches",
+             "lich", "spirits", "wraiths", "graves", "grave"),
+    "warren": ("goblins", "kobolds", "gnolls", "rats", "ratmen", "vermin", "beasts",
+               "spiders", "insects", "monsters"),
+    "corrupted_sanctum": ("cult", "cultists", "corruption", "darkness", "evil", "demons",
+                          "shadow", "shadows", "heretics", "plague"),
+    "sunken_ruin": ("sea", "water", "waters", "flood", "floods", "tide", "swamp"),
+    "ice_keep": ("ice", "frost", "cold", "snow", "winter"),
+    "lava_forge": ("fire", "flame", "flames", "lava", "magma"),
+    "war_city": ("army", "armies", "soldiers", "orcs", "invaders", "raiders"),
+}
+
+# The fewest rooms that make the named count of Districts (umbrella 23.1:
+# 2 from 8 rooms, 3 from 14); a prompt naming no room count is raised to it.
+_DISTRICT_ROOMS = {2: 8, 3: 14}
+
 # size → base room count and footprint multiplier
 _SIZE_ROOMS = {"small": 3, "medium": 5, "large": 8, "huge": 14}
 
@@ -189,6 +236,12 @@ class RulePlanner:
         inhabitant = _match_words(text, _INHABITANT_WORDS, "") if landscape else ""
         # Decor (only meaningful for the room-graph zone types).
         decor = _match_words(text, _DECOR_WORDS, "") if zone_type in DECOR_ZONE_TYPES else ""
+        # Districts (dungeon only; on any other zone type plan_to_spec ignores them
+        # with a note). A dungeon naming no room count gets enough for the count.
+        districts = match_districts(text, dungeon_theme)
+        if (districts is not None and zone_type in DISTRICT_ZONE_TYPES
+                and _explicit_count(text) is None):
+            room_count = max(room_count, _DISTRICT_ROOMS[len(districts[0])])
 
         return ZonePlan(
             name=name,
@@ -205,6 +258,9 @@ class RulePlanner:
             sites=sites,
             inhabitant=inhabitant,
             decor=decor,
+            districts=districts is not None,
+            district_plan=list(districts[0]) if districts else [],
+            district_relationship=districts[1] if districts else "",
             mood=mood,
             prompt=prompt or "",
         ).validate()
@@ -306,6 +362,46 @@ _WORD_NUMBERS = {
 }
 
 _COUNT_NOUNS = r"(?:rooms?|chambers?|caverns?|clearings?|halls?|areas?)"
+
+
+def match_districts(text: str, theme: str = "") -> Optional[Tuple[List[Dict[str, str]], str]]:
+    """The Districts a prompt's contrasting-area phrase names (umbrella 23.9): ``None``
+    when it has none, else ``(proposals, relationship)``, the proposals one
+    ``{"purpose": name}`` per named area (2-3), "" where the words name none. *theme* is
+    the prompt's archetype (``THEME`` areas)."""
+    for pattern, relationship, areas in _DISTRICT_PHRASES:
+        m = re.search(pattern, text)
+        if m is None:
+            continue
+        names: List[str] = []
+        for area in areas:
+            if area == COUNT:
+                count = {"two": 2, "2": 2, "three": 3, "3": 3}[m.group(1)]
+                names = (names + [names[-1]] * 3)[:count]
+            elif area == THEME:
+                names.append(theme)
+            elif area == TAKER:
+                names.append(_taker(m.group(m.lastindex)))
+            else:
+                names.append(area)
+        # The theme stands for its own area only: when the phrase names it for
+        # another ("a crypt of the living and the dead"), that area keeps it and
+        # the theme's area is left open, so two contrasting areas don't share it.
+        named = {n for n, a in zip(names, areas) if a != THEME}
+        names = [("" if a == THEME and n in named else n) for n, a in zip(names, areas)]
+        return [{"purpose": n} for n in names], relationship
+    return None
+
+
+def _taker(word: str) -> str:
+    """The Purpose of the area *word* (what took the place) holds, or "" for none."""
+    for purpose, words in _TAKER_WORDS.items():
+        if word in words:
+            return purpose
+    for purpose, words in _ARCHETYPE_WORDS.items():
+        if word in words:
+            return purpose
+    return ""
 
 
 def _match_words(text: str, mapping: dict, default: str) -> str:
