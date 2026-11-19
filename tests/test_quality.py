@@ -6,6 +6,7 @@ Specs only: nothing here builds a zone.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import math
 
@@ -16,7 +17,10 @@ from generators import quality
 from generators.outline import Outline
 from generators.quality import (METRICS, OutOfBand, QualityReport, UNBOUNDED, bands_for,
                                 bands_for_spec, evaluate, measure, quality_summary, spec_key)
-from generators.zone_spec import CorridorSpec, GateSpec, RoomSpec, ZoneSpec
+from generators.zone_spec import CorridorSpec, DistrictSpec, GateSpec, RoomSpec, ZoneSpec
+
+# sha256 of the k = 1 rows (step 19's table), first 16 hex digits.
+_K1_DIGEST = "4f03c70120f1b79f"
 
 
 # ---------------------------------------------------------------------------
@@ -114,10 +118,13 @@ def test_no_rooms_is_all_zero_and_passes():
 
 
 def test_band_table_covers_every_swept_key():
-    keys = {(zt, "classic", v) for zt in ("dungeon", "city", "outdoor_dungeon")
+    keys = {(zt, "classic", v, 1) for zt in ("dungeon", "city", "outdoor_dungeon")
             for v in ("flat", "moderate", "dramatic")}
-    keys |= {(zt, "graph", v) for zt in ("dungeon", "outdoor_dungeon")
+    keys |= {(zt, "graph", v, 1) for zt in ("dungeon", "outdoor_dungeon")
              for v in ("flat", "moderate", "dramatic")}
+    # Districted dungeons (districts spec Req 5): k = 2 and 3, both layouts.
+    keys |= {("dungeon", layout, v, k) for layout in ("classic", "graph")
+             for v in ("flat", "moderate", "dramatic") for k in (2, 3)}
     assert set(quality.BAND_TABLE) == keys
 
 
@@ -131,10 +138,30 @@ def test_wilderness_and_tiny_zones_stay_unbounded():
 
 
 def test_dropped_metrics_are_unbounded_in_every_row():
-    for rows in quality.BAND_TABLE.values():
+    for key, rows in quality.BAND_TABLE.items():
         for _lo, _hi, bands in rows:
-            for m in ("room_type_diversity", "branching_factor", "district_balance"):
+            for m in ("room_type_diversity", "branching_factor"):
                 assert m not in bands
+            if key[3] == 1:
+                assert "district_balance" not in bands
+
+
+def test_districted_rows_bound_district_balance_low_side_only():
+    for key, rows in quality.BAND_TABLE.items():
+        if key[3] < 2:
+            continue
+        for lo, hi, bands in rows:
+            assert lo >= 8
+            dlo, dhi = bands["district_balance"]
+            assert dlo is not None and 0 < dlo < 1 and dhi is None
+
+
+def test_one_district_rows_did_not_move():
+    # Step 19's k = 1 rows, as calibrated there (zone-generator-quality decision 4); the
+    # District count joined the key without moving them (districts spec Req 5.2).
+    one = sorted((k, rows) for k, rows in quality.BAND_TABLE.items() if k[3] == 1)
+    digest = hashlib.sha256(repr(one).encode()).hexdigest()[:16]
+    assert digest == _K1_DIGEST
 
 
 # ---------------------------------------------------------------------------
@@ -144,10 +171,21 @@ def test_dropped_metrics_are_unbounded_in_every_row():
 def test_spec_key_reads_layout_from_the_spec_and_takes_verticality():
     rooms = [_room(c) for c in "abcde"]
     classic = _spec(rooms, [])
-    assert spec_key(classic) == ("dungeon", "classic", 5, "moderate")
+    assert spec_key(classic) == ("dungeon", "classic", 5, "moderate", 1)
     graph = _spec(rooms, [], zone_type="outdoor_dungeon")
     graph.layout = {"engine": "graph", "rule_set": "x"}
-    assert spec_key(graph, "dramatic") == ("outdoor_dungeon", "graph", 5, "dramatic")
+    assert spec_key(graph, "dramatic") == ("outdoor_dungeon", "graph", 5, "dramatic", 1)
+
+
+def test_spec_key_takes_the_resolved_district_count():
+    rooms = [_room(f"r{i}", district=i % 3) for i in range(16)]
+    spec = _spec(rooms, [], dungeon_theme="temple")
+    spec.districts = [DistrictSpec(d) for d in range(3)]
+    assert spec_key(spec, "flat") == ("dungeon", "classic", 16, "flat", 3)
+    assert bands_for_spec(spec, "flat") == {**bands_for("dungeon", "classic", 16, "flat", 3)}
+    assert bands_for_spec(spec, "flat")["district_balance"] != UNBOUNDED
+    assert bands_for("dungeon", "classic", 16, "flat") == \
+        bands_for("dungeon", "classic", 16, "flat", 1)
 
 
 # ---------------------------------------------------------------------------
@@ -159,13 +197,13 @@ _TIGHT = {m: (100.0, 200.0) for m in METRICS}
 
 @pytest.fixture
 def tight_table(monkeypatch):
-    table = {("dungeon", "classic", "moderate"): [(1, 30, dict(_TIGHT))]}
+    table = {("dungeon", "classic", "moderate", 1): [(1, 30, dict(_TIGHT))]}
     monkeypatch.setattr(quality, "BAND_TABLE", table)
     return table
 
 
 def test_rows_apply_by_room_count(tight_table, monkeypatch):
-    monkeypatch.setattr(quality, "BAND_TABLE", {("dungeon", "classic", "flat"): [
+    monkeypatch.setattr(quality, "BAND_TABLE", {("dungeon", "classic", "flat", 1): [
         (4, 6, {"cyclomatic": (0.0, 0.0)}), (7, 30, {"cyclomatic": (1.0, None)})]})
     assert bands_for("dungeon", "classic", 5, "flat")["cyclomatic"] == (0.0, 0.0)
     assert bands_for("dungeon", "classic", 9, "flat")["cyclomatic"] == (1.0, None)
