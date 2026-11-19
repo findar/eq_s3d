@@ -31,6 +31,7 @@ from .zone_spec import (
 )
 from core.ter import SHADER_OPAQUE
 
+from . import districts as _districts
 from . import semantics
 from .envelope import Envelope, EnvelopeFitError
 from .layout_engine import (ClassicEngine, ENGINES, RELATIONS,
@@ -46,6 +47,20 @@ _TOUCH = 1e-6
 # many fresh layouts are tried at each room count before dropping a room.
 MIN_ENVELOPE_ROOMS = 3
 ENVELOPE_ATTEMPTS = 6
+
+# Districts (districts spec Req 3): the zone types they apply to (A2), and how
+# many fresh Draws a districted generate makes when a crossing split would add a
+# second link between two Districts (Req 3.3) before the error goes out.
+DISTRICT_ZONE_TYPES = {"dungeon"}
+DISTRICT_ATTEMPTS = 8
+
+
+class DistrictSplitError(ValueError):
+    """A corridor split or swap left two Districts joined by more than their
+    one Threshold (districts spec Req 3.3): the Draw is rejected."""
+
+    def __init__(self) -> None:
+        super().__init__("district threshold split")
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -256,6 +271,9 @@ class LayoutGenerator:
         spec = gen.generate("myrealm", room_count=5)
     """
 
+    # Room index -> District id during a districted pass (set per pass).
+    _district_assign: Optional[List[int]] = None
+
     def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None,
                  engine: Union[LayoutEngine, str, None] = None):
         # The Layout_Engine that lays out the rooms and their graph (Job A);
@@ -424,7 +442,10 @@ class LayoutGenerator:
                  dungeon_race: str = "",
                  elemental_tint: Optional[str] = None,
                  room_type_overrides: Optional[dict] = None,
-                 envelope: Optional[Envelope] = None) -> ZoneSpec:
+                 envelope: Optional[Envelope] = None,
+                 districts: bool = False,
+                 district_plan: Optional[list] = None,
+                 district_relationship: str = "") -> ZoneSpec:
         """
         Generate a zone. *locks* > 0 produces a keyed dungeon with that many
         lock-and-key gates (solvability guaranteed); 0 is a fully open dungeon.
@@ -444,13 +465,35 @@ class LayoutGenerator:
         ``MIN_ENVELOPE_ROOMS``, with a ``rooms_reduced`` warning in
         ``self.warnings``. If even that many don't fit, ``EnvelopeFitError``.
         Without an Envelope the layout is exactly as before.
+
+        *districts* (districts spec Req 3) splits a dungeon of 8 or more rooms
+        into 2-3 Districts joined by one Threshold corridor each
+        (``generators.districts``): *district_plan* proposes their Purposes in
+        id order, *district_relationship* is ``sequential`` (default),
+        ``factional`` or ``abandoned_vs_active``. Only a ``dungeon`` without an
+        Envelope takes them (A2); for anything else the switch is ignored. The
+        partition's notes (fewer Districts than asked, a Purpose or
+        relationship ignored) go to ``self.warnings``. A Draw whose crossing
+        split would join two Districts twice is redrawn, up to
+        ``DISTRICT_ATTEMPTS`` times, then :class:`DistrictSplitError`. With the
+        switch off, or one District resolved, nothing changes (Req 3.4).
         """
         self.warnings = []
         self.race = dungeon_race or ""
         args = (name, add_lights, elevation, locks, dungeon_theme,
                 dungeon_race, elemental_tint, room_type_overrides)
         if envelope is None:
-            return self._generate_once(room_count, *args)
+            if not (districts and self.zone_type in DISTRICT_ZONE_TYPES):
+                return self._generate_once(room_count, *args)
+            plan = (list(district_plan or []), district_relationship or "")
+            for attempt in range(DISTRICT_ATTEMPTS):
+                kept = len(self.warnings)
+                try:
+                    return self._generate_once(room_count, *args, districts=plan)
+                except DistrictSplitError:
+                    del self.warnings[kept:]
+                    if attempt == DISTRICT_ATTEMPTS - 1:
+                        raise
         floor = min(room_count, MIN_ENVELOPE_ROOMS)
         self._apply_room_scale(room_count)
         for count in range(room_count, floor - 1, -1):
@@ -470,8 +513,11 @@ class LayoutGenerator:
                        elevation: bool, locks: int, dungeon_theme: str,
                        dungeon_race: str, elemental_tint: Optional[str],
                        room_type_overrides: Optional[dict],
-                       envelope: Optional[Envelope] = None) -> ZoneSpec:
-        """One layout pass (``generate`` without the Envelope retry loop)."""
+                       envelope: Optional[Envelope] = None,
+                       districts: Optional[Tuple[list, str]] = None) -> ZoneSpec:
+        """One layout pass (``generate`` without the Envelope retry loop).
+        *districts* is ``(district_plan, district_relationship)`` when the
+        switch is on for this zone, else None."""
         spec = ZoneSpec(name=name, zone_type=self.zone_type,
                         style_profile=STYLE_PROFILE.get(self.zone_type, self.zone_type),
                         seed=self.seed)
@@ -487,6 +533,9 @@ class LayoutGenerator:
         self._envelope = envelope
         self._shapes = {}
         self._stair_route = {}
+        # Room index -> District id while a districted pass runs Job B, else
+        # None (the crossing and conflict passes keep Districts apart).
+        self._district_assign = None
 
         # --- Job A: the rooms and their graph, from the Layout_Engine ----
         # (classic: scatter in an ellipse, separate, Delaunay, MST + a few
@@ -514,22 +563,57 @@ class LayoutGenerator:
         entry = envelope.entry if envelope is not None else None
         if entry is None:
             entry = result.entry
+
+        # Districts (districts spec A4): find the zone entrance by pacing's
+        # rule (no rng), cut the graph into Districts and drop the
+        # cross-District edges but the Thresholds, then pace ONCE on the
+        # pruned graph with one climax per District. One District (the switch
+        # off, fewer than 8 rooms, or no cut meeting the sizes) draws nothing
+        # and leaves the edges alone, so the zone is as before (Req 3.4).
+        part = None
+        climaxes = None
+        k = _districts.district_count(len(rooms), districts is not None)
+        if k >= 2:
+            first = self._find_entrance(rooms, entry)
+            part = _districts.partition_districts(rooms, edges, first, k, self.rng)
+            if part.k < part.requested:
+                self.warnings.append(
+                    f"districts_reduced: {part.requested} requested, {part.k} "
+                    f"fit the room graph")
+            if part.k >= 2:
+                edges[:] = part.edges
+                for i, room in enumerate(rooms):
+                    room.district = part.assign[i]
+                self._district_assign = part.assign
+                climaxes = _districts.district_climaxes(part, part.edges, first)
+            else:
+                part = None
         entrance = self._apply_pacing(rooms, edges, entry,
                                       size_bias=not self.engine.sizes_rooms,
-                                      climax=result.climax)
+                                      climax=result.climax, climaxes=climaxes)
 
         # Content / semantic layer (box themes only): label rooms with a
         # semantic type + theme and apply the shape/proportion/ceiling/floor
         # biases BEFORE the re-separate + elevation passes, so the themed shapes
         # resolve for overlaps and elevation builds on the sunk/raised floors.
+        # Districts need their Purposes, so a districted dungeon is themed
+        # whether or not a theme was asked for (District 0 takes the asked
+        # theme, if any; otherwise the Purposes are drawn).
         themed = self.zone_type in _SEMANTIC_ZONE_TYPES and (
             dungeon_theme or dungeon_race or elemental_tint is not None
-            or room_type_overrides)
+            or room_type_overrides or part is not None)
+        district_specs = None
+        if part is not None:
+            district_specs, notes = _districts.assign_district_purposes(
+                part, dungeon_theme, districts[0], districts[1], self.rng)
+            self.warnings.extend(notes)
+            spec.districts = district_specs
         if themed:
             semantics.label_rooms(
                 spec, rooms, self.rng,
                 archetype=dungeon_theme, race=dungeon_race,
-                tint=elemental_tint, overrides=room_type_overrides)
+                tint=elemental_tint, overrides=room_type_overrides,
+                districts=district_specs)
         # Every room-graph room ends inside its race's bands (Req 10): the
         # role and room-type biases can push one past either end.
         if self.corridor_clearance:
@@ -571,7 +655,11 @@ class LayoutGenerator:
         # Realize the semantic parts that need final geometry + the assembled
         # spec: per-room palette, elemental regions, and lighting mood.
         if themed:
-            semantics.realize_semantics(spec, self.rng)
+            if part is not None:
+                semantics.realize_semantics(spec, self.rng, districts=district_specs,
+                                            thresholds=part.thresholds)
+            else:
+                semantics.realize_semantics(spec, self.rng)
 
         # Resolve corridors that would cut through a third room by splitting the
         # edge A–B into A–C–B (C becomes a waypoint room; design option (a) for
@@ -607,11 +695,21 @@ class LayoutGenerator:
                         break
                     relax()
 
+        # Req 3.3: the splits and swaps above may have joined two Districts a
+        # second time; that Draw is rejected. Else the Thresholds are the
+        # cross-District edges as they now stand.
+        if part is not None:
+            part.thresholds = self._district_thresholds(part, edges)
+            part.edges = list(edges)
+
         if envelope is not None:
             self._fit_floors(rooms, edges, entrance, envelope)
 
         self._shapes = {}
         self._build_corridors(spec, rooms, edges)
+        threshold_ids: List[str] = []
+        if part is not None:
+            threshold_ids = self._record_districts(spec, part, rooms, edges, entrance)
         self.layout_record = self._layout_record(result, rooms, edges, relations,
                                                  elevation)
         if self._stack is not None and self.layout_record is not None:
@@ -635,9 +733,65 @@ class LayoutGenerator:
         # Optional lock-and-key gating (keyed dungeons). Runs after corridors
         # exist so gates can reference corridor ids. Solvability is guaranteed.
         if locks > 0:
-            self._apply_gating(spec, rooms, edges, entrance, n_locks=locks)
+            self._apply_gating(spec, rooms, edges, entrance, n_locks=locks,
+                               thresholds=threshold_ids)
 
         return spec
+
+    # ------------------------------------------------------------------
+    # Districts (districts spec Req 3)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _district_thresholds(part, edges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        """The Thresholds after the crossing and conflict passes, as
+        ``(parent side, child side)`` in District order, or
+        :class:`DistrictSplitError` when those passes joined two Districts by
+        anything but one edge per original Threshold (Req 3.3). A split of a
+        Threshold through a room of one of its own two Districts just moves
+        it to that room's other edge."""
+        assign = part.assign
+        if len(set(LayoutGenerator._components(len(assign), edges))) > 1:
+            raise DistrictSplitError()
+        cross: Dict[frozenset, Tuple[int, int]] = {}
+        for i, j in edges:
+            a, b = assign[i], assign[j]
+            if a == b:
+                continue
+            pair = frozenset((a, b))
+            if pair in cross:
+                raise DistrictSplitError()
+            cross[pair] = (i, j)
+        wanted = [frozenset((assign[p], assign[c])) for p, c in part.thresholds]
+        if set(cross) != set(wanted):
+            raise DistrictSplitError()
+        out = []
+        for (p, _), pair in zip(part.thresholds, wanted):
+            i, j = cross[pair]
+            out.append((i, j) if assign[i] == assign[p] else (j, i))
+        return out
+
+    @staticmethod
+    def _record_districts(spec: ZoneSpec, part, rooms: List[RoomSpec],
+                          edges: List[Tuple[int, int]], entrance: int) -> List[str]:
+        """Fill ``spec.districts`` (rooms, entrance, climax, Threshold
+        corridor) and flag the Threshold corridors. Returns the Threshold
+        corridor ids in District order (District 1's first). A District's
+        climax is the room pacing made its climax."""
+        _districts.fill_district_rooms(spec.districts, part, rooms, entrance)
+        cor_by_pair = {frozenset(e): f"corr_{k}" for k, e in enumerate(edges)}
+        cors = {c.id: c for c in spec.corridors}
+        ids = []
+        for d, (p, c) in enumerate(part.thresholds, start=1):
+            cid = cor_by_pair[frozenset((p, c))]
+            cors[cid].threshold = True
+            spec.districts[d].threshold_corridor = cid
+            ids.append(cid)
+        for dist in spec.districts:
+            boss = [r.id for r in rooms if r.district == dist.id and r.role == "climax"]
+            if boss:
+                dist.climax_room = boss[0]
+        return ids
 
     @staticmethod
     def _layout_record(result, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
@@ -678,7 +832,7 @@ class LayoutGenerator:
 
     def _apply_gating(self, spec: ZoneSpec, rooms: List[RoomSpec],
                       edges: List[Tuple[int, int]], entrance: int,
-                      n_locks: int) -> None:
+                      n_locks: int, thresholds: Optional[List[str]] = None) -> None:
         """
         Place `n_locks` lock-and-key gates on the room graph such that the
         dungeon is ALWAYS solvable.
@@ -689,6 +843,12 @@ class LayoutGenerator:
         key for that lock is placed in a room in the near set, outside any
         deeper locked subtree. This guarantees every key is obtainable before
         the door it opens — nested or sequential, never a deadlock.
+
+        *thresholds* (a districted zone: the Threshold corridor ids, shallow
+        to deep) are locked first (umbrella 23.7), then the tree edges as
+        usual. Each Threshold is a bridge, so it is a tree edge and its far
+        side is its District and the Districts beyond; its key goes on the
+        near side by the same rule.
         """
         n = len(rooms)
         if n < 3 or not edges:
@@ -704,6 +864,17 @@ class LayoutGenerator:
         corr_by_pair = {}
         for k, (i, j) in enumerate(edges):
             corr_by_pair[frozenset((i, j))] = f"corr_{k}"
+
+        if thresholds:
+            pair_by_corr = {c: p for p, c in corr_by_pair.items()}
+            first = []
+            for cid in thresholds:
+                a, b = tuple(pair_by_corr[cid])
+                child = a if parent.get(a) == b else b
+                first.append((child, parent[child]))
+            first.sort(key=lambda e: rooms[e[0]].graph_depth)
+            taken = {frozenset(e) for e in first}
+            tree_edges = first + [e for e in tree_edges if frozenset(e) not in taken]
 
         chosen = []
         for child, par in tree_edges:
@@ -736,7 +907,8 @@ class LayoutGenerator:
                       edges: List[Tuple[int, int]],
                       entry: Optional[Tuple[float, float]] = None,
                       size_bias: bool = True,
-                      climax: Optional[int] = None) -> int:
+                      climax: Optional[int] = None,
+                      climaxes: Optional[List[int]] = None) -> int:
         """
         Analyse the room graph to assign each room a role and depth:
 
@@ -758,6 +930,10 @@ class LayoutGenerator:
         Then bias room geometry by role & depth so the shape reflects the pacing
         (unless *size_bias* is False: an engine that sizes its own rooms).
         Returns the entrance room index.
+
+        *climaxes* (a districted zone, one per District): those rooms are the
+        climaxes and the single-climax rule above is skipped. Depth stays BFS
+        from the zone entrance.
         """
         n = len(rooms)
         if n == 0:
@@ -770,21 +946,7 @@ class LayoutGenerator:
             adj[i].append(j)
             adj[j].append(i)
 
-        if entry is not None:
-            # Entrance = the room nearest the way in.
-            ex, ey = entry
-            entrance = min(
-                range(n),
-                key=lambda i: (rooms[i].center_x - ex) ** 2 + (rooms[i].center_y - ey) ** 2,
-            )
-        else:
-            # Entrance = the room farthest from the layout centroid (peripheral).
-            cx = sum(r.center_x for r in rooms) / n
-            cy = sum(r.center_y for r in rooms) / n
-            entrance = max(
-                range(n),
-                key=lambda i: (rooms[i].center_x - cx) ** 2 + (rooms[i].center_y - cy) ** 2,
-            )
+        entrance = self._find_entrance(rooms, entry)
 
         # BFS graph-depth from the entrance.
         gdepth = {entrance: 0}
@@ -800,17 +962,21 @@ class LayoutGenerator:
 
         # Climax = the engine's pick, else the deepest room (ties broken by
         # lowest index for determinism). Depth stays BFS from the entrance.
-        if n == 1:
-            climax = entrance
-        elif climax is None or not 0 <= climax < n or climax == entrance:
-            climax = max(range(n), key=lambda i: (rooms[i].graph_depth, -i))
+        if climaxes is not None:
+            peaks = set(climaxes)
+        elif n == 1:
+            peaks = {entrance}
+        else:
+            if climax is None or not 0 <= climax < n or climax == entrance:
+                climax = max(range(n), key=lambda i: (rooms[i].graph_depth, -i))
+            peaks = {climax}
 
         # Assign roles.
         for i in range(n):
             deg = len(adj[i])
             if i == entrance:
                 rooms[i].role = "entrance"
-            elif i == climax:
+            elif i in peaks:
                 rooms[i].role = "climax"
             elif deg >= 3:
                 rooms[i].role = "hub"
@@ -822,6 +988,27 @@ class LayoutGenerator:
         if size_bias:
             self._bias_rooms_by_role(rooms)
         return entrance
+
+    @staticmethod
+    def _find_entrance(rooms: List[RoomSpec],
+                       entry: Optional[Tuple[float, float]] = None) -> int:
+        """Pacing's zone entrance (no rng): the room nearest *entry* when
+        there is a way in, else the one farthest from the layout centroid."""
+        n = len(rooms)
+        if entry is not None:
+            # Entrance = the room nearest the way in.
+            ex, ey = entry
+            return min(
+                range(n),
+                key=lambda i: (rooms[i].center_x - ex) ** 2 + (rooms[i].center_y - ey) ** 2,
+            )
+        # Entrance = the room farthest from the layout centroid (peripheral).
+        cx = sum(r.center_x for r in rooms) / n
+        cy = sum(r.center_y for r in rooms) / n
+        return max(
+            range(n),
+            key=lambda i: (rooms[i].center_x - cx) ** 2 + (rooms[i].center_y - cy) ** 2,
+        )
 
     def _bias_rooms_by_role(self, rooms: List[RoomSpec]) -> None:
         """
@@ -926,6 +1113,14 @@ class LayoutGenerator:
         fresh A–C or C–B sub-edge can itself cross a different room. Edges that
         become duplicates or self-loops after a split are dropped. Returns True
         if any edge changed (the caller re-relaxes elevation on the new graph).
+
+        Districted (``self._district_assign``, districts spec Req 3.3): a split
+        whose waypoint would join two Districts by a new edge drops A–B
+        instead when the graph stays whole without it (a loop edge, as the
+        partition drops). A bridge is swapped for the shortest edge on the
+        same District pair that rejoins its two halves crossing no room (as
+        `_resolve_conflicts` swaps a clashing bridge); with none, it is split
+        anyway and the District check after this pass rejects the Draw.
         """
         if self._stack is not None:
             # Stacked: judged in 3D, a corridor over or under a room with the
@@ -968,6 +1163,17 @@ class LayoutGenerator:
                     seen.add(key)
                     resolved.append((i, j))
                 continue
+            if (self._district_assign is not None
+                    and self._joins_districts(i, j, c)):
+                rest = resolved + pending
+                if self._connected_without(len(rooms), rest, i, j):
+                    changed = True
+                    continue
+                swap = self._district_swap(rooms, rest, i, j, crossed_room)
+                if swap is not None:
+                    changed = True
+                    pending.append(swap)
+                    continue
             # Split A–B into A–C and C–B; re-check both halves.
             changed = True
             pending.append((i, c))
@@ -983,6 +1189,58 @@ class LayoutGenerator:
         if changed:
             edges[:] = resolved
         return changed
+
+    def _joins_districts(self, i: int, j: int, c: int) -> bool:
+        """Would splitting edge i–j through room c add a District pair the
+        edge didn't have? (Within a District, c must be in it; a Threshold
+        may move to c on either of its two sides.)"""
+        a = self._district_assign
+        return a[c] not in (a[i], a[j])
+
+    @staticmethod
+    def _components(n: int, edges: List[Tuple[int, int]]) -> List[int]:
+        """Each room's union-find root over *edges*."""
+        parent = list(range(n))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for u, v in edges:
+            ru, rv = find(u), find(v)
+            if ru != rv:
+                parent[ru] = rv
+        return [find(x) for x in range(n)]
+
+    def _connected_without(self, n: int, edges: List[Tuple[int, int]], i: int, j: int) -> bool:
+        """Are rooms i and j joined by *edges* (which leave out the i–j edge
+        being judged)?"""
+        roots = self._components(n, edges)
+        return roots[i] == roots[j]
+
+    def _district_swap(self, rooms: List[RoomSpec], rest: List[Tuple[int, int]],
+                       i: int, j: int, crossed_room) -> Optional[Tuple[int, int]]:
+        """Districted: a stand-in for bridge i–j (*rest* is the graph without
+        it): the shortest edge joining its two halves on the same District
+        pair (one District, or the Threshold's two) that crosses no room, or
+        None. (One crossing a room of its own Districts would be split again,
+        and could be swapped back: no fixpoint.)"""
+        da = self._district_assign
+        roots = self._components(len(rooms), rest)
+        pair = frozenset((da[i], da[j]))
+        near, far = roots[i], roots[j]
+        cands = sorted(
+            ((u, v) for u in range(len(rooms)) if roots[u] == near
+             for v in range(len(rooms)) if roots[v] == far
+             if frozenset((da[u], da[v])) == pair),
+            key=lambda e: (rooms[e[0]].center_x - rooms[e[1]].center_x) ** 2
+            + (rooms[e[0]].center_y - rooms[e[1]].center_y) ** 2)
+        for u, v in cands:
+            if crossed_room(u, v) is None:
+                return (u, v)
+        return None
 
     def _crossed_room_centreline(self, rooms: List[RoomSpec], i: int, j: int
                                  ) -> Optional[int]:
@@ -1216,9 +1474,15 @@ class LayoutGenerator:
             roots = components_without(idx, es)
             side = roots[es[idx][0]]
             rest = [e for k, e in enumerate(es) if k != idx]
+            # Districted: the stand-in joins the same District pair (one
+            # District, or the Threshold's two), so no new link appears.
+            da = self._district_assign
+            pair = (frozenset((da[es[idx][0]], da[es[idx][1]]))
+                    if da is not None else None)
             cands = sorted(
                 ((u, v) for u in range(len(rooms)) if roots[u] == side
-                 for v in range(len(rooms)) if roots[v] != side),
+                 for v in range(len(rooms)) if roots[v] != side
+                 if pair is None or frozenset((da[u], da[v])) == pair),
                 key=lambda e: (rooms[e[0]].center_x - rooms[e[1]].center_x) ** 2
                 + (rooms[e[0]].center_y - rooms[e[1]].center_y) ** 2)
             # (Stacked: a stand-in must be clear of every room, its own
