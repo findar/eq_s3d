@@ -40,5 +40,9 @@ user's design review). The user confirms at the first look (task 9).
     with none open; a theme alone doesn't pin. A District phrase with no room count raises a dungeon
     to 8 rooms (2 areas) or 14 (3). Notes collect in `plan_to_spec(..., warnings=[])`; task 5 carries
     them to the response and sidecar (a `ZoneSpec` notes field if rebuilds must keep them).
+11. **Bands key on the resolved District count** (task 6): `BAND_TABLE[(zone_type, layout,
+    verticality, k)]`, k = `len(spec.districts)` or 1, so the k = 1 rows are step 19's unchanged;
+    k = 2/3 rows use step 19 decision 4's rule, keep a bound only where it fails some Draw, always
+    bound `district_balance` low, and leave `cyclomatic` unbounded (districted trees reach 0 loops).
 
 ## Follow-ups
