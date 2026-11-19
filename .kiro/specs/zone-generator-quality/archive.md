@@ -7,6 +7,13 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | `generators/quality.py`: the meter reads the room graph from the spec (loops, dead ends, critical path, elevation, size spread, hub degree, room types) | `d21a5ff` |
+| 2 | `scripts/quality_sweep.py` and the band table, from ~24k Draws (decision 4) | `4b70a3e`, `ec5be17` |
+| 3 | The soft gate in the pipeline: up to 32 Draws, a pinned seed or an edit outside the bands is built and marked; the sidecar's `quality` entry | `7466fef`, `da50070` |
+| 4 | `quality` in generate/rebuild/edit responses, the reason in `warnings`, `edit_outside_bands`, the listing, the CLI lines | `97dbfc3` |
+| 5 | `web/src/quality.ts`: the degraded banner, the passed/unknown indicator, the Quality list | `a4fada5` |
+| 6 | `docs/ACCEPTANCE.md` "Step 19 — Quality" | `698a953` |
+| 7 | First look skipped at the user's word ("Skip acceptance") | — |
 
 ## Decisions
 

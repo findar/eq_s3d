@@ -13,3 +13,4 @@ Confirm step 19's choice (`archive.md` "Decisions"). Walk "Step 19 — Quality" 
 - [ ] Walk the section.
 
 ## Result
+— skipped at the user's word, 2026-11-18 ("Skip acceptance"); the choice stands as the lead made it. The banner was checked by task 5's agent on its own servers, not by the user.

@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 19, ready.** Drafted 2026-11-18 at master `19c041d`. The user said "Skip
+> **STATUS: roadmap step 19, DONE (closed 2026-11-18; first look skipped at the user's word).** Drafted 2026-11-18 at master `19c041d`. The user said "Skip
 > and continue more work" after step 18; multi-zone worlds still wait on their design review, so
 > the lead chose the next unblocked umbrella piece: M3's quality gate (umbrella Requirements 24
 > and 25). The user confirms the choice at the first look (task 7). Task index: `tasks.md` (card
