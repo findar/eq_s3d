@@ -45,7 +45,7 @@ alone; say so in the commit body).
   - Owns: scripts/quality_sweep.py, generators/quality.py (the band table only), .kiro/specs/zone-generator-quality/archive.md
   - Reqs: 2
 
-- [ ] 3. The gate in the pipeline
+- [x] 3. The gate in the pipeline
   - Card: [cards/03-pipeline.md](cards/03-pipeline.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/pipeline.py, generators/rebuild.py, tests/test_quality_gate.py, golden hash files a sidecar change moves

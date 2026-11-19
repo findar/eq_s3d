@@ -74,6 +74,7 @@ from generators.mapview import render_map_svg
 from generators.rebuild import SHELLS
 from generators.outdoor_dungeon import (PLAN_ERRORS, is_outdoor_dungeon,
                                         outdoor_dungeon_report)
+from generators.quality import QualityReport, measure, quality_summary
 from generators.zone_spec import ZoneSpec
 from generators.zone_types import enabled_zone_types
 
@@ -99,6 +100,16 @@ DEFAULT_MAX_ATTEMPTS = 8
 # Append-only JSONL triage feed — one line per rejected attempt. The data a
 # future corridor/format triage pass consumes to measure and prioritise fixes.
 DEFAULT_FAILURE_LOG = Path("output") / "validation_failures.jsonl"
+
+# The quality gate (zone-generator-quality Req 3, umbrella 24.5-24.8): an unpinned generate
+# may Draw (plan a spec without building it) this many failing specs before it builds the
+# lowest-scoring one as degraded. One budget per generate, shared by its attempts.
+QUALITY_DRAWS = 32
+
+# The reasons a returned build is marked Quality_Degraded (umbrella 25.2).
+REASON_DEGRADED = "quality_degraded"
+REASON_PINNED = "quality_outside_bands_pinned"
+REASON_EDIT = "edit_outside_bands"
 
 
 # A factory that, given a seed, produces a fresh ZoneSpec for that seed. The
@@ -159,6 +170,9 @@ class ValidatedBuild:
     report: Optional[TraversalReport] = None
     format: Optional[FormatReport] = None  # the Format_Checker verdict (rof2check)
     warnings: List[str] = field(default_factory=list)
+    # The quality meter's report of the built spec, marked degraded with its reason when it
+    # fails the bands; the Sidecar's ``quality`` entry is its ``quality_summary``.
+    quality: Optional[QualityReport] = None
 
 
 class GenerationFailed(Exception):
@@ -528,6 +542,89 @@ def _remove_scratch(root: OutputRoot, output_dir: Path, zone_id: str,
 # The pipeline
 # ---------------------------------------------------------------------------
 
+def _plan_verticality(request: Optional[Mapping]) -> Optional[str]:
+    """The verticality of the plan a request was built from (``request["plan"]``), the one
+    band key the spec doesn't record; ``None`` when the request names none."""
+    plan = request.get("plan") if isinstance(request, Mapping) else None
+    v = plan.get("verticality") if isinstance(plan, Mapping) else None
+    return v if isinstance(v, str) else None
+
+
+def _judged(report: QualityReport, reason: str) -> QualityReport:
+    """``report`` marked Quality_Degraded with ``reason`` when it fails its bands. A passing
+    report stays not degraded, no reason, score 0 (umbrella 24.8, 25.3)."""
+    if not report.passed:
+        report.degraded, report.reason = True, reason
+    return report
+
+
+@dataclass
+class _DrawBudget:
+    """The quality Draws a generate has left (``QUALITY_DRAWS`` failing ones); ``done`` once
+    they are spent or the timeout ran out during them: no Draws after that."""
+    left: int = QUALITY_DRAWS
+    done: bool = False
+
+
+class _DrawsStopped(Exception):
+    """A plan error during the Draws used up the attempt budget or the timeout with no
+    measured spec to build: the generate fails as it would have before the Draws."""
+
+    def __init__(self, timed_out: bool):
+        super().__init__("draws stopped")
+        self.timed_out = timed_out
+
+
+def _quality_draw(make: Callable[[int], ZoneSpec], first: int, rng: Optional[random.Random],
+                  budget: _DrawBudget, start: float, timeout_s: float,
+                  bands: Optional[Mapping], verticality: Optional[str],
+                  plan_failed: Callable[[int, BaseException], bool]):
+    """Draw specs (``make(s)``, not built) from seed ``first`` on, fresh seeds after it, until
+    one passes the bands, the budget is spent or the timeout runs out (Draw time counts
+    against it). Returns ``(spec, s)``: the passing spec, else the lowest score (the earliest
+    on a tie).
+
+    A ``PLAN_ERRORS`` Draw is a rejected attempt exactly as before the Draws (lead's call,
+    task 3): ``plan_failed(s, error)`` logs it (checks ``["plan"]``, stage ``zone``), moves
+    the caller on to its next attempt and says whether the attempt cap and timeout still
+    allow one. It is also one of the ``QUALITY_DRAWS`` (score infinity, never chosen). When
+    they don't allow one: the best measured spec so far is built, or with none
+    :class:`_DrawsStopped` is raised. With the Draws spent and nothing measured yet, the
+    next spec drawn is built whatever it scores (a retry with no quality Draws)."""
+    best = None                                   # (score, spec, seed)
+    s = first
+    while True:
+        try:
+            spec = make(s)
+            report = measure(spec, bands=bands, verticality=verticality)
+        except PLAN_ERRORS as e:
+            budget.left -= 1
+            go_on = plan_failed(s, e)
+            if budget.left <= 0 or (time.monotonic() - start) >= timeout_s:
+                budget.done = True
+            if not go_on:
+                budget.done = True
+                if best is None:
+                    raise _DrawsStopped((time.monotonic() - start) >= timeout_s)
+                break
+            if budget.done and best is not None:
+                break
+            s = _fresh_seed(rng)
+            continue
+        if report.passed:
+            return spec, s
+        if best is None or report.score < best[0]:
+            best = (report.score, spec, s)
+        budget.left -= 1
+        if budget.left <= 0 or (time.monotonic() - start) >= timeout_s:
+            budget.done = True
+        if budget.done:
+            break
+        s = _fresh_seed(rng)
+    logger.info("quality draws spent: building seed %s, score %.3f", best[2], best[0])
+    return best[1], best[2]
+
+
 def _with_decor(spec: ZoneSpec) -> ZoneSpec:
     """The spec with its Decor control resolved: one nobody chose takes the
     default (room-decor Req 10.1, ``generators.decor.rules.DEFAULT_CONTROL``).
@@ -561,6 +658,9 @@ def generate_validated(
     request: Optional[Mapping] = None,
     version_meta: Optional[Mapping] = None,
     stages: Optional[SavedStages] = None,
+    verticality: Optional[str] = None,
+    quality_bands: Optional[Mapping] = None,
+    quality_reason: Optional[str] = None,
 ) -> ValidatedBuild:
     """
     Build a zone and guarantee (for gated zone types) that it passes the
@@ -596,6 +696,20 @@ def generate_validated(
     ``stages`` (a partial rebuild, ``generators.rebuild.rebuild_decor``): the parent's TER
     and textures, handed to every attempt's ``ZoneBuilder.build``; the gates, format check,
     map files and finalize run as for any build.
+
+    Quality (zone-generator-quality Req 3): every build's spec is measured before it is built
+    (``generators.quality.measure`` with ``quality_bands``, None: the band table, and
+    ``verticality``, None: ``request["plan"]["verticality"]``, else the meter's default), and
+    the report rides on ``ValidatedBuild.quality`` and in the Sidecar as ``quality``, marked
+    degraded with a reason when it fails. A gated unpinned generate Draws before it builds
+    (:func:`_quality_draw`): at most ``QUALITY_DRAWS`` failing specs per generate, Draw time
+    inside ``timeout_s``; a rooms reroll draws its ``rooms_seed`` the same way. A Draw that
+    can't be planned (``PLAN_ERRORS``) is a rejected attempt as before, logged and counted in
+    ``attempts`` and ``max_attempts``, and also one of the Draws. Once the
+    Draws are spent (or the timeout ran out during them), attempts build as before. A failing
+    build's reason: ``quality_reason`` when given (a rebuild or an edit: measured only, never
+    drawn, A4), else ``quality_outside_bands_pinned`` for a pinned seed, else
+    ``quality_degraded``.
 
     Behaviour by scope:
 
@@ -633,6 +747,12 @@ def generate_validated(
     base_warnings = list(warnings)
     final_dir = output_dir / zone_id / f"v{version}"
     started = time.monotonic()
+    if verticality is None:
+        verticality = _plan_verticality(request)
+    reason = quality_reason or (REASON_PINNED if pinned else REASON_DEGRADED)
+
+    def judge(spec: ZoneSpec) -> QualityReport:
+        return _judged(measure(spec, bands=quality_bands, verticality=verticality), reason)
 
     # -- Ungated / validation-disabled: single build through the scratch path.
     if not gated:
@@ -640,6 +760,7 @@ def generate_validated(
         scratch = _scratch_dir(output_dir, zone_id, 1, version)
         try:
             spec = _with_decor(spec_factory(use_seed))
+            quality = judge(spec)
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
                 saved=stages,
@@ -658,7 +779,7 @@ def generate_validated(
                 root, result, scratch, final_dir, fmt=fmt,
                 warnings=all_warnings, validated=False, attempts=1,
                 seed=use_seed, planned_zone_type=planned_zone_type, mode=mode,
-                map_meta=map_meta, version_meta=version_meta,
+                map_meta=map_meta, version_meta=version_meta, quality=quality,
             )
             _remove_scratch(root, output_dir, zone_id, scratch)
         except Exception:
@@ -676,7 +797,7 @@ def generate_validated(
             result=moved, spec=spec, seed=use_seed, attempts=1,
             validated=False, gated=False, zone_type=zone_type,
             build_dir=final_dir, report=None, format=fmt,
-            warnings=all_warnings,
+            warnings=all_warnings, quality=quality,
         )
 
     # -- Gated: build -> gate -> retry-on-fresh-seed (random only). ----------
@@ -690,6 +811,23 @@ def generate_validated(
     decor_draw: Optional[int] = None
     rerolls = 0
     next_stage = STAGE_ZONE
+    # Quality Draws: an unpinned generate's only (a rebuild or an edit measures, A4).
+    draws = _DrawBudget(done=pinned or quality_reason is not None or stages is not None)
+
+    def plan_failed(draw_seeds: Dict[str, Optional[int]], error: BaseException) -> bool:
+        """A Draw that can't be planned: a rejected attempt, logged as the ``PLAN_ERRORS``
+        handler below logs one; the loop moves on to its next attempt. Whether the
+        attempt cap and the timeout allow another (the checks after every attempt)."""
+        nonlocal attempt
+        failures.append(log_validation_failure(
+            failure_log, zone_id=zone_id, zone_type=zone_type,
+            seed=draw_seeds["seed"], attempt=attempt,
+            report=_plan_failure_report(zone_id, error), checks=["plan"],
+            stage=STAGE_ZONE, seeds=draw_seeds,
+        ))
+        go_on = attempt < max_attempts and (time.monotonic() - start) < timeout_s
+        attempt += 1
+        return go_on
 
     while True:
         attempt += 1
@@ -702,8 +840,23 @@ def generate_validated(
         seeds = {"seed": use_seed, "rooms_seed": rooms_draw, "decor_seed": decor_draw}
         rooms_pinned = decor_pinned = True
         try:
-            spec = (spec_factory(use_seed) if rooms_draw is None
-                    else spec_factory(use_seed, rooms_seed=rooms_draw))
+            if not draws.done and next_stage == STAGE_ZONE:
+                spec, use_seed = _quality_draw(
+                    spec_factory, use_seed, rng, draws, start, timeout_s,
+                    quality_bands, verticality,
+                    lambda s, e: plan_failed({"seed": s, "rooms_seed": None,
+                                              "decor_seed": None}, e))
+                scratch = _scratch_dir(output_dir, zone_id, attempt, version)
+            elif not draws.done and next_stage == STAGE_ROOMS:
+                spec, rooms_draw = _quality_draw(
+                    lambda r: spec_factory(use_seed, rooms_seed=r), rooms_draw, rng, draws,
+                    start, timeout_s, quality_bands, verticality,
+                    lambda r, e: plan_failed({"seed": use_seed, "rooms_seed": r,
+                                              "decor_seed": None}, e))
+                scratch = _scratch_dir(output_dir, zone_id, attempt, version)
+            else:
+                spec = (spec_factory(use_seed) if rooms_draw is None
+                        else spec_factory(use_seed, rooms_seed=rooms_draw))
             # A stage seed the caller chose is pinned: its stage is never rerolled.
             rooms_pinned = rooms_draw is None and spec.rooms_seed is not None
             decor_pinned = spec.decor_seed is not None
@@ -711,6 +864,7 @@ def generate_validated(
                 spec.decor_seed = decor_draw
             spec = _with_decor(spec)
             seeds = _seeds_used(spec, use_seed)
+            quality = judge(spec)
             result = ZoneBuilder(spec).build(
                 output_dir=scratch, write_glb=write_glb, ter_version=ter_version,
                 saved=stages,
@@ -739,6 +893,7 @@ def generate_validated(
                     warnings=all_warnings, validated=True, attempts=attempt,
                     seed=use_seed, planned_zone_type=planned_zone_type,
                     mode=mode, map_meta=map_meta, version_meta=version_meta,
+                    quality=quality,
                 )
                 _remove_scratch(root, output_dir, zone_id, scratch)
                 if attempt > 1:
@@ -748,7 +903,7 @@ def generate_validated(
                     result=moved, spec=spec, seed=use_seed, attempts=attempt,
                     validated=True, gated=True, zone_type=zone_type,
                     build_dir=final_dir, report=report, format=fmt,
-                    warnings=all_warnings,
+                    warnings=all_warnings, quality=quality,
                 )
 
             # Rejected — gather the failed checks, log for triage, drop scratch.
@@ -771,6 +926,11 @@ def generate_validated(
                 stage=STAGE_ZONE, seeds=seeds,
             ))
             _remove_scratch(root, output_dir, zone_id, scratch)
+        except _DrawsStopped as e:
+            # A plan error in the Draws spent the attempt cap or the timeout, as it would
+            # have without Draws (each one was logged as a rejected attempt).
+            _remove_scratch(root, output_dir, zone_id, scratch)
+            raise GenerationFailed(zone_id, zone_type, failures, timed_out=e.timed_out)
         except Exception:
             # Builder crash mid-attempt: leave nothing behind, re-raise.
             _remove_scratch(root, output_dir, zone_id, scratch)
@@ -950,7 +1110,8 @@ def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
                     planned_zone_type: Optional[str] = None,
                     mode: Optional[str] = None,
                     map_meta: Optional[dict] = None,
-                    version_meta: Optional[Mapping] = None) -> BuildResult:
+                    version_meta: Optional[Mapping] = None,
+                    quality: Optional[QualityReport] = None) -> BuildResult:
     """Move a passing/ungated build out of scratch into ``final_dir``.
 
     Moves every file from ``scratch`` into ``final_dir`` through
@@ -1012,6 +1173,9 @@ def _finalize_build(root: OutputRoot, result: BuildResult, scratch: Path,
         # A rebuild's ``version`` block (partial-rebuild Req 1.2); a v1 build has none.
         if version_meta is not None:
             data["version"] = dict(version_meta)
+        # The Quality_Block (zone-generator-quality Req 3.3, umbrella 25.4).
+        if quality is not None:
+            data["quality"] = quality_summary(quality)
         # Rewrite in place, confined to the Output_Directory.
         root.write_text(str(sidecar), json.dumps(data, indent=2))
 

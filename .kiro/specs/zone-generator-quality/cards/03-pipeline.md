@@ -23,3 +23,4 @@ Count Draw time inside the existing timeout. Keep the World/rooms/decor stage re
 is (`_blame`, `MAX_STAGE_REROLLS`). Don't commit while the full suite runs.
 
 ## Result
+✔ da50070 · 3554 passed
