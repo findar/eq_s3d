@@ -63,7 +63,7 @@ touches generation proves it with
   - (Owns widened by the lead after task 4: the notes need a path to the sidecar.)
   - Reqs: 4.3, 4.4
 
-- [ ] 6. Bands for Districts
+- [x] 6. Bands for Districts
   - Card: [cards/06-bands.md](cards/06-bands.md)
   - Type: agent · Size: S · Depends: 4
   - Owns: generators/quality.py, scripts/quality_sweep.py, tests/test_quality.py, .kiro/specs/zone-generator-districts/archive.md
