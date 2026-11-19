@@ -33,6 +33,8 @@ export interface GenerateControls {
   decor_layers?: string[];
   // Every zone type: the rooms seed that rerolls the rooms and Sites alone.
   rooms_seed?: number;
+  // Dungeon only: split the rooms into 2-3 Districts (left out: off).
+  districts?: boolean;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:
@@ -66,6 +68,8 @@ export interface ZonePlan {
   decor_seed?: number | null;
   // The rooms seed (null = the zone's).
   rooms_seed?: number | null;
+  // Districts on (dungeon only; absent on a plan from before step 20).
+  districts?: boolean;
 }
 
 // One file of an accepted build (server/app.py ArtifactRef), in panel order:
@@ -222,6 +226,25 @@ export interface ZoneContent {
   elemental_tint?: string;
 }
 
+// One District of a multi-District dungeon (generators/zone_spec.py DistrictSpec);
+// the sidecar lists them only when the zone has two or more.
+export interface ZoneDistrict {
+  id: number;                  // 0 holds the zone entrance; the page shows id + 1
+  purpose: string;             // an archetype name (the page calls it a theme)
+  entrance_room: string;
+  climax_room: string;
+  room_ids: string[];
+  threshold_corridor: string | null;
+  relationship: string;
+  palette: string;
+  light_mood: string;
+}
+
+// How the page and the map name a District: "District 1 — tomb" (mapview.district_label).
+export function districtLabel(d: { id: number; purpose: string }): string {
+  return `District ${d.id + 1}` + (d.purpose ? ` — ${d.purpose}` : "");
+}
+
 export interface ZoneGate {
   id: string;
   tier: number;
@@ -245,6 +268,8 @@ export interface ZoneSidecar {
   theme?: ZoneContent;
   // Props (room-decor): present only when the build placed Props.
   decor?: ZoneDecor;
+  // Districts (districts spec Req 4.4): only when the zone has two or more.
+  districts?: ZoneDistrict[];
   // Sites (wilderness, outdoor dungeon): each Site's Props ride on its row, and
   // `socket` names the point `site` Socket it stands on (site-sockets; absent
   // on older sidecars).

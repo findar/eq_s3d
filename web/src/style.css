@@ -215,6 +215,7 @@ label.field {
 label.field > span { white-space: nowrap; }
 label.field > select,
 label.field > input { width: 100%; }
+label.field > input[type="checkbox"] { width: auto; justify-self: start; margin: 0; }
 
 #controls input[type="checkbox"] { cursor: pointer; accent-color: var(--accent); }
 
