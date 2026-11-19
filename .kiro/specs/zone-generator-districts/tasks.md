@@ -32,7 +32,7 @@ touches generation proves it with
 
 ## Tasks
 
-- [ ] 1. The partition
+- [x] 1. The partition
   - Card: [cards/01-partition.md](cards/01-partition.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/districts.py, generators/zone_spec.py, tests/test_districts.py

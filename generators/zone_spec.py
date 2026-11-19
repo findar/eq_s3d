@@ -178,6 +178,10 @@ class CorridorSpec:
     # Where two wall styles meet in this corridor; None for most. The JSON carries it only when set.
     transition: Optional[Transition] = None
 
+    # The one corridor joining two Districts (districts spec Req 1, umbrella 23.3). Label
+    # only, never geometry; the JSON carries it only when set.
+    threshold: bool = False
+
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
     def floor_z(self) -> float:
@@ -274,13 +278,33 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
-    """A corridor's JSON; ``side``, ``bridge``, ``rough`` and ``transition`` only when set
+    """A corridor's JSON; ``side``, ``bridge``, ``rough``, ``transition`` and ``threshold`` only when set
     (step 6 corridors carry none of them)."""
     d = asdict(cor)
-    for key in ("side", "bridge", "rough", "transition"):
+    for key in ("side", "bridge", "rough", "transition", "threshold"):
         if not d.get(key):
             d.pop(key, None)
     return d
+
+
+@dataclass
+class DistrictSpec:
+    """One District of a multi-District dungeon (districts spec Req 1, umbrella
+    "DistrictSpec"). Label data: realised through its rooms' palette and light,
+    never written into geometry.
+
+    Room and corridor references are ids (as ``GateSpec`` and
+    ``CorridorSpec.from_room`` use).
+    """
+    id: int                                   # 0 = the District holding the zone entrance
+    purpose: str = ""                         # an archetype name (semantics.ARCHETYPES)
+    entrance_room: str = ""                   # zone entrance, or the child side of its Threshold
+    climax_room: str = ""
+    room_ids: List[str] = field(default_factory=list)
+    threshold_corridor: Optional[str] = None  # corridor id into this District; None for 0
+    relationship: str = ""                    # shared across the zone
+    palette: str = ""
+    light_mood: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +396,9 @@ class ZoneSpec:
     # Props are placed with. Whether a room is bare is still drawn with the zone's decor seed
     # (``builder.decor_for``). Left out of ``to_dict()`` while empty.
     room_decor_seeds: Dict[str, int] = field(default_factory=dict)
+    # Districts (districts spec Req 1): empty for a one-District zone. Left out of
+    # ``to_dict()`` while empty, so existing spec JSON is unchanged.
+    districts: List[DistrictSpec] = field(default_factory=list)
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -404,6 +431,7 @@ class ZoneSpec:
             **({"decor_seed": self.decor_seed} if self.decor_seed is not None else {}),
             **({"rooms_seed": self.rooms_seed} if self.rooms_seed is not None else {}),
             **({"room_decor_seeds": dict(self.room_decor_seeds)} if self.room_decor_seeds else {}),
+            **({"districts": [asdict(x) for x in self.districts]} if self.districts else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -463,6 +491,10 @@ class ZoneSpec:
             spec.regions.append(RegionSpec(**rg))
         for g in d.get("gates", []):
             spec.gates.append(GateSpec(**g))
+        for x in d.get("districts") or []:
+            x = dict(x)
+            x["room_ids"] = [str(r) for r in x.get("room_ids", [])]
+            spec.districts.append(DistrictSpec(**x))
         return spec
 
     @classmethod
