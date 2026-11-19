@@ -399,6 +399,10 @@ class ZoneSpec:
     # Districts (districts spec Req 1): empty for a one-District zone. Left out of
     # ``to_dict()`` while empty, so existing spec JSON is unchanged.
     districts: List[DistrictSpec] = field(default_factory=list)
+    # The plan's District notes for this spec (districts spec Req 4.3: ``districts_ignored``,
+    # ``districts_reduced``, ...), which ``ZoneBuilder.build`` adds to the build's warnings, so a
+    # rebuild or an edit of the saved spec keeps them. Left out of ``to_dict()`` while empty.
+    notes: List[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -432,6 +436,7 @@ class ZoneSpec:
             **({"rooms_seed": self.rooms_seed} if self.rooms_seed is not None else {}),
             **({"room_decor_seeds": dict(self.room_decor_seeds)} if self.room_decor_seeds else {}),
             **({"districts": [asdict(x) for x in self.districts]} if self.districts else {}),
+            **({"notes": list(self.notes)} if self.notes else {}),
         }
 
     def save(self, path: str | Path) -> Path:
@@ -467,6 +472,7 @@ class ZoneSpec:
             decor_seed=d.get("decor_seed"),
             rooms_seed=d.get("rooms_seed"),
             room_decor_seeds={str(k): int(v) for k, v in (d.get("room_decor_seeds") or {}).items()},
+            notes=[str(n) for n in d.get("notes") or []],
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)

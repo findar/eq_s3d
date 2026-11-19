@@ -414,6 +414,33 @@ def with_decor_layers(spec: ZoneSpec, layers) -> ZoneSpec:
     return spec
 
 
+def with_district_notes(spec: ZoneSpec, notes) -> ZoneSpec:
+    """The spec carrying the District notes among ``notes`` (what ``plan_to_spec(...,
+    warnings=notes)`` collected for it; districts spec Req 4.3): every note whose key starts
+    ``district`` (``districts_ignored``, ``districts_reduced``, ``district_purposes_relaxed``,
+    ...). The layout's other notes stay out, so a zone without Districts builds and reports
+    as it did. The build adds ``spec.notes`` to its warnings."""
+    spec.notes = [n for n in notes or () if str(n).split(":", 1)[0].startswith("district")]
+    return spec
+
+
+def district_sidecar(spec: ZoneSpec, corridor_rows: Optional[List[dict]]) -> dict:
+    """The sidecar's District keys (districts spec Req 4.4, umbrella 27.3), or ``{}`` for a
+    one-District zone, whose sidecar is unchanged: ``districts`` (each ``DistrictSpec`` as the
+    spec JSON has it) and ``corridors``, every corridor of the spec in spec order with its
+    ``threshold`` flag, the decor block's row (``corridor_rows``, by id) where it has one."""
+    if not spec.districts:
+        return {}
+    from dataclasses import asdict
+    rows = {r["id"]: r for r in corridor_rows or ()}
+    return {
+        "districts": [asdict(d) for d in spec.districts],
+        "corridors": [{**rows.get(c.id, {"id": c.id, "from_room": c.from_room,
+                                          "to_room": c.to_room}),
+                       "threshold": bool(c.threshold)} for c in spec.corridors],
+    }
+
+
 def decor_layers_of(spec: ZoneSpec) -> Tuple[str, ...]:
     """The layers a spec's Decor takes: its theme's, then its race's (``themes.toml``),
     then the request's (``with_decor_layers``)."""
@@ -884,6 +911,9 @@ class ZoneBuilder:
         # build's warnings.
         if self.spec.wilderness is not None and "dungeon" in self.spec.wilderness:
             warnings.extend(self.spec.wilderness["dungeon"]["warnings"])
+        # The plan's District notes (``with_district_notes``), kept in the spec JSON so a
+        # rebuild or an edit reports them too.
+        warnings.extend(self.spec.notes)
 
         # The stages (world-sockets design "Where the stages run"): the World the
         # spec was made on, its rooms' Attachment (planned in plan_to_spec), then
@@ -1028,6 +1058,8 @@ class ZoneBuilder:
             corridor_rows = decor.corridor_records(self.spec.corridors)
             if corridor_rows:
                 side_meta["corridors"] = corridor_rows
+        # Districts and each corridor's Threshold flag; nothing for a one-District zone.
+        side_meta.update(district_sidecar(self.spec, side_meta.get("corridors")))
         side_meta["sockets"] = stages.sockets_sidecar(stages.apply_edits(world, attachments),
                                                       attachments)
         # Every stage seed the build used, resolved (world-sockets Req 4.4).
