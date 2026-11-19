@@ -101,6 +101,9 @@ export interface GenerateResult {
   // Non-fatal advisories for the UI, e.g. "zone_type_substituted:<planned>->
   // dungeon" or "backend_fallback: <name> unavailable, built with box".
   warnings: string[];
+  // The build's Quality_Block, equal to its sidecar's `quality` entry; the page
+  // shows the sidecar's (quality.ts), so every way a version opens is the same.
+  quality?: QualityBlock | null;
   format_passed: boolean;      // cleared the format gate?
   build_commit?: string;       // short commit of the code the server loaded
 }
@@ -262,6 +265,19 @@ export interface ZoneSidecar {
   // The layout engine's report; on a graph layout each room's outline rings
   // (world x, y), which the map dialog hit-tests a click against.
   layout?: { rooms?: Record<string, { outline?: number[][][] }> } | null;
+  // The Quality_Block (zone-generator-quality Req 3, 4): absent on a version
+  // built before step 19 (quality.ts shows "quality unknown").
+  quality?: QualityBlock;
+}
+
+// The build's quality (umbrella 25.2-25.4): the same in the generate, rebuild
+// and edit responses and in the sidecar. An open band end is null.
+export interface QualityBlock {
+  degraded: boolean;
+  reason: string | null;
+  score: number;
+  metrics: Record<string, number>;
+  out_of_band: { metric: string; value: number; lo: number | null; hi: number | null }[];
 }
 
 // ---- The room view (decor-rules Req 4, 5) ----
@@ -428,6 +444,8 @@ export interface ZoneVersionEntry {
   took_ms: number | null;
   // The edit that made this version ({text, ops}; text null when ops were sent), else null.
   edit?: { text: string | null; ops: EditOp[] } | null;
+  // Its sidecar's quality, in brief; null for a version built before step 19.
+  quality?: { degraded: boolean; reason: string | null } | null;
   glb_url: string;
   zone_url: string;
   map_url: string;

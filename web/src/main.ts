@@ -14,6 +14,7 @@ import { setExportBuild } from "./exportrow";
 import { initFeedback, setFeedbackBuild, setFeedbackBusy } from "./feedback";
 import { drawSockets } from "./sockets";
 import { RoomView } from "./roomview";
+import { initQuality, QUALITY_REASONS, reasonWords, showQuality } from "./quality";
 
 // How a grown zone's rooms lean: "From rules", or a number or an overlay on top.
 const SCALE_CONTROLS = ["finish", "structure", "clutter", "overlay"];
@@ -169,6 +170,8 @@ function warningToWords(w: string): string {
       ? `Geometry backend fell back — ${detail}.`
       : "Geometry backend fell back to the box builder.";
   }
+  // A degraded build's quality reason (the banner says it too; quality.ts).
+  if (QUALITY_REASONS.has(w)) return `Outside quality targets: ${reasonWords(w)}.`;
   return w;   // unknown token: show it verbatim rather than hide it
 }
 
@@ -744,6 +747,7 @@ async function runEdit(text: string): Promise<EditResult> {
 }
 
 initFeedback({ edit: runEdit, open: (n) => { openVersion(n); } });
+initQuality();
 
 // A version of the open zone, from the listing: the answer this page had for
 // it, else the open one's with that version's URLs (its Files have the same
@@ -764,6 +768,7 @@ function resultFor(entry: ZoneVersionEntry): GenerateResult | null {
     eqg_url: entry.eqg_url,
     artifacts: (base.artifacts ?? []).map((a) => ({ ...a, url: a.url.replace(from, to) })),
     warnings: [],
+    quality: undefined,          // the sidecar's entry is what shows (quality.ts)
     build_commit: undefined,
   };
 }
@@ -827,6 +832,8 @@ async function showBuild(
   showToggle("t-regions", zoneScene.hasRegions());
   showToggle("t-gates", zoneScene.hasGates());
   updatePanel(result, sidecar);
+  // The banner, indicator and Quality list: this version's sidecar entry.
+  showQuality(sidecar.quality);
   syncVersionNav();
   roomView.setBuild({ zone: result.id, version: result.version, sidecar }, reopenRoom);
   $("panel-empty").hidden = true;
@@ -903,6 +910,7 @@ function syncVersionNav(): void {
       if (v.parent) parts.push(`from v${v.parent}`);
       if (v.edit) parts.push(editWords(v.edit));
       else if (v.changed.length) parts.push(v.changed.map((c) => CHANGED_WORDS[c] ?? c.replace(/_/g, " ")).join(", "));
+      if (v.quality?.degraded) parts.push(`outside quality targets (${reasonWords(v.quality.reason)})`);
       return parts.join(" · ");
     }).join("\n")
     : "The version of this zone on screen";
