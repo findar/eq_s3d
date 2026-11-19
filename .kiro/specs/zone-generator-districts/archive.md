@@ -20,5 +20,8 @@ user's design review). The user confirms at the first look (task 9).
 3. **Partition before pacing** (A4), so each District's climax gets the climax's size bias.
 4. **New palettes only in multi-District zones** (design "Purposes"), so one-District zones don't
    move.
+5. **District adjacency is a tree** (task 1, `c2c0a14`): only the cut edges link Districts, so
+   two sibling Districts that shared a loop corridor lose it, and every Threshold is a bridge
+   (task 3's gating relies on it). Umbrella 23.3 allowed a cycle of Districts.
 
 ## Follow-ups
