@@ -63,7 +63,7 @@ alone; say so in the commit body).
   - Owns: web/src/, web/index.html, tests/test_hygiene.py (the web control id allowlist only)
   - Reqs: 5
 
-- [ ] 6. Acceptance section
+- [x] 6. Acceptance section
   - Card: [cards/06-acceptance.md](cards/06-acceptance.md)
   - Type: agent · Size: S · Depends: 5
   - Owns: docs/ACCEPTANCE.md

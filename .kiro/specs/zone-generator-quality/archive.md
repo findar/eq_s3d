@@ -32,3 +32,7 @@ wait on the user's design review). The user confirms at the first look (task 7).
 
 - **Slow outdoor-dungeon Draws** predate step 19: on outdoor graph flat, 67 of 405 Draws took
   over 30 s, and a 30-room `ice_keep` (seed 1100087430) took 223 s alone. It is a generator cost.
+- A thorough-run failure outside this step: `test_properties_layout.py::test_cave_words_mean_dungeon`
+  with the prompt "cave outdoor dungeon": the planner picks `outdoor_dungeon` (the phrase) where
+  the test expects word counts to pick `dungeon`. The rule planner is untouched by step 19.
+- The tent failure from step 18's thorough run (`test_site_models` p3) didn't come up this time.

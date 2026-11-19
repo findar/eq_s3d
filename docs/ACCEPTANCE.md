@@ -2505,3 +2505,58 @@ Version row names the text, and the edited rooms are tinted until the next chang
       parent and its edit text.
 - [ ] **[SHOULD] Nothing lost** — After undoing, make a new edit: a new version appears; the
       versions you undid are still there (◂ ▸ reaches them).
+
+## Step 19 — Quality
+
+> Roadmap step 19 (`zone-generator-quality`, umbrella M3's quality gate). Every generate measures
+> its room graph against targets for its zone type, layout, room count and verticality (loops,
+> dead ends, floor heights, room sizes and the like) before building, and redraws a dull seed.
+> A zone that still misses them (a pinned seed, an edit) is built anyway and says so plainly.
+> Restart the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and
+> check no stale-code banner shows.
+
+Build each case in Controls (Decor **Normal**, Decor rules **From theme**, Seeds blank unless a
+case pins one):
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout **Graph**, Rooms 10, Verticality **Moderate**, Theme **Fortress** | 1853087170 |
+| b | Dungeon | Layout **Classic**, Rooms 7, Verticality **Moderate**, Theme **Temple** | 1192137566 |
+| c | Dungeon | Layout **Graph**, Rooms 10, Verticality **Moderate**, Theme **Fortress** | |
+| d | City | Rooms 8 | |
+
+### X.1 — Outside the targets
+
+- [ ] **[MUST] The banner** — Case a: an amber banner at the foot of the 3D view says the zone is
+      walkable but outside quality targets, "2 metrics out of band", and that the pinned seed
+      was built as asked. It has no close control, and it stays put when you open the Controls,
+      move the camera or collapse the side panel.
+- [ ] **[MUST] The list** — Click the banner's link: the side panel's **Quality** list opens with
+      focus on it, `elevation_range — 0 (band 7–…)` and `elevation_levels — 1 (band 2–…)` first,
+      then the other metrics with their values. In the 3D view every room is on one floor,
+      which is what those two say.
+- [ ] **[MUST] A different shortfall** — Case b: one metric out, `size_cv — 0.208 (band 0.25–…)`.
+      On the map the rooms are much the same size.
+- [ ] **[SHOULD] An edit outside the targets** — On case a, Feedback `make the boss room bigger`:
+      v2 is built and still flagged, now with the reason "edit outside bands". ◂ to v1 shows
+      v1's own reason again.
+
+### X.2 — Inside the targets
+
+- [ ] **[MUST] Passed** — Case c (no seed): no banner, and the Version row shows quality passed.
+      Generate it three or four times: each passes, and none takes noticeably longer than
+      before this step.
+- [ ] **[MUST] A city** — Case d passes too.
+- [ ] **[SHOULD] Start over** — On case a, Feedback `start over`: the new version passes and the
+      banner goes away; Undo brings the banner back for the version that had it.
+- [ ] **[SHOULD] An old zone** — Open a zone built before this step (◂ ▸ through an older zone's
+      versions): "quality unknown", no banner and no list.
+
+### X.3 — Do the targets catch dull layouts?
+
+- [ ] **[MUST] Judge the rejects** — Run `python scripts/quality_sweep.py --per-key 40 --only dungeon
+      --svg 3` (a few minutes): it lists failing seeds with their controls and writes maps of
+      some to `output/quality_sweep_svg/`. Open those (or build the seeds pinned, as in cases a
+      and b) beside a few passing ones. The failing ones should read as dull: a straight line of
+      same-size rooms, a comb of dead ends, every room on one floor, one hub with six corridors.
+      If a failing one looks fine, or a passing one looks dull, note its seed and settings.

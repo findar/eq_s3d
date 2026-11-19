@@ -8,9 +8,10 @@ banner, the list), an old version (quality unknown), an edit outside the bands, 
 seeds' maps beside passing ones to judge whether the bands catch dull layouts.
 
 ## Done when
-- [ ] The section is written, every case run through the route. → verify:
+- [x] The section is written, every case run through the route. → verify:
       `git show HEAD -- docs/ACCEPTANCE.md`
-- [ ] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
+- [x] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
       named in the commit body.
 
 ## Result
+✔ thorough 3560 passed, 1 failed (pre-existing planner words: "cave outdoor dungeon" read as an outdoor dungeon)
