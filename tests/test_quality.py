@@ -349,6 +349,14 @@ def test_pass_list_and_score(spec, bands):
     assert not r.degraded and r.reason == ""
 
 
+def test_subnormal_gap_still_fails():
+    # A gap of 5e-324 over a width of 2 underflows to 0; the value is still out of band.
+    bands = dict({m: UNBOUNDED for m in METRICS}, district_balance=(5e-324, 2.0))
+    r = evaluate({m: 0.0 for m in METRICS}, bands)
+    assert not r.passed and r.score > 0
+    assert [o.metric for o in r.out_of_band] == ["district_balance"]
+
+
 @given(st.sampled_from(METRICS), band_sets(), st.floats(0.01, 100), st.floats(0.01, 100),
        st.booleans())
 def test_score_strictly_increases_moving_away(metric, bands, step1, step2, below):

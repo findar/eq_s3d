@@ -380,7 +380,9 @@ def _distance(value: float, band: Band) -> float:
     else:
         return 0.0
     width = (hi - lo) if (lo is not None and hi is not None) else abs(bound)
-    return gap / max(1.0, width)
+    # At least the smallest float: a subnormal gap over the width can underflow to 0, which
+    # would read an out-of-band value as a pass.
+    return max(gap / max(1.0, width), math.ulp(0.0))
 
 
 def evaluate(metrics: Dict[str, float], bands: Dict[str, Band]) -> QualityReport:
