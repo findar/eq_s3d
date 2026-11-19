@@ -113,12 +113,28 @@ def test_no_rooms_is_all_zero_and_passes():
     assert report.passed and report.score == 0 and report.out_of_band == []
 
 
-def test_band_table_is_unbounded_for_now():
-    assert quality.BAND_TABLE == {}
-    for zt in ("dungeon", "city", "outdoor_dungeon", "wilderness"):
-        for layout in ("classic", "graph"):
-            for v in ("flat", "moderate", "dramatic", None):
-                assert bands_for(zt, layout, 12, v) == {m: UNBOUNDED for m in METRICS}
+def test_band_table_covers_every_swept_key():
+    keys = {(zt, "classic", v) for zt in ("dungeon", "city", "outdoor_dungeon")
+            for v in ("flat", "moderate", "dramatic")}
+    keys |= {(zt, "graph", v) for zt in ("dungeon", "outdoor_dungeon")
+             for v in ("flat", "moderate", "dramatic")}
+    assert set(quality.BAND_TABLE) == keys
+
+
+def test_wilderness_and_tiny_zones_stay_unbounded():
+    for layout in ("classic", "graph"):
+        for v in ("flat", "moderate", "dramatic", None):
+            assert bands_for("wilderness", layout, 12, v) == {m: UNBOUNDED for m in METRICS}
+            for zt in ("dungeon", "city", "outdoor_dungeon"):
+                for n in range(4):
+                    assert bands_for(zt, layout, n, v) == {m: UNBOUNDED for m in METRICS}
+
+
+def test_dropped_metrics_are_unbounded_in_every_row():
+    for rows in quality.BAND_TABLE.values():
+        for _lo, _hi, bands in rows:
+            for m in ("room_type_diversity", "branching_factor", "district_balance"):
+                assert m not in bands
 
 
 # ---------------------------------------------------------------------------

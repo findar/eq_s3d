@@ -29,3 +29,6 @@ wait on the user's design review). The user confirms at the first look (task 7).
    sits near the entrance by design). Elevation is bounded only off `flat`.
 
 ## Follow-ups
+
+- **Slow outdoor-dungeon Draws** predate step 19: on outdoor graph flat, 67 of 405 Draws took
+  over 30 s, and a 30-room `ice_keep` (seed 1100087430) took 223 s alone. It is a generator cost.
