@@ -51,7 +51,7 @@ alone; say so in the commit body).
   - Owns: generators/pipeline.py, generators/rebuild.py, tests/test_quality_gate.py, golden hash files a sidecar change moves
   - Reqs: 3, 6
 
-- [ ] 4. Responses, edits, listing and CLI
+- [x] 4. Responses, edits, listing and CLI
   - Card: [cards/04-route.md](cards/04-route.md)
   - Type: agent · Size: M · Depends: 2, 3
   - Owns: server/app.py, main.py, tests/test_quality_route.py

@@ -38,6 +38,7 @@ from core.paths import (
 )
 from generators.builder import BUILD_NAME_RE, with_decor_layers
 from generators.pipeline import generate_validated, GenerationFailed
+from generators.quality import quality_summary
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, LANDSCAPE_ZONE_TYPES,
     canonical_zone_type, enabled_zone_types, is_enabled,
@@ -164,6 +165,25 @@ def _decor_layer_arg(value: str) -> str:
         raise argparse.ArgumentTypeError(str(exc))
 
 
+def print_quality(block) -> None:
+    """A Quality_Degraded build's lines (umbrella 25.9): the reason, the out-of-band count
+    and each entry's metric, value, ``lo`` and ``hi``. A passing build (or none) prints
+    nothing. ``block`` is the Quality_Block (``generators.quality.quality_summary``)."""
+    if not block or not block.get("degraded"):
+        return
+    entries = block.get("out_of_band") or []
+    print(f"  Quality: walkable but outside quality targets ({block.get('reason')}), "
+          f"{len(entries)} metric(s) out of band:")
+    for o in entries:
+        print(f"    - {o['metric']} = {o['value']:.3f} (band {_bound(o.get('lo'))}"
+              f"..{_bound(o.get('hi'))})")
+
+
+def _bound(value) -> str:
+    """A band end as the CLI prints it; an open end is ``-``."""
+    return "-" if value is None else f"{value:g}"
+
+
 def cmd_generate(args) -> None:
     # Resolve the zone type. ``--zone-type`` / ``--theme`` share one dest and
     # are already converted + validated by ``_zone_type_arg`` (so a disabled or
@@ -236,6 +256,7 @@ def cmd_generate(args) -> None:
             validate_enabled=not args.no_validate,
             failure_log=Path(args.output) / "validation_failures.jsonl",
             mode="controls",
+            verticality=plan.verticality,
         )
     except GenerationFailed as e:
         print(f"\nerror: {e}", file=sys.stderr)
@@ -278,6 +299,8 @@ def cmd_generate(args) -> None:
         print("  Traversability: skipped (--no-validate)")
     else:
         print(f"  Traversability: ungated zone type '{zone_type}' (not validated)")
+    if vb.quality is not None:
+        print_quality(quality_summary(vb.quality))
 
 
 def cmd_export(args) -> None:
@@ -344,6 +367,8 @@ def cmd_edit(zone: str, version: str, text: str) -> None:
               f"interpreter {res.interpreter})")
         for op in res.ops:
             print(f"  op: {json.dumps(op)}")
+        if res.build is not None:
+            print_quality(res.build.quality)
     else:
         print(f"Nothing applied to {zone} v{res.parent}", file=sys.stderr)
     for note in res.notes:

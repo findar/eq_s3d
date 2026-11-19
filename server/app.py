@@ -39,7 +39,10 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 from core.env import env_value
 from core.paths import OutputRoot, assert_output_allowed, new_zone_id
 from generators.builder import with_decor_layers
-from generators.pipeline import generate_validated, GenerationFailed
+from generators.pipeline import (
+    REASON_DEGRADED, REASON_EDIT, REASON_PINNED, generate_validated, GenerationFailed,
+)
+from generators.quality import quality_summary
 from generators.zone_types import (
     DEFINED_ZONE_TYPES, DEFAULT_ZONE_TYPE, LANDSCAPE_ZONE_TYPES, canonical_zone_type,
     ENABLED_ZONE_TYPES, is_enabled, zone_type_listing,
@@ -696,6 +699,23 @@ class GenerateResponse(BaseModel):
     # Short commit of the code this server process loaded (BUILD_INFO), so a
     # result/screenshot can be traced to the exact code that produced it.
     build_commit: str = UNKNOWN
+    # The Quality_Block (zone-generator-quality Req 4, umbrella 25.1-25.3): the build's
+    # sidecar ``quality`` entry, ``{degraded, reason, score, metrics, out_of_band}``; a
+    # degraded build's reason is also in ``warnings``.
+    quality: Optional[dict[str, Any]] = None
+
+
+#: The reasons a Quality_Degraded build is marked with (umbrella 25.2).
+QUALITY_REASONS = (REASON_DEGRADED, REASON_PINNED, REASON_EDIT)
+
+
+def _quality_warnings(warnings: list[str], quality: Optional[dict]) -> list[str]:
+    """``warnings`` with the quality reason as the Quality_Block says: a degraded build's
+    reason in it once, a passing build's none (umbrella 25.2, 25.3)."""
+    out = [w for w in warnings if w not in QUALITY_REASONS]
+    if quality is not None and quality.get("degraded") and quality.get("reason"):
+        out.append(quality["reason"])
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -798,7 +818,8 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
               version_meta: Optional[dict] = None,
               partial: Optional[tuple] = None,
               edited: Optional[tuple] = None,
-              raise_failed: bool = False) -> GenerateResponse:
+              raise_failed: bool = False,
+              quality_reason: Optional[str] = None) -> GenerateResponse:
     """Generate (``version`` 1 of a new ``zone_id``) or a rebuild (the next version of an
     existing zone; ``saved`` is the request it is built from, its parent's ``request.json``
     with the change applied). A prompt-mode rebuild takes the plan the parent's planner
@@ -809,7 +830,9 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
     ``(parent_dir, spec_doc, stages)``: the zone is built from that spec dict
     (``generators.rebuild.build_spec``), from the parent's saved stages when ``stages``.
     ``raise_failed``: a ``GenerationFailed`` goes to the caller (an edit tries its next
-    candidate) instead of becoming a 503."""
+    candidate) instead of becoming a 503. ``quality_reason``: the reason a failing build is
+    marked with when it isn't the pipeline's own (a ``regenerate`` edit's, a decor rebuild's
+    full fallback); it measures without redrawing (zone-generator-quality A4)."""
     # --- Mode + seed resolution: every 400 here happens BEFORE any build/write.
     mode = _resolve_mode(req)
 
@@ -979,6 +1002,8 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
         request=request,
         version_meta=version_meta,
     )
+    if quality_reason is not None:
+        pipeline["quality_reason"] = quality_reason
     try:
         if partial is not None:
             from generators.rebuild import rebuild_decor
@@ -1016,6 +1041,7 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
     # advisories (e.g. a builder backend_fallback) to ``vb.warnings``; return
     # that merged list.
     base = f"/api/zones/{zone_id}/v{version}"
+    quality = quality_summary(vb.quality) if vb.quality is not None else None
     return GenerateResponse(
         id=zone_id,
         version=version,
@@ -1037,9 +1063,10 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
         gates=len(vb.spec.gates),
         validated=vb.validated,
         attempts=vb.attempts,
-        warnings=list(vb.warnings),
+        warnings=_quality_warnings(list(vb.warnings), quality),
         format_passed=bool(vb.format.passed) if vb.format is not None else False,
         build_commit=BUILD_INFO["short"],
+        quality=quality,
     )
 
 
@@ -1257,7 +1284,12 @@ def rebuild(req: RebuildRequest):
                                req.zone, parent_seg, exc)
                 info = VersionInfo(n=n, parent=parent_n, changed=changed, how="full")
         if resp is None:
-            resp = _generate(gen_req, req.zone, n, saved=body, version_meta=info.model_dump())
+            # A decor change built in full still keeps the parent's room graph: measured
+            # with the parent's reason (A4); a rooms reroll is the pipeline's own.
+            reason = (partial.parent_quality_reason(parent_dir, req.zone)
+                      if how == "partial" else None)
+            resp = _generate(gen_req, req.zone, n, saved=body, version_meta=info.model_dump(),
+                             quality_reason=reason)
     finally:
         _release_version(req.zone, n)
     return RebuildResponse(**resp.model_dump(), version_info=info)
@@ -1366,7 +1398,8 @@ def _build_edit(zone: str, n: int, parent_n: int, parent_dir: Path, saved: dict,
                          raise_failed=True, **how)
 
     if result.seed is not None:
-        return build(), info
+        # A ``regenerate``: planned again at the edit's seed, measured as an edit (A4).
+        return build(quality_reason=REASON_EDIT), info
     if result.how == "partial":
         try:
             return build(edited=(parent_dir, result.doc, True)), info
@@ -1503,7 +1536,9 @@ def list_versions(zone: str):
     ``parent``, ``changed``, ``how`` (from its sidecar's ``version`` block; v1 has none),
     its ``seeds``, ``created`` and ``took_ms`` (from its ``request.json``; ``created``
     falls back to the sidecar's time), ``edit`` (an edit's ``{text, ops}``, from its sidecar's
-    ``edit`` block; ``None`` for a version no edit made) and the URLs that open it."""
+    ``edit`` block; ``None`` for a version no edit made), ``quality`` (``{degraded, reason}``
+    from its sidecar's ``quality`` entry; ``None`` for a version with none) and the URLs that
+    open it."""
     zone_dir = _zone_dir(zone)
     versions = []
     for n, vdir in sorted(_version_dirs(zone_dir).items()):
@@ -1519,12 +1554,16 @@ def list_versions(zone: str):
             created = datetime.fromtimestamp(sidecar_path.stat().st_mtime,
                                              tz=timezone.utc).isoformat(timespec="seconds")
         base = f"/api/zones/{zone}/v{n}"
+        q = sidecar.get("quality")
         versions.append({
             "n": n, "parent": block.get("parent"), "changed": list(block.get("changed", [])),
             "how": block.get("how"), "seeds": sidecar.get("seeds"),
             "created": created, "took_ms": saved.get("took_ms"),
             "edit": ({"text": made.get("text"), "ops": list(made.get("ops") or [])}
                      if made is not None else None),
+            # zone-generator-quality Req 4.4: null for a version built before step 19.
+            "quality": ({"degraded": bool(q.get("degraded")), "reason": q.get("reason")}
+                        if isinstance(q, dict) else None),
             "glb_url": f"{base}/{zone}.glb", "zone_url": f"{base}/{zone}.zone.json",
             "map_url": f"{base}/{zone}.map.svg", "eqg_url": f"{base}/{zone}.eqg",
         })
