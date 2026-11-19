@@ -38,7 +38,7 @@ touches generation proves it with
   - Owns: generators/districts.py, generators/zone_spec.py, tests/test_districts.py
   - Reqs: 1
 
-- [ ] 2. Purposes, palettes and lights
+- [x] 2. Purposes, palettes and lights
   - Card: [cards/02-purposes.md](cards/02-purposes.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/districts.py, generators/semantics.py, tests/test_district_purposes.py
