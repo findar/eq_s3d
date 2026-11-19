@@ -26,11 +26,11 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from core.ter import SHADER_OPAQUE
 
-from .zone_spec import ZoneSpec, RoomSpec, RegionSpec, LightSpec
+from .zone_spec import DistrictSpec, ZoneSpec, RoomSpec, RegionSpec, LightSpec
 
 
 # ---------------------------------------------------------------------------
@@ -470,7 +470,8 @@ def label_rooms(spec: ZoneSpec,
                 archetype: str = "",
                 race: str = "",
                 tint: Optional[str] = None,
-                overrides: Optional[Dict[str, str]] = None) -> None:
+                overrides: Optional[Dict[str, str]] = None,
+                districts: Optional[Sequence[DistrictSpec]] = None) -> None:
     """
     Phase 1 — assign each room a semantic type + theme and realise the parts
     that affect GEOMETRY (shape / proportion / ceiling / floor-height) plus the suggestion fields. Call AFTER _apply_pacing (rooms must have
@@ -484,11 +485,20 @@ def label_rooms(spec: ZoneSpec,
     *race* sizes the floor sink (its body height). *tint* overrides the archetype's
     default elemental tint ("" to force none; None to use the archetype default).
     *overrides* maps room.id → semantic_type for planner-driven assignment.
+
+    *districts* (two or more, districts spec Req 2.2): each room takes its
+    types from its own District's Purpose (``room.district`` -> the District
+    with that id) by in-District depth; *archetype* is then unused and
+    ``spec.dungeon_theme`` is District 0's Purpose. ``None`` or one District
+    is the single-District path, unchanged.
     """
     if not rooms:
         return
+    if districts is not None and len(districts) >= 2:
+        _label_districted(spec, rooms, rng, districts, race, tint, overrides or {})
+        return
 
-    arch = ARCHETYPES.get((archetype or "").lower(), ARCHETYPES[DEFAULT_ARCHETYPE])
+    arch =ARCHETYPES.get((archetype or "").lower(), ARCHETYPES[DEFAULT_ARCHETYPE])
     effective_tint = arch.tint if tint is None else tint
 
     spec.dungeon_theme = arch.name
@@ -525,14 +535,28 @@ def label_rooms(spec: ZoneSpec,
         _apply_shape(r, rt, race)
 
 
-def realize_semantics(spec: ZoneSpec, rng: random.Random) -> None:
+def realize_semantics(spec: ZoneSpec, rng: random.Random,
+                      districts: Optional[Sequence[DistrictSpec]] = None,
+                      thresholds: Optional[Sequence[Tuple[int, int]]] = None) -> None:
     """
     Phase 2 — realise the parts that depend on final room geometry and on the
     spec being fully assembled: per-room material (palette) selection, elemental
     region volumes, and lighting mood. Call AFTER rooms (and their pacing
     lights, if any) are appended to the spec.
+
+    *districts* defaults to ``spec.districts``. With two or more, each room
+    takes its District's palette (variant included) and light mood, and each
+    of *thresholds* (``(parent side, child side)`` indices into ``spec.rooms``,
+    as ``Partition.thresholds``) gets ends that differ in material set and in
+    light (districts spec Req 2.4, umbrella 23.5). With none or one District
+    this is the single-District path, unchanged.
     """
     if not spec.rooms:
+        return
+    if districts is None:
+        districts = spec.districts
+    if len(districts) >= 2:
+        _realize_districted(spec, districts, thresholds or ())
         return
     tint = spec.elemental_tint
     for room in spec.rooms:
@@ -582,9 +606,15 @@ def _pick_by_depth(arc: Tuple[str, ...], room: RoomSpec, max_depth: int,
                    rng: random.Random) -> str:
     """One type of *arc* by the room's normalised graph depth, with a small
     jitter. A one-type arc draws nothing from *rng*."""
+    return _pick_at(arc, room.graph_depth, max_depth, rng)
+
+
+def _pick_at(arc: Tuple[str, ...], depth: int, max_depth: int,
+             rng: random.Random) -> str:
+    """:func:`_pick_by_depth` at an explicit depth (a District's in-District depth)."""
     if len(arc) == 1:
         return arc[0]
-    frac = (room.graph_depth / max_depth) if max_depth > 0 else 0.0
+    frac = (depth / max_depth) if max_depth > 0 else 0.0
     idx = int(round(frac * (len(arc) - 1)))
     jitter = rng.choice([-1, 0, 0, 1])
     idx = max(0, min(len(arc) - 1, idx + jitter))
@@ -788,3 +818,255 @@ def _set_room_light(spec: ZoneSpec, room: RoomSpec, idx: int,
             lt.radius = max(lt.radius, max(room.width, room.depth) * 0.9)
             lt.id = f"light_{idx}_{room.semantic_type}"
             return
+
+
+# ---------------------------------------------------------------------------
+# Districts (districts spec Requirement 2, umbrella 23.4-23.5, 23.8, 23.10)
+#
+# A multi-District zone labels each room from its own District's Purpose and
+# realises each District's palette and light. A District's palette is its
+# Purpose's at a variant level: 0 as built, 1 ``abandoned`` (half saturation,
+# dimmer and colder light), 2 ``ruined`` (further still). The level is in the
+# palette key (``temple``, ``temple_abandoned``) and so in the Material_Name,
+# which keys the texture. Nothing here runs for a one-District zone.
+# ---------------------------------------------------------------------------
+
+#: Palettes for the four archetypes that had none (A3). Used ONLY in
+#: multi-District zones (archive decision 4): a one-District war_city keeps
+#: the base materials it always had.
+_DISTRICT_PALETTES: Dict[str, Dict[str, Tuple[Tuple[int, int, int], str]]] = {
+    "war_city": {
+        "floor": ((102, 92, 78), "battle-worn paved street stone, ash"),
+        "wall":  ((124, 108, 90), "fortified city wall, banner hooks, scorch marks"),
+    },
+    "warren": {
+        "floor": ((92, 78, 60), "packed earth floor, straw and droppings"),
+        "wall":  ((108, 90, 68), "dug earthen burrow wall, roots"),
+    },
+    "corrupted_sanctum": {
+        "floor": ((84, 66, 76), "defiled temple flagstone, dark stains"),
+        "wall":  ((98, 74, 88), "blighted shrine stone, profane sigils"),
+    },
+    "mine_delve": {
+        "floor": ((82, 76, 70), "rough-hewn mine floor, ore dust, cart ruts"),
+        "wall":  ((96, 88, 78), "pick-scarred rock wall, timber props"),
+    },
+}
+
+#: Every Purpose's palette, multi-District zones only.
+PURPOSE_PALETTES: Dict[str, Dict[str, Tuple[Tuple[int, int, int], str]]] = {
+    **_THEME_PALETTES, **_DISTRICT_PALETTES,
+}
+
+#: Variant levels: name (in the palette key), light mood, colour saturation and
+#: value, light intensity, and how far the light leans to cold.
+VARIANTS: Tuple[str, ...] = ("", "abandoned", "ruined")
+LIGHT_MOODS: Tuple[str, ...] = ("lit", "dim", "faint")
+_VARIANT_SAT = (1.0, 0.5, 0.25)
+_VARIANT_VALUE = (1.0, 0.85, 0.7)
+_VARIANT_LIGHT = (1.0, 0.65, 0.45)
+_VARIANT_COLD = (0.0, 0.25, 0.45)
+#: A Threshold whose two ends would still light the same: the child's scale.
+_THRESHOLD_DIM = 0.8
+
+
+def palette_key(purpose: str, level: int = 0) -> str:
+    """A District's palette key: ``temple``, ``temple_abandoned``, ``temple_ruined``."""
+    variant = VARIANTS[level % len(VARIANTS)]
+    return f"{purpose}_{variant}" if variant else purpose
+
+
+def palette_level(key: str) -> Tuple[str, int]:
+    """``(purpose, level)`` of a palette key (inverse of :func:`palette_key`)."""
+    for level in range(len(VARIANTS) - 1, 0, -1):
+        suffix = "_" + VARIANTS[level]
+        if key.endswith(suffix):
+            return key[: -len(suffix)], level
+    return key, 0
+
+
+def set_district_palette(district: DistrictSpec, level: int) -> None:
+    """Point *district* at its Purpose's palette and light mood at *level*."""
+    level %= len(VARIANTS)
+    district.palette = palette_key(district.purpose, level)
+    district.light_mood = LIGHT_MOODS[level]
+
+
+def _district_palette(district: DistrictSpec) -> Tuple[str, int]:
+    """``(purpose, level)`` of a District, its Purpose at level 0 when unset."""
+    if district.palette:
+        return palette_level(district.palette)
+    return district.purpose, 0
+
+
+def separate_threshold_palettes(districts, pairs: Sequence[Tuple[int, int]]) -> None:
+    """Umbrella 23.5 for the material sets: for each ``(parent, child)`` pair of
+    District ids (parents first), a child whose palette equals its parent's
+    takes the next variant level. *districts* maps id -> DistrictSpec (or is a
+    list indexed by id). Draws nothing."""
+    for p, c in pairs:
+        parent, child = districts[p], districts[c]
+        p_purpose, p_level = _district_palette(parent)
+        c_purpose, c_level = _district_palette(child)
+        if (p_purpose, p_level) == (c_purpose, c_level):
+            set_district_palette(child, p_level + 1)
+        elif not child.palette:
+            set_district_palette(child, c_level)
+
+
+def _desaturate(color: Tuple[int, int, int], level: int) -> Tuple[int, int, int]:
+    grey = sum(color) / 3.0
+    sat, val = _VARIANT_SAT[level], _VARIANT_VALUE[level]
+    return tuple(max(0, min(255, int(round((grey + (c - grey) * sat) * val))))
+                 for c in color)
+
+
+def _district_light(rgb: Tuple[float, float, float], level: int) -> Tuple[float, float, float]:
+    """A variant's light: leaned toward cold, then dimmed."""
+    cold, k = _VARIANT_COLD[level], _VARIANT_LIGHT[level]
+    return tuple((c * (1.0 - cold) + w * cold) * k for c, w in zip(rgb, _COLD))
+
+
+def _label_districted(spec: ZoneSpec, rooms: List[RoomSpec], rng: random.Random,
+                      districts: Sequence[DistrictSpec], race: str,
+                      tint: Optional[str], overrides: Dict[str, str]) -> None:
+    """``label_rooms`` with Districts: each room's arc is its District's
+    Purpose, sampled by in-District depth.
+
+    A District's entrance is its shallowest room (ties to the lowest index):
+    the zone entrance for District 0, else the child side of its Threshold,
+    since the Threshold is the only way in (archive decision 5). The same
+    bridge makes in-District depth ``graph_depth`` less the entrance's. A
+    District entrance takes its Purpose's entrance type (unless an override,
+    its kind or the climax role says otherwise); the climax role, one per
+    District, is set by pacing.
+    """
+    by_id = {d.id: d for d in districts}
+    first = by_id[min(by_id)]
+    archs = {d.id: ARCHETYPES.get((d.purpose or "").lower(), ARCHETYPES[DEFAULT_ARCHETYPE])
+             for d in districts}
+
+    zone_arch = archs[first.id]
+    spec.dungeon_theme = zone_arch.name
+    spec.dungeon_race = (race or "default").lower()
+    spec.elemental_tint = zone_arch.tint if tint is None else tint
+
+    def home(r: RoomSpec) -> int:
+        return r.district if r.district in by_id else first.id
+
+    start: Dict[int, int] = {}
+    for i, r in enumerate(rooms):
+        d = home(r)
+        if d not in start or r.graph_depth < rooms[start[d]].graph_depth:
+            start[d] = i
+    depth = [r.graph_depth - rooms[start[home(r)]].graph_depth for r in rooms]
+    max_depth: Dict[int, int] = {}
+    for i, r in enumerate(rooms):
+        d = home(r)
+        max_depth[d] = max(max_depth.get(d, 0), depth[i])
+    kmaps = {d: kind_types(a.name) for d, a in archs.items()}
+
+    for i, r in enumerate(rooms):
+        d = home(r)
+        arch, kmap, md = archs[d], kmaps[d], max_depth[d]
+        if r.id in overrides and overrides[r.id] in ROOM_TYPES:
+            type_name = overrides[r.id]
+        elif r.kind and r.kind in kmap:
+            type_name = _pick_at(kmap[r.kind], depth[i], md, rng)
+        elif r.role == "climax":
+            type_name = arch.climax_type
+        elif i == start[d] or r.role == "entrance":
+            type_name = arch.entrance_type
+        elif r.role == "hub":
+            type_name = arch.hub_type
+        elif arch.arc:
+            type_name = _pick_at(arch.arc, depth[i], md, rng)
+        else:
+            type_name = "passage"
+        rt = ROOM_TYPES.get(type_name, ROOM_TYPES["passage"])
+
+        r.semantic_type = type_name
+        r.room_theme = arch.name
+        r.boss = r.role == "climax"
+        r.prop_hints = list(rt.props)
+        r.encounter_intent = rt.encounter
+        _apply_shape(r, rt, race)
+
+
+def _realize_districted(spec: ZoneSpec, districts: Sequence[DistrictSpec],
+                        thresholds: Sequence[Tuple[int, int]]) -> None:
+    """``realize_semantics`` with Districts (see there)."""
+    by_id = {d.id: d for d in districts}
+    first = by_id[min(by_id)]
+
+    def home(room: RoomSpec) -> DistrictSpec:
+        return by_id.get(room.district, first)
+
+    ends = [(a, b) for a, b in thresholds
+            if 0 <= a < len(spec.rooms) and 0 <= b < len(spec.rooms)]
+    pairs = []
+    for a, b in ends:
+        pa, pb = home(spec.rooms[a]).id, home(spec.rooms[b]).id
+        if pa != pb:
+            pairs.append((pa, pb))
+    separate_threshold_palettes(by_id, pairs)
+
+    for room in spec.rooms:
+        purpose, level = _district_palette(home(room))
+        _apply_district_materials(spec, room, purpose, level)
+
+    tint = spec.elemental_tint
+    _, tint_rgb, tint_imult = _TINTS.get(tint, ("", None, 1.0))
+    moods: List[Tuple[float, float, float]] = []
+    for i, room in enumerate(spec.rooms):
+        rt = ROOM_TYPES.get(room.semantic_type, ROOM_TYPES["passage"])
+        if rt.region:
+            _add_room_region(spec, room, rt.region, i)
+        rgb = rt.light
+        intensity = rt.intensity
+        if tint_rgb is not None and rt.region:
+            rgb = tint_rgb
+            intensity *= tint_imult
+        intensity *= max(0.5, 1.0 - room.graph_depth * 0.05)
+        if room.role == "entrance":
+            intensity = max(intensity, 0.95)
+        _, level = _district_palette(home(room))
+        moods.append(_district_light(tuple(c * intensity for c in rgb), level))
+
+    # The light half of 23.5: the child end of a Threshold that would still
+    # light like the parent end is dimmed (parents first, so a chain settles).
+    for a, b in ends:
+        if all(abs(x - y) < 1e-3 for x, y in zip(_clamp(moods[a]), _clamp(moods[b]))):
+            moods[b] = tuple(c * _THRESHOLD_DIM for c in moods[b])
+
+    for i, room in enumerate(spec.rooms):
+        _set_room_light(spec, room, i, *moods[i])
+
+
+def _clamp(rgb) -> Tuple[float, ...]:
+    return tuple(max(0.0, min(1.0, c)) for c in rgb)
+
+
+def _apply_district_materials(spec: ZoneSpec, room: RoomSpec, purpose: str,
+                              level: int) -> None:
+    """Point the room at its District's floor/wall variants (registered on
+    first use). Ceiling keeps the shared material, as in ``_apply_materials``."""
+    palette = PURPOSE_PALETTES.get(purpose)
+    if not palette:
+        return
+    key = palette_key(purpose, level)
+    for base in ("floor", "wall"):
+        if base not in palette:
+            continue
+        name = material_name(texture_set(spec.zone_type, spec.dungeon_race, key), base)
+        if name not in spec.materials:
+            color, desc = palette[base]
+            if level:
+                color = _desaturate(color, level)
+                desc = f"{VARIANTS[level]}, faded: {desc}"
+            spec.add_material(name, f"{name}.dds", shader=SHADER_OPAQUE,
+                              color=color, description=desc)
+        if base == "floor":
+            room.floor_material = name
+        else:
+            room.wall_material = name

@@ -20,10 +20,14 @@ one-District zone is byte-identical to one built before Districts existed.
 
 from __future__ import annotations
 
+import itertools
 import random
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
+
+from . import semantics
+from .zone_spec import DistrictSpec
 
 # Districts need this many rooms before the switch does anything (umbrella 23.1).
 MIN_ROOMS = 8
@@ -224,3 +228,197 @@ def district_climaxes(part: Partition, edges: Sequence[Edge], entrance: int) -> 
                     q.append(nxt)
         climaxes.append(max(dist, key=lambda i: (dist[i], -i)))
     return climaxes
+
+
+# ---------------------------------------------------------------------------
+# Purposes (districts spec Requirement 2, umbrella 23.8, 23.10-23.12)
+# ---------------------------------------------------------------------------
+
+RELATIONSHIPS: Tuple[str, ...] = ("sequential", "factional", "abandoned_vs_active")
+DEFAULT_RELATIONSHIP = "sequential"
+
+#: The compatibility table, as symmetric pairs (the lead's first cut; the
+#: first look judges it). ``NEXT``: may sit next to each other, a plausible
+#: walk from one into the other (``sequential``). ``CONTRAST``: opposed
+#: factions or elements (``factional``). Every Purpose is in at least one
+#: CONTRAST triangle, so three pairwise-contrasting Districts can start from
+#: any of them. No pair is in both.
+_NEXT_PAIRS: Tuple[Tuple[str, str], ...] = (
+    ("fortress", "war_city"), ("fortress", "mine_delve"), ("fortress", "ice_keep"),
+    ("fortress", "lava_forge"), ("fortress", "tomb"),
+    ("war_city", "temple"), ("war_city", "lava_forge"), ("war_city", "mine_delve"),
+    ("warren", "sunken_ruin"), ("warren", "ice_keep"),
+    ("temple", "tomb"), ("temple", "sunken_ruin"), ("temple", "ice_keep"),
+    ("tomb", "corrupted_sanctum"), ("tomb", "sunken_ruin"), ("tomb", "ice_keep"),
+    ("wizard_lair", "lava_forge"), ("wizard_lair", "ice_keep"), ("wizard_lair", "mine_delve"),
+    ("wizard_lair", "tomb"),
+    ("corrupted_sanctum", "sunken_ruin"),
+    ("mine_delve", "lava_forge"),
+)
+_CONTRAST_PAIRS: Tuple[Tuple[str, str], ...] = (
+    # soldiers, vermin and a cult
+    ("fortress", "warren"), ("fortress", "corrupted_sanctum"), ("warren", "corrupted_sanctum"),
+    # faith, its corruption and the arcane
+    ("temple", "corrupted_sanctum"), ("temple", "wizard_lair"), ("wizard_lair", "corrupted_sanctum"),
+    # fire, ice and water
+    ("lava_forge", "ice_keep"), ("lava_forge", "sunken_ruin"), ("ice_keep", "sunken_ruin"),
+    # a living army, vermin and the dead
+    ("war_city", "warren"), ("war_city", "tomb"), ("warren", "tomb"),
+    # miners against what they dug into
+    ("mine_delve", "warren"), ("mine_delve", "corrupted_sanctum"),
+)
+
+
+def _table(pairs) -> Dict[str, Tuple[str, ...]]:
+    out: Dict[str, set] = {p: set() for p in semantics.ARCHETYPES}
+    for a, b in pairs:
+        out[a].add(b)
+        out[b].add(a)
+    return {p: tuple(sorted(v)) for p, v in out.items()}
+
+
+#: Purpose -> the Purposes it may sit next to / contrasts with.
+COMPATIBLE: Dict[str, Tuple[str, ...]] = _table(_NEXT_PAIRS)
+CONTRASTS: Dict[str, Tuple[str, ...]] = _table(_CONTRAST_PAIRS)
+PURPOSES: Tuple[str, ...] = tuple(sorted(semantics.ARCHETYPES))
+
+
+def _purpose_name(value) -> str:
+    """A proposal's Purpose: a string, or a dict's ``purpose``."""
+    if isinstance(value, dict):
+        value = value.get("purpose", "")
+    return str(value or "").strip().lower()
+
+
+def _parents(part: Partition) -> List[Optional[int]]:
+    """District id -> the District on the parent side of its Threshold."""
+    return [None] + [part.assign[p] for p, _ in part.thresholds]
+
+
+def _solutions(k: int, fixed: List[Optional[str]], ok) -> List[List[str]]:
+    """Every assignment of the free Districts (``fixed[d] is None``), in id
+    order, where each free District's Purpose is used by no other District and
+    ``ok(cur)`` holds. Fixed Districts (proposals) are taken as given."""
+    free = [d for d in range(k) if fixed[d] is None]
+    out = []
+    for combo in itertools.product(PURPOSES, repeat=len(free)):
+        cur = list(fixed)
+        for d, p in zip(free, combo):
+            cur[d] = p
+        if any(cur[d] in [cur[e] for e in range(k) if e != d] for d in free):
+            continue
+        if ok(cur):
+            out.append(cur)
+    return out
+
+
+def assign_district_purposes(part: Partition, purpose: str = "",
+                             proposals: Optional[Sequence] = None,
+                             relationship: str = "",
+                             rng: Optional[random.Random] = None,
+                             *, pinned: bool = False
+                             ) -> Tuple[List[DistrictSpec], List[str]]:
+    """Each District's Purpose, palette and light mood (umbrella 23.8, 23.10-23.12).
+
+    *purpose* is the plan's archetype (District 0's when no proposal names
+    one); *proposals* (strings or ``{"purpose": ...}`` dicts) fill Districts in
+    id order, the first ``k`` used; *relationship* is ``sequential`` (default),
+    ``factional`` or ``abandoned_vs_active``. *pinned* (with a known *purpose*)
+    gives every District that Purpose. Unknown values are ignored with a note.
+
+    ``sequential``: pairwise-distinct Purposes, each compatible with the
+    District across its Threshold. ``factional``: pairwise-distinct Purposes,
+    every pair contrasting where the table allows it, else each contrasting
+    with the District across its Threshold. ``abandoned_vs_active``: District
+    0's Purpose everywhere, every other District at the ``abandoned`` variant.
+    A Threshold whose two Districts would share a palette gives the child the
+    next variant (23.5, 23.10).
+
+    Returns ``(districts, notes)``; ``districts`` is empty (and nothing is
+    drawn from *rng*) when ``part.k`` is 1. Room ids, entrance and climax are
+    left for :func:`fill_district_rooms`; the Threshold corridor id is the
+    layout's to set.
+    """
+    k = part.k
+    if k <= 1:
+        return [], []
+    rng = rng or random.Random()
+    notes: List[str] = []
+
+    rel = (relationship or "").strip().lower()
+    if not rel:
+        rel = DEFAULT_RELATIONSHIP
+    elif rel not in RELATIONSHIPS:
+        notes.append(f"district_relationship_unknown: '{relationship}' ignored, "
+                     f"using {DEFAULT_RELATIONSHIP}")
+        rel = DEFAULT_RELATIONSHIP
+
+    first = _purpose_name(purpose)
+    if first and first not in semantics.ARCHETYPES:
+        notes.append(f"district_purpose_unknown: '{purpose}' ignored")
+        first = ""
+
+    fixed: List[Optional[str]] = [None] * k
+    for d, value in enumerate(list(proposals or [])[:k]):
+        name = _purpose_name(value)
+        if name in semantics.ARCHETYPES:
+            fixed[d] = name
+        else:
+            notes.append(f"district_purpose_unknown: '{name}' ignored (District {d})")
+    if fixed[0] is None and first:
+        fixed[0] = first
+
+    parents = _parents(part)
+    levels = [0] * k
+    if pinned and first:
+        purposes = [first] * k
+        notes.append(f"district_purpose_pinned: every District is {first}")
+    elif rel == "abandoned_vs_active":
+        base = fixed[0] or rng.choice(PURPOSES)
+        purposes = [fixed[d] or base for d in range(k)]
+        levels = [0] + [1] * (k - 1)
+    else:
+        table = COMPATIBLE if rel == "sequential" else CONTRASTS
+        # Pairs to check: those with a free end (two proposals are taken as given).
+        threshold_pairs = [(parents[d], d) for d in range(1, k)
+                           if fixed[d] is None or fixed[parents[d]] is None]
+        all_pairs = [(a, b) for a, b in itertools.combinations(range(k), 2)
+                     if fixed[a] is None or fixed[b] is None]
+
+        def near(cur):
+            return all(cur[a] in table[cur[b]] for a, b in threshold_pairs)
+
+        if rel == "sequential":
+            tiers = [near]
+        else:
+            def every(cur):
+                return all(cur[a] in CONTRASTS[cur[b]] for a, b in all_pairs)
+            tiers = [every, near]
+        tiers.append(lambda cur: True)
+        for i, ok in enumerate(tiers):
+            found = _solutions(k, fixed, ok)
+            if found:
+                break
+        if i == len(tiers) - 1:
+            notes.append(f"district_purposes_relaxed: no {rel} set fits "
+                         f"{[p for p in fixed if p]}; Purposes only distinct")
+        purposes = found[rng.randrange(len(found))]
+
+    districts = [DistrictSpec(id=d, purpose=purposes[d], relationship=rel) for d in range(k)]
+    for d in range(k):
+        semantics.set_district_palette(districts[d], levels[d])
+    semantics.separate_threshold_palettes(
+        districts, [(parents[d], d) for d in range(1, k)])
+    return districts, notes
+
+
+def fill_district_rooms(districts: Sequence[DistrictSpec], part: Partition,
+                        rooms: Sequence, entrance: int) -> None:
+    """Fill each District's ``room_ids``, ``entrance_room`` and ``climax_room``
+    from the partition (room ids from *rooms*, indexed as ``part.assign``)."""
+    entrances = district_entrances(part, entrance)
+    climaxes = district_climaxes(part, part.edges, entrance)
+    for d in districts:
+        d.room_ids = [rooms[i].id for i, a in enumerate(part.assign) if a == d.id]
+        d.entrance_room = rooms[entrances[d.id]].id
+        d.climax_room = rooms[climaxes[d.id]].id
