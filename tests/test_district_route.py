@@ -149,7 +149,7 @@ def _cli(tmp_path, *argv):
 def test_cli_districts(monkeypatch, tmp_path):
     monkeypatch.setattr(tempfile, "tempdir", tempfile.tempdir)
     side, spec = _cli(tmp_path, "--rooms", "10", "--layout", "classic", "--districts",
-                      "--district-purpose", "temple", "--district-relationship", "factional")
+                      "--district-theme", "temple", "--district-relationship", "factional")
     _check_districts(side, spec)
     assert spec["districts"][0]["purpose"] == "temple"
     assert spec["districts"][0]["relationship"] == "factional"
@@ -165,7 +165,7 @@ def test_cli_city_notes_the_switch(monkeypatch, tmp_path, capsys):
 
 def test_cli_takes_at_most_three_purposes(tmp_path):
     with pytest.raises(SystemExit):
-        main.main(["generate", "dz", "--districts", *["--district-purpose", "tomb"] * 4,
+        main.main(["generate", "dz", "--districts", *["--district-theme", "tomb"] * 4,
                    "--output", str(tmp_path)])
 
 

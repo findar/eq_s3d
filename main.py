@@ -481,7 +481,7 @@ def main(argv: list[str] | None = None) -> None:
     g.add_argument("--districts", dest="districts", action="store_true",
                    help="Dungeon: split the zone into contrasting areas (Districts) joined by "
                         "one corridor each (ignored with a note on other zone types)")
-    g.add_argument("--district-purpose", dest="district_plan", action="append",
+    g.add_argument("--district-theme", dest="district_plan", action="append",
                    choices=VALID_DUNGEON_THEMES, default=None, metavar="PURPOSE",
                    help="With --districts: one District's Purpose, in District order; repeat "
                         f"for up to {MAX_DISTRICT_PROPOSALS} (the rest follow the relationship)")
@@ -535,7 +535,7 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(f"--{opt.replace('_', '-')} only applies to --zone-type "
                          "dungeon, city or outdoor_dungeon")
     if len(getattr(args, "district_plan", None) or ()) > MAX_DISTRICT_PROPOSALS:
-        parser.error(f"--district-purpose names at most {MAX_DISTRICT_PROPOSALS} Districts")
+        parser.error(f"--district-theme names at most {MAX_DISTRICT_PROPOSALS} Districts")
     # As --edges / --trees: a graph layout or a rule set on a zone type that
     # doesn't take them is a usage error (the default classic is a no-op).
     if canonical_zone_type(args.zone_type) not in LAYOUT_ZONE_TYPES:

@@ -56,7 +56,7 @@ touches generation proves it with
   - Owns: ai/schema.py, ai/expand.py, ai/rule_planner.py, ai/llm_planner.py, ai/prompts/, tests/test_district_plan.py
   - Reqs: 4.1, 4.2
 
-- [ ] 5. CLI, Server and sidecar
+- [x] 5. CLI, Server and sidecar
   - Card: [cards/05-route.md](cards/05-route.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: main.py, server/app.py, generators/builder.py, generators/zone_spec.py (a notes field only), generators/pipeline.py (passing the notes only), tests/test_district_route.py
