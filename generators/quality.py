@@ -9,8 +9,9 @@ The graph: the rooms are the nodes; a corridor is an edge when both ``from_room`
 aren't edges). Parallel corridors between one pair count once.
 
 The bands are data (``BAND_TABLE``), keyed by zone type, layout (``classic`` or ``graph``),
-room count and verticality (quality requirements A1). The table is empty until the sweep of
-task 2 fills it, so every band is unbounded and every spec passes.
+room count and verticality (quality requirements A1), calibrated by the sweep of task 2
+(``scripts/quality_sweep.py``) so the generator's ordinary output passes and only its dull
+tail fails.
 
 The meter never marks a report degraded: ``degraded`` and ``reason`` are set by the pipeline
 (``quality_degraded``, ``quality_outside_bands_pinned``, ``edit_outside_bands``).
@@ -53,11 +54,93 @@ DEFAULT_VERTICALITY = "moderate"
 # Height of one elevation bin (u) for ``elevation_levels``.
 LEVEL_BIN = 8.0
 
-# The band table (task 2 fills it from the sweep). Key: (zone_type, layout, verticality);
-# value: rows ``(n_lo, n_hi, {metric: band})`` for room counts n_lo..n_hi inclusive, the
-# first matching row winning. A metric a row leaves out is unbounded.
+# The band table. Key: (zone_type, layout, verticality); value: rows
+# ``(n_lo, n_hi, {metric: band})`` for room counts n_lo..n_hi inclusive, the first matching
+# row winning. A metric a row leaves out is unbounded.
 BandRow = Tuple[int, int, Dict[str, Band]]
+
+# Calibrated by ``scripts/quality_sweep.py`` (task 2, archive decision 4): each bound sits on
+# the metric's dull side (low loops, roles, size spread or height; high dead ends, hub degree
+# or a climax at the end of one long path) at the nearest round value failing at most 1% of
+# the row's Draws (0.5% for the outdoor dungeon, whose Draw builds a World), so a key fails
+# a few percent at most. ``room_type_diversity`` (capped by the theme's room types over N),
+# ``branching_factor`` (repeats ``max_degree``) and ``district_balance`` (no Districts yet)
+# are unbounded; so is ``critical_path_ratio`` on a graph layout, whose climax sits near the
+# entrance by design. Elevation is bounded only off ``flat``. Classic dungeon and city share
+# one layout generator, and verticality moves rooms up and down, not the graph, so a layout
+# has one topology table and an elevation table per verticality.
+_CLASSIC: List[BandRow] = [
+    (4, 5, {"size_cv": (0.2, None)}),
+    (6, 9, {"size_cv": (0.25, None), "dead_end_ratio": (None, 0.7)}),
+    (10, 15, {"role_diversity": (4.0, None), "size_cv": (0.3, None),
+              "dead_end_ratio": (None, 0.6), "critical_path_ratio": (None, 0.9)}),
+    (16, 22, {"size_cv": (0.3, None), "dead_end_ratio": (None, 0.45),
+              "critical_path_ratio": (None, 0.75)}),
+    (23, 30, {"role_diversity": (5.0, None), "size_cv": (0.3, None),
+              "dead_end_ratio": (None, 0.4), "critical_path_ratio": (None, 0.7)}),
+]
+_GRAPH: List[BandRow] = [
+    (4, 5, {"size_cv": (0.15, None)}),
+    (6, 9, {"role_diversity": (4.0, None), "size_cv": (0.2, None)}),
+    (10, 15, {"size_cv": (0.3, None), "max_degree": (None, 5.0),
+              "dead_end_ratio": (None, 0.65)}),
+    (16, 22, {"size_cv": (0.3, None), "dead_end_ratio": (None, 0.55)}),
+    (23, 30, {"cyclomatic": (1.0, None), "role_diversity": (5.0, None),
+              "size_cv": (0.35, None), "max_degree": (None, 5.0),
+              "dead_end_ratio": (None, 0.45)}),
+]
+_OUTDOOR_CLASSIC: List[BandRow] = [
+    (4, 9, {}),
+    (10, 15, {"critical_path_ratio": (None, 0.85)}),
+    (16, 22, {"dead_end_ratio": (None, 0.5)}),
+    (23, 30, {"size_cv": (0.3, None), "dead_end_ratio": (None, 0.45)}),
+]
+_OUTDOOR_GRAPH: List[BandRow] = [
+    (4, 22, {}),
+    (23, 30, {"size_cv": (0.3, None), "max_degree": (None, 5.0)}),
+]
+# Elevation by verticality, merged into the topology rows of the same room range.
+_CLASSIC_ELEVATION: Dict[str, Dict[Tuple[int, int], Dict[str, Band]]] = {
+    "moderate": {
+        (16, 22): {"elevation_range": (8.0, None), "elevation_levels": (2.0, None)},
+        (23, 30): {"elevation_range": (15.0, None), "elevation_levels": (3.0, None)},
+    },
+    "dramatic": {
+        (6, 9): {"elevation_range": (1.0, None)},
+        (10, 15): {"elevation_range": (10.0, None), "elevation_levels": (2.0, None)},
+        (16, 22): {"elevation_range": (20.0, None), "elevation_levels": (3.0, None)},
+        (23, 30): {"elevation_range": (31.0, None), "elevation_levels": (5.0, None)},
+    },
+}
+_GRAPH_ELEVATION: Dict[str, Dict[Tuple[int, int], Dict[str, Band]]] = {
+    "moderate": {
+        (10, 15): {"elevation_range": (7.0, None), "elevation_levels": (2.0, None)},
+        (16, 22): {"elevation_range": (97.0, None)},
+        (23, 30): {"elevation_range": (102.0, None)},
+    },
+    "dramatic": {
+        (6, 9): {"elevation_range": (18.0, None), "elevation_levels": (2.0, None)},
+        (10, 15): {"elevation_range": (101.0, None), "elevation_levels": (3.0, None)},
+        (16, 22): {"elevation_range": (102.0, None)},
+        (23, 30): {"elevation_range": (116.0, None)},
+    },
+}
+
+
+def _merge(rows: List[BandRow],
+           elevation: Optional[Dict[Tuple[int, int], Dict[str, Band]]] = None) -> List[BandRow]:
+    elevation = elevation or {}
+    return [(lo, hi, {**bands, **elevation.get((lo, hi), {})}) for lo, hi, bands in rows]
+
+
 BAND_TABLE: Dict[Tuple[str, str, str], List[BandRow]] = {}
+for _v in ("flat", "moderate", "dramatic"):
+    for _zt in ("dungeon", "city"):
+        BAND_TABLE[(_zt, "classic", _v)] = _merge(_CLASSIC, _CLASSIC_ELEVATION.get(_v))
+    BAND_TABLE[("dungeon", "graph", _v)] = _merge(_GRAPH, _GRAPH_ELEVATION.get(_v))
+    BAND_TABLE[("outdoor_dungeon", "classic", _v)] = _merge(_OUTDOOR_CLASSIC)
+    BAND_TABLE[("outdoor_dungeon", "graph", _v)] = _merge(_OUTDOOR_GRAPH)
+del _v, _zt
 
 
 @dataclass

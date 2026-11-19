@@ -39,7 +39,7 @@ alone; say so in the commit body).
   - Owns: generators/quality.py, tests/test_quality.py
   - Reqs: 1
 
-- [ ] 2. Calibrate the bands
+- [x] 2. Calibrate the bands
   - Card: [cards/02-bands.md](cards/02-bands.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: scripts/quality_sweep.py, generators/quality.py (the band table only), .kiro/specs/zone-generator-quality/archive.md
