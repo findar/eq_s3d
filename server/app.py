@@ -38,7 +38,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr
 
 from core.env import env_value
 from core.paths import OutputRoot, assert_output_allowed, new_zone_id
-from generators.builder import with_decor_layers
+from generators.builder import with_decor_layers, with_district_notes
 from generators.pipeline import (
     REASON_DEGRADED, REASON_EDIT, REASON_PINNED, generate_validated, GenerationFailed,
 )
@@ -625,7 +625,9 @@ class GenerateRequest(BaseModel):
                     "only), decor (none/sparse/normal/dense, \"\" for normal) and "
                     "decor_seed (dungeon, city and outdoor_dungeon only), decor_layers "
                     "(decor layers on top of the dungeon theme's, from /api/controls), rooms_seed "
-                    "(the rooms and Sites; every zone type), …",
+                    "(the rooms and Sites; every zone type), districts (true for contrasting "
+                    "areas), district_plan (up to 3 Purposes) and district_relationship "
+                    "(dungeon only; on another zone type a districts_ignored warning), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.
@@ -917,7 +919,10 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
 
         def factory(s: int, rooms_seed: Optional[int] = None):
             # ``rooms_seed`` is the pipeline's rooms reroll on a gate failure (task 19).
-            return plan_to_spec(_rooms(plan, rooms_seed), seed=s)
+            # A fresh notes list per spec: a retry's District notes are its own.
+            notes: list[str] = []
+            return with_district_notes(plan_to_spec(_rooms(plan, rooms_seed), seed=s,
+                                                    warnings=notes), notes)
     else:
         # Control-driven: the ``controls`` sub-object drives it, with the legacy
         # flat fields filling any key it doesn't name. The raw zone type is
@@ -978,10 +983,11 @@ def _generate(req: GenerateRequest, zone_id: str, version: int, *,
         rooms = plan.room_count
 
         def factory(s: int, rooms_seed: Optional[int] = None):
-            return with_decor_layers(
-                plan_to_spec(_rooms(plan, rooms_seed), seed=s, edges=edges, trees=trees,
-                             trees_source="controls", sites_source=sites_source),
-                plan.decor_layers)
+            notes: list[str] = []
+            spec = plan_to_spec(_rooms(plan, rooms_seed), seed=s, edges=edges, trees=trees,
+                                trees_source="controls", sites_source=sites_source,
+                                warnings=notes)
+            return with_decor_layers(with_district_notes(spec, notes), plan.decor_layers)
 
     # Build + traversability gate. On gated themes a failing dungeon seed is
     # never returned: the pipeline retries on fresh seeds (bounded by attempts +
@@ -1537,8 +1543,8 @@ def list_versions(zone: str):
     its ``seeds``, ``created`` and ``took_ms`` (from its ``request.json``; ``created``
     falls back to the sidecar's time), ``edit`` (an edit's ``{text, ops}``, from its sidecar's
     ``edit`` block; ``None`` for a version no edit made), ``quality`` (``{degraded, reason}``
-    from its sidecar's ``quality`` entry; ``None`` for a version with none) and the URLs that
-    open it."""
+    from its sidecar's ``quality`` entry; ``None`` for a version with none), ``districts`` (its
+    Districts' Purposes from its sidecar; ``[]`` when it has none) and the URLs that open it."""
     zone_dir = _zone_dir(zone)
     versions = []
     for n, vdir in sorted(_version_dirs(zone_dir).items()):
@@ -1564,6 +1570,10 @@ def list_versions(zone: str):
             # zone-generator-quality Req 4.4: null for a version built before step 19.
             "quality": ({"degraded": bool(q.get("degraded")), "reason": q.get("reason")}
                         if isinstance(q, dict) else None),
+            # districts spec Req 4.4: each District's Purpose, in id order; [] for a
+            # one-District version and for one built before step 20.
+            "districts": [str(d.get("purpose", "")) for d in sidecar.get("districts") or ()
+                          if isinstance(d, dict)],
             "glb_url": f"{base}/{zone}.glb", "zone_url": f"{base}/{zone}.zone.json",
             "map_url": f"{base}/{zone}.map.svg", "eqg_url": f"{base}/{zone}.eqg",
         })

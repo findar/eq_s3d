@@ -589,11 +589,11 @@ def test_serialized_output_has_no_theme_key():
 # CONCATENATION so this file never contains the literal control id / option
 # name, and it stays excluded from the generic ``*.py`` scans by ``_THIS_REL``.
 
-# The seven forbidden control ids / CLI option names (Req 2.3). Built so the
+# The forbidden control ids / CLI option names (Req 2.3). District left the list when
+# Districts landed (districts spec task 5); the page and CLI call a Purpose "theme". Built so the
 # literals don't appear verbatim in this file.
 _FORBIDDEN_CONTROLS = (
     "top" + "ology",
-    "dis" + "trict",
     "pur" + "pose",
     "buil" + "der",
     "inhab" + "itants",
@@ -647,6 +647,7 @@ _ALLOWED_CLI_OPTIONS = {
     "--decor", "--decor-seed",  # Props in rooms (room-decor spec task 10)
     "--decor-layer",  # decor layers on top of the theme's (decor-rules spec task 2)
     "--rooms-seed",  # rooms and Sites on the same World (world-sockets spec task 8)
+    "--districts", "--district-theme", "--district-relationship",  # Districts (districts spec task 5)
     # the export command (export spec task 6), not generate's
     "--shortname", "--clear-spawns",
     # an edit of a Server zone (zone-generator-edits task 4), not generate's
@@ -710,7 +711,7 @@ def _cli_option_strings():
 def test_no_forbidden_control_ids_in_web_app():
     """web/index.html carries no richer-mode control (Req 2.3).
 
-    None of topology / district / purpose / builder / inhabitants / condition /
+    None of topology / purpose / builder / inhabitants / condition /
     element may appear as a control id, and the input controls must be exactly
     the geometry slice (zone-type, rooms, size, verticality, locks) plus the
     header description (prompt) and seed. A leak here means a control from a
@@ -736,7 +737,7 @@ def test_no_forbidden_control_ids_in_web_app():
 def test_no_forbidden_options_in_cli():
     """main.py's generate command carries no richer-mode option (Req 2.3).
 
-    None of topology / district / purpose / builder / inhabitants / condition /
+    None of topology / purpose / builder / inhabitants / condition /
     element may appear as an option name, and the registered options must be a
     subset of the geometry slice plus name/output/ter-version/no-validate (and
     the deprecated aliases). A leak means a wider-surface option was added to

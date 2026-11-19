@@ -28,6 +28,7 @@ from ai.schema import (
     LAYOUT_ZONE_TYPES, SCALE_CONTROLS, VALID_FEATURES, VALID_LAYOUTS, ZonePlan, available_overlays,
     available_rule_sets, available_wall_styles, VALID_SITES, available_inhabitants,
     DECOR_ZONE_TYPES, DEFAULT_DECOR, VALID_DECOR, decor_layers,
+    MAX_DISTRICT_PROPOSALS, VALID_DISTRICT_RELATIONSHIPS, VALID_DUNGEON_THEMES,
 )
 from core.env import env_value
 from core.paths import (
@@ -36,7 +37,7 @@ from core.paths import (
     assert_output_allowed,
     new_zone_id,
 )
-from generators.builder import BUILD_NAME_RE, with_decor_layers
+from generators.builder import BUILD_NAME_RE, with_decor_layers, with_district_notes
 from generators.pipeline import generate_validated, GenerationFailed
 from generators.quality import quality_summary
 from generators.zone_types import (
@@ -50,8 +51,9 @@ from generators.zone_types import (
 #
 # Every one raises ``argparse.ArgumentTypeError`` for an out-of-domain value,
 # so argparse exits 2 DURING parse_args — before ``cmd_generate`` runs and so
-# before any build or write. The geometry-slice controls are the ONLY surface:
-# there is no target / topology / district / content option (Req 2.3, 8.1).
+# before any build or write. The geometry-slice controls are the surface, plus the
+# options later steps added (the Districts are step 20's); there is no target /
+# topology option (Req 2.3, 8.1).
 # ---------------------------------------------------------------------------
 
 def _enabled_set_str() -> str:
@@ -216,6 +218,13 @@ def cmd_generate(args) -> None:
                 "decor", "decor_seed", "decor_layers", "rooms_seed"):
         if getattr(args, key, None) is not None:
             controls[key] = getattr(args, key)
+    # Districts (districts spec Req 4.3): only named when given, so a run without them
+    # plans as before. On a zone type other than a dungeon they are ignored with a note (A2).
+    if getattr(args, "districts", False):
+        controls["districts"] = True
+    for key in ("district_plan", "district_relationship"):
+        if getattr(args, key, None) is not None:
+            controls[key] = getattr(args, key)
     # Sites (wilderness / outdoor dungeon): only named when given, so the
     # sidecar says who set them.
     sites_source = None
@@ -238,9 +247,10 @@ def cmd_generate(args) -> None:
     def factory(seed, rooms_seed=None):
         # ``rooms_seed`` is the pipeline's rooms reroll on a gate failure (task 19).
         p = plan if rooms_seed is None else dataclasses.replace(plan, rooms_seed=rooms_seed)
-        return with_decor_layers(plan_to_spec(p, seed=seed, edges=edges, trees=trees,
-                                              trees_source="cli", sites_source=sites_source),
-                                 p.decor_layers)
+        notes: list = []      # fresh per spec: a retry's District notes are its own
+        spec = plan_to_spec(p, seed=seed, edges=edges, trees=trees, trees_source="cli",
+                            sites_source=sites_source, warnings=notes)
+        return with_decor_layers(with_district_notes(spec, notes), p.decor_layers)
 
     # Build through the shared validated pipeline, so the CLI gets the same
     # "every room reachable on foot" guarantee as the server (dungeon/box
@@ -301,6 +311,8 @@ def cmd_generate(args) -> None:
         print(f"  Traversability: ungated zone type '{zone_type}' (not validated)")
     if vb.quality is not None:
         print_quality(quality_summary(vb.quality))
+    for note in vb.spec.notes:          # District notes, also in the sidecar's warnings
+        print(f"  note: {note}")
 
 
 def cmd_export(args) -> None:
@@ -466,6 +478,16 @@ def main(argv: list[str] | None = None) -> None:
     g.add_argument("--rooms-seed", dest="rooms_seed", type=_rooms_seed_arg, default=None,
                    help="Reroll the rooms and Sites on the same World (0-2147483647); "
                         "default: the zone's seed")
+    g.add_argument("--districts", dest="districts", action="store_true",
+                   help="Dungeon: split the zone into contrasting areas (Districts) joined by "
+                        "one corridor each (ignored with a note on other zone types)")
+    g.add_argument("--district-theme", dest="district_plan", action="append",
+                   choices=VALID_DUNGEON_THEMES, default=None, metavar="PURPOSE",
+                   help="With --districts: one District's Purpose, in District order; repeat "
+                        f"for up to {MAX_DISTRICT_PROPOSALS} (the rest follow the relationship)")
+    g.add_argument("--district-relationship", dest="district_relationship",
+                   choices=VALID_DISTRICT_RELATIONSHIPS, default=None,
+                   help="With --districts: how the Districts relate (default sequential)")
     g.add_argument("--output", default="output", help="Output directory")
     g.add_argument("--ter-version", type=int, default=2, choices=[2, 3])
     g.add_argument("--no-validate", "--allow-invalid", dest="no_validate",
@@ -512,6 +534,8 @@ def main(argv: list[str] | None = None) -> None:
                 and canonical_zone_type(args.zone_type) not in DECOR_ZONE_TYPES):
             parser.error(f"--{opt.replace('_', '-')} only applies to --zone-type "
                          "dungeon, city or outdoor_dungeon")
+    if len(getattr(args, "district_plan", None) or ()) > MAX_DISTRICT_PROPOSALS:
+        parser.error(f"--district-theme names at most {MAX_DISTRICT_PROPOSALS} Districts")
     # As --edges / --trees: a graph layout or a rule set on a zone type that
     # doesn't take them is a usage error (the default classic is a no-op).
     if canonical_zone_type(args.zone_type) not in LAYOUT_ZONE_TYPES:

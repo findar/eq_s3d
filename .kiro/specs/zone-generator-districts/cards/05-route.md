@@ -8,14 +8,15 @@ Index entry: `tasks.md` task 5. Requirements 4.3, 4.4. Design "Plan, prompt and 
 `districts` list and each corridor's `threshold`.
 
 ## Done when
-- [ ] A districted dungeon through the route and the CLI: the sidecar's `districts` matches the
+- [x] A districted dungeon through the route and the CLI: the sidecar's `districts` matches the
       spec, rooms carry their District, Threshold corridors are flagged; a city with Districts on
       builds with the note in `warnings`. → verify: `python -m pytest tests/test_district_route.py -q`
-- [ ] A rebuild or edit of a districted version keeps its Districts. Same command.
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] A rebuild or edit of a districted version keeps its Districts. Same command.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 Never `match` with `^…$` on ids (lessons-learned). Old sidecars have no `districts`: the listing
 and the page read it as empty.
 
 ## Result
+✔ bfb4f47 + lead fix · 3716 passed (3715 + the hygiene test, fixed by the lead: `district` off the banned list, flag renamed `--district-theme`)
