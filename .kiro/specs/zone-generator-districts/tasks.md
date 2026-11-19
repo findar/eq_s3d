@@ -59,7 +59,8 @@ touches generation proves it with
 - [ ] 5. CLI, Server and sidecar
   - Card: [cards/05-route.md](cards/05-route.md)
   - Type: agent · Size: M · Depends: 4
-  - Owns: main.py, server/app.py, generators/builder.py, tests/test_district_route.py
+  - Owns: main.py, server/app.py, generators/builder.py, generators/zone_spec.py (a notes field only), generators/pipeline.py (passing the notes only), tests/test_district_route.py
+  - (Owns widened by the lead after task 4: the notes need a path to the sidecar.)
   - Reqs: 4.3, 4.4
 
 - [ ] 6. Bands for Districts

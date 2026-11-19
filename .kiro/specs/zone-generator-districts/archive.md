@@ -36,5 +36,9 @@ user's design review). The user confirms at the first look (task 9).
    `DISTRICT_ATTEMPTS`), since the pipeline's plan errors don't cover `ValueError`. Failing Draws:
    classic 15.7%, graph 3.0%; over 200 generates per layout none failed. The design's fallback
    (waypoint to A's District) barely helped and was dropped. Notes go to `gen.warnings`.
+10. **The plan** (task 4, `ff0021a`): a plan pins when it proposes one Purpose two or more times
+    with none open; a theme alone doesn't pin. A District phrase with no room count raises a dungeon
+    to 8 rooms (2 areas) or 14 (3). Notes collect in `plan_to_spec(..., warnings=[])`; task 5 carries
+    them to the response and sidecar (a `ZoneSpec` notes field if rebuilds must keep them).
 
 ## Follow-ups
