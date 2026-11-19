@@ -88,6 +88,12 @@
         <label class="field"><span>Locks</span>
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>
+        <!-- Dungeon only: split the rooms into 2-3 Districts, each with its own
+             theme (districts spec Req 6.1). A build whose plan had them on
+             ticks it (main.ts). -->
+        <label class="field" title="Split the dungeon into 2–3 areas, each with its own theme, joined by one corridor each"><span>Districts</span>
+          <input type="checkbox" id="districts" />
+        </label>
       </fieldset>
 
       <!-- Dungeon and outdoor dungeon only: the layout engine, and (Graph

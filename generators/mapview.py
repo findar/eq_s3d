@@ -125,6 +125,76 @@ def _props_group(props: "PropMarks", px, py) -> str:
     return "".join(parts)
 
 
+# District hull colours by District id (districts spec Req 6.2): light fills so the
+# rooms read through. A fourth District, should one ever exist, wraps round.
+_DISTRICT_FILL = ("#4fc3f7", "#ffb74d", "#aed581", "#f48fb1")
+_THRESHOLD_STROKE = "#e0c068"
+
+
+def _district_fill(did: int) -> str:
+    return _DISTRICT_FILL[did % len(_DISTRICT_FILL)]
+
+
+def district_label(did: int, purpose: str) -> str:
+    """How the map and the page name a District: 1-based, with its Purpose ("District 1 — tomb")."""
+    return f"District {did + 1}" + (f" — {purpose}" if purpose else "")
+
+
+def _convex_hull(points: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    """Andrew's monotone chain; counter-clockwise, no repeated end point."""
+    pts = sorted(set(points))
+    if len(pts) <= 2:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: List[Tuple[float, float]] = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper: List[Tuple[float, float]] = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def _room_corners(r) -> List[Tuple[float, float]]:
+    """A room's footprint points: its Outline's vertices when shaped, else its Box corners."""
+    if r.outline is not None and r.outline.verts:
+        return [(float(v[0]), float(v[1])) for v in r.outline.verts]
+    hw, hd = r.width / 2, r.depth / 2
+    return [(r.center_x - hw, r.center_y - hd), (r.center_x + hw, r.center_y - hd),
+            (r.center_x + hw, r.center_y + hd), (r.center_x - hw, r.center_y + hd)]
+
+
+def _districts_group(spec: ZoneSpec, px, py) -> str:
+    """One convex hull per District over its rooms' footprints, a light fill per District id
+    (districts spec Req 6.2). Only drawn for a zone of two or more Districts."""
+    rooms_by_id = {r.id: r for r in spec.rooms}
+    parts = ['<g id="districts">']
+    for d in spec.districts:
+        pts: List[Tuple[float, float]] = []
+        for rid in d.room_ids:
+            r = rooms_by_id.get(rid)
+            if r is not None:
+                pts += _room_corners(r)
+        hull = _convex_hull(pts)
+        if len(hull) < 3:
+            continue
+        colour = _district_fill(d.id)
+        poly = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in hull)
+        parts.append(f'<polygon class="district" data-district="{d.id}" points="{poly}" '
+                     f'fill="{colour}" fill-opacity="0.12" stroke="{colour}" stroke-opacity="0.6" '
+                     f'stroke-width="1.5" stroke-dasharray="8 4" stroke-linejoin="round">'
+                     f'<title>{_esc(district_label(d.id, d.purpose))}</title></polygon>')
+    parts.append("</g>")
+    return "".join(parts)
+
+
 def frame_attrs(a: float, b: float, s: float) -> str:
     """The map's world-to-pixel frame as attributes on the root ``<svg>``: world (x, y)
     is drawn at ``u = a + s·x``, ``v = b − s·y``. Nothing drawn reads them; the page
@@ -205,12 +275,25 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     if outline is not None:
         parts.append(_outline_group(outline, px, py))
 
+    # ---- District hulls (after the outline, under the corridors and rooms) ----
+    has_districts = len(spec.districts) >= 2
+    if has_districts:
+        parts.append(_districts_group(spec, px, py))
+
     # ---- Corridors (drawn first, under the rooms) ----
     if outline is None:
         for c in spec.corridors:
             x1, y1 = px(c.from_x), py(c.from_y)
             x2, y2 = px(c.to_x), py(c.to_y)
             cw = max(2.0, c.width * scale)
+            if c.threshold:
+                # A Threshold (the one corridor joining two Districts): heavier.
+                parts.append(
+                    f'<line class="threshold" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" '
+                    f'y2="{y2:.1f}" stroke="{_THRESHOLD_STROKE}" stroke-width="{cw * 1.5 + 2:.1f}" '
+                    f'stroke-linecap="round"/>'
+                )
+                continue
             parts.append(
                 f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
                 f'stroke="#5c6b73" stroke-width="{cw:.1f}" stroke-linecap="round"/>'
@@ -223,6 +306,15 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
             route = corridor_route(c, rooms_by_id)
             pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in route.waypoints)
             cw = max(1.0, c.width * scale * 0.25)
+            if c.threshold:
+                # A Threshold: heavier and opaque, so the District boundary reads.
+                parts.append(
+                    f'<polyline class="threshold" points="{pts}" fill="none" '
+                    f'stroke="{_THRESHOLD_STROKE}" stroke-opacity="0.9" '
+                    f'stroke-width="{cw * 2.5 + 1:.1f}" '
+                    f'stroke-linecap="round" stroke-linejoin="round"/>'
+                )
+                continue
             parts.append(
                 f'<polyline points="{pts}" fill="none" stroke="#5c6b73" '
                 f'stroke-opacity="0.45" stroke-width="{cw:.1f}" '
@@ -335,8 +427,10 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         parts.append(_sites_group(sites, px, py))
 
     has_doors = any(c.transition is not None and c.transition.form == "frame" for c in spec.corridors)
+    districts = ([(_district_fill(d.id), district_label(d.id, d.purpose)) for d in spec.districts]
+                 if has_districts else [])
     parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites),
-                         bool(props)))
+                         bool(props), districts))
 
     # ---- Scale bar (world units) ----
     parts.append(_scale_bar(scale, padding, h))
@@ -349,7 +443,11 @@ _DOOR_SPOT = "#e0a458"
 
 
 def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_doors: bool = False,
-            has_sites: bool = False, has_props: bool = False) -> str:
+            has_sites: bool = False, has_props: bool = False,
+            districts: Optional[List[Tuple[str, str]]] = None) -> str:
+    """The key, top right. *districts* ((colour, "District 1 — tomb") in id order, only for a
+    zone of two or more Districts) adds a swatch per District and a ``threshold`` line, and
+    widens the box to fit; without it the legend is unchanged."""
     items = [
         ("#2e7d32", "entrance"),
         ("#1565c0", "hub"),
@@ -365,13 +463,20 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_
     if has_props:
         items.append((_PROP_FILL, "prop"))
     # Outline entries get a line swatch (solid wall, dashed ledge), not a box.
-    lines = [("", "wall"), (' stroke-dasharray="4 3"', "ledge")] if has_outline else []
+    # (stroke, width, extra attributes, label)
+    lines = ([(_BAND_STROKE[0], 2, "", "wall"), (_BAND_STROKE[0], 2, ' stroke-dasharray="4 3"', "ledge")]
+             if has_outline else [])
+    if districts:
+        items += list(districts)
+        lines.append((_THRESHOLD_STROKE, 4, "", "threshold"))
 
-    lx = w - 118
+    # 118 wide; District labels are longer (about 6 px a character at 10 px sans).
+    bw = 118 if not districts else max(118, 30 + 6 * max(len(lab) for _, lab in items))
+    lx = w - bw
     ly = 14
     parts = [f'<g font-family="sans-serif" font-size="10" fill="#cdd6db">']
     parts.append(
-        f'<rect x="{lx - 8:.0f}" y="{ly - 8:.0f}" width="118" '
+        f'<rect x="{lx - 8:.0f}" y="{ly - 8:.0f}" width="{bw}" '
         f'height="{(len(items) + len(lines)) * 16 + 8:.0f}" rx="4" fill="#0a0a12" '
         f'fill-opacity="0.75" stroke="#2a2a38"/>'
     )
@@ -380,12 +485,12 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_
         parts.append(
             f'<rect x="{lx:.0f}" y="{yy:.0f}" width="10" height="10" rx="2" fill="{color}"/>'
         )
-        parts.append(f'<text x="{lx + 16:.0f}" y="{yy + 9:.0f}">{label}</text>')
-    for j, (dash, label) in enumerate(lines):
+        parts.append(f'<text x="{lx + 16:.0f}" y="{yy + 9:.0f}">{_esc(label)}</text>')
+    for j, (stroke, sw, dash, label) in enumerate(lines):
         yy = ly + (len(items) + j) * 16
         parts.append(
             f'<line x1="{lx:.0f}" y1="{yy + 5:.0f}" x2="{lx + 10:.0f}" y2="{yy + 5:.0f}" '
-            f'stroke="{_BAND_STROKE[0]}" stroke-width="2"{dash}/>'
+            f'stroke="{stroke}" stroke-width="{sw}"{dash}/>'
         )
         parts.append(f'<text x="{lx + 16:.0f}" y="{yy + 9:.0f}">{label}</text>')
     parts.append("</g>")

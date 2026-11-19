@@ -24,7 +24,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
-  fetchRoomDecor,
+  fetchRoomDecor, districtLabel,
   type RoomDecorParams, type RoomDecorReport, type ZoneSidecar,
 } from "./api";
 
@@ -319,8 +319,9 @@ export class RoomView {
     for (const r of rooms) {
       const b = el("button", "rv-room", r.id);
       const n = r.props?.length ?? 0;
+      const district = this.districtRow(r.id)[0]?.[1];
       b.title = `Open ${r.id} in the room view` + (r.semantic_type ? ` (${r.semantic_type})` : "") +
-        ` · ${n} Props`;
+        (district ? ` · ${district}` : "") + ` · ${n} Props`;
       const count = el("span", "rv-room-n", String(n));
       b.appendChild(count);
       b.addEventListener("click", () => this.open(r.id));
@@ -625,6 +626,15 @@ export class RoomView {
     this.syncUse();
   }
 
+  /** The room's District and its theme ("District 1 — tomb", districts spec Req 6.3), from
+   *  the build's sidecar; none on a zone of one District. */
+  private districtRow(roomId: string): [string, string][] {
+    const districts = this.build?.sidecar.districts ?? [];
+    if (districts.length < 2) return [];
+    const d = districts.find((x) => x.room_ids.includes(roomId));
+    return d ? [["District", districtLabel(d)]] : [];
+  }
+
   private fillList(report: RoomDecorReport): void {
     const list = this.list;
     list.replaceChildren();
@@ -635,6 +645,7 @@ export class RoomView {
       ...(r.room_type ? [["Type", r.room_type] as [string, string]] : []),
       ...(r.kind ? [["Kind", r.kind] as [string, string]] : []),
       ...(r.theme || r.race ? [["Theme", [r.theme, r.race].filter(Boolean).join(" · ")] as [string, string]] : []),
+      ...this.districtRow(r.id),
       ["Decor", `${report.control} · seed ${report.seed}`],
       ["Rules", report.layers.length ? report.layers.join(", ") : "base"],
       ...(report.sets.length ? [["Sets", report.sets.join(", ")] as [string, string]] : []),

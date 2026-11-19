@@ -69,7 +69,7 @@ touches generation proves it with
   - Owns: generators/quality.py, scripts/quality_sweep.py, tests/test_quality.py, .kiro/specs/zone-generator-districts/archive.md
   - Reqs: 5
 
-- [ ] 7. The page and the map
+- [x] 7. The page and the map
   - Card: [cards/07-page.md](cards/07-page.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: web/src/, web/index.html, generators/mapview.py, tests/test_hygiene.py (the web control id allowlist only)

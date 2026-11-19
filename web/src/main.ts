@@ -226,6 +226,10 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     }
     if (usesControl(p.zone_type, "decor") && p.decor) rows.push(["Decor", p.decor]);
     if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
+    // Districts: each one's theme, in id order (districts spec Req 6).
+    if (sidecar.districts?.length) {
+      rows.push(["Districts", sidecar.districts.map((d) => d.purpose || "—").join(", ")]);
+    }
     if (p.mood) rows.push(["Mood", p.mood]);
     for (const [k, v] of rows) {
       const div = document.createElement("div");
@@ -390,6 +394,16 @@ function updatePropsPanel(result: GenerateResult, sidecar: ZoneSidecar): void {
   }
 }
 
+// The Districts box mirrors the build on screen: a dungeon whose plan had
+// Districts on (a ticked box, or a prompt that asked for areas) ticks it, one
+// without unticks it (districts spec Req 6.1). Other zone types leave it be.
+const districtsBox = $("districts") as HTMLInputElement;
+
+function syncDistrictsBox(result: GenerateResult, sidecar: ZoneSidecar): void {
+  if (result.zone_type !== "dungeon") return;
+  districtsBox.checked = !!result.plan?.districts || (sidecar.districts?.length ?? 0) >= 2;
+}
+
 // ---- Generate ----
 // The seed box feeds both modes. Blank or non-numeric → omit (the server picks
 // a fresh random seed, the default "identical inputs still vary" behaviour). A
@@ -426,6 +440,8 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   decor: ["dungeon", "city", "wilderness", "outdoor_dungeon"],
   // Every zone type (server: rooms_seed on any plan).
   "rooms-seed": ["dungeon", "city", "wilderness", "outdoor_dungeon"],
+  // Dungeon only (server: DISTRICT_ZONE_TYPES; elsewhere a districts_ignored note).
+  districts: ["dungeon"],
 };
 
 function usesControl(zoneType: string, control: string): boolean {
@@ -570,6 +586,8 @@ async function doGenerate(mode: Mode) {
     const decorLayer = on("decor-layers") ? sel("decor-layers") : "";
     // The rooms seed: blank is left out (the zone's).
     const roomsSeed = on("rooms-seed") ? readStageSeed("rooms-seed") : undefined;
+    // Districts: sent only ticked (left out, the server's default: off).
+    const districts = on("districts") && districtsBox.checked;
     params = {
       mode,
       controls: {
@@ -591,6 +609,7 @@ async function doGenerate(mode: Mode) {
         ...(decorSeed !== undefined ? { decor_seed: decorSeed } : {}),
         ...(decorLayer ? { decor_layers: [decorLayer] } : {}),
         ...(roomsSeed !== undefined ? { rooms_seed: roomsSeed } : {}),
+        ...(districts ? { districts: true } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
     };
@@ -612,7 +631,8 @@ async function doGenerate(mode: Mode) {
       (decor !== undefined ? ` decor=${decor}` : "") +
       (decorSeed !== undefined ? ` decor_seed=${decorSeed}` : "") +
       (decorLayer ? ` decor_layers=${decorLayer}` : "") +
-      (roomsSeed !== undefined ? ` rooms_seed=${roomsSeed}` : "") + seedNote,
+      (roomsSeed !== undefined ? ` rooms_seed=${roomsSeed}` : "") +
+      (districts ? " districts=on" : "") + seedNote,
     );
   }
   await runGenerate(params);
@@ -832,6 +852,7 @@ async function showBuild(
   showToggle("t-regions", zoneScene.hasRegions());
   showToggle("t-gates", zoneScene.hasGates());
   updatePanel(result, sidecar);
+  syncDistrictsBox(result, sidecar);
   // The banner, indicator and Quality list: this version's sidecar entry.
   showQuality(sidecar.quality);
   syncVersionNav();
@@ -1168,7 +1189,7 @@ seedInput.addEventListener("keydown", (e) => {
 for (const id of ["zone-type", "rooms", "size", "verticality", "locks",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
-                  "decor", "decor-layers", "decor-seed", "rooms-seed"]) {
+                  "decor", "decor-layers", "decor-seed", "rooms-seed", "districts"]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });
