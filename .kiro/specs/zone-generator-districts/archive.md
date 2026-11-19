@@ -30,5 +30,11 @@ user's design review). The user confirms at the first look (task 9).
 8. **With Districts, a zone tint drives regions and lights but not the palette**: a lava temple
    split into Districts keeps its lava pools and light but loses its lava floor. Judged at the
    first look.
+9. **Crossing splits are guarded, then redrawn in the layout** (task 3, `195b918`): a split that
+   would join two Districts drops the edge (if still connected) or swaps it for the shortest clean
+   edge on the same pair; a Draw that still fails is redrawn inside `generate` (up to 8,
+   `DISTRICT_ATTEMPTS`), since the pipeline's plan errors don't cover `ValueError`. Failing Draws:
+   classic 15.7%, graph 3.0%; over 200 generates per layout none failed. The design's fallback
+   (waypoint to A's District) barely helped and was dropped. Notes go to `gen.warnings`.
 
 ## Follow-ups
