@@ -37,6 +37,7 @@ VALID_REGION_KINDS = ["water", "lava", "ice", "pvp", "zoneline", "generic"]
 VALID_DUNGEON_THEMES = [
     "fortress", "war_city", "warren", "temple", "tomb", "wizard_lair",
     "corrupted_sanctum", "mine_delve", "sunken_ruin", "lava_forge", "ice_keep",
+    "cave",
 ]
 VALID_DUNGEON_RACES = [
     "goblin", "froglok", "kobold", "lizardman", "gnoll", "sarnak", "troll",

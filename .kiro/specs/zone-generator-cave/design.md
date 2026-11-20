@@ -27,7 +27,9 @@ A Purpose is spread over these tables; `cave` needs an entry in each:
 
 Task 1 adds the name to `VALID_DUNGEON_THEMES` and `ARCHETYPES` at once. Rule validators that
 list the vocabulary (`room_scales`, `topology/ruleset`, `decor/rules`, `decor/catalogue`) accept a
-theme with no entry, so task 1 builds before tasks 2–3 fill the files; verify that.
+theme with no entry, but Room_Types are different: `room_layouts` needs a recipe in
+`rules/rooms/layouts.toml` for every `ROOM_TYPES` name, so task 1 adds empty ones
+(`features = []`) for the four new types and task 2 fills them.
 
 ## Room_Types (task 1)
 

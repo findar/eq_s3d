@@ -134,3 +134,16 @@ features = []
 
 [types.sump]
 features = []
+
+# --- the cave Purpose (step 21): placeholders until task 2 writes their recipes ---
+[types.cave_mouth]
+features = []
+
+[types.cavern]
+features = []
+
+[types.crystal_grotto]
+features = []
+
+[types.grotto]
+features = []

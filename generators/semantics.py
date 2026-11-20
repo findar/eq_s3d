@@ -73,6 +73,10 @@ _COLD = (0.45, 0.6, 0.85)
 _FIRE = (1.0, 0.45, 0.12)
 _ARCANE = (0.7, 0.45, 0.95)
 _GREEN = (0.5, 0.75, 0.55)
+# The cave Purpose's mood: blue-grey rock light, and a brighter crystal glow
+# (cold with an arcane edge) in its climax.
+_CAVE = (0.5, 0.58, 0.72)
+_CRYSTAL = (0.6, 0.72, 1.0)
 
 # The realizable room-type catalogue. Keyed by type name.
 ROOM_TYPES: Dict[str, RoomType] = {
@@ -162,6 +166,19 @@ ROOM_TYPES: Dict[str, RoomType] = {
                               light=_COLD, intensity=0.85,
                               props=("hoard pile", "scorched/frozen floor", "bones"),
                               encounter="the dragon; boss"),
+    # --- natural cave (the ``cave`` Purpose, step 21) ---
+    "cave_mouth":    RoomType("cave_mouth", footprint=1.2, ceiling=0.85, light=_CAVE, intensity=0.75,
+                              props=("daylight spill", "rock fall", "moss"),
+                              encounter="cave dwellers at the threshold"),
+    "cavern":        RoomType("cavern", footprint=1.35, ceiling=1.3, light=_CAVE, intensity=0.55,
+                              props=("stalagmites", "dripstone columns", "boulders"),
+                              encounter="cave beasts"),
+    "grotto":        RoomType("grotto", footprint=0.75, ceiling=0.8, light=_CAVE, intensity=0.45,
+                              props=("fungus clusters", "dripping water", "loose scree"),
+                              encounter="a lurking den creature"),
+    "crystal_grotto": RoomType("crystal_grotto", footprint=1.1, ceiling=1.3, light=_CRYSTAL, intensity=1.0,
+                              props=("crystal clusters", "glowing geode", "mirror pool"),
+                              encounter="crystal guardian; boss"),
 }
 
 
@@ -220,6 +237,9 @@ ARCHETYPES: Dict[str, Archetype] = {
     "ice_keep": Archetype(
         "ice_keep", entrance_type="gatehouse", climax_type="dragon_lair", hub_type="guard_post",
         arc=("guard_post", "barracks", "warren", "ossuary", "collapsed_gallery"), tint="ice"),
+    "cave": Archetype(
+        "cave", entrance_type="cave_mouth", climax_type="crystal_grotto", hub_type="cavern",
+        arc=("passage", "grotto", "flooded_gallery", "sump", "collapsed_gallery", "warren")),
 }
 
 DEFAULT_ARCHETYPE = "fortress"
@@ -305,6 +325,12 @@ _THEME_KIND_TYPES: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "chamber": ("barracks", "warren", "ossuary"),
         "lair":    ("warren", "collapsed_gallery"),
         "hall":    ("barracks",),
+    },
+    "cave": {
+        "passage": ("passage", "grotto"),
+        "chamber": ("grotto", "flooded_gallery", "collapsed_gallery"),
+        "lair":    ("grotto", "sump", "warren"),
+        "hall":    ("cavern",),
     },
 }
 
@@ -718,6 +744,10 @@ _THEME_PALETTES: Dict[str, Dict[str, Tuple[Tuple[int, int, int], str]]] = {
     "lava_forge": {
         "floor": ((88, 72, 64), "soot-blackened forge stone, ember glow"),
         "wall":  ((104, 82, 72), "heat-cracked basalt wall"),
+    },
+    "cave": {
+        "floor": ((70, 72, 74), "damp cave rock floor, wet stone, mineral seams"),
+        "wall":  ((84, 86, 90), "rough natural rock wall, wet sheen, mineral streaks"),
     },
 }
 # Elemental tints override the archetype palette where present.
