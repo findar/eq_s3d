@@ -62,7 +62,7 @@ proves it with
   - Owns: ai/rule_planner.py, generators/districts.py, web/index.html, tests/test_planner.py, tests/test_properties_layout.py (property 19 wording), tests/test_district_purposes.py
   - Reqs: 4
 
-- [ ] 6. Gate and bands
+- [x] 6. Gate and bands
   - Card: [cards/06-gate.md](cards/06-gate.md)
   - Type: agent · Size: M · Depends: 2, 3, 4
   - Owns: scripts/sweep_themed_navigability.py, scripts/quality_sweep.py, generators/quality.py (only a cave row, if measured), any root-cause fix named in the commit

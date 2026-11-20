@@ -7,15 +7,16 @@ Index entry: `tasks.md` task 6. Requirement 5. Design "Gate and bands".
 today's bands is measured (A3).
 
 ## Done when
-- [ ] `scripts/sweep_themed_navigability.py` with `cave`, both layouts, 2–30 rooms, each
+- [x] `scripts/sweep_themed_navigability.py` with `cave`, both layouts, 2–30 rooms, each
       verticality: every build passes; counts in the commit body.
-- [ ] ≥ 200 `cave` Draws per layout: fail share and expected Draws per generate per key in the
+- [x] ≥ 200 `cave` Draws per layout: fail share and expected Draws per generate per key in the
       commit body; above ~5% on a key, a `cave` band row and an `archive.md` decision. → verify:
       `python -m pytest tests/test_quality.py -q`
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 A gate failure is a geometry bug to fix at its root (project rule), named in the commit body; if
 the fix is outside `Owns`, stop and report. Keep sweep CSVs in `output/`.
 
 ## Result
+✔ 371c55e fcc3a35 · 3769 passed (2 expected: tasks 5, 10) · gate 348/348 · cave fail ≤ 3.8%/key, no band change
