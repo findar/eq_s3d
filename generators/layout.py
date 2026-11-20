@@ -57,7 +57,8 @@ DISTRICT_ATTEMPTS = 8
 
 class DistrictSplitError(ValueError):
     """A corridor split or swap left two Districts joined by more than their
-    one Threshold (districts spec Req 3.3): the Draw is rejected."""
+    one Threshold (districts spec Req 3.3), or two corridors clashing that no
+    swap within their Districts could part: the Draw is rejected."""
 
     def __init__(self) -> None:
         super().__init__("district threshold split")
@@ -1604,6 +1605,14 @@ class LayoutGenerator:
                     continue
             safety -= 1
             removed_any = True
+
+        # Districted: a stand-in must join the same District pair, so two tree
+        # edges can clash with nothing to swap in, and the corridors would be
+        # built through each other (district-looks task 5, seed 1867829545).
+        # That Draw is redrawn, as a second link between Districts is.
+        if self._district_assign is not None and any(
+                a in edges and b in edges and clash(a, b) for a, b in stuck):
+            raise DistrictSplitError()
 
         if self._stack is not None:
             restore_dropped(before)

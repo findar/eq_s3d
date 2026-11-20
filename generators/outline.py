@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 import numpy as np
 from scipy.spatial import Voronoi, cKDTree
@@ -458,10 +458,47 @@ def _in_convex(poly, p) -> bool:
                for a, q in zip(poly, poly[1:] + poly[:1]))
 
 
-def _close_holes(verts: list, cells: list) -> list:
+def _on_rects(p, rects: Sequence[Rect], tol: float = 1e-3) -> int:
+    """How many sides of these rects the point lies on."""
+    n = 0
+    for r in rects:
+        inside_x, inside_y = r[0] - tol <= p[0] <= r[2] + tol, r[1] - tol <= p[1] <= r[3] + tol
+        n += inside_y * ((abs(p[0] - r[0]) <= tol) + (abs(p[0] - r[2]) <= tol))
+        n += inside_x * ((abs(p[1] - r[1]) <= tol) + (abs(p[1] - r[3]) <= tol))
+    return n
+
+
+def _pinhole_target(verts: list, cells: list, loop: List[int], rects: Sequence[Rect]) -> int:
+    """The vertex a pinhole collapses onto: the one on the most sides of ``rects`` whose
+    merge keeps every Cell round the pinhole's fan sound, else the loop's first."""
+    best = sorted((i for i in loop if i != loop[0]), key=lambda i: -_on_rects(verts[i], rects))
+    first = _on_rects(verts[loop[0]], rects)
+    around = [c for c in cells if set(c) & set(loop)]
+    for i in best:
+        if _on_rects(verts[i], rects) <= first:
+            break
+        merged = []
+        for c in around:
+            cell = []
+            for k in c:
+                k = i if k in loop else k
+                if not cell or cell[-1] != k:
+                    cell.append(k)
+            if len(cell) > 1 and cell[0] == cell[-1]:
+                cell.pop()
+            merged.append(cell)
+        if all(len(c) < 3 or _fans_sound(verts, c) for c in merged):
+            return i
+    return loop[0]
+
+
+def _close_holes(verts: list, cells: list, rects: Sequence[Rect] = ()) -> list:
     """Only the outer wall stays. A dropped sliver can leave a pinhole in the floor:
     a loop with next to no area collapses to one vertex, and anything bigger becomes
-    a Cell of its own."""
+    a Cell of its own. The pinhole collapses onto the vertex lying on the most sides of
+    ``rects`` (the Bridge slots), its first on a tie: a slot's corner moved off it leaves
+    the ceiling hole off the slot, an open seam to the gate (district-looks task 5). Only
+    the slots: any other room keeps its Outline exactly."""
     loops = Outline(verts=verts, cells=cells, core=(0, 0, 0, 0)).wall_loops()
     if len(loops) < 2:
         return cells
@@ -472,7 +509,8 @@ def _close_holes(verts: list, cells: list) -> list:
         if loop is outer:
             continue
         if _area([verts[i] for i in loop]) < 0.5:
-            merge.update({i: loop[0] for i in loop})
+            onto = _pinhole_target(verts, cells, loop, rects)
+            merge.update({i: onto for i in loop})
         else:
             extra.append(loop[::-1])
     out = []
@@ -704,7 +742,7 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
     remap = {old: new for new, old in enumerate(used)}
     # Wandering walls scale down with a small room, or it loses too much of its floor.
     wobble = min(wobble, WOBBLE_SHARE * min(x1 - x0, y1 - y0))
-    keep = _close_holes([verts[i] for i in used], [[remap[i] for i in c] for c in keep])
+    keep = _close_holes([verts[i] for i in used], [[remap[i] for i in c] for c in keep], slots)
     verts = [verts[i] for i in used]
     # Splitting edges moves a Cell's mean, so judge the fans again afterwards.
     for scale in (1.0, 0.5, 0.25, 0.0):

@@ -79,7 +79,26 @@ class RoomGrid:
             self.taken |= self.rect(s)
         self.door_cells = [self._door_cell(d) for d in doors]
         self.spine = self._spine(doors)
+        self.by_wall = self._by_wall()
         self.cut_already = self._cut_off(self._free(self.taken))
+
+    def _by_wall(self) -> np.ndarray:
+        """Cells a body's radius from the outline's own walls, measured from the wall edges
+        as the gate does. ``floor`` samples cell centres, so a slit in a wall narrower than a
+        cell falls between them and only the edges show it (district-looks task 5: a boulder
+        closed the gap under such a slit and walled floor off)."""
+        near = np.zeros(self.gx.shape, bool)
+        o = self.room.outline
+        if o is None:
+            return near
+        from .outline import _wall_edges
+        v = np.asarray(o.verts, float)
+        for i, j in _wall_edges(o.cells):
+            a, ab = v[i], v[j] - v[i]
+            t = np.clip(((self.gx - a[0]) * ab[0] + (self.gy - a[1]) * ab[1]) / max(float(ab @ ab), 1e-9),
+                        0.0, 1.0)
+            near |= np.hypot(self.gx - (a[0] + t * ab[0]), self.gy - (a[1] + t * ab[1])) < BODY_RADIUS
+        return near
 
     def rect(self, r) -> np.ndarray:
         return (self.gx >= r[0]) & (self.gx <= r[2]) & (self.gy >= r[1]) & (self.gy <= r[3])
@@ -165,7 +184,8 @@ class RoomGrid:
         reach = int(math.ceil(BODY_RADIUS / CELL)) + 1
         walls = np.pad(~self.floor, 1, constant_values=True)
         placed = binary_dilation(solid, iterations=reach) if solid.any() else solid
-        return (self.floor & ~placed) & (~binary_dilation(walls, iterations=reach)[1:-1, 1:-1] | self.spine)
+        walled = binary_dilation(walls, iterations=reach)[1:-1, 1:-1] | self.by_wall
+        return (self.floor & ~placed) & (~walled | self.spine)
 
     def _cut_off(self, free: np.ndarray) -> np.ndarray:
         """The free floor not joined to a door. Measured on the bare room (``cut_already``): what
@@ -548,12 +568,45 @@ def _scaled(asks: Sequence[Ask], density: str, scales: Optional[Mapping[str, int
     return out
 
 
+STEEP_DEG = 35.0        # a POI's floor is no steeper than this; the gate stands on up to 40
+
+
+def _steep_floor(grid: RoomGrid) -> np.ndarray:
+    """Cells on a relief floor too steep to stand on. The mesh fans each Outline Cell from
+    its middle (``geometry.add_outline_room``), and a thin fan triangle can climb past the
+    gate's 40 degrees though no edge of the Cell does (district-looks task 5: a boss POI on
+    such a wedge by a cave wall couldn't be reached)."""
+    steep = np.zeros(grid.gx.shape, bool)
+    o = grid.room.outline
+    if o is None or not o.lift or not any(o.lift):
+        return steep
+    least = math.cos(math.radians(STEEP_DEG))
+    for cell in o.cells:
+        pts = [(o.verts[i][0], o.verts[i][1], o.lift_at(i)) for i in cell]
+        mid = tuple(sum(p[k] for p in pts) / len(pts) for k in range(3))
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            tri = np.array((mid, a, b))
+            n = np.cross(tri[1] - tri[0], tri[2] - tri[0])
+            norm = float(np.linalg.norm(n))
+            if norm < 1e-9 or abs(n[2]) / norm >= least:
+                continue
+            (ax, ay), (bx, by), (cx, cy) = tri[0, :2], tri[1, :2], tri[2, :2]
+            d0 = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+            if abs(d0) < 1e-9:
+                continue
+            l0 = ((by - cy) * (grid.gx - cx) + (cx - bx) * (grid.gy - cy)) / d0
+            l1 = ((cy - ay) * (grid.gx - cx) + (ax - cx) * (grid.gy - cy)) / d0
+            steep |= (l0 >= 0) & (l1 >= 0) & (l0 + l1 <= 1)
+    return steep
+
+
 def _floor_poi(grid: RoomGrid, purpose: str, taken: Sequence[Feature]) -> Optional[POI]:
     """A POI on open floor, as far from the doors as the room allows."""
     solid = grid.taken.copy()
     for f in taken:
         solid |= grid.footprint(f.plan)
     free = grid.floor & ~binary_dilation(solid, iterations=max(1, int(math.ceil(BODY_RADIUS / CELL))))
+    free &= ~_steep_floor(grid)
     cand = np.argwhere(free)
     if len(cand) == 0:
         return None

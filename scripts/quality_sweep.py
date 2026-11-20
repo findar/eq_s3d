@@ -31,6 +31,14 @@ seeds with the controls that reproduce them.
 Purpose) instead of drawing it, to measure one Purpose against the bands; ``none`` pins
 no theme.
 
+``--pair`` (zone-generator-district-looks task 5, implies ``--districts``) pins each
+Draw's ``district_plan`` to a ``cave`` District and a built one, the cave District
+first or second in turn, the built Purpose drawn from every other theme; with 14 or
+more rooms the third District is left to the relationship. The ``theme`` column holds
+``cave_first:<built>`` or ``cave_second:<built>``.
+
+    python scripts/quality_sweep.py --per-key 120 --only dungeon --pair --jobs 3
+
 ``--svg N`` writes the top-down maps (``generators/mapview.py``) of up to N
 failing specs per key to ``output/quality_sweep_svg/``, to look at before
 calling them dull.
@@ -60,6 +68,8 @@ VERTICALITIES = ("flat", "moderate", "dramatic")
 ROOM_COUNTS = range(4, 31)
 DISTRICT_ROOM_COUNTS = range(DISTRICT_MIN_ROOMS, 31)
 THEMES = ("",) + tuple(VALID_DUNGEON_THEMES)
+PAIRS = ("cave_first", "cave_second")
+BUILT = tuple(t for t in VALID_DUNGEON_THEMES if t != "cave")
 MAX_DRAWS = 32          # the pipeline's quality Draw cap (Requirement 3.1)
 QUANTILES = (0.01, 0.05, 0.25, 0.5, 0.75, 0.95, 0.99)
 # Room-count rows the quantiles are printed by when a key has no band rows yet.
@@ -85,7 +95,10 @@ def controls(zone_type, layout, verticality, rooms, theme, districts=False):
     c = {"zone_type": zone_type, "room_count": rooms, "verticality": verticality}
     if zone_type in LAYOUT_ZONE_TYPES:
         c["layout"] = layout
-    if theme:
+    pair, _, built = theme.partition(":")
+    if pair in PAIRS:
+        c["district_plan"] = ["cave", built] if pair == "cave_first" else [built, "cave"]
+    elif theme:
         c["dungeon_theme"] = theme
     if districts:
         c["districts"] = True
@@ -108,7 +121,7 @@ def draw(job):
     from generators.outdoor_dungeon import PLAN_ERRORS
     row = {"zone_type": zone_type, "layout": layout, "verticality": verticality,
            "room_count": rooms, "n_rooms": 0, "districts": 1, "switch": int(districts),
-           "theme": theme, "seed": seed}
+           "theme": theme, "purposes": "", "seed": seed}
     t0 = time.perf_counter()
     try:
         spec = _spec(zone_type, layout, verticality, rooms, theme, districts, seed)
@@ -121,6 +134,7 @@ def draw(job):
     report = quality.measure(spec, verticality=verticality)
     row.update(layout=quality.spec_layout(spec), n_rooms=len(spec.rooms),
                districts=quality.spec_districts(spec),
+               purposes="+".join(d.purpose for d in spec.districts),
                draw_s=round(dt, 4), plan_error="", passed=int(report.passed),
                score=round(report.score, 6),
                out_of_band=" ".join(o.metric for o in report.out_of_band))
@@ -163,7 +177,8 @@ def write_svgs(rows, per_key, out_dir):
         done[key] += 1
         spec = _spec(r["zone_type"], r["layout"], r["verticality"], r["room_count"],
                      r["theme"], bool(r["switch"]), r["seed"])
-        name = "_".join(str(x) for x in (*key, r["room_count"], r["theme"] or "none", r["seed"]))
+        name = "_".join(str(x) for x in (*key, r["room_count"],
+                                         (r["theme"] or "none").replace(":", "_"), r["seed"]))
         (out_dir / f"{name}.svg").write_text(render_map_svg(spec), encoding="utf-8")
 
 
@@ -178,6 +193,9 @@ def main(argv=None):
                     help="sweep districted zones (8-30 rooms, keyed by District count)")
     ap.add_argument("--theme", default="",
                     help="pin every Draw's dungeon theme (Purpose); 'none' pins no theme")
+    ap.add_argument("--pair", action="store_true",
+                    help="districted Draws pinning a cave District and a built one, "
+                         "cave first then second in turn (implies --districts)")
     ap.add_argument("--csv", default="",
                     help="CSV path (default output/quality_sweep[_districts].csv)")
     ap.add_argument("--svg", type=int, default=0,
@@ -188,6 +206,10 @@ def main(argv=None):
     if args.theme and args.theme != "none" and args.theme not in VALID_DUNGEON_THEMES:
         ap.error(f"--theme {args.theme!r} is not a dungeon theme")
     themes = ("",) if args.theme == "none" else (args.theme,) if args.theme else THEMES
+    if args.pair:
+        if args.theme:
+            ap.error("--pair and --theme don't combine")
+        args.districts = True
     rng = random.Random(args.seed)
     only = {s for s in args.only.split(",") if s}
     room_counts = DISTRICT_ROOM_COUNTS if args.districts else ROOM_COUNTS
@@ -199,7 +221,9 @@ def main(argv=None):
         for i in range(args.per_key):
             if i % len(counts) == 0:
                 rng.shuffle(counts)
-            jobs.append((*key, counts[i % len(counts)], rng.choice(themes), args.districts,
+            theme = (f"{PAIRS[i % 2]}:{rng.choice(BUILT)}" if args.pair
+                     else rng.choice(themes))
+            jobs.append((*key, counts[i % len(counts)], theme, args.districts,
                          rng.randint(0, 2 ** 31 - 1)))
     if not jobs:
         print("nothing to sweep")
@@ -213,7 +237,8 @@ def main(argv=None):
         rows = [draw(j) for j in jobs]
     print(f"{len(rows)} Draws in {time.perf_counter() - t0:.0f} s")
 
-    default_csv = "quality_sweep_districts.csv" if args.districts else "quality_sweep.csv"
+    default_csv = ("quality_sweep_cave_pairs.csv" if args.pair else
+                   "quality_sweep_districts.csv" if args.districts else "quality_sweep.csv")
     path = Path(args.csv) if args.csv else ROOT / "output" / default_csv
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as f:
