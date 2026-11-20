@@ -1783,6 +1783,15 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         fp_a = _room_footprint(a)
         fp_b = _room_footprint(b)
         include = leg_rects + [fp_a, fp_b]
+        # A winding leg (winding-tunnels task 3) strays off its straight footprint: each run of
+        # its centreline, grown by the same margin, holds its floor.
+        from generators.routing import winding_legs
+        grow = hw + agent.adjacency_eps
+        for line in winding_legs(cor, rooms_by_id):
+            if line is not None:
+                include += [(min(p[0], q[0]) - grow, min(p[1], q[1]) - grow,
+                             max(p[0], q[0]) + grow, max(p[1], q[1]) + grow)
+                            for p, q in zip(line, line[1:])]
         # A planned Switchback climbs in a stairwell beside its carry leg.
         lay = stair_layout(cor, rooms_by_id)
         if lay is not None and lay.stairwell is not None:
