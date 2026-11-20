@@ -38,3 +38,13 @@ design review). The user confirms at the first look (task 8).
   the gate on an open seam, a class cave never hit; not investigated.
 - **`test_w1_outline_is_inside_connected_and_reaches_every_door` flakes** ("no Cell's fan folds
   over"): rare, same 8 failing examples on master before the outline fix.
+- **VSPBLOCK301 reads as a rock** (task 7): a square cut slab tagged rock; task 3 retagged it
+  brick, which moved rocks in other themes' decorated zones (Theme None, mine_delve), so the lead
+  reverted it for A6. Retag it in a step that may move decor bytes.
+- **A cave District after a built District gets built walls and the first District's decor**
+  (task 7, case f): finish and decor follow District 0's Purpose; cave first makes 14 of 16
+  rooms rough, the built Districts included. Wider than the decor follow-up above.
+- **No water in an outdoor cave's flooded galleries** (task 7, case e): outdoor dungeons keep
+  only the host landscape's regions (any Purpose).
+- **Warm light in warren and collapsed galleries inside a cave**; wall torches and the shared
+  treasure dressing (chests, urns) in cave builds (task 7).

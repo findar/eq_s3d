@@ -139,5 +139,3 @@ kinds = { crystal_cluster = "debris" }
 "CRYSTAL4" = { kind = "crystal_cluster", set = "neutral" }
 "VELIUMCRYSTALS201" = { kind = "crystal_cluster" }
 "VELIUMCRYSTALS202" = { kind = "crystal_cluster" }
-# A square cut slab (13 x 13 x 2 u), not a rock.
-"VSPBLOCK301" = { kind = "brick" }

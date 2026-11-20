@@ -2812,11 +2812,8 @@ section, so the CLI zone may differ). Every case was built through the Server's
       **Classic**, case h and case d on the code from before the step (`a377d54`) and on the
       merged code: case g on both layouts came out with every file inside the `.eqg` identical
       (zone name aside).
-- [ ] **[MUST] Same rooms, some Props moved** — Cases h and d against the code from before the
-      step: the rooms, walls, terrain and lights are identical, but a few Props are a different
-      model (case h: RUJROCKS705 became RUJROCKS704; case d: several rocks, webs and bones). The
-      cause is task 3's retag of VSPBLOCK301 from rock to brick (`rules/decor/tags.toml`), which
-      shrinks the rock pool every theme draws from; with that one line added to the old code both
-      cases came out identical. This breaks the step's "every zone built today stays
-      byte-identical" (A6) for decorated builds whose rooms pick a rock; say whether the change is
-      acceptable (the slab was a wrong rock) or the bytes matter.
+- [ ] **[MUST] Case h unchanged** — Case h (Theme None) and case d (`an old mine`) against the
+      code from before the step: identical `.eqg` contents, zone name aside. (Step 21's run
+      found a few Props moved, from task 3's retag of VSPBLOCK301 from rock to brick, which
+      shrank the rock pool every theme draws from; the lead reverted that retag to keep A6, so
+      a cave mouth may still show that square slab as a rock — a follow-up.)
