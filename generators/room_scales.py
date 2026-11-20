@@ -111,7 +111,8 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
                      asked: Optional[Mapping[str, int]] = None) -> None:
     """Each room's value on each Scale, into ``layout.rooms.<id>.scales``. Rooms draw from
     the entrance outward, each from its own stream, so this moves nothing about the layout.
-    ``asked`` is Scale -> a control's number: a bell on the rules' blend, a lean and not a pin."""
+    ``asked`` is Scale -> a control's number: a bell on the rules' blend, a lean and not a pin.
+    A room's theme Layer is its District's Purpose (``room.room_theme``)."""
     rules = rules or load_scales()
     control = {scale: peak_weights(value, ASKED_SPREAD) for scale, value in (asked or {}).items()}
     records = spec.layout["rooms"]
@@ -121,17 +122,20 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
         if cor.from_room in next_door and cor.to_room in next_door:
             next_door[cor.from_room].append(cor.to_room)
             next_door[cor.to_room].append(cor.from_room)
+    district = {room.id: room.district for room in spec.rooms}
     drawn: Dict[str, Dict[str, int]] = {}
     for room in sorted(spec.rooms, key=lambda r: r.graph_depth):    # stable: the spec's order within a depth
         record = records.setdefault(room.id, {})
         wing = record.get("wing", "")
-        layers = rules.layers_for(spec.dungeon_race, spec.dungeon_theme, overlay, record.get("kind", room.kind),
-                                  room.semantic_type, wing)
+        # Its own District's Purpose: in a one-District zone that is the zone's theme.
+        layers = rules.layers_for(spec.dungeon_race, room.room_theme or spec.dungeon_theme, overlay,
+                                  record.get("kind", room.kind), room.semantic_type, wing)
         values = {}
         for scale in SCALES:
-            # A room leans only within its wing: that's what gives a wing its hard edge.
+            # A room leans only within its wing and its District: that's what gives either its hard edge.
             near = [drawn[n][scale] for n in next_door[room.id]
-                    if n in drawn and records.get(n, {}).get("wing", "") == wing]
+                    if n in drawn and records.get(n, {}).get("wing", "") == wing
+                    and district[n] == room.district]
             weights = combine(scale, layers)
             if scale in control:    # on top of the blend, not one more voice in it
                 weights = tuple(w * c for w, c in zip(weights, control[scale]))

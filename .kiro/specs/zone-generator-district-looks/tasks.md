@@ -31,7 +31,7 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
 
 ## Tasks
 
-- [ ] 1. Walls per District
+- [x] 1. Walls per District
   - Card: [cards/01-walls.md](cards/01-walls.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/room_scales.py, tests/test_district_looks.py
