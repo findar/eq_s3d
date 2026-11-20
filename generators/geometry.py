@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 
 from core.ter import TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
-from .routing import corridor_route
+from .routing import corridor_route, winding_legs
 
 
 # A sloped corridor floor is subdivided so each segment rises at most this much
@@ -877,7 +877,7 @@ class MeshBuilder:
             floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat,
             avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
             bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough,
-            seam=self._seam(cor, spec))
+            seam=self._seam(cor, spec), winds=winding_legs(cor, rooms))
         if cor.transition is not None and cor.transition.material:
             self._add_opening(cor, spec)
 
@@ -943,7 +943,8 @@ class MeshBuilder:
         return zs, carry
 
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
-                    steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None, rough=0.0, seam=None):
+                    steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None, rough=0.0, seam=None,
+                    winds=None):
         """
         Shared multi-segment corridor builder. `waypoints` is an ordered list of
         (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
@@ -967,6 +968,9 @@ class MeshBuilder:
         ``seam`` is ((x, y), materials, rough): the leg holding that point splits there, and
         the route takes that look past it. Both parts end square, so their sections meet. A
         point on no leg (too short a leg, say) leaves the corridor in one look.
+
+        ``winds`` is ``routing.winding_legs``'s list: a plain rough leg with a polyline there
+        is built along it (``_add_winding_leg``), its square ends where the straight leg's are.
         """
         zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
         seam_leg = self._seam_leg(waypoints, seam, hw, zs) if seam else None
@@ -1008,6 +1012,11 @@ class MeshBuilder:
                 self._add_leg(sx, sy, sz, ex, ey, zs[k + 1], axes[k], hw, height, leg_steps, past_rough, *past)
                 continue
             leg_floor, leg_wall, leg_ceiling, leg_rough = look(k)
+            line = winds[k] if winds and k < len(winds) else None
+            if line is not None and leg_steps == 0 and leg_rough > 0 and \
+                    self._add_winding_leg(line, zs[k], zs[k + 1], hw, height, leg_rough,
+                                          leg_floor, leg_wall, leg_ceiling):
+                continue
             self._add_leg(x0, y0, zs[k], x1, y1, zs[k + 1], axes[k], hw, height, leg_steps, leg_rough,
                           leg_floor, leg_wall, leg_ceiling)
 
@@ -1275,6 +1284,123 @@ class MeshBuilder:
                               normal=(0, 0, -1), material=ceiling_mat)
                 along_a += wall(p1, c0 + s0[i + 1], p0, c0 + s0[i], z1, z0, h1, h0, along_a)
                 along_b += wall(p0, c1 - s1[i], p1, c1 - s1[i + 1], z0, z1, h0, h1, along_b)
+
+    def _add_winding_leg(self, line, fz, tz, hw, height, rough, floor_mat, wall_mat, ceiling_mat) -> bool:
+        """A rough leg built along a winding centreline (``routing.winding_legs``), winding-tunnels
+        task 3. The floor is a strip ``hw`` either side of ``line``, mitred at each turn, its
+        height running from ``fz`` to ``tz`` along the path and level across it. Each run between
+        turns is cut so no piece rises more than MAX_SEG_RISE (lessons-learned "A ramp must be
+        SUBDIVIDED") or runs past ROUGH_SPACING. The walls stand on the strip's edges with the
+        rough leg's wobble (in by up to ``rough`` × the width), the ceiling follows the strip and
+        falls by up to ``rough`` × the height. ``line`` starts and ends on axis-aligned runs, so
+        both ends are the straight leg's square ends: the same corners at the same heights,
+        which weld to the bend square or the room's opening as ``_add_rough_leg``'s do.
+
+        False, building nothing, when a mitre would fold the strip's inner edge back on itself
+        (a turn too sharp for the width): the caller builds the straight leg instead."""
+        pts = [(float(x), float(y)) for x, y in line]
+        m = len(pts) - 1
+        seg = [math.hypot(pts[j + 1][0] - pts[j][0], pts[j + 1][1] - pts[j][1]) for j in range(m)]
+        if m < 1 or min(seg) < 1e-6:
+            return False
+        dirs = [((pts[j + 1][0] - pts[j][0]) / seg[j], (pts[j + 1][1] - pts[j][1]) / seg[j]) for j in range(m)]
+        lefts = [(-dy, dx) for dx, dy in dirs]
+
+        # The strip's corners at each vertex of the line: (left, right), mitred where it turns.
+        corners = []
+        for i in range(m + 1):
+            ns = [lefts[j] for j in (i - 1, i) if 0 <= j < m]
+            mx, my = sum(n[0] for n in ns), sum(n[1] for n in ns)
+            size = math.hypot(mx, my)
+            mx, my = mx / size, my / size
+            reach = hw / (mx * ns[0][0] + my * ns[0][1])
+            px, py = pts[i]
+            corners.append(((px + mx * reach, py + my * reach), (px - mx * reach, py - my * reach)))
+        # Each edge must still run forward along every run, or the strip folds over.
+        for j in range(m):
+            for side in (0, 1):
+                a, b = corners[j][side], corners[j + 1][side]
+                if (b[0] - a[0]) * dirs[j][0] + (b[1] - a[1]) * dirs[j][1] <= 1e-6:
+                    return False
+
+        # Sections across the strip: (left, right, floor z), level across.
+        total = sum(seg)
+        sections = []
+        done = 0.0
+        for j in range(m):
+            za = fz + (tz - fz) * done / total
+            done += seg[j]
+            zb = tz if j == m - 1 else fz + (tz - fz) * done / total
+            n = max(int(math.ceil(abs(zb - za) / MAX_SEG_RISE)), int(math.ceil(seg[j] / ROUGH_SPACING)), 1)
+            (la, ra), (lb, rb) = corners[j], corners[j + 1]
+            for k in range(n):
+                t = k / n
+                sections.append(((la[0] + (lb[0] - la[0]) * t, la[1] + (lb[1] - la[1]) * t),
+                                 (ra[0] + (rb[0] - ra[0]) * t, ra[1] + (rb[1] - ra[1]) * t),
+                                 za + (zb - za) * t))
+        sections.append((corners[m][0], corners[m][1], tz))
+
+        count = len(sections)
+        rng = random.Random(f"wind:{pts[0][0]:.2f},{pts[0][1]:.2f},{pts[-1][0]:.2f},{pts[-1][1]:.2f}")
+        s_left, s_right, fall = [0.0], [0.0], [0.0]
+        for _ in range(count - 2):
+            s_left.append(rng.uniform(0.0, rough * 2 * hw))
+            s_right.append(rng.uniform(0.0, rough * 2 * hw))
+            fall.append(rng.uniform(0.0, rough * height))
+        s_left.append(0.0)
+        s_right.append(0.0)
+        fall.append(0.0)
+
+        def inward(p, q, s):
+            """``p`` moved ``s`` toward ``q`` (across the section)."""
+            if s == 0.0:
+                return p
+            d = math.hypot(q[0] - p[0], q[1] - p[1])
+            return (p[0] + (q[0] - p[0]) * s / d, p[1] + (q[1] - p[1]) * s / d)
+
+        wall_scale = self._uv_scale[wall_mat]
+
+        def wall(p, q, z0, z1, h0, h1, along0):
+            """One wall piece from p to q (plan), floor on its left going that way."""
+            dx, dy = q[0] - p[0], q[1] - p[1]
+            length = math.hypot(dx, dy)
+            if length < 1e-9:
+                return 0.0
+            pts4 = [(p[0], p[1], z0), (p[0], p[1], h0), (q[0], q[1], h1), (q[0], q[1], z1)]
+            uvs = [(-along0 * wall_scale, -z0 * wall_scale), (-along0 * wall_scale, -h0 * wall_scale),
+                   (-(along0 + length) * wall_scale, -h1 * wall_scale),
+                   (-(along0 + length) * wall_scale, -z1 * wall_scale)]
+            self._add_face(pts4, uvs, (-dy / length, dx / length, 0.0), wall_mat)
+            return length
+
+        # One floor on shared vertices, as the rough leg's: the walk gate sees it joined.
+        floor_scale = self._uv_scale[floor_mat]
+        floor_at: Dict[Tuple[float, float, float], int] = {}
+
+        def floor_vertex(x, y, z):
+            k = floor_at.get((x, y, z))
+            if k is None:
+                k = floor_at[(x, y, z)] = len(self.vertices)
+                self.vertices.append(Vertex(x=x, y=y, z=z, nx=0, ny=0, nz=1,
+                                            u=x * floor_scale, v=-y * floor_scale))
+            return k
+
+        along_l = along_r = 0.0
+        walls_l = [inward(l, r, s) for (l, r, _), s in zip(sections, s_left)]
+        walls_r = [inward(r, l, s) for (l, r, _), s in zip(sections, s_right)]
+        for i in range(count - 1):
+            (la, ra, za), (lb, rb, zb) = sections[i], sections[i + 1]
+            ha, hb = za + height - fall[i], zb + height - fall[i + 1]
+            # Floor, counter-clockwise from above: the right edge forward, then the left back.
+            a_, b_, c_, d_ = (floor_vertex(*p) for p in ((ra[0], ra[1], za), (rb[0], rb[1], zb),
+                                                         (lb[0], lb[1], zb), (la[0], la[1], za)))
+            self.polygons.append(Polygon(a_, b_, c_, floor_mat, 0))
+            self.polygons.append(Polygon(a_, c_, d_, floor_mat, 0))
+            self.add_quad((la[0], la[1], ha), (lb[0], lb[1], hb), (rb[0], rb[1], hb), (ra[0], ra[1], ha),
+                          normal=(0, 0, -1), material=ceiling_mat)
+            along_r += wall(walls_r[i], walls_r[i + 1], za, zb, ha, hb, along_r)
+            along_l += wall(walls_l[i + 1], walls_l[i], zb, za, hb, ha, along_l)
+        return True
 
     def _add_corner_fill(self, square, cz, height, floor_mat, ceiling_mat):
         """
