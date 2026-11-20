@@ -6,7 +6,8 @@ Decor per District (district-looks task 2, Req 2, A1).
 - In a dungeon whose ``cave`` District follows a ``fortress`` District, each room's Props come
   from its own District's layers: the cave rooms' from ``layers/cave.toml`` and the shared base
   (``rooms.toml``), never a bench or a banner; the fortress rooms' never from the cave layer.
-  A corridor takes the layers of the room it leaves (``from_room``).
+  A corridor takes the layers of the room it leaves (``from_room``); a Threshold the outer
+  District's (the lower District id), whichever end it was drawn from.
 - The sidecar's ``decor`` block names each District's layers under ``districts``; a one-District
   build's block has no such key (its bytes are the byte check's).
 - ``BareCap`` stays one zone-wide cap, each room's bare chance read from its own District's rules.
@@ -96,11 +97,16 @@ def test_each_district_s_rooms_take_its_own_layers(districted):
 def test_corridors_take_their_from_room_s_layers(districted):
     spec, side = districted
     theme = {r.id: r.room_theme for r in spec.rooms}
+    district = {r.id: r.district for r in spec.rooms}
+    threshold = {c.id for c in spec.corridors if c.threshold}
     seen = set()
     for c in side["corridors"]:
         files = {_file(p) for p in c["props"]}
-        seen.add(theme[c["from_room"]])
-        if theme[c["from_room"]] == "cave":
+        look = c["from_room"]
+        if c["id"] in threshold and district[c["to_room"]] < district[look]:
+            look = c["to_room"]                     # a Threshold looks like the outer District
+        seen.add(theme[look])
+        if theme[look] == "cave":
             assert files <= {"rooms.toml", "cave.toml"}, (c["id"], files)
         else:
             assert "cave.toml" not in files, (c["id"], files)

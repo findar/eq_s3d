@@ -2823,7 +2823,8 @@ section, so the CLI zone may differ). Every case was built through the Server's
 > Roadmap step 22 (`zone-generator-district-looks`). In a dungeon with Districts, each District
 > now looks like its own Purpose: its rooms draw their wall style (`rough`, `hewn`, `built`) from
 > their District's Purpose, and their decor from its decor layers. A corridor takes the look of
-> the room it starts from (its `from_room`), so a Threshold looks like one side or the other.
+> the room it starts from (its `from_room`); a Threshold takes the outer District's look
+> (the lower District id), whichever end it was drawn from.
 > The room view dresses each room from its own District's layers too. Step 21's cave follow-ups
 > are fixed: cave rooms are never lit warm, cave decor has no wall torches and no chests or urns,
 > and the cave profile shrinks a cave's footprints but no longer its ceilings. **The wall lights
@@ -2870,12 +2871,11 @@ this section, so the CLI zone may differ). Every case was built through the Serv
       sidecar's `decor.districts` reads fortress `[]`, cave `["cave"]`. Three cave rooms (room_6,
       room_7, room_10) are bare on this seed, so the cave District is sparse: say whether it
       reads as empty.
-- [ ] **[MUST] The Threshold takes its `from_room`'s look** — Case a: `corr_10` starts in the
+- [ ] **[MUST] The Threshold takes the outer District's look** — Case a: `corr_10` starts in the
       fortress room_3, so it carries a fortress TORCHPOINT and is the last lit corridor; the
-      cave's own corridors (`corr_5`–`corr_9`) have no Props and no light. Known: a Threshold's
-      `from_room` is not always the outer District's room. Built like case a, seeds 1840275513
-      and 484702260 give Thresholds that start in the cave (`corr_1` room_2 → room_1, `corr_9`
-      room_5 → room_3), so there the Threshold looks like the cave. Say whether that matters.
+      cave's own corridors (`corr_5`–`corr_9`) have no Props and no light. Built like case a,
+      seeds 1840275513 and 484702260 draw Thresholds from the cave end (`corr_1` room_2 →
+      room_1, `corr_9` room_5 → room_3); since the lead's fix they still look like the fortress.
 - [ ] **[MUST] The room view of a cave room** — Case a, open room_8 in the room view: the same 7
       Props as in the zone, under `cave.toml types.cavern` and `cave.toml every` lines. room_11
       lists its boss POI with the cave Dressing (rubble, CRYS4E, CRYSTAL4) under `cave.toml

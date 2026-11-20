@@ -572,6 +572,15 @@ def _corridor_left_out(cor) -> bool:
     return bool(cor.bridge) or (cor.steps != 0 and abs(cor.to_z - cor.from_z) > 0.01)
 
 
+def _look_room(rooms, cor):
+    """The room whose look a corridor takes: its ``from_room``, except that a Threshold takes
+    the outer District's room (the lower District id), whichever end it was drawn from."""
+    a, b = rooms.get(cor.from_room), rooms.get(cor.to_room)
+    if getattr(cor, "threshold", False) and a is not None and b is not None and b.district < a.district:
+        return b
+    return a
+
+
 def corridor_contexts(spec, mesh) -> List[RoomContext]:
     """One context per corridor of a built zone (``source = "corridor"``), stairs and Bridges
     left out (``_corridor_left_out``): its floor and ceiling on the plan grid, read from the
@@ -702,10 +711,11 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         floor, ceiling = _rounded(floor), _rounded(ceiling)
         reached = _reached(floor, solid, [tuple(int(v) for v in c) for c in np.argwhere(starts)])
         out.append(RoomContext(
-            # A corridor takes the look of the room it leaves (district-looks A1): in a
+            # A corridor takes the look of the room it leaves (district-looks A1), and a
+            # Threshold the outer District's (its lower id), whichever way it was drawn. In a
             # one-District zone every room's ``room_theme`` is the zone's.
             id=cor.id, source="corridor", zone_type=spec.zone_type,
-            theme=(getattr(rooms.get(cor.from_room), "room_theme", "") or spec.dungeon_theme or ""),
+            theme=(getattr(_look_room(rooms, cor), "room_theme", "") or spec.dungeon_theme or ""),
             race=spec.dungeon_race or "", room_type="", kind="", style="", seed=int(spec.seed or 0),
             body_height=_r(h), scales={}, box=tuple(_rr((x0, y0, z0, x1, y1, z1))), cell=CELL,
             origin=(_r(xs[0]), _r(ys[0])), floor=floor, reached=reached, ceiling=ceiling,
