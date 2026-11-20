@@ -97,3 +97,90 @@ def test_a_cave_dungeon(layout, rooms):
         cold, bright = _mood(spec)
         f_cold, f_bright = _mood(_spec("fortress", layout, rooms, seed))
         assert cold > f_cold and bright < f_bright, (where, cold, f_cold, bright, f_bright)
+
+
+# --- cave dressing (step 22 task 3, district-looks Requirement 3) ----------------------------------
+
+def _room_lights(spec):
+    """``(room, light)`` for each room the semantic pass lit (``light_<i>_<type>``)."""
+    by_id = {lt.id: lt for lt in spec.lights}
+    out = []
+    for i, r in enumerate(spec.rooms):
+        lt = by_id.get(f"light_{i}_{r.semantic_type}")
+        if lt is not None:
+            out.append((r, lt))
+    return out
+
+
+def test_a_cave_room_takes_cave_light_for_a_warm_type():
+    for name in ("warren", "collapsed_gallery", "passage"):
+        rt = semantics.ROOM_TYPES[name]
+        assert rt.light == semantics._WARM, name
+        cave = semantics.RoomSpec(id="r", center_x=0, center_y=0, room_theme="cave", semantic_type=name)
+        other = semantics.RoomSpec(id="r", center_x=0, center_y=0, room_theme="warren", semantic_type=name)
+        assert semantics._room_light(cave, rt) == semantics._CAVE, name
+        assert semantics._room_light(other, rt) == semantics._WARM, name
+    # A cold or crystal type keeps its own light in a cave.
+    cave = semantics.RoomSpec(id="r", center_x=0, center_y=0, room_theme="cave", semantic_type="sump")
+    assert semantics._room_light(cave, semantics.ROOM_TYPES["sump"]) == semantics._COLD
+
+
+@pytest.mark.parametrize("layout", ["classic", "graph"])
+@pytest.mark.parametrize("rooms", [8, 15, 30])
+def test_no_cave_room_is_torch_lit(layout, rooms):
+    """No light in a cave dungeon is warm (red over blue); warren and collapsed_gallery in
+    another Purpose still are."""
+    warm_types = {"warren", "collapsed_gallery"}
+    seen = set()
+    for seed in (1, 2, 3):
+        spec = _spec("cave", layout, rooms, seed)
+        lit = _room_lights(spec)
+        assert lit, (layout, rooms, seed)
+        for r, lt in lit:
+            assert lt.b > lt.r, (layout, rooms, seed, r.id, r.semantic_type, (lt.r, lt.g, lt.b))
+            seen.add(r.semantic_type)
+        other = _spec("warren", layout, rooms, seed)
+        for r, lt in _room_lights(other):
+            if r.semantic_type in warm_types:
+                assert lt.r > lt.b, (layout, rooms, seed, r.id)
+    assert seen & (warm_types | {"passage"}), seen
+
+
+def test_a_cave_district_is_not_torch_lit():
+    """A cave District in a districted zone is lit as a cave; the built District beside it
+    keeps its warm light."""
+    warm_cave = 0
+    for seed in range(1, 9):
+        plan = ZonePlan(name="cv", room_count=16, dungeon_theme="fortress", districts=True,
+                        district_plan=[{"purpose": "fortress"}, {"purpose": "cave"}]).validate()
+        spec = plan_to_spec(plan, seed=seed)
+        for r, lt in _room_lights(spec):
+            if r.room_theme == "cave":
+                assert lt.b > lt.r, (seed, r.id, r.semantic_type)
+                warm_cave += semantics.ROOM_TYPES[r.semantic_type].light == semantics._WARM
+    assert warm_cave, "no warm-typed room in a cave District to check"
+
+
+TORCH_KINDS = frozenset({"torch", "lantern", "lamp", "brazier"})
+TREASURE_KINDS = frozenset({"chest", "urn", "vase"})
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+def test_a_cave_build_places_no_torch_and_no_chest_or_urn(tmp_path, seed):
+    from generators.builder import ZoneBuilder
+    from generators.decor.stock import eq_path_from_env
+    import json
+    if eq_path_from_env() is None:
+        pytest.skip("EQ_PATH is not set (no EQ install to read)")
+    spec = _spec("cave", "graph", 12, seed)
+    spec.decor = "normal"
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+    side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+    assert side["decor"]["layers"] == ["cave"]
+    props = [p for room in side["rooms"] for p in room.get("props", [])]
+    props += [p for c in side.get("corridors", []) for p in c.get("props", [])]
+    assert props
+    bad = [(p["kind"], p["key"]) for p in props
+           if p["kind"] in TORCH_KINDS | TREASURE_KINDS or p["category"] in ("light", "container")]
+    assert not bad, (seed, bad)
