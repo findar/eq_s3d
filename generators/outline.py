@@ -496,9 +496,9 @@ def _close_holes(verts: list, cells: list, rects: Sequence[Rect] = ()) -> list:
     """Only the outer wall stays. A dropped sliver can leave a pinhole in the floor:
     a loop with next to no area collapses to one vertex, and anything bigger becomes
     a Cell of its own. The pinhole collapses onto the vertex lying on the most sides of
-    ``rects`` (the Core and Throats), its first on a tie: a Throat's corner moved off it
-    leaves a bridge slot's ceiling hole off the slot, an open seam to the gate
-    (district-looks task 5)."""
+    ``rects`` (the Bridge slots), its first on a tie: a slot's corner moved off it leaves
+    the ceiling hole off the slot, an open seam to the gate (district-looks task 5). Only
+    the slots: any other room keeps its Outline exactly."""
     loops = Outline(verts=verts, cells=cells, core=(0, 0, 0, 0)).wall_loops()
     if len(loops) < 2:
         return cells
@@ -742,7 +742,7 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
     remap = {old: new for new, old in enumerate(used)}
     # Wandering walls scale down with a small room, or it loses too much of its floor.
     wobble = min(wobble, WOBBLE_SHARE * min(x1 - x0, y1 - y0))
-    keep = _close_holes([verts[i] for i in used], [[remap[i] for i in c] for c in keep], forced_rects)
+    keep = _close_holes([verts[i] for i in used], [[remap[i] for i in c] for c in keep], slots)
     verts = [verts[i] for i in used]
     # Splitting edges moves a Cell's mean, so judge the fans again afterwards.
     for scale in (1.0, 0.5, 0.25, 0.0):
