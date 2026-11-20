@@ -427,7 +427,10 @@ class LayoutGenerator:
             side = semantics.room_side(self.race, t)
             self.room_min = side * 0.7
             self.room_max = side * 1.3
-            self.ceiling = semantics.room_height(self.race, t)
+            # A profile's shift sizes footprints only; heights keep the
+            # Size control's position (district-looks task 4).
+            self.ceiling = semantics.room_height(
+                self.race, semantics.band_position("medium", self.size_shift - self.profile_shift))
             self.corridor_width, self.corridor_height = semantics.corridor_size(self.race)
             h = semantics.body_height(self.race)
             self.step_rise_min, self.step_rise_max = self.rise_h[0] * h, self.rise_h[1] * h
@@ -840,7 +843,8 @@ class LayoutGenerator:
             build=BuildContext(zone_type=self.zone_type, theme=theme, race=race,
                                race_scale=semantics.race_scale(race),
                                room_count=room_count),
-            size_shift=self.size_shift)
+            size_shift=self.size_shift,
+            height_shift=self.size_shift - self.profile_shift)
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement

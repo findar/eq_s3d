@@ -57,6 +57,33 @@ def test_cave_rooms_are_smaller_than_without_the_profile(layout, monkeypatch):
     assert statistics.mean(with_profile) < 0.95 * statistics.mean(without)
 
 
+@pytest.mark.parametrize("layout, shrink", [("classic", 0.076), ("graph", 0.139)])
+def test_the_profile_shrinks_footprints_not_heights(layout, shrink, monkeypatch):
+    """District-looks task 4: the shift sizes footprints only. Ten seeds with
+    and without the profile: rooms still smaller (no more than step 21's
+    shrink), mean room height within 2 %, corridor heights unchanged."""
+    def measure():
+        specs = [_spec(layout=layout, seed=s) for s in range(1, 11)]
+        return (statistics.mean(_mean_area(sp) for sp in specs),
+                statistics.mean(statistics.mean(r.height for r in sp.rooms) for sp in specs),
+                sorted({c.height for sp in specs for c in sp.corridors}))
+    area, height, corridors = measure()
+    monkeypatch.setattr(expand, "PURPOSE_PROFILE", {})
+    area0, height0, corridors0 = measure()
+    assert 1 - shrink - 0.01 <= area / area0 < 0.97
+    assert abs(height / height0 - 1) <= 0.02
+    assert corridors == corridors0
+
+
+def test_the_profile_leaves_the_classic_ceiling():
+    plain = LayoutGenerator("dungeon", seed=1)
+    cave = LayoutGenerator("dungeon", seed=1, profile="cave")
+    for g in (plain, cave):
+        g._apply_room_scale(10)
+    assert cave.ceiling == plain.ceiling
+    assert cave.room_max < plain.room_max
+
+
 def _districted(theme, proposals):
     return ZonePlan(name="cp", room_count=12, dungeon_theme=theme, districts=True,
                     district_plan=[{"purpose": p} for p in proposals]).validate()
