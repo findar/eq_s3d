@@ -12,3 +12,4 @@ in `docs/ACCEPTANCE.md`.
 - [ ] Walk the section.
 
 ## Result
+Skipped at the user's word, 2026-11-20 ("Skip acceptance"). The step's choice stands; nothing was looked at in 3D.

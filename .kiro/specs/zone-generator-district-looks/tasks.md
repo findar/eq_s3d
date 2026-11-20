@@ -66,11 +66,11 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
   - Type: agent · Size: S · Depends: 5, 9
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 7. HUMAN: first look
+- [x] 7. HUMAN: first look
   - Card: [cards/07-first-look.md](cards/07-first-look.md)
   - Type: human · Depends: 6
 
-- [ ] 8. Close step 22
+- [x] 8. Close step 22
   - Card: [cards/08-close.md](cards/08-close.md)
   - Type: agent · Size: S · Depends: 7 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-district-looks/, .kiro/specs/zone-generator/

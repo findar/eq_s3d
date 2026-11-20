@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 22, ready.** Drafted 2026-11-20 at master `b11764b`. After step 21 the
+> **STATUS: roadmap step 22, DONE (closed 2026-11-20; first look skipped at the user's word).** Drafted 2026-11-20 at master `b11764b`. After step 21 the
 > user said "Pick the next step yourself". Multi-zone worlds still wait on the user's design
 > review. The lead chose the "district look", carried as a follow-up since step 6: stock zones mix
 > built and cave parts, but today a District takes District 0's walls and decor. The step also

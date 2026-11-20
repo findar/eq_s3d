@@ -7,6 +7,14 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | Each room's Scales (and wall style) from its District's Purpose; the lean stops at a District edge; rule wings keep their override | `1007a14`, `d87dabf` |
+| 2 | Decor per District (rules once per Purpose, `BareCap` per-room rules), corridors from their `from_room`, sidecar `decor.districts`; lead fix: a Threshold takes the outer District's look | `e8a449f`, `3a27cac` |
+| 3 | Cave rooms never lit warm (`_CAVE`); cave decor drops torches, lanterns, chests, urns (crystals and gems as treasure) | `f3af75f` |
+| 4 | The cave profile shifts footprints only; heights through `height_shift` (`layout_engine`, `embed.room_size`) | `37c151e` |
+| 5 | Cave-pair sweeps; five pre-existing gate failures fixed (clashing tree corridors redrawn, bridge-slot pinhole, slit-blind boulders and decor, steep POI); gate 552/552; fail share ≤ 4.7%/key, bands unchanged | `a1860cf`, `4e79bab`, `c31edef`, `001790d`, `bd03aac`, `434a00a`, `70104f8` |
+| 6 | ACCEPTANCE "Step 22 — District looks" (cases a–g); thorough 3837 passed | `b1ed709` |
+| 7 | First look skipped at the user's word, 2026-11-20 | — |
+| 9 | Room view and `stage.py decor` per District; the room view route passes the record | `3f1eaf6`, `86f255f` |
 
 ## Decisions
 
