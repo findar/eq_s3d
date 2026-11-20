@@ -111,7 +111,8 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
                      asked: Optional[Mapping[str, int]] = None) -> None:
     """Each room's value on each Scale, into ``layout.rooms.<id>.scales``. Rooms draw from
     the entrance outward, each from its own stream, so this moves nothing about the layout.
-    ``asked`` is Scale -> a control's number: a bell on the rules' blend, a lean and not a pin."""
+    ``asked`` is Scale -> a control's number: a bell on the rules' blend, a lean and not a pin.
+    A room's theme Layer is its District's Purpose (``room.room_theme``)."""
     rules = rules or load_scales()
     control = {scale: peak_weights(value, ASKED_SPREAD) for scale, value in (asked or {}).items()}
     records = spec.layout["rooms"]
@@ -125,8 +126,9 @@ def draw_room_scales(spec, seed: int, overlay: str = "", rules: Optional[RoomSca
     for room in sorted(spec.rooms, key=lambda r: r.graph_depth):    # stable: the spec's order within a depth
         record = records.setdefault(room.id, {})
         wing = record.get("wing", "")
-        layers = rules.layers_for(spec.dungeon_race, spec.dungeon_theme, overlay, record.get("kind", room.kind),
-                                  room.semantic_type, wing)
+        # Its own District's Purpose: in a one-District zone that is the zone's theme.
+        layers = rules.layers_for(spec.dungeon_race, room.room_theme or spec.dungeon_theme, overlay,
+                                  record.get("kind", room.kind), room.semantic_type, wing)
         values = {}
         for scale in SCALES:
             # A room leans only within its wing: that's what gives a wing its hard edge.
