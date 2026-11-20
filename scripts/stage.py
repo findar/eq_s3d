@@ -16,7 +16,8 @@ a GLB of that stage alone, and prints its time:
             and ``<name>.rooms.json`` (the RoomContexts; none with Decor ``none`` or no
             install, as a build).
 ``decor``   a rooms file -> ``<name>.decor.glb`` (every room and its Props) and
-            ``<name>.decor.json``, as ``scripts/decor_room.py`` does for one room.
+            ``<name>.decor.json``, as ``scripts/decor_room.py`` does for one room. A build's
+            rooms file with its sidecar beside it dresses each District with its own layers.
 
 Plan fields are ``--plan key=value`` (any ``ZonePlan`` field: ``room_count=8``,
 ``dungeon_theme=crypt``, ``layout=classic``, ``sites=dense``, ...). ``attach`` and ``rooms``
@@ -416,12 +417,16 @@ def _site_placement(world, attachments):
     return None
 
 
-def decor_stage(recipe, rooms, control: Optional[str] = None, decor_seed: Optional[int] = None):
+def decor_stage(recipe, rooms, control: Optional[str] = None, decor_seed: Optional[int] = None,
+                districts=None):
     """Each room placed as the build places it (the bare cap included): ``[(ctx, Decorated,
-    problems)]``."""
+    problems)]``. ``districts`` is the build's sidecar ``decor.districts`` record
+    (district-looks Req 2): with it each room and corridor takes its own District's layers, as
+    the build does; without it (a staged rooms file, an old build) every room takes the zone's."""
     from generators.decor.catalogue import load as load_catalogue
     from generators.builder import BareCap
     from generators.decor.placement import check
+    from generators.decor.room_view import district_rules
     from generators.decor.rules import DEFAULT_CONTROL, layers_for, load_decor
 
     control = control or recipe.get("decor") or DEFAULT_CONTROL
@@ -434,10 +439,11 @@ def decor_stage(recipe, rooms, control: Optional[str] = None, decor_seed: Option
     zone = next((c for c in rooms if c.source in ("room", "corridor")), None)
     layers = layers_for(zone.theme, zone.race) if zone is not None else ()
     rules, cat = load_decor(layers=layers), load_catalogue()
-    cap = BareCap(rooms, rules, control)    # the build's own cap, not a copy of it
+    rules_of = district_rules(rules, districts, lambda ls: load_decor(layers=ls))
+    cap = BareCap(rooms, rules, control, rules_of)    # the build's own cap, not a copy of it
     out = []
     for ctx in rooms:
-        d = cap.place(ctx, rules, cat, control, seed)
+        d = cap.place(ctx, rules_of(ctx), cat, control, seed)
         out.append((ctx, d, check(ctx, d)))
     return control, seed, out
 
@@ -526,6 +532,7 @@ def cmd_rooms(args) -> List[Path]:
 
 def cmd_decor(args) -> List[Path]:
     import decor_room as dr
+    from generators.decor.room_view import _file
     from generators.room_context import load
 
     root = OutputRoot(Path(args.out))
@@ -535,7 +542,12 @@ def cmd_decor(args) -> List[Path]:
     if not rooms:
         print(f"decor {name}: the rooms file holds no RoomContexts (Decor none, or no install "
               "when it was built)")
-    control, seed, done = decor_stage(recipe, rooms, args.control, args.decor_seed)
+    # A build's rooms file has its sidecar beside it; its ``decor.districts`` record (a
+    # districted build's) dresses each District with its own layers, as the build did.
+    side = _file(path.parent, _stem(path, ".rooms.json"), ".zone.json")
+    districts = ((json.loads(side.read_text(encoding="utf-8")).get("decor") or {}).get("districts")
+                 if side.is_file() else None)
+    control, seed, done = decor_stage(recipe, rooms, args.control, args.decor_seed, districts)
     eq = None if args.boxes else dr.eq_path_of(args.eq_path)
     meshes = dr.Meshes(eq)
     room_parts, props, boxes = [], [], 0

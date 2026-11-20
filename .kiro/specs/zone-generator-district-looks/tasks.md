@@ -75,7 +75,7 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
   - Type: agent · Size: S · Depends: 7 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-district-looks/, .kiro/specs/zone-generator/
 
-- [ ] 9. The room view per District
+- [x] 9. The room view per District
   - Card: [cards/09-room-view.md](cards/09-room-view.md)
   - Type: agent · Size: S · Depends: 2
   - Owns: generators/decor/room_view.py, scripts/stage.py, tests/test_room_view.py, tests/test_district_decor.py
