@@ -254,6 +254,9 @@ _NEXT_PAIRS: Tuple[Tuple[str, str], ...] = (
     ("wizard_lair", "tomb"),
     ("corrupted_sanctum", "sunken_ruin"),
     ("mine_delve", "lava_forge"),
+    # natural caves open onto what lives in, digs into, floods or is buried in them
+    ("cave", "warren"), ("cave", "mine_delve"), ("cave", "sunken_ruin"),
+    ("cave", "ice_keep"), ("cave", "lava_forge"), ("cave", "tomb"),
 )
 _CONTRAST_PAIRS: Tuple[Tuple[str, str], ...] = (
     # soldiers, vermin and a cult
@@ -266,6 +269,8 @@ _CONTRAST_PAIRS: Tuple[Tuple[str, str], ...] = (
     ("war_city", "warren"), ("war_city", "tomb"), ("warren", "tomb"),
     # miners against what they dug into
     ("mine_delve", "warren"), ("mine_delve", "corrupted_sanctum"),
+    # the wild cave against the built, the faithful and the arcane
+    ("cave", "fortress"), ("cave", "temple"), ("cave", "wizard_lair"),
 )
 
 

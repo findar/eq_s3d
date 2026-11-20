@@ -62,6 +62,26 @@ class TestRulePlanner:
         p = self.rp.plan(f"a dark {word} to explore")
         assert p.zone_type == "dungeon"
 
+    @pytest.mark.parametrize("prompt", ["a dark cavern", "a crystal grotto deep underground",
+                                        "winding tunnels"])
+    def test_cave_words_choose_the_cave_purpose(self, prompt):
+        # Step 21 (A5): the words pick the Purpose; the zone type stays dungeon.
+        p = self.rp.plan(prompt)
+        assert (p.zone_type, p.dungeon_theme) == ("dungeon", "cave")
+
+    @pytest.mark.parametrize("prompt, purpose", [
+        ("an old mine", "mine_delve"),
+        # A tie goes to the other Purpose: cave must strictly outscore it.
+        ("a flooded temple in a cave", "temple"),
+        ("a goblin warren of tunnels", "warren"),
+    ])
+    def test_other_purposes_keep_their_words(self, prompt, purpose):
+        p = self.rp.plan(prompt)
+        assert (p.zone_type, p.dungeon_theme) == ("dungeon", purpose)
+
+    def test_cave_in_a_hill_stays_an_outdoor_dungeon(self):
+        assert self.rp.plan("a cave in a hill").zone_type == "outdoor_dungeon"
+
     def test_detects_wilderness(self):
         p = self.rp.plan("a sprawling forest with rolling hills")
         assert p.zone_type == "wilderness"

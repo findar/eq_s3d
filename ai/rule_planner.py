@@ -102,6 +102,13 @@ _ARCHETYPE_WORDS = {
     "war_city": ["war city", "citadel", "capital", "metropolis"],
     "fortress": ["fortress", "stronghold", "keep", "castle", "garrison", "fort",
                  "bastion"],
+    # Natural caves (step 21, A5). Last on purpose: a tie goes to the Purpose
+    # listed earlier, so "a flooded temple in a cave" stays a temple and cave
+    # wins only when it strictly outscores every other Purpose. Roots only:
+    # substring counting already finds "caverns", "caves" and "tunnels" through
+    # "cave" and "tunnel", and listing them too would count one word twice.
+    "cave": ["cave", "grotto", "underground", "tunnel", "stalactite",
+             "stalagmite", "subterranean"],
 }
 
 # Keyword → inhabiting race (scales rooms/corridors).
