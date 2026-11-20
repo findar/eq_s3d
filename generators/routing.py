@@ -314,7 +314,9 @@ def wind_leg(start: Point, end: Point, along_x: bool, hw: float, clearance: floa
     rng = random.Random(seed)
     gaps: List[float] = []
     left = middle
-    while left > hi:
+    # Split at least once: a middle of 2 × lo up to hi takes one bend (a stock-length
+    # tunnel, ~86 u, winds), a longer one as many as its gaps need.
+    while left > hi or (not gaps and left >= 2 * lo):
         g = rng.uniform(lo, max(lo, min(hi, left - lo)))
         gaps.append(g)
         left -= g

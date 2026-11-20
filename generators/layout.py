@@ -58,7 +58,7 @@ DISTRICT_ATTEMPTS = 8
 # (``LayoutContext.run_factor``; ``embed.RUN_FACTOR`` otherwise). Winding
 # tunnels task 9: a cave's legs come out near the stock tunnels' span
 # (``scripts/tunnel_survey.py``) so they are long enough to wind.
-PROFILE_RUN_FACTOR = {"cave": 12.0}
+PROFILE_RUN_FACTOR = {"cave": 9.0}
 
 
 class DistrictSplitError(ValueError):
