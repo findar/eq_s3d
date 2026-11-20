@@ -148,6 +148,12 @@ FACET_CUTS = {"blob": ((0.20, 0.32), None), "cut": ((0.18, 0.28), None),
               "ell": ((0.12, 0.22), (0.42, 0.55))}
 
 Door = Tuple[str, float, float]             # side (N/S/E/W), c0, c1 along that wall
+#: The narrowest way a player walks through: the gate's body (``analyzer.traverse.BODY_RADIUS``
+#: 2 u either side). A link to the Core, or growth from one Cell to the next, needs this much.
+LINK_MIN = 4.0
+#: Floor stranded behind a sliver this big (u^2) is dropped and regrown: the gate's
+#: "floor walled off" pocket (``analyzer.traverse.WALLED_OFF``).
+STRANDED_POCKET = 64.0
 
 
 def _wall_edges(cells: List[List[int]]) -> List[Tuple[int, int]]:
@@ -319,13 +325,16 @@ def _overlap(a: Rect, b: Rect, axis: int) -> float:
 
 def _link(r: Rect, core: Rect, width: float) -> List[Rect]:
     """The rects joining ``r`` to the Core, none if they already touch: straight
-    across when they share a range on one axis, otherwise an L."""
+    across when they share a range on one axis wide enough to walk (``LINK_MIN``),
+    otherwise an L."""
     ox, oy = _overlap(r, core, 0), _overlap(r, core, 1)
     if ox > 1e-6 and oy >= -1e-6 or oy > 1e-6 and ox >= -1e-6:
         return []
-    if ox > 1e-6:
+    # A shared range thinner than a player made a hairline "straight" link the gate
+    # can't walk (zone-generator-cave task 6: a 0.006 u strip); take the L instead.
+    if ox >= LINK_MIN:
         return [(max(r[0], core[0]), min(r[3], core[3]), min(r[2], core[2]), max(r[1], core[1]))]
-    if oy > 1e-6:
+    if oy >= LINK_MIN:
         return [(min(r[2], core[2]), max(r[1], core[1]), max(r[0], core[0]), min(r[3], core[3]))]
     # An L: along Y from ``r`` to the Core's middle, then along X into the Core.
     mx, my = (r[0] + r[2]) / 2, (core[1] + core[3]) / 2
@@ -336,7 +345,8 @@ def _link(r: Rect, core: Rect, width: float) -> List[Rect]:
     elif r[1] > my + w:
         leg = (mx - w, my - w, mx + w, r[1])
     run = (mx + w, my - w, core[0], my + w) if mx < core[0] else (core[2], my - w, mx - w, my + w)
-    return [leg, run]
+    # A leg already reaching into the Core (``r`` shares a sliver of its range) needs no run.
+    return [leg] + ([run] if run[2] >= run[0] else [])
 
 
 def _door_throats(box: Rect, door: Door, core: Rect) -> List[Rect]:
@@ -610,9 +620,19 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
         for a, b in zip(c, c[1:] + c[:1]):
             edge_cells.setdefault((min(a, b), max(a, b)), []).append(k)
     neighbours: List[set] = [set() for _ in cells]
-    for owners in edge_cells.values():
-        for a in owners:
-            neighbours[a].update(o for o in owners if o != a)
+    shared: Dict[Tuple[int, int], float] = {}
+    for (a, b), owners in edge_cells.items():
+        for k in owners:
+            neighbours[k].update(o for o in owners if o != k)
+        if len(owners) == 2:
+            pair = (min(owners), max(owners))
+            shared[pair] = shared.get(pair, 0.0) + math.dist(verts[a], verts[b])
+    # Cells sharing edges a player fits through (``LINK_MIN``), for the stranded check below.
+    passable: List[set] = [set() for _ in cells]
+    for (a, b), length in shared.items():
+        if length >= LINK_MIN:
+            passable[a].add(b)
+            passable[b].add(a)
 
     chosen = np.zeros(len(cells), bool)
     for r in forced_rects:
@@ -629,14 +649,45 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
                       (cy - (y0 + y1) / 2) / ((y1 - y0) / 2), wide, su, sv)
                + jitter * rng.random()) for cx, cy in cen]
     target = 0.0 if complex == "facet" else max(fill, FILL_FLOOR) * box_area
-    area = float(areas[chosen].sum())
-    frontier = {n for k in np.nonzero(chosen)[0] for n in neighbours[k] if not chosen[n]}
-    while area < target and frontier:
-        k = min(frontier, key=lambda f: (scores[f], f))
-        frontier.discard(k)
-        chosen[k] = True
-        area += float(areas[k])
-        frontier |= {n for n in neighbours[k] if not chosen[n]}
+    seeds = chosen.copy()
+
+    def grow(links: List[set]) -> None:
+        area = float(areas[chosen].sum())
+        frontier = {n for k in np.nonzero(chosen)[0] for n in links[k] if not chosen[n]}
+        while area < target and frontier:
+            k = min(frontier, key=lambda f: (scores[f], f))
+            frontier.discard(k)
+            chosen[k] = True
+            area += float(areas[k])
+            frontier |= {n for n in links[k] if not chosen[n]}
+
+    grow(neighbours)
+    # Growth can reach a Cell through a sliver no player fits through, stranding floor the
+    # doors can't reach (zone-generator-cave task 6: "floor walled off"). Drop each pocket the
+    # seeds don't reach through passable edges, if it's as big as the gate's, and grow on
+    # passable edges alone. A room with no such pocket keeps its Cells exactly.
+    reach, stack = set(np.nonzero(seeds)[0].tolist()), list(np.nonzero(seeds)[0].tolist())
+    while stack:
+        for n in passable[stack.pop()]:
+            if chosen[n] and n not in reach:
+                reach.add(n)
+                stack.append(n)
+    left = {int(k) for k in np.nonzero(chosen)[0] if k not in reach}
+    stranded = []
+    while left:     # by pocket: slivers under the gate's pocket size stay
+        pocket, stack = {left.pop()}, []
+        stack.extend(pocket)
+        while stack:
+            for n in neighbours[stack.pop()]:
+                if n in left:
+                    left.discard(n)
+                    pocket.add(n)
+                    stack.append(n)
+        if float(areas[sorted(pocket)].sum()) >= STRANDED_POCKET:
+            stranded += sorted(pocket)
+    if stranded:
+        chosen[stranded] = False
+        grow(passable)
 
     # A pocket of Cells ringed by chosen ones is a hole; columns are step 9's.
     outer = {k for owners in edge_cells.values() if len(owners) == 1 for k in owners if not chosen[k]}

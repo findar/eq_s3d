@@ -227,3 +227,61 @@ def test_a_wandering_wall_stays_out_of_every_throat():
             for a, b in zip(pts, pts[1:] + pts[:1]):
                 for t in o.throats:
                     assert not _segment_enters(a, b, t, inset=0.5), (seed, a, b, t)
+
+
+# ---------------------------------------------------------------------------
+# Slivers (zone-generator-cave task 6): two gate failures in the cave sweep
+# ---------------------------------------------------------------------------
+
+def test_a_sliver_of_shared_range_links_by_an_l_not_a_hairline():
+    # A door's strip sharing 0.006 u of the Core's range drew a 0.006 u "straight" link
+    # the gate couldn't walk ("no walkable path from the core to throat").
+    from generators.outline import LINK_MIN, _link
+    core = (-133.0, -70.1, -91.9, -22.103)
+    stem = (-83.36, -22.109, -61.05, 9.4)
+    rects = _link(stem, core, 31.5)
+    assert rects and all(min(r[2] - r[0], r[3] - r[1]) >= LINK_MIN for r in rects), rects
+
+
+def _spec_for(verticality, rooms, seed):
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": rooms, "layout": "graph",
+                                   "verticality": verticality, "dungeon_theme": "cave"}, [])
+    plan.name = "sliver"
+    return plan_to_spec(plan, seed=seed, warnings=[])
+
+
+@pytest.mark.slow
+def test_no_floor_hangs_off_the_core_by_a_sliver():
+    # Growth reached a Cell through a 1.9 u edge, floor the gate called walled off. Every
+    # pocket the Throats and Core don't reach through passable edges is now under the
+    # gate's size. Seed from the cave gate sweep (graph, moderate, 21 rooms).
+    from generators.outline import LINK_MIN, STRANDED_POCKET, _area
+    spec = _spec_for("moderate", 21, 1978770946)
+    o = next(r for r in spec.rooms if r.id == "room_14").outline
+    owners = {}
+    for k, c in enumerate(o.cells):
+        for a, b in zip(c, c[1:] + c[:1]):
+            owners.setdefault((min(a, b), max(a, b)), []).append(k)
+    shared = {}
+    for (a, b), own in owners.items():
+        if len(own) == 2:
+            shared[tuple(sorted(own))] = shared.get(tuple(sorted(own)), 0.0) + math.dist(o.verts[a], o.verts[b])
+    wide = {k: set() for k in range(len(o.cells))}
+    for (a, b), length in shared.items():
+        if length >= LINK_MIN:
+            wide[a].add(b)
+            wide[b].add(a)
+    forced = [o.core] + list(o.throats)
+    cen = [np.mean([o.verts[i] for i in c], axis=0) for c in o.cells]
+    seen = {k for k, (x, y) in enumerate(cen)
+            if any(r[0] <= x <= r[2] and r[1] <= y <= r[3] for r in forced)}
+    stack = list(seen)
+    while stack:
+        for n in wide[stack.pop()]:
+            if n not in seen:
+                seen.add(n)
+                stack.append(n)
+    cut_off = sum(_area([o.verts[i] for i in c]) for k, c in enumerate(o.cells) if k not in seen)
+    assert cut_off < STRANDED_POCKET, cut_off
