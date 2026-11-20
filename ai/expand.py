@@ -140,11 +140,15 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
 
     engine = layout_engine(plan.layout, plan.rule_set, plan.verticality) \
         if plan.zone_type in LAYOUT_ZONE_TYPES else None
-    gen = LayoutGenerator(zone_type=plan.zone_type, seed=rooms_seed, engine=engine)
+    district_args = _district_args(plan, rooms_seed, notes)
+    profile = purpose_profile(plan, district_args)
+    gen = LayoutGenerator(zone_type=plan.zone_type, seed=rooms_seed, engine=engine,
+                          profile=profile)
 
     # Apply size as a shift within the race's room bands (generate() sizes
-    # the rooms from the race; this persists).
-    gen.size_shift = _SIZE_SHIFT.get(plan.size, 0.0)
+    # the rooms from the race; this persists), on top of the Purpose's
+    # profile shift (0.0 unless a profile was passed).
+    gen.size_shift = gen.profile_shift + _SIZE_SHIFT.get(plan.size, 0.0)
 
     # Apply verticality (rises in body heights; generate() turns them into u)
     chance, rise_min, rise_max = _VERTICALITY.get(plan.verticality, _VERTICALITY["moderate"])
@@ -159,7 +163,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         dungeon_theme=plan.dungeon_theme,
         dungeon_race=plan.dungeon_race,
         elemental_tint=(plan.elemental_tint or None),
-        **_district_args(plan, rooms_seed, notes),
+        **district_args,
     )
     notes.extend(gen.warnings)
     pinned = plan.pinned_purpose()
@@ -180,14 +184,41 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         for mat in spec.materials.values():
             mat.description = f"{mat.description}, {plan.mood}".strip(", ")
 
-    # Record provenance: the measured style-profile name for this zone type
-    # (wilderness -> "outdoor"; dungeon/city map to themselves).
-    spec.style_profile = STYLE_PROFILE[plan.zone_type]
+    # Record provenance: the measured style-profile name the layout read: the
+    # Purpose's (``PURPOSE_PROFILE``), else the zone type's (wilderness ->
+    # "outdoor"; dungeon/city map to themselves).
+    spec.style_profile = profile or STYLE_PROFILE[plan.zone_type]
 
     # A grown dungeon's rooms draw their real walls, last, when every door is known.
     if spec.layout is not None and plan.zone_type == "dungeon":
         _dress_rooms(spec, plan, rooms_seed)
     return _decor(spec, plan)
+
+
+#: Purposes with a measured style profile of their own (cave spec Req 3): a
+#: dungeon with one of these Purposes (District 0's, with Districts) sizes its
+#: rooms from it. Any other Purpose keeps its zone type's profile.
+PURPOSE_PROFILE: Dict[str, str] = {"cave": "cave"}
+
+
+def purpose_profile(plan: ZonePlan, district_args: Mapping[str, object]) -> Optional[str]:
+    """The style profile *plan*'s Purpose brings (``PURPOSE_PROFILE``), or ``None``.
+
+    A ``dungeon`` only (an outdoor dungeon and a city keep theirs). The Purpose is
+    District 0's when Districts are on (*district_args* from :func:`_district_args`)
+    and the room count can split: its first proposal when it names a Purpose, else
+    the plan's dungeon theme, as ``assign_district_purposes`` fills District 0. A
+    District 0 the layout draws (no theme, no proposal) is not known here, so it
+    keeps the dungeon profile."""
+    if plan.zone_type != "dungeon":
+        return None
+    purpose = plan.dungeon_theme
+    if district_args and plan.room_count >= _districts.MIN_ROOMS:
+        proposals = district_args.get("district_plan") or []
+        first = proposals[0].get("purpose", "") if proposals else ""
+        if first in semantics.ARCHETYPES:
+            purpose = first
+    return PURPOSE_PROFILE.get(purpose or "")
 
 
 def _district_args(plan: ZonePlan, seed: int, notes: List[str]) -> Dict[str, object]:
