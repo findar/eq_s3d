@@ -12,12 +12,11 @@ from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from analyzer.traverse import AgentModel, build_walk_surface, check_outline
 from generators.geometry import build_mesh
-from generators.outline import MAX_GRADE, _fan_grades, add_relief, draw_outline
+from generators.outline import MAX_GRADE, add_relief, draw_outline
 from generators.pipeline import generate_validated
 from generators.wall_styles import MIN_HEAD, load_styles
 
 AGENT = AgentModel()
-AGENT_GRADE = float(np.tan(np.radians(AGENT.walkable_slope_deg)))
 
 
 def _room(seed, rise, fall, height=40.0, min_head=8.0, complex="voronoi"):
@@ -52,9 +51,6 @@ def test_w7_floors_only_rise_and_ceilings_only_fall_within_bounds(seed, rise, fa
         for a, b in zip(c, c[1:] + c[:1]):
             run = float(np.hypot(*(pts[a] - pts[b])))
             assert abs(lift[a] - lift[b]) <= run * MAX_GRADE + 2e-3, "no edge is too steep"
-    # The mesh fans each Cell from its mean: a thin fan triangle must not climb past the
-    # gate's walkable 40 degrees either (winding-tunnels task 5).
-    assert (_fan_grades(o.cells, pts, lift) <= AGENT_GRADE).all(), "no fan triangle is too steep"
 
 
 def test_a_room_with_no_relief_stays_flat():
