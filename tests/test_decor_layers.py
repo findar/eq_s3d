@@ -260,7 +260,7 @@ def test_layer_names_lists_the_folder(tmp_path):
 
 def test_the_shipped_theme_map_gives_the_tomb_its_layer():
     m = load_decor_themes()
-    assert m.themes == {"tomb": ("tomb",)} and m.races == {}
+    assert m.themes == {"tomb": ("tomb",), "cave": ("cave",)} and m.races == {}
     assert layers_for("tomb", "goblin") == ("tomb",) and layers_for("temple", "goblin") == ()
     assert layers_for("tomb", extra=["x", "tomb", "x"]) == ("tomb", "x")
 

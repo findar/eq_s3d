@@ -44,10 +44,10 @@ proves it with
   - Owns: rules/rooms/, rules/topology/themes.toml, styles/texture_recipes.json, tests/test_cave_rules.py
   - Reqs: 2.1–2.3, 2.5
 
-- [ ] 3. The decor layer
+- [x] 3. The decor layer
   - Card: [cards/03-decor.md](cards/03-decor.md)
   - Type: agent · Size: S · Depends: 1
-  - Owns: rules/decor/themes.toml, rules/decor/layers/cave.toml, tests/test_decor_rules.py
+  - Owns: rules/decor/themes.toml, rules/decor/layers/cave.toml, tests/test_decor_rules.py, rules/decor/sets.toml, rules/decor/tags.toml, tests/test_decor_layers.py (the theme-map line)
   - Reqs: 2.4, 2.5
 
 - [x] 4. Room scale from the cave profile

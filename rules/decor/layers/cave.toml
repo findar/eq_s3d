@@ -1,0 +1,107 @@
+# rules/decor/layers/cave.toml -- the cave Purpose's decor (step 21 task 3).
+#
+# themes.toml maps `cave = { layers = ["cave"] }`, so every Theme Cave build merges this file onto
+# rooms.toml; any other build can take it with `--decor-layer cave` or the page's Decor rules
+# control, and its rooms then read as a cave's. docs/DECOR_RULES.md is the guide, layers/tomb.toml
+# the worked example.
+#
+# A cave is found, not built: rock, stalagmites and stalactites, fungus, crystals in the deep
+# grottoes, bones where something dens. Nothing made: no furniture, banners, braziers or chains.
+#
+# A cave's rooms take the room types cave_mouth (entrance), cavern (hub, hall), crystal_grotto (the
+# climax) and grotto, plus passage, flooded_gallery, sump, collapsed_gallery and warren
+# (generators/semantics.py). The four cave types are the cave's alone, so their recipes are new
+# entries here. passage, flooded_gallery, sump and collapsed_gallery ask for nothing built and stay
+# as rooms.toml has them. Three shared entries ask for built things, so this layer stands its own
+# version instead, for builds taking it (mode = "replace"): `every` (braziers, chains and hooks),
+# types.warren (furs, rugs, beds and sacks) and the Dressing of a boss, a guard and an altar
+# (a throne, stools, braziers).
+#
+# Models: catalogue kinds with use = "yes" models in the neutral Set (a Theme Cave build takes
+# neutral alone). Crystal clusters (crystal_cluster, tags.toml): VELIUMCRYSTALS201/202, Runnyeye's
+# CRYSTAL4; the climax asks for them first. Crystal shards (crystal): Runnyeye's and Najena's
+# CRYS*/CRYSTAL2 (neutral in tags.toml), CRYSTAL3, VELIUMCRYSTALS200, VELIUMCHIPS200 on the floor,
+# POECRYST503 on the ceiling.
+# Stalactite kind: the CDSTALAG/KDSTALAG/MISTSTALG/WARRENSTALAG stalagmites on the floor,
+# SLCSTALAG40x, STALAG101 and WARRENSTALAG203/206 on the ceiling. Fungus: MUSHROOM*, NSHROOMS*,
+# YKSHROOM*. Roots: GKROOT*, NDROOTS*, TAKROOT* (ceiling).
+
+[layer]
+name        = "cave"
+description = "A natural cave: crystals in the grottoes, rock, stalagmites and fungus, nothing built"
+
+# Blackburrow and Runnyeye: few lights, much lying about (outdoor_dungeon's natural cave in
+# rooms.toml is light 0.6, debris 1.7). Squared, as every Weights Layer is: 0.4 next to the
+# default's 1 gives about 0.63.
+[weights.layer]
+light = 0.4
+container = 0.5
+debris = 2
+
+# The climax is never bare: its crystals are the point of it.
+[weights.types.crystal_grotto]
+light = 0.6
+bare = 0
+
+[weights.types.cavern]
+bare = 0.1
+
+# --- every room, after its own recipe ------------------------------------------------------------
+# The base's, less what is built: wall lights (still first, so corridors keep their lights), rock
+# and bones, fungus and webs; stalactites where the base hangs chains.
+
+[every]
+mode  = "replace"
+props = [ { kind = ["torch", "lantern"], at = "on_wall", count = [1, 2], chance = 0.8 },
+          { kind = ["rock", "mound"], at = "scatter", count = [1, 3] },
+          { kind = ["mushroom", "web"], at = "corners", count = [1, 2], chance = 0.4, from = 3 },
+          { kind = "stalactite", at = "ceiling", count = [1, 2], chance = 0.4 },
+          { kind = ["bones", "skull"], at = "scatter", count = [1, 2], chance = 0.3 } ]
+
+# --- the cave's own room types -------------------------------------------------------------------
+
+[types.cave_mouth]              # rock fall at the threshold, roots through the roof
+props = [ { kind = ["rock", "mound"], at = "scatter", count = [2, 4] },
+          { kind = "root", at = "ceiling", count = [1, 3], chance = 0.6 },
+          { kind = "stalactite", at = "along_wall", count = [1, 2], chance = 0.4 } ]
+
+[types.cavern]                  # stalagmites and dripstone, a crystal or two
+props = [ { kind = "stalactite", at = "scatter", count = [2, 4] },
+          { kind = "stalactite", at = "ceiling", count = [1, 3], chance = 0.6 },
+          { kind = ["crystal_cluster", "crystal"], at = "corners", count = [1, 2], chance = 0.5 },
+          { kind = ["rock", "mound"], at = "along_wall", count = [1, 2], chance = 0.5 } ]
+
+[types.grotto]                  # fungus clusters, dripping water, loose scree
+props = [ { kind = "mushroom", at = "corners", count = [1, 3], chance = 0.7 },
+          { kind = ["rock", "mound"], at = "scatter", count = [1, 2] },
+          { kind = "slime", at = "scatter", chance = 0.3 } ]
+
+[types.crystal_grotto]          # the climax: crystal clusters on the floor and the roof, a geode
+props = [ { kind = ["crystal_cluster", "crystal"], at = "scatter", count = [2, 4] },
+          { kind = ["crystal_cluster", "crystal"], at = "corners", count = [2, 4] },
+          { kind = "crystal", at = "scatter", count = [2, 4], chance = 0.6 },
+          { kind = "crystal", at = "ceiling", count = [1, 2], chance = 0.5 },
+          { kind = "gem", at = "far_end", chance = 0.3 },
+          { kind = "stalactite", at = "along_wall", count = [1, 2], chance = 0.4 } ]
+
+# --- shared entries, in a cave without what is built ---------------------------------------------
+
+[types.warren]                  # a beast's den: bones and dug earth, not a household
+mode  = "replace"
+props = [ { kind = ["bone_pile", "bones", "skull"], at = "scatter", count = [1, 3], chance = 0.7 },
+          { kind = ["mound", "rock"], at = "along_wall", count = [1, 2], chance = 0.5 },
+          { kind = "mushroom", at = "corners", chance = 0.4 } ]
+
+[dressing.boss]                 # a stalagmite at its back, crystals either side
+mode  = "replace"
+props = [ { kind = ["stalactite", "rock"], at = "behind" },
+          { kind = ["crystal_cluster", "crystal", "rock"], at = "flank", count = 2, chance = 0.6 } ]
+
+[dressing.guard]
+mode  = "replace"
+props = [ { kind = ["rock", "mound"], at = "beside" },
+          { kind = ["torch", "lantern"], at = "wall" } ]
+
+[dressing.altar]
+mode  = "replace"
+props = [ { kind = ["crystal", "candle"], at = "flank", count = 2 } ]

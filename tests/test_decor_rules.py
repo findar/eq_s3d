@@ -328,6 +328,66 @@ def test_two_cultures_share_a_room_only_when_allowed(rules):
     assert s.may_share("goblin", "undead") and not s.may_share("goblin", "dark_elf")
 
 
+# --- the cave layer (step 21 task 3) ----------------------------------------------------------------
+
+FURNITURE = frozenset(k for k, c in KINDS.items() if c == "furniture")
+CRYSTALS = frozenset({"crystal", "crystal_cluster"})
+
+
+def _line_kinds(rules, line):
+    if line.group:
+        return {k for m in rules.groups[line.group].members for k in m.kinds}
+    return set(line.kinds)
+
+
+def test_the_cave_layer_builds_nothing_and_puts_crystals_in_the_climax():
+    """Every recipe and Dressing a cave room can reach asks for no furniture kind, not even as
+    a fallback; the climax (crystal_grotto) and the hub (cavern) ask for crystals, and the
+    climax is never bare."""
+    from generators.semantics import ARCHETYPES, kind_types
+    assert layers_for("cave") == ("cave",)
+    r = load_decor(layers=layers_for("cave"))
+    arch = ARCHETYPES["cave"]
+    reach = {(t, k) for k, types in kind_types("cave").items() for t in types} | {(t, "") for t in arch.arc}
+    lines = [ln for t, k in sorted(reach) for recipe in r.recipe_for(t, k) for ln in recipe.lines]
+    lines += [ln for purpose in ("boss", "treasure", "altar", "guard") for ln in r.dressing_for(purpose)]   # rooms' POIs
+    built = {f"{ln.where[1]} {ln.where[2]}": _line_kinds(r, ln) & FURNITURE for ln in lines}
+    assert not {w: k for w, k in built.items() if k}
+    for room_type in (arch.climax_type, arch.hub_type):
+        own = r.recipe_for(room_type)[0]
+        assert own.name == f"types.{room_type}" and any(set(ln.kinds) & CRYSTALS for ln in own.lines)
+    # The climax asks for the clusters (tags.toml crystal_cluster) before the shards, every time.
+    climax = r.recipe_for(arch.climax_type)[0]
+    assert any(ln.kinds[:1] == ("crystal_cluster",) and ln.chance == 1 and ln.count[0] >= 1 for ln in climax.lines)
+    assert r.weights_for("dungeon", theme="cave", kind="deep", room_type=arch.climax_type)[BARE] == 0
+    # The base is untouched: a warren still keeps house without the layer.
+    assert _line_kinds(load_decor(), load_decor().types["warren"].lines[0]) & FURNITURE
+
+
+@pytest.mark.slow
+def test_a_cave_build_has_crystals_in_its_climax_and_no_furniture(tmp_path):
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from generators.builder import ZoneBuilder
+    from generators.decor.stock import eq_path_from_env
+    if eq_path_from_env() is None:
+        pytest.skip("EQ_PATH is not set (no EQ install to read)")
+    spec = plan_to_spec(ZonePlan(name="cave_decor", zone_type="dungeon", dungeon_theme="cave").validate(), seed=4)
+    spec.decor = "normal"
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+    side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
+    assert side["decor"]["layers"] == ["cave"]
+    props = [p for room in side["rooms"] for p in room.get("props", [])]
+    props += [p for c in side.get("corridors", []) for p in c.get("props", [])]
+    assert props and not [p["key"] for p in props if p["category"] == "furniture"]
+    climax = [room for room in side["rooms"] if room["role"] == "climax"]
+    assert climax and all(any(p["kind"] == "crystal_cluster" for p in room["props"]) for room in climax)
+    # A plain cave build takes Runnyeye's crystals too (neutral in tags.toml).
+    from generators.decor.catalogue import load
+    assert {"CRYS2E", "CRYSTAL4"} <= set(load().find(kind="crystal", set="neutral")) | set(
+        load().find(kind="crystal_cluster", set="neutral"))
+
+
 # --- scripts/topology_rules.py ---------------------------------------------------------------------
 
 
