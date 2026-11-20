@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .geometry import _bridge_slots, room_doors
+from .routing import TunnelRules
 from .outline import (COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, add_relief,
                       draw_outline)
 from .semantics import body_height
@@ -40,6 +41,8 @@ SURFACES: Tuple[str, ...] = ("wall", "floor", "ceiling")
 FINISH = "finish"       # the Scale a room's style comes from (``room_scales``)
 FINISH_VALUES = range(11)
 #: What ``[tune]`` may move across a style's band of finish.
+#: ``[tunnel]``'s fields (``routing.TunnelRules``).
+TUNNEL_KEYS: Tuple[str, ...] = ("segment", "max_turn", "wander", "end")
 TUNABLE: Tuple[str, ...] = ("wobble_h", "fill", "floor_relief_h", "ceiling_spread", "corridor_break")
 #: The texture families that read as laid stone or carpentry, not rock.
 MASONRY: Tuple[str, ...] = ("dressed_stone", "brick", "flagstone", "cobble", "planks", "plaster")
@@ -64,6 +67,7 @@ class WallStyle:
     relief_scale_h: float = 5.0         # how far apart a floor's or ceiling's rises and falls are
     finish: Tuple[int, int] = (0, 10)   # the rooms of this finish take this style
     tune: Mapping[str, Tuple[float, float]] = field(default_factory=dict)   # scale at the band's ends
+    tunnel: Optional[TunnelRules] = None    # how its corridors wind; None keeps them straight
 
     def at_finish(self, value: int) -> "WallStyle":
         """This style at one value of its band: ``tune`` scales its numbers, by the first
@@ -172,13 +176,26 @@ def _shapes(chk: _Checker, raw, kinds: Sequence[str]) -> Dict[str, Dict[str, flo
     return out
 
 
+def _tunnel(chk: _Checker, raw) -> Optional[TunnelRules]:
+    """``[tunnel]``: how a rough corridor's plain legs wind (winding-tunnels Requirement 2)."""
+    tbl = chk.table(raw, "top level", "tunnel", "[tunnel] with segment, max_turn, wander, end")
+    if tbl is None:
+        return None
+    chk.keys(tbl, "tunnel", TUNNEL_KEYS, required=TUNNEL_KEYS)
+    segment = _band(chk, tbl, "segment", "tunnel", 4.0, 200.0) if "segment" in tbl else (4.0, 4.0)
+    max_turn = _number(chk, tbl, "max_turn", "tunnel", 5.0, 120.0) if "max_turn" in tbl else 5.0
+    wander = _number(chk, tbl, "wander", "tunnel", 0.0, 1.0) if "wander" in tbl else 0.0
+    end = _number(chk, tbl, "end", "tunnel", 0.0, 200.0) if "end" in tbl else 0.0
+    return TunnelRules(segment, max_turn, wander, end)
+
+
 def load_style(path: Union[str, Path]) -> WallStyle:
     """Load and check one style; raises ``RuleSetError`` with every failure."""
     path = Path(path)
     chk = _Checker(path.name)
     data = _read_toml(path, chk)
     chk.raise_if_failed()
-    chk.keys(data, "top level", ("style", "shapes", "look", "tune"), required=("style", "shapes", "look"))
+    chk.keys(data, "top level", ("style", "shapes", "look", "tune", "tunnel"), required=("style", "shapes", "look"))
     st = chk.table(data.get("style", {}), "top level", "style", "[style] with name, complex") or {}
     chk.keys(st, "style", ("name", "description", "complex", "cell_size_h", "wobble_h", "fill",
                            "floor_relief_h", "ceiling_spread", "corridor_break", "relief_scale_h", FINISH),
@@ -218,9 +235,13 @@ def load_style(path: Union[str, Path]) -> WallStyle:
     for surface, value in lk.items():
         if surface in SURFACES and value not in LOOKS:
             chk.fail("look", surface, value, _one_of(LOOKS))
+    tunnel = _tunnel(chk, data["tunnel"]) if "tunnel" in data else None
+    if tunnel is not None and broken <= 0:
+        chk.fail("top level", "tunnel", "a [tunnel]", "nothing: only a style with a corridor_break winds",
+                 raw=True)
     chk.raise_if_failed()
     return WallStyle(name, desc, complex_, cell, wobble, fill, relief, spread, broken, shapes, dict(lk),
-                     relief_scale, (int(band[0]), int(band[1])), tune)
+                     relief_scale, (int(band[0]), int(band[1])), tune, tunnel)
 
 
 def load_styles(folder: Union[str, Path] = WALLS_DIR) -> Dict[str, WallStyle]:
@@ -235,11 +256,32 @@ def load_styles(folder: Union[str, Path] = WALLS_DIR) -> Dict[str, WallStyle]:
             errors.extend(exc.errors)
     if errors:
         raise RuleSetError(errors)
+    winding = sorted(s.name for s in styles.values() if s.tunnel is not None)
+    if len(winding) > 1:
+        # A corridor's ``wind`` doesn't say which style it took, so every reader winds it by
+        # the one tunnel there is (``tunnel_rules``).
+        raise RuleSetError([CheckError("walls", "styles", "tunnel", str(winding),
+                                       "one style at most with a [tunnel]")])
     bands = sorted((s.finish, s.name) for s in styles.values())
     if bands and [v for (lo, hi), _ in bands for v in range(lo, hi + 1)] != list(FINISH_VALUES):
         raise RuleSetError([CheckError("walls", "styles", FINISH, str(bands),
                                        "bands that cover 0 to 10 once each")])
     return styles
+
+
+def tunnel_rules(styles: Optional[Mapping[str, WallStyle]] = None) -> Optional[TunnelRules]:
+    """The one ``[tunnel]`` among the wall styles (``load_styles`` allows one at most), or
+    None. What ``routing.winding_legs`` winds a corridor's legs by."""
+    if styles is None:
+        global _TUNNEL
+        if _TUNNEL is _UNREAD:
+            _TUNNEL = tunnel_rules(load_styles())
+        return _TUNNEL
+    return next((s.tunnel for s in styles.values() if s.tunnel is not None), None)
+
+
+_UNREAD = object()
+_TUNNEL: object = _UNREAD
 
 
 AUTO = "auto"

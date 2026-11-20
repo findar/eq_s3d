@@ -175,6 +175,12 @@ class CorridorSpec:
     # as a share of its width and height. 0 is square; the JSON carries it only when set.
     rough: float = 0.0
 
+    # A rough corridor's winding (step 23): per leg of its route, how far that leg's
+    # centreline may stray sideways (``routing.wind_leg``); 0 keeps a leg straight. Measured
+    # from the finished spec (``transitions.measure_winds``). The JSON carries it only when
+    # some leg winds, so a spec from before step 23 loads with [] (every leg straight).
+    wind: List[float] = field(default_factory=list)
+
     # Where two wall styles meet in this corridor; None for most. The JSON carries it only when set.
     transition: Optional[Transition] = None
 
@@ -278,12 +284,14 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
-    """A corridor's JSON; ``side``, ``bridge``, ``rough``, ``transition`` and ``threshold`` only when set
-    (step 6 corridors carry none of them)."""
+    """A corridor's JSON; ``side``, ``bridge``, ``rough``, ``wind``, ``transition`` and ``threshold``
+    only when set (step 6 corridors carry none of them; ``wind`` only when a leg winds)."""
     d = asdict(cor)
     for key in ("side", "bridge", "rough", "transition", "threshold"):
         if not d.get(key):
             d.pop(key, None)
+    if not any(d.get("wind") or ()):
+        d.pop("wind", None)
     return d
 
 
