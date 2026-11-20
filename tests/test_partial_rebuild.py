@@ -46,6 +46,10 @@ CASES = {
     "outdoor_dungeon": ({"zone_type": "outdoor_dungeon", "room_count": 5}, 2),
     "tomb": ({"zone_type": "dungeon", "dungeon_theme": "tomb"}, 4),
     "wilderness": ({"zone_type": "wilderness", "sites": "normal"}, 4),
+    # District looks (district-looks task 2): a cave District after a fortress District, each
+    # dressed from its own layers.
+    "districted": ({"zone_type": "dungeon", "room_count": 12, "districts": True,
+                    "district_plan": ["fortress", "cave"]}, 3),
 }
 DECOR_SEED = 11
 ROOM_SEED = 123457
