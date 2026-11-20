@@ -13,9 +13,15 @@
 # (generators/semantics.py). The four cave types are the cave's alone, so their recipes are new
 # entries here. passage, flooded_gallery, sump and collapsed_gallery ask for nothing built and stay
 # as rooms.toml has them. Three shared entries ask for built things, so this layer stands its own
-# version instead, for builds taking it (mode = "replace"): `every` (braziers, chains and hooks),
-# types.warren (furs, rugs, beds and sacks) and the Dressing of a boss, a guard and an altar
-# (a throne, stools, braziers).
+# version instead, for builds taking it (mode = "replace"): `every` (wall torches, braziers, chains
+# and hooks), types.warren (furs, rugs, beds and sacks) and the Dressing of a boss, a guard, an altar
+# and a treasure (a throne, stools, torches, braziers, chests and urns).
+#
+# No wall torches and no treasure chests or urns (step 22 task 3): a cave is lit by its own cold
+# light (generators/semantics.py), so its `every` and its guard ask for no wall light, and its
+# treasure is a crystal or a gem on a bone pile. A Dressing takes no Weights, so those lines are
+# rewritten; the light and container Weights at 0 also weigh out any fallback recipe's torches,
+# braziers, chests and urns (and a corridor's wall lights, which follow the light Weight).
 #
 # Models: catalogue kinds with use = "yes" models in the neutral Set (a Theme Cave build takes
 # neutral alone). Crystal clusters (crystal_cluster, tags.toml): VELIUMCRYSTALS201/202, Runnyeye's
@@ -30,30 +36,28 @@
 name        = "cave"
 description = "A natural cave: crystals in the grottoes, rock, stalagmites and fungus, nothing built"
 
-# Blackburrow and Runnyeye: few lights, much lying about (outdoor_dungeon's natural cave in
-# rooms.toml is light 0.6, debris 1.7). Squared, as every Weights Layer is: 0.4 next to the
-# default's 1 gives about 0.63.
+# Much lying about (outdoor_dungeon's natural cave in rooms.toml is debris 1.7), nothing built to
+# light it or to keep things in: light and container at 0 (a 0 in the geometric blend is a 0).
+# Squared, as every Weights Layer is: debris 2 next to the default's 1 gives about 1.41.
 [weights.layer]
-light = 0.4
-container = 0.5
+light = 0
+container = 0
 debris = 2
 
 # The climax is never bare: its crystals are the point of it.
 [weights.types.crystal_grotto]
-light = 0.6
 bare = 0
 
 [weights.types.cavern]
 bare = 0.1
 
 # --- every room, after its own recipe ------------------------------------------------------------
-# The base's, less what is built: wall lights (still first, so corridors keep their lights), rock
-# and bones, fungus and webs; stalactites where the base hangs chains.
+# The base's, less what is built: no wall lights (so a cave's corridors are dark too), rock and
+# bones, fungus and webs; stalactites where the base hangs chains.
 
 [every]
 mode  = "replace"
-props = [ { kind = ["torch", "lantern"], at = "on_wall", count = [1, 2], chance = 0.8 },
-          { kind = ["rock", "mound"], at = "scatter", count = [1, 3] },
+props = [ { kind = ["rock", "mound"], at = "scatter", count = [1, 3] },
           { kind = ["mushroom", "web"], at = "corners", count = [1, 2], chance = 0.4, from = 3 },
           { kind = "stalactite", at = "ceiling", count = [1, 2], chance = 0.4 },
           { kind = ["bones", "skull"], at = "scatter", count = [1, 2], chance = 0.3 } ]
@@ -97,10 +101,14 @@ mode  = "replace"
 props = [ { kind = ["stalactite", "rock"], at = "behind" },
           { kind = ["crystal_cluster", "crystal", "rock"], at = "flank", count = 2, chance = 0.6 } ]
 
-[dressing.guard]
+[dressing.guard]                # a rock to sit on, no torch on the wall
 mode  = "replace"
-props = [ { kind = ["rock", "mound"], at = "beside" },
-          { kind = ["torch", "lantern"], at = "wall" } ]
+props = [ { kind = ["rock", "mound"], at = "beside" } ]
+
+[dressing.treasure]             # a beast's hoard: a crystal or a gem among bones, no chest or urn
+mode  = "replace"
+props = [ { kind = ["crystal_cluster", "crystal", "gem"], at = "beside", count = [1, 2] },
+          { kind = ["gem", "bone_pile", "bones"], at = "round", count = [1, 2], chance = 0.4 } ]
 
 [dressing.altar]
 mode  = "replace"

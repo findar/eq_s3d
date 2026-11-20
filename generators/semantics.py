@@ -800,7 +800,7 @@ def _apply_regions_and_lights(spec: ZoneSpec, tint: str) -> None:
 
         # --- lighting mood: type base light × type intensity, fades a little
         #     with depth, overridden by the elemental tint where set. ---
-        base_r, base_g, base_b = rt.light
+        base_r, base_g, base_b = _room_light(room, rt)
         intensity = rt.intensity
         if tint_rgb is not None and rt.region:
             # Only rooms actually carrying the tint region take the tint light.
@@ -813,6 +813,16 @@ def _apply_regions_and_lights(spec: ZoneSpec, tint: str) -> None:
 
         _set_room_light(spec, room, i,
                         base_r * intensity, base_g * intensity, base_b * intensity)
+
+
+def _room_light(room: RoomSpec, rt: RoomType) -> Tuple[float, float, float]:
+    """The room's base light: its Room_Type's, except that a room of the ``cave`` Purpose
+    (a cave zone's, or a cave District's) is never torch-lit. A shared type there that
+    lights ``_WARM`` (warren, collapsed_gallery, passage) takes ``_CAVE`` instead, at the
+    type's own intensity (district-looks Requirement 3)."""
+    if room.room_theme == "cave" and rt.light == _WARM:
+        return _CAVE
+    return rt.light
 
 
 def _add_room_region(spec: ZoneSpec, room: RoomSpec, kind: str, idx: int) -> None:
@@ -1052,7 +1062,7 @@ def _realize_districted(spec: ZoneSpec, districts: Sequence[DistrictSpec],
         rt = ROOM_TYPES.get(room.semantic_type, ROOM_TYPES["passage"])
         if rt.region:
             _add_room_region(spec, room, rt.region, i)
-        rgb = rt.light
+        rgb = _room_light(room, rt)
         intensity = rt.intensity
         if tint_rgb is not None and rt.region:
             rgb = tint_rgb
