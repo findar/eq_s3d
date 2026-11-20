@@ -24,5 +24,9 @@ on the user's design review. The user confirms at the first look (task 7).
    p10/p50/p90): segment between turns 16/40/72 u, turn 24/48/87 deg, wander 0.07/0.25/1.50 of span,
    width 12/20/31 u, end straight 20/37/84 u. Proposed `[tunnel]`: `segment = [16, 72]`,
    `max_turn = 85`, `wander = 0.25`, `end = 20`.
+4. **`[tunnel]` takes the plain tunnels' numbers** (lead, at the task 1 merge): `segment = [20, 72]`,
+   `max_turn = 60`, `wander = 0.2`, `end = 20`. Junction legs (70 of 113) bend round junctions and push
+   the turn p90 to 87; plain tunnels turn 32/52/78 and wander 0.03/0.17/0.58, and a generated corridor
+   is a plain tunnel. A gentler max turn also keeps the strip's mitres short.
 
 ## Follow-ups
