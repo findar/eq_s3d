@@ -23,12 +23,29 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from .routing import corridor_route
+from .routing import corridor_route, winding_legs
 from .zone_spec import ZoneSpec
 
 if TYPE_CHECKING:
     from .eqmap import PropMarks, SiteMarks
     from .mapgeom import OutlineSet
+
+
+def corridor_path(c, rooms_by_id) -> List[Tuple[float, float]]:
+    """A corridor's centreline in plan: its route's waypoints, a winding leg (step 23,
+    ``routing.winding_legs``) along its tunnel between its bend squares. Without a winding
+    leg it is the route's waypoints, as it always was."""
+    route = corridor_route(c, rooms_by_id)
+    wps = list(route.waypoints)
+    lines = winding_legs(c, rooms_by_id) if any(c.wind) else [None] * (len(wps) - 1)
+    if not any(line is not None for line in lines):
+        return wps
+    out = [wps[0]]
+    for k, line in enumerate(lines):
+        for p in (line or []) + [wps[k + 1]]:
+            if p != out[-1]:
+                out.append(p)
+    return out
 
 
 _FEATURE_FILL = {"dais": "#8a7a4a", "pillar": "#c8ccd0", "plinth": "#b07a4c", "boulder": "#8a8f94"}
@@ -300,11 +317,11 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
             )
     else:
         # Over a real outline, a corridor is a thin centreline along the route
-        # the geometry builder actually cut (straight / Z / L), not a chord.
+        # the geometry builder actually cut (straight / Z / L / U, each winding
+        # leg along its tunnel), not a chord.
         rooms_by_id = {r.id: r for r in spec.rooms}
         for c in spec.corridors:
-            route = corridor_route(c, rooms_by_id)
-            pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in route.waypoints)
+            pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in corridor_path(c, rooms_by_id))
             cw = max(1.0, c.width * scale * 0.25)
             if c.threshold:
                 # A Threshold: heavier and opaque, so the District boundary reads.

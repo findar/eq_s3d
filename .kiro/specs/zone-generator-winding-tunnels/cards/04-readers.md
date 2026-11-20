@@ -8,11 +8,11 @@ Index entry: `tasks.md` task 4. Requirement 4. Design "Readers".
 - The map outline, the EQ map lines and the map SVG follow the tunnel.
 
 ## Done when
-- [ ] Every winding corridor's RoomContext floor cells lie on the strip and none lie outside it.
+- [x] Every winding corridor's RoomContext floor cells lie on the strip and none lie outside it.
       → verify: `python -m pytest tests/test_winding_readers.py -q`
-- [ ] Decor on 5 cave builds (`EQ_PATH='F:\everquest_rof2'`) places no corridor Prop off the
+- [x] Decor on 5 cave builds (`EQ_PATH='F:\everquest_rof2'`) places no corridor Prop off the
       strip. Same command.
-- [ ] The map SVG and the EQ map `.txt` draw the winding walls. Same command, checked on one
+- [x] The map SVG and the EQ map `.txt` draw the winding walls. Same command, checked on one
       seed's lines.
 - [ ] `python -m pytest tests/ -q -m "not slow"` is green.
 
@@ -22,3 +22,4 @@ Index entry: `tasks.md` task 4. Requirement 4. Design "Readers".
 - `mapgeom` unions pieces on one supporting line; check that it handles angled walls.
 
 ## Result
+✔ 560ff84 · 53 passed

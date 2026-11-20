@@ -393,6 +393,47 @@ def _line_key(P: np.ndarray, Q: np.ndarray):
             tuple(np.round(off / WELD).astype(np.int64).tolist())), d
 
 
+#: Two angled lines' directions this close (cosine) can be one supporting line.
+_FOLD_COS = math.cos(math.radians(1.0))
+
+
+def _fold_angled_lines(groups: Dict[tuple, list]) -> Dict[tuple, List[tuple]]:
+    """Each kept line key with the keys folded into it: an angled line (a winding tunnel's
+    wall, a ramp's side) whose pieces keyed apart. Its ends are float32 in the TER, so its
+    pieces' directions and offsets differ by noise that ``_line_key`` can round apart; a key
+    is folded into an earlier one when it runs within 1 degree of it and every end of its
+    pieces lies within WELD of that line. An axis-aligned line keys exactly (its ends share
+    the coordinate across it), so it is never folded and keeps its own key."""
+    kept: Dict[tuple, List[tuple]] = {}
+    lines_d: List[np.ndarray] = []
+    lines_p: List[np.ndarray] = []
+    lines_k: List[tuple] = []
+    for key in sorted(groups):
+        kept[key] = [key]
+        if sum(1 for c in key[0] if c != 0) < 2:
+            continue
+        d = np.array(key[0], float)
+        d /= np.linalg.norm(d)
+        ends = np.array([p for P, Q in groups[key] for p in (P, Q)], float)
+        home = None
+        if lines_d:
+            D = np.array(lines_d)
+            for i in np.nonzero(np.abs(D @ d) >= _FOLD_COS)[0]:
+                r = ends - lines_p[i]
+                off = r - np.outer(r @ D[i], D[i])
+                if np.all(np.linalg.norm(off, axis=1) <= WELD):
+                    home = lines_k[i]
+                    break
+        if home is not None:
+            kept[home].append(key)
+            del kept[key]
+            continue
+        lines_d.append(d)
+        lines_p.append(ends[0])
+        lines_k.append(key)
+    return kept
+
+
 def _merge_collinear_pieces(pieces):
     """Union overlapping pieces on one supporting line (an overlapping corridor
     end and the room floor both contribute the same boundary). Pieces that only
@@ -403,11 +444,16 @@ def _merge_collinear_pieces(pieces):
             P, Q = Q, P
         key, d = _line_key(P, Q)
         groups.setdefault(key, []).append((P, Q))
+    folded = _fold_angled_lines(groups)
     merged = []
     for key in sorted(groups):
-        items = groups[key]
+        if key not in folded:
+            continue
+        items = [it for k in folded[key] for it in groups[k]]
         d = np.array(key[0], float)
         d = d / np.linalg.norm(d)
+        # A folded piece can run the other way along the line (its ends sorted apart).
+        items = [(P, Q) if float(np.dot(Q - P, d)) >= 0.0 else (Q, P) for P, Q in items]
         rows = sorted(((float(np.dot(P, d)), float(np.dot(Q, d)),
                         tuple(P.tolist()), tuple(Q.tolist())) for P, Q in items))
         cur = None
