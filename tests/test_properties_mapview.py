@@ -19,7 +19,7 @@ from hypothesis import strategies as st
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.mapgeom import DepthBand, OutlineSet, Polyline
-from generators.mapview import render_map_svg
+from generators.mapview import corridor_path, render_map_svg
 from generators.routing import corridor_route
 from generators.zone_spec import ZoneSpec
 
@@ -224,12 +224,12 @@ def test_outline_under_annotations(data, spec, size, padding):
     assert len(room_rects) == len(spec.rooms)
     assert all(float(k.get("fill-opacity")) <= 0.35 for k in room_rects)
 
-    # Corridors follow their routes, and come after the outline group.
+    # Corridors follow their routes (a winding leg its tunnel), after the outline group.
     rooms_by_id = {r.id: r for r in spec.rooms}
     polylines = [k for k in kids[2:] if k.tag == _NS + "polyline"]
     assert len(polylines) == len(spec.corridors)
     for c, el in zip(spec.corridors, polylines):
-        want = [proj(x, y) for x, y in corridor_route(c, rooms_by_id).waypoints]
+        want = [proj(x, y) for x, y in corridor_path(c, rooms_by_id)]   # a winding leg's tunnel
         got = [tuple(float(v) for v in p.split(",")) for p in el.get("points").split()]
         assert got == want
 
