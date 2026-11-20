@@ -135,6 +135,10 @@ class RoomContext:
     features: List[dict] = field(default_factory=list)
     pois: List[dict] = field(default_factory=list)
     clear: List[dict] = field(default_factory=list)     # a Site's Site_Clear pieces
+    #: A shaped room's wall lines ((x0, y0), (x1, y1)), exact: the grid samples only cell
+    #: middles, so a slit in a wall narrower than a cell is in these alone (district-looks
+    #: task 5). Not recorded: a context loaded from a recording has none.
+    wall_lines: List[tuple] = field(default_factory=list)
 
     # -- JSON ---------------------------------------------------------------
 
@@ -532,6 +536,7 @@ def contexts(spec, mesh) -> List[RoomContext]:
             cell=CELL, origin=(_r(grid.xs[0]), _r(grid.ys[0])),
             floor=floor, reached=reached, ceiling=ceiling, spine=grid.spine.copy(),
             walls=_walls(m, room, level), doors=ctx_doors,
+            wall_lines=_wall_lines(room) if room.outline is not None else [],
             features=[_clean({"kind": f.kind, "plan": f.plan, "height": f.height, "steps_side": f.steps_side})
                       for f in room.features],
             pois=[_clean({"purpose": p.purpose, "name": p.name, "x": p.x, "y": p.y, "z": p.z,

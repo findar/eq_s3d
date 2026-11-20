@@ -440,6 +440,13 @@ def _edge_distance(ctx: RoomContext, ok: np.ndarray, reach: float = 0.0) -> np.n
     return out
 
 
+def _segment_distance(gx, gy, ax: float, ay: float, bx: float, by: float) -> np.ndarray:
+    """Each grid point's distance (u) to the segment a..b."""
+    dx, dy = bx - ax, by - ay
+    t = np.clip(((gx - ax) * dx + (gy - ay) * dy) / max(dx * dx + dy * dy, 1e-12), 0.0, 1.0)
+    return np.hypot(gx - (ax + t * dx), gy - (ay + t * dy))
+
+
 def _in_capsule(gx, gy, x0, y0, x1, y1, r) -> np.ndarray:
     dx, dy = x1 - x0, y1 - y0
     n = dx * dx + dy * dy
@@ -565,6 +572,11 @@ class Room:
         #: Feature), as the gate reads it. Props stand on ``ok``; the room's connectivity
         #: (``problems``, ``check``) is judged on ``walk``.
         self.walk = self.ok & ~_near_rise(ctx, self.ok)
+        # The wall lines too, exact: a slit in a wall narrower than a cell leaves floor on both
+        # sides of it, which the cells read as open (district-looks task 5: rocks walled floor
+        # off behind such a slit). Off a straight wall this takes no cell ``_near_rise`` keeps.
+        for (ax, ay), (bx, by) in ctx.wall_lines:
+            self.walk &= _segment_distance(self.gx, self.gy, ax, ay, bx, by) >= PLAYER_HALF_WIDTH
         # A solid Feature's plan is known exactly: off it by the half-width and half the
         # gate's own 2 u sample spacing (its samples needn't fall on these cells).
         for f in ctx.features:
