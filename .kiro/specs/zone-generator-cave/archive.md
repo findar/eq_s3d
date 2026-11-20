@@ -34,3 +34,7 @@ design review). The user confirms at the first look (task 8).
   the zone's theme, so its cavern and crystal grotto take the generic recipes (benches, banners).
 - **Classic-layout caves look built** (task 2): no per-room finish on classic, so no `rough`
   walls; a high-finish race (giant) pushes graph caves toward `hewn`.
+- **Warren "open seam"** (task 6 comparison sweep, graph 18–24 rooms): one warren build failed
+  the gate on an open seam, a class cave never hit; not investigated.
+- **`test_w1_outline_is_inside_connected_and_reaches_every_door` flakes** ("no Cell's fan folds
+  over"): rare, same 8 failing examples on master before the outline fix.
