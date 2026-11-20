@@ -56,7 +56,7 @@ proves it with
   - Owns: ai/expand.py, generators/layout.py (constructor and its one call), tests/test_cave_profile.py
   - Reqs: 3
 
-- [ ] 5. Planner words, page and Districts
+- [x] 5. Planner words, page and Districts
   - Card: [cards/05-planner.md](cards/05-planner.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: ai/rule_planner.py, generators/districts.py, web/index.html, tests/test_planner.py, tests/test_properties_layout.py (property 19 wording), tests/test_district_purposes.py, generators/outdoor_dungeon.py, generators/layout_engine.py, tests/test_outdoor_levels.py (widened by the lead: the outdoor Entrance fix)
