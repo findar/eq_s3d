@@ -1064,6 +1064,11 @@ OUTLINE_TOL = 0.05    # how far a door, Throat or seam may be off (u)
 THROAT_CLEAR = 0.5    # a wall only counts as across a Throat this far in: cut pieces can
                       # graze a Throat's corner by a hair, and a real one spans it (u)
 BODY_RADIUS = 2.0     # how far a player's middle stays from a wall (u)
+#: A Throat is read at least this wide (u) for the floor in it: ``_link``'s run from a stem
+#: ending a few thousandths short of the Core is a sliver no face's centroid lies in, so
+#: the floor joining Core and Throat read as missing (winding-tunnels task 5: a boulder took
+#: the one face that happened to lie in such a sliver).
+THROAT_READ = 2.0
 DOOR_STUB = 3.0       # a corridor's end can stand this far into its room (u)
 
 
@@ -1207,7 +1212,9 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
     cen = surf.centroids[own]
 
     def faces_in(r: Rect) -> set:
-        m = (cen[:, 0] >= r[0]) & (cen[:, 0] <= r[2]) & (cen[:, 1] >= r[1]) & (cen[:, 1] <= r[3])
+        px = max(0.0, THROAT_READ - (r[2] - r[0])) / 2
+        py = max(0.0, THROAT_READ - (r[3] - r[1])) / 2
+        m = (cen[:, 0] >= r[0] - px) & (cen[:, 0] <= r[2] + px) &             (cen[:, 1] >= r[1] - py) & (cen[:, 1] <= r[3] + py)
         return {int(f) for f in own[m]}
 
     start = faces_in(outline.core)
