@@ -2672,3 +2672,151 @@ shown, and the results quoted below are what those builds gave:
       8 or more".
 - [ ] **[SHOULD] Rerolls keep them** — On case a, **reroll rooms** then ◂ back to v1: both
       versions show the box ticked and their own Districts on the map.
+
+## Step 21 — Caves
+
+> Roadmap step 21 (`zone-generator-cave`, umbrella M3's `cave` Purpose). A cave is not a zone
+> type: it is a dungeon whose Purpose (the page's **Theme**) is **Cave**. Its rooms are a cave
+> mouth (entrance), caverns (hubs), grottoes, flooded galleries, sumps, collapsed galleries,
+> warrens and passages, with a **crystal grotto** as the climax. The look comes from the
+> `rough` wall style (wandering walls, a moving ceiling) that low-finish rooms already draw; there
+> is no new geometry. Light is cold and dim, brightest in the crystal grotto; flooded galleries
+> and sumps hold water; the decor layer `cave` puts rock, stalagmites, fungus, roots and crystals
+> in the rooms and nothing built. Rooms are sized from the measured `styles/cave.json`, so they
+> come out smaller than an unthemed dungeon's. Prompts with "cave", "cavern", "grotto",
+> "underground" or "tunnel" pick the Theme. Restart the Server on the merged code first (with
+> `EQ_PATH` pointing at the RoF2 install) and check no stale-code banner shows.
+
+Build each case in Controls (Size **medium**, Verticality **moderate**, Decor **Normal**, Decor
+rules **From theme**, everything else at its default) or, where it says Describe, by typing the
+text in Describe. Case f has no page control (the page has the Districts box but no list of
+District themes); send it as the body shown, or build it from the CLI with
+`--districts --district-theme fortress --district-theme cave` (the CLI was not run for this
+section, so the CLI zone may differ). Every case was built through the Server's
+`/api/generate` with the seed shown, and the results quoted below are what those builds gave:
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout **Graph**, Rooms 12, Theme **Cave** | 731402518 |
+| b | Dungeon | Layout **Classic**, Rooms 12, Theme **Cave** | 731402518 |
+| c | Describe | `a dark cavern` | 1840275513 |
+| d | Describe | `an old mine` | 1840275513 |
+| e | Describe | `a cave in a hill where kobolds live` | 1840275513 |
+| f | Dungeon | `{"mode":"controls","controls":{"zone_type":"dungeon","layout":"graph","room_count":16,"size":"medium","verticality":"moderate","decor":"normal","districts":true,"district_plan":["fortress","cave"]},"seed":731402518}` | 731402518 |
+| g | Dungeon | Layout **Graph**, Rooms 12, Theme **Tomb** | 731402518 |
+| h | Dungeon | Layout **Graph**, Rooms 12, Theme **None** | 731402518 |
+
+### X.1 — A cave on the graph layout (the default)
+
+- [ ] **[MUST] The rooms** — Case a: 12 rooms, passed the gate on the first build, rule set
+      `warren` (the side panel's layout readout). The entrance room_0 is a `cave_mouth`, the hubs
+      are room_3 (`cavern`) and room_1 and room_6 (`flooded_gallery`), and the climax and boss room
+      is room_4, a `crystal_grotto`. The rest are grottoes, flooded and collapsed galleries and a
+      warren. No room has a built name (no hall, barracks, vault or throne room).
+- [ ] **[MUST] Rough walls** — Case a in 3D: 10 of the 12 rooms draw `rough` walls and 2 draw
+      `hewn` (room_6 and room_9); none draws `built`. Walk room_0 → room_3 → room_4: the walls
+      wander in and out, the ceiling rises and falls, and no wall is a straight panel. The two
+      hewn rooms should read as worked rock, still not masonry. Say whether the cave reads as a
+      found place or as a dungeon with bumpy walls (only a human can confirm this).
+- [ ] **[MUST] Cold, dim light** — Case a in 3D: the cave mouth is grey-blue (0.47, 0.55, 0.68),
+      the cavern and grottoes a dim blue-grey (about 0.21–0.26, 0.25–0.30, 0.31–0.38), the flooded
+      galleries a little bluer. The crystal grotto room_4 is the brightest room, a cold blue
+      (0.54, 0.65, 0.90). Known: the shared Room_Types keep their own light, so the warren
+      (room_8) and the collapsed galleries (room_9, room_10) are a warm dim orange (about 0.5,
+      0.27, 0.07). Say whether those warm rooms break the cave's mood or read as torch-lit dens.
+- [ ] **[MUST] The crystal climax** — Case a, room_4: crystal clusters on the floor and the
+      roof, CRYSTAL4 ×7, CRYS2E ×6 and a VELIUMCRYSTALS202, with a stalactite (SLCSTALAG404) and
+      rubble. In 3D the clusters should be big enough to read across the room (10 u and more),
+      not specks, and the room should feel like the end of the cave (only a human can confirm
+      this).
+- [ ] **[MUST] Water in the flooded galleries** — Case a: the sidecar has five water regions,
+      `AWT_water_1`, `_5`, `_6`, `_7` and `_11`, one in each flooded gallery (room_1, room_5,
+      room_6, room_7, room_11) and nowhere else. In 3D each of those rooms has its floor under
+      water and is still walkable out.
+- [ ] **[MUST] Cave decor, nothing built** — Case a: 100 Props, 12 decor lights. They are rubble
+      and rocks (HAVRUBBLE301, NROCKS303, WKROCK8), stalagmites and stalactites (SLCSTALAG400 ×10,
+      STALAG101), mushrooms (MUSHROOM1, MUSHROOM3), roots on the cave mouth's roof (GKROOT700 ×2),
+      bones, and a few wall torches (WALLTORCH200, WALLTORCHARMSTUB200, DROVTORCH200). No
+      furniture, banners, braziers or chains (no Prop of category furniture or hanging). The only
+      made things are treasure: two chests and an urn in room_6, a chest and two urns in the
+      warren room_8 (the treasure Dressing, which the cave layer keeps). Say whether the torches
+      and chests belong in a cave or should go.
+- [ ] **[SHOULD] Materials** — Case a: the floor and walls are `cave_floor` and `cave_wall`, the
+      ceiling `dungeon_ceiling`, all of the `cave_rock` family: damp dark rock, not dressed
+      stone.
+- [ ] **[SHOULD] Smaller rooms** — Compare case a with case h (same seed, no Theme): the rooms'
+      outlines average about 3,550 u² in case a against about 4,800 u² in case h. The Room_Types
+      differ too, so this is a rough measure; in 3D the cave's rooms should feel tighter, except
+      the cavern hub and the crystal grotto, which are large on purpose.
+
+### X.2 — A cave on the classic layout (box walls: a known limit)
+
+- [ ] **[MUST] Same cave, box walls** — Case b: 12 rooms, passed the gate on the first build.
+      The entrance is room_7 (`cave_mouth`), the climax room_6 (`crystal_grotto`, VELIUMCRYSTALS201
+      ×4, CRYSTAL4 ×4, NIHSEWCRYS803 ×3, POECRYST503 on the roof), four caverns as hubs (room_1,
+      room_2, room_9, room_10). **The walls are boxes**: the classic layout draws no per-room
+      finish, so no room draws `rough` (step 21 decision 5). The cave's light, water, materials
+      and decor still apply. Known limit, not a fault: note whether the cave decor alone makes it
+      read as a cave.
+- [ ] **[MUST] Water and decor** — Case b: two water regions, `AWT_water_3` (the sump room_3) and
+      `AWT_water_11` (the flooded gallery room_11). 117 Props, almost all rock, rubble, stalagmites
+      (CDSTALAG103, SLCSTALAG40x, WARRENSTALAG206), fungus (NSHROOMS301, MUSHROOM1/4) and bones,
+      four wall torches and a root; no furniture and no containers on this seed.
+
+### X.3 — Prompts
+
+- [ ] **[MUST] "A dark cavern"** — Case c: a dungeon, Theme **Cave** (the plan readout), layout
+      Graph, 5 rooms (no count in the prompt), mood dark. Rule set `warren`, all 5 rooms `rough`.
+      Entrance room_0 `cave_mouth`, climax room_4 `crystal_grotto` (CRYSTAL4 ×7, VELIUMCRYSTALS202
+      ×2, POECRYST503, two RUBY gems), water in the flooded gallery room_3.
+- [ ] **[MUST] "An old mine" stays a mine** — Case d: Theme **mine_delve**, not cave. Rule set
+      `classic_eq`; the rooms are an entry hall, forges (room_1 and room_4, each with lava), a
+      collapsed gallery and a vault climax; warm orange light; built Props in the vault (NTHRONE,
+      KELBRAZ, NIHFURNACE801, chests) and pick-axes in a forge.
+- [ ] **[MUST] A cave in a hill** — Case e: an **outdoor dungeon** (zone type unchanged by the cave
+      words), Theme **Cave**, race kobold, 5 rooms, rule set `warren`, every room `rough`. The way
+      in is from the hill's north face. The entrance room_0 (`cave_mouth`) is on the top Level
+      (Level 0, with room_1–room_3); the climax room_4 (`crystal_grotto`) is one Level down
+      (Level −1, 92 u lower). Walk in from the outdoor spawn: you enter at the cave mouth, not at
+      the deep room, and go down to the crystals (this is the entrance fix step 21 made). Known:
+      the flooded gallery room_2 has **no water** here, because an outdoor dungeon keeps only the
+      host landscape's regions (its one region, `ALV_lava_0`, is a lava pool out on the land, at
+      x 440, y 440).
+
+### X.4 — A cave District next to a built one
+
+- [ ] **[MUST] On the map** — Case f: three hulls, legend "District 1 — fortress", "District 2 —
+      cave", "District 3 — warren" (the third Purpose drawn, as 16 rooms allow three). The gold
+      Threshold into the cave is `corr_10` (room_2 → room_4); into the warren `corr_2` (room_6 →
+      room_9). The cave District holds room_4 (grotto), room_6 (flooded gallery, with water
+      `AWT_water_6`), room_7 and room_8 (caverns), room_10 and room_11 (collapsed galleries); its
+      boss room is room_10.
+- [ ] **[MUST] Crossing into it** — Case f in 3D, room_2 → `corr_10` → room_4: the palette changes
+      to the cave's and the light drops from the fortress's warm (about 0.7–0.95, 0.4–0.5, 0.1) to
+      the cave's dim blue-grey (0.19, 0.22, 0.28). Known limits, both follow-ups of this step: the
+      cave District takes the **zone's** finish and decor, so its walls are `built` (room_4,
+      room_6, room_7, room_8, room_10, room_11 all draw `built`) and its decor is the fortress
+      recipes: two banners (CMFLAG101) in the cavern room_7, benches (HPBENCH400) in room_8, a
+      throne (NTHRONE) in the boss room. Its boss room is a collapsed gallery, not a crystal
+      grotto. Note how much of a cave it still reads as.
+- [ ] **[SHOULD] The other way round** — Same body with `"district_plan":["cave","fortress"]`:
+      District 1 is the cave (entrance room_0 `cave_mouth`, climax room_5 `crystal_grotto` with
+      crystal clusters), the zone takes Theme cave's finish and decor, and 14 of the 16 rooms draw
+      `rough`, the fortress and lava-forge Districts included (District 3 is `lava_forge` here).
+      The finish follows the first District's Purpose, not each District's.
+
+### X.5 — Another Purpose unchanged
+
+- [ ] **[MUST] Tomb** — Case g: a tomb as before step 21 (ossuaries, ritual chambers, a vault
+      climax, the `tomb` decor layer). Step 21's own run built case g, case g with Layout
+      **Classic**, case h and case d on the code from before the step (`a377d54`) and on the
+      merged code: case g on both layouts came out with every file inside the `.eqg` identical
+      (zone name aside).
+- [ ] **[MUST] Same rooms, some Props moved** — Cases h and d against the code from before the
+      step: the rooms, walls, terrain and lights are identical, but a few Props are a different
+      model (case h: RUJROCKS705 became RUJROCKS704; case d: several rocks, webs and bones). The
+      cause is task 3's retag of VSPBLOCK301 from rock to brick (`rules/decor/tags.toml`), which
+      shrinks the rock pool every theme draws from; with that one line added to the old code both
+      cases came out identical. This breaks the step's "every zone built today stays
+      byte-identical" (A6) for decorated builds whose rooms pick a rock; say whether the change is
+      acceptable (the slab was a wrong rock) or the bytes matter.
