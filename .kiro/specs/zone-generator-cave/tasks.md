@@ -38,7 +38,7 @@ proves it with
   - Owns: generators/semantics.py, ai/schema.py, tests/test_cave_purpose.py, any test that pins the Purpose list, rules/rooms/layouts.toml (placeholder recipes only)
   - Reqs: 1
 
-- [ ] 2. Rule files: finish, recipes, topology, textures
+- [x] 2. Rule files: finish, recipes, topology, textures
   - Card: [cards/02-rules.md](cards/02-rules.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: rules/rooms/, rules/topology/themes.toml, styles/texture_recipes.json, tests/test_cave_rules.py
