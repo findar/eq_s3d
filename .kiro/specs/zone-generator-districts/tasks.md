@@ -80,11 +80,11 @@ touches generation proves it with
   - Type: agent · Size: S · Depends: 6, 7
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 9. HUMAN: first look
+- [x] 9. HUMAN: first look
   - Card: [cards/09-first-look.md](cards/09-first-look.md)
   - Type: human · Depends: 7, 8
 
-- [ ] 10. Close step 20
+- [x] 10. Close step 20
   - Card: [cards/10-close.md](cards/10-close.md)
   - Type: agent · Size: S · Depends: 9 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-districts/, .kiro/specs/zone-generator/

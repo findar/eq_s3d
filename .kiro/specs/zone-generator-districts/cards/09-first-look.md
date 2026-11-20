@@ -13,3 +13,4 @@ the default for 8 or more rooms (A1). Walk "Step 20 — Districts" in `docs/ACCE
 - [ ] Walk the section.
 
 ## Result
+Skipped at the user's word, 2026-11-19 ("Skip acceptance"). The default question (A1) was not answered, so Districts stay off by default.

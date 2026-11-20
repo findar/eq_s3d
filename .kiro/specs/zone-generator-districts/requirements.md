@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 20, ready.** Drafted 2026-11-18 at master `a26d07b`. After step 19 the
+> **STATUS: roadmap step 20, DONE (closed 2026-11-19; first look skipped at the user's word).** Drafted 2026-11-18 at master `a26d07b`. After step 19 the
 > user said "continue working"; multi-zone worlds still wait on their design review, so the lead
 > chose the next unblocked umbrella piece: M3's Districts (umbrella Requirement 23). The user
 > confirms the choice at the first look (task 9). Task index: `tasks.md` (card format).
