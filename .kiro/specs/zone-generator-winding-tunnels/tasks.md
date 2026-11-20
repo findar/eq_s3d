@@ -30,7 +30,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
 
 ## Tasks
 
-- [ ] 1. Stock tunnel survey
+- [x] 1. Stock tunnel survey
   - Card: [cards/01-survey.md](cards/01-survey.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/tunnel_survey.py, tests/test_tunnel_survey.py, .kiro/specs/zone-generator-winding-tunnels/archive.md (the survey numbers)
