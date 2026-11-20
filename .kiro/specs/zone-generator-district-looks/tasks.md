@@ -63,7 +63,7 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
 
 - [ ] 6. Acceptance section
   - Card: [cards/06-acceptance.md](cards/06-acceptance.md)
-  - Type: agent · Size: S · Depends: 5
+  - Type: agent · Size: S · Depends: 5, 9
   - Owns: docs/ACCEPTANCE.md
 
 - [ ] 7. HUMAN: first look
@@ -74,3 +74,9 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
   - Card: [cards/08-close.md](cards/08-close.md)
   - Type: agent · Size: S · Depends: 7 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-district-looks/, .kiro/specs/zone-generator/
+
+- [ ] 9. The room view per District
+  - Card: [cards/09-room-view.md](cards/09-room-view.md)
+  - Type: agent · Size: S · Depends: 2
+  - Owns: generators/decor/room_view.py, scripts/stage.py, tests/test_room_view.py, tests/test_district_decor.py
+  - Reqs: 2 (added by the lead at the task 2 merge)
