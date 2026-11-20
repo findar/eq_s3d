@@ -9,10 +9,19 @@ corridor continuous) and the RoF2 Format_Checker. First written for the Step 1
 content-layer re-sweep; step 21 (zone-generator-cave task 6) added ``cave``, the
 layout, verticality and room-count axes, and parallel workers.
 
+``--pair`` (zone-generator-district-looks task 5) sweeps districted dungeons
+instead of one archetype per zone: the Districts switch on and the plan's
+``district_plan`` pinning a ``cave`` District and a built one, the cave District
+first (``cave_first``) or second (``cave_second``). Each build draws its built
+Purpose from every non-cave archetype; with 14 or more rooms the third District
+is left to the relationship. The CSV records the resolved District Purposes.
+
 Usage:
     python -m scripts.sweep_themed_navigability [--seeds N] [--rooms N ...] [--keep]
     python -m scripts.sweep_themed_navigability --only cave --layouts classic graph \\
         --verticality flat moderate dramatic --rooms 2-30 --seeds 2 --jobs 3
+    python -m scripts.sweep_themed_navigability --pair cave_first cave_second \\
+        --layouts classic graph --verticality flat moderate dramatic --rooms 8-30 --jobs 3
 
 Prints a per-zone OK/FAIL line, a tally per (archetype, layout, verticality),
 writes one CSV row per build (``--csv``, default ``output/themed_navigability.csv``)
@@ -40,6 +49,18 @@ ARCHETYPES = [
     "cave",
 ]
 VERTICALITIES = ("flat", "moderate", "dramatic")
+PAIRS = ("cave_first", "cave_second")
+BUILT = [a for a in ARCHETYPES if a != "cave"]
+
+
+def _district_plan(arch):
+    """``(dungeon_theme, district_plan)`` for a sweep cell: an archetype pins the
+    zone's theme and no Districts; ``cave_first:<built>`` / ``cave_second:<built>``
+    pin the two District Purposes in that order."""
+    pair, _, built = arch.partition(":")
+    if pair not in PAIRS:
+        return arch, None
+    return "", (["cave", built] if pair == "cave_first" else [built, "cave"])
 
 
 def _room_counts(tokens):
@@ -61,10 +82,15 @@ def build_one(job):
     from generators.builder import ZoneBuilder
     from generators.pipeline import _with_decor
 
-    plan = ZonePlan.from_controls(
-        {"zone_type": "dungeon", "room_count": rooms, "verticality": verticality,
-         "layout": layout, "dungeon_theme": arch}, [])
-    plan.name = f"nav_{arch}_{layout[0]}{verticality[0]}{rooms}_{seed}"
+    theme, dplan = _district_plan(arch)
+    c = {"zone_type": "dungeon", "room_count": rooms, "verticality": verticality,
+         "layout": layout}
+    if theme:
+        c["dungeon_theme"] = theme
+    if dplan:
+        c.update(districts=True, district_plan=dplan)
+    plan = ZonePlan.from_controls(c, [])
+    plan.name = f"nav_{arch.replace(':', '_')}_{layout[0]}{verticality[0]}{rooms}_{seed}"
     spec = _with_decor(plan_to_spec(plan, seed=seed, warnings=[]))
     res = ZoneBuilder(spec).build(output_dir=Path(out_dir), write_glb=False)
     report = validate(res.eqg_path, spec=spec, check_corridors=True)
@@ -79,13 +105,14 @@ def build_one(job):
     passed = report.passed and report.corridors_passed and fmt.passed
     return {"archetype": arch, "layout": layout, "verticality": verticality,
             "room_count": rooms, "n_rooms": len(spec.rooms), "seed": seed,
+            "districts": "+".join(d.purpose for d in spec.districts),
             "passed": int(passed), "reachable": report.reachable_rooms,
             "total": report.total_rooms, "reasons": " | ".join(reasons)}
 
 
 def run(args) -> int:
     out_dir = Path(tempfile.mkdtemp(prefix="navsweep_")) if not args.keep else ROOT / "output"
-    archetypes = [a for a in ARCHETYPES if not args.only or a in args.only]
+    archetypes = list(args.pair) or [a for a in ARCHETYPES if not args.only or a in args.only]
     rng = random.Random(args.seed)
     jobs = []
     for arch in archetypes:
@@ -93,7 +120,8 @@ def run(args) -> int:
             for v in args.verticality:
                 for n in _room_counts(args.rooms):
                     for _ in range(max(args.seeds, 1)):
-                        jobs.append((arch, layout, v, n, rng.randint(0, 2 ** 31 - 1),
+                        cell = f"{arch}:{rng.choice(BUILT)}" if arch in PAIRS else arch
+                        jobs.append((cell, layout, v, n, rng.randint(0, 2 ** 31 - 1),
                                      str(out_dir)))
 
     rows = []
@@ -117,13 +145,17 @@ def run(args) -> int:
 
     tally = defaultdict(lambda: [0, 0])
     for r in rows:
-        t = tally[(r["archetype"], r["layout"], r["verticality"])]
+        t = tally[(r["archetype"].partition(":")[0], r["layout"], r["verticality"])]
         t[0] += r["passed"]
         t[1] += 1
     print("\nper archetype / layout / verticality:")
     for key, (p, n) in sorted(tally.items()):
         print(f"  {'/'.join(key):<36} {p}/{n}")
     passed = sum(r["passed"] for r in rows)
+    if args.pair:
+        cave = sum(1 for r in rows if "cave" in r["districts"].split("+"))
+        print(f"\n{cave}/{len(rows)} builds resolved a cave District "
+              f"({sum(1 for r in rows if not r['districts'])} resolved one District)")
     print(f"\nTally: {passed}/{len(rows)} themed zones pass the gate "
           f"(rooms {args.rooms}, {args.seeds} seed(s) per cell). CSV: {path}")
 
@@ -134,7 +166,7 @@ def run(args) -> int:
 
 def _print(row):
     mark = "OK  " if row["passed"] else "FAIL"
-    print(f"  {mark} {row['archetype']:<18} {row['layout']:<8} {row['verticality']:<9} "
+    print(f"  {mark} {row['archetype']:<26} {row['layout']:<8} {row['verticality']:<9} "
           f"rooms {row['room_count']:<3} seed {row['seed']:<11} "
           f"{row['reachable']}/{row['total']} reachable", flush=True)
     if row["reasons"]:
@@ -151,6 +183,9 @@ if __name__ == "__main__":
     ap.add_argument("--layouts", nargs="+", default=["classic"], choices=("classic", "graph"))
     ap.add_argument("--verticality", nargs="+", default=["moderate"], choices=VERTICALITIES)
     ap.add_argument("--only", nargs="+", default=[], help="archetypes to sweep (default all)")
+    ap.add_argument("--pair", nargs="+", default=[], choices=PAIRS,
+                    help="districted builds pinning a cave District and a built one, in "
+                         "these orders (replaces the archetype axis)")
     ap.add_argument("--jobs", type=int, default=1, help="worker processes")
     ap.add_argument("--csv", default="", help="CSV path (default output/themed_navigability.csv)")
     ap.add_argument("--keep", action="store_true", help="keep artifacts in output/ (default: temp dir, cleaned)")
