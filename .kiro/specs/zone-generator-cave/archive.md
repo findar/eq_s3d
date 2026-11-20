@@ -22,9 +22,15 @@ design review). The user confirms at the first look (task 8).
    bands since step 7, so `cave.json`'s `floor_area` (15% under `dungeon.json`) becomes a Size
    shift of −0.089, as `outdoor_dungeon.py` does; caves come out 7.6% (classic) / 13.9% (graph)
    smaller than with no profile. District 0 unknown (Districts on, nothing proposed) → `dungeon`.
+5. **The `rough` look holds on the graph layout only** (task 2, `6463109`): the classic layout
+   draws no per-room finish, so classic caves keep box walls; graph caves (the default layout)
+   draw 86% `rough`, 14% `hewn`, never `built` (finish weights 7–10 written as 0). Topology base
+   is `warren`, so `cavern` appears only as the hub. Amends A1.
 
 ## Follow-ups
 - **Cave ceilings drop with the shift** (task 4): about −12%, against `cave.json`'s taller
   measured ceilings (474 vs 303); shrinking sides only needs `_apply_room_scale`.
 - **A cave District in another theme's zone gets no cave decor** (task 3): decor layers follow
   the zone's theme, so its cavern and crystal grotto take the generic recipes (benches, banners).
+- **Classic-layout caves look built** (task 2): no per-room finish on classic, so no `rough`
+  walls; a high-finish race (giant) pushes graph caves toward `hewn`.
