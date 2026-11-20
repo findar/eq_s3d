@@ -136,6 +136,13 @@ finish = { peak = 5, spread = 2 }
 structure = { peak = 5, spread = 3 }
 clutter = { peak = 2, spread = 2 }
 
+# Natural rock (step 21): warren's low finish, written out so no room is ever built (7-10 are 0);
+# a little hewn where the rock happens to be smooth. Little built in, a moderate scatter of rock.
+[themes.cave]
+finish = [2, 3, 3, 2, 1, 0.5, 0.2, 0, 0, 0, 0]
+structure = { peak = 2, spread = 2 }
+clutter = { peak = 4, spread = 3 }
+
 # --- what happened to it since -------------------------------------------------------------------
 
 [overlays.natural_cave]  # an outdoor dungeon with no theme: the Blackburrow it's modelled on

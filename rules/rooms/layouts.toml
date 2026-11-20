@@ -135,15 +135,20 @@ features = []
 [types.sump]
 features = []
 
-# --- the cave Purpose (step 21): placeholders until task 2 writes their recipes ---
+# --- the cave Purpose (step 21): raw rock, nothing built. Pillars are rock columns, a dais a ledge;
+# the crystals and fungus are decor (rules/decor/layers/cave.toml).
 [types.cave_mouth]
-features = []
+features = [ { kind = "boulder", at = "scatter", count = [1, 3], side_h = 2, height_h = 1, chance = 0.6, by = "clutter" } ]
 
 [types.cavern]
-features = []
+features = [ { kind = "pillar", at = "scatter", count = [1, 3], side_h = 2, chance = 0.6 },
+             { kind = "dais", at = "far_end", share = 0.2, poi = "view", chance = 0.3 },
+             { kind = "boulder", at = "scatter", count = [1, 3], side_h = 2, height_h = 1, chance = 0.5, by = "clutter" } ]
 
 [types.crystal_grotto]
-features = []
+features = [ { kind = "dais", at = "far_end", share = 0.25, poi = "boss" },
+             { kind = "pillar", at = "corners", count = [2, 4], side_h = 2, chance = 0.4 } ]
 
 [types.grotto]
-features = []
+features = [ { kind = "boulder", at = "scatter", count = [1, 2], side_h = 2, height_h = 1, chance = 0.4, by = "clutter" },
+             { kind = "dais", at = "far_end", share = 0.2, poi = "treasure", chance = 0.2 } ]
