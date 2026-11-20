@@ -111,6 +111,24 @@ def test_v8_outdoor_dungeon_goes_down(tmp_path, case, verticality):
     assert report.corridors_passed
 
 
+@pytest.mark.parametrize("verticality", ["moderate", "dramatic"])
+def test_entrance_is_the_rules_entrance_on_the_top_level(verticality):
+    """Step 21 regression: case a's prompt now plans Purpose ``cave``, whose rooms
+    at seed 7 left the Tunnel no cover at the facings that turn the rules'
+    entrance toward the way in. A facing turned away was then taken, and pacing
+    made the ``deep`` room, a Level down, the entrance. Such a facing is now
+    refused, and a layout is lowered for its Tunnel when nothing else plans."""
+    plan = _plan("a", verticality)
+    assert plan.dungeon_theme == "cave"
+    spec = _spec("a", verticality)
+    levels = spec.layout["levels"]
+    entrance = od.Entrance.from_dict(spec.wilderness[od.DUNGEON_KEY]["entrance"])
+    room = next(r for r in spec.rooms if r.id == entrance.room_id)
+    assert room.role == "entrance" and room.kind == "entrance"
+    assert levels[room.id] == max(levels.values()) == 0
+    assert len(spec.rooms) == plan.room_count
+
+
 def _boxes(spec):
     """The rooms without what wall styles add (step 8)."""
     rooms = spec.to_dict()["rooms"]
