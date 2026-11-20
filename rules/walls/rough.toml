@@ -38,3 +38,13 @@ wobble_h = [1.25, 0.75]
 floor_relief_h = [1.2, 0.8]
 ceiling_spread = [1.2, 0.8]
 corridor_break = [1.2, 0.8]
+
+# How a corridor's plain legs wind (step 23). From the stock tunnel survey
+# (scripts/tunnel_survey.py), the plain tunnels' numbers: a run between turns (u, along
+# the leg), the most a turn bends (degrees), the most the centreline strays over the
+# leg's span, and how far each end runs straight (u). Only one style may have a [tunnel].
+[tunnel]
+segment = [20, 72]
+max_turn = 60
+wander = 0.2
+end = 20

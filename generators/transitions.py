@@ -10,13 +10,14 @@ for a Transition.
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout
-from .routing import corridor_route
+from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, stair_layout
+from .routing import corridor_route, route_footprint, wind_leg, wind_seed
 from .semantics import ROOM_TYPES, body_height
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import _Checker, _is_number, _one_of, _read_toml
@@ -41,6 +42,9 @@ BREACH_DEPTH_H = 0.3
 LEAST_HEAD = 8.0        # the gate's least headroom in u, whatever the race
 HEAD_SPARE = 1.0        # a lintel leaves this much more than the gate asks (u)
 CLEAR_OF_END = 3.0      # a corridor's end can stand this far into its room, so a line keeps past that (u)
+# Winding (step 23), in u.
+PLAYER_HALF_WIDTH = 1.5     # a winding strip keeps this far off anything else (decor.placement's)
+WIND_Z_SPARE = 2.0          # things nearer than this above or below a leg count as beside it
 
 
 @dataclass(frozen=True)
@@ -283,6 +287,7 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
     records = spec.layout["rooms"]
     holders: List[Tuple[object, object]] = []
     written: List[Dict[str, object]] = []
+    tunnels = {}
     for cor in spec.corridors:
         cor.transition = None
         a, b = styles.get(cor.from_room), styles.get(cor.to_room)
@@ -301,9 +306,122 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
             t.rough = b.corridor_break
             holders.append((t, b))
         cor.rough = style.corridor_break if plain else 0.0
+        tunnels[cor.id] = getattr(style, "tunnel", None)
         holders.append((cor, style))
     spec.layout["transitions"] = written
+    measure_winds(spec, tunnels)
     return holders
+
+
+# --- Winding (step 23, winding-tunnels Requirement 2) -----------------------------------
+
+_Box = Tuple[float, float, float, float, float, float]      # x0, y0, x1, y1, z0, z1
+
+
+def _corridor_boxes(cor: CorridorSpec, rooms) -> List[Tuple[int, _Box]]:
+    """What a corridor takes up: (leg index or -1, box) for each of its route's legs and bend
+    squares, and its stairwell if it has one. Each holds its own floors' heights and the
+    headroom over them."""
+    route = corridor_route(cor, rooms)
+    waypoints = list(route.waypoints)
+    zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
+                                     cor.from_z, cor.to_z)
+    rects = route_footprint(route, cor.width / 2)
+    n = len(waypoints) - 1
+    out: List[Tuple[int, _Box]] = []
+    for i, r in enumerate(rects):
+        lo, hi = (min(zs[i], zs[i + 1]), max(zs[i], zs[i + 1])) if i < n else (zs[i - n + 1],) * 2
+        out.append((i if i < n else -1, (*r, lo, hi + cor.height)))
+    stair = stair_layout(cor, rooms)
+    if stair is not None and stair.stairwell is not None:
+        lo, hi = sorted((cor.from_z, cor.to_z))
+        out.append((-1, (*stair.stairwell, lo, hi + cor.height)))
+    return out
+
+
+def _held_leg(cor: CorridorSpec, waypoints, zs) -> Optional[int]:
+    """The leg a Transition's line stands on, as the mesh splits it (``_seam_leg``)."""
+    t = cor.transition
+    if t is None:
+        return None
+    return MeshBuilder._seam_leg(waypoints, ((t.x, t.y), None, None), cor.width / 2, zs)
+
+
+def leg_clearance(ends, along_x: bool, hw: float, z0: float, z1: float, height: float, run_in: float,
+                  others: Sequence[_Box]) -> float:
+    """How far a leg's strip can move sideways, on either side, before it comes within the
+    player's half-width of one of ``others``: over the part of the leg that may wind (all but
+    ``run_in`` at each end, give or take a mitre's ``hw`` and the player), counting only what
+    overlaps the leg in Z. 0 when something stands in the strip there; inf when nothing is
+    beside it."""
+    ax = 0 if along_x else 1
+    a0, a1 = sorted((ends[0][ax], ends[1][ax]))
+    reach = hw + PLAYER_HALF_WIDTH
+    m0, m1 = a0 + run_in - reach, a1 - run_in + reach
+    cross = ends[0][1 - ax]
+    lo, hi = min(z0, z1) - WIND_Z_SPARE, max(z0, z1) + height + WIND_Z_SPARE
+    if m1 <= m0:
+        return 0.0
+    room = float("inf")
+    eps = 1e-6
+    for x0, y0, x1, y1, bz0, bz1 in others:
+        if bz1 <= lo or bz0 >= hi:
+            continue                        # another Level's, over or under the leg
+        o0, o1, c0, c1 = (x0, x1, y0, y1) if along_x else (y0, y1, x0, x1)
+        if o1 <= m0 + eps or o0 >= m1 - eps:
+            continue
+        if c0 >= cross + hw - eps:
+            room = min(room, c0 - (cross + hw))
+        elif c1 <= cross - hw + eps:
+            room = min(room, (cross - hw) - c1)
+        else:
+            return 0.0
+    return max(room - PLAYER_HALF_WIDTH, 0.0)
+
+
+def measure_winds(spec: ZoneSpec, tunnels: Mapping[str, object]) -> None:
+    """Set each corridor's ``wind``: per leg of its route, how far that plain leg of a rough
+    corridor may stray (``min(clearance, wander × span)``, floored to 0.01 u), 0 for a leg that
+    stays straight. ``tunnels`` is corridor id -> its style's ``TunnelRules`` (None: no
+    winding). Only reads the finished spec: routes, footprints, conflicts and Levels stay.
+
+    A leg winds when it is plain (a corridor with a ``rough`` break, so no stair or bridge),
+    has a part that may wind, and holds no Transition line; past a Seam the corridor takes
+    the other style, which has no tunnel (one style at most has one), so it stays straight
+    there too."""
+    for cor in spec.corridors:
+        cor.wind = []
+    if not any(tunnels.get(cor.id) is not None and cor.rough > 0 for cor in spec.corridors):
+        return
+    rooms = {r.id: r for r in spec.rooms}
+    boxes = {cor.id: _corridor_boxes(cor, rooms) for cor in spec.corridors}
+    room_boxes = [(*r.bounds[0][:2], *r.bounds[1][:2], r.bounds[0][2], r.bounds[1][2]) for r in spec.rooms]
+    for cor in spec.corridors:
+        rules = tunnels.get(cor.id)
+        if rules is None or cor.rough <= 0:
+            continue
+        hw = cor.width / 2
+        route = corridor_route(cor, rooms)
+        waypoints = list(route.waypoints)
+        zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
+                                         cor.from_z, cor.to_z)
+        held = _held_leg(cor, waypoints, zs)
+        split = held is not None and bool(cor.transition.floor_material)
+        others = room_boxes + [b for cid, bs in boxes.items() if cid != cor.id for _, b in bs]
+        run_in = max(hw, rules.end)
+        wind: List[float] = []
+        for k in range(len(waypoints) - 1):
+            ends = MeshBuilder._leg_ends(waypoints, k, hw, zs)
+            if ends is None or (held is not None and (k == held or (split and k > held))):
+                wind.append(0.0)
+                continue
+            own = [b for i, b in boxes[cor.id] if i != k]
+            room = leg_clearance(ends, route.axes[k], hw, zs[k], zs[k + 1], cor.height, run_in, others + own)
+            span = abs(ends[1][0] - ends[0][0]) + abs(ends[1][1] - ends[0][1])
+            limit = math.floor(min(room, rules.wander * span) * 100) / 100
+            line = wind_leg(ends[0], ends[1], route.axes[k], hw, limit, rules, wind_seed(cor, k, ends[0]))
+            wind.append(limit if len(line) > 2 else 0.0)
+        cor.wind = wind if any(wind) else []
 
 
 def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:
@@ -325,4 +443,5 @@ def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:
 
 
 __all__ = ["BREACH", "FORMS", "FRAME", "NONE", "SAME", "SEAM", "TRANSITIONS_FILE", "TransitionRules",
-           "draw_transition", "draw_transitions", "finish_transitions", "load_transitions"]
+           "draw_transition", "draw_transitions", "finish_transitions", "leg_clearance", "load_transitions",
+           "measure_winds"]

@@ -36,8 +36,10 @@ EQ coordinate convention: Z is up; routes live in the XY plane.
 
 from __future__ import annotations
 
+import math
+import random
 from dataclasses import dataclass
-from typing import List, Mapping, Optional, Tuple
+from typing import List, Mapping, Optional, Sequence, Tuple, Union
 
 from .zone_spec import CorridorSpec, RoomSpec
 
@@ -249,3 +251,123 @@ def route_footprint(route: Route, hw: float) -> List[Rect]:
         cx, cy = wps[i]
         rects.append((cx - hw, cy - hw, cx + hw, cy + hw))
     return rects
+
+
+# --- Winding tunnels (step 23, winding-tunnels Requirement 2) ---------------------------
+
+Point = Tuple[float, float]
+#: Less sideways room than this (u) and a leg stays straight: a wander no one would see.
+MIN_WANDER = 1.0
+
+
+@dataclass(frozen=True)
+class TunnelRules:
+    """How a rough corridor's plain legs wind (``[tunnel]`` in a wall style), from the
+    stock tunnel survey (winding-tunnels archive decisions 3 and 4)."""
+    segment: Tuple[float, float]    # a run between two turns, measured along the leg (u)
+    max_turn: float                 # the most a turn bends (degrees)
+    wander: float                   # the most the centreline strays, over the leg's span
+    end: float                      # each end runs straight at least this far (u)
+
+
+def _wind_limit(span: float, hw: float, clearance: float, rules: TunnelRules) -> float:
+    """How far a leg's centreline may stray: ``min(clearance, wander × span)``, less what a
+    mitre at a turn adds to the strip's reach. 0 when that is too little to wind."""
+    reserve = hw * (1.0 / math.cos(math.radians(rules.max_turn / 2)) - 1.0)
+    lim = min(clearance, rules.wander * span) - reserve
+    return lim if lim >= MIN_WANDER else 0.0
+
+
+def wind_leg(start: Point, end: Point, along_x: bool, hw: float, clearance: float,
+             rules: TunnelRules, seed: Union[int, str]) -> List[Point]:
+    """A plain leg's winding centreline, from ``start`` to ``end``, as a polyline.
+
+    The leg runs on ``start``'s line, as a straight leg is built, and the polyline ends
+    exactly at ``end``'s place along the leg on that line, so its square ends weld to the
+    room or bend square as today. It runs straight for ``max(hw, rules.end)`` from each end.
+    Between, segments ``rules.segment`` long (along the leg) turn by at most
+    ``rules.max_turn``: every heading keeps within half of it of the leg's axis, so any turn,
+    the first and last included, is at most the whole. The centreline strays at most
+    ``min(clearance, wander × span)``, less a mitre's reach, so the strip (centreline ±
+    ``hw``) stays within ``clearance`` of the straight strip on either side. Too little
+    clearance or too short a leg gives the straight leg, ``[start, end on start's line]``.
+
+    Pure: the same inputs give the same polyline. ``seed`` seeds its own stream (the
+    corridor id and the leg index, ``winding_legs``), never a shared one."""
+    ax = 0 if along_x else 1
+    a0, a1 = start[ax], end[ax]
+    cross = start[1 - ax]
+    span = abs(a1 - a0)
+    sign = 1.0 if a1 >= a0 else -1.0
+
+    def at(u: float, v: float) -> Point:
+        along = a1 if u == span else a0 + sign * u
+        return (along, cross + v) if along_x else (cross + v, along)
+
+    straight = [(float(start[0]), float(start[1])), at(span, 0.0)]
+    run_in = max(hw, rules.end)
+    middle = span - 2 * run_in
+    lim = _wind_limit(span, hw, clearance, rules)
+    lo, hi = rules.segment
+    if lim <= 0.0 or middle < 2 * lo:
+        return straight
+    rng = random.Random(seed)
+    gaps: List[float] = []
+    left = middle
+    while left > hi:
+        g = rng.uniform(lo, max(lo, min(hi, left - lo)))
+        gaps.append(g)
+        left -= g
+    gaps.append(left)
+    if len(gaps) < 2:
+        return straight
+    us = [run_in]
+    for g in gaps:
+        us.append(us[-1] + g)
+    us[-1] = span - run_in
+    slope = math.tan(math.radians(rules.max_turn / 2))
+    n = len(us) - 1
+    vs = [0.0]
+    for i in range(1, n):
+        du, rest = us[i] - us[i - 1], us[n] - us[i]
+        v_lo = max(vs[-1] - slope * du, -lim, -slope * rest)
+        v_hi = min(vs[-1] + slope * du, lim, slope * rest)
+        vs.append(rng.uniform(v_lo, v_hi))
+    vs.append(0.0)
+    return [straight[0]] + [at(u, v) for u, v in zip(us, vs)] + [straight[1]]
+
+
+def wind_seed(cor: CorridorSpec, k: int, start: Point) -> str:
+    """Leg ``k``'s own stream: the corridor's id and the leg's index (and where it starts,
+    so two zones' ``corr_0`` don't wind alike)."""
+    return f"wind:{cor.id}:{k}:{start[0]:.2f},{start[1]:.2f}"
+
+
+def winding_legs(cor: CorridorSpec, rooms: Mapping[str, RoomSpec],
+                 rules: Optional[TunnelRules] = None) -> List[Optional[List[Point]]]:
+    """One entry per leg of ``cor``'s route: the winding centreline of a leg ``cor.wind``
+    lets wind, over the leg's built span (``MeshBuilder._leg_ends``), else None. The one
+    source the mesh, decor and map read, so they agree. ``rules`` defaults to the tunnel of
+    the wall styles (``wall_styles.tunnel_rules``)."""
+    route = corridor_route(cor, rooms)
+    n = len(route.waypoints) - 1
+    if not any(cor.wind):
+        return [None] * n
+    from .geometry import MeshBuilder       # geometry imports this module
+    if rules is None:
+        from .wall_styles import tunnel_rules
+        rules = tunnel_rules()
+    waypoints = list(route.waypoints)
+    zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
+                                     cor.from_z, cor.to_z)
+    out: List[Optional[List[Point]]] = []
+    for k in range(n):
+        ends = MeshBuilder._leg_ends(waypoints, k, cor.width / 2, zs)
+        limit = cor.wind[k] if k < len(cor.wind) else 0.0
+        if ends is None or limit <= 0 or rules is None:
+            out.append(None)
+            continue
+        line = wind_leg(ends[0], ends[1], route.axes[k], cor.width / 2, limit, rules,
+                        wind_seed(cor, k, ends[0]))
+        out.append(line if len(line) > 2 else None)
+    return out
