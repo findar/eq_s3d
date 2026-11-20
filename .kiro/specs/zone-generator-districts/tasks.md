@@ -75,7 +75,7 @@ touches generation proves it with
   - Owns: web/src/, web/index.html, generators/mapview.py, tests/test_hygiene.py (the web control id allowlist only)
   - Reqs: 6
 
-- [ ] 8. Acceptance section
+- [x] 8. Acceptance section
   - Card: [cards/08-acceptance.md](cards/08-acceptance.md)
   - Type: agent · Size: S · Depends: 6, 7
   - Owns: docs/ACCEPTANCE.md

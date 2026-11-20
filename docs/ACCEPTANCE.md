@@ -2560,3 +2560,115 @@ case pins one):
       and b) beside a few passing ones. The failing ones should read as dull: a straight line of
       same-size rooms, a comb of dead ends, every room on one floor, one hub with six corridors.
       If a failing one looks fine, or a passing one looks dull, note its seed and settings.
+
+## Step 20 — Districts
+
+> Roadmap step 20 (`zone-generator-districts`, umbrella M3's Districts). A larger dungeon can be
+> split into 2–3 **Districts**, like a dungeon's wings: each has its own theme (its Purpose),
+> palette, light mood and boss, and they are joined by one corridor each, the **Threshold**. It
+> is **off by default**: the Controls' **Districts** box (dungeon only), the CLI's `--districts`
+> or a prompt naming contrasting areas ("fallen to the dead", "upper and lower", "two rival
+> factions") turns it on. Districts need 8 rooms for 2 and 14 for 3. Restart the Server on the
+> merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no stale-code banner
+> shows.
+
+Build each case in Controls (Size **medium**, Verticality **moderate**, Decor **Normal**, Decor
+rules **From theme**, Theme **None**, everything else at its default) or, where it says
+Describe, by typing the text in Describe. Every case was built through the Server with the seed
+shown, and the results quoted below are what those builds gave:
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout **Classic**, Rooms 16, **Districts** ticked | 971456024 |
+| b | Dungeon | Layout **Graph**, Rooms 16, **Districts** ticked | 1671788217 |
+| c | Describe | `a temple fallen to the dead` | 1972559028 |
+| d | Dungeon | Layout **Graph**, Rooms 16, Locks 3, **Districts** ticked | 484702260 |
+| e | Describe | `a fortress with upper and lower halls` | 66356526 |
+| f | Dungeon | Layout **Classic**, Rooms 16, Districts **unticked** | 971456024 |
+| g | Describe | `a city fallen to the dead` | 5 |
+
+### X.1 — Districts on the map
+
+- [ ] **[MUST] Classic** — Case a, open the **Map**: three dashed hulls, one light fill each,
+      drawn under the corridors and rooms; the legend lists "District 1 — corrupted_sanctum",
+      "District 2 — tomb", "District 3 — ice_keep" and a threshold line. Two corridors are drawn
+      heavier in gold: `corr_4` (room_2 → room_5) and `corr_12` (room_3 → room_8). Every room
+      sits inside its own District's hull. The side panel's plan readout has a Districts row
+      naming the three.
+- [ ] **[MUST] Graph** — Case b: three hulls, legend "District 1 — sunken_ruin", "District 2 —
+      tomb", "District 3 — corrupted_sanctum"; gold Thresholds `corr_0` and `corr_13`. Hulls of
+      neighbouring Districts may overlap where one wraps round another (seen in step 20's own
+      run); note it if it makes the map hard to read.
+- [ ] **[MUST] One Threshold between two Districts** — On either map, follow each District's
+      edge: the only corridor crossing from one hull into another is the gold one. No second
+      corridor joins the same two Districts.
+- [ ] **[MUST] The room panel** — Case a, click room_6 (or pick it in the room list): its
+      District row reads "District 1 — corrupted_sanctum"; room_10 reads "District 2 — tomb".
+
+### X.2 — Walking across a Threshold (only a human can confirm this)
+
+- [ ] **[MUST] Palette and light change** — Case a in 3D: walk from the entrance (room_0)
+      through District 1 to room_5, then along the gold `corr_4` into room_2. The floor and walls
+      change from corrupted sanctum to tomb materials as you cross, and the light changes with
+      them (on this seed room_5's light is violet and room_2's orange). Do the same through `corr_12`
+      (room_3 → room_8, tomb to ice keep). The change should read as entering a different wing,
+      not as a texture seam: note where the switch happens (in the corridor, at the doorway) and
+      whether it looks deliberate.
+- [ ] **[MUST] Graph** — Case b, `corr_0` (room_2 sunken ruin → room_3 tomb): both sides are
+      cool blue light, so the change rests on the materials and the light's reach. Say whether
+      the two areas still read as different places.
+- [ ] **[MUST] One boss per District** — Case a: each District has one climax room, its boss
+      room: room_6 (District 1), room_10 (District 2), room_11 (District 3). Each is the deepest
+      room of its own District from where you entered it, not the deepest of the zone. Walk to
+      each; it should feel like the end of its wing. The floors are walkable all the way.
+- [ ] **[SHOULD] Still one zone** — Walk the whole of case a or b: every room is reachable, no
+      corridor dead-ends in a wall, and the Thresholds are ordinary walkable corridors.
+
+### X.3 — A prompt that turns them on
+
+- [ ] **[MUST] Fallen to the dead** — Case c: Describe with the Districts box **unticked**. The
+      zone comes back with the box ticked, 8 rooms (the prompt names no count, so it's raised to
+      8), the plan readout's Districts row "temple, tomb", and two hulls on the map with one gold
+      Threshold, `corr_1` (room_2 → room_4). The tomb half is the fallen one: its palette is
+      `tomb_abandoned` and its light is dimmer, so in 3D it should look older, greyer and darker
+      than the temple half. Each half has its boss (room_2 and room_5).
+- [ ] **[SHOULD] A plain prompt stays off** — Describe `a small goblin cave dungeon with 6
+      rooms`: the box comes back unticked, no hulls, no gold corridors.
+
+### X.4 — Locks on Thresholds
+
+- [ ] **[MUST] Gates on the Thresholds first** — Case d: three Gates. On the map, Gate 0 stands
+      on the Threshold `corr_2` (into District 2, tomb) and Gate 1 on the Threshold `corr_11`
+      (into District 3, corrupted sanctum); the third, with only two Thresholds to use, sits
+      inside District 3 on `corr_12`. Every key is on the entrance side of its Gate (all three
+      are in room_1, in District 1, as they are on this seed with Districts off too). In 3D a
+      door model stands in each Threshold's doorway.
+- [ ] **[SHOULD] Solvable** — Walk case d in order: key, Gate 0, Gate 1, Gate 2. No Gate's key
+      is behind it.
+
+### X.5 — A pinned single Purpose
+
+- [ ] **[MUST] Upper and lower** — Case e: the plan readout's Districts row "fortress,
+      fortress" and a note in the warnings, "district_purpose_pinned: every District is
+      fortress". Two hulls, both "fortress" in the legend, and one gold Threshold, `corr_5`
+      (room_1 → room_4). The second District is a variant: `fortress_abandoned` palette and dim
+      light, so walking room_1 → room_4 in 3D it is the same kind of place, gone to ruin. Note
+      whether the two halves look distinct enough to be worth splitting.
+
+### X.6 — Switched off, and where they don't apply
+
+- [ ] **[MUST] Off is the zone it always did** — Case f: no hulls, no gold corridors, no
+      Districts row, no District in the room panel. It is the same zone this seed built before
+      step 20: step 20's own run built these controls on the code from before the step and on
+      the merged code, and every file inside the `.eqg` came out identical (zone name aside), as
+      did case d's controls with the box unticked. Compare with case a: the same seed with the box
+      ticked gives different rooms.
+- [ ] **[MUST] A city ignores them, with a note** — Case g: a city is built as usual (the plan
+      asked for Districts, but the box is hidden for a city), and the warnings carry
+      "districts_ignored: Districts apply to dungeons only; this city builds without them".
+      No hulls on the map.
+- [ ] **[SHOULD] Too few rooms** — Dungeon, Layout **Graph**, Rooms 6, Districts ticked, seed 7:
+      it builds as one District with the note "districts_too_few_rooms: 6 rooms; Districts need
+      8 or more".
+- [ ] **[SHOULD] Rerolls keep them** — On case a, **reroll rooms** then ◂ back to v1: both
+      versions show the box ticked and their own Districts on the map.

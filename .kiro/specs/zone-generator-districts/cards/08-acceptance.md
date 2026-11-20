@@ -9,9 +9,10 @@ District), a prompt that turns them on, locks on Thresholds, a pinned single Pur
 switch off giving the zone it always did.
 
 ## Done when
-- [ ] The section is written, every case run through the route. → verify:
+- [x] The section is written, every case run through the route. → verify:
       `git show HEAD -- docs/ACCEPTANCE.md`
-- [ ] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
+- [x] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
       named in the commit body.
 
 ## Result
+✔ 6f59ad0 · 3719 passed (thorough) · 1 failed: test_raw_navigable seed 8869712 (pre-existing, fails at a26d07b too)
