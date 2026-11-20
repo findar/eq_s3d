@@ -2817,3 +2817,156 @@ section, so the CLI zone may differ). Every case was built through the Server's
       found a few Props moved, from task 3's retag of VSPBLOCK301 from rock to brick, which
       shrank the rock pool every theme draws from; the lead reverted that retag to keep A6, so
       a cave mouth may still show that square slab as a rock — a follow-up.)
+
+## Step 22 — District looks
+
+> Roadmap step 22 (`zone-generator-district-looks`). In a dungeon with Districts, each District
+> now looks like its own Purpose: its rooms draw their wall style (`rough`, `hewn`, `built`) from
+> their District's Purpose, and their decor from its decor layers. A corridor takes the look of
+> the room it starts from (its `from_room`), so a Threshold looks like one side or the other.
+> The room view dresses each room from its own District's layers too. Step 21's cave follow-ups
+> are fixed: cave rooms are never lit warm, cave decor has no wall torches and no chests or urns,
+> and the cave profile shrinks a cave's footprints but no longer its ceilings. **The wall lights
+> a cave had came from its torches, so a cave's corridors are now unlit** (see X.3). Restart
+> the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no
+> stale-code banner shows.
+
+Build each case in Controls (Size **medium**, Verticality **moderate**, Decor **Normal**, Decor
+rules **From theme**, everything else at its default). Cases a–c pin the Districts' Purposes,
+which the page has no control for: send the body shown to `/api/generate`, or build it from the
+CLI with `--districts --district-theme fortress --district-theme cave` (the CLI was not run for
+this section, so the CLI zone may differ). Every case was built through the Server's
+`/api/generate` with the seed shown, and the results quoted below are what those builds gave:
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | `{"mode":"controls","controls":{"zone_type":"dungeon","layout":"graph","room_count":12,"size":"medium","verticality":"moderate","decor":"normal","districts":true,"district_plan":["fortress","cave"]},"seed":971456024}` | 971456024 |
+| b | Dungeon | Case a's body with `"district_plan":["cave","fortress"]` | 971456024 |
+| c | Dungeon | Case a's body with `"room_count":16` and seed 731402518 (step 21's case f) | 731402518 |
+| d | Dungeon | Layout **Graph**, Rooms 12, Theme **Cave** (step 21's case a) | 731402518 |
+| e | Dungeon | Layout **Classic**, Rooms 12, Theme **Cave** (step 21's case b) | 731402518 |
+| f | Dungeon | Layout **Graph**, Rooms 16, Theme **Fortress**, Districts **unticked** | 731402518 |
+| g | Dungeon | Layout **Graph**, Rooms 12, Theme **None** (step 21's case h) | 731402518 |
+
+### X.1 — A cave District after a fortress one
+
+- [ ] **[MUST] The Districts** — Case a: 12 rooms, passed the gate on the first build. Two hulls,
+      "District 1 — fortress" (room_0–room_5: gatehouse, storeroom, barracks, armory, guard post,
+      and the throne room room_5 as boss) and "District 2 — cave" (room_6–room_11: a grotto, two
+      caverns, a sump with water `AWT_water_9`, two collapsed galleries; boss room_11). The gold
+      Threshold is `corr_10` (room_3 → room_6).
+- [ ] **[MUST] Walls change at the Threshold** — Case a in 3D: every fortress room draws `built`
+      walls and every cave room draws `rough` (6 of 6; step 21's case f drew `built` there). Walk
+      room_3 → `corr_10` → room_6: straight masonry panels on the fortress side, wandering walls
+      and a moving ceiling past the doorway. Say whether it reads as walking out of a fortress
+      into a cave, and where the change happens (in the corridor or at the doorway).
+- [ ] **[MUST] Decor changes at the Threshold** — Case a: the fortress rooms keep the fortress
+      recipes (stools, crates and barrels, a chest, a weapon rack, braziers and torches, and in
+      room_5 the throne CDTHRONE101 with three COMFLAG303 banners and a chain). The cave rooms
+      carry only rock, rubble, stalagmites, crystals and bones: room_8 (cavern) STALAG102 ×2,
+      WARRENSTALAG206, VELIUMCRYSTALS202, SLCSTALAG402 and rubble; the boss room_11 19 Props,
+      rubble ×10, SLCSTALAG400 ×5, CRYS4E, CRYSTAL4 and bones. No furniture, banner, torch or
+      chest in the cave District (step 21's case f had banners, benches and a throne there). The
+      sidecar's `decor.districts` reads fortress `[]`, cave `["cave"]`. Three cave rooms (room_6,
+      room_7, room_10) are bare on this seed, so the cave District is sparse: say whether it
+      reads as empty.
+- [ ] **[MUST] The Threshold takes its `from_room`'s look** — Case a: `corr_10` starts in the
+      fortress room_3, so it carries a fortress TORCHPOINT and is the last lit corridor; the
+      cave's own corridors (`corr_5`–`corr_9`) have no Props and no light. Known: a Threshold's
+      `from_room` is not always the outer District's room. Built like case a, seeds 1840275513
+      and 484702260 give Thresholds that start in the cave (`corr_1` room_2 → room_1, `corr_9`
+      room_5 → room_3), so there the Threshold looks like the cave. Say whether that matters.
+- [ ] **[MUST] The room view of a cave room** — Case a, open room_8 in the room view: the same 7
+      Props as in the zone, under `cave.toml types.cavern` and `cave.toml every` lines. room_11
+      lists its boss POI with the cave Dressing (rubble, CRYS4E, CRYSTAL4) under `cave.toml
+      dressing.boss`. Press ⟳ on room_8 a few times: each reroll stays cave decor (seen with room
+      seeds 4242 and 77: stalagmites, rubble, a crystal). Open the fortress room_5: the throne,
+      banners and torches, and no cave line. `corr_10` opens with its TORCHPOINT.
+- [ ] **[SHOULD] Three Districts** — Case c: "fortress", "cave", "warren"; Thresholds `corr_10`
+      (room_2 → room_4, into the cave) and `corr_2` (room_6 → room_9, cave into warren, so it
+      takes the cave look). The cave District (room_4, room_6, room_7, room_8, room_10, room_11)
+      draws 4 `rough` and 2 `hewn` (room_6, room_8), no `built`, and cave decor only: no banners,
+      benches or throne, which step 21 found there. The room view of room_7 and room_10 gives the
+      zone's Props, layer `cave`. Its boss room is still a collapsed gallery (room_10), not a
+      crystal grotto (see X.5).
+
+### X.2 — A fortress District after a cave one
+
+- [ ] **[MUST] The Districts** — Case b: "District 1 — cave" (room_0 `cave_mouth`, a collapsed
+      gallery, a grotto, a flooded gallery with water `AWT_water_3`, a passage, and the climax
+      room_5 `crystal_grotto`) and "District 2 — fortress" (three barracks, a battle arena, a
+      prison cell, and the armory room_11 as boss). The Threshold is `corr_10` (room_3 → room_6).
+- [ ] **[MUST] Walls** — Case b: every fortress room draws `built`, none `rough` (step 21's reverse
+      case drew `rough` in 14 of 16 rooms, the fortress District included). The cave District
+      draws 1 `rough` (room_4) and 5 `hewn`: on this seed its rooms drew Finish 4–6, as a cave's
+      Room_Types pull the Finish up a little. It is an unlucky seed (task 1 measured 80–85%
+      `rough` over 20 seeds); case c's order reversed (seed 731402518, 16 rooms) draws `rough` in
+      all five cave rooms. Say whether the hewn cave still reads as a cave next to the built
+      fortress.
+- [ ] **[MUST] Decor** — Case b: the cave District has rock, rubble, stalagmites, crystals (the
+      flooded gallery room_3 CRYSTAL4, CRYS4E) and in the crystal grotto VELIUMCRYSTALS201 ×2,
+      CRYSTAL4 ×7, VELIUMCHIPS200 ×3, POECRYST503 and a gem (SERUJEWELS301). The fortress
+      District has beds, pallets, chairs, candles, chests (TCHESTS305, TCHESTS303), racks, a
+      throne (HHTHRONE) and torches. In the room view, room_5 lists the crystals with layer
+      `cave`; room_10 lists its beds and chests with no cave layer.
+- [ ] **[SHOULD] Its corridors** — Case b: the cave corridors (`corr_0`–`corr_4`) and the
+      Threshold `corr_10` (it starts in the cave room_3) are unlit; `corr_6` and `corr_8` in the
+      fortress carry torches.
+
+### X.3 — A cave's light and dressing
+
+- [ ] **[MUST] No warm rooms** — Case d: every room's light is cold. The warren room_8 is
+      (0.26, 0.30, 0.37) and the collapsed galleries room_9 and room_10 (0.23, 0.27, 0.34), where
+      step 21 had a warm orange (0.51, 0.28, 0.08) and (0.47, 0.26, 0.07). The other rooms are as
+      in step 21 (cave mouth 0.47, 0.55, 0.68; crystal grotto 0.54, 0.65, 0.90). Case e
+      (classic) likewise: all twelve lights blue-grey, the crystal grotto room_6 brightest.
+- [ ] **[MUST] No torches, chests or urns** — Case d: 101 Props, every one rock, rubble,
+      stalagmites, crystals or bones (category `debris`) or the cave mouth's two roots
+      (GKROOT700, `plant`). No light, container or furniture Prop anywhere; step 21 had wall
+      torches (WALLTORCH200, WALLTORCHARMSTUB200, DROVTORCH200, TORCH1, NIHTORCH80x) and chests
+      and urns in room_6 and room_8. Case e: 100 Props of the same kinds, none built. Note that
+      crystals now show outside the grotto too (CRYSTAL4 ×2 in the flooded gallery room_6, one in
+      the warren room_8).
+- [ ] **[MUST] Dark corridors (judge this)** — Case d: **no decor light at all** (`decor.lights`
+      0; step 21 had 12) and no Prop in any of the 12 corridors (step 21 had a torch in 6 of
+      them). The only light is the 12 rooms' own, so in 3D a corridor is lit only by what spills
+      in from the rooms at its ends. Case e is the same (0 decor lights, 0 corridor Props). Walk
+      room_0 → room_3 → room_4 and room_6 → room_9 → room_11: say whether the dark passages feel
+      right for a cave or are too dark to play, and whether a cave wants a faint light of its own
+      in its corridors (glowing fungus, crystals).
+- [ ] **[SHOULD] Water and climax as before** — Case d: water in the five flooded galleries
+      (`AWT_water_1`, `_5`, `_6`, `_7`, `_11`); the climax room_4 has CRYSTAL4 ×7, CRYS4R ×6,
+      CRYS4E ×4 and VELIUMCRYSTALS202 ×2.
+
+### X.4 — A cave's ceilings and footprints
+
+- [ ] **[MUST] Taller than step 21, same footprints** — Case d against the same build on the code
+      from before the step (`b11764b`, built through its own Server for this section): every
+      room has the same width and depth, and every room but the crystal grotto (60 u, at the
+      cap both times) is about 13% taller. Mean room height 29.7 u against 26.9 u: the cave mouth
+      25.5 u (was 22.5), the cavern room_3 55.2 u (was 48.8), the grotto, warren and collapsed
+      galleries 17.0 u (was 15.0). Case e (classic): mean 33.8 u against 29.9 u, caverns 44.9 u
+      (was 39.7), the crystal grotto 58.5 u (was 51.7). Corridors are unchanged (18 u wide, 15 u
+      high). In 3D the caverns and the grotto should feel tall, not squashed.
+- [ ] **[SHOULD] Still smaller rooms** — Case d against case g (same seed, no Theme): mean room
+      footprint (width × depth) 4,566 u² against 6,369 u². The Room_Types differ, so this is a
+      rough measure; the cave should still feel tighter than the unthemed dungeon, except the
+      cavern and the crystal grotto. (Task 4's own measure: footprints 6–13% smaller than the
+      same cave with no profile, heights within about 1%.)
+
+### X.5 — Known, not this step
+
+- [ ] **[SHOULD] A cave District's boss room** — When the cave is not the first District its
+      climax is not a crystal grotto: collapsed galleries in cases a and c (room_11, room_10),
+      and over seeds 1840275513, 1671788217 and 484702260 (built like case a) a flooded or a
+      collapsed gallery. On 1840275513 a crystal grotto is drawn, as a dead end (room_5), while
+      the boss room is the flooded gallery room_11. As District 1 (case b) the cave's climax is
+      its crystal grotto. Note whether the cave District's end feels like an end.
+
+### X.6 — A one-District dungeon unchanged
+
+- [ ] **[MUST] Fortress, Districts off** — Case f, built on the code from before the step
+      (`b11764b`) and on the merged code: every file inside the `.eqg` came out identical (zone
+      name aside), 209 entries, and the rooms' sizes and heights are the same.
+- [ ] **[MUST] No Theme** — Case g: the same check, 118 entries, all identical. In 3D both look
+      as they did.
