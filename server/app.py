@@ -1685,7 +1685,10 @@ def room_decor(req: RoomDecorRequest):
         glb, report = decorate_room(build.contexts, req.room, seed=build.seed, control=control,
                                     layers=layers, eq_path=_room_eq_path(), mesh=build.mesh,
                                     rules_dir=rules_dir, room_seed=req.decor_seed,
-                                    room_seeds=build.room_seeds)
+                                    room_seeds=build.room_seeds,
+                                    # Each District dresses from its own layers, as the build
+                                    # did; asked-for layers stay zone-wide (one list).
+                                    districts=build.districts if extra is None else None)
     except NoRoom:
         raise HTTPException(404, f"build {zone}/{version} has no room {req.room!r}; it has "
                                  + ", ".join(c.id for c in build.contexts))
