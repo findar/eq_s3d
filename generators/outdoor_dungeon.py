@@ -337,57 +337,65 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
         raise EntranceError(f"spec {host.name!r} has no Landform")
     facings = int(getattr(engine, "facings", 1)) if engine is not None else 1
     side = tunnel_wall(grid.res) if facings > 1 else 0.0
-    # A second pass, only when the first plans nothing, lowers each layout
-    # for its Tunnel (step 21): the fit sets a layout as high as the cover
-    # over its rooms allows, which can leave too little over the Tunnel.
-    error = None
-    for lower in (False, True):
-        reduced = None
-        for shrink in range(FIT_SHRINKS + 1):
-            for facing in range(facings):
-                try:
-                    layout, warnings = layout_in_envelope(
-                        name, seed, envelope, room_count, scale=FIT_SHRINK ** shrink,
-                        engine=engine, facing=facing, entrance_side=side, **kwargs)
-                    # The Tunnel opens into the layout's entrance room, so the
-                    # pacing (depth, climax, keys) runs from the way in.
-                    first = next(r.id for r in layout.rooms if r.role == "entrance")
-                    _entrance_on_top_level(layout, first)
-                    layout = align_to_grid(socket, grid, envelope, layout, first)
-                    layout, entrance = _entrance_lowering(socket, grid, envelope, layout,
-                                                          first, lower)
-                except PLAN_ERRORS as e:
-                    error = e
-                    continue
-                if len(layout.rooms) == room_count:
-                    return layout, warnings, entrance
-                reduced = reduced or (layout, warnings, entrance)
-        if reduced is not None:
-            return reduced
-    raise error
-
-
-def _entrance_lowering(host, grid, envelope: Envelope, layout: ZoneSpec, room_id: str,
-                       lower: bool) -> Tuple[ZoneSpec, "Entrance"]:
-    """``layout`` and its Entrance into room ``room_id``. With ``lower``, a
-    layout whose Tunnel finds no cover is lowered by ``ALIGN_DROP_STEP`` (up
-    to ``ALIGN_DROP``, staying in the Envelope) until one does."""
-    try:
-        return layout, plan_entrance(host, grid, layout, room_id=room_id)
-    except EntranceError:
-        if not lower:
-            raise
-        drop = ALIGN_DROP_STEP
-        while drop <= ALIGN_DROP + 1e-9:
-            moved = copy.deepcopy(layout)
-            _translate(moved, 0, 0.0, -drop)
-            if not LayoutGenerator.fits(moved, envelope):
-                break
+    reduced, error = None, None
+    # Layouts whose entrance wall gave no Tunnel, in the order tried: only
+    # when nothing else plans are they lowered for it (step 21; the fit sets
+    # a layout as high as the cover over its rooms allows, which can leave
+    # too little over the Tunnel).
+    no_tunnel = []
+    for shrink in range(FIT_SHRINKS + 1):
+        for facing in range(facings):
             try:
-                return moved, plan_entrance(host, grid, moved, room_id=room_id)
-            except EntranceError:
-                drop += ALIGN_DROP_STEP
-        raise
+                layout, warnings = layout_in_envelope(
+                    name, seed, envelope, room_count, scale=FIT_SHRINK ** shrink,
+                    engine=engine, facing=facing, entrance_side=side, **kwargs)
+                # The Tunnel opens into the layout's entrance room, so the
+                # pacing (depth, climax, keys) runs from the way in.
+                first = next(r.id for r in layout.rooms if r.role == "entrance")
+                _entrance_on_top_level(layout, first)
+                layout = align_to_grid(socket, grid, envelope, layout, first)
+            except PLAN_ERRORS as e:
+                error = e
+                continue
+            try:
+                entrance = plan_entrance(socket, grid, layout, room_id=first)
+            except EntranceError as e:
+                error = e
+                no_tunnel.append((layout, warnings, first))
+                continue
+            if len(layout.rooms) == room_count:
+                return layout, warnings, entrance
+            reduced = reduced or (layout, warnings, entrance)
+    if reduced is not None:
+        return reduced
+    for layout, warnings, first in no_tunnel:
+        lowered = _lowered_for_tunnel(socket, grid, envelope, layout, first)
+        if lowered is None:
+            continue
+        if len(lowered[0].rooms) == room_count:
+            return lowered[0], warnings, lowered[1]
+        reduced = reduced or (lowered[0], warnings, lowered[1])
+    if reduced is None:
+        raise error
+    return reduced
+
+
+def _lowered_for_tunnel(host, grid, envelope: Envelope, layout: ZoneSpec,
+                        room_id: str) -> Optional[Tuple[ZoneSpec, "Entrance"]]:
+    """``layout`` lowered by ``ALIGN_DROP_STEP`` at a time (up to
+    ``ALIGN_DROP``, staying in the Envelope) until room ``room_id``'s wall
+    gives a Tunnel, with that Entrance; ``None`` when no drop does."""
+    drop = ALIGN_DROP_STEP
+    while drop <= ALIGN_DROP + 1e-9:
+        moved = copy.deepcopy(layout)
+        _translate(moved, 0, 0.0, -drop)
+        if not LayoutGenerator.fits(moved, envelope):
+            return None
+        try:
+            return moved, plan_entrance(host, grid, moved, room_id=room_id)
+        except EntranceError:
+            drop += ALIGN_DROP_STEP
+    return None
 
 
 def _entrance_on_top_level(layout: ZoneSpec, room_id: str) -> None:
