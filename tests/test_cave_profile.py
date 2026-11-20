@@ -75,6 +75,29 @@ def test_the_profile_shrinks_footprints_not_heights(layout, shrink, monkeypatch)
     assert corridors == corridors0
 
 
+def test_only_the_cave_profile_sets_a_corridor_run():
+    """Winding tunnels task 9: the cave's graph placement runs corridors longer; every other
+    build keeps ``embed.RUN_FACTOR`` (run_factor None)."""
+    import generators.topology.embed as embed
+    plain = LayoutGenerator("dungeon", seed=1)
+    cave = LayoutGenerator("dungeon", seed=1, profile="cave")
+    assert plain.run_factor is None
+    assert plain._layout_context(10, "", "").run_factor is None
+    assert cave.run_factor > embed.RUN_FACTOR
+    assert cave._layout_context(10, "", "").run_factor == cave.run_factor
+    assert LayoutGenerator("city", seed=1).run_factor is None
+
+
+def test_cave_rooms_stand_further_apart_with_the_profile(monkeypatch):
+    """Same seeds: the cave's own run lengthens its corridors."""
+    def mean_length():
+        return statistics.mean(abs(c.to_x - c.from_x) + abs(c.to_y - c.from_y)
+                               for s in range(1, 6) for c in _spec(layout="graph", seed=s).corridors)
+    longer = mean_length()
+    monkeypatch.setattr(expand, "PURPOSE_PROFILE", {})
+    assert longer > 2 * mean_length()
+
+
 def test_the_profile_leaves_the_classic_ceiling():
     plain = LayoutGenerator("dungeon", seed=1)
     cave = LayoutGenerator("dungeon", seed=1, profile="cave")

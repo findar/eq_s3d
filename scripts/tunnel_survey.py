@@ -30,7 +30,10 @@ Reads each zone as ``scripts/wall_survey.py`` does (its floor faces, cached with
    - wander: the smoothed path's largest sideways offset from the straight
      line between its ends, over that line's length (the span);
    - width: twice the distance to the floor's edge along the centreline;
-   - end: the first and last segment's lengths (the straight at each mouth).
+   - end: the first and last segment's lengths (the straight at each mouth);
+   - span and centreline: the straight distance between the mouths and the
+     polyline's length (pooled p10/p25/p50/p75/p90; task 9 sets the cave
+     profile's corridor run from them).
 
 Per tunnel it prints these (p10/p50/p90 where there are several), per zone and
 pooled over all zones (every tunnel, and again without junction legs), then a
@@ -78,6 +81,7 @@ SMOOTH = 5          # running-mean window over the raster path (nodes)
 EPS = 0.35          # simplification tolerance, a share of the tunnel's median width
 MIN_EPS = CELL      # and never under one raster cell (u)
 TRIM = 0.2          # a run's heading is fitted to its middle, this share cut at each end
+SPAN_QS = (10, 25, 50, 75, 90)   # the span's percentiles (step 23 task 9: cave run length)
 
 #: The rough-style zones ``rough.toml`` was measured on (``wall_survey.STYLES``).
 ZONES = ("blackburrow", "paw", "crystal", "runnyeye", "soldungb", "soldunga", "permafrost")
@@ -325,6 +329,10 @@ def _pooled(tunnels: list, label: str) -> None:
     print(f"  wander (/ span)  {_p([t['wander'] for t in tunnels], fmt='{:.2f}'):>11}")
     print(f"  width (u)        {_p(_cat(tunnels, 'width')):>11}")
     print(f"  end straight (u) {_p(_cat(tunnels, 'ends')):>11}")
+    spans = [t["span"] for t in tunnels]
+    lengths = [t["length"] for t in tunnels]
+    print(f"  span (u)         {_p(spans, SPAN_QS):>19}   (p10/p25/p50/p75/p90, mouth to mouth)")
+    print(f"  centreline (u)   {_p(lengths, SPAN_QS):>19}   (p10/p25/p50/p75/p90, along the polyline)")
 
 
 def proposal(tunnels: list) -> tuple:

@@ -2,7 +2,9 @@
 legs wind inside the clearance measured from the finished spec.
 """
 
+import functools
 import math
+import statistics
 
 import pytest
 from hypothesis import given, settings, strategies as st
@@ -212,16 +214,51 @@ def test_wind_is_written_only_when_a_leg_winds():
 
 # --- Ten cave dungeons -------------------------------------------------------------------
 
-def _cave(seed):
+#: Stock plain tunnels' span, mouth to mouth (``scripts/tunnel_survey.py``, 43 plain tunnels in
+#: the 7 rough caves): p25 and p75 (u). Task 9 sets the cave run so generated legs land here.
+STOCK_SPAN_P25, STOCK_SPAN_P75 = 51.0, 140.0
+
+
+@functools.lru_cache(maxsize=None)
+def _cave(seed, rooms=12):
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "dungeon_theme": "cave", "layout": "graph",
-                                   "room_count": 12}, [])
+                                   "room_count": rooms}, [])
     plan.name = "wind"
     return plan_to_spec(plan, seed=seed, warnings=[])
 
 
+def _plain_rough_legs(spec):
+    """(span, wind) of each plain leg (one ``_leg_ends`` builds) of each rough corridor."""
+    rooms = {r.id: r for r in spec.rooms}
+    out = []
+    for cor in spec.corridors:
+        if cor.rough <= 0:
+            continue
+        route = corridor_route(cor, rooms)
+        waypoints = list(route.waypoints)
+        zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
+                                         cor.from_z, cor.to_z)
+        for k in range(len(waypoints) - 1):
+            ends = MeshBuilder._leg_ends(waypoints, k, cor.width / 2, zs)
+            if ends is not None:
+                span = abs(ends[1][0] - ends[0][0]) + abs(ends[1][1] - ends[0][1])
+                out.append((span, cor.wind[k] if cor.wind else 0.0))
+    return out
+
+
+def test_cave_legs_run_as_long_as_stock_tunnels_and_most_wind():
+    """Task 9: over ten caves at 12 and 25 rooms, the median plain rough leg is within the
+    stock span's p25-p75, and most of those legs wind."""
+    legs = [leg for rooms in (12, 25) for seed in range(10) for leg in _plain_rough_legs(_cave(seed, rooms))]
+    assert len(legs) > 300
+    assert STOCK_SPAN_P25 <= statistics.median(s for s, _ in legs) <= STOCK_SPAN_P75
+    assert sum(1 for _, w in legs if w > 0) > len(legs) / 2
+
+
+@pytest.mark.parametrize("rooms", [12, 25])
 @pytest.mark.parametrize("seed", range(10))
-def test_cave_strips_keep_off_rooms_and_corridors(seed):
-    spec = _cave(seed)
+def test_cave_strips_keep_off_rooms_and_corridors(seed, rooms):
+    spec = _cave(seed, rooms)
     rooms = {r.id: r for r in spec.rooms}
     room_boxes = [(*r.bounds[0][:2], *r.bounds[1][:2], r.bounds[0][2], r.bounds[1][2]) for r in spec.rooms]
     boxes = {c.id: _corridor_boxes(c, rooms) for c in spec.corridors}

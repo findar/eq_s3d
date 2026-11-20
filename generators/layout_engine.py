@@ -23,6 +23,7 @@ pins that byte for byte.
 
 from __future__ import annotations
 
+import functools
 import math
 import random
 from dataclasses import dataclass, replace
@@ -84,6 +85,10 @@ class LayoutContext:
     # The shift room heights use (``size_shift`` less a style profile's
     # shift, which sizes footprints only); None: ``size_shift``.
     height_shift: Optional[float] = None
+    # One corridor run in corridor widths for the graph engine's placement
+    # (``embed.spring``); a style profile sets its own (winding tunnels task 9:
+    # a cave's corridors run as long as stock tunnels). None: ``embed.RUN_FACTOR``.
+    run_factor: Optional[float] = None
 
 
 @dataclass
@@ -373,6 +378,8 @@ class GraphEngine:
             sizes[entrance] = (max(w, self.entrance_side), max(d, self.entrance_side), h)
         half = {r: (w / 2, d / 2) for r, (w, d, _h) in sizes.items()}
         place = embed.PLACEMENT_FUNCS[rs.placement]
+        if ctx.run_factor is not None:
+            place = functools.partial(place, run_factor=ctx.run_factor)
         gap = ctx.corridor_width + 1.0
         # Levels go in before placement (step 7): heights as the rooms are
         # placed.
