@@ -16,6 +16,7 @@
 # docs/DECOR_RULES.md is the guide; layers/tomb.toml its worked example.
 
 tomb = { layers = ["tomb"] }
+cave = { layers = ["cave"] }
 
 # A race takes a layer the same way, under [races]:
 #
