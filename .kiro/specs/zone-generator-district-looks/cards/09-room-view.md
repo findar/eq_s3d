@@ -9,15 +9,16 @@ read the sidecar's `decor.districts` record and pass `rules_of` to `BareCap`. Wi
 they behave as today.
 
 ## Done when
-- [ ] A districted build (a fortress District, then a cave District, Decor on): the room view of
+- [x] A districted build (a fortress District, then a cave District, Decor on): the room view of
       every room and corridor returns the same Props as the build placed. → verify:
       `python -m pytest tests/test_district_decor.py tests/test_room_view.py -q` (needs
       `EQ_PATH='F:\everquest_rof2'`)
-- [ ] `scripts/stage.py decor` on that build's hand-off equals the build. Same command.
-- [ ] The byte check passes.
+- [x] `scripts/stage.py decor` on that build's hand-off equals the build. Same command.
+- [x] The byte check passes.
 
 ## Pitfalls
 - Old sidecars have no `decor.districts`, so the room view reads them as one District.
 - Another agent's sweeps and full suite may be running: use `-n 2` and no full suite.
 
 ## Result
+✔ 3f1eaf6 · 159 passed
