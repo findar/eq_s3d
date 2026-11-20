@@ -32,7 +32,7 @@ proves it with
 
 ## Tasks
 
-- [ ] 1. The cave Purpose
+- [x] 1. The cave Purpose
   - Card: [cards/01-purpose.md](cards/01-purpose.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/semantics.py, ai/schema.py, tests/test_cave_purpose.py, any test that pins the Purpose list, rules/rooms/layouts.toml (placeholder recipes only)
