@@ -47,8 +47,10 @@ def test_pinhole_collapses_onto_the_throat_corner():
 
 @pytest.mark.slow
 def test_bridge_slot_ceiling_hole_stays_on_the_slot():
-    """seed 486546126: a pinhole collapsed off the slot's corner, an open seam."""
-    spec = _spec(8, "dramatic", ["cave", "fortress"], 486546126)
+    """A pinhole collapsed off the slot's corner, an open seam (first seen at seed 486546126,
+    8 dramatic cave+fortress; re-pinned by winding-tunnels task 5 once the cave run moved
+    that layout: seed 2103223021 collapses a pinhole by room_1's slot)."""
+    spec = _spec(8, "moderate", ["cave", "wizard_lair"], 2103223021)
     room = _room(spec, "room_1")
     slots = _bridge_slots(room, spec)
     assert slots
@@ -107,13 +109,18 @@ def test_clashing_tree_corridors_redraw():
 
 @pytest.mark.slow
 def test_floor_poi_stands_on_floor_the_gate_stands_on():
-    """seed 1476063938: a boss POI on a relief wedge steeper than 40 degrees."""
-    spec = _spec(21, "moderate", ["cave", "lava_forge"], 1476063938)
-    room = _room(spec, "room_9")
-    grid = _grid(spec, room)
-    steep = _steep_floor(grid)
-    assert steep.any()
-    for p in room.pois:
-        i = int(np.abs(grid.xs - p.x).argmin())
-        j = int(np.abs(grid.ys - p.y).argmin())
-        assert not steep[i, j], p
+    """A boss POI on a relief wedge steeper than 40 degrees (first seen at seed 1476063938,
+    room_9; the cave run moved that layout). Since winding-tunnels task 5 relief leaves no
+    such wedge at all (``outline.FAN_GRADE``): seed 124576495 has six rooms with one when it
+    is off, and none with it. No POI stands on steep floor either way."""
+    spec = _spec(21, "moderate", ["cave", "lava_forge"], 124576495)
+    for room in spec.rooms:
+        if room.outline is None:
+            continue
+        grid = _grid(spec, room)
+        steep = _steep_floor(grid)
+        assert not steep.any(), room.id
+        for p in room.pois:
+            i = int(np.abs(grid.xs - p.x).argmin())
+            j = int(np.abs(grid.ys - p.y).argmin())
+            assert not steep[i, j], p
