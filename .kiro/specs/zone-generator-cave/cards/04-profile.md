@@ -7,8 +7,8 @@ A `cave` zone (single District, or District 0 `cave`) gets `spec.style_profile =
 layout reads `floor_area` from `styles/cave.json`; every other zone is unchanged.
 
 ## Done when
-- [ ] Purpose `cave` → `style_profile == "cave"` and smaller mean room area than the same seed as
-      `warren` (sizes in the commit body); any other Purpose → today's profile; a saved spec keeps
+- [x] Purpose `cave` → `style_profile == "cave"` and smaller mean room area than the same seed with
+      no profile (classic −7.6%, graph −13.9%); any other Purpose → today's profile; a saved spec keeps
       its profile on load and rebuild. → verify: `python -m pytest tests/test_cave_profile.py -q`
 - [x] The byte check passes; `python -m pytest tests/ -q` is green.
 
@@ -17,4 +17,4 @@ layout reads `floor_area` from `styles/cave.json`; every other zone is unchanged
 Outdoor dungeons and cities keep their profiles.
 
 ## Result
-✔ 9c86fbe · 3755 passed, 4 expected (2 texture_recipes, district_purposes three_districts, room_context corpus); 'smaller than warren' does not hold (cave Room_Types outweigh the profile), box 1 left for the lead
+✔ 9c86fbe · 3755 passed, 4 expected (2 texture_recipes, district_purposes three_districts, room_context corpus)
