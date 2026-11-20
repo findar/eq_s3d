@@ -19,5 +19,6 @@ wait on the user's design review. The user confirms at the first look (task 7).
    Natural_Style, and normal maps (umbrella decision 24 kept them off the Classic look).
 2. **Corridors take their `from_room`'s look** (A1), so a Threshold looks like the District it
    leaves.
+3. **The lean stops at a District edge; rule wings keep their override** (task 1): a District edge is as hard as a wing's, and a cave wing in a fortress District stays rough.
 
 ## Follow-ups
