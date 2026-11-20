@@ -37,7 +37,7 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
   - Owns: generators/room_scales.py, tests/test_district_looks.py
   - Reqs: 1
 
-- [ ] 2. Decor per District
+- [x] 2. Decor per District
   - Card: [cards/02-decor.md](cards/02-decor.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/builder.py (the decor part), generators/room_context.py, generators/rebuild.py, tests/test_district_decor.py, tests/test_partial_rebuild.py
