@@ -814,7 +814,7 @@ def test_zoneplan_normalisation(d):
     assert_fixpoint(from_controls_plan, "from_controls")
 
 
-# --- Property 19: Cave words never yield a cave theme (M0-only) ---------------
+# --- Property 19: Cave words never yield a cave zone type ---------------------
 #
 # Layout-tier, no binary build: `RulePlanner().plan(prompt)` is pure keyword
 # scoring (`ai.rule_planner`), so no `slow` marker and no `build_settings`.
@@ -873,13 +873,16 @@ def _bucket_score(text_lower: str, bucket: list) -> int:
 @settings(deadline=None, max_examples=scaled(100))
 @given(prompt=cave_prompts())
 def test_cave_words_mean_dungeon(prompt):
-    """Feature: zone-generator-m0-hygiene, Property 19: Cave words never yield a cave theme (M0-only).
+    """Feature: zone-generator-m0-hygiene, Property 19: Cave words never yield a cave zone type.
 
     For any prompt containing one or more Cave_Words (mixed with random filler
     and, optionally, outdoor/city/dungeon keywords), the rule planner's chosen
-    theme is always one of the Defined_Themes {dungeon, outdoor, city} and NEVER
-    "cave" -- the cave theme was removed from the surface in M0, and the cave
-    words were folded into the dungeon bucket. Beyond that, the theme EQUALS
+    zone type (the M0 "theme") is always one of the Defined_Themes {dungeon,
+    outdoor, city} and NEVER "cave" -- the cave zone type was removed from the
+    surface in M0, and the cave words were folded into the dungeon bucket. Since
+    step 21 the same words also choose the `cave` Purpose (`dungeon_theme`);
+    that is the content layer, not the zone type, and this property doesn't
+    look at it. Beyond that, the theme EQUALS
     "dungeon" whenever the prompt's dungeon-bucket score (Cave_Words included,
     counted with `str.count` exactly as `RulePlanner._match_theme` does) is
     STRICTLY GREATER than both its outdoor score and its city score. When the

@@ -55,6 +55,20 @@ def test_table_lets_every_purpose_start_three_districts():
         assert any(set(COMPATIBLE[a]) - {p} for a in COMPATIBLE[p]), p
 
 
+def test_cave_neighbours_and_contrasts():
+    """Cave sits next to what lives in, digs into, floods or is buried in it, and
+    contrasts with the built, the faithful and the arcane (step 21 design)."""
+    assert set(COMPATIBLE["cave"]) == {"warren", "mine_delve", "sunken_ruin", "ice_keep",
+                                       "lava_forge", "tomb"}
+    assert set(CONTRASTS["cave"]) == {"fortress", "temple", "wizard_lair"}
+
+
+@pytest.mark.parametrize("rel", ["sequential", "factional"])
+def test_drawn_districts_can_be_cave(rel):
+    drawn = {d.purpose for seed in range(200)
+             for d in assign_district_purposes(CHAIN3, "", None, rel, random.Random(seed))[0]}
+    assert "cave" in drawn
+
 def test_every_purpose_has_a_palette():
     assert set(semantics.PURPOSE_PALETTES) == set(semantics.ARCHETYPES)
     colours = [tuple(v["floor"][0]) for v in semantics.PURPOSE_PALETTES.values()]
@@ -73,7 +87,7 @@ def test_one_district_draws_nothing():
 
 
 @pytest.mark.parametrize("part", PARTS, ids=["two", "chain3", "star3"])
-@pytest.mark.parametrize("purpose", ["", "tomb", "warren"])
+@pytest.mark.parametrize("purpose", ["", "tomb", "warren", "cave"])
 def test_sequential_distinct_and_compatible_across_thresholds(part, purpose):
     for seed in range(40):
         ds, notes = assign_district_purposes(part, purpose, None, "", random.Random(seed))
@@ -88,7 +102,7 @@ def test_sequential_distinct_and_compatible_across_thresholds(part, purpose):
 
 
 @pytest.mark.parametrize("part", PARTS, ids=["two", "chain3", "star3"])
-@pytest.mark.parametrize("purpose", ["", "fortress", "mine_delve"])
+@pytest.mark.parametrize("purpose", ["", "fortress", "mine_delve", "cave"])
 def test_factional_pairwise_distinct_contrasting(part, purpose):
     for seed in range(40):
         ds, notes = assign_district_purposes(part, purpose, None, "factional",
@@ -138,10 +152,11 @@ def test_unknown_values_fall_back_with_a_note():
 
 @pytest.mark.parametrize("part", PARTS, ids=["two", "chain3", "star3"])
 @pytest.mark.parametrize("rel", RELATIONSHIPS)
-def test_pinned_purpose_everywhere_with_variants(part, rel):
-    ds, notes = assign_district_purposes(part, "temple", ["tomb"], rel, random.Random(0),
+@pytest.mark.parametrize("purpose", ["temple", "cave"])
+def test_pinned_purpose_everywhere_with_variants(part, rel, purpose):
+    ds, notes = assign_district_purposes(part, purpose, ["tomb"], rel, random.Random(0),
                                          pinned=True)
-    assert [d.purpose for d in ds] == ["temple"] * part.k
+    assert [d.purpose for d in ds] == [purpose] * part.k
     assert any("pinned" in n for n in notes)
     for d in range(1, part.k):
         assert ds[d].palette != ds[_parent(part, d)].palette

@@ -335,9 +335,14 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     socket, grid = _hill(host, terrain)
     if socket is None:
         raise EntranceError(f"spec {host.name!r} has no Landform")
-    reduced, error = None, None
     facings = int(getattr(engine, "facings", 1)) if engine is not None else 1
     side = tunnel_wall(grid.res) if facings > 1 else 0.0
+    reduced, error = None, None
+    # Layouts whose entrance wall gave no Tunnel, in the order tried: only
+    # when nothing else plans are they lowered for it (step 21; the fit sets
+    # a layout as high as the cover over its rooms allows, which can leave
+    # too little over the Tunnel).
+    no_tunnel = []
     for shrink in range(FIT_SHRINKS + 1):
         for facing in range(facings):
             try:
@@ -347,17 +352,70 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
                 # The Tunnel opens into the layout's entrance room, so the
                 # pacing (depth, climax, keys) runs from the way in.
                 first = next(r.id for r in layout.rooms if r.role == "entrance")
+                _entrance_on_top_level(layout, first)
                 layout = align_to_grid(socket, grid, envelope, layout, first)
-                entrance = plan_entrance(socket, grid, layout, room_id=first)
             except PLAN_ERRORS as e:
                 error = e
+                continue
+            try:
+                entrance = plan_entrance(socket, grid, layout, room_id=first)
+            except EntranceError as e:
+                error = e
+                no_tunnel.append((layout, warnings, first))
                 continue
             if len(layout.rooms) == room_count:
                 return layout, warnings, entrance
             reduced = reduced or (layout, warnings, entrance)
+    if reduced is not None:
+        return reduced
+    for layout, warnings, first in no_tunnel:
+        lowered = _lowered_for_tunnel(socket, grid, envelope, layout, first)
+        if lowered is None:
+            continue
+        if len(lowered[0].rooms) == room_count:
+            return lowered[0], warnings, lowered[1]
+        reduced = reduced or (lowered[0], warnings, lowered[1])
     if reduced is None:
         raise error
     return reduced
+
+
+def _lowered_for_tunnel(host, grid, envelope: Envelope, layout: ZoneSpec,
+                        room_id: str) -> Optional[Tuple[ZoneSpec, "Entrance"]]:
+    """``layout`` lowered by ``ALIGN_DROP_STEP`` at a time (up to
+    ``ALIGN_DROP``, staying in the Envelope) until room ``room_id``'s wall
+    gives a Tunnel, with that Entrance; ``None`` when no drop does."""
+    drop = ALIGN_DROP_STEP
+    while drop <= ALIGN_DROP + 1e-9:
+        moved = copy.deepcopy(layout)
+        _translate(moved, 0, 0.0, -drop)
+        if not LayoutGenerator.fits(moved, envelope):
+            return None
+        try:
+            return moved, plan_entrance(host, grid, moved, room_id=room_id)
+        except EntranceError:
+            drop += ALIGN_DROP_STEP
+    return None
+
+
+def _entrance_on_top_level(layout: ZoneSpec, room_id: str) -> None:
+    """Raise ``EntranceError`` when the pacing's entrance room ``room_id`` is
+    below the layout's top Level.
+
+    The Tunnel enters at the top Level (the engine's ``descend``), and the
+    engine gives its Levels from the rules' entrance room down. Pacing picks
+    the entrance as the room nearest the way in, which is that room only
+    when the facing turned it toward the way in: ``face_entry``'s later
+    ranks turn the layout away, and a deeper room can then be nearest (step
+    21: "a cave in a hill where kobolds live", seed 7, planned at facing 6
+    with its ``deep`` room as the entrance, a Level down). Such a facing is
+    refused like one whose wall takes no Tunnel, so ``plan_dungeon`` tries
+    the next."""
+    levels = (layout.layout or {}).get("levels") if isinstance(layout.layout, dict) else None
+    if levels and levels.get(room_id, 0) < max(levels.values()):
+        raise EntranceError(
+            f"entrance room {room_id} is on Level {levels[room_id]}, below the top "
+            f"Level {max(levels.values())}")
 
 
 #: How far (u) ``align_to_grid`` may lower a moved layout, in steps of
