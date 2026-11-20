@@ -73,11 +73,11 @@ proves it with
   - Type: agent · Size: S · Depends: 5, 6, 10
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 8. HUMAN: first look
+- [x] 8. HUMAN: first look
   - Card: [cards/08-first-look.md](cards/08-first-look.md)
   - Type: human · Depends: 7
 
-- [ ] 9. Close step 21
+- [x] 9. Close step 21
   - Card: [cards/09-close.md](cards/09-close.md)
   - Type: agent · Size: S · Depends: 8 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-cave/, .kiro/specs/zone-generator/

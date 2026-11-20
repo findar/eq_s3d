@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 21, ready.** Drafted 2026-11-19 at master `a377d54`. After step 20 the
+> **STATUS: roadmap step 21, DONE (closed 2026-11-20; first look skipped at the user's word).** Drafted 2026-11-19 at master `a377d54`. After step 20 the
 > user said "Continue"; multi-zone worlds still wait on their design review, so the lead chose
 > the last unbuilt piece of umbrella M3: the `cave` Purpose (umbrella Requirement 33, design
 > "Semantics", "`cave` archetype"). The user confirms the choice at the first look (task 8).

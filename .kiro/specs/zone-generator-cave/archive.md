@@ -7,6 +7,15 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | The `cave` Purpose: Room_Types `cave_mouth`, `cavern`, `grotto`, `crystal_grotto`; cold and crystal light; damp-rock palette; kind map; `cave` in `VALID_DUNGEON_THEMES` | `b526dd8` |
+| 2 | `[themes.cave]` finish (rough on graph, never built), recipes, topology `cave = { base = "warren" }`, `cave_rock` textures | `6463109` |
+| 3 | `rules/decor/layers/cave.toml`: crystal clusters, stalagmites, mushrooms, roots; no furniture | `8946f16`, `31bc537` |
+| 4 | Room scale from `styles/cave.json` as a Size band shift (−0.089); `LayoutGenerator(profile=)` | `9c86fbe` |
+| 5 | Cave words pick the Purpose; Districts neighbours and contrasts; "Cave" on the page; outdoor Entrance on the top Level (fix) | `1b44160`, `aba7bee`, `5c1e8e6` |
+| 6 | Outline fix (no hairline links, no floor hung off a sliver); gate 348/348; cave fail share 0.8–3.8%, bands unchanged | `371c55e`, `fcc3a35` |
+| 7 | ACCEPTANCE "Step 21 — Caves" (cases a–h); VSPBLOCK301 retag reverted for A6; thorough 3799 passed | `bae1ae8`, `7319049` |
+| 8 | First look skipped at the user's word, 2026-11-20 | — |
+| 10 | A graph-layout cave recorded for the room-context corpus (seed 125) | `d869ca4` |
 
 ## Decisions
 
