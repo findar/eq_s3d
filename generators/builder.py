@@ -441,13 +441,26 @@ def district_sidecar(spec: ZoneSpec, corridor_rows: Optional[List[dict]]) -> dic
     }
 
 
-def decor_layers_of(spec: ZoneSpec) -> Tuple[str, ...]:
+def decor_layers_of(spec: ZoneSpec, theme: Optional[str] = None) -> Tuple[str, ...]:
     """The layers a spec's Decor takes: its theme's, then its race's (``themes.toml``),
-    then the request's (``with_decor_layers``)."""
+    then the request's (``with_decor_layers``). ``theme`` (district-looks Req 2) stands for
+    the zone's when given: a District's Purpose, for that District's rooms and corridors."""
     from ai import schema
     from generators.decor.rules import layers_for
-    return layers_for(spec.dungeon_theme or "", spec.dungeon_race or "",
+    theme = spec.dungeon_theme if theme is None else theme
+    return layers_for(theme or "", spec.dungeon_race or "",
                       tuple(getattr(spec, "decor_layers", ()) or ()), schema.RULES_DECOR_DIR)
+
+
+def district_themes(spec: ZoneSpec) -> List[Tuple[int, str]]:
+    """Each District's (id, theme) in id order, ``[]`` for a one-District zone: the theme its
+    rooms were labelled with (``room_theme``, the Purpose's archetype), else its Purpose."""
+    out = []
+    for d in sorted(spec.districts or (), key=lambda d: d.id):
+        theme = next((r.room_theme for r in spec.rooms if r.district == d.id and r.room_theme),
+                     d.purpose or "")
+        out.append((d.id, theme))
+    return out
 _IMPORTERS: Dict[str, object] = {}
 
 
@@ -584,6 +597,9 @@ class DecorBuild:
         self.textures: Dict[str, bytes] = {}
         self.placed: list = []
         self.room_seeds: Dict[str, int] = {}   # rooms placed with their own decor seed
+        # Each District's decor layers (district-looks Req 2.2): ``{"id", "theme", "layers"}``
+        # in id order; empty for a one-District zone, whose record is as it always was.
+        self.districts: List[dict] = []
 
     def lights(self) -> List[ZonLight]:
         """One ZON point light per light-bearing Prop, at its flame (Req 9.1)."""
@@ -639,11 +655,13 @@ class DecorBuild:
 
     def summary(self) -> dict:
         """The sidecar's ``decor`` block (``sites`` only when Sites were dressed, ``layers``
-        only when decor layers were merged on)."""
+        only when decor layers were merged on: the zone's, District 0's; ``districts`` only
+        when the zone has Districts, each District's layers)."""
         n_sites = sum(1 for ctx, _, _ in self.rooms if ctx.source == "site")
         n_corridors = sum(1 for ctx, _, _ in self.rooms if ctx.source == "corridor")
         return {"control": self.control, "seed": self.seed,
                 **({"layers": list(self.layers)} if self.layers else {}),
+                **({"districts": [dict(d) for d in self.districts]} if self.districts else {}),
                 "props": len(self.placed),
                 "lights": sum(1 for _, p in self.placed if p.light),
                 "models": len(self.models), "rooms": len(self.rooms) - n_sites - n_corridors,
@@ -700,13 +718,18 @@ class BareCap:
     three of five bare, and four cities in 40 under stock's lowest Props per room (task 14).
     Rooms are placed in ``todo``'s order through ``place``; a room that draws bare past the cap
     is placed in full. The room view (``generators.decor.room_view``) replays it over the
-    rooms before the one it shows, so that room comes out as the build placed it."""
+    rooms before the one it shows, so that room comes out as the build placed it.
 
-    def __init__(self, todo, rules, control: str):
+    In a multi-District zone (district-looks Req 2) ``rules_of`` gives each room its own
+    District's rules: the cap stays one zone-wide cap, each room's bare chance read from the
+    rules it is placed with. None: every room takes ``rules``."""
+
+    def __init__(self, todo, rules, control: str, rules_of=None):
         import math
         from generators.decor.rules import BARE
+        of = rules_of or (lambda _c: rules)
         self.left = math.ceil(sum(
-            rules.weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
+            of(c).weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
             for c in todo if c.source == "room") - 1e-9)
 
     def place(self, ctx, rules, catalogue, control: str, decor_seed, room_seed=None):
@@ -795,12 +818,31 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     mesh = _Mesh(ter) if rooms else None
     todo = (contexts(spec, mesh) if rooms else []) + (site_contexts(spec, ter) if sited else [])
 
+    # District looks (district-looks Req 2): in a multi-District zone each room and corridor
+    # takes its own District's layers (its context's theme: the room's ``room_theme``, a
+    # corridor's ``from_room``'s), loaded once per theme. A Site keeps the zone's; a
+    # one-District zone takes the zone's everywhere, as it always has.
+    by_theme: Dict[str, object] = {}
+
+    def rules_of(ctx):
+        if not spec.districts or ctx.source == "site":
+            return rules
+        if ctx.theme not in by_theme:
+            by_theme[ctx.theme] = _decor_data(decor_layers_of(spec, ctx.theme))[0]
+        return by_theme[ctx.theme]
+
+    if spec.districts:
+        for did, theme in district_themes(spec):
+            layers = by_theme.setdefault(theme, _decor_data(decor_layers_of(spec, theme))[0]).layers
+            out.districts.append({"id": did, "theme": theme, "layers": list(layers)})
+
     imported = {}                           # model file -> its import
-    cap = BareCap(todo, rules, control)
+    cap = BareCap(todo, rules, control, rules_of)
     own = spec.room_decor_seeds or {}
     out.room_seeds = {c.id: own[c.id] for c in todo if c.source == "room" and c.id in own}
     for ctx in todo:
-        d = cap.place(ctx, rules, catalogue, control, spec.decor_seed, out.room_seeds.get(ctx.id))
+        d = cap.place(ctx, rules_of(ctx), catalogue, control, spec.decor_seed,
+                      out.room_seeds.get(ctx.id))
         d, problems, used = settle_room(ctx, d, catalogue, importer, mesh, imported)
         out.placed.extend(zip(used, d.props))
         out.rooms.append((ctx, d, problems))

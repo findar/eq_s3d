@@ -697,7 +697,10 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         floor, ceiling = _rounded(floor), _rounded(ceiling)
         reached = _reached(floor, solid, [tuple(int(v) for v in c) for c in np.argwhere(starts)])
         out.append(RoomContext(
-            id=cor.id, source="corridor", zone_type=spec.zone_type, theme=spec.dungeon_theme or "",
+            # A corridor takes the look of the room it leaves (district-looks A1): in a
+            # one-District zone every room's ``room_theme`` is the zone's.
+            id=cor.id, source="corridor", zone_type=spec.zone_type,
+            theme=(getattr(rooms.get(cor.from_room), "room_theme", "") or spec.dungeon_theme or ""),
             race=spec.dungeon_race or "", room_type="", kind="", style="", seed=int(spec.seed or 0),
             body_height=_r(h), scales={}, box=tuple(_rr((x0, y0, z0, x1, y1, z1))), cell=CELL,
             origin=(_r(xs[0]), _r(ys[0])), floor=floor, reached=reached, ceiling=ceiling,
