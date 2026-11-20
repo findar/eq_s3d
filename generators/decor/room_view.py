@@ -310,8 +310,28 @@ def shipped_catalogue() -> Catalogue:
     return _CATALOGUES[key]
 
 
+def district_rules(rules, districts: Optional[Sequence[Mapping[str, Any]]], load):
+    """Each context's rules as the build picks them (district-looks Req 2): ``rules`` (the
+    zone's) for every context when ``districts`` is empty (a one-District build, or an old
+    sidecar without the record); else a room's or corridor's own District's rules, by its
+    context's theme (a room's ``room_theme``, a corridor's ``from_room``'s), each District's
+    layers as the sidecar's ``decor.districts`` names them, read with ``load(layers)``. A Site,
+    and a theme the record doesn't name, take the zone's."""
+    if not districts:
+        return lambda _c: rules
+    by_theme: Dict[str, Any] = {}
+    for rec in districts:
+        theme = rec.get("theme") or ""
+        if theme not in by_theme:
+            by_theme[theme] = load(tuple(rec.get("layers") or ()))
+
+    def rules_of(ctx):
+        return rules if ctx.source == "site" else by_theme.get(ctx.theme or "", rules)
+    return rules_of
+
+
 def _decorated(contexts: Sequence[RoomContext], k: int, rules, catalogue, control: str,
-               seed: Optional[int], room_seed: Optional[int] = None):
+               seed: Optional[int], room_seed: Optional[int] = None, rules_of=None):
     """Room ``k`` placed as ``builder.decor_for`` places it: on its own stream, under the
     zone's bare cap. The cap only matters when the room draws bare, so only then are the rooms
     before it replayed (each on its own stream with the same seed) to find what is left of it.
@@ -319,23 +339,26 @@ def _decorated(contexts: Sequence[RoomContext], k: int, rules, catalogue, contro
     ``room_seed`` is the room's own decor seed (partial-rebuild Req 3) and follows
     ``builder.BareCap.place``'s one rule: the bare decision is drawn with the zone's ``seed``
     (the replay above, which no room's own seed moves), a room left bare stays as the zone drew
-    it, and one that isn't is placed in full with ``room_seed``. Returns (the Decorated, the
+    it, and one that isn't is placed in full with ``room_seed``. ``rules_of``
+    (``district_rules``) gives each context its own District's rules; None: every context
+    takes ``rules``. Returns (the Decorated, the
     rooms replayed, the decor seed its Props came from: ``room_seed``, else ``seed``)."""
     from generators.builder import BareCap
+    of = rules_of or (lambda _c: rules)
     ctx = contexts[k]
-    d = place(ctx, rules, catalogue, control, seed)
+    d = place(ctx, of(ctx), catalogue, control, seed)
     own = room_seed if ctx.source == "room" else None
     if not (d.bare and ctx.source == "room"):
         if own is not None:
-            d = place(ctx, rules, catalogue, control, own, may_be_bare=False)
+            d = place(ctx, of(ctx), catalogue, control, own, may_be_bare=False)
         return d, 0, (own if own is not None else seed)
-    cap = BareCap(contexts, rules, control)
+    cap = BareCap(contexts, rules, control, rules_of)
     replayed = 0
     for c in contexts[:k]:
         if c.source == "room":
-            cap.place(c, rules, catalogue, control, seed)
+            cap.place(c, of(c), catalogue, control, seed)
             replayed += 1
-    d = cap.place(ctx, rules, catalogue, control, seed, own)
+    d = cap.place(ctx, of(ctx), catalogue, control, seed, own)
     return d, replayed, (seed if d.bare or own is None else own)
 
 
@@ -343,7 +366,8 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
                   control: str, layers: Sequence[str] = (), eq_path: Optional[Path] = None,
                   mesh=None, rules_dir: Optional[Path] = None, catalogue: Optional[Catalogue] = None,
                   preview_any_use: bool = False, room_seed: Optional[int] = None,
-                  room_seeds: Optional[Mapping[str, int]] = None) -> Tuple[bytes, dict]:
+                  room_seeds: Optional[Mapping[str, int]] = None,
+                  districts: Optional[Sequence[Mapping[str, Any]]] = None) -> Tuple[bytes, dict]:
     """Decorate room ``room_id`` of a build's ``contexts`` (all of them, in build order) and
     draw it alone: (GLB bytes, report).
 
@@ -361,7 +385,14 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
     seed from ``room_seeds`` when the build has one. Either way ``seed`` stays the zone's: the
     room's bare decision is drawn with it, as the build draws it. The report's ``seed`` is the
     decor seed the room's Props came from, ``zone_seed`` the one its bare decision came from
-    and ``room_seed`` the room's own (None: it has none)."""
+    and ``room_seed`` the room's own (None: it has none).
+
+    District looks (district-looks Req 2): ``districts`` is a build's sidecar
+    ``decor.districts`` record (``Build.districts``), ``[{id, theme, layers}]``. With it each
+    room and corridor takes its own District's layers (``district_rules``) and the bare cap
+    reads each room's own, as the build does; ``layers`` stays the zone's (a Site's). None or
+    empty: every context takes ``layers``, as before. The report's ``layers`` are the ones
+    this room was placed with."""
     from ai import schema
     from generators.builder import settle_room
     from generators.decor.rules import load_decor
@@ -372,13 +403,14 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
         raise NoRoom(room_id)
     k = ids.index(room_id)
     ctx = contexts[k]
-    rules = load_decor(Path(rules_dir) if rules_dir is not None else schema.RULES_DECOR_DIR,
-                       layers=tuple(layers))
+    rdir = Path(rules_dir) if rules_dir is not None else schema.RULES_DECOR_DIR
+    rules = load_decor(rdir, layers=tuple(layers))
+    rules_of = district_rules(rules, districts, lambda ls: load_decor(rdir, layers=ls))
     cat = catalogue if catalogue is not None else shipped_catalogue()
     if preview_any_use:
         cat = any_use(cat)
     own = room_seed if room_seed is not None else (room_seeds or {}).get(room_id)
-    d, replayed, used = _decorated(contexts, k, rules, cat, control, seed, own)
+    d, replayed, used = _decorated(contexts, k, rules, cat, control, seed, own, rules_of)
     notes: List[str] = []
     meshes = meshes_for(eq_path)
     if eq_path is not None:
@@ -414,7 +446,7 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
         "zone_seed": int(seed) if seed is not None else int(ctx.seed),
         "room_seed": int(own) if own is not None else None,
         "control": control,
-        "layers": list(rules.layers),
+        "layers": list(rules_of(ctx).layers),
         "sets": list(d.sets),
         "bare": d.bare,
         "props": [p.to_dict() for p in d.props],
@@ -449,6 +481,9 @@ class Build:
     mesh: Any = None
     recipe: Dict[str, Any] = field(default_factory=dict)
     room_seeds: Dict[str, int] = field(default_factory=dict)   # rooms with their own decor seed
+    # The sidecar's ``decor.districts`` (district-looks Req 2): each District's layers; empty for
+    # a one-District build or an old sidecar. Pass it to ``decorate_room(districts=...)``.
+    districts: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def zone_theme_race(recipe: Dict[str, Any], contexts: Sequence[RoomContext],
@@ -509,8 +544,9 @@ def load_build(build_dir: Path, name: str, with_mesh: bool = True) -> Build:
                  theme=content.get("dungeon_theme") or "", race=content.get("dungeon_race") or "",
                  mesh=mesh, recipe=dict(recipe),
                  room_seeds={str(r): int(v) for r, v in
-                             ((side.get("seeds") or {}).get("room_decor_seeds") or {}).items()})
+                             ((side.get("seeds") or {}).get("room_decor_seeds") or {}).items()},
+                 districts=[dict(d) for d in decor.get("districts") or ()])
 
 
-__all__ = ["Build", "CATEGORY_RGB", "Meshes", "NoRoom", "any_use", "decorate_room", "eq_path_of", "glb_bytes",
+__all__ = ["Build", "CATEGORY_RGB", "Meshes", "NoRoom", "any_use", "decorate_room", "district_rules", "eq_path_of", "glb_bytes",
            "load_build", "meshes_for", "prop_part", "prop_parts", "room_parts", "shipped_catalogue", "wall_mesh", "write_glb", "zone_theme_race"]
