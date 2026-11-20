@@ -13,3 +13,4 @@ temple  = { base = "classic_eq", layers = ["temple"] }
 mine_delve = { base = "classic_eq" }
 lava_forge = { base = "classic_eq" }
 ice_keep   = { base = "classic_eq" }
+cave       = { base = "warren" }    # wide, loopy, shallow; its kinds all map to cave Room_Types
