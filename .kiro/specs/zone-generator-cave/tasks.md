@@ -70,7 +70,7 @@ proves it with
 
 - [ ] 7. Acceptance section
   - Card: [cards/07-acceptance.md](cards/07-acceptance.md)
-  - Type: agent · Size: S · Depends: 5, 6
+  - Type: agent · Size: S · Depends: 5, 6, 10
   - Owns: docs/ACCEPTANCE.md
 
 - [ ] 8. HUMAN: first look
@@ -81,3 +81,9 @@ proves it with
   - Card: [cards/09-close.md](cards/09-close.md)
   - Type: agent · Size: S · Depends: 8 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-cave/, .kiro/specs/zone-generator/
+
+- [ ] 10. Record cave rooms for the room-context corpus
+  - Card: [cards/10-recording.md](cards/10-recording.md)
+  - Type: agent · Size: S · Depends: 2, 3, 4
+  - Owns: scripts/record_rooms.py, tests/fixtures/rooms/
+  - Reqs: 2.5
