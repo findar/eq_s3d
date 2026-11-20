@@ -43,7 +43,7 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
   - Owns: generators/builder.py (the decor part), generators/room_context.py, generators/rebuild.py, tests/test_district_decor.py, tests/test_partial_rebuild.py
   - Reqs: 2
 
-- [ ] 3. Cave dressing
+- [x] 3. Cave dressing
   - Card: [cards/03-cave-dressing.md](cards/03-cave-dressing.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/semantics.py, rules/decor/layers/cave.toml, tests/test_cave_purpose.py, tests/fixtures/rooms/cave_graph.json
