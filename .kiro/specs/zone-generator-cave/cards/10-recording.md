@@ -10,11 +10,12 @@ A `cave` entry in `RECORDINGS` (`scripts/record_rooms.py`) whose recording cover
 after tasks 2-4 so it holds the cave's real recipes, decor and scale.
 
 ## Done when
-- [ ] → verify: `python -m pytest tests/test_room_context.py -q`
-- [ ] Existing fixtures unchanged (`git diff --stat` shows only the new fixture and the script).
-- [ ] `python -m pytest tests/ -q` is green.
+- [x] → verify: `python -m pytest tests/test_room_context.py -q`
+- [x] Existing fixtures unchanged (`git diff --stat` shows only the new fixture and the script).
+- [x] `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 Fixtures hold measured geometry, never client art. Recording needs `EQ_PATH`.
 
 ## Result
+✔ d869ca4 · 3769 passed, 1 failed (task 5's three_districts) · seed 125
