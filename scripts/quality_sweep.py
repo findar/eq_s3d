@@ -25,6 +25,11 @@ seeds with the controls that reproduce them.
     python scripts/quality_sweep.py --per-key 40
     python scripts/quality_sweep.py --per-key 600 --jobs 6 --svg 4
     python scripts/quality_sweep.py --per-key 40 --only dungeon --districts
+    python scripts/quality_sweep.py --per-key 240 --only dungeon --theme cave --jobs 3
+
+``--theme NAME`` (zone-generator-cave task 6) pins every Draw's dungeon theme (its
+Purpose) instead of drawing it, to measure one Purpose against the bands; ``none`` pins
+no theme.
 
 ``--svg N`` writes the top-down maps (``generators/mapview.py``) of up to N
 failing specs per key to ``output/quality_sweep_svg/``, to look at before
@@ -171,6 +176,8 @@ def main(argv=None):
     ap.add_argument("--only", default="", help="comma list of zone types to sweep")
     ap.add_argument("--districts", action="store_true",
                     help="sweep districted zones (8-30 rooms, keyed by District count)")
+    ap.add_argument("--theme", default="",
+                    help="pin every Draw's dungeon theme (Purpose); 'none' pins no theme")
     ap.add_argument("--csv", default="",
                     help="CSV path (default output/quality_sweep[_districts].csv)")
     ap.add_argument("--svg", type=int, default=0,
@@ -178,6 +185,9 @@ def main(argv=None):
     ap.add_argument("--fails", type=int, default=4, help="failing seeds listed per key")
     args = ap.parse_args(argv)
 
+    if args.theme and args.theme != "none" and args.theme not in VALID_DUNGEON_THEMES:
+        ap.error(f"--theme {args.theme!r} is not a dungeon theme")
+    themes = ("",) if args.theme == "none" else (args.theme,) if args.theme else THEMES
     rng = random.Random(args.seed)
     only = {s for s in args.only.split(",") if s}
     room_counts = DISTRICT_ROOM_COUNTS if args.districts else ROOM_COUNTS
@@ -189,7 +199,7 @@ def main(argv=None):
         for i in range(args.per_key):
             if i % len(counts) == 0:
                 rng.shuffle(counts)
-            jobs.append((*key, counts[i % len(counts)], rng.choice(THEMES), args.districts,
+            jobs.append((*key, counts[i % len(counts)], rng.choice(themes), args.districts,
                          rng.randint(0, 2 ** 31 - 1)))
     if not jobs:
         print("nothing to sweep")
