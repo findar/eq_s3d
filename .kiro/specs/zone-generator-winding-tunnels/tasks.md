@@ -42,10 +42,10 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Owns: generators/routing.py (a new `wind_leg`), generators/transitions.py, generators/zone_spec.py (`CorridorSpec.wind`), generators/wall_styles.py, rules/walls/rough.toml, tests/test_winding.py
   - Reqs: 2
 
-- [ ] 3. The winding mesh
+- [x] 3. The winding mesh
   - Card: [cards/03-mesh.md](cards/03-mesh.md)
   - Type: agent · Size: M · Depends: 2, 9
-  - Owns: generators/geometry.py (the leg builders), tests/test_winding_mesh.py, goldens of zones with rough corridors (named)
+  - Owns: generators/geometry.py (the leg builders), tests/test_winding_mesh.py, goldens of zones with rough corridors (named), analyzer/traverse.py (widened by the lead: corridor_continuity)
   - Reqs: 3, 6
 
 - [ ] 4. Decor, map and room view read the tunnel
