@@ -704,11 +704,14 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
 
 def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
            corridor_width: float, gap: float,
-           storeys: Optional[Dict[str, Storey]] = None) -> Dict[str, Point]:
+           storeys: Optional[Dict[str, Storey]] = None,
+           run_factor: Optional[float] = None) -> Dict[str, Point]:
     """The ``spring`` placement: room centres for ``order`` (before separation
     and the Envelope; :func:`place` does those). With ``storeys`` (step 7)
-    rooms on different Levels may overlap and stair edges pull together."""
-    run = RUN_FACTOR * corridor_width
+    rooms on different Levels may overlap and stair edges pull together.
+    ``run_factor`` (None: :data:`RUN_FACTOR`) is one corridor run in corridor
+    widths; a style profile sets its own (winding tunnels task 9: a cave's)."""
+    run = (RUN_FACTOR if run_factor is None else run_factor) * corridor_width
     pos = start_positions(graph, order, half, run, gap, storeys)
     edges = [(e.a, e.b) for e in graph.edges()
              if graph.node(e.a).is_room and graph.node(e.b).is_room]
@@ -717,7 +720,7 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
 
 
 #: The Placement registry: name -> callable(graph, order, half, corridor_width,
-#: gap, storeys=None) -> {room id: centre}. Names must be the checker's
+#: gap, storeys=None, run_factor=None) -> {room id: centre}. Names must be the checker's
 #: ``ruleset.PLACEMENTS``. ``storeys`` (step 7) is passed only when the build
 #: stacks, so a placement written before it still works on one Level.
 PLACEMENT_FUNCS: Dict[str, Callable[..., Dict[str, Point]]] = {"spring": spring}

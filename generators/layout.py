@@ -54,6 +54,12 @@ ENVELOPE_ATTEMPTS = 6
 DISTRICT_ZONE_TYPES = {"dungeon"}
 DISTRICT_ATTEMPTS = 8
 
+# A style profile's corridor run for the graph placement, in corridor widths
+# (``LayoutContext.run_factor``; ``embed.RUN_FACTOR`` otherwise). Winding
+# tunnels task 9: a cave's legs come out near the stock tunnels' span
+# (``scripts/tunnel_survey.py``) so they are long enough to wind.
+PROFILE_RUN_FACTOR = {"cave": 12.0}
+
 
 class DistrictSplitError(ValueError):
     """A corridor split or swap left two Districts joined by more than their
@@ -310,6 +316,9 @@ class LayoutGenerator:
         # (``outdoor_dungeon``). ``generate`` reads ``size_shift``; a plan's
         # Size control adds to ``profile_shift``. No profile: 0.0, as before.
         self.profile_shift = 0.0
+        # The graph placement's corridor run, in corridor widths, for this
+        # profile (``PROFILE_RUN_FACTOR``); None: ``embed.RUN_FACTOR``.
+        self.run_factor = PROFILE_RUN_FACTOR.get(profile or "")
         if profile:
             import math
             base_area = _profile_mean(self.profile, ["geometry", "floor_area"], 2_000_000.0)
@@ -845,7 +854,8 @@ class LayoutGenerator:
                                race_scale=semantics.race_scale(race),
                                room_count=room_count),
             size_shift=self.size_shift,
-            height_shift=self.size_shift - self.profile_shift)
+            height_shift=self.size_shift - self.profile_shift,
+            run_factor=self.run_factor)
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement
