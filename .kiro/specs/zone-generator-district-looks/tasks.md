@@ -61,7 +61,7 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
   - Owns: scripts/sweep_themed_navigability.py, scripts/quality_sweep.py, any root-cause fix named in the commit
   - Reqs: 5
 
-- [ ] 6. Acceptance section
+- [x] 6. Acceptance section
   - Card: [cards/06-acceptance.md](cards/06-acceptance.md)
   - Type: agent · Size: S · Depends: 5, 9
   - Owns: docs/ACCEPTANCE.md
