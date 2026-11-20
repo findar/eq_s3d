@@ -275,7 +275,8 @@ class LayoutGenerator:
     _district_assign: Optional[List[int]] = None
 
     def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None,
-                 engine: Union[LayoutEngine, str, None] = None):
+                 engine: Union[LayoutEngine, str, None] = None,
+                 profile: Optional[str] = None):
         # The Layout_Engine that lays out the rooms and their graph (Job A);
         # ``None`` is the classic TinyKeep engine, a string names one in
         # ``layout_engine.ENGINES``.
@@ -300,6 +301,21 @@ class LayoutGenerator:
         # profile, not a zone type (zone_types "Zone-type vocabulary").
         self.profile = load_style_profile(
             STYLE_PROFILE.get(self.zone_type, self.zone_type))
+        # *profile* names another measured profile (a ``cave`` Purpose:
+        # styles/cave.json; cave spec Req 3). A room-graph zone sizes its rooms
+        # from its race's bands, so the profile's floor_area reaches them as a
+        # band shift: the side ratio sqrt(area / zone type's area) as a
+        # position in the side band, as an outdoor dungeon's scale does
+        # (``outdoor_dungeon``). ``generate`` reads ``size_shift``; a plan's
+        # Size control adds to ``profile_shift``. No profile: 0.0, as before.
+        self.profile_shift = 0.0
+        if profile:
+            import math
+            base_area = _profile_mean(self.profile, ["geometry", "floor_area"], 2_000_000.0)
+            self.profile = load_style_profile(profile)
+            area = _profile_mean(self.profile, ["geometry", "floor_area"], base_area)
+            lo, hi = semantics.ROOM_SIDE_BAND
+            self.profile_shift = math.log((area / base_area) ** 0.5) / math.log(hi / lo)
         # Remember the seed so it can be recorded on the ZoneSpec. The geometry
         # backends (cave/terrain) seed from this rather than a hash of the
         # (always-unique, timestamped) name, so a pinned seed reproduces the
@@ -340,7 +356,7 @@ class LayoutGenerator:
         # rooms' position in them instead (``size_shift``,
         # ``semantics.SIZE_SHIFT``; step 7 task 17).
         self.size_multiplier = 1.0
-        self.size_shift = 0.0
+        self.size_shift = self.profile_shift
         # The build's race (``generate``'s ``dungeon_race``): its body height
         # sizes a room-graph zone's rooms, corridors and rises.
         self.race = ""

@@ -50,7 +50,7 @@ proves it with
   - Owns: rules/decor/themes.toml, rules/decor/layers/cave.toml, tests/test_decor_rules.py
   - Reqs: 2.4, 2.5
 
-- [ ] 4. Room scale from the cave profile
+- [x] 4. Room scale from the cave profile
   - Card: [cards/04-profile.md](cards/04-profile.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: ai/expand.py, generators/layout.py (constructor and its one call), tests/test_cave_profile.py
