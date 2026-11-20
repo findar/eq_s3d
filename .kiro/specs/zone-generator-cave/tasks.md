@@ -82,7 +82,7 @@ proves it with
   - Type: agent · Size: S · Depends: 8 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-cave/, .kiro/specs/zone-generator/
 
-- [ ] 10. Record cave rooms for the room-context corpus
+- [x] 10. Record cave rooms for the room-context corpus
   - Card: [cards/10-recording.md](cards/10-recording.md)
   - Type: agent · Size: S · Depends: 2, 3, 4
   - Owns: scripts/record_rooms.py, tests/fixtures/rooms/

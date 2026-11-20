@@ -81,6 +81,10 @@ RECORDINGS: List[Dict] = [
     # Farmsteads are human only; seed 127 gives two, with a hut, a shrine and a ruin (task 11).
     {"name": "wilderness_farmstead", "seed": 127,
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "human"}},
+    # The cave Purpose (step 21): graph layout, the only one that draws its rough walls; seed 125
+    # holds a cave mouth, the cavern hub, a crystal grotto and grottos.
+    {"name": "cave_graph", "seed": 125,
+     "plan": {"zone_type": "dungeon", "dungeon_theme": "cave", "layout": "graph"}},
 ]
 DEFAULTS = {"room_count": 8, "size": "small"}
 
