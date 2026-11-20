@@ -47,7 +47,7 @@ proves it with
 - [ ] 3. The decor layer
   - Card: [cards/03-decor.md](cards/03-decor.md)
   - Type: agent · Size: S · Depends: 1
-  - Owns: rules/decor/themes.toml, rules/decor/layers/cave.toml, tests/test_decor_rules.py
+  - Owns: rules/decor/themes.toml, rules/decor/layers/cave.toml, tests/test_decor_rules.py, rules/decor/sets.toml, rules/decor/tags.toml, tests/test_decor_layers.py (the theme-map line)
   - Reqs: 2.4, 2.5
 
 - [ ] 4. Room scale from the cave profile

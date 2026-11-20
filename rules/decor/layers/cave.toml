@@ -18,8 +18,10 @@
 # (a throne, stools, braziers).
 #
 # Models: catalogue kinds with use = "yes" models in the neutral Set (a Theme Cave build takes
-# neutral alone; a goblin cave also takes Runnyeye's CRYS*/CRYSTAL* crystals). Crystals: CRYSTAL3,
-# VELIUMCRYSTALS200-202, VELIUMCHIPS200, NIHSEWCRYS803 on the floor, POECRYST503 on the ceiling.
+# neutral alone). Crystal clusters (crystal_cluster, tags.toml): VELIUMCRYSTALS201/202, Runnyeye's
+# CRYSTAL4; the climax asks for them first. Crystal shards (crystal): Runnyeye's and Najena's
+# CRYS*/CRYSTAL2 (neutral in tags.toml), CRYSTAL3, VELIUMCRYSTALS200, VELIUMCHIPS200 on the floor,
+# POECRYST503 on the ceiling.
 # Stalactite kind: the CDSTALAG/KDSTALAG/MISTSTALG/WARRENSTALAG stalagmites on the floor,
 # SLCSTALAG40x, STALAG101 and WARRENSTALAG203/206 on the ceiling. Fungus: MUSHROOM*, NSHROOMS*,
 # YKSHROOM*. Roots: GKROOT*, NDROOTS*, TAKROOT* (ceiling).
@@ -66,7 +68,7 @@ props = [ { kind = ["rock", "mound"], at = "scatter", count = [2, 4] },
 [types.cavern]                  # stalagmites and dripstone, a crystal or two
 props = [ { kind = "stalactite", at = "scatter", count = [2, 4] },
           { kind = "stalactite", at = "ceiling", count = [1, 3], chance = 0.6 },
-          { kind = "crystal", at = "corners", count = [1, 2], chance = 0.5 },
+          { kind = ["crystal_cluster", "crystal"], at = "corners", count = [1, 2], chance = 0.5 },
           { kind = ["rock", "mound"], at = "along_wall", count = [1, 2], chance = 0.5 } ]
 
 [types.grotto]                  # fungus clusters, dripping water, loose scree
@@ -75,8 +77,9 @@ props = [ { kind = "mushroom", at = "corners", count = [1, 3], chance = 0.7 },
           { kind = "slime", at = "scatter", chance = 0.3 } ]
 
 [types.crystal_grotto]          # the climax: crystal clusters on the floor and the roof, a geode
-props = [ { kind = "crystal", at = "scatter", count = [3, 6] },
-          { kind = "crystal", at = "corners", count = [2, 4] },
+props = [ { kind = ["crystal_cluster", "crystal"], at = "scatter", count = [2, 4] },
+          { kind = ["crystal_cluster", "crystal"], at = "corners", count = [2, 4] },
+          { kind = "crystal", at = "scatter", count = [2, 4], chance = 0.6 },
           { kind = "crystal", at = "ceiling", count = [1, 2], chance = 0.5 },
           { kind = "gem", at = "far_end", chance = 0.3 },
           { kind = "stalactite", at = "along_wall", count = [1, 2], chance = 0.4 } ]
@@ -92,7 +95,7 @@ props = [ { kind = ["bone_pile", "bones", "skull"], at = "scatter", count = [1, 
 [dressing.boss]                 # a stalagmite at its back, crystals either side
 mode  = "replace"
 props = [ { kind = ["stalactite", "rock"], at = "behind" },
-          { kind = ["crystal", "rock"], at = "flank", count = 2, chance = 0.6 } ]
+          { kind = ["crystal_cluster", "crystal", "rock"], at = "flank", count = 2, chance = 0.6 } ]
 
 [dressing.guard]
 mode  = "replace"

@@ -53,6 +53,9 @@
 accept = "proposed"             # or "reviewed": only use = "yes" here enters builds
 
 # kinds = { lever = "other" }   # kinds beyond the built-in ones, with their Category
+# crystal_cluster (the cave Purpose, step 21 task 3): a crystal big enough to read in a room (10 u
+# and more across), which the cave's climax asks for before the 1-5 u "crystal" shards.
+kinds = { crystal_cluster = "debris" }
 # sets = ["centaur"]            # Sets beyond the built-in ones
 
 [models]
@@ -121,3 +124,20 @@ accept = "proposed"             # or "reviewed": only use = "yes" here enters bu
 "STONEBENCH" = { category = "furniture", kind = "bench", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks", "guard_post", "shrine"], use = "yes" }
 "BENCH2" = { category = "furniture", kind = "bench", mount = "floor", set = "neutral", era = "classic", collision = "solid", suits = ["city", "dungeon", "outdoor", "barracks", "guard_post", "shrine"], use = "yes" }
 "KSPEW101" = { category = "furniture", kind = "bench", mount = "floor", set = "iksar", era = "kunark", collision = "solid", suits = ["dungeon", "barracks", "guard_post", "shrine"], use = "yes" }
+
+# --- crystals (the cave Purpose, step 21 task 3) ---------------------------------------------------
+# Runnyeye's and Najena's crystals are natural stone, not goblin make: neutral, so a plain cave
+# build (neutral Set) takes them. No recipe outside layers/cave.toml asks for a crystal.
+"CRYS2E" = { set = "neutral" }
+"CRYS2R" = { set = "neutral" }
+"CRYS3E" = { set = "neutral" }
+"CRYS3R" = { set = "neutral" }
+"CRYS4E" = { set = "neutral" }
+"CRYS4R" = { set = "neutral" }
+"CRYSTAL2" = { set = "neutral" }
+# The clusters: what a crystal grotto is built round.
+"CRYSTAL4" = { kind = "crystal_cluster", set = "neutral" }
+"VELIUMCRYSTALS201" = { kind = "crystal_cluster" }
+"VELIUMCRYSTALS202" = { kind = "crystal_cluster" }
+# A square cut slab (13 x 13 x 2 u), not a rock.
+"VSPBLOCK301" = { kind = "brick" }

@@ -331,6 +331,7 @@ def test_two_cultures_share_a_room_only_when_allowed(rules):
 # --- the cave layer (step 21 task 3) ----------------------------------------------------------------
 
 FURNITURE = frozenset(k for k, c in KINDS.items() if c == "furniture")
+CRYSTALS = frozenset({"crystal", "crystal_cluster"})
 
 
 def _line_kinds(rules, line):
@@ -354,9 +355,10 @@ def test_the_cave_layer_builds_nothing_and_puts_crystals_in_the_climax():
     assert not {w: k for w, k in built.items() if k}
     for room_type in (arch.climax_type, arch.hub_type):
         own = r.recipe_for(room_type)[0]
-        assert own.name == f"types.{room_type}" and any("crystal" in ln.kinds for ln in own.lines)
+        assert own.name == f"types.{room_type}" and any(set(ln.kinds) & CRYSTALS for ln in own.lines)
+    # The climax asks for the clusters (tags.toml crystal_cluster) before the shards, every time.
     climax = r.recipe_for(arch.climax_type)[0]
-    assert any(ln.kinds == ("crystal",) and ln.chance == 1 and ln.count[0] >= 1 for ln in climax.lines)
+    assert any(ln.kinds[:1] == ("crystal_cluster",) and ln.chance == 1 and ln.count[0] >= 1 for ln in climax.lines)
     assert r.weights_for("dungeon", theme="cave", kind="deep", room_type=arch.climax_type)[BARE] == 0
     # The base is untouched: a warren still keeps house without the layer.
     assert _line_kinds(load_decor(), load_decor().types["warren"].lines[0]) & FURNITURE
@@ -379,7 +381,11 @@ def test_a_cave_build_has_crystals_in_its_climax_and_no_furniture(tmp_path):
     props += [p for c in side.get("corridors", []) for p in c.get("props", [])]
     assert props and not [p["key"] for p in props if p["category"] == "furniture"]
     climax = [room for room in side["rooms"] if room["role"] == "climax"]
-    assert climax and all(any(p["kind"] == "crystal" for p in room["props"]) for room in climax)
+    assert climax and all(any(p["kind"] == "crystal_cluster" for p in room["props"]) for room in climax)
+    # A plain cave build takes Runnyeye's crystals too (neutral in tags.toml).
+    from generators.decor.catalogue import load
+    assert {"CRYS2E", "CRYSTAL4"} <= set(load().find(kind="crystal", set="neutral")) | set(
+        load().find(kind="crystal_cluster", set="neutral"))
 
 
 # --- scripts/topology_rules.py ---------------------------------------------------------------------
