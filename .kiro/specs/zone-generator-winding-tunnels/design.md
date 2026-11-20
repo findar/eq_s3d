@@ -16,13 +16,12 @@ Written at master `b2db7b4`. Verify everything here against the code before work
 
 ## Survey (task 1)
 
-Extend `analyzer/wall_survey.py`, or add a sibling `analyzer/tunnel_survey.py`. Find tunnels in
+Add `scripts/tunnel_survey.py` beside `scripts/wall_survey.py`, reusing its chamber split (`scripts/dungeon_topology_survey.py`). Find tunnels in
 stock caves: narrow floor runs between chambers in Blackburrow, Runnyeye, Crystal Caverns,
 Solusek's Eye, Nagafen's Lair and Permafrost (the zones `rough.toml` was measured on). Measure
 their centreline as a polyline: segment lengths, turn angles, wander as a share of span, and
 width. The output feeds `[tunnel]` in `rough.toml`, for example `segment = [a, b]`,
-`max_turn = deg`, `wander = share of span`. Read the WLD through `core/wld.py`, as the wall survey
-does.
+`max_turn = deg`, `wander = share of span`. Read the zones as the wall survey does.
 
 ## The centreline (task 2)
 

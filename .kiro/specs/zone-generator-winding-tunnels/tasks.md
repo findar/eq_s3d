@@ -33,7 +33,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
 - [ ] 1. Stock tunnel survey
   - Card: [cards/01-survey.md](cards/01-survey.md)
   - Type: agent · Size: S · Depends: —
-  - Owns: analyzer/tunnel_survey.py, tests/test_tunnel_survey.py, .kiro/specs/zone-generator-winding-tunnels/archive.md (the survey numbers)
+  - Owns: scripts/tunnel_survey.py, tests/test_tunnel_survey.py, .kiro/specs/zone-generator-winding-tunnels/archive.md (the survey numbers)
   - Reqs: 1
 
 - [ ] 2. The winding centreline and its clearance

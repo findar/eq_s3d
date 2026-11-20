@@ -6,7 +6,7 @@ Index entry: `tasks.md` task 1. Requirement 1. Design "Survey".
 Measure how stock cave tunnels wind, so `[tunnel]` in `rough.toml` holds measured numbers (A3).
 
 ## Done when
-- [ ] `python -m analyzer.tunnel_survey` (with `EQ_PATH='F:\everquest_rof2'`) runs over at least
+- [ ] `python scripts/tunnel_survey.py` (with `EQ_PATH='F:\everquest_rof2'`) runs over at least
       five stock cave zones and prints, for each tunnel and pooled, the median and p10–p90 of:
       - segment length;
       - turn angle;
@@ -19,7 +19,7 @@ Measure how stock cave tunnels wind, so `[tunnel]` in `rough.toml` holds measure
       synthetic bent tunnel recovers its angles.
 
 ## Pitfalls
-- Read the zones the way `analyzer/wall_survey.py` reads them.
+- Read the zones the way `scripts/wall_survey.py` does (it splits chambers with `scripts/dungeon_topology_survey.py`).
 - A tunnel is a narrow floor run between wider chambers; say in the commit body how you told
   them apart.
 
