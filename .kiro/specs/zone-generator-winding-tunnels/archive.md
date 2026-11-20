@@ -28,5 +28,9 @@ on the user's design review. The user confirms at the first look (task 7).
    `max_turn = 60`, `wander = 0.2`, `end = 20`. Junction legs (70 of 113) bend round junctions and push
    the turn p90 to 87; plain tunnels turn 32/52/78 and wander 0.03/0.17/0.58, and a generated corridor
    is a plain tunnel. A gentler max turn also keeps the strip's mitres short.
+5. **Cave corridors get stock length** (lead, at the task 2 merge; amends A1/A2): with the layout
+   untouched no cave leg wound (0 of 146: median 21 u, a turn needs ~80 u). Edges rest at 2 corridor
+   widths; stock tunnels are far longer. The cave profile gets its own spring run from the survey's
+   tunnel span (task 9); every other zone's layout stays as it is.
 
 ## Follow-ups

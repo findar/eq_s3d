@@ -44,13 +44,13 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
 
 - [ ] 3. The winding mesh
   - Card: [cards/03-mesh.md](cards/03-mesh.md)
-  - Type: agent · Size: M · Depends: 2
+  - Type: agent · Size: M · Depends: 2, 9
   - Owns: generators/geometry.py (the leg builders), tests/test_winding_mesh.py, goldens of zones with rough corridors (named)
   - Reqs: 3, 6
 
 - [ ] 4. Decor, map and room view read the tunnel
   - Card: [cards/04-readers.md](cards/04-readers.md)
-  - Type: agent · Size: M · Depends: 2
+  - Type: agent · Size: M · Depends: 2, 9
   - Owns: generators/room_context.py, generators/mapgeom.py, generators/mapview.py, tests/test_winding_readers.py
   - Reqs: 4
 
@@ -73,3 +73,9 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Card: [cards/08-close.md](cards/08-close.md)
   - Type: agent · Size: S · Depends: 7 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-winding-tunnels/, .kiro/specs/zone-generator/
+
+- [ ] 9. Cave tunnels as long as stock
+  - Card: [cards/09-length.md](cards/09-length.md)
+  - Type: agent · Size: M · Depends: 2
+  - Owns: scripts/tunnel_survey.py, generators/topology/embed.py (the run only), generators/layout_engine.py (`LayoutContext`), generators/layout.py (the profile's run only), tests/test_winding.py, tests/test_cave_profile.py, .kiro/specs/zone-generator-winding-tunnels/cards/02-centreline.md
+  - Reqs: 2 (added by the lead at the task 2 merge, archive decision 5)
