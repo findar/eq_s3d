@@ -49,10 +49,10 @@ A golden covering a districted or `cave` zone may be recaptured, named in its ow
   - Owns: generators/semantics.py, rules/decor/layers/cave.toml, tests/test_cave_purpose.py, tests/fixtures/rooms/cave_graph.json
   - Reqs: 3
 
-- [ ] 4. Cave ceilings
+- [x] 4. Cave ceilings
   - Card: [cards/04-ceilings.md](cards/04-ceilings.md)
   - Type: agent · Size: S · Depends: —
-  - Owns: generators/layout.py (the profile shift only), ai/expand.py, tests/test_cave_profile.py
+  - Owns: generators/layout.py (the profile shift only), ai/expand.py, tests/test_cave_profile.py, generators/layout_engine.py, generators/topology/embed.py (widened by the lead: height_shift)
   - Reqs: 4
 
 - [ ] 5. Gate and bands

@@ -81,6 +81,9 @@ class LayoutContext:
     # bands (``semantics.SIZE_SHIFT``); the graph engine sizes its classes
     # with it, the classic band (room_min/room_max/ceiling) already has it.
     size_shift: float = 0.0
+    # The shift room heights use (``size_shift`` less a style profile's
+    # shift, which sizes footprints only); None: ``size_shift``.
+    height_shift: Optional[float] = None
 
 
 @dataclass
@@ -361,7 +364,8 @@ class GraphEngine:
         # into each other, re-separation moved them onto shared walls and Job
         # B split or dropped the loops).
         race = ctx.build.race or ""
-        sizes = {r: embed.room_size(graph.node(r).size, race, ctx.rng, ctx.size_shift)
+        sizes = {r: embed.room_size(graph.node(r).size, race, ctx.rng, ctx.size_shift,
+                                     ctx.height_shift)
                  for r in order}
         entrance = next((n.id for n in graph.rooms() if n.kind == "entrance"), None)
         if envelope is not None and entrance is not None and self.entrance_side > 0:

@@ -64,13 +64,15 @@ _SPREAD_SIGMA = SPREAD / 2
 
 
 def room_size(size: Optional[str], race: str, rng,
-              shift: float = 0.0) -> Tuple[float, float, float]:
+              shift: float = 0.0,
+              height_shift: Optional[float] = None) -> Tuple[float, float, float]:
     """(width, depth, height) of a room of Size_Class ``size`` for ``race``
     (step 7 task 17): the class's point in the race's bands
     (``semantics.band_position``, after the Size control's ``shift``), the
     footprint spread by up to SPREAD on each axis and kept inside the band.
 
     Two rng draws (width, then depth). An unknown or missing class is medium.
+    ``height_shift`` (None: ``shift``) places the height instead.
     """
     from generators import semantics
     t = semantics.band_position(size, shift)
@@ -78,7 +80,8 @@ def room_size(size: Optional[str], race: str, rng,
     (s0, s1), _h = semantics.room_bands(race)
     w = side * min(1 + SPREAD, max(1 - SPREAD, rng.gauss(1.0, _SPREAD_SIGMA)))
     d = side * min(1 + SPREAD, max(1 - SPREAD, rng.gauss(1.0, _SPREAD_SIGMA)))
-    return (min(s1, max(s0, w)), min(s1, max(s0, d)), semantics.room_height(race, t))
+    th = t if height_shift is None else semantics.band_position(size, height_shift)
+    return (min(s1, max(s0, w)), min(s1, max(s0, d)), semantics.room_height(race, th))
 
 
 # ---------------------------------------------------------------------------
