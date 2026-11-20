@@ -36,7 +36,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Owns: scripts/tunnel_survey.py, tests/test_tunnel_survey.py, .kiro/specs/zone-generator-winding-tunnels/archive.md (the survey numbers)
   - Reqs: 1
 
-- [ ] 2. The winding centreline and its clearance
+- [x] 2. The winding centreline and its clearance
   - Card: [cards/02-centreline.md](cards/02-centreline.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/routing.py (a new `wind_leg`), generators/transitions.py, generators/zone_spec.py (`CorridorSpec.wind`), generators/wall_styles.py, rules/walls/rough.toml, tests/test_winding.py
@@ -74,7 +74,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Type: agent · Size: S · Depends: 7 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-winding-tunnels/, .kiro/specs/zone-generator/
 
-- [ ] 9. Cave tunnels as long as stock
+- [x] 9. Cave tunnels as long as stock
   - Card: [cards/09-length.md](cards/09-length.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: scripts/tunnel_survey.py, generators/topology/embed.py (the run only), generators/layout_engine.py (`LayoutContext`), generators/layout.py (the profile's run only), tests/test_winding.py, tests/test_cave_profile.py, .kiro/specs/zone-generator-winding-tunnels/cards/02-centreline.md

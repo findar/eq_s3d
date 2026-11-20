@@ -16,7 +16,7 @@ Index entry: `tasks.md` task 2. Requirement 2. Design "The centreline".
       - with zero clearance, returns the straight leg.
 
       → verify: `python -m pytest tests/test_winding.py -q`
-- [ ] Over 10 cave dungeons (graph layout), most rough corridor legs get `wind > 0`, and no
+- [x] (met by task 9) Over 10 cave dungeons (graph layout), most rough corridor legs get `wind > 0`, and no
       strip comes within the player's half-width of another room's Box or another corridor's
       footprint; counts are in the commit body. Same command.
 - [x] Specs without `wind` load, and the corridor JSON gets `wind` only when it is non-zero.
@@ -28,3 +28,4 @@ Index entry: `tasks.md` task 2. Requirement 2. Design "The centreline".
 - Stacked Levels share a plan, so count only rooms and corridors that overlap the leg in Z.
 
 ## Result
+✔ c7f248c, ceecc02 (task 9) · 2973 passed

@@ -13,9 +13,9 @@ rooms stand close. Stock tunnels are long.
 - Every other zone's layout is unchanged (A4).
 
 ## Done when
-- [ ] The survey prints the tunnel span's p10/p50/p90, and the chosen cave run factor is written
+- [x] The survey prints the tunnel span's p10/p50/p90, and the chosen cave run factor is written
       in the commit body.
-- [ ] Over 10 cave dungeons (graph layout, 12 and 25 rooms):
+- [x] Over 10 cave dungeons (graph layout, 12 and 25 rooms):
       - the median plain rough leg is within the stock span's p25–p75;
       - most plain rough legs get `wind > 0`;
       - no strip comes within the player's half-width of another room's Box or another
@@ -23,8 +23,8 @@ rooms stand close. Stock tunnels are long.
       - the counts are in the commit body.
 
       → verify: `python -m pytest tests/test_winding.py tests/test_cave_profile.py -q`
-- [ ] Card 02's unticked check is ticked with "(met by task 9)", and its Result filled in.
-- [ ] The byte check passes with no golden moved; `python -m pytest tests/ -q -m "not slow"` is
+- [x] Card 02's unticked check is ticked with "(met by task 9)", and its Result filled in.
+- [x] The byte check passes with no golden moved; `python -m pytest tests/ -q -m "not slow"` is
       green.
 
 ## Pitfalls
@@ -33,3 +33,4 @@ rooms stand close. Stock tunnels are long.
   (`tests/test_cave_purpose.py`, the walkability tests).
 
 ## Result
+✔ ceecc02 · 2973 passed
