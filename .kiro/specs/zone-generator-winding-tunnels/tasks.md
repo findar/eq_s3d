@@ -48,7 +48,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Owns: generators/geometry.py (the leg builders), tests/test_winding_mesh.py, goldens of zones with rough corridors (named)
   - Reqs: 3, 6
 
-- [ ] 4. Decor, map and room view read the tunnel
+- [x] 4. Decor, map and room view read the tunnel
   - Card: [cards/04-readers.md](cards/04-readers.md)
   - Type: agent · Size: M · Depends: 2, 9
   - Owns: generators/room_context.py, generators/mapgeom.py, generators/mapview.py, tests/test_winding_readers.py
