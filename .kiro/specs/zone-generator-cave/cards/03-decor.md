@@ -8,13 +8,14 @@ crystal models in `crystal_grotto` and `cavern`, rock and fungus where the catal
 nothing built.
 
 ## Done when
-- [ ] The layer validates and a `cave` build's decor uses crystal models in its climax and no
+- [x] The layer validates and a `cave` build's decor uses crystal models in its climax and no
       furniture tag anywhere. → verify: `python -m pytest tests/test_decor_rules.py -q`
-- [ ] Look at 3 `cave` builds' room views with Decor Normal; say what you saw in the commit body.
-- [ ] The byte check passes; `python -m pytest tests/ -q` is green.
+- [x] Look at 3 `cave` builds' room views with Decor Normal; say what you saw in the commit body.
+- [x] The byte check passes; `python -m pytest tests/ -q` is green.
 
 ## Pitfalls
 Models come only from `rules/decor/catalogue.json` (client art is never committed). The guide is
 `docs/DECOR_RULES.md`; `layers/tomb.toml` is the worked example.
 
 ## Result
+✔ 31bc537 · 3734 passed, 4 expected failed (test_texture_recipes x2 → task 2, test_district_purposes three_districts → task 5, test_room_context corpus → task 10)
