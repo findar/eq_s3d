@@ -68,7 +68,7 @@ proves it with
   - Owns: scripts/sweep_themed_navigability.py, scripts/quality_sweep.py, generators/quality.py (only a cave row, if measured), any root-cause fix named in the commit
   - Reqs: 5
 
-- [ ] 7. Acceptance section
+- [x] 7. Acceptance section
   - Card: [cards/07-acceptance.md](cards/07-acceptance.md)
   - Type: agent · Size: S · Depends: 5, 6, 10
   - Owns: docs/ACCEPTANCE.md
