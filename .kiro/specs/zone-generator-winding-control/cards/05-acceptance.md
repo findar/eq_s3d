@@ -7,8 +7,9 @@ Index entry: `tasks.md` task 5.
 and on the map, a warren at max, the slider and the words, and a fortress unchanged.
 
 ## Done when
-- [ ] The section is written, and every case was run with its seed on agent servers (8020–8050).
-- [ ] Thorough run `python -m pytest tests/ -q --hypothesis-profile=thorough -n 4`, failures named
+- [x] The section is written, and every case was run with its seed on agent servers (8020–8050).
+- [x] Thorough run `python -m pytest tests/ -q --hypothesis-profile=thorough -n 4`, failures named
       in the commit body.
 
 ## Result
+✔ e17a1ad · 4082 passed, 6 skipped (thorough, -n 4)
