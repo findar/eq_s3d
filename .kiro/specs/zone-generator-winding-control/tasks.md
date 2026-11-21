@@ -37,7 +37,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
   - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, ai/rule_planner.py, ai/llm_planner.py, tests/test_winding_words.py
   - Reqs: 5
 
-- [ ] 4. Gate and bands
+- [x] 4. Gate and bands
   - Card: [cards/04-gate.md](cards/04-gate.md)
   - Type: agent · Size: S · Depends: 2
   - Owns: fixes only where a failure is new (stop and report first)
