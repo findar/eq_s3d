@@ -2162,17 +2162,71 @@ class LayoutGenerator:
         shape = self._make_shape(rooms, i, j, new)
         if shape.blocked is not None:
             return None
-        from .topology.embed import SLAB
+        # Every other corridor, those leaving i or j too: moving the doors can
+        # put one into a door already on that wall (seed 432395022, Winding 2:
+        # room_6-room_2 straightened onto room_2's west-wall stair door, the
+        # two openings 14 u apart at 18 u wide, an open seam). As
+        # ``_clash_3d``, a stub pinned to a shared room may share it.
         for q, e in enumerate(edges):
-            if q == k or set(e) & {i, j}:
+            if q == k:
                 continue
-            for ra, za0, za1, _ in shape.pieces:
-                for rb, zb0, zb1, _ in self._shape(rooms, *e).pieces:
-                    if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
-                            and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH
-                            and zb0 - za1 < SLAB and za0 - zb1 < SLAB):
-                        return None
+            shared = set(e) & {i, j}
+            other = self._shape(rooms, *e)
+            if self._pieces_clash(shape.pieces, other.pieces, shared):
+                return None
+            if any(self._doors_clash(new, other.cor, rooms[m]) for m in shared):
+                return None
         return new
+
+    @staticmethod
+    def _pieces_clash(pa, pb, shared) -> bool:
+        """Do two corridors' planned pieces overlap without the Slab between?
+        A piece pinned to a room both corridors leave (``shared``) may meet
+        the other's piece pinned there: they share that doorway's stub."""
+        from .topology.embed import SLAB
+        for (ra, za0, za1, ka) in pa:
+            for (rb, zb0, zb1, kb) in pb:
+                if ka is not None and ka == kb and ka in shared:
+                    continue
+                if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
+                        and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH
+                        and zb0 - za1 < SLAB and za0 - zb1 < SLAB):
+                    return True
+        return False
+
+    @staticmethod
+    def _door_on_wall(cor: CorridorSpec, room: RoomSpec):
+        """``(wall, along)``: the wall of ``room`` that ``cor``'s door is on
+        (N, S, E or W) and the door's centre along it; None when ``cor``
+        doesn't leave ``room`` or its door isn't on a wall line."""
+        if cor.from_room == room.id:
+            x, y = cor.from_x, cor.from_y
+        elif cor.to_room == room.id:
+            x, y = cor.to_x, cor.to_y
+        else:
+            return None
+        inset, tol = 2.0, 0.5            # _wall_point's inset
+        hx, hy = room.width / 2 - inset, room.depth / 2 - inset
+        if abs(x - (room.center_x + hx)) < tol:
+            return "E", y
+        if abs(x - (room.center_x - hx)) < tol:
+            return "W", y
+        if abs(y - (room.center_y + hy)) < tol:
+            return "N", x
+        if abs(y - (room.center_y - hy)) < tol:
+            return "S", x
+        return None
+
+    @classmethod
+    def _doors_clash(cls, a: CorridorSpec, b: CorridorSpec, room: RoomSpec) -> bool:
+        """Do ``a``'s and ``b``'s doors on one wall of ``room`` overlap, or
+        stand closer than a pier of ``U_DOOR_MARGIN`` between them? Two doors
+        at one point share the opening (facing corridors out of one wall)."""
+        da, db = cls._door_on_wall(a, room), cls._door_on_wall(b, room)
+        if da is None or db is None or da[0] != db[0]:
+            return False
+        gap = abs(da[1] - db[1])
+        return 1e-6 < gap < (a.width + b.width) / 2 + U_DOOR_MARGIN
 
     def _shaft_clear(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
                      k: int, m: int, shaft, shafts) -> bool:
@@ -2434,20 +2488,9 @@ class LayoutGenerator:
         (``analyzer.traverse.corridor_conflicts``, design decision 16) wants
         a corridor height + 1 between the two floors, which that gives: it
         reads floors only (task 18)."""
-        from .topology.embed import SLAB
         shared = set(ea) & set(eb)
         sa, sb = self._shape(rooms, *ea), self._shape(rooms, *eb)
-        clear = SLAB
-        pa, pb = sa.pieces, sb.pieces
-        for (ra, za0, za1, ka) in pa:
-            for (rb, zb0, zb1, kb) in pb:
-                if ka is not None and ka == kb and ka in shared:
-                    continue
-                if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
-                        and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH
-                        and zb0 - za1 < clear and za0 - zb1 < clear):
-                    return True
-        return False
+        return self._pieces_clash(sa.pieces, sb.pieces, shared)
 
     # ------------------------------------------------------------------
     # Helpers

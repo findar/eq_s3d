@@ -692,6 +692,16 @@ class Room:
         #: is judged on the other readings.
         self._gentle = (self.walk,) + self._graph(self.walk, self.cell * WALK_GRADE)
         self.gentle_before = self._joined(np.zeros(self.shape, bool), graph=self._gentle)
+        #: ``walk`` joined corner to corner too: a lane one cell wide running diagonally (between
+        #: a dais's corner and a wall) reads shut on this grid's side-by-side steps, but the gate's
+        #: 2 u samples lie on a grid of their own and can walk it. Floor joined only that way was
+        #: left to the loose reading, which joins it round the dais's foot, a way the gate doesn't
+        #: walk (winding-control task 4: seed 2096692951, a gem shut the lane and cut 476 u^2 off
+        #: the gate's entrance while every reading of decor's kept it joined). Floor joined this
+        #: way before a Prop must stay joined this way; a corner step never passes a Prop's cell.
+        self._diag = self._diag_steps(self.walk)
+        self.diag_before = self._diag_joined(np.zeros(self.shape, bool))
+        self._diag_more = bool((self.diag_before & ~self.before).any())
         #: Walkable floor the strict reading doesn't join (a gutter below a rise, a strip by a
         #: wall), and the cells within ``LANE_NEAR`` of it: whether such a lane is a way through
         #: and where it opens only the gate's own samples tell, so no blocking Prop stands on
@@ -760,12 +770,54 @@ class Room:
         good = np.unique(lab[starts & free])
         return free & np.isin(lab, good)
 
-    def _wide_doors(self, blocked: np.ndarray, maybe: Optional[np.ndarray] = None) -> List[bool]:
+    def _diag_steps(self, mask: np.ndarray):
+        """The corner-to-corner steps between cells of ``mask`` rising at most ``STEP_UP``:
+        (one end, the other, the two cells beside both)."""
+        nx, ny = self.shape
+        idx = np.arange(nx * ny).reshape(nx, ny)
+        f = np.where(mask, self.floor, np.nan)
+        out = []
+        for di in (1, -1):              # (i, j) to (i + 1, j + di)
+            j0, j1 = (0, ny - 1) if di == 1 else (1, ny)
+            a = (slice(0, nx - 1), slice(j0, j1))
+            b = (slice(1, nx), slice(j0 + di, j1 + di))
+            c1 = (slice(1, nx), slice(j0, j1))
+            c2 = (slice(0, nx - 1), slice(j0 + di, j1 + di))
+            with np.errstate(invalid="ignore"):
+                ok = mask[a] & mask[b] & (np.abs(f[a] - f[b]) <= STEP_UP)
+            out.append((idx[a][ok], idx[b][ok], idx[c1][ok], idx[c2][ok]))
+        return tuple(np.concatenate(p) for p in zip(*out))
+
+    def _diag_joined(self, blocked: np.ndarray) -> np.ndarray:
+        """``walk`` not blocked and joined to a door, side by side or corner to corner past no
+        blocked cell (``_diag``)."""
+        nx, ny = self.shape
+        flat = blocked.ravel()
+        free = (self.walk & ~blocked).ravel()
+        da, db, c1, c2 = self._diag
+        keep = free[self._ea] & free[self._eb]
+        dk = free[da] & free[db] & ~flat[c1] & ~flat[c2]
+        a = np.r_[self._ea[keep], da[dk]]
+        b = np.r_[self._eb[keep], db[dk]]
+        m = csr_matrix((np.ones(len(a), np.int8), (a, b)), shape=(nx * ny, nx * ny))
+        lab = connected_components(m, directed=False)[1].reshape(self.shape)
+        free = free.reshape(self.shape)
+        good = np.unique(lab[self.starts & free])
+        return free & np.isin(lab, good)
+
+    def _wide_doors(self, blocked: np.ndarray, maybe: Optional[np.ndarray] = None,
+                    plans: Optional[np.ndarray] = None) -> List[bool]:
         """Which doors a body ``CLEAR_WIDTH`` wide walks from to the room's middle, read as
         the gate does: to the free wide floor nearest the middle. On the gate's own samples
         that can be any wide cell about as near that may be free (``maybe`` blocked: Props'
         plans grown the least they may be), a pocket among Props too, so then every one of
-        those must be free and joined (else any free one)."""
+        those must be free and joined (else any free one).
+
+        The gate reads a model only where it stands in its band, so a model's plan can hold
+        free samples of its own (a rock hollow at head height). With the bare ``plans``, the
+        cells inside one by ``WIDE_RADIUS`` or more may be free too: one of them nearest the
+        middle is a pocket no door reaches (winding-control task 4: seed 770923935, a rock over
+        room_7's middle held a 10-sample hole the gate took for the core)."""
         nx, ny = self.shape
         free = (self.wide & ~blocked).ravel()
         if self.ctx.source != "room" or not free.any():
@@ -773,6 +825,9 @@ class Room:
         x0, y0, _z0, x1, y1, _z1 = self.ctx.box
         mid = np.hypot(self.gx - (x0 + x1) / 2, self.gy - (y0 + y1) / 2).ravel()
         may = free if maybe is None else (self.wide & ~maybe).ravel()
+        if maybe is not None and plans is not None and plans.any():
+            inside = distance_transform_edt(plans) * self.cell >= WIDE_RADIUS
+            may = may | (self.wide & inside).ravel()
         d = np.where(may, mid, np.inf)
         targets = np.nonzero(d <= d.min() + 1.5 * self.cell)[0]
         strict = maybe is not None
@@ -894,6 +949,8 @@ class Room:
         out = []
         cut = self.before & ~blocked & ~after
         loose_after = self._joined(blocked, loose=True)
+        if not cut.any() and self._diag_more:
+            cut = self.diag_before & ~blocked & ~self._diag_joined(blocked)
         if not cut.any():
             cut = self.loose_before & self.walk & ~blocked & ~loose_after
         if not cut.any():
@@ -923,7 +980,7 @@ class Room:
                    for was, now in ((self.before, after), (self.loose_before, loose_after))):
                 out.append(f"POI {k} ({p.get('purpose')}) no longer reached")
         if any(self.wide_doors) and wide_blocked.any():
-            for k, (was, now) in enumerate(zip(self.wide_doors, self._wide_doors(wide_blocked, maybe))):
+            for k, (was, now) in enumerate(zip(self.wide_doors, self._wide_doors(wide_blocked, maybe, plans))):
                 if was and not now:
                     out.append(f"door {k}'s way under {CLEAR_WIDTH:g} u clear")
         return out

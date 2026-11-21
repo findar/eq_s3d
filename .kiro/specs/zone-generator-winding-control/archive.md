@@ -41,4 +41,17 @@
    0.08 u mean for k ≥ 1: its embed run (2 widths) leaves no room. The warren run is shared
    with non-rough dungeons, so it stays as it is (a follow-up if warrens should answer).
 
+3. **Winding 2's three new gate failures were fixed at their root; the run growth stays**
+   (task 4, the lead's call). Each was a place where a check passed what the gate fails:
+   - `layout._straight_cor` (straightening a Bridge) judged its new route only against corridors
+     leaving neither room, so a door could land on a door already on that wall (s432395022,
+     open seam). It now judges every corridor, and two doors on one wall of a shared room stand
+     a width plus a `U_DOOR_MARGIN` pier apart or at one point.
+   - Decor's strict `walk` reading is now also read corner to corner: a one-cell diagonal lane
+     the gate's own grid walks read shut (s2096692951, 476 u^2 cut).
+   - Decor's clear-width targets count cells deep inside a Prop's plan as maybe free: the gate
+     read a hollow rock's hole as the core (s770923935, throat_narrow).
+   No golden moved. The gate is then 692/696 at Winding 0, 1 and 2: the hollow-Prop fix also
+   clears step 23's warren graph moderate 25 s616736071 residual.
+
 ## Follow-ups

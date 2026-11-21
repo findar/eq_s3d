@@ -74,7 +74,7 @@ def _room_counts(tokens):
 
 def build_one(job):
     """One build: plan, build, gate. Returns a CSV row."""
-    arch, layout, verticality, rooms, seed, out_dir = job
+    arch, layout, verticality, rooms, seed, out_dir, winding = job
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from analyzer.rof2check import check_eqg
@@ -89,6 +89,8 @@ def build_one(job):
         c["dungeon_theme"] = theme
     if dplan:
         c.update(districts=True, district_plan=dplan)
+    if winding is not None:
+        c["winding"] = winding
     plan = ZonePlan.from_controls(c, [])
     plan.name = f"nav_{arch.replace(':', '_')}_{layout[0]}{verticality[0]}{rooms}_{seed}"
     spec = _with_decor(plan_to_spec(plan, seed=seed, warnings=[]))
@@ -122,7 +124,7 @@ def run(args) -> int:
                     for _ in range(max(args.seeds, 1)):
                         cell = f"{arch}:{rng.choice(BUILT)}" if arch in PAIRS else arch
                         jobs.append((cell, layout, v, n, rng.randint(0, 2 ** 31 - 1),
-                                     str(out_dir)))
+                                     str(out_dir), args.winding))
 
     rows = []
     if args.jobs > 1:
@@ -186,6 +188,8 @@ if __name__ == "__main__":
     ap.add_argument("--pair", nargs="+", default=[], choices=PAIRS,
                     help="districted builds pinning a cave District and a built one, in "
                          "these orders (replaces the archetype axis)")
+    ap.add_argument("--winding", type=float, default=None,
+                    help="the plan's Winding (0..WINDING_MAX; default unset, the plan's default)")
     ap.add_argument("--jobs", type=int, default=1, help="worker processes")
     ap.add_argument("--csv", default="", help="CSV path (default output/themed_navigability.csv)")
     ap.add_argument("--keep", action="store_true", help="keep artifacts in output/ (default: temp dir, cleaned)")

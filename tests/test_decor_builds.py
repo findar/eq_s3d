@@ -262,6 +262,45 @@ def test_a_dais_tops_edge_is_no_way_through(tmp_path):
     assert report.passed and not failures, failures
 
 
+def _cave_graph(tmp_path, verticality, rooms, seed, room_id):
+    """A cave graph build at Winding 2 (winding-control task 4) and the gate's verdict."""
+    from generators.pipeline import _traversal_report, _with_decor
+
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": rooms, "verticality": verticality,
+                                   "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
+    plan.name = "wind2"
+    spec = _with_decor(plan_to_spec(plan, seed=seed, warnings=[]))
+    room = next(r for r in spec.rooms if r.id == room_id)
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+    report = _traversal_report(result.eqg_path, spec, None)
+    return room, report, [o.reason for o in report.outlines if not o.ok]
+
+
+@pytest.mark.slow
+@needs_install
+def test_a_diagonal_lane_is_a_way_through(tmp_path):
+    """Cave graph flat 19 rooms, seed 2096692951, Winding 2: room_17's top floor joins its
+    doors by a lane one cell wide running corner to corner between the dais and the wall. Decor
+    read it shut (side-by-side steps only) and joined that floor round the dais's foot instead,
+    so a gem dressing its POI shut the lane and cut 476 u^2 off on the gate. ``walk`` is now
+    read corner to corner too (``Room._diag_joined``)."""
+    room, report, failures = _cave_graph(tmp_path, "flat", 19, 2096692951, "room_17")
+    assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
+    assert report.passed and not failures, failures
+
+
+@pytest.mark.slow
+@needs_install
+def test_a_hollow_prop_over_the_core_keeps_the_doors_wide(tmp_path):
+    """Cave graph dramatic 26 rooms, seed 770923935, Winding 2: a rock over room_7's middle is
+    hollow at head height, and the gate took a 10-sample hole in it for the core, which no door
+    reaches. Decor's clear-width reading now counts cells deep inside a Prop's plan as maybe
+    free (``Room._wide_doors``)."""
+    room, report, failures = _cave_graph(tmp_path, "dramatic", 26, 770923935, "room_7")
+    assert room.outline is not None and len(room.outline.throats) == 2, "the layout moved: re-pin"
+    assert report.passed and not failures, failures
+
+
 @pytest.mark.slow
 @needs_install
 def test_same_inputs_same_eqg(tmp_path):
