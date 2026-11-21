@@ -13,10 +13,11 @@ The user sets Winding with a slider or with words in the prompt.
 - [x] The slider shows for dungeon, city and outdoor_dungeon only, is sent only when shown, is in
       the summary, and WASD doesn't move the camera while it has focus. Checked on an agent server
       (8020–8050) in the browser; `cd web; npx vite build` passes.
-- [ ] `python -m pytest tests/ -q -m "not slow" -n 4` is green.
+- [x] `python -m pytest tests/ -q -m "not slow" -n 4` is green.
 
 ## Pitfalls
 - lessons-learned "Movement keys must be suppressed while typing".
 - Don't touch ports 8000/5173 (the user's) or 8010/5180 (the lead's).
 
 ## Result
+✔ 8b55240 · 3149 passed (not-slow, 6 skipped)
