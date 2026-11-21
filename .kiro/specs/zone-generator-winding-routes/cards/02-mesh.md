@@ -13,10 +13,11 @@ over the path between the run-outs.
 - [x] `corridor_continuity` reads the path's segments.
 - [x] Look at 3 builds' meshes and map SVGs; say what you saw in the commit body.
 - [x] The byte check passes for zones with no rough corridor; rough goldens recaptured by name.
-- [ ] `python -m pytest tests/ -q -m "not slow"` is green.
+- [x] `python -m pytest tests/ -q -m "not slow"` is green.
 
 ## Pitfalls
 - lessons-learned "A ramp must be SUBDIVIDED" and "Same-axis room pairs need a Z-route".
 - Reuse `_add_winding_leg`'s strip; `geometry.py` is large, so touch only the route dispatch.
 
 ## Result
+✔ 7e6c7dc · 31 passed (test_wind_route_mesh) · not-slow 3112 passed on master after merging tasks 2 and 3
