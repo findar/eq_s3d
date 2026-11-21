@@ -12,9 +12,9 @@ Index entry: `tasks.md` task 6.
 - decor in a tunnel.
 
 ## Done when
-- [ ] The section is written, and every case was run through the route with its seed on agent
+- [x] The section is written, and every case was run through the route with its seed on agent
       servers (8020–8050 only). → verify: `git show HEAD -- docs/ACCEPTANCE.md`
-- [ ] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
+- [x] Thorough run: `python -m pytest tests/ -q --hypothesis-profile=thorough`, with any failures
       named in the commit body.
 
 ## Pitfalls
@@ -22,3 +22,4 @@ Index entry: `tasks.md` task 6.
 - Never write "Vite" or "dev server" in a commit message.
 
 ## Result
+✔ 4308d00 · 3949 passed, 1 failed (pre-existing: test_cave_words_mean_dungeon) (thorough)
