@@ -9,17 +9,17 @@ A golden whose zone has a flooded room may be recaptured, named in its own commi
 
 ## Tasks
 
-- [ ] 1. Water fills a flooded room
+- [x] 1. Water fills a flooded room
   - Card: [cards/01-water.md](cards/01-water.md)
   - Type: agent · Size: M · Depends: — · Where: MAIN checkout
   - Owns: generators/semantics.py (the flood), generators/geometry.py (`_add_flood`), generators/layout.py (`settle_floods` call), analyzer/traverse.py (`WalkSurface.solid`), tests/test_flooded_rooms.py, goldens of zones with flooded rooms (named)
   - Reqs: 1–6
 
-- [ ] 2. HUMAN: look at a flooded room
+- [x] 2. HUMAN: look at a flooded room
   - Card: [cards/02-look.md](cards/02-look.md)
   - Type: human · Depends: 1
 
-- [ ] 3. Close step 24
+- [x] 3. Close step 24
   - Card: [cards/03-close.md](cards/03-close.md)
   - Type: agent · Size: S · Depends: 2 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-flooded-rooms/

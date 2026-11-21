@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 24, in progress.** Drafted 2026-11-20 at master `1897d62`. At the step 23
+> **STATUS: roadmap step 24, DONE (closed 2026-11-21; the look skipped at the user's word).** Drafted 2026-11-20 at master `1897d62`. At the step 23
 > first look the user said: "a flooded room just has a square of water in the middle so that's
 > something we should address", then "Yes, fix it". Task index: `tasks.md` (card format).
 > Decisions: `archive.md`.

@@ -12,3 +12,4 @@ The lead restarts the test server on master.
 - [ ] At a doorway, judge where the water ends.
 
 ## Result
+Skipped at the user's word (2026-11-21): "continue, skip the next acceptance once we get to that point and keep working"
