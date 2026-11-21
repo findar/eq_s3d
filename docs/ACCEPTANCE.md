@@ -2970,3 +2970,134 @@ this section, so the CLI zone may differ). Every case was built through the Serv
       name aside), 209 entries, and the rooms' sizes and heights are the same.
 - [ ] **[MUST] No Theme** — Case g: the same check, 118 entries, all identical. In 3D both look
       as they did.
+
+## Step 23 — Winding tunnels
+
+> Roadmap step 23 (`zone-generator-winding-tunnels`). A rough corridor's plain legs (no stairs,
+> not a bridge) now wind. Each one follows a centreline of short runs (20–72 u between turns,
+> turns of at most 60°) that wanders sideways into the free space around the leg. It runs
+> straight for 20 u at each end, so it still meets its room or bend square. The numbers come
+> from a survey of 113 stock cave tunnels (`[tunnel]` in `rules/walls/rough.toml`). The floor is
+> a mitred strip under rough walls, with a ceiling that follows it. The layout is unchanged,
+> except that **a cave's graph rooms now stand much further apart**: the cave profile spaces them
+> about 9 corridor widths apart, so its tunnels are long enough to bend (see X.5). Stairs,
+> bridges, hewn corridors and built corridors stay straight. The gate's corridor check, corridor
+> decor, the map's lines and the outline all follow the tunnel. A fix to the floor relief moves
+> rough and hewn room floors a little in every zone that has them (see X.3, X.4). Restart the
+> Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no
+> stale-code banner shows.
+
+Build each case in Controls (Size **medium**, Decor **Normal**, Decor rules **From theme**,
+everything else at its default unless the row says otherwise). Every case was built through the
+Server's `/api/generate` with the seed shown, and the results quoted below are what those builds
+gave. The "before" builds ran on the code from before the step (`b2db7b4`), on its own Server.
+Every case passed the gate on the first build.
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout **Graph**, Rooms 12, Theme **Cave**, Verticality **Moderate** (step 22's case d) | 731402518 |
+| b | Dungeon | Layout **Graph**, Rooms 12, Theme **Cave**, Verticality **Dramatic** | 23 |
+| c | Dungeon | Layout **Graph**, Rooms 12, Theme **Warren**, Verticality **Moderate** | 731402518 |
+| d | Dungeon | Layout **Graph**, Rooms 16, Theme **Fortress**, Walls **Built**, Verticality **Moderate** | 731402518 |
+| e | Dungeon | Layout **Graph**, Rooms 16, Theme **Fortress**, Verticality **Moderate** (step 22's case f) | 731402518 |
+| f | Dungeon | Layout **Classic**, Rooms 12, Theme **Cave**, Verticality **Moderate** (step 22's case e) | 731402518 |
+
+### X.1 — A cave's tunnels in 3D and on the map
+
+- [ ] **[MUST] Which tunnels wind** — Case a: 13 corridors. 12 are rough; the stair `corr_10`
+      (room_5 → room_8, 102 u up) is not. 15 of the 30 rough legs wind. Each Z-shaped corridor
+      winds its two long legs (1.6 to 16.6 u of sideways wander) and keeps its short middle jog
+      straight. The three straight corridors wind the most: `corr_8` (room_0 → room_3), `corr_9`
+      (room_3 → room_7) and `corr_12` (room_11 → room_10) each make 4 or 5 turns over about
+      210 u and stray 37 to 39 u from the straight line. `corr_4`, `corr_5` and `corr_11` stay
+      straight. They start in the hewn rooms room_6 and room_9 and take the hewn look, which has
+      no tunnel.
+- [ ] **[MUST] In 3D** — Case a: walk room_0 → `corr_8` → room_3 → `corr_9` → room_7. The floor
+      should bend smoothly, with no seam, step or gap at a turn. The walls should keep their
+      rough wobble round the bends, and the ceiling should follow the floor (no ceiling cutting
+      across a bend, no wall through the floor). Both ends should still meet their doorway square.
+      Then walk the Z corridor `corr_0` (room_1 → room_4) through its jog. Say whether the
+      tunnels read as natural passages or as zig-zags. Not looked at in the 3D viewer for this
+      section.
+- [ ] **[MUST] On the map** — Case a: the map's corridor lines follow the bends. `corr_8`'s line
+      turns with the tunnel where `b2db7b4` drew a straight line. The EQ map files trace the tunnel walls
+      (1,195 lines, against 1,109 before). In the viewer, the map overlay and the 3D walls should
+      agree. A straight corridor whose two doorways are a little out of line ends its line with
+      a short sideways jog (`corr_8`: x 22.5 at room_0, 19.9 at room_3). The jog is the end
+      square, as before the step.
+
+### X.2 — Ramps, stairs and bridges
+
+- [ ] **[MUST] A winding ramp** — Case a (Moderate): `corr_8` climbs 4.6 u and `corr_9` 6.7 u,
+      and both wind along the whole climb. A Z corridor puts its climb on the middle jog, which
+      stays straight (`corr_7`: 4.6 u up over its 27 u jog).
+- [ ] **[MUST] Steeper winding ramps** — Case b (Dramatic) has three Levels: 0 (room_0 to
+      room_5), -1 (room_6, room_7, room_8) and -2 (room_9, room_10, room_11). Inside Level -1,
+      `corr_4` (room_7 → room_6) runs 27.1 u down over 166 u (grade 0.16), with 3 turns and 24 u
+      of wander. `corr_8` (room_6 → room_8) runs 26.8 u up with 16.7 u of wander. Walk both in
+      3D, up and down: the slope should feel even, with no lip at a turn. Levels are joined by
+      stairs, never by a ramp, so no ramp tunnel runs from one Level to the next.
+- [ ] **[MUST] Stairs and the bridge stay straight** — Case b: the stairs `corr_7` (room_3 →
+      room_6), `corr_9` (room_8 → room_9) and `corr_10` (room_8 → room_10), each 102 u, and the
+      bridge `corr_6` (room_0 → room_3) over room_8 are built as before: straight and square,
+      with no rough break. In 3D, a winding tunnel next to a straight stair should not look out
+      of place.
+- [ ] **[SHOULD] What stays straight on Level -2** — Case b: `corr_11` (room_9 → room_11) winds.
+      `corr_12` (room_11 → room_10) stays straight: room_10 is hewn, and the corridor changes look
+      at a seam.
+
+### X.3 — A warren's tunnels (mostly straight)
+
+- [ ] **[MUST] Why a warren barely winds** — Case c: 12 rough corridors and 24 rough legs, and
+      **none winds**. A warren keeps the dungeon spacing (only the cave profile spreads its rooms
+      out), so its corridors run 50 to 73 u from end to end. A leg needs about 80 u to turn: 20 u
+      straight at each end, plus a run between. Over three more warren builds (seed 10 with 12
+      rooms, seed 13 with 20 rooms, seed 23 at Dramatic) 0 of 75 rough legs winds. A warren's
+      corridors look as before the step: short, rough-walled and straight. Say whether that is
+      fine for a warren, or whether a warren wants the cave's spacing too.
+- [ ] **[SHOULD] Floors shift a little** — Case c against `b2db7b4`: the same rooms and
+      corridors, but the relief fix lowers parts of 10 rooms' floors by up to 4 u. As a result
+      room_1 draws different crates, barrels and torches. No other room's or corridor's decor
+      changed.
+
+### X.4 — A built fortress unchanged
+
+- [ ] **[MUST] Built walls** — Case d against `b2db7b4`: every one of the 209 files inside the
+      `.eqg` is identical, zone name aside. All 16 rooms are built and no corridor is rough.
+- [ ] **[SHOULD] A fortress with some rough rooms** — Case e: five rooms draw `rough` (room_9 and
+      room_12 to room_15) and one draws `hewn` (room_5). Six corridors take a wall break (one of them hewn), and none winds
+      (the dungeon spacing again). Against `b2db7b4` only the terrain and the zone file change:
+      111 of 19,419 vertices drop, by up to 2.7 u, all on the floors of the rough rooms room_13,
+      room_14 and room_15 (the relief fix). 7 Props rest about 0.01 u lower. Footprints and
+      corridors are unchanged.
+- [ ] **[SHOULD] The classic cave** — Case f: every file identical (66 entries). The classic
+      layout draws box walls (step 21's known limit), so it has no rough corridor to wind.
+
+### X.5 — A cave's rooms further apart
+
+- [ ] **[MUST] Same rooms, longer tunnels** — Case a against `b2db7b4`: the same 12 rooms (same
+      Room_Type, width, depth and height) and the same 13 corridors between the same rooms. The
+      rooms now stand much further apart. The mean distance between neighbouring room centres is
+      225 u (was 101), the zone covers 920 × 843 u (was 416 × 373), and a plain corridor runs
+      212 u from doorway to doorway on average (was 56). The same seed at Dramatic gives 200 u
+      against 53. In 3D, say whether the cave now feels like chambers joined by long tunnels, as
+      stock caves do, or whether the walks between rooms are too long and empty.
+
+### X.6 — Decor in a tunnel
+
+- [ ] **[MUST] Cave tunnels are bare and unlit** — Case a: no corridor carries a Prop or a
+      light. A corridor's decor is its wall lights, and the cave decor layer has none (step 22,
+      X.3), so every winding tunnel is dark and lit only by what spills in from the rooms at its
+      ends. With Decor **Dense** (same seed) the corridors stay bare. The tunnels are now about
+      four times as long as in step 22, so walk `corr_8` (227 u) in 3D and say whether a dark
+      tunnel that long is too dark to play.
+- [ ] **[MUST] The room view of a tunnel** — Case a: open `corr_8` in the room view. Its box
+      spans x 13.5 to 71.4 and y −12.4 to 214.3: 58 u across, room for the 18 u corridor and its
+      wander. At `b2db7b4` the box was 18 × 60 u. No Props, also after a reroll (seed 4242).
+- [ ] **[SHOULD] Props in a winding tunnel (not reachable)** — No build through the route puts
+      a Prop in a winding tunnel today. The corridors that carry torches (a fortress's, a
+      fortress District's and the Thresholds) are built and never wind. Also tried: Theme Cave
+      with the `tomb` decor layer, Districts fortress + cave and cave + fortress (seed 971456024),
+      and Walls **Rough** with Theme Fortress or no Theme (seed 731402518). None put a Prop in a
+      tunnel that winds. So decor reading the winding floor is covered only by
+      `tests/test_winding_readers.py`.
