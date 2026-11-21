@@ -62,6 +62,25 @@ DISTRICT_ATTEMPTS = 8
 # half the cave's rough corridors winding (that spec's archive, decision 4).
 PROFILE_RUN_FACTOR = {"cave": 4.0}
 
+# Widths of run a profile's corridors gain per unit of Winding above 1
+# (winding-control task 2, that spec's archive, decision 2). The tunnel's
+# wander stops paying off by a Winding of about 1.25: each heading keeps
+# within half a turn of the leg, so a run's stray tops out near 0.29 x its
+# middle. Above 1 a longer run is what leaves room to stray. At a Winding of
+# 1 or less the run is the profile's, so those zones keep their bytes.
+WINDING_RUN = 2.0
+
+
+def profile_run_factor(profile: Optional[str], winding: float = 1.0) -> Optional[float]:
+    """The graph placement's corridor run, in corridor widths, for a style
+    *profile* at a plan's *winding*: ``PROFILE_RUN_FACTOR``, plus
+    ``WINDING_RUN`` per unit of winding above 1. None (``embed.RUN_FACTOR``)
+    for a profile without a run of its own, at any winding."""
+    base = PROFILE_RUN_FACTOR.get(profile or "")
+    if base is None or winding <= 1.0:
+        return base
+    return base + WINDING_RUN * (winding - 1.0)
+
 
 class DistrictSplitError(ValueError):
     """A corridor split or swap left two Districts joined by more than their
@@ -285,7 +304,7 @@ class LayoutGenerator:
 
     def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None,
                  engine: Union[LayoutEngine, str, None] = None,
-                 profile: Optional[str] = None):
+                 profile: Optional[str] = None, winding: float = 1.0):
         # The Layout_Engine that lays out the rooms and their graph (Job A);
         # ``None`` is the classic TinyKeep engine, a string names one in
         # ``layout_engine.ENGINES``.
@@ -319,8 +338,9 @@ class LayoutGenerator:
         # Size control adds to ``profile_shift``. No profile: 0.0, as before.
         self.profile_shift = 0.0
         # The graph placement's corridor run, in corridor widths, for this
-        # profile (``PROFILE_RUN_FACTOR``); None: ``embed.RUN_FACTOR``.
-        self.run_factor = PROFILE_RUN_FACTOR.get(profile or "")
+        # profile (``PROFILE_RUN_FACTOR``), longer at a *winding* above 1
+        # (``profile_run_factor``); None: ``embed.RUN_FACTOR``.
+        self.run_factor = profile_run_factor(profile, winding)
         if profile:
             import math
             base_area = _profile_mean(self.profile, ["geometry", "floor_area"], 2_000_000.0)

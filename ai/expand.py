@@ -143,7 +143,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     district_args = _district_args(plan, rooms_seed, notes)
     profile = purpose_profile(plan, district_args)
     gen = LayoutGenerator(zone_type=plan.zone_type, seed=rooms_seed, engine=engine,
-                          profile=profile)
+                          profile=profile, winding=plan.winding)
 
     # Apply size as a shift within the race's room bands (generate() sizes
     # the rooms from the race; this persists), on top of the Purpose's
