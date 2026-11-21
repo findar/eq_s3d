@@ -20,6 +20,7 @@ from hypothesis import given, settings, strategies as st
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from core.ter import Material, Polygon, TerFile, Vertex
+from generators import layout
 from generators.backends import backend_for
 from generators.eqmap import build_map_file
 from generators.geometry import MeshBuilder
@@ -84,7 +85,14 @@ def _cave(seed, rooms=12):
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "dungeon_theme": "cave", "layout": "graph",
                                    "room_count": rooms}, [])
     plan.name = "windr"
-    spec = plan_to_spec(plan, seed=seed, warnings=[])
+    # Step 23's cave run (9 widths), so the legs are long enough to wind; winding routes task
+    # 4 dropped the profile's run to 4, where some of these caves have no winding leg.
+    saved = layout.PROFILE_RUN_FACTOR["cave"]
+    layout.PROFILE_RUN_FACTOR["cave"] = 9.0
+    try:
+        spec = plan_to_spec(plan, seed=seed, warnings=[])
+    finally:
+        layout.PROFILE_RUN_FACTOR["cave"] = saved
     for cor in spec.corridors:       # every route as step 23 lays it: no route line (step 25)
         cor.path = []
     ter = backend_for(spec.zone_type).build(spec, "ter_windr", 2)

@@ -215,7 +215,7 @@ def test_wind_is_written_only_when_a_leg_winds():
 # --- Ten cave dungeons -------------------------------------------------------------------
 
 #: Stock plain tunnels' span, mouth to mouth (``scripts/tunnel_survey.py``, 43 plain tunnels in
-#: the 7 rough caves): p25 and p75 (u). Task 9 sets the cave run so generated legs land here.
+#: the 7 rough caves): p25 and p75 (u). The cave run puts generated corridors here.
 STOCK_SPAN_P25, STOCK_SPAN_P75 = 51.0, 140.0
 
 
@@ -227,32 +227,28 @@ def _cave(seed, rooms=12):
     return plan_to_spec(plan, seed=seed, warnings=[])
 
 
-def _plain_rough_legs(spec):
-    """(span, wind) of each plain leg (one ``_leg_ends`` builds) of each rough corridor."""
+def _rough_corridors(spec):
+    """(door-to-door length, winds) of each rough corridor: the path's length when it has one,
+    else its route's; it winds when it has a path or a winding leg."""
     rooms = {r.id: r for r in spec.rooms}
     out = []
     for cor in spec.corridors:
         if cor.rough <= 0:
             continue
-        route = corridor_route(cor, rooms)
-        waypoints = list(route.waypoints)
-        zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
-                                         cor.from_z, cor.to_z)
-        for k in range(len(waypoints) - 1):
-            ends = MeshBuilder._leg_ends(waypoints, k, cor.width / 2, zs)
-            if ends is not None:
-                span = abs(ends[1][0] - ends[0][0]) + abs(ends[1][1] - ends[0][1])
-                out.append((span, cor.wind[k] if cor.wind else 0.0))
+        line = cor.path or corridor_route(cor, rooms).waypoints
+        out.append((sum(math.dist(a, b) for a, b in zip(line, line[1:])),
+                    bool(cor.path) or any(w > 0 for w in cor.wind)))
     return out
 
 
-def test_cave_legs_run_as_long_as_stock_tunnels_and_most_wind():
-    """Task 9: over ten caves at 12 and 25 rooms, the median plain rough leg is within the
-    stock span's p25-p75, and most of those legs wind."""
-    legs = [leg for rooms in (12, 25) for seed in range(10) for leg in _plain_rough_legs(_cave(seed, rooms))]
-    assert len(legs) > 300
-    assert STOCK_SPAN_P25 <= statistics.median(s for s, _ in legs) <= STOCK_SPAN_P75
-    assert sum(1 for _, w in legs if w > 0) > len(legs) / 2
+def test_cave_corridors_run_as_long_as_stock_tunnels_and_most_wind():
+    """Winding routes task 4 (was step 23 task 9's per-leg check, at a run of 9): over ten
+    caves at 12 and 25 rooms, the median rough corridor, door to door, is within the stock
+    span's p25-p75, and most rough corridors wind (a path or a winding leg)."""
+    cors = [c for rooms in (12, 25) for seed in range(10) for c in _rough_corridors(_cave(seed, rooms))]
+    assert len(cors) > 200
+    assert STOCK_SPAN_P25 <= statistics.median(n for n, _ in cors) <= STOCK_SPAN_P75
+    assert sum(1 for _, w in cors if w) > len(cors) / 2
 
 
 @pytest.mark.parametrize("rooms", [12, 25])

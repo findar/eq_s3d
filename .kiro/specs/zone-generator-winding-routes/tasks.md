@@ -34,7 +34,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Owns: generators/room_context.py, generators/mapgeom.py, generators/mapview.py, tests/test_wind_route_readers.py
   - Reqs: 4
 
-- [ ] 4. Cave run length
+- [x] 4. Cave run length
   - Card: [cards/04-length.md](cards/04-length.md)
   - Type: agent · Size: S · Depends: 2, 3
   - Owns: generators/layout.py (`PROFILE_RUN_FACTOR`), tests/test_cave_profile.py, tests/test_winding.py, .kiro/specs/zone-generator-winding-routes/archive.md (the measurement)

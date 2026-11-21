@@ -17,5 +17,21 @@
    `EQ_PATH='F:\everquest_rof2'`, cave + warren, both layouts, 2-30 rooms, 2 seeds, `--seed 23`).
    The five failures are step 23's residuals (its archive "Follow-ups"). Without `EQ_PATH` the
    stock models leave the decor and the count is 695/696, so always sweep with it set.
+4. **The cave run drops from 9 to 4 widths** (task 4; 40 cave graph builds per factor, seeds
+   1000-1039, 8-30 rooms, flat/moderate/dramatic, `EQ_PATH` set). Rough corridors that wind (a
+   `path` or a winding leg), that have a `path`, and door-to-door length (u, path else route):
+
+   | factor | rough | wind | path | p25 | p50 | p75 |
+   |---|---|---|---|---|---|---|
+   | 3 | 711 | 48% | 39% | 66 | 79 | 86 |
+   | **4** | 710 | **61%** | 55% | 86 | 102 | 110 |
+   | 5 | 706 | 72% | 64% | 106 | 124 | 134 |
+   | 6 | 706 | 74% | 73% | 127 | 147 | 158 |
+   | 7 | 709 | 75% | 74% | 147 | 170 | 183 |
+   | 9 | 707 | 80% | 75% | 190 | 216 | 232 |
+
+   4 is the lowest with half winding. Its p75 (110 u) sits under the plain stock tunnels' p75
+   (163 u, step 23 decision 6) and its median inside all stock tunnels' p25-p75 (76-341 u);
+   at 9 the median was above the plain p75.
 
 ## Follow-ups
