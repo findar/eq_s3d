@@ -19,7 +19,7 @@ from typing import Optional
 from core.env import env_value
 from .schema import (
     ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_DISTRICT_RELATIONSHIPS, VALID_DUNGEON_THEMES,
-    VALID_ZONE_TYPES,
+    VALID_ZONE_TYPES, WINDING_MAX,
 )
 
 
@@ -32,6 +32,11 @@ Rules:
 - size is the overall footprint: small, medium, large, or huge.
 - Set elevation true if the zone should have multiple vertical levels.
 - verticality: flat, moderate, or dramatic.
+- winding: a number from 0 to {winding_max}, how far the rough (cave) corridors
+  stray: 0 straight, 1 the stock tunnel (the default; omit it then), {winding_max}
+  twisty with longer cave tunnels. About 0.25 for "straight", "regular" or
+  "orderly"; about 1.75 for "twisting", "winding", "meandering", "serpentine" or
+  "labyrinthine" passages (not a "winding stair").
 - regions: list any special volumes implied by the description
   (water, lava, ice, pvp, zoneline, generic). Empty if none.
 - mood: a short atmosphere note (e.g. "dark and damp").
@@ -55,7 +60,8 @@ def system_prompt() -> str:
     return _SYSTEM_PROMPT.format(
         zone_types=", ".join(VALID_ZONE_TYPES),
         purposes=", ".join(VALID_DUNGEON_THEMES),
-        relationships=", ".join(VALID_DISTRICT_RELATIONSHIPS))
+        relationships=", ".join(VALID_DISTRICT_RELATIONSHIPS),
+        winding_max=f"{WINDING_MAX:g}")
 
 
 class LLMPlanner:

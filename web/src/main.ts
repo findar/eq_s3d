@@ -215,6 +215,8 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
       ...(usesControl(p.zone_type, "size") ? [["Size", p.size] as [string, string]] : []),
       ...(usesControl(p.zone_type, "verticality")
         ? [["Verticality", p.verticality] as [string, string]] : []),
+      ...(usesControl(p.zone_type, "winding")
+        ? [["Winding", String(p.winding ?? 1)] as [string, string]] : []),
       ...(p.walls ? [["Walls", p.walls] as [string, string]] : []),
       ...(p.features && p.layout === "graph" ? [["Features", p.features] as [string, string]] : []),
       ...SCALE_CONTROLS.flatMap((id) => p[id] != null && p[id] !== ""
@@ -432,6 +434,8 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   locks: ["dungeon", "city", "outdoor_dungeon"],
   size: ["dungeon", "city"],
   verticality: ["dungeon", "city", "outdoor_dungeon"],
+  // Where a zone can have rough corridors (winding-control step 26).
+  winding: ["dungeon", "city", "outdoor_dungeon"],
   edges: ["wilderness", "outdoor_dungeon"],
   layout: ["dungeon", "outdoor_dungeon"],
   "dungeon-theme": ["dungeon", "city", "outdoor_dungeon"],
@@ -559,6 +563,9 @@ async function doGenerate(mode: Mode) {
       : Number.isFinite(locksRaw) ? Math.min(5, Math.max(0, locksRaw)) : 0;
     const size = on("size") ? sel("size") : undefined;
     const verticality = on("verticality") ? sel("verticality") : undefined;
+    const windingRaw = Number(($("winding") as HTMLInputElement).value);
+    const winding = !on("winding") ? undefined
+      : Number.isFinite(windingRaw) ? Math.min(2, Math.max(0, windingRaw)) : 1;
     const edges = on("edge-n") ? readEdges() : undefined;
     const trees = on("trees") ? sel("trees") : undefined;
     // Sites and who builds them: landscape only; "" is the biome's mix. With
@@ -595,6 +602,7 @@ async function doGenerate(mode: Mode) {
         ...(rooms !== undefined ? { room_count: rooms } : {}),
         ...(size !== undefined ? { size } : {}),
         ...(verticality !== undefined ? { verticality } : {}),
+        ...(winding !== undefined ? { winding } : {}),
         ...(locks !== undefined ? { locks } : {}),
         ...(edges ? { edges } : {}),
         ...(trees ? { trees } : {}),
@@ -618,6 +626,7 @@ async function doGenerate(mode: Mode) {
       (rooms !== undefined ? ` rooms=${rooms}` : "") +
       (size !== undefined ? ` size=${size}` : "") +
       (verticality !== undefined ? ` verticality=${verticality}` : "") +
+      (winding !== undefined ? ` winding=${winding}` : "") +
       (locks !== undefined ? ` locks=${locks}` : "") +
       (edges ? ` edges=${JSON.stringify(edges)}` : "") +
       (trees ? ` trees=${trees}` : "") +
@@ -1186,7 +1195,13 @@ seedInput.addEventListener("keydown", (e) => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate(mode);
 });
 
-for (const id of ["zone-type", "rooms", "size", "verticality", "locks",
+// The Winding slider shows its value beside it.
+const windingInput = $("winding") as HTMLInputElement;
+windingInput.addEventListener("input", () => {
+  $("winding-value").textContent = windingInput.value;
+});
+
+for (const id of ["zone-type", "rooms", "size", "verticality", "winding", "locks",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
                   "decor", "decor-layers", "decor-seed", "rooms-seed", "districts"]) {

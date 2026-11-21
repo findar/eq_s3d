@@ -612,7 +612,8 @@ class GenerateRequest(BaseModel):
     controls: Optional[dict[str, Any]] = Field(
         default=None,
         description="Controls sub-object: zone_type, room_count, size, "
-                    "verticality, locks, edges (wilderness Rim, e.g. "
+                    "verticality, winding (how far rough corridors stray, 0 straight to 2, "
+                    "1 the stock tunnel; anything else falls back to 1), locks, edges (wilderness Rim, e.g. "
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
                     "none/sparse/normal/dense), sites (none/sparse/normal/dense) "
                     "and inhabitant (human/orc/gnoll/centaur, \"\" for the "
