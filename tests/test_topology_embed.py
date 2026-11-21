@@ -429,3 +429,77 @@ def test_engine_climax_loses_to_the_entrance():
     r = rooms()
     gen._apply_pacing(r, edges, entry=(0.0, 0.0), size_bias=False, climax=0)
     assert [x.role for x in r] == ["entrance", "standard", "standard", "climax"]
+
+
+# ---------------------------------------------------------------------------
+# Winding control task 8: the per-edge offset and spacing break the lattice
+# ---------------------------------------------------------------------------
+
+def test_edge_jitter_is_bounded_symmetric_and_salted():
+    """Each edge's spacing and offset sit in their bands, read the same from
+    either end (the offset as b's displacement from a), and change with the
+    salt; the salt reads a pinned seed or the rooms' sizes, never the rng."""
+    for k in range(200):
+        a, b = f"n{k}", f"n{k + 7}"
+        f, t = embed.edge_jitter("s", a, b)
+        assert 1 - embed.SPACING <= f <= 1 + embed.SPACING
+        assert embed.OFFSET_MIN <= abs(t) <= embed.OFFSET < 1
+        table = {frozenset((a, b)): (f, t)}
+        assert embed._jitter_of(table, a, b) == (f, t if b > a else -t)
+        assert embed._jitter_of(table, b, a) == (f, -t if b > a else t)
+    assert embed._jitter_of(None, "a", "b") == (1.0, 0.0)
+    draws = {embed.edge_jitter(f"s{k}", "a", "b") for k in range(50)}
+    assert len(draws) == 50
+    half = {"a": (40.0, 50.0), "b": (45.0, 45.0)}
+    assert embed.jitter_salt(["a", "b"], half, 7) == embed.jitter_salt(["a", "b"], {}, 7)
+    assert embed.jitter_salt(["a", "b"], half) != embed.jitter_salt(
+        ["a", "b"], {"a": (40.0, 50.0), "b": (45.0, 45.5)})
+
+
+def _controls_spec(seed, n, theme, verticality):
+    """A Graph dungeon as the controls build it (``plan_to_spec``)."""
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "dungeon_theme": theme,
+                                   "layout": "graph", "room_count": n,
+                                   "verticality": verticality}, [])
+    plan.name = "grid"
+    return plan_to_spec(plan, seed=seed, warnings=[])
+
+
+@pytest.mark.parametrize("seed,n,theme,verticality", [
+    (731402518, 12, "cave", "moderate"), (1003, 11, "cave", "flat"),
+    (1017, 25, "cave", "dramatic"), (4, 20, "temple", "moderate")])
+def test_offset_keeps_every_edge_on_its_wall_side(monkeypatch, seed, n, theme, verticality):
+    """Every edge between rooms on one Level ends the springs on the wall
+    side it started on, with the offsets on (one opening per wall side, step
+    6 finding 1). A stair edge's rooms overlap in plan, so its side is not a
+    wall's and isn't held."""
+    seen = []
+    relax = embed.spring_relax
+
+    def watched(order, edges, pos, half, nodes, run, gap, iterations=None, jitter=None):
+        out = relax(order, edges, pos, half, nodes, run, gap, iterations, jitter=jitter)
+        assert jitter, "the spring placement passes its edges' offsets"
+        for a, b in edges:
+            if embed.is_stair(nodes[a], nodes[b]):
+                continue
+            seen.append((a, b))
+            assert (embed._side_toward(pos[a], half[a], pos[b], half[b])
+                    == embed._side_toward(out[a], half[a], out[b], half[b])), (seed, a, b)
+        return out
+
+    monkeypatch.setattr(embed, "spring_relax", watched)
+    _controls_spec(seed, n, theme, verticality)
+    assert seen
+
+
+def test_graph_rooms_leave_the_lattice():
+    """Seed 731402518 (cave, 12 rooms, moderate): before the offsets, 23 % of
+    room-centre pairs shared an x or a y within 10 u (rows and columns ~200 u
+    apart); a share near chance now."""
+    from itertools import combinations
+    spec = _controls_spec(731402518, 12, "cave", "moderate")
+    pairs = list(combinations([(r.center_x, r.center_y) for r in spec.rooms], 2))
+    lined = sum(abs(p[0] - q[0]) < 10 or abs(p[1] - q[1]) < 10 for p, q in pairs)
+    assert lined / len(pairs) < 0.12, lined / len(pairs)
