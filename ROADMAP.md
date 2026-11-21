@@ -459,6 +459,13 @@ particular are a cheap, high-impact quick win.)
       `reload=False`, so it serves the code it started with. Restart after
       pulling or editing. The viewer shows the server and web commits and a
       stale-code banner (`/api/version`).
+- [ ] **Stale-code banner covers the Controls and can't be dismissed** — the
+      user, at step 25's look (2026-11-21): the frontend/server mismatch banner
+      gets in the way of the controls; make it dismissable. Related: the banner
+      fires on any HEAD move, so a docs-only merge flags the server stale even
+      though `source_fingerprint` is unchanged (`/api/version` `stale`); consider
+      keying it on the fingerprint. (`web/src/main.ts` ~line 123,
+      `server/app.py` version route.)
 - [ ] **Elevation-on overwrites the semantic sink/raise** — with elevation on,
       `_assign_elevation` re-derives every `floor_z` and discards the content
       layer's `sink` bias (M0 fixed only the elevation-off path). Content-layer
