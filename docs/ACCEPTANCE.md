@@ -3274,3 +3274,175 @@ no "before".
       Before the fix two crystals stood on the top and the only way round them ran along the
       lip. In 3D, climb the steps and walk round the crystals to the boss: there should be room
       to pass without edging along the drop. Not looked at in the 3D viewer for this section.
+
+## Step 26 — Winding control
+
+> Roadmap step 26 (`zone-generator-winding-control`). One user-facing scalar, **Winding**, scales
+> how far rough corridors stray. **0** builds every corridor straight with square bends, **1** is
+> step 25's stock-measured tunnel (byte-identical to before the step), **2** (`WINDING_MAX`) strays
+> further. Above 1 the wander alone gains little (the 30° heading cap holds a run's stray to about
+> 0.29 of its middle), so a cave's run also grows by 2 corridor widths per unit above 1: 4 widths
+> at 1, **6 at 2**, and the cave's rooms stand further apart (archive decisions 1 and 2). A
+> warren's run is the shared dungeon run and does not grow, so a warren barely answers above 1.
+> Turn sharpness and run-outs never change. The Controls get a Winding slider, and the rule
+> planner reads words. Task 4 fixed three faults the Winding 2 layouts exposed (see X.6). Restart
+> the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no
+> stale-code banner shows.
+
+Build each case in Controls (Size **medium**, Decor **Normal**, Decor rules **From theme**,
+everything else at its default unless the row says otherwise). Every case was built through the
+Server's `/api/generate` with the seed shown, on the task-5 branch (`8b85544`: task 4's fixes
+merged with master `2bfb895`), and the results quoted below are what those builds gave. Every
+case passed the gate on the first build. The "before" builds ran on the code from before the step
+(`c120210`) on its own Server. The "before the fix" builds in X.6 ran the gate sweep's own build
+(no retry) on master `2bfb895`, which lacks task 4's fixes.
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a0 | Dungeon | Layout **Graph**, Rooms 12, Theme **Cave**, Verticality **Moderate**, Winding **0** (step 25's case a) | 731402518 |
+| a1 | Dungeon | As a0, Winding **1** | 731402518 |
+| a2 | Dungeon | As a0, Winding **2** | 731402518 |
+| c2 | Dungeon | Layout **Graph**, Rooms 12, Theme **Warren**, Verticality **Moderate**, Winding **2** (also built at 0 and 1; step 25's case c) | 731402518 |
+| d2 | Dungeon | Layout **Graph**, Rooms 16, Theme **Fortress**, Walls **Built**, Verticality **Moderate**, Winding **2** (also built at 1; step 25's case d) | 731402518 |
+| p | Prompt | "a twisting cave", "straight cave passages", "a cave with a winding stair", "a cave" (rule planner, no API key) | 731402518 |
+| x1 | Dungeon | Layout **Graph**, Rooms 30, Theme **Cave**, Verticality **Moderate**, Winding **2**, Size and Decor at their defaults | 432395022 |
+| x2 | Dungeon | Layout **Graph**, Rooms 19, Theme **Cave**, Verticality **Flat**, Winding **2**, Size and Decor at their defaults | 2096692951 |
+| x3 | Dungeon | Layout **Graph**, Rooms 26, Theme **Cave**, Verticality **Dramatic**, Winding **2**, Size and Decor at their defaults | 770923935 |
+
+### X.1 — One cave at Winding 0, 1 and 2
+
+The same 12 rooms and 13 corridors between the same rooms at every setting: 12 rough plain
+corridors and the stair `corr_10` (room_5 → room_8, 102 u up), which never winds. "Stray" is the
+largest sideways distance of a corridor's centreline (its path, or its wound legs) from its square
+route. A Z corridor's diagonal cuts its corners but strays 0 by that measure.
+
+| Corridor | Rooms | Form | Stray at 0 / 1 / 2 (u) | Door to door at 0 / 1 / 2 (u) |
+|---|---|---|---|---|
+| `corr_0` | room_1 → room_4 | Z | — / path 0 / path 0 | 109.1 / 101.8 / 145.0 |
+| `corr_1` | room_1 → room_0 | Z | — / path 0 / path 0 | 120.2 / 117.1 / 163.5 |
+| `corr_2` | room_1 → room_5 | Z | — / path 0 / path 0 | 96.5 / 89.9 / 131.0 |
+| `corr_3` | room_6 → room_3 | straight, 11 u down | — / path 6.7 / path 2.1 | 104.6 / 106.5 / 153.2 |
+| `corr_4` | room_6 → room_9 | joins hewn rooms | — / — / — | 103.9 / 103.9 / 153.2 |
+| `corr_5` | room_6 → room_10 | Z, Transition line | — / — / — | 120.7 / 120.7 / 169.4 |
+| `corr_6` | room_2 → room_0 | Z | — / path 0 / path 0 | 91.2 / 85.9 / 125.6 |
+| `corr_7` | room_4 → room_3 | Z | — / path 0 / path 0 | 114.1 / 106.5 / 156.4 |
+| `corr_8` | room_0 → room_3 | straight | — / path 10.0 / path 11.5 | 108.0 / 112.0 / 158.8 |
+| `corr_9` | room_3 → room_7 | straight, 14 u up | — / path 4.5 / path 10.4 | 103.1 / 104.0 / 152.0 |
+| `corr_11` | room_9 → room_11 | Z, Transition line | — / — / — | 109.6 / 109.6 / 155.4 |
+| `corr_12` | room_11 → room_10 | straight | — / leg 5.3 / path 11.2 | 96.4 / 100.4 / 142.7 |
+
+- [ ] **[MUST] Winding 0: straight, square bends** — Case a0: none of the 12 rough corridors has a
+      path or a wound leg. The seven Z corridors run as three straight legs with two square
+      corners and the five straight ones as one line; each centreline is exactly its square
+      route. The mesh has 10,018 vertices (10,254 at 1). In 3D, walk room_1 → `corr_0` →
+      room_4: two square corners, rough walls along straight legs. Say whether a straight rough
+      tunnel reads as a hewn passage or still as a cave. Not looked at in the 3D viewer for this
+      section.
+- [ ] **[MUST] Winding 1: step 25's cave** — Case a1: 9 of the 12 rough corridors wind, 8 with a
+      path (five Z diagonals and three that wander: `corr_3`, `corr_8`, `corr_9`) and `corr_12`
+      on a wound leg (stray 5.3 u; its 56 u between run-outs is too short for a route). `corr_4`
+      joins two hewn rooms, and `corr_5` and `corr_11` hold a Transition line, so those three stay
+      straight. This is step 25's X.1, unchanged. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] Winding 2: further strays, longer tunnels** — Case a2: 9 wind, all 9 with a path.
+      `corr_12` now has room for a route between its run-outs (142.7 u door to door) and wanders
+      11.2 u. The same three stay straight for the same reasons. The largest stray goes from
+      10.0 u (`corr_8`) to 11.5 u, and `corr_9` from 4.5 to 10.4 u, but `corr_3` drops from 6.7 to
+      2.1 u: the wander is drawn afresh within a larger limit, not scaled. Over the 12 rough
+      corridors the mean stray goes 0 → 2.2 → 2.9 u. The tunnels get longer mostly from the run:
+      a plain corridor averages 106.5 u door to door at 0, 104.9 u at 1 and **150.5 u at 2**
+      (125.6 to 169.4 u). The mesh has 10,780 vertices. In 3D, walk room_0 → `corr_8` → room_3 →
+      `corr_9` → room_7, and room_11 → `corr_12` → room_10: each should bend gently, with no turn
+      sharper than at 1. Say whether 2 reads as more natural than 1, or just as longer. Not looked
+      at in the 3D viewer for this section.
+- [ ] **[MUST] Rooms further apart at 2** — With the cave run at 6 widths instead of 4, the mean
+      distance between the centres of rooms a corridor joins is 197.1 u at 2 (155.9 u at 0 and 1),
+      and the rooms span 769 × 711 u (624 × 575 u at 0 and 1). The rooms themselves are the same.
+      In 3D, say whether the cave at 2 still feels like chambers joined by tunnels, or like rooms
+      strung far apart. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] On the map** — Cases a0, a1 and a2: the map's corridor lines follow each
+      centreline. At 0 every line is the square route. At 1, `corr_8` runs (10.4, 8.1) →
+      (9.8, 28.1) → (9.6, 37.1) → (−1.2, 66.2) → (8.2, 87.1) → (8.0, 96.1) → (7.4, 116.1), as in
+      step 25. At 2 it runs (15.5, −0.1) → (15.1, 19.9) → (14.9, 28.9) → (25.8, 58.5) →
+      (13.0, 126.5) → (12.8, 135.5) → (12.4, 155.5). The EQ map files have 976, 1,004 and 1,069
+      lines on layer 0 at 0, 1 and 2, and 93 on layer 1 at each. In the viewer, the map overlay
+      and the 3D walls should agree at each setting. Not looked at in the 3D viewer for this
+      section.
+
+### X.2 — Winding 1 is unchanged
+
+- [ ] **[MUST] Byte-identical to before the step** — Case a1 against `c120210` (no Winding):
+      every one of the 47 files inside the `.eqg` is identical, zone name aside (the ZON also
+      names its TER in capitals, masked the same way). A plan at 1 leaves `winding` out of the
+      plan and the spec. The four byte-identity test files cover the other goldens.
+
+### X.3 — A warren at 2 (barely changes)
+
+- [ ] **[MUST] How little a warren answers** — Case c2 against the same warren at 1: every one of
+      the 122 files inside the `.eqg` is identical. The same 3 Z corridors get a path (`corr_5`,
+      `corr_7`, `corr_11`, their jog cut as a diagonal), none wanders, and the other 9 are 50 to
+      70 u long, too short for a route or a wound leg. The warren seed 13 build (Rooms 20,
+      **Moderate**) is identical at 2 and 1 too (140 files; 4 of its 17 rough corridors get a
+      path). A warren's run is the shared dungeon run (2 widths), which the Winding does not
+      grow, so this is expected (archive decision 2: over 20 warren builds the mean stray stays
+      0.08 u at every Winding from 1 to 3). Only 0 changes a warren: case c at 0 drops the three
+      diagonals (9,786 vertices, against 9,810 at 1 and 2), and its corridors average 60.1 u door
+      to door (59.0 u at 1). Say whether a warren should answer the slider at all (a follow-up:
+      grow its run without moving the bytes of non-rough dungeons).
+
+### X.4 — A built fortress unchanged
+
+- [ ] **[MUST] Built walls at 2** — Case d2 against the same fortress at 1, and against `c120210`:
+      every one of the 209 files inside the `.eqg` is identical both times, zone name aside. No
+      corridor is rough, so the Winding has nothing to scale (the spec still records
+      `winding: 2.0`).
+
+### X.5 — The slider and the words
+
+- [ ] **[MUST] The slider** — In Controls, the **Winding** slider (0 to 2, step 0.25, default 1,
+      its value shown beside it) shows for Dungeon, City and Outdoor dungeon and hides for
+      Wilderness. Checked in the browser on an agent Server: with the slider focused, the arrow
+      keys moved it from 1 to 2 and the value beside it read 2; thirty presses of W left the 3D
+      view unmoved and the slider at 2. Generating case a2 that way showed **Winding 2** in the
+      plan readout, Quality passed and 10,780 vertices, the same build as through the API. Check
+      it yourself the same way, and that WASD moves the camera again once you click the view.
+- [ ] **[MUST] The words** — Prompt mode with no API key (the rule planner), seed 731402518:
+      "a twisting cave" plans Winding **1.75**, "straight cave passages" plans **0.25**, "a cave
+      with a winding stair" plans 1 (the stair phrase is dropped, so `winding` is left out of the
+      plan), and "a cave" plans 1. Each builds a 5-room graph cave and passes the gate. In
+      Controls the prompt is never read: Controls at Winding 0.5 with the prompt "a twisting cave"
+      plan **0.5**. Check the plan readout's Winding row each time.
+- [ ] **[SHOULD] The words move the rooms only above 1** — "straight cave passages" (0.25) lays
+      out the same rooms as "a cave" (1). "a twisting cave" (1.75) spreads them as the run grows
+      above 1: room_1's outline starts at (183.6, −62.4) instead of (152.8, −60.3).
+
+### X.6 — Task 4's three fixes
+
+Each was a gate failure at Winding 2 in a cave graph layout with `EQ_PATH` set. Built on master
+`2bfb895` with the gate sweep's build, each fails as described. On `8b85544` each passes, and
+through the Server each passed on the first build.
+
+- [ ] **[MUST] A bridge keeps off a doorway already on its wall** — Case x1, room_2. Before the
+      fix, `corr_3` (room_6 → room_2) was straightened as a Bridge over room_12, onto y −22.2 on
+      room_2's west wall (x −108.9). That put it 14.1 u from the doorway of the U-stair `corr_13`
+      (room_2 → room_8, side W) at y −36.3. Both are 18 u wide, so the openings overlapped and the
+      gate found an open seam at (−110.9, −29.2). Now `corr_3` keeps its Z route with a path, from
+      (−231.6, 2.5) to (−108.9, −13.4), 22.9 u from the stair's doorway. In 3D, look at room_2's
+      west wall: two separate doorways with a pier of rock between them and no gap in the wall.
+      Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] A decor footprint no longer cuts the floor** — Case x2, room_17: a rough flooded
+      gallery with doors S and W and a dais (7.1 u, steps on its S side) holding the treasure POI
+      at (890.4, 142.6). Before the fix the gem dressing the POI (CDGEM101, `decor_0114`) stood at
+      (897.8, 153.3) and cut 476 u² of floor at (861, 161) off from the entrance. That floor
+      joins the doors only by a lane one cell wide, running corner to corner between the dais and
+      the wall. Now the gem stands at (900.8, 129.1) and the room's decor is redrawn (9 Props in
+      its box, 7 before). In 3D, walk from the W door round the dais's N side into the NW corner
+      near (861, 161): you should get there without squeezing past a Prop. Not looked at in the
+      3D viewer for this section.
+- [ ] **[MUST] A hollow rock no longer narrows a throat** — Case x3, room_7: a rough passage with
+      doors S and N and a DNROCK101 (scale 1.55) over its middle. Before the fix the rock stood at
+      (153.2, 200.7). It is hollow at head height: the gate's samples found a free hole inside it,
+      nearest the core, that no door reached, so both doors' ways to the core read under 8 u wide.
+      Decor now counts that hole as maybe free. The rock stands at (154.2, 198.2), with the room's
+      decor redrawn (8 Props, 5 before). In 3D, walk from the S door past the rock to the N door:
+      there should be a clear 8 u way past it, and nothing should look reachable inside the rock.
+      Not looked at in the 3D viewer for this section.
