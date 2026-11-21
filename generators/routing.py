@@ -270,6 +270,17 @@ class TunnelRules:
     end: float                      # each end runs straight at least this far (u)
 
 
+def scaled_tunnel(rules: Optional[TunnelRules], k: float) -> Optional[TunnelRules]:
+    """``rules`` with its wander times ``k`` (a zone's Winding, winding-control Req 2): the same
+    object at 1, None at 0 or below (nothing winds), else a copy whose ``segment``,
+    ``max_turn`` and ``end`` stay as measured."""
+    if rules is None or k == 1.0:
+        return rules
+    if k <= 0.0:
+        return None
+    return TunnelRules(rules.segment, rules.max_turn, rules.wander * k, rules.end)
+
+
 def _wind_limit(span: float, hw: float, clearance: float, rules: TunnelRules) -> float:
     """How far a leg's centreline may stray: ``min(clearance, wander × span)``, less what a
     mitre at a turn adds to the strip's reach. 0 when that is too little to wind."""
@@ -345,12 +356,24 @@ def wind_seed(cor: CorridorSpec, k: int, start: Point) -> str:
     return f"wind:{cor.id}:{k}:{start[0]:.2f},{start[1]:.2f}"
 
 
+def tunnel_for(cor: CorridorSpec, spec) -> Optional[TunnelRules]:
+    """The rules a reader re-winds ``cor``'s legs by: the spec's scaled tunnel
+    (``wall_styles.tunnel_rules_for``), read only when a leg winds (``cor.wind``), else None
+    (``winding_legs`` then winds nothing and reads no rules)."""
+    if not any(cor.wind):
+        return None
+    from .wall_styles import tunnel_rules_for     # wall_styles imports this module
+    return tunnel_rules_for(spec)
+
+
 def winding_legs(cor: CorridorSpec, rooms: Mapping[str, RoomSpec],
                  rules: Optional[TunnelRules] = None) -> List[Optional[List[Point]]]:
     """One entry per leg of ``cor``'s route: the winding centreline of a leg ``cor.wind``
     lets wind, over the leg's built span (``MeshBuilder._leg_ends``), else None. The one
     source the mesh, decor and map read, so they agree. ``rules`` defaults to the tunnel of
-    the wall styles (``wall_styles.tunnel_rules``)."""
+    the wall styles (``wall_styles.tunnel_rules``), the stock tunnel: a zone with a Winding
+    other than 1 must pass its own (``wall_styles.tunnel_rules_for(spec)``), or
+    ``_wind_limit`` clips its legs at the stock wander."""
     route = corridor_route(cor, rooms)
     n = len(route.waypoints) - 1
     if not any(cor.wind):

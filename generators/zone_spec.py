@@ -411,6 +411,9 @@ class ZoneSpec:
     # Props are placed with. Whether a room is bare is still drawn with the zone's decor seed
     # (``builder.decor_for``). Left out of ``to_dict()`` while empty.
     room_decor_seeds: Dict[str, int] = field(default_factory=dict)
+    # The plan's Winding (winding-control Req 3): what every rough corridor's tunnel wander is
+    # multiplied by (``wall_styles.tunnel_rules_for``). Left out of ``to_dict()`` at 1.0.
+    winding: float = 1.0
     # Districts (districts spec Req 1): empty for a one-District zone. Left out of
     # ``to_dict()`` while empty, so existing spec JSON is unchanged.
     districts: List[DistrictSpec] = field(default_factory=list)
@@ -450,6 +453,7 @@ class ZoneSpec:
             **({"decor_seed": self.decor_seed} if self.decor_seed is not None else {}),
             **({"rooms_seed": self.rooms_seed} if self.rooms_seed is not None else {}),
             **({"room_decor_seeds": dict(self.room_decor_seeds)} if self.room_decor_seeds else {}),
+            **({"winding": float(self.winding)} if self.winding != 1.0 else {}),
             **({"districts": [asdict(x) for x in self.districts]} if self.districts else {}),
             **({"notes": list(self.notes)} if self.notes else {}),
         }
@@ -488,6 +492,7 @@ class ZoneSpec:
             rooms_seed=d.get("rooms_seed"),
             room_decor_seeds={str(k): int(v) for k, v in (d.get("room_decor_seeds") or {}).items()},
             notes=[str(n) for n in d.get("notes") or []],
+            winding=float(d.get("winding", 1.0)),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)

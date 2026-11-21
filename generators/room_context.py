@@ -660,7 +660,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
     every Prop off its way through."""
     from generators.geometry import MeshBuilder
     from generators.room_layouts import CELL
-    from generators.routing import corridor_route, winding_legs
+    from generators.routing import corridor_route, tunnel_for, winding_legs
     from generators.semantics import body_height
 
     m = mesh if isinstance(mesh, _Mesh) else _Mesh(mesh)
@@ -684,7 +684,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         # strip, mitred, at the heights the mesh gives it (``transitions.path_pieces``: flat
         # over the run-outs, the rise spread by length between). It wins over any ``wind``.
         runs = _path_runs(cor)
-        lines = [None] * (len(wps) - 1) if runs is not None else winding_legs(cor, rooms)
+        lines = [None] * (len(wps) - 1) if runs is not None else winding_legs(cor, rooms, tunnel_for(cor, spec))
         pieces = []
         if runs is not None:
             path = [tuple(p) for p in cor.path]

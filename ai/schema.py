@@ -149,6 +149,27 @@ def rooms_seed(value: Any) -> Optional[int]:
     return decor_seed(value, "rooms_seed")
 
 
+# Winding (winding-control step 26, Req 1): how far rough corridors stray, a multiple of the
+# stock-measured tunnel's wander (``rules/walls/rough.toml`` ``[tunnel]``). 0 builds them
+# straight, 1 is stock. Provisional top until task 2 measures the range.
+WINDING_MAX = 2.0
+DEFAULT_WINDING = 1.0
+
+
+def winding_value(value: Any) -> float:
+    """A plan's winding: a number clamped to ``[0, WINDING_MAX]``; anything else (None, a
+    bool, text that isn't a number, NaN) falls back to 1.0, as an unknown verticality does."""
+    if isinstance(value, bool):
+        return DEFAULT_WINDING
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_WINDING
+    if number != number:                    # NaN
+        return DEFAULT_WINDING
+    return max(0.0, min(WINDING_MAX, number))
+
+
 def district_switch(value: Any) -> bool:
     """The Districts switch: a bool, or a form-style string ("true"/"on"/"1")."""
     if isinstance(value, str):
@@ -293,6 +314,9 @@ class ZonePlan:
     size: str = "medium"             # small | medium | large | huge
     elevation: bool = True           # multi-level layout
     verticality: str = "moderate"    # flat | moderate | dramatic
+    # How far rough corridors stray (step 26): 0 straight .. WINDING_MAX; 1 the stock tunnel.
+    # ``to_dict`` leaves it out at 1.
+    winding: float = DEFAULT_WINDING
 
     # Named special regions to add (water pools, lava, etc.)
     regions: List[str] = field(default_factory=list)   # kinds from VALID_REGION_KINDS
@@ -373,6 +397,7 @@ class ZonePlan:
             self.size = "medium"
         if self.verticality not in ("flat", "moderate", "dramatic"):
             self.verticality = "moderate"
+        self.winding = winding_value(self.winding)
         self.regions = [r for r in self.regions if r in VALID_REGION_KINDS]
         self.locks = max(0, min(5, int(self.locks)))
         if self.dungeon_theme and self.dungeon_theme not in VALID_DUNGEON_THEMES:
@@ -448,6 +473,8 @@ class ZonePlan:
         # key (Req 11.1). ``decor_layers`` only when some are named, so a plan
         # naming none is the dict it always was.
         out = asdict(self)
+        if out.get("winding") == DEFAULT_WINDING:
+            out.pop("winding", None)
         layers = out.pop("decor_layers", ())
         if layers:
             out["decor_layers"] = list(layers)

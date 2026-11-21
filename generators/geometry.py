@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 
 from core.ter import FLAG_PASSABLE, TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
-from .routing import corridor_route, strip_corners, winding_legs
+from .routing import corridor_route, strip_corners, tunnel_for, winding_legs
 
 
 # A sloped corridor floor is subdivided so each segment rises at most this much
@@ -915,7 +915,8 @@ class MeshBuilder:
             floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat,
             avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
             bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough,
-            seam=self._seam(cor, spec), winds=winding_legs(cor, rooms), path=cor.path)
+            seam=self._seam(cor, spec), winds=winding_legs(cor, rooms, tunnel_for(cor, spec)),
+            path=cor.path)
         if cor.transition is not None and cor.transition.material:
             self._add_opening(cor, spec)
 

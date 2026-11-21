@@ -19,7 +19,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
 
 ## Tasks
 
-- [ ] 1. Winding on the plan, the spec and every reader
+- [x] 1. Winding on the plan, the spec and every reader
   - Card: [cards/01-plumbing.md](cards/01-plumbing.md)
   - Type: agent · Size: M · Depends: —
   - Owns: ai/schema.py, generators/zone_spec.py, generators/layout.py, generators/pipeline.py, generators/builder.py, generators/transitions.py, generators/wall_styles.py, generators/routing.py, callers of `winding_legs`/`tunnel_rules()` (named in the commit), tests/test_winding_control.py

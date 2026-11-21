@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from .routing import corridor_route, winding_legs
+from .routing import corridor_route, tunnel_for, winding_legs
 from .zone_spec import ZoneSpec
 
 if TYPE_CHECKING:
@@ -31,17 +31,18 @@ if TYPE_CHECKING:
     from .mapgeom import OutlineSet
 
 
-def corridor_path(c, rooms_by_id) -> List[Tuple[float, float]]:
+def corridor_path(c, rooms_by_id, rules=None) -> List[Tuple[float, float]]:
     """A corridor's centreline in plan: its route's waypoints, a winding leg (step 23,
     ``routing.winding_legs``) along its tunnel between its bend squares. Without a winding
     leg it is the route's waypoints, as it always was. A route line (step 25,
     ``CorridorSpec.path``) is the whole centreline, opening to opening, and wins over any
-    winding leg."""
+    winding leg. ``rules`` is the zone's tunnel (``routing.tunnel_for``); None is the stock
+    one, right only for a zone whose Winding is 1."""
     if len(getattr(c, "path", None) or ()) >= 2:
         return [(float(x), float(y)) for x, y in c.path]
     route = corridor_route(c, rooms_by_id)
     wps = list(route.waypoints)
-    lines = winding_legs(c, rooms_by_id) if any(c.wind) else [None] * (len(wps) - 1)
+    lines = winding_legs(c, rooms_by_id, rules) if any(c.wind) else [None] * (len(wps) - 1)
     if not any(line is not None for line in lines):
         return wps
     out = [wps[0]]
@@ -325,7 +326,8 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         # leg along its tunnel), not a chord.
         rooms_by_id = {r.id: r for r in spec.rooms}
         for c in spec.corridors:
-            pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in corridor_path(c, rooms_by_id))
+            line = corridor_path(c, rooms_by_id, tunnel_for(c, spec))
+            pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in line)
             cw = max(1.0, c.width * scale * 0.25)
             if c.threshold:
                 # A Threshold: heavier and opaque, so the District boundary reads.
