@@ -151,7 +151,9 @@ def rooms_seed(value: Any) -> Optional[int]:
 
 # Winding (winding-control step 26, Req 1): how far rough corridors stray, a multiple of the
 # stock-measured tunnel's wander (``rules/walls/rough.toml`` ``[tunnel]``). 0 builds them
-# straight, 1 is stock. Provisional top until task 2 measures the range.
+# straight, 1 is stock. Above 1 a cave's run grows with it (``layout.profile_run_factor``).
+# The top is measured (task 2, that spec's archive, decision 2): stray still rises to 2, and
+# at 3 the longer run breaks the gate.
 WINDING_MAX = 2.0
 DEFAULT_WINDING = 1.0
 
