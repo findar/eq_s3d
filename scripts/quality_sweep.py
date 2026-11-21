@@ -90,9 +90,11 @@ def keys(districts=False):
     return out
 
 
-def controls(zone_type, layout, verticality, rooms, theme, districts=False):
+def controls(zone_type, layout, verticality, rooms, theme, districts=False, winding=None):
     """The controls a generate would send for this Draw."""
     c = {"zone_type": zone_type, "room_count": rooms, "verticality": verticality}
+    if winding is not None:
+        c["winding"] = winding
     if zone_type in LAYOUT_ZONE_TYPES:
         c["layout"] = layout
     pair, _, built = theme.partition(":")
@@ -105,18 +107,18 @@ def controls(zone_type, layout, verticality, rooms, theme, districts=False):
     return c
 
 
-def _spec(zone_type, layout, verticality, rooms, theme, districts, seed):
+def _spec(zone_type, layout, verticality, rooms, theme, districts, seed, winding=None):
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     plan = ZonePlan.from_controls(
-        controls(zone_type, layout, verticality, rooms, theme, districts), [])
+        controls(zone_type, layout, verticality, rooms, theme, districts, winding), [])
     plan.name = "sweep"
     return plan_to_spec(plan, seed=seed, warnings=[])
 
 
 def draw(job):
     """One Draw: the spec for ``seed`` under the job's controls, measured and timed."""
-    zone_type, layout, verticality, rooms, theme, districts, seed = job
+    zone_type, layout, verticality, rooms, theme, districts, seed, winding = job
     from generators.layout import DistrictSplitError
     from generators.outdoor_dungeon import PLAN_ERRORS
     row = {"zone_type": zone_type, "layout": layout, "verticality": verticality,
@@ -124,7 +126,7 @@ def draw(job):
            "theme": theme, "purposes": "", "seed": seed}
     t0 = time.perf_counter()
     try:
-        spec = _spec(zone_type, layout, verticality, rooms, theme, districts, seed)
+        spec = _spec(zone_type, layout, verticality, rooms, theme, districts, seed, winding)
     except PLAN_ERRORS + (DistrictSplitError,) as e:
         # The pipeline retries such a seed like a gate failure; not a quality Draw.
         row.update(draw_s=round(time.perf_counter() - t0, 4), plan_error=type(e).__name__,
@@ -166,7 +168,7 @@ def _name(key):
     return "/".join(str(x) for x in key)
 
 
-def write_svgs(rows, per_key, out_dir):
+def write_svgs(rows, per_key, out_dir, winding=None):
     from generators.mapview import render_map_svg
     out_dir.mkdir(parents=True, exist_ok=True)
     done = defaultdict(int)
@@ -176,7 +178,7 @@ def write_svgs(rows, per_key, out_dir):
             continue
         done[key] += 1
         spec = _spec(r["zone_type"], r["layout"], r["verticality"], r["room_count"],
-                     r["theme"], bool(r["switch"]), r["seed"])
+                     r["theme"], bool(r["switch"]), r["seed"], winding)
         name = "_".join(str(x) for x in (*key, r["room_count"],
                                          (r["theme"] or "none").replace(":", "_"), r["seed"]))
         (out_dir / f"{name}.svg").write_text(render_map_svg(spec), encoding="utf-8")
@@ -196,6 +198,8 @@ def main(argv=None):
     ap.add_argument("--pair", action="store_true",
                     help="districted Draws pinning a cave District and a built one, "
                          "cave first then second in turn (implies --districts)")
+    ap.add_argument("--winding", type=float, default=None,
+                    help="every Draw's Winding (0..WINDING_MAX; default unset, the plan's default)")
     ap.add_argument("--csv", default="",
                     help="CSV path (default output/quality_sweep[_districts].csv)")
     ap.add_argument("--svg", type=int, default=0,
@@ -224,7 +228,7 @@ def main(argv=None):
             theme = (f"{PAIRS[i % 2]}:{rng.choice(BUILT)}" if args.pair
                      else rng.choice(themes))
             jobs.append((*key, counts[i % len(counts)], theme, args.districts,
-                         rng.randint(0, 2 ** 31 - 1)))
+                         rng.randint(0, 2 ** 31 - 1), args.winding))
     if not jobs:
         print("nothing to sweep")
         return
@@ -295,13 +299,13 @@ def main(argv=None):
         fails = sorted((r for r in krows if not r["passed"]), key=lambda r: -r["score"])
         for r in fails[:args.fails]:
             c = controls(r["zone_type"], r["layout"], r["verticality"], r["room_count"],
-                         r["theme"], bool(r["switch"]))
+                         r["theme"], bool(r["switch"]), args.winding)
             print(f"{_name(key):<36} seed {r['seed']:<11} score {r['score']:.3f}  "
                   f"{c}  out: {r['out_of_band']}")
 
     if args.svg:
         out = ROOT / "output" / "quality_sweep_svg"
-        write_svgs(rows, args.svg, out)
+        write_svgs(rows, args.svg, out, args.winding)
         print(f"\nmaps: {out}")
 
 
