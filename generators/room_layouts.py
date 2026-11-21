@@ -601,12 +601,18 @@ def _steep_floor(grid: RoomGrid) -> np.ndarray:
 
 
 def _floor_poi(grid: RoomGrid, purpose: str, taken: Sequence[Feature]) -> Optional[POI]:
-    """A POI on open floor, as far from the doors as the room allows."""
+    """A POI on open floor, as far from the doors as the room allows: a body's radius from
+    Features and, where the room has such floor, from the outline's own walls (``by_wall``).
+    Farthest from the doors is often the tip of an acute outline corner, where a body has no
+    floor to stand on (step 25 task 5: a boss 1.2 u from such a tip, shut off by its own
+    Dressing)."""
     solid = grid.taken.copy()
     for f in taken:
         solid |= grid.footprint(f.plan)
     free = grid.floor & ~binary_dilation(solid, iterations=max(1, int(math.ceil(BODY_RADIUS / CELL))))
     free &= ~_steep_floor(grid)
+    if (free & ~grid.by_wall).any():
+        free &= ~grid.by_wall
     cand = np.argwhere(free)
     if len(cand) == 0:
         return None
