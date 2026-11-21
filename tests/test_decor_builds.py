@@ -47,8 +47,10 @@ DECORATED = {
 
 #: A decorated Theme Tomb build's ``.eqg`` hash (decor-rules task 3), captured before the
 #: tomb's decor moved into ``rules/decor/layers/tomb.toml``: the move keeps its bytes.
+#: Recaptured by winding-routes task 5: two floor POIs keep a body's radius off the outline
+#: walls, and their Dressing follows them.
 TOMB = (dict(zone_type="dungeon", dungeon_theme="tomb"), 4,
-        "42fd23bc7d6991891eed6dfc77f1f75c331c768cc2a9e87edd527a923ad7047c")
+        "7f495cd942c175bba43fa2d68a25076b901fcf505af9aea523c430d170f06caa")
 
 
 def _spec(fields, seed, decor, name="dec"):
