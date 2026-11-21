@@ -7,9 +7,10 @@ Index entry: `tasks.md` task 6.
 route between Levels, a stair and a bridge still square, a warren, and a built fortress unchanged.
 
 ## Done when
-- [ ] The section is written, and every case was run with its seed on agent servers (8020–8050
+- [x] The section is written, and every case was run with its seed on agent servers (8020–8050
       only).
-- [ ] Thorough run `python -m pytest tests/ -q --hypothesis-profile=thorough`, failures named in
+- [x] Thorough run `python -m pytest tests/ -q --hypothesis-profile=thorough`, failures named in
       the commit body.
 
 ## Result
+✔ 7b80745 · 4040 passed thorough, 1 stale-HEAD flake passed alone
