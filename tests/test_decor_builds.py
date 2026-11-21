@@ -47,8 +47,10 @@ DECORATED = {
 
 #: A decorated Theme Tomb build's ``.eqg`` hash (decor-rules task 3), captured before the
 #: tomb's decor moved into ``rules/decor/layers/tomb.toml``: the move keeps its bytes.
+#: Recaptured by winding-routes task 5: two floor POIs keep a body's radius off the outline
+#: walls, and their Dressing follows them.
 TOMB = (dict(zone_type="dungeon", dungeon_theme="tomb"), 4,
-        "42fd23bc7d6991891eed6dfc77f1f75c331c768cc2a9e87edd527a923ad7047c")
+        "7f495cd942c175bba43fa2d68a25076b901fcf505af9aea523c430d170f06caa")
 
 
 def _spec(fields, seed, decor, name="dec"):
@@ -232,6 +234,29 @@ def test_decor_agrees_with_the_gate_where_it_once_didnt(tmp_path, label, seed):
     result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
     side = json.loads(result.sidecar_path.read_text(encoding="utf-8"))
     assert side["decor"]["props"] > 0 and side["decor"]["check"] == []
+    report = _traversal_report(result.eqg_path, spec, None)
+    failures = [o.reason for o in report.outlines if not o.ok]
+    assert report.passed and not failures, failures
+
+
+@pytest.mark.slow
+@needs_install
+def test_a_dais_tops_edge_is_no_way_through(tmp_path):
+    """Cave graph dramatic 28 rooms, seed 1752055716 (winding-routes task 5): room_11's boss
+    stands on a dais, and decor read a strip of the dais top 0.5 u from its edge as the one
+    way from the steps past the boss's crystals; the gate's 2 u samples had none there, so
+    it cut 748 u^2 of the top and the boss off. ``walk`` now keeps a half-width off a drop
+    edge (``placement._near_drop``)."""
+    from generators.pipeline import _traversal_report, _with_decor
+
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 28, "verticality": "dramatic",
+                                   "layout": "graph", "dungeon_theme": "cave"}, [])
+    plan.name = "dais"
+    spec = _with_decor(plan_to_spec(plan, seed=1752055716, warnings=[]))
+    room = next(r for r in spec.rooms if r.id == "room_11")
+    assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
+    assert any(p.purpose == "boss" for p in room.pois), "the layout moved: re-pin"
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
     report = _traversal_report(result.eqg_path, spec, None)
     failures = [o.reason for o in report.outlines if not o.ok]
     assert report.passed and not failures, failures
