@@ -85,6 +85,8 @@ def _cave(seed, rooms=12):
                                    "room_count": rooms}, [])
     plan.name = "windr"
     spec = plan_to_spec(plan, seed=seed, warnings=[])
+    for cor in spec.corridors:       # every route as step 23 lays it: no route line (step 25)
+        cor.path = []
     ter = backend_for(spec.zone_type).build(spec, "ter_windr", 2)
     return spec, ter
 
@@ -132,7 +134,9 @@ def _on_floor(x, y, strips, rects, grow):
 
 def _winding(spec):
     rooms = {r.id: r for r in spec.rooms}
-    return rooms, {c.id: c for c in spec.corridors if any(l is not None for l in winding_legs(c, rooms))}
+    # A corridor with a route line (step 25, ``path``) is read along it, not its legs.
+    return rooms, {c.id: c for c in spec.corridors
+                   if not c.path and any(l is not None for l in winding_legs(c, rooms))}
 
 
 @pytest.mark.parametrize("seed", SEEDS)
@@ -251,6 +255,8 @@ def test_map_svg_draws_the_tunnel(seed):
             it = iter(path)
             assert all(any(q == p for q in it) for p in pts)
             assert len(path) > len(corridor_route(cor, rooms).waypoints)
+        elif cor.path:
+            assert path == [tuple(p) for p in cor.path]
         else:
             assert path == list(corridor_route(cor, rooms).waypoints)
         want.append(len(path))
