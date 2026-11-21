@@ -758,6 +758,8 @@ class LayoutGenerator:
         if rooms:
             e = rooms[entrance]
             spec.safe_point = (e.center_x, e.center_y, e.floor_z + 5.0)
+        # Floors moved after the semantic pass; flooded rooms' water follows them.
+        semantics.settle_floods(spec)
 
         # Optional lock-and-key gating (keyed dungeons). Runs after corridors
         # exist so gates can reference corridor ids. Solvability is guaranteed.

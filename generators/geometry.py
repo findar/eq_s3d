@@ -18,7 +18,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from core.ter import TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
+from core.ter import FLAG_PASSABLE, TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
 from .routing import corridor_route, winding_legs
 
@@ -570,6 +570,7 @@ class MeshBuilder:
         an Outline builds from that instead (``add_outline_room``). What stands in the room
         (its Features) is built either way."""
         self._add_features(room, spec)
+        self._add_flood(room, spec)
         if room.outline is not None:
             self.add_outline_room(room, spec, extra_doors)
             return
@@ -622,6 +623,43 @@ class MeshBuilder:
                 pos = c1
             if pos < hi:
                 self._add_room_wall(room, side, pos, hi, z0, z1, wall_mat)
+
+    def _add_flood(self, room: RoomSpec, spec: ZoneSpec) -> None:
+        """A flooded room's water: one flat surface at its water line over the whole floor
+        (each Outline Cell, or the box's floor), so it meets every wall and the floor's
+        relief rises through it as islands. It is non-collidable (``FLAG_PASSABLE``):
+        the client wades through it and the walk gate and map never stand on it.
+
+        The water line is read from the room's water region (realised content), never
+        from its Room_Type, which is advisory: clearing advisory data must not change the
+        mesh (M0 Property 14)."""
+        from .semantics import FLOOD_MATERIAL
+        level = room_water_line(room, spec)
+        if level is None or FLOOD_MATERIAL not in spec.materials:
+            return
+        mat = self.material_id(spec.materials[FLOOD_MATERIAL])
+        uv = self._uv_scale[mat]
+        if room.outline is None:
+            (x0, y0, _), (x1, y1, _) = room.bounds
+            self.add_quad((x0, y0, level), (x1, y0, level), (x1, y1, level), (x0, y1, level),
+                          normal=(0, 0, 1), material=mat, flags=FLAG_PASSABLE)
+            return
+        at: Dict[Tuple[float, float], int] = {}
+
+        def vertex(x, y):
+            k = at.get((x, y))
+            if k is None:
+                k = at[(x, y)] = len(self.vertices)
+                self.vertices.append(Vertex(x=x, y=y, z=level, nx=0, ny=0, nz=1, u=x * uv, v=-y * uv))
+            return k
+
+        outline = room.outline
+        for cell in outline.cells:
+            # Fanned from the Cell's centre like the floor: a Cell need not be convex.
+            pts = [outline.verts[i] for i in cell]
+            cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+            for a, b in zip(pts, pts[1:] + pts[:1]):
+                self.polygons.append(Polygon(vertex(cx, cy), vertex(*a), vertex(*b), mat, FLAG_PASSABLE))
 
     def _add_room_wall(self, room: RoomSpec, side: str, a: float, b: float,
                        lo: float, hi: float, wall_mat: int) -> None:
@@ -1825,6 +1863,18 @@ class MeshBuilder:
 # ---------------------------------------------------------------------------
 # High-level entry point
 # ---------------------------------------------------------------------------
+
+def room_water_line(room: RoomSpec, spec: ZoneSpec) -> Optional[float]:
+    """The top of the water region that fills ``room`` (centred on it and as wide and
+    deep as it, as ``semantics`` floods a room), else None. A pool region in a room's
+    middle (lava) fills nothing."""
+    for rg in spec.regions:
+        if (rg.kind == "water" and abs(rg.center_x - room.center_x) < 1e-3
+                and abs(rg.center_y - room.center_y) < 1e-3
+                and abs(rg.extent_x - room.width / 2) < 1e-3 and abs(rg.extent_y - room.depth / 2) < 1e-3):
+            return rg.center_z + rg.extent_z
+    return None
+
 
 def build_mesh(spec: ZoneSpec) -> MeshBuilder:
     """Build a complete MeshBuilder from a ZoneSpec."""

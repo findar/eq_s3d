@@ -28,7 +28,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from core.ter import SHADER_OPAQUE
+from core.ter import SHADER_ALPHA, SHADER_OPAQUE
 
 from .zone_spec import DistrictSpec, ZoneSpec, RoomSpec, RegionSpec, LightSpec
 
@@ -825,8 +825,64 @@ def _room_light(room: RoomSpec, rt: RoomType) -> Tuple[float, float, float]:
     return rt.light
 
 
+#: How deep a flooded room's water stands over its floor, in H: about knee to waist on
+#: the room's race (3.6 u for a human). Shallow on purpose: the water ends at each
+#: doorway, where the corridor floor meets the room's floor, so a deep pool would show
+#: a wall of water across the opening.
+FLOOD_DEPTH_H = 0.6
+#: How far the water region reaches below the floor, so feet on the floor are inside it.
+FLOOD_FOOT = 2.0
+#: The flooded room's visible water surface (``liquid_`` is a liquid surface class).
+FLOOD_MATERIAL = "liquid_water"
+FLOOD_COLOR = (58, 104, 128)
+
+
+def flood_level(room: RoomSpec, spec: ZoneSpec) -> Optional[float]:
+    """The water line of a room whose Room_Type floods it with water, else None. It is
+    read from the room's floor as it stands, so the water follows a floor moved after
+    the semantic pass (``settle_floods``, the mesh's water surface)."""
+    rt = ROOM_TYPES.get(room.semantic_type)
+    if rt is None or rt.region != "water":
+        return None
+    return room.floor_z + FLOOD_DEPTH_H * body_height(spec.dungeon_race)
+
+
+def _flood_region(region: RegionSpec, room: RoomSpec, level: float) -> None:
+    """Fit a water region to the whole room, from just under its floor to the water line."""
+    bottom = room.floor_z - FLOOD_FOOT
+    region.center_x, region.center_y = room.center_x, room.center_y
+    region.extent_x, region.extent_y = room.width / 2.0, room.depth / 2.0
+    region.center_z = (bottom + level) / 2.0
+    region.extent_z = (level - bottom) / 2.0
+
+
+def settle_floods(spec: ZoneSpec) -> None:
+    """Re-seat each flooded room's water region on the room's final floor. The layout
+    moves floors after the semantic pass (the relax after a split, ``_fit_floors``);
+    the water surface is built from the final floor, so the region follows it."""
+    flooded = {}
+    for room in spec.rooms:
+        level = flood_level(room, spec)
+        if level is not None:
+            flooded[(round(room.center_x, 3), round(room.center_y, 3))] = (room, level)
+    for region in spec.regions:
+        hit = flooded.get((round(region.center_x, 3), round(region.center_y, 3)))
+        if region.kind == "water" and hit is not None:
+            _flood_region(region, *hit)
+
+
 def _add_room_region(spec: ZoneSpec, room: RoomSpec, kind: str, idx: int) -> None:
-    """Flood the lower part of a room with an elemental region volume."""
+    """Flood the lower part of a room with an elemental region volume. Water fills the
+    whole room to its water line and gets a visible surface (``FLOOD_MATERIAL``, built
+    over the room's floor by the mesh); other kinds keep a pool in the room's middle."""
+    if kind == "water":
+        region = RegionSpec(id=f"{kind}_{idx}", kind=kind, center_x=0.0, center_y=0.0, center_z=0.0)
+        _flood_region(region, room, room.floor_z + FLOOD_DEPTH_H * body_height(spec.dungeon_race))
+        spec.regions.append(region)
+        if FLOOD_MATERIAL not in spec.materials:
+            spec.add_material(FLOOD_MATERIAL, f"{FLOOD_MATERIAL}.dds", shader=SHADER_ALPHA,
+                              color=FLOOD_COLOR, description="still dark cave water surface")
+        return
     ext_x = room.width * 0.38
     ext_y = room.depth * 0.38
     ext_z = max(8.0, room.height * 0.18)

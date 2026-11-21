@@ -491,6 +491,16 @@ class WalkSurface:
     # is exactly the partition ``flood_reachable`` would recover, exposed once
     # instead of reflooded.
     component: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int64))
+    # (F,) bool: the face is solid (collidable). A ``FLAG_PASSABLE`` face (a flooded room's
+    # water surface) is neither floor nor wall to the client, so the checks that read walls
+    # and seams from the mesh skip it. Empty means every face is solid.
+    solid: np.ndarray = field(default_factory=lambda: np.zeros(0, bool))
+
+
+def _solid(surf: "WalkSurface") -> np.ndarray:
+    """(F,) bool: which faces are solid (all of them when the surface carries no mask)."""
+    solid = getattr(surf, "solid", ())   # a surface from tests/reference_traverse.py has none
+    return solid if len(solid) == len(surf.faces) else np.ones(len(surf.faces), bool)
 
 
 # ---------------------------------------------------------------------------
@@ -672,8 +682,8 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
     # ceiling underneath (wound down): only its top is stood on.
     nz = normals[:, 2] if floors_up else -normals[:, 2]
     standable = safe & (nz >= agent.min_up_normal)
+    passable = np.array([bool(p.flags & FLAG_PASSABLE) for p in ter.polygons])
     if skip_passable:
-        passable = np.array([bool(p.flags & FLAG_PASSABLE) for p in ter.polygons])
         standable &= ~passable
 
     std_idx = np.nonzero(standable)[0]
@@ -888,7 +898,8 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
         component[std_idx] = std_idx[roots_pos]
 
     return WalkSurface(verts, faces, normals, centroids, standable,
-                       adjacency_lists, component)
+                       adjacency_lists, component,
+                       ~passable if skip_passable else np.ones(len(faces), bool))
 
 
 # ---------------------------------------------------------------------------
@@ -1112,7 +1123,7 @@ def _room_mesh_faces(surf: WalkSurface, room: RoomSpec) -> np.ndarray:
     inside = ((tri[:, :, 0] >= x0 - tol) & (tri[:, :, 0] <= x1 + tol)
               & (tri[:, :, 1] >= y0 - tol) & (tri[:, :, 1] <= y1 + tol)
               & (tri[:, :, 2] >= z0 - tol) & (tri[:, :, 2] <= z1 + tol))
-    return np.nonzero(inside.all(axis=1))[0]
+    return np.nonzero(inside.all(axis=1) & _solid(surf))[0]
 
 
 def _open_seam(surf: WalkSurface, room: RoomSpec, faces: np.ndarray, doors, slots):
@@ -1419,7 +1430,7 @@ def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent
     near = ((hi[:, axis] >= line - reach - 1) & (lo[:, axis] <= line + reach + 1)
             & (hi[:, across] >= middle - half) & (lo[:, across] <= middle + half)
             & (hi[:, 2] >= t.z - reach) & (lo[:, 2] <= t.z + cor.height + reach))
-    faces = np.nonzero(near)[0]
+    faces = np.nonzero(near & _solid(surf))[0]
     tri, nz = tri[faces], surf.normals[faces, 2]
     standable = surf.standable[faces]
 
@@ -2515,6 +2526,7 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
         tmax = tris_all[:, :, :2].max(axis=1)
         near = ((tmax[:, 0] >= pmin[0]) & (tmin[:, 0] <= pmax[0]) &
                 (tmax[:, 1] >= pmin[1]) & (tmin[:, 1] <= pmax[1]))
+        near &= _solid(surf)
     else:
         near = np.zeros(0, bool)
     nz = surf.normals[:, 2] if len(surf.faces) else np.zeros(0)
