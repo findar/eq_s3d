@@ -329,3 +329,28 @@ def test_marking_bridges_moves_nothing_else(monkeypatch, rule_set, n, seed):
                 c0.pop(k, None)
         assert c1 == c0
     assert d1 == d0
+
+
+def test_straightening_keeps_off_a_door_already_on_the_wall():
+    """Cave graph moderate 30 rooms, seed 432395022, Winding 2 (winding-control task 4):
+    straightening room_6-room_2 into a Bridge moved its door onto room_2's west wall 14 u
+    from the stair to room_8's door, both 18 u wide; the overlapping openings left an open
+    seam. ``_straight_cor`` judged the new route only against corridors leaving neither
+    room. It now judges every corridor and keeps two doors on one wall a width and a pier
+    (``U_DOOR_MARGIN``) apart."""
+    import itertools
+
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 30, "verticality": "moderate",
+                                   "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
+    plan.name = "doors"
+    spec = plan_to_spec(plan, seed=432395022, warnings=[])
+    room_2 = next(r for r in spec.rooms if r.id == "room_2")
+    walls = {LayoutGenerator._door_on_wall(c, room_2)[0] for c in spec.corridors
+             if "room_2" in (c.from_room, c.to_room) and LayoutGenerator._door_on_wall(c, room_2)}
+    assert "W" in walls, "the layout moved: re-pin"
+    for r in spec.rooms:
+        cs = [c for c in spec.corridors if r.id in (c.from_room, c.to_room)]
+        for a, b in itertools.combinations(cs, 2):
+            da, db = LayoutGenerator._door_on_wall(a, r), LayoutGenerator._door_on_wall(b, r)
+            if da and db and da[0] == db[0] and abs(da[1] - db[1]) > 1e-6:
+                assert abs(da[1] - db[1]) >= (a.width + b.width) / 2, (r.id, a.id, b.id)
