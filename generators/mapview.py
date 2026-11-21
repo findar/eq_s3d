@@ -34,7 +34,11 @@ if TYPE_CHECKING:
 def corridor_path(c, rooms_by_id) -> List[Tuple[float, float]]:
     """A corridor's centreline in plan: its route's waypoints, a winding leg (step 23,
     ``routing.winding_legs``) along its tunnel between its bend squares. Without a winding
-    leg it is the route's waypoints, as it always was."""
+    leg it is the route's waypoints, as it always was. A route line (step 25,
+    ``CorridorSpec.path``) is the whole centreline, opening to opening, and wins over any
+    winding leg."""
+    if len(getattr(c, "path", None) or ()) >= 2:
+        return [(float(x), float(y)) for x, y in c.path]
     route = corridor_route(c, rooms_by_id)
     wps = list(route.waypoints)
     lines = winding_legs(c, rooms_by_id) if any(c.wind) else [None] * (len(wps) - 1)

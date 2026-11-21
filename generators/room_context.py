@@ -288,7 +288,7 @@ class _Mesh:
 
     def __init__(self, ter):
         from core.ter import FLAG_PASSABLE
-        polys = [p for p in ter.polygons if not p.flags & FLAG_PASSABLE]
+        polys = [p for p in ter.polygons if not getattr(p, "flags", 0) & FLAG_PASSABLE]
         v = np.array([(p.x, p.y, p.z) for p in ter.vertices], dtype=np.float64)
         vn = np.array([(p.nx, p.ny, p.nz) for p in ter.vertices], dtype=np.float64)
         idx = np.array([(p.v1, p.v2, p.v3) for p in polys], dtype=np.int64).reshape(-1, 3)
@@ -590,13 +590,23 @@ def _strip_plan(line: Sequence[Tuple[float, float]], hw: float) -> List[Tuple[fl
     return left + right[::-1]
 
 
+def _strip_quad(line: Sequence[Tuple[float, float]], hw: float, j: int) -> List[Tuple[float, float]]:
+    """Run ``j`` of ``line``'s strip (``_strip_plan``) in plan: its two left corners out, its
+    two right corners back, mitred as the whole strip is."""
+    plan = _strip_plan(line, hw)
+    n = len(line)
+    left, right = plan[:n], plan[n:][::-1]
+    return [left[j], left[j + 1], right[j + 1], right[j]]
+
+
 def _piece_in(px, py, piece, grow: float = 0.0) -> np.ndarray:
-    """Whether each point lies in a corridor piece (``corridor_contexts``): its rect, or a
-    winding leg's strip, grown by ``grow``."""
-    rect, _lo, _hi, line, hw = piece
+    """Whether each point lies in a corridor piece (``corridor_contexts``): its rect, a
+    winding leg's strip, or one run of a route line's strip (step 25), grown by ``grow``."""
+    rect, _lo, _hi, line, hw = piece[:5]
     if line is None:
         return _in_rects(px, py, [rect], grow)
-    return _in_polygon(np.asarray(px, float), np.asarray(py, float), _strip_plan(line, hw + grow))
+    plan = _strip_plan(line, hw + grow) if len(piece) < 6 else _strip_quad(line, hw + grow, piece[5])
+    return _in_polygon(np.asarray(px, float), np.asarray(py, float), plan)
 
 
 def _in_pieces(px, py, pieces, grow: float = 0.0) -> np.ndarray:
@@ -604,6 +614,16 @@ def _in_pieces(px, py, pieces, grow: float = 0.0) -> np.ndarray:
     for piece in pieces:
         out |= _piece_in(px, py, piece, grow)
     return out
+
+
+def _path_runs(cor):
+    """A corridor's route line (step 25, ``CorridorSpec.path``) as its strip's runs, (quad, z
+    at its start, z at its end) each (``transitions.path_pieces``), or None when it has no
+    line (or the line's strip folds, which ``measure_routes`` never keeps)."""
+    if len(cor.path) < 2:
+        return None
+    from generators.transitions import path_pieces
+    return path_pieces([tuple(p) for p in cor.path], cor.width / 2, cor.from_z, cor.to_z)
 
 
 def _floor_at(floor: np.ndarray, xs: np.ndarray, ys: np.ndarray, x: float, y: float) -> bool:
@@ -632,7 +652,8 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
     left out (``_corridor_left_out``): its floor and ceiling on the plan grid, read from the
     built mesh one leg or bend at a time within that piece's own heights (so a room stacked
     over it isn't its floor), a winding leg's piece its strip (``_strip_plan``, step 23)
-    rather than the straight leg's rect; its wall faces from the mesh (any level triangle of its wall
+    rather than the straight leg's rect, and a corridor with a route line (``cor.path``, step
+    25) its line's strip run by run in place of every leg and bend; its wall faces from the mesh (any level triangle of its wall
     materials inside it, facing into it: a rough leg's walls stand in off its side lines);
     both doorways as doors with their clear zones; a frame's or breach's jambs as solid
     Features. Its whole floor is the Spine: decor lights a corridor on its walls and keeps
@@ -658,10 +679,21 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         # The pieces: each leg waypoint to waypoint, each bend's square; with their heights.
         # A winding leg (step 23) is its strip over its built span instead: the centreline the
         # mesh lays (``routing.winding_legs``) ± hw, between the bend squares.
-        # Each piece: (plan box, lo, hi, centreline or None, hw).
-        lines = winding_legs(cor, rooms)
+        # Each piece: (plan box, lo, hi, centreline or None, hw[, run index]).
+        # A route line (step 25, ``cor.path``) replaces all of them: one piece per run of its
+        # strip, mitred, at the heights the mesh gives it (``transitions.path_pieces``: flat
+        # over the run-outs, the rise spread by length between). It wins over any ``wind``.
+        runs = _path_runs(cor)
+        lines = [None] * (len(wps) - 1) if runs is not None else winding_legs(cor, rooms)
         pieces = []
-        for k in range(len(wps) - 1):
+        if runs is not None:
+            path = [tuple(p) for p in cor.path]
+            for j, (quad, za, zb) in enumerate(runs):
+                box = (min(p[0] for p in quad), min(p[1] for p in quad),
+                       max(p[0] for p in quad), max(p[1] for p in quad))
+                pieces.append((box, min(za, zb), max(za, zb), path, hw, j))
+            zs = [cor.from_z, cor.to_z]
+        for k in range(len(wps) - 1 if runs is None else 0):
             if lines[k] is not None:
                 plan = _strip_plan(lines[k], hw)
                 box = (min(p[0] for p in plan), min(p[1] for p in plan),
@@ -672,7 +704,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
             rect = (min(ax, bx), ay - hw, max(ax, bx), ay + hw) if axes[k] else \
                 (ax - hw, min(ay, by), ax + hw, max(ay, by))
             pieces.append((rect, min(zs[k], zs[k + 1]), max(zs[k], zs[k + 1]), None, hw))
-        for i in range(1, len(wps) - 1):
+        for i in range(1, len(wps) - 1 if runs is None else 1):
             pieces.append((MeshBuilder._bend_square(wps, i, hw), zs[i], zs[i], None, hw))
         rects = [p[0] for p in pieces]
         x0, y0 = min(r[0] for r in rects), min(r[1] for r in rects)
@@ -725,7 +757,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         # (to the room's Box), and its walls there are the room's doorway, not the corridor's.
         walls = [w for w in walls if all(_floor_at(floor, xs, ys, w.x + w.nx * d, w.y + w.ny * d)
                                          for d in (CELL, 1.5 * CELL))]
-        if any(line is not None for line in lines):
+        if runs is not None or any(line is not None for line in lines):
             # A winding corridor's wall faces stand on its strip: a piece leaning off it (one
             # end in, one out) is a wall the tunnel doesn't have there.
             walls = [w for w in walls if _in_pieces(w.x, w.y, pieces, 0.1)]
