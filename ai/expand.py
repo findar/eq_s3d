@@ -297,6 +297,9 @@ def _dress_rooms(spec, plan: ZonePlan, seed: int, extra_doors=None, overlay: str
     from generators.wall_styles import apply_walls, apply_walls_by_finish, load_styles
     asked = {name: getattr(plan, name) for name in SCALE_CONTROLS if getattr(plan, name) is not None}
     draw_room_scales(spec, seed, overlay=plan.overlay or overlay, asked=asked)
+    # The Winding goes on the spec before the walls: drawing them measures how far each
+    # rough corridor winds (``transitions.measure_winds``), by the spec's scaled tunnel.
+    spec.winding = plan.winding
     if plan.walls:
         apply_walls(spec, load_styles()[plan.walls], seed, extra_doors=extra_doors)
     else:

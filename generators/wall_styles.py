@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from .geometry import _bridge_slots, room_doors
-from .routing import TunnelRules
+from .routing import TunnelRules, scaled_tunnel
 from .outline import (COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, add_relief,
                       draw_outline)
 from .semantics import body_height
@@ -282,6 +282,14 @@ def tunnel_rules(styles: Optional[Mapping[str, WallStyle]] = None) -> Optional[T
 
 _UNREAD = object()
 _TUNNEL: object = _UNREAD
+
+
+def tunnel_rules_for(spec) -> Optional[TunnelRules]:
+    """The tunnel a zone's rough corridors wind by: ``tunnel_rules()`` with its wander times
+    the spec's Winding (``routing.scaled_tunnel``). The very same object at 1, None at 0.
+    Every reader that re-winds a leg (mesh, decor, map, gate) takes this, so it agrees with
+    what ``transitions.measure_winds`` measured."""
+    return scaled_tunnel(tunnel_rules(), float(getattr(spec, "winding", 1.0)))
 
 
 AUTO = "auto"

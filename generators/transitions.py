@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, stair_layout
-from .routing import (corridor_route, route_footprint, route_seed, strip_corners, wind_leg, wind_route,
-                      wind_seed)
+from .routing import (corridor_route, route_footprint, route_seed, scaled_tunnel, strip_corners, wind_leg,
+                      wind_route, wind_seed)
 from .semantics import ROOM_TYPES, body_height
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import _Checker, _is_number, _one_of, _read_toml
@@ -290,6 +290,7 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
     holders: List[Tuple[object, object]] = []
     written: List[Dict[str, object]] = []
     tunnels = {}
+    winding = float(getattr(spec, "winding", 1.0))
     for cor in spec.corridors:
         cor.transition = None
         a, b = styles.get(cor.from_room), styles.get(cor.to_room)
@@ -308,7 +309,8 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
             t.rough = b.corridor_break
             holders.append((t, b))
         cor.rough = style.corridor_break if plain else 0.0
-        tunnels[cor.id] = getattr(style, "tunnel", None)
+        # The zone's Winding scales the tunnel's wander (winding-control Req 2): None at 0.
+        tunnels[cor.id] = scaled_tunnel(getattr(style, "tunnel", None), winding)
         holders.append((cor, style))
     spec.layout["transitions"] = written
     measure_winds(spec, tunnels)
