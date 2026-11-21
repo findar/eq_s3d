@@ -56,3 +56,27 @@ factor to k (for example `4 + c × (k − 1)` above 1). It records the measured 
 - **Rule planner:** straight words → 0.25, twisting words → 1.75 (or `WINDING_MAX`'s middle), no
   words → 1.0. An explicit Controls value wins over the words, as with verticality.
 - **LLM planner:** the field is in its schema text.
+
+## First-look fixes (tasks 8–9)
+
+**Grid (task 8, `generators/topology/embed.py`).** `start_once` puts each neighbour centred one
+`run` past a wall side, and `spring_relax` pulls every edge back to that centred rest
+(`f = K_SPRING * (d - S * rest)`), so rooms of similar size fall on a lattice. Give each edge a
+seeded sideways offset `t` along the wall (perpendicular to `S`) and a seeded spacing factor on
+`run`, used both in `beside` (the start) and in the spring's rest (`S * rest + T * t`). Bound `t`
+so `_side_toward` still gives the edge's side (the axis of most separation stays the edge's axis);
+a larger offset makes a Z corridor, which now winds. Seed from the build seed and the edge's two
+room ids, not from the rng stream (`embed` draws nothing but `room_size` today). Measure: a
+grid score (share of room-centre pairs whose x or y agree within 10 u) on seed 731402518 and on
+the 40-seed cave graph set of decision 2, before and after.
+
+**Framed corridors (task 9, `generators/transitions.py`, `generators/routing.py`, mesh).**
+`measure_routes` skips any corridor with `cor.transition`, so it keeps its legs and their square
+bends; `measure_winds` also holds the leg with the line straight. Let such a corridor take a
+`path` whose run through the line is straight for the frame's depth plus a half-width each side,
+square to the line (the line's `along_x` and position fixed), winding before and after it. The
+mesh's seam split (`_seam_leg` / `_held_leg`: which side takes which style) must read the line on
+the path. Every reader of the line (mesh, `corridor_continuity`, decor RoomContexts, map) must
+agree, as step 25 required for paths. If a framed corridor's path fails `route_clear`, it keeps
+step 23's legs, but its bends are cut as a plain corridor's are.
+

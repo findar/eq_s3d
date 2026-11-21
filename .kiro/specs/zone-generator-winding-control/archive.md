@@ -54,4 +54,11 @@
    No golden moved. The gate is then 692/696 at Winding 0, 1 and 2: the hollow-Prop fix also
    clears step 23's warren graph moderate 25 s616736071 residual.
 
+4. **First look: grid and square framed corridors, fixed at every setting** (the user,
+   2026-11-21: "i think conceptually the winding is ok, but we have an issue where the rooms end up in a consistent grid layout with the 731402518 cave seed.  also some of the winding isn't as smooth as i would expect.  for the given seed 731402518, between room 9 and 11 is a sharper turn"; asked whether to keep Winding 1 byte-identical, chose "Every
+   setting"). Causes: Graph `embed` places each neighbour centred one run off a wall and the
+   springs hold it there (seed 731402518: rows and columns ~220 u apart); `measure_routes`
+   skips a corridor holding a Transition line (`corr_11`, room_9 hewn to room_11), leaving
+   square bends. Requirement 4 is amended; Requirements 7 and 8 added; tasks 8–11.
+
 ## Follow-ups

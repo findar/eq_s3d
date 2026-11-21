@@ -50,9 +50,34 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
 
 - [ ] 6. HUMAN: first look
   - Card: [cards/06-first-look.md](cards/06-first-look.md)
-  - Type: human · Depends: 5
+  - Type: human · Depends: 5, 11
 
 - [ ] 7. Close step 26
   - Card: [cards/07-close.md](cards/07-close.md)
   - Type: agent · Size: S · Depends: 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-winding-control/, .kiro/specs/zone-generator/
+
+## First-look fixes (decision 4)
+
+- [ ] 8. Break the Graph grid
+  - Card: [cards/08-grid.md](cards/08-grid.md)
+  - Type: agent · Size: M · Depends: 5
+  - Owns: generators/topology/embed.py, tests/test_topology_embed.py, goldens it moves (named in the commit)
+  - Reqs: 7
+
+- [ ] 9. Framed corridors wind
+  - Card: [cards/09-framed.md](cards/09-framed.md)
+  - Type: agent · Size: M · Depends: 8
+  - Owns: generators/transitions.py, generators/routing.py, generators/geometry.py, analyzer/traverse.py, generators/room_context.py, generators/mapview.py, generators/eqmap.py, tests/test_winding_control.py, goldens it moves (named in the commit)
+  - Reqs: 8
+
+- [ ] 10. Gate and bands again
+  - Card: [cards/10-gate.md](cards/10-gate.md)
+  - Type: agent · Size: S · Depends: 9
+  - Owns: fixes only where a failure is new (stop and report first)
+  - Reqs: 6
+
+- [ ] 11. Acceptance addendum
+  - Card: [cards/11-acceptance.md](cards/11-acceptance.md)
+  - Type: agent · Size: S · Depends: 10
+  - Owns: docs/ACCEPTANCE.md

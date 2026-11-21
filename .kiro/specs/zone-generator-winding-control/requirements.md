@@ -28,7 +28,9 @@ straight. 1 is today's stock-measured tunnel. Higher values wander further.
    only when it is not 1.0). Every reader that re-derives a leg's centreline (mesh, decor
    RoomContexts, map, gate) winds with the same scaled rules, so they agree at any setting.
 4. **Bytes.** At `winding = 1` (or absent) every zone is byte-identical to before this step.
-   Zones with no rough corridor are byte-identical at any setting.
+   Zones with no rough corridor are byte-identical at any setting. *Amended at the first look
+   (decision 4): Requirements 7 and 8 change zones at every setting, Winding 1 included; tasks
+   8 and 9 re-record the goldens they move, each named in its commit.*
 5. **Controls and words.** The web Controls get a **Winding** slider wherever a zone can have
    rough corridors (dungeon, city, outdoor dungeon), default 1, shown in the build summary. The
    rule planner reads words: straight ("straight", "regular", "orderly") lowers it, twisting
@@ -36,3 +38,12 @@ straight. 1 is today's stock-measured tunnel. Higher values wander further.
    planner's schema gets the field. The server passes it through.
 6. **Gate and bands.** Cave and warren gate sweeps (`EQ_PATH` set) pass at master's count or
    better at `winding` 0, 1 and `WINDING_MAX`. Quality fail shares stay under 5% per key.
+7. **No grid** (first look). A Graph layout's rooms don't line up in rows and columns: each
+   neighbour stands off its wall side by a seeded amount sideways and at a seeded spacing, so
+   seed 731402518's cave (rows and columns about 220 u apart at `3f925f8`) no longer reads as a
+   grid. Every edge keeps its wall side (one opening per wall, step 6 finding 1).
+8. **Framed corridors wind** (first look). A rough corridor holding a Transition line (a frame,
+   breach or seam where a hewn room meets the cave) winds door to door like any other, with a
+   straight stretch at the line so the frame stands square across it. No square bend is left
+   on such a corridor where a plain one would have a cut bend (seed 731402518's `corr_11`,
+   room_9 to room_11).
