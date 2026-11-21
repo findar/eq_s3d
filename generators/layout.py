@@ -57,8 +57,10 @@ DISTRICT_ATTEMPTS = 8
 # A style profile's corridor run for the graph placement, in corridor widths
 # (``LayoutContext.run_factor``; ``embed.RUN_FACTOR`` otherwise). Winding
 # tunnels task 9: a cave's legs come out near the stock tunnels' span
-# (``scripts/tunnel_survey.py``) so they are long enough to wind.
-PROFILE_RUN_FACTOR = {"cave": 9.0}
+# (``scripts/tunnel_survey.py``) so they are long enough to wind. Winding
+# routes task 4: with whole routes winding, 4 is the lowest run that keeps
+# half the cave's rough corridors winding (that spec's archive, decision 4).
+PROFILE_RUN_FACTOR = {"cave": 4.0}
 
 
 class DistrictSplitError(ValueError):
