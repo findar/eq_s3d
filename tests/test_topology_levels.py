@@ -59,19 +59,21 @@ def _spec_hash(spec) -> str:
 # stacking-off path, ``flat`` (vertical rules left out, one Level).
 # Recaptured again, deliberately, by task 17: rooms at stock scale for their
 # race.
+# Recaptured by winding-tunnels task 5: relief no longer leaves a floor fan
+# triangle steeper than the gate's slope (classic_eq, warren, ogre: lift only).
 GOLDENS = {
     "classic_eq": (dict(zone_type="dungeon", room_count=12, layout="graph",
                         verticality="flat"), 2,
-                   "13c4d36286d4a12d6e6caf1a289563e57bf797da34577e0fe21aa00f8a9fd209"),
+                   "b433118c9511c58ad6648b8132da35f154f528fd74ae3f50649dc118a8c79729"),
     "warren": (dict(zone_type="dungeon", room_count=12, layout="graph",
                     rule_set="warren", verticality="flat"), 2,
-               "8756eb00908c0d59462c0358395ec1a42de9e13bd73016bbcf01da07d4084ccc"),
+               "b1481dea7d54cf418b0970bd15a9c46740b3ef2c8f8c8715719902b5daabec81"),
     "temple": (dict(zone_type="dungeon", room_count=10, layout="graph",
                     dungeon_theme="temple", verticality="flat"), 3,
                "5457596e906b5c8c8c0493c6630b20cc12eccd0109641434abb4197fa5089b21"),
     "ogre": (dict(zone_type="dungeon", room_count=9, layout="graph",
                   dungeon_race="ogre", locks=1, verticality="flat"), 21,
-             "4f5249152d2e2e61c4ebf9a0998e0a9fbb2f8315791451f7f1c0f561dfe8089c"),
+             "9595dd7f8637ffad88f4a26220f554a4c3050f8b0e01a804849937d391c17a10"),
 }
 
 

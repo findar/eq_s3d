@@ -760,6 +760,64 @@ MAX_GRADE = 0.45        # a floor's rise over run between vertices: about 24 deg
 CEILING_GRADE = 0.8     # a ceiling's, about 39 degrees: any steeper and it reads as wall
 
 
+#: The steepest a floor fan's triangle may climb (rise over run, about 35 degrees). The mesh
+#: fans each Cell from the mean of its corners, at their mean lift, so a thin fan triangle (a
+#: corner nearly in line with the centre and the next corner) climbs far steeper than any of
+#: its edges: up to a grade of 6 was seen. That face is no floor to the gate (40 degrees), so
+#: its floor samples break along it while decor's 2 u grid reads one floor across it, and
+#: Props shut the ways round (winding-tunnels task 5: warren gate failures "footprint_cut" and
+#: "throat_narrow").
+FAN_GRADE = 0.7
+#: Halvings of a steep Cell's lifts before it is laid flat.
+FAN_TRIES = 24
+
+
+def _fan_grades(cells: List[List[int]], pts: np.ndarray, lift: np.ndarray) -> np.ndarray:
+    """Each Cell's steepest fan triangle (rise over run), as the mesh fans it."""
+    out = np.zeros(len(cells))
+    for k, cell in enumerate(cells):
+        p = pts[cell]
+        z = lift[cell]
+        c = p.mean(axis=0)
+        cz = z.mean()
+        a, b = p - c, np.roll(p, -1, axis=0) - c
+        za, zb = z - cz, np.roll(z, -1) - cz
+        det = a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]
+        gx = za * b[:, 1] - zb * a[:, 1]
+        gy = zb * a[:, 0] - za * b[:, 0]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            g = np.where(np.abs(det) > 1e-12, np.hypot(gx, gy) / np.abs(det),
+                         np.where(np.abs(za - zb) > 1e-9, np.inf, 0.0))
+        out[k] = float(g.max()) if len(g) else 0.0
+    return out
+
+
+def _cap_fans(cells: List[List[int]], pts: np.ndarray, lift: np.ndarray, ea: np.ndarray,
+              eb: np.ndarray, cap: np.ndarray) -> np.ndarray:
+    """``lift`` lowered until no fan triangle climbs over ``FAN_GRADE``: a steep Cell's lifts
+    halve (the edges relaxed again, since a lowered corner can steepen an edge beside it), and
+    one still steep after ``FAN_TRIES`` lies flat. A floor only falls here, so it still never
+    rises over a Slab. An Outline with no steep fan keeps its lifts exactly."""
+    lift = lift.copy()
+    for n in range(FAN_TRIES + 1):
+        steep = np.nonzero(_fan_grades(cells, pts, lift) > FAN_GRADE)[0]
+        if not len(steep):
+            break
+        for k in steep:
+            if n == FAN_TRIES:
+                lift[cells[k]] = 0.0
+            else:
+                lift[cells[k]] *= 0.5
+        lift[lift < 0.01] = 0.0
+        for _ in range(len(pts)):
+            before = lift.copy()
+            np.minimum.at(lift, ea, lift[eb] + cap)
+            np.minimum.at(lift, eb, lift[ea] + cap)
+            if np.array_equal(before, lift):
+                break
+    return lift
+
+
 def _noise_01(pts: np.ndarray, scale: float, seed: int) -> np.ndarray:
     """Smooth noise over the plan, 0 to 1 (the lower half of the noise reads as flat)."""
     z = np.zeros(len(pts), dtype=np.float32)
@@ -805,6 +863,9 @@ def add_relief(outline: Outline, height: float, floor_rise: float, ceiling_fall:
             np.minimum.at(values, eb, values[ea] + limit)
             if np.array_equal(before, values):
                 break
+
+    if lift.any():
+        lift = _cap_fans(outline.cells, pts, lift, ea, eb, cap)
 
     drop = np.minimum(drop, np.maximum(0.0, height - lift - min_head))
     outline.lift = [round(float(v), PLACES) for v in lift]

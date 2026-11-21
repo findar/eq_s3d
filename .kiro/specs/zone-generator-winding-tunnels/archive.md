@@ -34,3 +34,21 @@ on the user's design review. The user confirms at the first look (task 7).
    tunnel span (task 9); every other zone's layout stays as it is.
 
 ## Follow-ups
+
+Gate failures from task 5's cave and warren sweep (`sweep_themed_navigability --only cave warren
+--layouts classic graph --verticality flat moderate dramatic --rooms 2-30 --seeds 2 --seed 23`).
+Each also fails at b2db7b4, so step 23 didn't cause any of them. Five of 696 builds:
+
+- Decor alley between Props: `Room.spaced` shuts a seam with the hull of both plans, so a 4.6 u
+  alley between a shelf and a rock never counts as a pocket. warren classic flat 23 rooms, seed
+  490919952, room_3 (footprint_cut 88 u^2).
+- Decor Prop-to-wall gap: only Prop-to-Prop gaps keep `BLOCKING_GAP`; a boulder 3.85 u off a wall
+  walls the strip off. warren classic flat 26 rooms, seed 1205085953, room_19 (footprint_cut 72 u^2).
+- Door jambs missing from decor's room data: a jamb plate standing 2 u into the room is in no
+  RoomContext field, and a rock 4.7 u off it shuts the strip. cave classic moderate 8 rooms, seed
+  1728424002, room_2 (footprint_cut 80 u^2).
+- Outline floor behind a wall slit: the outline reaches floor through a slit no body fits,
+  and `check_features` reads it walled off; no Feature is near it. cave graph flat 29 rooms, seed
+  1259910114, room_25 (floor walled off at (178.5, -621.5)).
+- Decor clear width: decor's wide reading lets a rock narrow door E's way that the gate measures
+  under 8 u; not diagnosed. warren graph moderate 25 rooms, seed 616736071, room_23 (throat_narrow).

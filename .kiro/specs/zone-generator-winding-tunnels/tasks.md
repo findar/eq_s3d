@@ -54,7 +54,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Owns: generators/room_context.py, generators/mapgeom.py, generators/mapview.py, tests/test_winding_readers.py
   - Reqs: 4
 
-- [ ] 5. Gate and bands
+- [x] 5. Gate and bands
   - Card: [cards/05-gate.md](cards/05-gate.md)
   - Type: agent · Size: M · Depends: 3, 4
   - Owns: scripts/sweep_themed_navigability.py, scripts/quality_sweep.py, any root-cause fix named in the commit
