@@ -1802,10 +1802,12 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         fp_b = _room_footprint(b)
         include = leg_rects + [fp_a, fp_b]
         # A winding leg (winding-tunnels task 3) strays off its straight footprint: each run of
-        # its centreline, grown by the same margin, holds its floor.
+        # its centreline, grown by the same margin, holds its floor. A corridor with a ``path``
+        # (winding-routes task 2) is built along that one line instead, and its legs don't wind.
         from generators.routing import winding_legs
         grow = hw + agent.adjacency_eps
-        for line in winding_legs(cor, rooms_by_id):
+        lines = [cor.path] if cor.path else winding_legs(cor, rooms_by_id)
+        for line in lines:
             if line is not None:
                 include += [(min(p[0], q[0]) - grow, min(p[1], q[1]) - grow,
                              max(p[0], q[0]) + grow, max(p[1], q[1]) + grow)

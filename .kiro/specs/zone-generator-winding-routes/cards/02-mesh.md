@@ -7,12 +7,12 @@ A corridor with a `path` is built as one winding strip from opening to opening, 
 over the path between the run-outs.
 
 ## Done when
-- [ ] Over 10 cave and 5 warren graph builds (8–30 rooms, each verticality) every build passes the
+- [x] Over 10 cave and 5 warren graph builds (8–30 rooms, each verticality) every build passes the
       traversability gate and no piece of a path's floor rises more than `MAX_SEG_RISE`. → verify:
       `python -m pytest tests/test_wind_route_mesh.py -q`
-- [ ] `corridor_continuity` reads the path's segments.
-- [ ] Look at 3 builds' meshes and map SVGs; say what you saw in the commit body.
-- [ ] The byte check passes for zones with no rough corridor; rough goldens recaptured by name.
+- [x] `corridor_continuity` reads the path's segments.
+- [x] Look at 3 builds' meshes and map SVGs; say what you saw in the commit body.
+- [x] The byte check passes for zones with no rough corridor; rough goldens recaptured by name.
 - [ ] `python -m pytest tests/ -q -m "not slow"` is green.
 
 ## Pitfalls

@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 
 from core.ter import FLAG_PASSABLE, TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
-from .routing import corridor_route, winding_legs
+from .routing import corridor_route, strip_corners, winding_legs
 
 
 # A sloped corridor floor is subdivided so each segment rises at most this much
@@ -915,7 +915,7 @@ class MeshBuilder:
             floor_mat=floor_mat, wall_mat=wall_mat, ceiling_mat=ceiling_mat,
             avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
             bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough,
-            seam=self._seam(cor, spec), winds=winding_legs(cor, rooms))
+            seam=self._seam(cor, spec), winds=winding_legs(cor, rooms), path=cor.path)
         if cor.transition is not None and cor.transition.material:
             self._add_opening(cor, spec)
 
@@ -982,7 +982,7 @@ class MeshBuilder:
 
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
                     steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None, rough=0.0, seam=None,
-                    winds=None):
+                    winds=None, path=None):
         """
         Shared multi-segment corridor builder. `waypoints` is an ordered list of
         (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
@@ -1009,7 +1009,17 @@ class MeshBuilder:
 
         ``winds`` is ``routing.winding_legs``'s list: a plain rough leg with a polyline there
         is built along it (``_add_winding_leg``), its square ends where the straight leg's are.
+
+        ``path`` is ``CorridorSpec.path`` (winding-routes task 2): a plain rough corridor with one
+        is built as ONE winding strip from opening to opening, flat over both run-outs, the rise
+        spread over the rest by length, with no legs and no bend squares; ``winds`` is then
+        unused. Its ends are the straight legs' square doorway ends. A strip that would fold
+        builds the legs instead.
         """
+        if path and steps == 0 and bridge is None and seam is None and rough > 0 and \
+                self._add_winding_leg(path, from_z, to_z, hw, height, rough, floor_mat, wall_mat,
+                                      ceiling_mat, flat_ends=True):
+            return
         zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
         seam_leg = self._seam_leg(waypoints, seam, hw, zs) if seam else None
 
@@ -1323,7 +1333,8 @@ class MeshBuilder:
                 along_a += wall(p1, c0 + s0[i + 1], p0, c0 + s0[i], z1, z0, h1, h0, along_a)
                 along_b += wall(p0, c1 - s1[i], p1, c1 - s1[i + 1], z0, z1, h0, h1, along_b)
 
-    def _add_winding_leg(self, line, fz, tz, hw, height, rough, floor_mat, wall_mat, ceiling_mat) -> bool:
+    def _add_winding_leg(self, line, fz, tz, hw, height, rough, floor_mat, wall_mat, ceiling_mat,
+                         flat_ends=False) -> bool:
         """A rough leg built along a winding centreline (``routing.winding_legs``), winding-tunnels
         task 3. The floor is a strip ``hw`` either side of ``line``, mitred at each turn, its
         height running from ``fz`` to ``tz`` along the path and level across it. Each run between
@@ -1335,40 +1346,43 @@ class MeshBuilder:
         which weld to the bend square or the room's opening as ``_add_rough_leg``'s do.
 
         False, building nothing, when a mitre would fold the strip's inner edge back on itself
-        (a turn too sharp for the width): the caller builds the straight leg instead."""
+        (a turn too sharp for the width): the caller builds the straight leg instead.
+
+        ``flat_ends`` (a whole route's ``path``, winding-routes task 2): the floor stays at ``fz``
+        over the line's first run and at ``tz`` over its last (the run-outs), the rise spread by
+        length over the runs between, as ``transitions.path_pieces`` measures it. False, building
+        nothing, when there is a rise but no run between to carry it."""
         pts = [(float(x), float(y)) for x, y in line]
         m = len(pts) - 1
-        seg = [math.hypot(pts[j + 1][0] - pts[j][0], pts[j + 1][1] - pts[j][1]) for j in range(m)]
-        if m < 1 or min(seg) < 1e-6:
+        # The strip's corners at each vertex of the line: (left, right), mitred where it turns;
+        # None when an edge would run backward along a run (the strip folds over).
+        corners = strip_corners(pts, hw)
+        if corners is None:
             return False
-        dirs = [((pts[j + 1][0] - pts[j][0]) / seg[j], (pts[j + 1][1] - pts[j][1]) / seg[j]) for j in range(m)]
-        lefts = [(-dy, dx) for dx, dy in dirs]
+        seg = [math.hypot(pts[j + 1][0] - pts[j][0], pts[j + 1][1] - pts[j][1]) for j in range(m)]
 
-        # The strip's corners at each vertex of the line: (left, right), mitred where it turns.
-        corners = []
-        for i in range(m + 1):
-            ns = [lefts[j] for j in (i - 1, i) if 0 <= j < m]
-            mx, my = sum(n[0] for n in ns), sum(n[1] for n in ns)
-            size = math.hypot(mx, my)
-            mx, my = mx / size, my / size
-            reach = hw / (mx * ns[0][0] + my * ns[0][1])
-            px, py = pts[i]
-            corners.append(((px + mx * reach, py + my * reach), (px - mx * reach, py - my * reach)))
-        # Each edge must still run forward along every run, or the strip folds over.
-        for j in range(m):
-            for side in (0, 1):
-                a, b = corners[j][side], corners[j + 1][side]
-                if (b[0] - a[0]) * dirs[j][0] + (b[1] - a[1]) * dirs[j][1] <= 1e-6:
-                    return False
-
-        # Sections across the strip: (left, right, floor z), level across.
         total = sum(seg)
+        if flat_ends:
+            s0, s1 = seg[0], total - seg[-1]
+            if abs(tz - fz) > 0.01 and s1 - s0 <= 1e-6:
+                return False
+
+            def z_at(s, j_end):
+                if s <= s0 or s1 <= s0:
+                    return fz
+                return tz if s >= s1 or j_end else fz + (tz - fz) * (s - s0) / (s1 - s0)
+        # Sections across the strip: (left, right, floor z), level across.
         sections = []
         done = 0.0
         for j in range(m):
-            za = fz + (tz - fz) * done / total
-            done += seg[j]
-            zb = tz if j == m - 1 else fz + (tz - fz) * done / total
+            if flat_ends:
+                za = z_at(done, False)
+                done += seg[j]
+                zb = z_at(done, j >= m - 2)
+            else:
+                za = fz + (tz - fz) * done / total
+                done += seg[j]
+                zb = tz if j == m - 1 else fz + (tz - fz) * done / total
             n = max(int(math.ceil(abs(zb - za) / MAX_SEG_RISE)), int(math.ceil(seg[j] / ROUGH_SPACING)), 1)
             (la, ra), (lb, rb) = corners[j], corners[j + 1]
             for k in range(n):
