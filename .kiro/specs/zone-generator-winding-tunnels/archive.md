@@ -33,6 +33,12 @@ on the user's design review. The user confirms at the first look (task 7).
    widths; stock tunnels are far longer. The cave profile gets its own spring run from the survey's
    tunnel span (task 9); every other zone's layout stays as it is.
 
+6. **The cave run stays at 9 widths** (lead, at the task 6 merge). Door to door, a plain cave corridor
+   now routes 194/217/233 u (p25/p50/p75; was 47/59/66), inside the stock tunnels' centreline
+   p25-p75 (76-341 u, all 113) but above the plain tunnels' p75 (163 u). Matching the plain median
+   (factor 5-6, ~130-150 u) leaves only 15-16% of legs bending, because a Z route splits a corridor
+   into legs that each wind alone. Winding the whole route is the follow-up that would let it drop.
+
 ## Follow-ups
 
 Gate failures from task 5's cave and warren sweep (`sweep_themed_navigability --only cave warren
@@ -52,3 +58,7 @@ Each also fails at b2db7b4, so step 23 didn't cause any of them. Five of 696 bui
   1259910114, room_25 (floor walled off at (178.5, -621.5)).
 - Decor clear width: decor's wide reading lets a rock narrow door E's way that the gate measures
   under 8 u; not diagnosed. warren graph moderate 25 rooms, seed 616736071, room_23 (throat_narrow).
+- **Wind the whole route, not each leg** (task 6, decision 6): a Z corridor's ramp sits on its short jog and never winds, and stock-length corridors split into legs too short to bend; one winding path door to door would let the cave run drop toward the plain tunnels' length.
+- **Warrens never wind** (task 6: 0 of 99 rough legs over 4 builds): they keep the default run. Give them the cave's spacing or route-winding?
+- **Cave rooms stand about twice as far apart** (task 6, case a: neighbour distance 225 u, was 101). Judge in 3D.
+- **No decor in a winding tunnel in any build** (task 6): cave corridors carry no Props or lights; only `tests/test_winding_readers.py` covers decor on the strip.
