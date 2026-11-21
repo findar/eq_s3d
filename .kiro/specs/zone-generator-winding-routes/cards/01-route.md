@@ -15,7 +15,7 @@ Index entry: `tasks.md` task 1. Requirements 1, 2. Design "Data", "The route lin
       `PLAYER_HALF_WIDTH` from every room box and other corridor box in its Z band. Same command.
       The share of rough corridors that got a `path` goes in the commit body.
 - [x] A spec without `path` loads as before; `_corridor_dict` writes `path` only when set.
-- [ ] `python -m pytest tests/ -q -m "not slow"` is green. Nothing reads `path` until task 2, so
+- [x] `python -m pytest tests/ -q -m "not slow"` is green. Nothing reads `path` until task 2, so
       the mesh is unchanged; the byte check passes.
 
 ## Pitfalls
@@ -23,3 +23,4 @@ Index entry: `tasks.md` task 1. Requirements 1, 2. Design "Data", "The route lin
 - Don't change routes, footprints or conflicts (A1).
 
 ## Result
+✔ 6fa72b6 · 24 passed · path share 73% (93% of eligible)
