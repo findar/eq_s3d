@@ -78,6 +78,22 @@ _VERTICALITY_WORDS = {
     "flat": ["flat", "level", "single-level", "ground-level", "even"],
 }
 
+# Winding (winding-control step 26): how far rough corridors stray. Whole words
+# on word boundaries, so "irregular" isn't "regular" and "straightforward" isn't
+# "straight". Straight words win a tie, as "flat" does for verticality. "winding"
+# before a stair word names the stair, not the tunnels, so it's left out. These
+# words feed nothing else: "labyrinthine" still raises the room count too, through
+# _MANY_WORDS' "labyrinth", which agrees with it (a labyrinth is many rooms AND
+# twisty passages).
+_WINDING_STRAIGHT = 0.25
+_WINDING_TWISTY = 1.75
+_WINDING_WORDS = {
+    _WINDING_STRAIGHT: ["straight", "regular", "orderly"],
+    _WINDING_TWISTY: ["twisting", "twisty", "winding", "meandering", "serpentine",
+                      "labyrinthine"],
+}
+_WINDING_STAIR = re.compile(r"\bwinding\s+(?:stair|stairs|staircase|stairway|steps)\b")
+
 # Rough room-count hints
 _MANY_WORDS = ["many", "lots", "numerous", "maze", "labyrinth", "sprawling", "warren"]
 _FEW_WORDS = ["few", "couple", "single", "one big", "simple"]
@@ -225,6 +241,7 @@ class RulePlanner:
         zone_type = self._match_zone_type(text)
         size = self._match_one(text, _SIZE_WORDS, default="medium")
         verticality = self._match_one(text, _VERTICALITY_WORDS, default="moderate")
+        winding = match_winding(text)
         regions = self._match_regions(text)
         room_count = self._room_count(text, size)
         elevation = verticality != "flat"
@@ -257,6 +274,7 @@ class RulePlanner:
             size=size,
             elevation=elevation,
             verticality=verticality,
+            winding=winding,
             regions=regions,
             locks=locks,
             dungeon_theme=dungeon_theme,
@@ -411,7 +429,13 @@ def _taker(word: str) -> str:
     return ""
 
 
-def _match_words(text: str, mapping: dict, default: str) -> str:
+def match_winding(text: str) -> float:
+    """The Winding a prompt's words name: 0.25 for straight words, 1.75 for twisting
+    ones, else 1.0 (the stock tunnel). *text* is lower-cased."""
+    return _match_words(_WINDING_STAIR.sub(" ", text), _WINDING_WORDS, 1.0)
+
+
+def _match_words(text: str, mapping: dict, default):
     """The first value with a word or phrase in ``text`` on word boundaries."""
     for value, words in mapping.items():
         if any(re.search(rf"\b{re.escape(w)}\b", text) for w in words):

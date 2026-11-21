@@ -85,6 +85,15 @@
             <option>dramatic</option>
           </select>
         </label>
+        <!-- How far rough corridors stray (winding-control step 26): 0 to
+             WINDING_MAX (ai/schema.py), 1 the stock tunnel. -->
+        <label class="field" title="Winding: 0 straight, 1 stock tunnels, 2 twisty with longer cave tunnels"><span>Winding</span>
+          <span style="display: flex; align-items: center; gap: 6px; min-width: 0;">
+            <input type="range" id="winding" min="0" max="2" step="0.25" value="1"
+                   style="flex: 1; min-width: 0; accent-color: var(--accent);" />
+            <output id="winding-value" for="winding" style="width: 2.5em; text-align: right;">1</output>
+          </span>
+        </label>
         <label class="field"><span>Locks</span>
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>

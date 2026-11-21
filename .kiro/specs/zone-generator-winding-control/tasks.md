@@ -31,7 +31,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
   - Owns: ai/schema.py (`WINDING_MAX`), generators/layout.py (run factor, only if measured), tests/test_winding_control.py, archive.md
   - Reqs: 2
 
-- [ ] 3. Controls, server and planner words
+- [x] 3. Controls, server and planner words
   - Card: [cards/03-controls.md](cards/03-controls.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, ai/rule_planner.py, ai/llm_planner.py, tests/test_winding_words.py

@@ -8,6 +8,9 @@ export interface GenerateControls {
   room_count?: number;
   size?: string;
   verticality?: string;
+  // Dungeon / city / outdoor dungeon only: how far rough corridors stray, 0
+  // (straight) to 2; 1 is the stock tunnel (winding-control step 26).
+  winding?: number;
   locks?: number;
   // Wilderness only: side (N/E/S/W) -> mountain | river | zoneline.
   edges?: Record<string, string>;
@@ -57,6 +60,8 @@ export interface ZonePlan {
   size: string;
   elevation: boolean;
   verticality: string;
+  // Absent at the default, 1 (ZonePlan.to_dict leaves it out).
+  winding?: number;
   regions: string[];
   mood: string;
   prompt: string;
