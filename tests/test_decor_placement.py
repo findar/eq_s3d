@@ -228,7 +228,8 @@ def test_every_room_passes_its_own_check(decorated, hand):
 def test_walkable_floor_keeps_the_players_half_width_off_walls_and_rises():
     """P13 (room-decor task 9): the room check reads floor as the gate does. Floor within
     the player's half-width of a wall or the foot of a rise he can't step is not walkable;
-    the top of the rise is."""
+    the top of the rise is, but not within the half-width of its edge (winding-routes task 5:
+    the gate's samples needn't fall in a strip by a drop)."""
     c = box_room(w=40.0, d=30.0)
     floor = c.floor.copy()
     floor[8:12, 8:12] = 10.0                     # a 8 x 8 block 10 u high
@@ -237,7 +238,8 @@ def test_walkable_floor_keeps_the_players_half_width_off_walls_and_rises():
     assert r.ok[0, 5] and not r.walk[0, 5]       # by the west wall
     assert r.walk[4, 5]
     assert not r.walk[7, 9] and not r.walk[12, 9]  # at the block's foot
-    assert r.walk[8, 9] and r.walk[11, 9]        # on its top, at its edge
+    assert not r.walk[8, 9] and not r.walk[11, 9]  # on its top, at its edge
+    assert r.walk[9, 9] and r.walk[10, 9]        # on its top, off its edge
     assert r.walk[5, 9]
 
 

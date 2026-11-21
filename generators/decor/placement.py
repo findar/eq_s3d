@@ -405,6 +405,26 @@ def _near_rise(ctx: RoomContext, ok: np.ndarray) -> np.ndarray:
     return out
 
 
+def _near_drop(ctx: RoomContext) -> np.ndarray:
+    """Cells within the player's half-width of their floor's own drop edge: floor more than
+    ``STEP_UP`` below the cell within the 8 cells round it (a dais's top, a ledge). The gate
+    stands on such a top up to its edge, but its 2 u samples needn't fall in a strip by the
+    edge narrower than a step, so a lane there that's open on this grid can be shut on its
+    (step 25 task 5: a strip on a dais top between a crystal and the edge was decor's only
+    way from the dais steps to the boss)."""
+    floor = ctx.floor
+    nx, ny = floor.shape
+    reach = max(1, int(math.ceil((PLAYER_HALF_WIDTH - ctx.cell / 2) / ctx.cell + 0.5)))
+    lo = np.pad(np.where(np.isnan(floor), np.inf, floor), reach, constant_values=np.inf)
+    base = np.where(np.isnan(floor), -np.inf, floor)
+    out = np.zeros(floor.shape, bool)
+    for di in range(-reach, reach + 1):
+        for dj in range(-reach, reach + 1):
+            if di or dj:
+                out |= lo[reach + di:reach + di + nx, reach + dj:reach + dj + ny] < base - STEP_UP
+    return out
+
+
 def _edge_distance(ctx: RoomContext, ok: np.ndarray, reach: float = 0.0) -> np.ndarray:
     """Each cell's distance (u, middle to middle) to the nearest cell a body can't stand
     in: a wall (no floor; not round a Site), a solid Feature, or the foot of a rise more
@@ -568,10 +588,11 @@ class Room:
         self.floor = ctx.floor
         self.ok = ctx.reached & ~np.isnan(ctx.floor)
         #: Where a player's middle can be: reached floor at least the player's half-width
-        #: from a wall and from the foot of a rise he can't step (a dais's side, a solid
-        #: Feature), as the gate reads it. Props stand on ``ok``; the room's connectivity
+        #: from a wall, from the foot of a rise he can't step (a dais's side, a solid
+        #: Feature) and from the edge of a drop (a dais's top, ``_near_drop``), as the gate
+        #: reads it. Props stand on ``ok``; the room's connectivity
         #: (``problems``, ``check``) is judged on ``walk``.
-        self.walk = self.ok & ~_near_rise(ctx, self.ok)
+        self.walk = self.ok & ~_near_rise(ctx, self.ok) & ~_near_drop(ctx)
         # The wall lines too, exact: a slit in a wall narrower than a cell leaves floor on both
         # sides of it, which the cells read as open (district-looks task 5: rocks walled floor
         # off behind such a slit). Off a straight wall this takes no cell ``_near_rise`` keeps.
