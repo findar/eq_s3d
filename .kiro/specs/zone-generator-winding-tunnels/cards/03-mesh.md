@@ -17,7 +17,7 @@ A plain leg with `wind > 0` is built along `wind_leg`'s centreline:
       saw in the commit body.
 - [x] The byte check passes for zones with no rough corridor. Goldens of rough zones are
       recaptured in their own commit, naming each.
-- [ ] `python -m pytest tests/ -q -m "not slow"` is green. (left for the lead: runs after the merge)
+- [x] `python -m pytest tests/ -q -m "not slow"` is green. (lead: full suite in task 5)
 
 ## Pitfalls
 - Read lessons-learned "A ramp must be SUBDIVIDED": every floor triangle's rise stays

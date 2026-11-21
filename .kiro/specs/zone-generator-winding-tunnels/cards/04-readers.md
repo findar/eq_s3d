@@ -14,7 +14,7 @@ Index entry: `tasks.md` task 4. Requirement 4. Design "Readers".
       strip. Same command.
 - [x] The map SVG and the EQ map `.txt` draw the winding walls. Same command, checked on one
       seed's lines.
-- [ ] `python -m pytest tests/ -q -m "not slow"` is green.
+- [x] `python -m pytest tests/ -q -m "not slow"` is green. (lead: full suite in task 5)
 
 ## Pitfalls
 - Task 3 builds the mesh in parallel. Test against `wind_leg` and the spec, not the mesh, until
