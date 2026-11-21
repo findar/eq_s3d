@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, stair_layout
-from .routing import corridor_route, route_footprint, wind_leg, wind_seed
+from .routing import (corridor_route, route_footprint, route_seed, strip_corners, wind_leg, wind_route,
+                      wind_seed)
 from .semantics import ROOM_TYPES, body_height
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import _Checker, _is_number, _one_of, _read_toml
@@ -45,6 +46,7 @@ CLEAR_OF_END = 3.0      # a corridor's end can stand this far into its room, so 
 # Winding (step 23), in u.
 PLAYER_HALF_WIDTH = 1.5     # a winding strip keeps this far off anything else (decor.placement's)
 WIND_Z_SPARE = 2.0          # things nearer than this above or below a leg count as beside it
+ROUTE_MAX_GRADE = 0.5       # a route line's rise over its length between the run-outs (layout's max_grade)
 
 
 @dataclass(frozen=True)
@@ -391,6 +393,7 @@ def measure_winds(spec: ZoneSpec, tunnels: Mapping[str, object]) -> None:
     there too."""
     for cor in spec.corridors:
         cor.wind = []
+        cor.path = []
     if not any(tunnels.get(cor.id) is not None and cor.rough > 0 for cor in spec.corridors):
         return
     rooms = {r.id: r for r in spec.rooms}
@@ -422,6 +425,163 @@ def measure_winds(spec: ZoneSpec, tunnels: Mapping[str, object]) -> None:
             line = wind_leg(ends[0], ends[1], route.axes[k], hw, limit, rules, wind_seed(cor, k, ends[0]))
             wind.append(limit if len(line) > 2 else 0.0)
         cor.wind = wind if any(wind) else []
+    measure_routes(spec, tunnels, rooms, boxes, room_boxes)
+
+
+# --- Winding routes (step 25, winding-routes Requirement 2) -----------------------------
+
+_Poly = List[Tuple[float, float]]
+#: (x0, y0, x1, y1) bounds, the convex polygon, z0, z1, and the room id it is ("" if none).
+_Solid = Tuple[Tuple[float, float, float, float], _Poly, float, float, str]
+
+
+def _solid(poly: _Poly, z0: float, z1: float, room: str = "") -> _Solid:
+    xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+    return (min(xs), min(ys), max(xs), max(ys)), poly, z0, z1, room
+
+
+def _box_solid(box: _Box, room: str = "") -> _Solid:
+    x0, y0, x1, y1, z0, z1 = box
+    return _solid([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1, room)
+
+
+def _separated(a: _Poly, b: _Poly) -> bool:
+    """Do two convex polygons stand apart (an axis across one's edges splits them)?"""
+    for poly in (a, b):
+        for i in range(len(poly)):
+            (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % len(poly)]
+            nx, ny = y0 - y1, x1 - x0
+            pa = [nx * x + ny * y for x, y in a]
+            pb = [nx * x + ny * y for x, y in b]
+            if max(pa) < min(pb) or max(pb) < min(pa):
+                return True
+    return False
+
+
+def _point_seg(p, a, b) -> float:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    d2 = dx * dx + dy * dy
+    t = 0.0 if d2 < 1e-12 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / d2))
+    return math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy)
+
+
+def poly_gap(a: _Poly, b: _Poly) -> float:
+    """The distance between two convex polygons in plan, 0 when they overlap."""
+    if not _separated(a, b):
+        return 0.0
+    gap = float("inf")
+    for p, q in ((a, b), (b, a)):
+        for pt in p:
+            for i in range(len(q)):
+                gap = min(gap, _point_seg(pt, q[i], q[(i + 1) % len(q)]))
+    return gap
+
+
+def path_pieces(line, hw: float, from_z: float, to_z: float) -> Optional[List[Tuple[_Poly, float, float]]]:
+    """A route line's strip, one (quad, z at its start, z at its end) per run of the line,
+    mitred as ``_add_winding_leg`` builds it: flat at ``from_z`` over the first run-out, at
+    ``to_z`` over the last, the rise spread by length between. None when the strip folds."""
+    corners = strip_corners(line, hw)
+    if corners is None:
+        return None
+    seg = [math.hypot(line[j + 1][0] - line[j][0], line[j + 1][1] - line[j][1]) for j in range(len(line) - 1)]
+    s0, s1 = seg[0], sum(seg) - seg[-1]
+
+    def z_at(s):
+        if s <= s0 or s1 <= s0:
+            return from_z
+        return to_z if s >= s1 else from_z + (to_z - from_z) * (s - s0) / (s1 - s0)
+
+    out, done = [], 0.0
+    for j in range(len(seg)):
+        (la, ra), (lb, rb) = corners[j], corners[j + 1]
+        out.append(([la, lb, rb, ra], z_at(done), z_at(done + seg[j])))
+        done += seg[j]
+    return out
+
+
+def route_clear(cor: CorridorSpec, line, solids: Sequence[_Solid]) -> bool:
+    """Amendment A2: does ``line``'s strip keep the player's half-width from every one of
+    ``solids`` beside it in Z (room boxes, other corridors), except the two rooms ``cor``
+    joins, which only its run-outs (its first and last runs) may reach? Also False when the
+    strip folds or climbs steeper than ``ROUTE_MAX_GRADE`` between the run-outs."""
+    hw = cor.width / 2
+    pieces = path_pieces(line, hw, cor.from_z, cor.to_z)
+    if pieces is None:
+        return False
+    seg = [math.hypot(line[j + 1][0] - line[j][0], line[j + 1][1] - line[j][1]) for j in range(len(line) - 1)]
+    middle = sum(seg[1:-1])
+    rise = abs(cor.to_z - cor.from_z)
+    if rise > 0.01 and (middle <= 0 or rise / middle > ROUTE_MAX_GRADE):
+        return False
+    last = len(pieces) - 1
+    for j, (quad, za, zb) in enumerate(pieces):
+        lo, hi = min(za, zb) - WIND_Z_SPARE, max(za, zb) + cor.height + WIND_Z_SPARE
+        xs, ys = [p[0] for p in quad], [p[1] for p in quad]
+        qx0, qy0 = min(xs) - PLAYER_HALF_WIDTH, min(ys) - PLAYER_HALF_WIDTH
+        qx1, qy1 = max(xs) + PLAYER_HALF_WIDTH, max(ys) + PLAYER_HALF_WIDTH
+        for (bx0, by0, bx1, by1), poly, z0, z1, room in solids:
+            if bx1 < qx0 or bx0 > qx1 or by1 < qy0 or by0 > qy1 or z1 <= lo or z0 >= hi:
+                continue
+            if (j == 0 and room == cor.from_room) or (j == last and room == cor.to_room):
+                continue
+            if poly_gap(quad, poly) < PLAYER_HALF_WIDTH:
+                return False
+    return True
+
+
+def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, boxes=None,
+                   room_boxes=None) -> None:
+    """Set each rough plain corridor's ``path``: ``routing.wind_route``'s line, opening to
+    opening, when its strip clears everything else (``route_clear``); else ``[]``. A corridor
+    with a Transition line keeps its legs. Checked against every room, every other
+    corridor's route boxes, the legs step 23 winds and the paths already set, so no two
+    lines meet. A line that wanders and fails is tried again without the wander (its bends
+    still cut).
+
+    Its ``wind`` stays as step 23 measured it, so the mesh, which reads only ``wind`` until
+    winding-routes task 2, is unchanged (the design has ``wind = []`` alongside a path)."""
+    for cor in spec.corridors:
+        cor.path = []
+    eligible = [cor for cor in spec.corridors
+                if tunnels.get(cor.id) is not None and cor.rough > 0 and cor.steps == 0
+                and not cor.bridge and cor.transition is None]
+    if not eligible:
+        return
+    if rooms is None:
+        rooms = {r.id: r for r in spec.rooms}
+        boxes = {cor.id: _corridor_boxes(cor, rooms) for cor in spec.corridors}
+        room_boxes = [(*r.bounds[0][:2], *r.bounds[1][:2], r.bounds[0][2], r.bounds[1][2]) for r in spec.rooms]
+    solids: Dict[str, List[_Solid]] = {"": [_box_solid(b, r.id) for b, r in zip(room_boxes, spec.rooms)]}
+    for cor in spec.corridors:
+        mine = solids[cor.id] = [_box_solid(b) for _, b in boxes[cor.id]]
+        rules = tunnels.get(cor.id)
+        if not cor.wind or rules is None:
+            continue
+        # The legs step 23 winds stray past their boxes.
+        route = corridor_route(cor, rooms)
+        waypoints = list(route.waypoints)
+        zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
+                                         cor.from_z, cor.to_z)
+        hw = cor.width / 2
+        for k, limit in enumerate(cor.wind):
+            ends = MeshBuilder._leg_ends(waypoints, k, hw, zs)
+            if limit <= 0 or ends is None:
+                continue
+            leg = wind_leg(ends[0], ends[1], route.axes[k], hw, limit, rules, wind_seed(cor, k, ends[0]))
+            for quad, _, _ in path_pieces(leg, hw, zs[k], zs[k]) or ():
+                mine.append(_solid(quad, min(zs[k], zs[k + 1]), max(zs[k], zs[k + 1]) + cor.height))
+    for cor in eligible:
+        rules = tunnels[cor.id]
+        others = [s for cid, ss in solids.items() if cid != cor.id for s in ss]
+        route = corridor_route(cor, rooms)
+        for wander in (True, False):
+            line = wind_route(route, cor.width / 2, rules, route_seed(cor), wander)
+            if line is not None and route_clear(cor, line, others):
+                cor.path = [(float(x), float(y)) for x, y in line]
+                for quad, za, zb in path_pieces(line, cor.width / 2, cor.from_z, cor.to_z):
+                    solids[cor.id].append(_solid(quad, min(za, zb), max(za, zb) + cor.height))
+                break
 
 
 def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:
@@ -444,4 +604,4 @@ def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:
 
 __all__ = ["BREACH", "FORMS", "FRAME", "NONE", "SAME", "SEAM", "TRANSITIONS_FILE", "TransitionRules",
            "draw_transition", "draw_transitions", "finish_transitions", "leg_clearance", "load_transitions",
-           "measure_winds"]
+           "measure_routes", "measure_winds", "path_pieces", "poly_gap", "route_clear"]
