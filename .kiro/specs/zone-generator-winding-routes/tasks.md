@@ -40,7 +40,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Owns: generators/layout.py (`PROFILE_RUN_FACTOR`), tests/test_cave_profile.py, tests/test_winding.py, .kiro/specs/zone-generator-winding-routes/archive.md (the measurement)
   - Reqs: 5
 
-- [ ] 5. Gate and bands
+- [x] 5. Gate and bands
   - Card: [cards/05-gate.md](cards/05-gate.md)
   - Type: agent · Size: M · Depends: 4
   - Owns: scripts/sweep_themed_navigability.py, scripts/quality_sweep.py, any root-cause fix named in the commit
