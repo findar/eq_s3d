@@ -65,11 +65,11 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
   - Type: agent · Size: S · Depends: 5
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 7. HUMAN: first look
+- [x] 7. HUMAN: first look
   - Card: [cards/07-first-look.md](cards/07-first-look.md)
   - Type: human · Depends: 6
 
-- [ ] 8. Close step 23
+- [x] 8. Close step 23
   - Card: [cards/08-close.md](cards/08-close.md)
   - Type: agent · Size: S · Depends: 7 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-winding-tunnels/, .kiro/specs/zone-generator/

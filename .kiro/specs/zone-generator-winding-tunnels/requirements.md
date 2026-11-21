@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 23, ready.** Drafted 2026-11-20 at master `b2db7b4`. After step 22 the
+> **STATUS: roadmap step 23, DONE (closed 2026-11-20; the user's first look: "looks good").** Drafted 2026-11-20 at master `b2db7b4`. After step 22 the
 > user said "Pick the step yourself". Multi-zone worlds still wait on the user's design review.
 > The lead chose winding tunnels. Angled corridors have been "wanted" since M1, and the north
 > star asks for natural geometry. A cave's corridors are its last straight boxes: their walls

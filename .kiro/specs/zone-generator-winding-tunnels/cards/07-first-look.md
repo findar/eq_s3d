@@ -9,6 +9,7 @@ The user confirms step 23's choice (`archive.md` "Decisions") and walks "Step 23
 tunnels" in `docs/ACCEPTANCE.md`.
 
 ## Checklist
-- [ ] Walk the section.
+- [x] Walk the section.
 
 ## Result
+✔ looks good (user, 2026-11-20): "looks good, one thing to note we need to address is a flooded room just hsa a square of water in the middle so that's something we should address"

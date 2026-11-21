@@ -7,6 +7,14 @@ this file to pick up a task; it holds the "why".
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | Survey of 113 tunnels in 7 stock rough caves (`scripts/tunnel_survey.py`): segment, turn, wander, width, end straight | `f4baf04`, `71fdaa2` |
+| 2 | `routing.wind_leg` / `winding_legs`: a plain rough leg's centreline winds into clearance measured from the finished spec; `[tunnel]` in `rough.toml` | `c7f248c`, `f134027` |
+| 9 | Cave corridors as long as stock: the cave profile's spring run at 9 corridor widths; lead fix: a stock-length leg takes one bend | `ceecc02`, `0a134ee`, `4c7d185` |
+| 3 | The winding mesh: mitred floor strip, rough walls and ceiling along the centreline, welded to bends and openings; `corridor_continuity` reads the segments | `24af605`, `c65c11b` |
+| 4 | Decor RoomContexts, the map line, outline and EQ map follow the tunnel; angled wall lines merge | `560ff84`, `3df464b`, `353b2a0` |
+| 5 | Gate 691/696 (5 pre-existing, follow-ups), bands held; fixes: no floor-relief fan steeper than 35°, a sliver Throat read 2 u wide; goldens re-recorded for floor lift only | `1588fdd`, `fb279b8`, `8f46c1f`, `f816092`, `76a7a27` |
+| 6 | ACCEPTANCE "Step 23 — Winding tunnels" (cases a–f); thorough 3949 passed, 1 pre-existing | `4308d00`, `d0a23e2` |
+| 7 | First look: "looks good" (user, 2026-11-20); the flooded-room water noted as a follow-up | — |
 
 ## Decisions
 
@@ -62,3 +70,4 @@ Each also fails at b2db7b4, so step 23 didn't cause any of them. Five of 696 bui
 - **Warrens never wind** (task 6: 0 of 99 rough legs over 4 builds): they keep the default run. Give them the cave's spacing or route-winding?
 - **Cave rooms stand about twice as far apart** (task 6, case a: neighbour distance 225 u, was 101). Judge in 3D.
 - **No decor in a winding tunnel in any build** (task 6): cave corridors carry no Props or lights; only `tests/test_winding_readers.py` covers decor on the strip.
+- **A flooded room's water is a square in the middle** (user, at the step 23 first look): `semantics._add_room_region` floods a `flooded_gallery` or `sump` with a box 0.76 of the footprint, centred, so a cave room's irregular floor shows one square pool. The water should fill the room's floor outline up to a water line.
