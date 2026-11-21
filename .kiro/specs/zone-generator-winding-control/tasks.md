@@ -25,7 +25,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
   - Owns: ai/schema.py, generators/zone_spec.py, generators/layout.py, generators/pipeline.py, generators/builder.py, generators/transitions.py, generators/wall_styles.py, generators/routing.py, callers of `winding_legs`/`tunnel_rules()` (named in the commit), tests/test_winding_control.py
   - Reqs: 1, 2, 3, 4
 
-- [ ] 2. Measure the range
+- [x] 2. Measure the range
   - Card: [cards/02-range.md](cards/02-range.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: ai/schema.py (`WINDING_MAX`), generators/layout.py (run factor, only if measured), tests/test_winding_control.py, archive.md
