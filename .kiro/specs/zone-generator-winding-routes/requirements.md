@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 25, ready.** Drafted 2026-11-21 at master `169e985`. After step 24 the
+> **STATUS: roadmap step 25, DONE (closed 2026-11-21; first look: "these look acceptable").** Drafted 2026-11-21 at master `169e985`. After step 24 the
 > user said "continue ... keep working". The lead chose winding routes, the first follow-up step 23
 > left (its archive decision 6): each straight leg of a rough corridor winds alone, so a Z
 > corridor's ramp, which sits on its short middle jog, never winds, every bend is still a square
