@@ -8,14 +8,14 @@ Index entry: `tasks.md` task 1. Requirements 1, 2. Design "Data", "The route lin
 (A2), else keeps step 23's per-leg `wind`.
 
 ## Done when
-- [ ] `wind_route` starts and ends at the openings, runs straight `max(hw, end)` out of each, no
+- [x] `wind_route` starts and ends at the openings, runs straight `max(hw, end)` out of each, no
       turn exceeds `max_turn`, and it is pure for a seed. → verify:
       `python -m pytest tests/test_wind_route.py -q`
-- [ ] Over 10 cave graph builds (8–30 rooms, each verticality) every stored `path`'s strip keeps
+- [x] Over 10 cave graph builds (8–30 rooms, each verticality) every stored `path`'s strip keeps
       `PLAYER_HALF_WIDTH` from every room box and other corridor box in its Z band. Same command.
       The share of rough corridors that got a `path` goes in the commit body.
-- [ ] A spec without `path` loads as before; `_corridor_dict` writes `path` only when set.
-- [ ] `python -m pytest tests/ -q -m "not slow"` is green. Nothing reads `path` until task 2, so
+- [x] A spec without `path` loads as before; `_corridor_dict` writes `path` only when set.
+- [x] `python -m pytest tests/ -q -m "not slow"` is green. Nothing reads `path` until task 2, so
       the mesh is unchanged; the byte check passes.
 
 ## Pitfalls
@@ -23,3 +23,4 @@ Index entry: `tasks.md` task 1. Requirements 1, 2. Design "Data", "The route lin
 - Don't change routes, footprints or conflicts (A1).
 
 ## Result
+✔ 6fa72b6 · 24 passed · path share 73% (93% of eligible)

@@ -373,3 +373,190 @@ def winding_legs(cor: CorridorSpec, rooms: Mapping[str, RoomSpec],
                         wind_seed(cor, k, ends[0]))
         out.append(line if len(line) > 2 else None)
     return out
+
+
+# --- Winding routes (step 25, winding-routes Requirement 1) -----------------------------
+
+def route_seed(cor: CorridorSpec) -> str:
+    """A route line's own stream: the corridor's id and where it starts."""
+    return f"wind:{cor.id}:route:{cor.from_x:.2f},{cor.from_y:.2f}"
+
+
+def _unit(p: Point, q: Point) -> Optional[Point]:
+    d = math.hypot(q[0] - p[0], q[1] - p[1])
+    return None if d < 1e-9 else ((q[0] - p[0]) / d, (q[1] - p[1]) / d)
+
+
+def _turn(d0: Point, d1: Point) -> float:
+    """The signed turn from heading ``d0`` to ``d1`` (radians, left positive)."""
+    return math.atan2(d0[0] * d1[1] - d0[1] * d1[0], d0[0] * d1[0] + d0[1] * d1[1])
+
+
+def _cuts(lengths: Sequence[float], lefts: Sequence[bool], run: float, lo: float) -> List[float]:
+    """How far each bend of the route is cut back from its corner, along both legs: the most
+    that leaves every inner leg at least ``lo`` straight, or nothing straight where two cuts
+    meet on a leg between bends of opposite turn (a Z's jog, one diagonal). The first and last
+    legs keep their run-outs (``run``) whole."""
+    n = len(lengths) - 1                    # bends
+    cuts = []
+    for i in range(n):
+        own = [lengths[i] - (run if i == 0 else 0.0), lengths[i + 1] - (run if i + 1 == n else 0.0)]
+        cuts.append(max(0.0, min(own)))
+    for k in range(1, n):                   # inner leg k, between bends k-1 and k
+        length = lengths[k]
+        a, b = cuts[k - 1], cuts[k]
+        if a + b <= length - lo:
+            continue
+        if lefts[k - 1] != lefts[k] and a + b >= length:
+            # A Z's jog: the two cuts meet, its two diagonals one straight line.
+            a = min(a, max(length - b, length / 2))
+            b = length - a
+        else:
+            spare = max(0.0, length - lo)
+            over = a + b - spare
+            a, b = max(0.0, a - over / 2), max(0.0, b - over / 2)
+            if a + b > spare:
+                a = b = spare / 2
+        cuts[k - 1], cuts[k] = a, b
+    return cuts
+
+
+def _chamfer(corner: Point, d_in: Point, d_out: Point, cut: float, turns: int) -> List[Point]:
+    """A 90 degree bend at ``corner`` cut as ``turns`` equal turns, leaving the incoming leg
+    ``cut`` before the corner and joining the outgoing leg ``cut`` past it: the turn vertices
+    of a polygon about a circle tangent to both legs."""
+    if cut <= 1e-6 or turns <= 1:
+        return [corner]
+    step = _turn(d_in, d_out) / turns
+    radius = cut / (1.0 - math.tan(abs(step) / 2))
+    side = 2 * radius * math.tan(abs(step) / 2)
+    p = (corner[0] - d_in[0] * cut, corner[1] - d_in[1] * cut)
+    out = [p]
+    heading = math.atan2(d_in[1], d_in[0])
+    for _ in range(turns - 1):
+        heading += step
+        p = (p[0] + math.cos(heading) * side, p[1] + math.sin(heading) * side)
+        out.append(p)
+    out[-1] = (corner[0] + d_out[0] * cut, corner[1] + d_out[1] * cut)
+    return out
+
+
+def _wind_run(p: Point, q: Point, hw: float, rules: TunnelRules, seed: int) -> List[Point]:
+    """``wind_leg`` along any heading: the run from ``p`` to ``q`` wound in its own frame."""
+    span = math.hypot(q[0] - p[0], q[1] - p[1])
+    d = ((q[0] - p[0]) / span, (q[1] - p[1]) / span)
+    local = wind_leg((0.0, 0.0), (span, 0.0), True, hw, float("inf"), rules, seed)
+    pts = [(p[0] + u * d[0] - v * d[1], p[1] + u * d[1] + v * d[0]) for u, v in local]
+    pts[0], pts[-1] = p, q
+    return pts
+
+
+def _tidy(line: List[Point], keep: Sequence[int]) -> List[Point]:
+    """``line`` without repeated points and without straight-through vertices, except those
+    at indices ``keep`` (the run-outs' ends)."""
+    out: List[Point] = []
+    kept: List[bool] = []
+    for i, p in enumerate(line):
+        if out and math.hypot(p[0] - out[-1][0], p[1] - out[-1][1]) < 1e-6:
+            kept[-1] = kept[-1] or i in keep
+            continue
+        out.append(p)
+        kept.append(i in keep)
+    i = 1
+    while i < len(out) - 1:
+        a, b = _unit(out[i - 1], out[i]), _unit(out[i], out[i + 1])
+        if not kept[i] and abs(_turn(a, b)) < 1e-9:
+            del out[i], kept[i]
+        else:
+            i += 1
+    return out
+
+
+def wind_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str],
+               wander: bool = True) -> Optional[List[Point]]:
+    """A corridor route's winding centreline, from its first opening to its last, as one
+    polyline (winding-routes design "The route line"), or None when nothing on it can wind.
+
+    From each opening the line runs straight ``max(hw, rules.end)`` along its exit axis (the
+    run-outs; ``line[1]`` and ``line[-2]`` are their ends). Each 90 degree bend between them
+    is cut as a chamfer of ``ceil(90 / max_turn)`` equal turns, cut back as far as leaves every
+    inner leg at least ``segment[0]`` straight (or none, where a Z's two diagonals meet). With
+    ``wander``, each straight run between is wound as ``wind_leg`` winds a leg (its own
+    straight ``hw`` at each end, a wander of at most ``wander`` x its span). No turn exceeds
+    ``rules.max_turn``. Nothing here measures clearance: ``transitions.measure_winds`` checks
+    the line against the spec.
+
+    Pure: the same inputs give the same line; ``seed`` (``route_seed``) seeds its own stream."""
+    wps = [(float(x), float(y)) for x, y in route.waypoints]
+    n = len(wps) - 1
+    run = max(hw, rules.end)
+    lengths = [math.hypot(wps[k + 1][0] - wps[k][0], wps[k + 1][1] - wps[k][1]) for k in range(n)]
+    if min(lengths) < 1e-6 or lengths[0] < run or lengths[-1] < run or (n == 1 and lengths[0] < 2 * run):
+        return None
+    dirs = [_unit(wps[k], wps[k + 1]) for k in range(n)]
+    for i in range(n - 1):
+        if abs(abs(_turn(dirs[i], dirs[i + 1])) - math.pi / 2) > 1e-6:
+            return None                     # a route bends square; anything else isn't one
+    turns = max(1, int(math.ceil(90.0 / rules.max_turn - 1e-9)))
+    a_out = (wps[0][0] + dirs[0][0] * run, wps[0][1] + dirs[0][1] * run)
+    b_in = (wps[n][0] - dirs[-1][0] * run, wps[n][1] - dirs[-1][1] * run)
+
+    # The bones: the run-outs' ends, and each bend cut as its chamfer.
+    lefts = [_turn(dirs[i], dirs[i + 1]) > 0 for i in range(n - 1)]
+    cuts = _cuts(lengths, lefts, run, rules.segment[0])
+    bones: List[Point] = [a_out]
+    for i in range(n - 1):
+        bones += _chamfer(wps[i + 1], dirs[i], dirs[i + 1], cuts[i], turns)
+    bones.append(b_in)
+    bones = _tidy(bones, (0, len(bones) - 1))
+
+    line: List[Point] = [wps[0], bones[0]]
+    if wander:
+        rng = random.Random(seed)
+        inner = TunnelRules(rules.segment, rules.max_turn, rules.wander, 0.0)
+        for p, q in zip(bones, bones[1:]):
+            line += _wind_run(p, q, hw, inner, rng.getrandbits(64))[1:]
+    else:
+        line += bones[1:]
+    line.append(wps[n])
+    line = _tidy(line, (1, len(line) - 2))
+    if len(line) < 4:
+        return None
+    # Every turn within the rule, the first and last included.
+    for i in range(1, len(line) - 1):
+        a, b = _unit(line[i - 1], line[i]), _unit(line[i], line[i + 1])
+        if abs(math.degrees(_turn(a, b))) > rules.max_turn + 1e-6:
+            return None
+    # Only the route's own legs again (no bend cut, no wander): nothing wound.
+    if len(line) == n + 3 and all(math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6
+                                  for p, q in zip(line[2:-2], wps[1:-1])):
+        return None
+    return line
+
+
+def strip_corners(line: Sequence[Point], hw: float) -> Optional[List[Tuple[Point, Point]]]:
+    """The strip ``hw`` either side of ``line``, as ``MeshBuilder._add_winding_leg`` builds it:
+    (left, right) corners at each vertex, mitred where the line turns. None when a mitre would
+    fold an edge back on itself."""
+    pts = [(float(x), float(y)) for x, y in line]
+    m = len(pts) - 1
+    seg = [math.hypot(pts[j + 1][0] - pts[j][0], pts[j + 1][1] - pts[j][1]) for j in range(m)]
+    if m < 1 or min(seg) < 1e-6:
+        return None
+    dirs = [((pts[j + 1][0] - pts[j][0]) / seg[j], (pts[j + 1][1] - pts[j][1]) / seg[j]) for j in range(m)]
+    lefts = [(-dy, dx) for dx, dy in dirs]
+    corners = []
+    for i in range(m + 1):
+        ns = [lefts[j] for j in (i - 1, i) if 0 <= j < m]
+        mx, my = sum(v[0] for v in ns), sum(v[1] for v in ns)
+        size = math.hypot(mx, my)
+        mx, my = mx / size, my / size
+        reach = hw / (mx * ns[0][0] + my * ns[0][1])
+        px, py = pts[i]
+        corners.append(((px + mx * reach, py + my * reach), (px - mx * reach, py - my * reach)))
+    for j in range(m):
+        for side in (0, 1):
+            a, b = corners[j][side], corners[j + 1][side]
+            if (b[0] - a[0]) * dirs[j][0] + (b[1] - a[1]) * dirs[j][1] <= 1e-6:
+                return None
+    return corners

@@ -16,7 +16,7 @@ A golden whose zone has rough corridors may be recaptured, named in its own comm
 
 ## Tasks
 
-- [ ] 1. The route line and its clearance
+- [x] 1. The route line and its clearance
   - Card: [cards/01-route.md](cards/01-route.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/routing.py (`wind_route`), generators/transitions.py (`measure_winds`), generators/zone_spec.py (`CorridorSpec.path`), tests/test_wind_route.py
