@@ -81,3 +81,19 @@ def test_water_region_matches_the_water(build):
         assert (g.extent_x, g.extent_y) == pytest.approx((room.width / 2, room.depth / 2))
         assert g.center_z + g.extent_z == pytest.approx(level)
         assert g.center_z - g.extent_z < room.floor_z
+
+
+def test_decor_reads_the_floor_under_the_water():
+    """Decor's room grid is the floor, not the water over it (a flooded room's surface is
+    non-collidable). Reading the water lifted Props and the treasure POI 3.6 u off the floor,
+    and the room gate failed them (footprint_cut, poi_unreached) on 30 cave builds."""
+    from generators.room_context import contexts
+    spec, ter = _built("cave", "graph", 731402518, 12, "moderate")
+    by_id = {c.id: c for c in contexts(spec, ter)}
+    for room in spec.rooms:
+        level = flood_level(room, spec)
+        if level is None:
+            continue
+        floor = by_id[room.id].floor
+        assert np.nanmax(floor) < level - 0.5 or np.nanmin(floor) < level - 0.5
+        assert np.nanmin(floor) == pytest.approx(room.floor_z, abs=0.5)

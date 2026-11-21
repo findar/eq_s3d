@@ -282,17 +282,21 @@ def _mask_in(rows: Sequence[str], shape) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 class _Mesh:
-    """The TER's triangles as arrays: corners (M, 3, 3), declared normal Z, material names."""
+    """The TER's solid triangles as arrays: corners (M, 3, 3), declared normal Z, material
+    names. Non-collidable faces (``FLAG_PASSABLE``: a flooded room's water) are left out, as
+    the walk gate leaves them out: decor stands on the floor under the water, not on it."""
 
     def __init__(self, ter):
+        from core.ter import FLAG_PASSABLE
+        polys = [p for p in ter.polygons if not p.flags & FLAG_PASSABLE]
         v = np.array([(p.x, p.y, p.z) for p in ter.vertices], dtype=np.float64)
         vn = np.array([(p.nx, p.ny, p.nz) for p in ter.vertices], dtype=np.float64)
-        idx = np.array([(p.v1, p.v2, p.v3) for p in ter.polygons], dtype=np.int64).reshape(-1, 3)
+        idx = np.array([(p.v1, p.v2, p.v3) for p in polys], dtype=np.int64).reshape(-1, 3)
         self.tri = v[idx]
         self.normal = vn[idx].mean(axis=1)
         names = [m.name for m in ter.materials]
         self.material = np.array([names[p.material] if 0 <= p.material < len(names) else ""
-                                  for p in ter.polygons], dtype=object)
+                                  for p in polys], dtype=object)
         self.lo = self.tri.min(axis=1)
         self.hi = self.tri.max(axis=1)
 
