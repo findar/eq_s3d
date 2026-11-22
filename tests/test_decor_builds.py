@@ -305,6 +305,20 @@ def test_a_hollow_prop_over_the_core_keeps_the_doors_wide(tmp_path):
 
 @pytest.mark.slow
 @needs_install
+def test_a_dais_over_the_middle_still_has_its_doors_checked_wide(tmp_path):
+    """Cave graph dramatic 21 rooms, seed 644918873, Winding 2 (winding-control task 10): a
+    dais over room_12's middle, its steps the gate's core (the nearest sample at the room's
+    level). Decor aimed at the dais top and, with its half-cell slack, read the steps' foot shut,
+    so no door had a wide way and no Prop was checked; a crystal and a stalactite shut both
+    ways round the dais (throat_narrow, door S). ``_wide_doors`` now aims as the gate does and,
+    when no door reads wide, reads the walls at the gate's own radius."""
+    room, report, failures = _cave_graph(tmp_path, "dramatic", 21, 644918873, "room_12")
+    assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
+    assert report.passed and not failures, failures
+
+
+@pytest.mark.slow
+@needs_install
 def test_same_inputs_same_eqg(tmp_path):
     """Req 12.3: the same inputs and install give the same ``.eqg`` (footer aside)."""
     fields, seed = DECORATED["dungeon"]
