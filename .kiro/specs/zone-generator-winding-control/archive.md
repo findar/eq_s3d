@@ -79,6 +79,17 @@
    0 -> 61 of 127, framed Z routes 0 -> 17 of 19. Moving a seam line to the hewn doorway
    (61 -> 109 of 127) was declined here: it changes how Transitions look.
 
+7. **Task 8's layouts exposed three faults, fixed at their root** (task 10, the lead's call; the
+   >= 692 target kept). `outline._link`: a gap under `SNAP` to the Core is touching, not a
+   hairline link (s937463091). `_mark_bridges` (jittered builds): no Bridge whose slot meets a
+   door's in-room piece on the bridged room's wall (s2071938654). Decor `_wide_doors` aims where
+   the gate does (cells within 4 u of the room floor) and, when no door reads wide, re-reads at
+   the gate's radius (s644918873, a dais). No golden moved. Gate 693/696 at Winding 0, 1 and 2
+   (three residuals; cave graph flat 29 s1259910114 now passes); bands under 5% (worst cave
+   classic dramatic 4.0%); full suite 4100 passed.
+
 ## Follow-ups
+- **Decor's dais fallback reads looser than the gate** near walls; it only applies to rooms
+  that checked nothing before (task 10).
 - **Seam lines at the hewn doorway** would let 109 of 127 framed cave corridors wind (57 of 64
   split seams), against 61 with the line mid-corridor (task 9). A Transitions look change.
