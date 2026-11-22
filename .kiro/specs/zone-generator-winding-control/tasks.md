@@ -71,7 +71,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
   - Owns: generators/transitions.py, generators/routing.py, generators/geometry.py, analyzer/traverse.py, generators/room_context.py, generators/mapview.py, generators/eqmap.py, tests/test_winding_control.py, goldens it moves (named in the commit)
   - Reqs: 8
 
-- [ ] 10. Gate and bands again
+- [x] 10. Gate and bands again
   - Card: [cards/10-gate.md](cards/10-gate.md)
   - Type: agent · Size: S · Depends: 9
   - Owns: fixes only where a failure is new (stop and report first)
