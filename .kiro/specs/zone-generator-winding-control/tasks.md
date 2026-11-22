@@ -77,7 +77,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
   - Owns: fixes only where a failure is new (stop and report first)
   - Reqs: 6
 
-- [ ] 11. Acceptance addendum
+- [x] 11. Acceptance addendum
   - Card: [cards/11-acceptance.md](cards/11-acceptance.md)
   - Type: agent · Size: S · Depends: 10
   - Owns: docs/ACCEPTANCE.md

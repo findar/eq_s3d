@@ -3285,8 +3285,9 @@ no "before".
 > at 1, **6 at 2**, and the cave's rooms stand further apart (archive decisions 1 and 2). A
 > warren's run is the shared dungeon run and does not grow, so a warren barely answers above 1.
 > Turn sharpness and run-outs never change. The Controls get a Winding slider, and the rule
-> planner reads words. Task 4 fixed three faults the Winding 2 layouts exposed (see X.6). Restart
-> the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no
+> planner reads words. Task 4 fixed three faults the Winding 2 layouts exposed (see X.6). After the
+> first look, tasks 8 to 10 took the cave's rooms off the grid and let framed corridors wind, at
+> every setting (see X.7). Restart the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and check no
 > stale-code banner shows.
 
 Build each case in Controls (Size **medium**, Decor **Normal**, Decor rules **From theme**,
@@ -3296,6 +3297,11 @@ merged with master `2bfb895`), and the results quoted below are what those build
 case passed the gate on the first build. The "before" builds ran on the code from before the step
 (`c120210`) on its own Server. The "before the fix" builds in X.6 ran the gate sweep's own build
 (no retry) on master `2bfb895`, which lacks task 4's fixes.
+
+**Since then:** tasks 8 to 10 changed every cave graph layout (Requirement 4 amended), so the
+numbers in X.1, X.2, X.5's last item and X.6 are task 5's code (`b70c5fc`), not master's. Case a
+at master is in X.7, beside these as "before". The warren and fortress cases (X.3, X.4) and the
+words (X.5) still hold.
 
 | Case | Zone | Settings | Seed |
 |---|---|---|---|
@@ -3314,7 +3320,9 @@ case passed the gate on the first build. The "before" builds ran on the code fro
 The same 12 rooms and 13 corridors between the same rooms at every setting: 12 rough plain
 corridors and the stair `corr_10` (room_5 → room_8, 102 u up), which never winds. "Stray" is the
 largest sideways distance of a corridor's centreline (its path, or its wound legs) from its square
-route. A Z corridor's diagonal cuts its corners but strays 0 by that measure.
+route. A Z corridor's diagonal cuts its corners but strays 0 by that measure. These are
+`b70c5fc`'s builds: on master the rooms stand elsewhere and the corridors are straight, so walk
+X.7.1 instead.
 
 | Corridor | Rooms | Form | Stray at 0 / 1 / 2 (u) | Door to door at 0 / 1 / 2 (u) |
 |---|---|---|---|---|
@@ -3373,7 +3381,10 @@ route. A Z corridor's diagonal cuts its corners but strays 0 by that measure.
 - [ ] **[MUST] Byte-identical to before the step** — Case a1 against `c120210` (no Winding):
       every one of the 47 files inside the `.eqg` is identical, zone name aside (the ZON also
       names its TER in capitals, masked the same way). A plan at 1 leaves `winding` out of the
-      plan and the spec. The four byte-identity test files cover the other goldens.
+      plan and the spec. The four byte-identity test files cover the other goldens. Since tasks 8
+      and 9 this holds only for zones with no jittered cave layout: case a at 1 now differs from
+      `b70c5fc` in 28 files, changed or new (51 against 47), as it should; X.7.4 has the zones that stay
+      identical.
 
 ### X.3 — A warren at 2 (barely changes)
 
@@ -3413,13 +3424,18 @@ route. A Z corridor's diagonal cuts its corners but strays 0 by that measure.
       plan **0.5**. Check the plan readout's Winding row each time.
 - [ ] **[SHOULD] The words move the rooms only above 1** — "straight cave passages" (0.25) lays
       out the same rooms as "a cave" (1). "a twisting cave" (1.75) spreads them as the run grows
-      above 1: room_1's outline starts at (183.6, −62.4) instead of (152.8, −60.3).
+      above 1: room_1's outline starts at (183.6, −62.4) instead of (152.8, −60.3). (Those
+      coordinates are `b70c5fc`'s; since task 8 the cave's rooms stand elsewhere. Not rebuilt for
+      X.7.)
 
 ### X.6 — Task 4's three fixes
 
 Each was a gate failure at Winding 2 in a cave graph layout with `EQ_PATH` set. Built on master
 `2bfb895` with the gate sweep's build, each fails as described. On `8b85544` each passes, and
-through the Server each passed on the first build.
+through the Server each passed on the first build. Since task 8 the three seeds lay out
+differently, so the rooms and spots below are no longer where they were; rebuilt for X.7 through
+the Server on `92c00e0`, each still passes the gate on the first build (37,710, 17,600 and 30,065
+vertices).
 
 - [ ] **[MUST] A bridge keeps off a doorway already on its wall** — Case x1, room_2. Before the
       fix, `corr_3` (room_6 → room_2) was straightened as a Bridge over room_12, onto y −22.2 on
@@ -3446,3 +3462,196 @@ through the Server each passed on the first build.
       decor redrawn (8 Props, 5 before). In 3D, walk from the S door past the rock to the N door:
       there should be a clear 8 u way past it, and nothing should look reachable inside the rock.
       Not looked at in the 3D viewer for this section.
+
+### X.7 — First-look fixes
+
+At the first look (2026-11-21) the user said "conceptually the winding is ok", but seed
+731402518's cave rooms sat on a grid and "between room 9 and 11 is a sharper turn". Three tasks
+answer it (archive decisions 4 to 7). Task 8 moves a cave Graph layout's rooms off the lattice:
+each neighbour stands off its wall side by a seeded amount sideways and at 1.25 to 1.75 times the
+run, and two rooms whose walls share enough span get both doors mid-span, so the corridor runs
+straight. Only cave zones do this. Task 9 gives a framed corridor (one holding a Transition line:
+a frame, breach or seam) a door-to-door path, held straight through the line so the frame stands
+square across it. Task 10 fixed three gate faults the new layouts exposed.
+
+Every case below was built through `/api/generate` (rule planner, no API key, `EQ_PATH` set) on
+an agent Server running this branch (`92c00e0`, master with tasks 8 to 10), and passed the gate
+on the first build with its seed kept. "Before" is task 5's code (`b70c5fc`) on its own Server,
+except where X.7.3 says "before the fix": that is the gate sweep's own build on `83410e9`, after
+tasks 8 and 9 but before task 10. Build cases a0 to a2 as in X.1 (Size **medium**, Decor
+**Normal**). The other cases leave Size and Decor at their defaults.
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a0, a1, a2 | Dungeon | As in X.1: Layout **Graph**, Rooms 12, Theme **Cave**, Verticality **Moderate**, Winding **0**, **1**, **2** | 731402518 |
+| f1 | Dungeon | Layout **Graph**, Rooms 10, Theme **Cave**, Verticality **Moderate**, Winding **1** | 1025 |
+| t1 | Dungeon | Layout **Graph**, Rooms 24, Theme **Cave**, Verticality **Moderate**, Winding **0** (also built at 1) | 937463091 |
+| t2 | Dungeon | Layout **Graph**, Rooms 27, Theme **Cave**, Verticality **Moderate**, Winding **2** | 2071938654 |
+| t3 | Dungeon | Layout **Graph**, Rooms 21, Theme **Cave**, Verticality **Dramatic**, Winding **2** | 644918873 |
+| c1, d1, w13 | Dungeon | Cases c and d (X.3, X.4) at Winding **1**, and the warren seed 13 build (Rooms 20, **Moderate**) at 1 | 731402518, 13 |
+
+#### X.7.1 — Seed 731402518 off the grid
+
+The same 12 rooms and 13 corridors join the same rooms as before (room ids unchanged): 12 rough
+corridors and the stair `corr_10` (room_5 → room_8, a U-route 102 u up, never rough). room_6
+and room_9 are hewn. The rooms keep their sizes, but every centre moved:
+
+| Room | Before, Winding 0 and 1 | Before, Winding 2 | Now, Winding 0 and 1 | Now, Winding 2 |
+|---|---|---|---|---|
+| room_0 | (10.4, −22.6) | (15.5, −30.8) | (8.3, −1.8) | (10.8, −1.2) |
+| room_1 | (181.9, −27.9) | (232.8, −37.5) | (181.1, −20.9) | (236.4, −20.4) |
+| room_2 | (−124.1, −31.7) | (−157.3, −43.1) | (−14.8, 172.8) | (−12.3, 230.6) |
+| room_3 | (7.4, 161.3) | (12.4, 200.8) | (−25.3, −200.6) | (−20.4, −260.7) |
+| room_4 | (194.3, 148.5) | (246.5, 181.5) | (158.7, −235.2) | (214.0, −295.3) |
+| room_5 | (193.1, −174.3) | (248.1, −223.3) | (369.9, −39.9) | (482.0, −41.6) |
+| room_6 | (−167.0, 163.0) | (−210.5, 204.4) | (−218.9, −168.0) | (−273.8, −228.1) |
+| room_7 | (6.3, 335.9) | (11.7, 421.9) | (−48.4, −370.6) | (−43.5, −478.0) |
+| room_8 | (226.2, −174.3) | (281.3, −223.3) | (403.0, −39.9) | (515.1, −41.6) |
+| room_9 | (−326.8, 167.4) | (−415.1, 209.0) | (−392.9, −156.3) | (−504.6, −213.4) |
+| room_10 | (−178.3, 327.0) | (−224.5, 414.4) | (−238.5, 22.4) | (−292.3, 20.6) |
+| room_11 | (−334.8, 329.5) | (−424.0, 416.0) | (−425.6, 3.8) | (−539.4, 0.1) |
+
+The grid score is the share of the 66 centre pairs whose x or y agree within 10 u. Before, it was
+**0.227** at 0 and 1 (15 pairs) and 0.212 at 2. Now it is **0.030** at 0 and 1 (2 pairs) and
+0.045 at 2 (3 pairs). Of the 2 pairs at 1, room_5 and room_8 are the stair's stacked pair, which
+is never offset, and room_0 and room_11 agree in y by chance, 434 u apart. The rooms now spread
+892 × 599 u at 0 and 1 (624 × 575 before) and 1,118 × 764 u at 2 (769 × 711). Rooms a corridor
+joins stand 174.0 u apart on average at 0 and 1 (155.9 before) and 225.6 u at 2 (197.1). The
+mesh has 10,380, 10,800 and 11,425 vertices at 0, 1 and 2 (10,018, 10,254 and 10,780 before).
+
+Every rough corridor is now **straight** at 0 and 1, where before 7 of the 12 were Z routes. At
+1, 9 of the 12 take a path, and every path wanders. Before, five of the eight paths were Z
+diagonals that strayed 0. Stray and door to door are measured as in X.1: the largest sideways
+distance of the centreline from its square route, and the centreline's length.
+
+| Corridor | Rooms | Form before → now | Stray now at 0 / 1 / 2 (u) | Door to door now at 0 / 1 / 2 (u) | Door to door before (u) |
+|---|---|---|---|---|---|
+| `corr_0` | room_1 → room_4 | Z → straight | — / path 1.8 / path 23.9 | 134.6 / 134.7 / 208.6 | 109.1 / 101.8 / 145.0 |
+| `corr_1` | room_1 → room_0 | Z → straight, 14 u down | — / path 9.8 / path 10.5 | 116.2 / 119.5 / 173.0 | 120.2 / 117.1 / 163.5 |
+| `corr_2` | room_1 → room_5 | Z → straight, 21 u down | — / path 15.1 / path 21.2 | 125.0 / 131.6 / 189.9 | 96.5 / 89.9 / 131.0 |
+| `corr_3` | room_6 → room_3 | straight (11 u down) → straight | — / path 10.6 / path 11.0 | 123.7 / 127.0 / 186.5 | 104.6 / 106.5 / 153.2 |
+| `corr_4` | room_6 → room_9 | straight, joins hewn rooms | — / — / — | 118.0 / 118.0 / 174.7 | 103.9 / 103.9 / 153.2 |
+| `corr_5` | room_6 → room_10 | Z → straight, seam | — / — / path 8.4 | 135.8 / 135.8 / 196.6 | 120.7 / 120.7 / 169.4 |
+| `corr_6` | room_2 → room_0 | Z → straight | — / path 7.0 / path 12.9 | 118.5 / 120.2 / 178.8 | 91.2 / 85.9 / 125.6 |
+| `corr_7` | room_4 → room_3 | Z → straight | — / path 2.9 / path 2.3 | 98.4 / 98.8 / 148.9 | 114.1 / 106.5 / 156.4 |
+| `corr_8` | room_0 → room_3 | straight → straight, 14 u up | — / path 7.4 / path 24.1 | 122.8 / 124.6 / 193.5 | 108.0 / 112.0 / 158.8 |
+| `corr_9` | room_3 → room_7 | straight (14 u up) → straight | — / path 5.7 / path 1.2 | 98.6 / 100.2 / 145.9 | 103.1 / 104.0 / 152.0 |
+| `corr_11` | room_9 → room_11 | Z → straight at 0 and 1, Z at 2; seam | — / — / path 0 | 99.6 / 99.6 / 167.5 | 109.6 / 109.6 / 155.4 |
+| `corr_12` | room_11 → room_10 | straight | — / path 6.6 / path 7.8 | 127.0 / 128.4 / 189.0 | 96.4 / 100.4 / 142.7 |
+
+Over the 12 rough corridors the mean stray is 0, **5.6** and **10.3** u at 0, 1 and 2 (0, 2.2
+and 2.9 u before). The 10 without a Transition line average 118.3, 120.3 and 178.9 u door to door
+(104.7, 102.8 and 148.1 u before by the same measure).
+
+- [ ] **[MUST] The grid is gone** — Cases a0, a1 and a2: look at the map and fly over the cave.
+      Before, rooms stood in rows and columns about 170 u apart: rows of three at y −22 to −32
+      (room_0, room_1, room_2), y 161 to 167 (room_3, room_6, room_9) and y 327 to 336 (room_7,
+      room_10, room_11), and a column at x 6 to 10 (room_0, room_3, room_7). Now no three rooms
+      line up; the stair pair room_5 / room_8 shares a row at y −39.9, as a stacked pair always
+      does, and room_0 / room_11 agree in y, 434 u apart. Say whether the cave now reads as chambers placed by hand, and whether the straight
+      doorways (each pair's doors face each other mid-wall) look too regular. Not looked at in
+      the 3D viewer for this section.
+- [ ] **[MUST] Winding 0: straight tunnels between offset rooms** — Case a0: all 12 rough
+      corridors are single straight legs, no path, no wound leg, no bends at all now (before,
+      seven had two square corners). In 3D, walk room_1 → `corr_2` → room_5 (125.0 u, 21 u
+      down): one straight ramped tunnel. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] Winding 1: every path wanders** — Case a1: 9 of the 12 rough corridors take a
+      path and each strays off its line (1.8 to 15.1 u), where before most were Z routes whose
+      diagonal strayed 0. `corr_4` (two hewn rooms), `corr_5` and `corr_11` (seams) stay
+      straight. In 3D, walk room_1 → `corr_2` → room_5 (15.1 u) and room_1 → `corr_1` → room_0
+      (9.8 u): each should bend gently with no sharp turn. Not looked at in the 3D viewer for
+      this section.
+- [ ] **[MUST] Winding 2: further** — Case a2: 11 of the 12 take a path; only `corr_4` stays
+      straight. The largest strays are `corr_8` 24.1 u, `corr_0` 23.9 u and `corr_2` 21.2 u. In
+      3D, walk room_0 → `corr_8` → room_3: it should swing well off its line and back, with no
+      turn sharper than at 1. Say whether 2 now reads as more natural than 1, or just as longer.
+      Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] room_9 → room_11 (`corr_11`) has no sharp turn** — The corridor the user named is
+      still `corr_11` (room_9, hewn, to room_11, rough), the framed one, with a seam where the
+      hewn look meets the cave. Before, at every setting, it was a Z with an 8 u jog and two
+      square bends and no path (the "sharper turn"). Now at 0 and 1 it is one straight leg,
+      (−405.1, −131.9) → (−405.1, −32.3), 99.6 u, no path, with the seam at (−405.1, −95.5),
+      36.4 u from room_9's door: the cave side past the seam (63 u) is too short to wind by the
+      stock tunnel, and a straight corridor has no bend to cut. At 2 its rooms' walls share only
+      25.2 u across, under the 27 u (1.5 corridor widths) a straight door pair needs, so it is a
+      Z again, but with a path: a 20 u
+      run-out from room_9's door (−504.6, −188.9), on straight to (−504.6, −129.9) with the seam
+      at y −164.3 on that straight, one 45° diagonal across the jog to (−539.4, −95.0), straight
+      on to room_11's door (−539.4, −35.9); 167.5 u. In 3D, walk room_9 → room_11 at each
+      setting: at 0 and 1 a straight tunnel with the hewn-to-rock seam square across it; at 2
+      two gentle 45° turns, no square corner, the seam square on the first straight. Not looked
+      at in the 3D viewer for this section.
+- [ ] **[SHOULD] The other seam, `corr_5`** — Case a2: `corr_5` (room_6, hewn, to room_10) is
+      straight with a path at 2 that wanders 8.4 u, its seam at (−285.1, −109.1) on a straight
+      stretch. At 0 and 1 it stays straight with no path, like `corr_11`. In 3D, check the seam
+      stands square across the tunnel at 2. Not looked at in the 3D viewer for this section.
+
+#### X.7.2 — A framed corridor that winds at Winding 1
+
+Case f1. `corr_8` joins room_4 (the boss's crystal grotto) to room_5 as a Z route with a
+**frame** (jambs 1.5 u in, a lintel 2 u down) at (310.1, 223.5), 5 u out from room_4's north
+door at (310.1, 218.5). Its path: a 20 u straight run-out north to (310.1, 238.5), holding the
+frame; the first bend cut to (300.9, 247.7); the cross leg west wandering 2.9 u off its line (at
+(270.4, 250.6)); the second bend cut, (239.9, 247.7) to (230.7, 256.9); a 20 u run-out into
+room_5's south door at (230.7, 276.9). Door to door 127.4 u; 12,487 vertices. At `b70c5fc` the
+seed lays out differently (rooms on the lattice, 11,641 vertices) and no framed corridor in it
+has a path: of its two seams, `corr_3` is one straight leg and `corr_9` a Z with square bends, as
+every framed corridor was before task 9. Over cave graph seeds 1000–1039 at 1, 17 of the 19 framed Z
+corridors now take a path (0 before; archive decision 6).
+
+- [ ] **[MUST] The frame square, the cave side winding** — In 3D, walk from room_4's north door
+      through the frame into `corr_8` and on to room_5. The frame should stand square across
+      the tunnel on its straight run-out, both jambs and the lintel at right angles to the walls,
+      with no bend inside it. Past it, both corners should be cut (no square corner) and the
+      middle stretch should drift gently sideways. Say whether the frame reads as set into the
+      tunnel or as stuck on. Not looked at in the 3D viewer for this section.
+
+#### X.7.3 — Task 10's three fixes
+
+Each seed failed the gate before the fix (gate sweep build on `83410e9`) and passes now through
+the Server. At `b70c5fc` each passed too, with its rooms elsewhere (still on the lattice).
+
+- [ ] **[MUST] t1: a hairline gap at a stair door** — Case t1 at Winding 0 (and 1), room_9
+      (centre (−6.3, −166.9), 70 × 74 u, floor −108.2). Before the fix it failed at both
+      settings: "no walkable path from the core to throat (7.7, −181.6, 7.7, −157.9)". The U-route
+      stair `corr_10` from room_3 arrives at room_9's south door (16.7, −201.8), and the stair
+      door's outline piece started 0.0022 u short of the room's Core at x 7.7, so the outline
+      drew a link 0.0022 u wide there that the gate read as unreached. Now a gap that small
+      counts as touching, and it passes at both (25,703 and 26,491 vertices; at `b70c5fc`,
+      24,669 and 25,125, room_9 at (−196.7, 32.8)). In 3D, walk off the stair at room_9's south
+      door and on into the room across x 7.7 between y −182 and −158: one floor, no seam, sliver
+      or step. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] t2: a Bridge's slot keeps off a doorway** — Case t2, room_5 (centre (130.3,
+      −78.3), 83 × 84 u, floor −112.5). Before the fix, `corr_8` (room_0 → room_2, a straight
+      41 u at y −65.2, 0 to −10.5 u high) was a Bridge over room_5, its slot cut in room_5's
+      ceiling over the west end. `corr_12` (room_5 → room_9, a Bridge over room_22) has its west
+      door at (90.7, −54.4), and that door's 2 u piece into room_5 stood in the slot's Throat:
+      "wall across throat (88.7, −83.2, 108.8, −47.2)". Now no Bridge's slot may meet a door's
+      piece on the bridged room's walls: `corr_8` is no longer a Bridge and runs as it did, with
+      no slot in room_5's ceiling. `corr_4`'s Bridge over room_16 is dropped by the same rule;
+      `corr_12` keeps its Bridge over room_22. 34,148 vertices (31,537 at `b70c5fc`, with Bridges
+      `corr_16` and `corr_23` instead). In 3D, stand in room_5's west end by `corr_12`'s door:
+      the ceiling should be whole, and the doorway clear, with no wall stub across the way in.
+      Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] t3: decor clears a dais's way** — Case t3, room_12, a flooded gallery (centre
+      (535.4, −17.9), 55 × 63 u, floor −218.0) with a dais (5.1 u) over its middle and a door S
+      at x 511 to 529. Before the fix, `decor_0062` (crystals, (548.6, −25.7)) and `decor_0068`
+      (a stalactite, (519.0, −14.5)) shut both 8 u ways from door S to the dais's east step at
+      (537.5, −17.5), the floor-level spot the gate aims at: "throat_narrow". Decor never checked,
+      as it aimed at the dais top. Now it aims where the gate does, and the room has 12 Props:
+      the crystal cluster (CRYSTAL4) stands at (546.3, −13.8), and the stalactites hang
+      at (533.0, 1.5), (521.0, −32.5), (515.0, −48.5) and (555.0, −34.5). 24,604 vertices (22,672
+      at `b70c5fc`, where room_12 is a different room with no dais). In 3D, walk from door S to
+      the dais's east step: an 8 u clear way past the Props. Also look at the stalactite at
+      (515.0, −48.5), over the door's west half just inside the room: say whether it reads as in
+      the way. Not looked at in the 3D viewer for this section.
+
+#### X.7.4 — Built and warren zones unchanged
+
+- [ ] **[MUST] Fortress and warrens byte-identical at 1** — Cases d1 (built fortress, 16 rooms),
+      c1 (warren, 12 rooms) and the warren seed 13 build (20 rooms), each at Winding 1, against
+      the same builds at `b70c5fc`: every file in each `.eqg` is identical, 209 of 209, 122 of
+      122 and 140 of 140, with the zone name masked in lower and upper case (the ZON names its
+      TER in capitals). Their vertex counts match too (18,948, 9,810 and 21,622). Only cave
+      zones jitter (archive decision 5). As a check that the comparison can tell: case a1 against `b70c5fc` differs in 28
+      files.
