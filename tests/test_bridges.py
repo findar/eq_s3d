@@ -357,18 +357,21 @@ def test_straightening_keeps_off_a_door_already_on_the_wall():
 
 
 def test_a_slot_keeps_off_a_door_on_the_bridged_rooms_wall():
-    """Cave graph moderate 27 rooms, seed 2071938654, Winding 2 (winding-control task 10):
+    """Cave graph moderate 27 rooms, Winding 2 (winding-control task 10): at seed 2071938654
     corr_8 bridged room_5 with a slot reaching its west wall, where corr_12's straight door
     runs 2 u into the room; that piece's side wall stood in the slot's Throat ("wall across
-    throat"). A jittered build now makes no Bridge whose slot meets a door's in-room piece."""
+    throat"). A jittered build now makes no Bridge whose slot meets a door's in-room piece.
+    Re-pinned by random placement task 1 (the offsets salt with the build's seed): at seed
+    782009009 the rule refuses two Bridges, and corr_24's slot in room_22 comes within 2.5 u
+    of the north wall, where corr_2 has its door."""
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 27, "verticality": "moderate",
                                    "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
     plan.name = "slots"
-    spec = plan_to_spec(plan, seed=2071938654, warnings=[])
+    spec = plan_to_spec(plan, seed=782009009, warnings=[])
     rooms = {r.id: r for r in spec.rooms}
-    room_5 = rooms["room_5"]
-    assert any(LayoutGenerator._door_on_wall(c, room_5) == ("W", c.from_y) for c in spec.corridors
-               if c.from_room == "room_5"), "the layout moved: re-pin"
+    room_22 = rooms["room_22"]
+    assert any((LayoutGenerator._door_on_wall(c, room_22) or ("",))[0] == "N" for c in spec.corridors
+               if c.id == "corr_2"), "the layout moved: re-pin"
     checked = 0
     for cor in spec.corridors:
         bl = bridge_layout(cor, rooms) if cor.bridge else None

@@ -149,6 +149,25 @@ def test_the_bare_cap_reads_each_room_s_own_rules():
     assert BareCap(rooms, rules["fortress"], "normal").left == one
 
 
+#: Within float32: the build settles wall Props on its own TER (float64 vertices), the room view on
+#: the TER the ``.eqg`` ships (float32), so a coordinate can differ by a few 1e-7 and round to 3
+#: places either side of a boundary (random placement task 1: a torch at x -135.63750038 built,
+#: just under -135.6375 viewed, recorded -135.638 and -135.637).
+WHERE_TOL = 1e-3 + 1e-9
+
+
+def _same_props(got: list, want: list) -> bool:
+    """Prop rows equal, their coordinates (``WHERE``) within ``WHERE_TOL``."""
+    if len(got) != len(want):
+        return False
+    for a, b in zip(got, want):
+        if {k: v for k, v in a.items() if k not in WHERE} != {k: v for k, v in b.items() if k not in WHERE}:
+            return False
+        if any(abs(a[k] - b[k]) > WHERE_TOL for k in WHERE):
+            return False
+    return True
+
+
 def _built_props(side) -> dict:
     """Each room's and corridor's Props as the build placed them, by id."""
     want = {r["id"]: r.get("props", []) for r in side["rooms"]}
@@ -172,7 +191,7 @@ def test_the_room_view_gives_each_district_the_build_s_props(districted_build):
         _glb, rep = decorate_room(b.contexts, cid, seed=b.seed, control=b.control, layers=b.layers,
                                   eq_path=EQ, mesh=b.mesh, room_seeds=b.room_seeds,
                                   districts=b.districts)
-        assert rep["props"] == props, cid
+        assert _same_props(rep["props"], props), (cid, rep["props"], props)
         assert rep["layers"] == layers[theme[cid]], cid
 
 

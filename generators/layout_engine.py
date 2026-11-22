@@ -94,6 +94,10 @@ class LayoutContext:
     # the lattice (winding control task 8). A warren without the cave profile
     # keeps its rooms centred.
     jitter: bool = False
+    # The build's seed, which salts each edge's offset and spacing
+    # (``embed.jitter_salt``; random placement task 1, Requirement 5); None:
+    # the rooms' sizes salt it.
+    seed: Optional[int] = None
 
 
 @dataclass
@@ -391,7 +395,7 @@ class GraphEngine:
             place = functools.partial(place, run_factor=ctx.run_factor)
         jittered = ctx.jitter
         if jittered:
-            place = functools.partial(place, jitter=True)
+            place = functools.partial(place, jitter=True, seed=ctx.seed)
         gap = ctx.corridor_width + 1.0
         # Levels go in before placement (step 7): heights as the rooms are
         # placed.

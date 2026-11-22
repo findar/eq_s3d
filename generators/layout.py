@@ -898,7 +898,7 @@ class LayoutGenerator:
                                room_count=room_count),
             size_shift=self.size_shift,
             height_shift=self.size_shift - self.profile_shift,
-            run_factor=self.run_factor, jitter=self.jitter)
+            run_factor=self.run_factor, jitter=self.jitter, seed=self.seed)
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement

@@ -824,7 +824,7 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
            corridor_width: float, gap: float,
            storeys: Optional[Dict[str, Storey]] = None,
            run_factor: Optional[float] = None,
-           jitter: bool = False) -> Dict[str, Point]:
+           jitter: bool = False, seed: Optional[int] = None) -> Dict[str, Point]:
     """The ``spring`` placement: room centres for ``order`` (before separation
     and the Envelope; :func:`place` does those). With ``storeys`` (step 7)
     rooms on different Levels may overlap and stair edges pull together.
@@ -832,9 +832,9 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
     widths; a style profile sets its own (winding tunnels task 9: a cave's).
     ``jitter`` (a zone whose corridors are rough: winding control task 8)
     gives each edge its spacing and offset (:func:`edge_jitter`, salted with
-    the rooms' sizes); off, every neighbour sits centred one run off a wall."""
+    the build's ``seed``, the rooms' sizes when None); off, every neighbour sits centred one run off a wall."""
     run = (RUN_FACTOR if run_factor is None else run_factor) * corridor_width
-    table = (_jitter_table(graph, order, half, storeys, None, corridor_width)
+    table = (_jitter_table(graph, order, half, storeys, seed, corridor_width)
              if jitter else None)
     pos = start_positions(graph, order, half, run, gap, storeys, table)
     edges = [(e.a, e.b) for e in graph.edges()
@@ -844,7 +844,7 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
 
 
 #: The Placement registry: name -> callable(graph, order, half, corridor_width,
-#: gap, storeys=None, run_factor=None, jitter=False) -> {room id: centre}. Names must be the checker's
+#: gap, storeys=None, run_factor=None, jitter=False, seed=None) -> {room id: centre}. Names must be the checker's
 #: ``ruleset.PLACEMENTS``. ``storeys`` (step 7) is passed only when the build
 #: stacks, so a placement written before it still works on one Level.
 PLACEMENT_FUNCS: Dict[str, Callable[..., Dict[str, Point]]] = {"spring": spring}

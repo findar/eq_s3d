@@ -531,3 +531,23 @@ def test_jittered_facing_rooms_get_a_straight_corridor(seed):
         checked += 1
         assert corridor_route(cor, rooms).kind == "straight", (seed, cor.id)
     assert checked
+
+
+def test_jitter_salt_is_the_build_seed():
+    """Random placement task 1 (Requirement 5): a cave's offsets come from the
+    build's seed. Two builds whose rooms match (one rng stream) but whose
+    seeds differ place differently; the same seed places the same."""
+    import dataclasses
+    import random
+
+    def centres(seed):
+        ctx = dataclasses.replace(_ctx(5, 14, "warren"), rng=random.Random(5), seed=seed, jitter=True)
+        res = GraphEngine().generate(ctx, 14, None)
+        assert res.jittered
+        return [(r.width, r.depth) for r in res.rooms], [(r.center_x, r.center_y) for r in res.rooms]
+
+    sizes_a, a = centres(11)
+    sizes_b, b = centres(12)
+    assert sizes_a == sizes_b
+    assert a != b
+    assert centres(11) == (sizes_a, a)

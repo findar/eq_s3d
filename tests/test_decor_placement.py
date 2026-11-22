@@ -832,3 +832,25 @@ def test_decor_room_writes_a_glb_of_one_room(tmp_path, capsys):
     assert glb.read_bytes()[:4] == b"glTF"
     assert (tmp_path / "war_city_troll_room_6.decor.json").is_file()
     assert "drawn as boxes" in capsys.readouterr().out
+
+
+def test_a_door_edges_corridor_wall_shuts_a_slot():
+    """Random placement task 1: a corridor's end runs ``DOOR_STUB`` into its room, so its walls
+    stand there at the door's edges (the gate covers floor by them). A dais 6 u off the S wall,
+    its west side at the door's east edge, leaves a slot along the wall whose door end that
+    wall shuts: the slot is floor only its far end reaches, and a blocking Prop there cuts it
+    off (seed 1830267899's fortress room_5, turned onto a hand-built room)."""
+    from generators.decor.placement import DOOR_STUB, _door_stubs, _in_polygon
+    ctx = box_room(w=70.0, d=50.0)
+    door = ctx.doors[0]                                     # S, x 29..41
+    plan = [[door.c1, 6.0], [60.0, 6.0], [60.0, 30.0], [door.c1, 30.0]]
+    ctx.features = [{"kind": "dais", "plan": plan, "height": 6.0, "steps_side": "N"}]
+    room = Room(ctx)
+    ctx.floor = np.where(_in_polygon(room.gx, room.gy, plan), 6.0, 0.0)
+    assert _door_stubs(ctx) == [((door.c0, 0.0), (door.c0, DOOR_STUB)), ((door.c1, 0.0), (door.c1, DOOR_STUB))]
+    room = Room(ctx)
+    slot = (room.gx > door.c1 + 2) & (room.gx < 58) & (room.gy < 6)
+    assert (room.walk & slot).any() and (room.before & slot).any()
+    blocked = np.zeros((4,) + room.shape, bool)
+    blocked |= room.footprint(64.0, 3.0, 0.0, 8.0, 6.0)[1]
+    assert any(p.startswith("cuts off") for p in room.problems(blocked))

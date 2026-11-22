@@ -20,7 +20,7 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
 
 ## Tasks
 
-- [ ] 1. Measure, and the build seed for the cave jitter (built and hewn tried, kept on the lattice: decision 2)
+- [x] 1. Measure, and the build seed for the cave jitter (built and hewn tried, kept on the lattice: decision 2)
   - Card: [cards/01-dungeons.md](cards/01-dungeons.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/topology/embed.py, generators/layout.py, generators/layout_engine.py, scripts/grid_score.py, tests/test_topology_embed.py, goldens it moves (named in the commit)

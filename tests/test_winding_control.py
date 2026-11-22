@@ -232,7 +232,10 @@ def test_map_line_runs_the_scaled_legs(seed, monkeypatch):
 
 # --- Framed corridors wind (task 9, Requirement 8) ----------------------------------------
 
-FRAMED_SEEDS = (2, 6, 12)       # a straight seam, a breach and a Z frame, a Z seam and breaches
+# A straight seam and a breach, a Z seam and a Z breach, a straight and a Z frame. Re-pinned
+# by random placement task 1 (a cave's offsets now salt with the build's seed: seeds 2 and 12
+# lost their cases).
+FRAMED_SEEDS = (6, 23, 55)
 
 
 @functools.lru_cache(maxsize=None)

@@ -108,6 +108,9 @@ BAND_SLACK = 0.1
 #: The gate's walled-off pocket (``analyzer.traverse.WALLED_OFF``): free floor this big (u^2)
 #: cut off and not inside one model's plan fails ``footprint_cut``.
 WALLED_OFF = 64.0
+#: How far a corridor's end runs into its room past the wall (u): ``LayoutGenerator._wall_point``'s
+#: inset, mirrored. Its side walls stand in the room that far at each door's edges (``_door_stubs``).
+DOOR_STUB = 2.0
 #: Layers of a blocked mask (``Room.footprint``).
 LAYERS = 4
 #: A wall is kept clear this far each side of a door's clear zone (u): the opening's frame.
@@ -463,6 +466,31 @@ def _edge_distance(ctx: RoomContext, ok: np.ndarray, reach: float = 0.0) -> np.n
     return out
 
 
+def _door_stubs(ctx: RoomContext) -> List[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    """The corridor walls standing in a room at each door's two edges: a corridor's end runs
+    ``DOOR_STUB`` into the room past its wall (``LayoutGenerator._wall_point``'s inset), so
+    its side walls do too, and the gate's walls cover floor by them. A room's own walls and
+    rises are in the grid; these aren't. A door's edge can meet a dais's corner a slot's
+    width off the wall (most often a door off its wall's middle, as a jittered placement's
+    straight doors stand), and the stub shuts the slot's end there (seen on a jittered
+    fortress, seed 1830267899 room_5: a crate in the slot's other end cut 88 u^2 off). A
+    door's wall is its clear zone's outer edge."""
+    if ctx.source != "room":
+        return []
+    out = []
+    for d in ctx.doors:
+        if d.clear is None:
+            continue
+        x0, y0, x1, y1 = d.clear
+        wall, inward = {"E": (x1, -1.0), "W": (x0, 1.0), "N": (y1, -1.0), "S": (y0, 1.0)}[d.side]
+        for c in (d.c0, d.c1):
+            if d.side in "EW":
+                out.append(((wall, c), (wall + inward * DOOR_STUB, c)))
+            else:
+                out.append(((c, wall), (c, wall + inward * DOOR_STUB)))
+    return out
+
+
 def _segment_distance(gx, gy, ax: float, ay: float, bx: float, by: float) -> np.ndarray:
     """Each grid point's distance (u) to the segment a..b."""
     dx, dy = bx - ax, by - ay
@@ -599,7 +627,7 @@ class Room:
         # The wall lines too, exact: a slit in a wall narrower than a cell leaves floor on both
         # sides of it, which the cells read as open (district-looks task 5: rocks walled floor
         # off behind such a slit). Off a straight wall this takes no cell ``_near_rise`` keeps.
-        for (ax, ay), (bx, by) in ctx.wall_lines:
+        for (ax, ay), (bx, by) in list(ctx.wall_lines) + _door_stubs(ctx):
             self.walk &= _segment_distance(self.gx, self.gy, ax, ay, bx, by) >= PLAYER_HALF_WIDTH
         # A solid Feature's plan is known exactly: off it by the half-width and half the
         # gate's own 2 u sample spacing (its samples needn't fall on these cells).
@@ -1554,10 +1582,18 @@ class _Placer:
             x, y = float(r.xs[i]), float(r.ys[j])
             if any(math.hypot(x - px, y - py) < max(sz.w, sz.d) + 4.0 for px, py in r.ceiling_props):
                 continue
+            yaw = self.rng.uniform(0, 2 * math.pi)
+            # The whole plan hangs over the room's reached floor with head room under it: a
+            # long model (GKCHAIN700, 39 u at 0.5) turned toward a wall from a spot near it
+            # otherwise runs through the wall (random placement task 1: dungeon seed 0's
+            # room_4, 4.4 u through its E wall). A spot is refused after its yaw is drawn,
+            # so a Prop that fits draws as it always did.
+            plan = r.rect_cells(x, y, yaw, sz.w, sz.d)
+            if plan is None or not (r.ok & room)[plan].all():
+                continue
             r.ceiling_props.append((x, y))
             z = float(r.ceiling[i, j]) - sz.h
-            return self._prop(model, sz, x, y, z, self.rng.uniform(0, 2 * math.pi), "ceiling", False, step,
-                              line, at)
+            return self._prop(model, sz, x, y, z, yaw, "ceiling", False, step, line, at)
         return None
 
     # -- one item of a line ---------------------------------------------------------
