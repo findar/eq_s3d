@@ -278,6 +278,13 @@ BRIDGE_TAG = "bridge"
 OFFSET = 1.0
 OFFSET_MIN = 0.4
 SPACING_LO, SPACING_HI = 1.25, 1.75
+#: The spacing range of a built or hewn zone's halls (random placement task
+#: 1): they are halls, not tunnels, and need no room to wind. Over Graph
+#: seeds 2000-2039 (fortress, temple, tomb, mine_delve) 1.0-1.5 keeps the
+#: door-to-door p50 at the lattice's (x0.91-0.99; 1.25-1.75 gave x1.06-1.12,
+#: 0.75-1.25 x0.80-0.87) with the grid score at 0.066-0.085 (0.196-0.233
+#: on the lattice).
+HALL_SPACING = (1.0, 1.5)
 #: The span two facing rooms keep in common, in corridor widths: the corridor
 #: and a quarter-width pier each side of its doors.
 STRAIGHT_NEED = 1.5
@@ -305,26 +312,32 @@ def jitter_salt(order: Sequence[str], half: Dict[str, Point], seed: Optional[int
     return "size:" + ";".join(f"{r}={half[r][0]:.6f},{half[r][1]:.6f}" for r in order)
 
 
-def edge_jitter(salt: str, a: str, b: str) -> Tuple[float, float]:
+def edge_jitter(salt: str, a: str, b: str,
+                spacing: Optional[Tuple[float, float]] = None) -> Tuple[float, float]:
     """(spacing factor, sideways offset share) of edge ``a``-``b`` for
-    ``salt``: the factor within :data:`SPACING_LO`-:data:`SPACING_HI`, the
-    share :data:`OFFSET_MIN` to :data:`OFFSET` either way, as the displacement of the greater id's room from the
+    ``salt``: the factor within ``spacing`` (None: :data:`SPACING_LO`-
+    :data:`SPACING_HI`), the share :data:`OFFSET_MIN` to :data:`OFFSET`
+    either way, as the displacement of the greater id's room from the
     lesser's (so either end reads the same edge)."""
+    s_lo, s_hi = (SPACING_LO, SPACING_HI) if spacing is None else spacing
     lo, hi = (a, b) if a <= b else (b, a)
     h = hashlib.blake2b(f"{salt}|{lo}|{hi}".encode(), digest_size=8).digest()
     u1 = int.from_bytes(h[:4], "little") / 2 ** 32
     u2 = int.from_bytes(h[4:], "little") / 2 ** 32
     v = 2 * u2 - 1
     t = math.copysign(OFFSET_MIN + (OFFSET - OFFSET_MIN) * abs(v), v)
-    return SPACING_LO + (SPACING_HI - SPACING_LO) * u1, t
+    return s_lo + (s_hi - s_lo) * u1, t
 
 
 def _jitter_table(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
                   storeys: Optional[Dict[str, Any]], seed: Optional[int],
-                  corridor_width: float) -> Optional[Jitter]:
+                  corridor_width: float,
+                  spacing: Optional[Tuple[float, float]] = None) -> Optional[Jitter]:
     """The :class:`Jitter` of every edge between rooms of ``order`` that
-    takes one (not a stair, not a Bridge); None when there's none to take."""
-    if OFFSET == 0 and SPACING_LO == SPACING_HI == 1:
+    takes one (not a stair, not a Bridge), spaced within ``spacing`` (None:
+    :data:`SPACING_LO`-:data:`SPACING_HI`); None when there's none to take."""
+    s_lo, s_hi = (SPACING_LO, SPACING_HI) if spacing is None else spacing
+    if OFFSET == 0 and s_lo == s_hi == 1:
         return None
     salt = jitter_salt(order, half, seed)
     keys = _plan_keys(graph, order, storeys)
@@ -335,7 +348,7 @@ def _jitter_table(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Po
             continue
         if is_stair(keys[e.a], keys[e.b]):
             continue
-        out[frozenset((e.a, e.b))] = edge_jitter(salt, e.a, e.b)
+        out[frozenset((e.a, e.b))] = edge_jitter(salt, e.a, e.b, spacing)
     return Jitter(out, STRAIGHT_NEED * corridor_width)
 
 
@@ -824,17 +837,20 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
            corridor_width: float, gap: float,
            storeys: Optional[Dict[str, Storey]] = None,
            run_factor: Optional[float] = None,
-           jitter: bool = False) -> Dict[str, Point]:
+           jitter: bool = False, seed: Optional[int] = None,
+           spacing: Optional[Tuple[float, float]] = None) -> Dict[str, Point]:
     """The ``spring`` placement: room centres for ``order`` (before separation
     and the Envelope; :func:`place` does those). With ``storeys`` (step 7)
     rooms on different Levels may overlap and stair edges pull together.
     ``run_factor`` (None: :data:`RUN_FACTOR`) is one corridor run in corridor
     widths; a style profile sets its own (winding tunnels task 9: a cave's).
-    ``jitter`` (a zone whose corridors are rough: winding control task 8)
-    gives each edge its spacing and offset (:func:`edge_jitter`, salted with
-    the rooms' sizes); off, every neighbour sits centred one run off a wall."""
+    ``jitter`` (winding control task 8; every Graph build but a warren's
+    since random placement task 1) gives each edge its spacing (within
+    ``spacing``, None: :data:`SPACING_LO`-:data:`SPACING_HI`) and offset
+    (:func:`edge_jitter`), salted with the build's ``seed`` (the rooms' sizes
+    when None); off, every neighbour sits centred one run off a wall."""
     run = (RUN_FACTOR if run_factor is None else run_factor) * corridor_width
-    table = (_jitter_table(graph, order, half, storeys, None, corridor_width)
+    table = (_jitter_table(graph, order, half, storeys, seed, corridor_width, spacing)
              if jitter else None)
     pos = start_positions(graph, order, half, run, gap, storeys, table)
     edges = [(e.a, e.b) for e in graph.edges()
@@ -844,7 +860,8 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
 
 
 #: The Placement registry: name -> callable(graph, order, half, corridor_width,
-#: gap, storeys=None, run_factor=None, jitter=False) -> {room id: centre}. Names must be the checker's
+#: gap, storeys=None, run_factor=None, jitter=False, seed=None, spacing=None)
+#: -> {room id: centre}. Names must be the checker's
 #: ``ruleset.PLACEMENTS``. ``storeys`` (step 7) is passed only when the build
 #: stacks, so a placement written before it still works on one Level.
 PLACEMENT_FUNCS: Dict[str, Callable[..., Dict[str, Point]]] = {"spring": spring}
@@ -929,5 +946,5 @@ __all__ = [
     "start_once", "repair", "spring_relax", "spring",
     "PLACEMENT_FUNCS", "fit_to_envelope", "FACINGS", "face_entry",
     "RUN_FACTOR", "REPEL_RUNS", "ITERATIONS", "K_SPRING", "K_REPEL",
-    "OFFSET", "OFFSET_MIN", "SPACING_LO", "SPACING_HI", "STRAIGHT_NEED", "Jitter", "jitter_salt", "edge_jitter",
+    "OFFSET", "OFFSET_MIN", "SPACING_LO", "SPACING_HI", "HALL_SPACING", "STRAIGHT_NEED", "Jitter", "jitter_salt", "edge_jitter",
 ]
