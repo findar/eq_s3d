@@ -319,6 +319,28 @@ def test_a_dais_over_the_middle_still_has_its_doors_checked_wide(tmp_path):
 
 @pytest.mark.slow
 @needs_install
+def test_a_door_edges_corridor_wall_shuts_a_slot(tmp_path):
+    """Fortress graph moderate 18 rooms, seed 1830267899 (random placement task 1): room_5's E
+    door sits off its wall's middle, its north edge at a dais's corner, the dais 6 u off the
+    wall. The corridor's wall runs 2 u into the room at that edge and shuts the slot's end on
+    the gate; decor read the slot open to the door there, so a crate in its other end cut
+    88 u^2 off. Decor now reads the corridor walls at a door's edges (``placement._door_stubs``)."""
+    from generators.pipeline import _traversal_report, _with_decor
+
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 18, "verticality": "moderate",
+                                   "layout": "graph", "dungeon_theme": "fortress"}, [])
+    plan.name = "stub"
+    spec = _with_decor(plan_to_spec(plan, seed=1830267899, warnings=[]))
+    room = next(r for r in spec.rooms if r.id == "room_5")
+    assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+    report = _traversal_report(result.eqg_path, spec, None)
+    failures = [o.reason for o in report.outlines if not o.ok]
+    assert report.passed and not failures, failures
+
+
+@pytest.mark.slow
+@needs_install
 def test_same_inputs_same_eqg(tmp_path):
     """Req 12.3: the same inputs and install give the same ``.eqg`` (footer aside)."""
     fields, seed = DECORATED["dungeon"]
