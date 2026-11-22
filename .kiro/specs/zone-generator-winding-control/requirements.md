@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 26, ready.** Drafted 2026-11-21 at master `3f925f8`. At the step 25 first
+> **STATUS: roadmap step 26, DONE (closed 2026-11-22; second look: "it looks good").** Drafted 2026-11-21 at master `3f925f8`. At the step 25 first
 > look the user said: "it might be interesting if we could add a scalar to how \"windy\" they
 > become but for now these look acceptable", then chose it as step 26 ("Windiness scalar").
 > Task index: `tasks.md` (card format). Decisions: `archive.md`.

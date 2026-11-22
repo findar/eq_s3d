@@ -4,6 +4,16 @@
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | `ZonePlan.winding` (0..`WINDING_MAX`, default 1) reaches `ZoneSpec.winding`; the tunnel's wander is scaled for measure, mesh, decor, map and gate | `c120210`, `ff88226` |
+| 2 | `WINDING_MAX` 2; the cave run grows 2 widths per unit above 1 (decision 2) | `90278e9` |
+| 3 | Winding slider (dungeon, city, outdoor dungeon), planner words, LLM schema text | `8b55240`, `a73fe84` |
+| 4 | Gate 692/696 at 0/1/2; a straightened Bridge keeps off doors, decor reads diagonal lanes and hollow Props | `7149e01`, `70521d1`, `948d9cc` |
+| 5 | `docs/ACCEPTANCE.md` "Step 26 — Winding control"; thorough 4082 passed | `e17a1ad` |
+| 6 | First look: grid and a square framed corridor (decision 4); second look "it looks good" | `d40b02c` |
+| 8 | Cave Graph rooms leave the lattice, facing pairs run straight (decision 5) | `b6085d8` |
+| 9 | Framed rough corridors take a path, straight through the line (decision 6) | `d32e19a`, `fc671b8` |
+| 10 | Hairline outline link, Bridge slot vs door, decor on a dais fixed; gate 693/696 at 0/1/2, bands < 5%, suite 4100 passed (decision 7) | `7566697`, `131f3a2`, `74ae74e` |
+| 11 | ACCEPTANCE X.7, first-look fixes built and quoted | `2a0a6b3` |
 
 ## Decisions
 
@@ -88,7 +98,21 @@
    (three residuals; cave graph flat 29 s1259910114 now passes); bands under 5% (worst cave
    classic dramatic 4.0%); full suite 4100 passed.
 
+8. **Second look accepted** (user, 2026-11-22): "i would say it looks good but a future task should also adjust length of halls and also when we generate rooms they should end up randomly positioned and connected". Hall length and random
+   placement are follow-ups, not part of this step.
+
 ## Follow-ups
+- **Hall length control** (the user, at the second look): a way to adjust how long corridors
+  run, alongside Winding (today only the cave run grows with Winding above 1).
+- **Randomly positioned, connected rooms** (the user, at the second look): rooms should land at
+  random positions and still connect, beyond task 8's cave-only jitter (built, hewn and warren
+  Graph zones still sit on the lattice; the classic layout's placement not reviewed for this).
+- **Warrens don't answer Winding** (task 5: byte-identical at 2 vs 1).
+- **`ZONE_PLAN_JSON_SCHEMA` lacks `winding`** (the LLM planner gets it as prompt text only).
+- **Gate residuals:** three footprint cuts (warren classic flat 23 s490919952, warren classic
+  flat 26 s1205085953, cave classic moderate 8 s1728424002).
+- **Not looked at in 3D:** task 10's dropped Bridges and the dais decor; a stalactite over
+  s644918873 room_12's south door (X.7.3).
 - **Decor's dais fallback reads looser than the gate** near walls; it only applies to rooms
   that checked nothing before (task 10).
 - **Seam lines at the hewn doorway** would let 109 of 127 framed cave corridors wind (57 of 64

@@ -48,11 +48,11 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
   - Type: agent · Size: S · Depends: 3, 4
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 6. HUMAN: first look
+- [x] 6. HUMAN: first look
   - Card: [cards/06-first-look.md](cards/06-first-look.md)
   - Type: human · Depends: 5, 11
 
-- [ ] 7. Close step 26
+- [x] 7. Close step 26
   - Card: [cards/07-close.md](cards/07-close.md)
   - Type: agent · Size: S · Depends: 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-winding-control/, .kiro/specs/zone-generator/
