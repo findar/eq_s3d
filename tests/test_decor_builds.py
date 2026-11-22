@@ -49,8 +49,9 @@ DECORATED = {
 #: tomb's decor moved into ``rules/decor/layers/tomb.toml``: the move keeps its bytes.
 #: Recaptured by winding-routes task 5: two floor POIs keep a body's radius off the outline
 #: walls, and their Dressing follows them.
+#: Recaptured by random-placement task 1: the tomb's Graph rooms leave the lattice.
 TOMB = (dict(zone_type="dungeon", dungeon_theme="tomb"), 4,
-        "7f495cd942c175bba43fa2d68a25076b901fcf505af9aea523c430d170f06caa")
+        "90ec2bc144f25d95071f6103181fa8bf011b1767c54b415e2f3bb9362c4203d9")
 
 
 def _spec(fields, seed, decor, name="dec"):
