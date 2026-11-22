@@ -72,4 +72,13 @@
    0.227 -> 0.030), wind 61% -> 69%, path 56% -> 60%, stray mean 1.13 -> 4.73 u, door to door
    p50 102 -> 118 u, gate 40/40.
 
+6. **A framed rough corridor takes a path, its line fixed** (task 9, the lead's call). The path
+   runs straight through the frame, breach or seam (depth plus a half-width each side; line
+   position and `along_x` unchanged) and cuts or winds elsewhere; plain corridors still take
+   their paths first. Cave graph seeds 1000-1039, Winding 1: framed corridors with a path
+   0 -> 61 of 127, framed Z routes 0 -> 17 of 19. Moving a seam line to the hewn doorway
+   (61 -> 109 of 127) was declined here: it changes how Transitions look.
+
 ## Follow-ups
+- **Seam lines at the hewn doorway** would let 109 of 127 framed cave corridors wind (57 of 64
+  split seams), against 61 with the line mid-corridor (task 9). A Transitions look change.
