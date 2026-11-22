@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 
 from core.ter import FLAG_PASSABLE, TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
-from .routing import corridor_route, strip_corners, tunnel_for, winding_legs
+from .routing import corridor_route, path_zs, split_path, strip_corners, tunnel_for, winding_legs
 
 
 # A sloped corridor floor is subdivided so each segment rises at most this much
@@ -1015,12 +1015,23 @@ class MeshBuilder:
         is built as ONE winding strip from opening to opening, flat over both run-outs, the rise
         spread over the rest by length, with no legs and no bend squares; ``winds`` is then
         unused. Its ends are the straight legs' square doorway ends. A strip that would fold
-        builds the legs instead.
+        builds the legs instead. With a ``seam`` (winding-control Requirement 8) the path holds
+        the seam's point on a straight run (``routing.hold_route``): it is cut there
+        (``routing.split_path``) and each part built in its own look, at the path's heights
+        (``routing.path_zs``), the two meeting square on one section.
         """
         if path and steps == 0 and bridge is None and seam is None and rough > 0 and \
                 self._add_winding_leg(path, from_z, to_z, hw, height, rough, floor_mat, wall_mat,
                                       ceiling_mat, flat_ends=True):
             return
+        if path and steps == 0 and bridge is None and seam is not None:
+            cut = split_path(path, path_zs(path, from_z, to_z), seam[0])
+            if cut is not None and strip_corners(path, hw) is not None:
+                _, past, past_rough = seam
+                self._add_winding_leg(cut[0], from_z, to_z, hw, height, rough, floor_mat, wall_mat,
+                                      ceiling_mat, zs=cut[1])
+                self._add_winding_leg(cut[2], from_z, to_z, hw, height, past_rough, *past, zs=cut[3])
+                return
         zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
         seam_leg = self._seam_leg(waypoints, seam, hw, zs) if seam else None
 
@@ -1335,7 +1346,7 @@ class MeshBuilder:
                 along_b += wall(p0, c1 - s1[i], p1, c1 - s1[i + 1], z0, z1, h0, h1, along_b)
 
     def _add_winding_leg(self, line, fz, tz, hw, height, rough, floor_mat, wall_mat, ceiling_mat,
-                         flat_ends=False) -> bool:
+                         flat_ends=False, zs=None) -> bool:
         """A rough leg built along a winding centreline (``routing.winding_legs``), winding-tunnels
         task 3. The floor is a strip ``hw`` either side of ``line``, mitred at each turn, its
         height running from ``fz`` to ``tz`` along the path and level across it. Each run between
@@ -1352,7 +1363,11 @@ class MeshBuilder:
         ``flat_ends`` (a whole route's ``path``, winding-routes task 2): the floor stays at ``fz``
         over the line's first run and at ``tz`` over its last (the run-outs), the rise spread by
         length over the runs between, as ``transitions.path_pieces`` measures it. False, building
-        nothing, when there is a rise but no run between to carry it."""
+        nothing, when there is a rise but no run between to carry it.
+
+        ``zs`` (one height per vertex of ``line``: part of a path cut at a Seam,
+        ``routing.split_path``) sets the floor there instead, rising evenly along each run;
+        ``fz`` and ``tz`` are then unused."""
         pts = [(float(x), float(y)) for x, y in line]
         m = len(pts) - 1
         # The strip's corners at each vertex of the line: (left, right), mitred where it turns;
@@ -1375,8 +1390,12 @@ class MeshBuilder:
         # Sections across the strip: (left, right, floor z), level across.
         sections = []
         done = 0.0
+        if zs is not None:
+            fz, tz = zs[0], zs[-1]
         for j in range(m):
-            if flat_ends:
+            if zs is not None:
+                za, zb = zs[j], zs[j + 1]
+            elif flat_ends:
                 za = z_at(done, False)
                 done += seg[j]
                 zb = z_at(done, j >= m - 2)

@@ -65,7 +65,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
   - Owns: generators/topology/embed.py, tests/test_topology_embed.py, goldens it moves (named in the commit)
   - Reqs: 7
 
-- [ ] 9. Framed corridors wind
+- [x] 9. Framed corridors wind
   - Card: [cards/09-framed.md](cards/09-framed.md)
   - Type: agent · Size: M · Depends: 8
   - Owns: generators/transitions.py, generators/routing.py, generators/geometry.py, analyzer/traverse.py, generators/room_context.py, generators/mapview.py, generators/eqmap.py, tests/test_winding_control.py, goldens it moves (named in the commit)
