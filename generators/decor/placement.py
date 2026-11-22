@@ -470,10 +470,11 @@ def _door_stubs(ctx: RoomContext) -> List[Tuple[Tuple[float, float], Tuple[float
     """The corridor walls standing in a room at each door's two edges: a corridor's end runs
     ``DOOR_STUB`` into the room past its wall (``LayoutGenerator._wall_point``'s inset), so
     its side walls do too, and the gate's walls cover floor by them. A room's own walls and
-    rises are in the grid; these aren't. Placed off a wall's middle (random placement task 1),
-    a door's edge can meet a dais's corner a slot's width off the wall, and the stub shuts
-    the slot's end there (seed 1830267899, fortress room_5: a crate in the slot's other end
-    cut 88 u^2 off). A door's wall is its clear zone's outer edge."""
+    rises are in the grid; these aren't. A door's edge can meet a dais's corner a slot's
+    width off the wall (most often a door off its wall's middle, as a jittered placement's
+    straight doors stand), and the stub shuts the slot's end there (seen on a jittered
+    fortress, seed 1830267899 room_5: a crate in the slot's other end cut 88 u^2 off). A
+    door's wall is its clear zone's outer edge."""
     if ctx.source != "room":
         return []
     out = []

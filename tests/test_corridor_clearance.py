@@ -324,9 +324,6 @@ def test_tight_bands_stay_within_grade_cap(layout):
     gen = LayoutGenerator("dungeon")
     gen.race = "froglok"        # the run is measured at the froglok's corridor width
     gen._apply_room_scale(22)
-    # A jittered build (random placement task 1) runs its facing pairs straight; the run
-    # is the build's route's (as tests/pbt_helpers reads it), not a centred Z's.
-    gen._straight_doors = bool((spec.layout or {}).get("jitter"))
     assert stair_or_ramp_violations(spec, gen) == []
     if layout == "classic":
         assert _level_count(spec) == 1 and all(c.steps >= 0 for c in spec.corridors)

@@ -49,9 +49,8 @@ DECORATED = {
 #: tomb's decor moved into ``rules/decor/layers/tomb.toml``: the move keeps its bytes.
 #: Recaptured by winding-routes task 5: two floor POIs keep a body's radius off the outline
 #: walls, and their Dressing follows them.
-#: Recaptured by random-placement task 1: the tomb's Graph rooms leave the lattice.
 TOMB = (dict(zone_type="dungeon", dungeon_theme="tomb"), 4,
-        "90ec2bc144f25d95071f6103181fa8bf011b1767c54b415e2f3bb9362c4203d9")
+        "7f495cd942c175bba43fa2d68a25076b901fcf505af9aea523c430d170f06caa")
 
 
 def _spec(fields, seed, decor, name="dec"):
@@ -315,28 +314,6 @@ def test_a_dais_over_the_middle_still_has_its_doors_checked_wide(tmp_path):
     when no door reads wide, reads the walls at the gate's own radius."""
     room, report, failures = _cave_graph(tmp_path, "dramatic", 21, 644918873, "room_12")
     assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
-    assert report.passed and not failures, failures
-
-
-@pytest.mark.slow
-@needs_install
-def test_a_door_edges_corridor_wall_shuts_a_slot(tmp_path):
-    """Fortress graph moderate 18 rooms, seed 1830267899 (random placement task 1): room_5's E
-    door sits off its wall's middle, its north edge at a dais's corner, the dais 6 u off the
-    wall. The corridor's wall runs 2 u into the room at that edge and shuts the slot's end on
-    the gate; decor read the slot open to the door there, so a crate in its other end cut
-    88 u^2 off. Decor now reads the corridor walls at a door's edges (``placement._door_stubs``)."""
-    from generators.pipeline import _traversal_report, _with_decor
-
-    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 18, "verticality": "moderate",
-                                   "layout": "graph", "dungeon_theme": "fortress"}, [])
-    plan.name = "stub"
-    spec = _with_decor(plan_to_spec(plan, seed=1830267899, warnings=[]))
-    room = next(r for r in spec.rooms if r.id == "room_5")
-    assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
-    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
-    report = _traversal_report(result.eqg_path, spec, None)
-    failures = [o.reason for o in report.outlines if not o.ok]
     assert report.passed and not failures, failures
 
 

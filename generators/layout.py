@@ -63,10 +63,7 @@ DISTRICT_ATTEMPTS = 8
 PROFILE_RUN_FACTOR = {"cave": 4.0}
 
 # Style profiles whose corridors are rough: the graph placement jitters each
-# edge off the lattice whatever the rule set (``LayoutContext.jitter``;
-# winding control task 8). Other Graph builds jitter by the engine's default
-# (``GraphEngine.UNJITTERED``; random placement task 1), an Envelope build
-# not yet (task 3).
+# edge off the lattice (``LayoutContext.jitter``; winding control task 8).
 JITTER_PROFILES = frozenset({"cave"})
 
 # Widths of run a profile's corridors gain per unit of Winding above 1
@@ -355,8 +352,7 @@ class LayoutGenerator:
         # profile (``PROFILE_RUN_FACTOR``), longer at a *winding* above 1
         # (``profile_run_factor``); None: ``embed.RUN_FACTOR``.
         self.run_factor = profile_run_factor(profile, winding)
-        # True for a rough profile, else None: the engine's default.
-        self.jitter = True if (profile or "") in JITTER_PROFILES else None
+        self.jitter = (profile or "") in JITTER_PROFILES
         # Set per generate from the engine (``EngineResult.jittered``).
         self._straight_doors = False
         if profile:
@@ -610,12 +606,9 @@ class LayoutGenerator:
         # (classic: scatter in an ellipse, separate, Delaunay, MST + a few
         # loop edges). Then Job B: pacing, elevation over the graph,
         # wall-to-wall corridors.
-        ctx = self._layout_context(room_count, dungeon_theme, dungeon_race)
-        if envelope is not None and ctx.jitter is None:
-            # An Envelope build (an outdoor dungeon) keeps the lattice until
-            # random placement task 3.
-            ctx.jitter = False
-        result = self.engine.generate(ctx, room_count, envelope)
+        result = self.engine.generate(
+            self._layout_context(room_count, dungeon_theme, dungeon_race),
+            room_count, envelope)
         self._straight_doors = getattr(result, "jittered", False)
         rooms = result.rooms
         # Job B works on plain (i, j) pairs; the vertical relations go to the

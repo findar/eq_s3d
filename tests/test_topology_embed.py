@@ -469,11 +469,9 @@ def _controls_spec(seed, n, theme, verticality):
 
 @pytest.mark.parametrize("seed,n,theme,verticality", [
     (731402518, 12, "cave", "moderate"), (1003, 11, "cave", "flat"),
-    (1017, 25, "cave", "dramatic"), (4, 20, "temple", "moderate"), (6, 16, "warren", "flat"),
-    (2003, 23, "fortress", "dramatic"), (2010, 18, "tomb", "moderate")])
+    (1017, 25, "cave", "dramatic"), (4, 20, "temple", "moderate"), (6, 16, "warren", "flat")])
 def test_offset_keeps_every_edge_on_its_wall_side(monkeypatch, seed, n, theme, verticality):
-    """Every Graph build but a warren's jitters (random placement task 1; a
-    cave is the warren rule set with the cave profile, and jitters). Every edge between rooms on one
+    """Only a cave (rough corridors) jitters. Every edge between rooms on one
     Level ends the springs on the wall side it started on (one opening per
     wall side, step 6 finding 1). A stair edge's rooms overlap in plan, so its
     side is not a wall's and isn't held."""
@@ -482,7 +480,7 @@ def test_offset_keeps_every_edge_on_its_wall_side(monkeypatch, seed, n, theme, v
 
     def watched(order, edges, pos, half, nodes, run, gap, iterations=None, jitter=None):
         out = relax(order, edges, pos, half, nodes, run, gap, iterations, jitter=jitter)
-        assert (jitter is not None) == (theme != "warren"), theme
+        assert (jitter is not None) == (theme == "cave"), theme
         for a, b in edges:
             if embed.is_stair(nodes[a], nodes[b]):
                 continue
@@ -496,15 +494,12 @@ def test_offset_keeps_every_edge_on_its_wall_side(monkeypatch, seed, n, theme, v
     assert seen
 
 
-@pytest.mark.parametrize("seed,n,theme", [(731402518, 12, "cave"), (2006, 14, "fortress"),
-                                          (2013, 21, "temple")])
-def test_graph_rooms_leave_the_lattice(seed, n, theme):
+def test_graph_rooms_leave_the_lattice():
     """Seed 731402518 (cave, 12 rooms, moderate): before the offsets, 23 % of
     room-centre pairs shared an x or a y within 10 u (rows and columns ~200 u
-    apart); a share near chance now. Built and hewn themes too (random
-    placement task 1)."""
+    apart); a share near chance now."""
     from itertools import combinations
-    spec = _controls_spec(seed, n, theme, "moderate")
+    spec = _controls_spec(731402518, 12, "cave", "moderate")
     pairs = list(combinations([(r.center_x, r.center_y) for r in spec.rooms], 2))
     lined = sum(abs(p[0] - q[0]) < 10 or abs(p[1] - q[1]) < 10 for p, q in pairs)
     assert lined / len(pairs) < 0.12, lined / len(pairs)
@@ -539,14 +534,14 @@ def test_jittered_facing_rooms_get_a_straight_corridor(seed):
 
 
 def test_jitter_salt_is_the_build_seed():
-    """Random placement task 1 (Requirement 5): the offsets come from the
+    """Random placement task 1 (Requirement 5): a cave's offsets come from the
     build's seed. Two builds whose rooms match (one rng stream) but whose
     seeds differ place differently; the same seed places the same."""
     import dataclasses
     import random
 
     def centres(seed):
-        ctx = dataclasses.replace(_ctx(5, 14, "fortress"), rng=random.Random(5), seed=seed)
+        ctx = dataclasses.replace(_ctx(5, 14, "warren"), rng=random.Random(5), seed=seed, jitter=True)
         res = GraphEngine().generate(ctx, 14, None)
         assert res.jittered
         return [(r.width, r.depth) for r in res.rooms], [(r.center_x, r.center_y) for r in res.rooms]

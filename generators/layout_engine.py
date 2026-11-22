@@ -89,15 +89,14 @@ class LayoutContext:
     # (``embed.spring``); a style profile sets its own (winding tunnels task 9:
     # a cave's corridors run as long as stock tunnels). None: ``embed.RUN_FACTOR``.
     run_factor: Optional[float] = None
-    # Whether the graph engine's placement offsets and spaces each edge so
-    # rooms leave the lattice (winding control task 8; random placement task
-    # 1). None: the engine's default, every rule set but those in
-    # ``GraphEngine.UNJITTERED``, at the halls' spacing; True: always, at the
-    # tunnels' spacing (a rough profile, ``layout.JITTER_PROFILES``); False:
-    # never (an Envelope build until random placement task 3, or a test).
-    jitter: Optional[bool] = None
+    # The zone's corridors are rough (a cave profile, ``layout.JITTER_PROFILES``):
+    # the graph engine's placement offsets and spaces each edge so rooms leave
+    # the lattice (winding control task 8). A warren without the cave profile
+    # keeps its rooms centred.
+    jitter: bool = False
     # The build's seed, which salts each edge's offset and spacing
-    # (``embed.jitter_salt``); None: the rooms' sizes salt it.
+    # (``embed.jitter_salt``; random placement task 1, Requirement 5); None:
+    # the rooms' sizes salt it.
     seed: Optional[int] = None
 
 
@@ -333,11 +332,6 @@ class GraphEngine:
     facing: int = 0
     entrance_side: float = 0.0
     DESCEND_TRIES = 8
-    # Rule sets whose rooms stay centred one run off a wall unless the
-    # context says otherwise (``LayoutContext.jitter``): a warren loses loops
-    # off the lattice (random placement task 2). A cave (warren rule set, cave
-    # profile) jitters: its context says so.
-    UNJITTERED = frozenset({"warren"})
 
     def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
                  theme: Optional[str] = None,
@@ -399,13 +393,9 @@ class GraphEngine:
         place = embed.PLACEMENT_FUNCS[rs.placement]
         if ctx.run_factor is not None:
             place = functools.partial(place, run_factor=ctx.run_factor)
-        jittered = (rs.name not in self.UNJITTERED) if ctx.jitter is None else bool(ctx.jitter)
+        jittered = ctx.jitter
         if jittered:
-            # A rough profile (jitter True) spaces its tunnels long enough to
-            # wind (``embed.SPACING_LO``-``SPACING_HI``); built and hewn halls
-            # keep about the lattice's length (``embed.HALL_SPACING``).
-            spacing = None if ctx.jitter else embed.HALL_SPACING
-            place = functools.partial(place, jitter=True, seed=ctx.seed, spacing=spacing)
+            place = functools.partial(place, jitter=True, seed=ctx.seed)
         gap = ctx.corridor_width + 1.0
         # Levels go in before placement (step 7): heights as the rooms are
         # placed.

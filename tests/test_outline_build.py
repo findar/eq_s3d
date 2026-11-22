@@ -32,7 +32,6 @@ def _layout_only(spec):
         c.pop("rough", None)
         c.pop("transition", None)
         c.pop("path", None)
-        c.pop("wind", None)     # a rough corridor's wander, measured per style (transitions)
     for holder in d["rooms"] + d["corridors"]:
         for surface in ("floor", "wall", "ceiling"):
             holder.pop(f"{surface}_material", None)
