@@ -1581,10 +1581,18 @@ class _Placer:
             x, y = float(r.xs[i]), float(r.ys[j])
             if any(math.hypot(x - px, y - py) < max(sz.w, sz.d) + 4.0 for px, py in r.ceiling_props):
                 continue
+            yaw = self.rng.uniform(0, 2 * math.pi)
+            # The whole plan hangs over the room's reached floor with head room under it: a
+            # long model (GKCHAIN700, 39 u at 0.5) turned toward a wall from a spot near it
+            # otherwise runs through the wall (random placement task 1: dungeon seed 0's
+            # room_4, 4.4 u through its E wall). A spot is refused after its yaw is drawn,
+            # so a Prop that fits draws as it always did.
+            plan = r.rect_cells(x, y, yaw, sz.w, sz.d)
+            if plan is None or not (r.ok & room)[plan].all():
+                continue
             r.ceiling_props.append((x, y))
             z = float(r.ceiling[i, j]) - sz.h
-            return self._prop(model, sz, x, y, z, self.rng.uniform(0, 2 * math.pi), "ceiling", False, step,
-                              line, at)
+            return self._prop(model, sz, x, y, z, yaw, "ceiling", False, step, line, at)
         return None
 
     # -- one item of a line ---------------------------------------------------------
