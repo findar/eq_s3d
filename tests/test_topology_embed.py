@@ -436,22 +436,22 @@ def test_engine_climax_loses_to_the_entrance():
 # ---------------------------------------------------------------------------
 
 def test_edge_jitter_is_bounded_symmetric_and_salted():
-    """Each edge's spacing and offset sit in their bands, read the same from
-    either end (the offset as b's displacement from a), and change with the
-    salt; the salt reads a pinned seed or the rooms' sizes, never the rng."""
+    """Each edge's spacing and offset share sit in their bands, read the same
+    from either end (the offset as b's displacement from a), and change with
+    the salt; the salt reads the rooms' sizes, never the rng."""
     for k in range(200):
         a, b = f"n{k}", f"n{k + 7}"
         f, t = embed.edge_jitter("s", a, b)
-        assert 1 - embed.SPACING <= f <= 1 + embed.SPACING
-        assert embed.OFFSET_MIN <= abs(t) <= embed.OFFSET < 1
-        table = {frozenset((a, b)): (f, t)}
-        assert embed._jitter_of(table, a, b) == (f, t if b > a else -t)
-        assert embed._jitter_of(table, b, a) == (f, -t if b > a else t)
+        assert embed.SPACING_LO <= f <= embed.SPACING_HI
+        assert embed.OFFSET_MIN <= abs(t) <= embed.OFFSET <= 1
+        jit = embed.Jitter({frozenset((a, b)): (f, t)}, 27.0)
+        assert embed._jitter_of(jit, a, b) == (f, t if b > a else -t)
+        assert embed._jitter_of(jit, b, a) == (f, -t if b > a else t)
     assert embed._jitter_of(None, "a", "b") == (1.0, 0.0)
-    draws = {embed.edge_jitter(f"s{k}", "a", "b") for k in range(50)}
-    assert len(draws) == 50
+    assert embed.Jitter({}, 27.0).cross(60.0) == 33.0 and embed.Jitter({}, 27.0).cross(20.0) == 0.0
+    assert len({embed.edge_jitter(f"s{k}", "a", "b") for k in range(50)}) == 50
     half = {"a": (40.0, 50.0), "b": (45.0, 45.0)}
-    assert embed.jitter_salt(["a", "b"], half, 7) == embed.jitter_salt(["a", "b"], {}, 7)
+    assert embed.jitter_salt(["a", "b"], half) == embed.jitter_salt(["a", "b"], dict(half))
     assert embed.jitter_salt(["a", "b"], half) != embed.jitter_salt(
         ["a", "b"], {"a": (40.0, 50.0), "b": (45.0, 45.5)})
 
@@ -469,18 +469,18 @@ def _controls_spec(seed, n, theme, verticality):
 
 @pytest.mark.parametrize("seed,n,theme,verticality", [
     (731402518, 12, "cave", "moderate"), (1003, 11, "cave", "flat"),
-    (1017, 25, "cave", "dramatic"), (4, 20, "temple", "moderate")])
+    (1017, 25, "cave", "dramatic"), (4, 20, "temple", "moderate"), (6, 16, "warren", "flat")])
 def test_offset_keeps_every_edge_on_its_wall_side(monkeypatch, seed, n, theme, verticality):
-    """Every edge between rooms on one Level ends the springs on the wall
-    side it started on, with the offsets on (one opening per wall side, step
-    6 finding 1). A stair edge's rooms overlap in plan, so its side is not a
-    wall's and isn't held."""
+    """Only a cave (rough corridors) jitters. Every edge between rooms on one
+    Level ends the springs on the wall side it started on (one opening per
+    wall side, step 6 finding 1). A stair edge's rooms overlap in plan, so its
+    side is not a wall's and isn't held."""
     seen = []
     relax = embed.spring_relax
 
     def watched(order, edges, pos, half, nodes, run, gap, iterations=None, jitter=None):
         out = relax(order, edges, pos, half, nodes, run, gap, iterations, jitter=jitter)
-        assert jitter, "the spring placement passes its edges' offsets"
+        assert (jitter is not None) == (theme == "cave"), theme
         for a, b in edges:
             if embed.is_stair(nodes[a], nodes[b]):
                 continue
@@ -503,3 +503,31 @@ def test_graph_rooms_leave_the_lattice():
     pairs = list(combinations([(r.center_x, r.center_y) for r in spec.rooms], 2))
     lined = sum(abs(p[0] - q[0]) < 10 or abs(p[1] - q[1]) < 10 for p, q in pairs)
     assert lined / len(pairs) < 0.12, lined / len(pairs)
+
+
+@pytest.mark.parametrize("seed", [731402518, 1003, 1017])
+def test_jittered_facing_rooms_get_a_straight_corridor(seed):
+    """In a jittered cave, two rooms that face each other across a shared span
+    holding the corridor and its piers (``embed.STRAIGHT_NEED`` widths) get
+    their doors on one line across it: a straight corridor, not a Z."""
+    from generators.routing import corridor_route, exit_axis_x
+    spec = _controls_spec(seed, 14, "cave", "moderate")
+    rooms = {r.id: r for r in spec.rooms}
+    checked = 0
+    for cor in spec.corridors:
+        a, b = rooms[cor.from_room], rooms[cor.to_room]
+        ax = exit_axis_x(a.center_x, a.center_y, a.width / 2, a.depth / 2,
+                         b.center_x, b.center_y, b.width / 2, b.depth / 2)
+        bx = exit_axis_x(b.center_x, b.center_y, b.width / 2, b.depth / 2,
+                         a.center_x, a.center_y, a.width / 2, a.depth / 2)
+        if ax != bx or cor.bridge or cor.steps:
+            continue
+        lo, hi = ((max(a.center_y - a.depth / 2, b.center_y - b.depth / 2),
+                   min(a.center_y + a.depth / 2, b.center_y + b.depth / 2)) if ax else
+                  (max(a.center_x - a.width / 2, b.center_x - b.width / 2),
+                   min(a.center_x + a.width / 2, b.center_x + b.width / 2)))
+        if hi - lo < embed.STRAIGHT_NEED * cor.width:
+            continue
+        checked += 1
+        assert corridor_route(cor, rooms).kind == "straight", (seed, cor.id)
+    assert checked

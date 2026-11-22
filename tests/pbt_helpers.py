@@ -275,6 +275,9 @@ def run_for(spec, theme, room_count, size, a, b) -> float:
     # task 17); the spec records it.
     gen.race = spec.dungeon_race or ""
     gen._apply_room_scale(room_count)
+    # A jittered layout (winding control task 8) ran its facing pairs straight
+    # across their shared span; its record says so.
+    gen._straight_doors = bool((spec.layout or {}).get("jitter"))
     return gen._elevation_run(a, b)
 
 

@@ -278,12 +278,14 @@ def _cave_graph(tmp_path, verticality, rooms, seed, room_id):
 
 @pytest.mark.slow
 @needs_install
-def test_a_diagonal_lane_is_a_way_through(tmp_path):
+def test_a_diagonal_lane_is_a_way_through(tmp_path, monkeypatch):
     """Cave graph flat 19 rooms, seed 2096692951, Winding 2: room_17's top floor joins its
     doors by a lane one cell wide running corner to corner between the dais and the wall. Decor
     read it shut (side-by-side steps only) and joined that floor round the dais's foot instead,
     so a gem dressing its POI shut the lane and cut 476 u^2 off on the gate. ``walk`` is now
-    read corner to corner too (``Room._diag_joined``)."""
+    read corner to corner too (``Room._diag_joined``). Built unjittered (winding-control task 8 moved
+    the cave's rooms off the lattice), so the room is the one the regression was found in."""
+    monkeypatch.setattr("generators.layout.JITTER_PROFILES", frozenset())
     room, report, failures = _cave_graph(tmp_path, "flat", 19, 2096692951, "room_17")
     assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
     assert report.passed and not failures, failures

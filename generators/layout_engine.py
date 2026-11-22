@@ -89,6 +89,11 @@ class LayoutContext:
     # (``embed.spring``); a style profile sets its own (winding tunnels task 9:
     # a cave's corridors run as long as stock tunnels). None: ``embed.RUN_FACTOR``.
     run_factor: Optional[float] = None
+    # The zone's corridors are rough (a cave profile, ``layout.JITTER_PROFILES``):
+    # the graph engine's placement offsets and spaces each edge so rooms leave
+    # the lattice (winding control task 8). A warren without the cave profile
+    # keeps its rooms centred.
+    jitter: bool = False
 
 
 @dataclass
@@ -104,6 +109,10 @@ class EngineResult:
     # that stacks. None: one Level, Job B places every floor as in step 6.
     levels: Optional[List[int]] = None
     level_height: Optional[float] = None
+    # The placement jittered its edges (``LayoutContext.jitter``): Job B then
+    # puts a facing pair's doors across their shared span, so the corridor
+    # runs straight where one fits (winding control task 8).
+    jittered: bool = False
 
 
 class LayoutEngine(Protocol):
@@ -380,6 +389,9 @@ class GraphEngine:
         place = embed.PLACEMENT_FUNCS[rs.placement]
         if ctx.run_factor is not None:
             place = functools.partial(place, run_factor=ctx.run_factor)
+        jittered = ctx.jitter
+        if jittered:
+            place = functools.partial(place, jitter=True)
         gap = ctx.corridor_width + 1.0
         # Levels go in before placement (step 7): heights as the rooms are
         # placed.
@@ -449,7 +461,8 @@ class GraphEngine:
             record["levels"] = {rooms[k].id: lv for k, lv in enumerate(room_levels)}
             record["level_height"] = level_h
         return EngineResult(rooms=rooms, edges=edges, entry=entry, climax=climax,
-                            record=record, levels=room_levels, level_height=level_h)
+                            record=record, levels=room_levels, level_height=level_h,
+                            jittered=jittered)
 
     def _descending(self, rs, room_count: int, ctx: LayoutContext, grown):
         """``grown``, or a graph grown again (``descend``): the first whose

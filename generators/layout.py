@@ -62,6 +62,10 @@ DISTRICT_ATTEMPTS = 8
 # half the cave's rough corridors winding (that spec's archive, decision 4).
 PROFILE_RUN_FACTOR = {"cave": 4.0}
 
+# Style profiles whose corridors are rough: the graph placement jitters each
+# edge off the lattice (``LayoutContext.jitter``; winding control task 8).
+JITTER_PROFILES = frozenset({"cave"})
+
 # Widths of run a profile's corridors gain per unit of Winding above 1
 # (winding-control task 2, that spec's archive, decision 2). The tunnel's
 # wander stops paying off by a Winding of about 1.25: each heading keeps
@@ -241,8 +245,15 @@ def gate_spec(gate_id: str, cor: CorridorSpec, key_room: RoomSpec,
 # to the ~135 u Level, like step 6's gentlest ramps.
 LEVEL_VARIATION = 28.0
 
-# How far a U-route stair's door sits in from the end of its wall.
+# How far a U-route stair's door sits in from the end of its wall, and the
+# pier between two doors on one wall (``_doors_clash``).
 U_DOOR_MARGIN = 2.0
+# A jittered layout's (winding control task 8) U-route doors sit this far in:
+# past the 2 u a corridor's end runs into the room beside it (``_wall_point``'s
+# inset) and the gate's THROAT_CLEAR, so a corridor leaving the wall round
+# the corner never stands in the door's Throat (s7 cave 14 moderate, room_2:
+# wall across throat). Other layouts keep U_DOOR_MARGIN and their bytes.
+U_CORNER_MARGIN = 3.0
 # Where a U-route's doors may stand along their walls once the two ends have
 # been tried (LayoutGenerator._u_cor). A finer grid found no more loops.
 U_DOOR_STOPS = (-1.0, -0.5, 0.0, 0.5, 1.0)
@@ -341,6 +352,9 @@ class LayoutGenerator:
         # profile (``PROFILE_RUN_FACTOR``), longer at a *winding* above 1
         # (``profile_run_factor``); None: ``embed.RUN_FACTOR``.
         self.run_factor = profile_run_factor(profile, winding)
+        self.jitter = (profile or "") in JITTER_PROFILES
+        # Set per generate from the engine (``EngineResult.jittered``).
+        self._straight_doors = False
         if profile:
             import math
             base_area = _profile_mean(self.profile, ["geometry", "floor_area"], 2_000_000.0)
@@ -595,6 +609,7 @@ class LayoutGenerator:
         result = self.engine.generate(
             self._layout_context(room_count, dungeon_theme, dungeon_race),
             room_count, envelope)
+        self._straight_doors = getattr(result, "jittered", False)
         rooms = result.rooms
         # Job B works on plain (i, j) pairs; the vertical relations go to the
         # elevation pass alone (only the ones that constrain anything).
@@ -863,6 +878,10 @@ class LayoutGenerator:
         rec["edge_fidelity"] = (len(grammar & final) / len(grammar)) if grammar else 1.0
         rec["relations_broken"] = (relations_broken(rooms, relations)
                                    if elevation else None)
+        if getattr(result, "jittered", False):
+            # The placement jittered its edges and Job B ran facing pairs
+            # straight across their shared span (winding control task 8).
+            rec["jitter"] = True
         return rec
 
     def _layout_context(self, room_count: int, theme: str,
@@ -879,7 +898,7 @@ class LayoutGenerator:
                                room_count=room_count),
             size_shift=self.size_shift,
             height_shift=self.size_shift - self.profile_shift,
-            run_factor=self.run_factor)
+            run_factor=self.run_factor, jitter=self.jitter)
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement
@@ -2293,7 +2312,9 @@ class LayoutGenerator:
 
         ta, tb = (a.center_y, b.center_y) if exit_x else (a.center_x, b.center_x)
         ha, hb = (a.depth / 2, b.depth / 2) if exit_x else (a.width / 2, b.width / 2)
-        reach_a, reach_b = ha - hw - U_DOOR_MARGIN, hb - hw - U_DOOR_MARGIN
+        # A jittered layout keeps its stair doors U_CORNER_MARGIN off the wall's end.
+        margin = U_CORNER_MARGIN if self._straight_doors else U_DOOR_MARGIN
+        reach_a, reach_b = ha - hw - margin, hb - hw - margin
         if reach_a < 0 or reach_b < 0:
             return None
         sgn = 1.0 if tb >= ta else -1.0
@@ -2635,14 +2656,45 @@ class LayoutGenerator:
         hw, hd = room.width / 2, room.depth / 2
         # Small inset so the corridor overlaps the wall slightly (clean join).
         inset = 2.0
+        across = self._straight_across(room, toward, exit_x)
         if exit_x:
             # East/West wall
             x = room.center_x + (hw - inset) * (1 if dx >= 0 else -1)
-            return x, room.center_y
+            return x, room.center_y if across is None else across
         else:
             # North/South wall
             y = room.center_y + (hd - inset) * (1 if dy >= 0 else -1)
-            return room.center_x, y
+            return room.center_x if across is None else across, y
+
+    def _straight_across(self, room: RoomSpec, toward: RoomSpec,
+                         exit_x: bool) -> Optional[float]:
+        """A jittered placement's door across the wall (winding control task
+        8): the middle of the span two facing rooms share, when it holds the
+        corridor and a quarter-width pier each side
+        (``embed.STRAIGHT_NEED``), so the corridor runs straight; None (the
+        wall's midpoint) otherwise, and always without jitter. The same for
+        both ends, so both doors land on one line."""
+        if not self._straight_doors or exit_x != self._exit_axis_x(toward, room):
+            return None
+        from .topology.embed import STRAIGHT_NEED
+        # Only rooms apart across the wall (a stair's rooms overlap in plan:
+        # its doors are planned with the stair).
+        if exit_x:
+            apart = abs(toward.center_x - room.center_x) - (room.width + toward.width) / 2
+        else:
+            apart = abs(toward.center_y - room.center_y) - (room.depth + toward.depth) / 2
+        if apart <= 0:
+            return None
+        if exit_x:
+            a0, a1 = room.center_y - room.depth / 2, room.center_y + room.depth / 2
+            b0, b1 = toward.center_y - toward.depth / 2, toward.center_y + toward.depth / 2
+        else:
+            a0, a1 = room.center_x - room.width / 2, room.center_x + room.width / 2
+            b0, b1 = toward.center_x - toward.width / 2, toward.center_x + toward.width / 2
+        lo, hi = max(a0, b0), min(a1, b1)
+        if hi - lo < STRAIGHT_NEED * self.corridor_width:
+            return None
+        return (lo + hi) / 2
 
     def _open_facing_walls(self, room: RoomSpec, toward: RoomSpec) -> None:
         """Open the wall of *room* that faces *toward* so a corridor connects."""
