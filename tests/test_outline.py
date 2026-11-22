@@ -243,6 +243,16 @@ def test_a_sliver_of_shared_range_links_by_an_l_not_a_hairline():
     assert rects and all(min(r[2] - r[0], r[3] - r[1]) >= LINK_MIN for r in rects), rects
 
 
+def test_a_hairline_gap_to_the_core_is_touching():
+    # Cave graph moderate 24 rooms s937463091 room_9 (winding control task 10): a stair
+    # door's strip stopped 0.0022 u short of the Core and got a 0.0022 u wide link the
+    # gate read as unreached ("no walkable path from the core to throat").
+    from generators.outline import _link
+    core = (-20.317493554609584, -181.63826028722718, 7.685465781917159, -152.15163259962287)
+    stem = (7.6876852843122165, -203.7532310529304, 25.687685284312217, -157.89494644342503)
+    assert _link(stem, core, 18.0) == []
+
+
 def _spec_for(verticality, rooms, seed):
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan

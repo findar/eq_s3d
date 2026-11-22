@@ -354,3 +354,38 @@ def test_straightening_keeps_off_a_door_already_on_the_wall():
             da, db = LayoutGenerator._door_on_wall(a, r), LayoutGenerator._door_on_wall(b, r)
             if da and db and da[0] == db[0] and abs(da[1] - db[1]) > 1e-6:
                 assert abs(da[1] - db[1]) >= (a.width + b.width) / 2, (r.id, a.id, b.id)
+
+
+def test_a_slot_keeps_off_a_door_on_the_bridged_rooms_wall():
+    """Cave graph moderate 27 rooms, seed 2071938654, Winding 2 (winding-control task 10):
+    corr_8 bridged room_5 with a slot reaching its west wall, where corr_12's straight door
+    runs 2 u into the room; that piece's side wall stood in the slot's Throat ("wall across
+    throat"). A jittered build now makes no Bridge whose slot meets a door's in-room piece."""
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 27, "verticality": "moderate",
+                                   "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
+    plan.name = "slots"
+    spec = plan_to_spec(plan, seed=2071938654, warnings=[])
+    rooms = {r.id: r for r in spec.rooms}
+    room_5 = rooms["room_5"]
+    assert any(LayoutGenerator._door_on_wall(c, room_5) == ("W", c.from_y) for c in spec.corridors
+               if c.from_room == "room_5"), "the layout moved: re-pin"
+    checked = 0
+    for cor in spec.corridors:
+        bl = bridge_layout(cor, rooms) if cor.bridge else None
+        if bl is None:
+            continue
+        hall = rooms[cor.bridge]
+        (x0, y0, _), (x1, y1, _) = hall.bounds
+        s = bl.slot
+        for other in spec.corridors:
+            at = LayoutGenerator._door_on_wall(other, hall)
+            if other is cor or at is None:
+                continue
+            wall, c = at
+            hw = other.width / 2
+            p = {"W": (x0, c - hw, x0 + 2, c + hw), "E": (x1 - 2, c - hw, x1, c + hw),
+                 "S": (c - hw, y0, c + hw, y0 + 2), "N": (c - hw, y1 - 2, c + hw, y1)}[wall]
+            checked += 1
+            assert (min(s[2], p[2]) - max(s[0], p[0]) <= 1e-6
+                    or min(s[3], p[3]) - max(s[1], p[1]) <= 1e-6), (cor.id, other.id, hall.id)
+    assert checked

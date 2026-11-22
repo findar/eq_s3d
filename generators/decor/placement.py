@@ -99,6 +99,9 @@ POI_REACH = PLAYER_HALF_WIDTH + 2.0
 #: (``throat_narrow``), read on a 1 u grid, so its middle keeps this far from anything.
 CLEAR_WIDTH = 8.0
 WIDE_RADIUS = CLEAR_WIDTH / 2 - 1.0 / math.sqrt(2.0)
+#: The gate's core sample is the nearest within this of the room's floor (``FLOOR_LEVEL_TOL``):
+#: never a dais top over the middle while floor at the room's level is free.
+FLOOR_LEVEL_TOL = 4.0
 #: The gate's band starts AT a step over the floor (a triangle touching it counts), and a
 #: model's measured height is rounded: a floor Prop this near a step tall is in the way.
 BAND_SLACK = 0.1
@@ -711,6 +714,17 @@ class Room:
         self.by_lane = binary_dilation(lane, np.ones((3, 3), bool), iterations=LANE_NEAR)             if lane.any() else lane
         self.door_masks = [_in_rect(self.gx, self.gy, d.clear) for d in ctx.doors if d.clear]
         self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
+        if self.door_masks and not any(self.wide_doors):
+            # No door's way reads CLEAR_WIDTH wide, so no Prop would be checked for narrowing
+            # one; the half-cell slack can read shut a way the gate's 1 u samples walk
+            # (winding-control task 10: seed 644918873, room_12's dais steps 4 u from a door's
+            # floor, the core on them; a crystal and a stalactite shut both ways round). Read
+            # the walls and rises at the gate's own radius, then, the Props still grown as before.
+            loose = self.ok & (_edge_distance(ctx, self.ok, WIDE_RADIUS) >= WIDE_RADIUS)
+            strict, self.wide = self.wide, loose
+            self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
+            if not any(self.wide_doors):
+                self.wide = strict
         self.faces = self._faces()
         self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
         self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
@@ -822,8 +836,14 @@ class Room:
         free = (self.wide & ~blocked).ravel()
         if self.ctx.source != "room" or not free.any():
             return [False] * len(self.door_masks)
-        x0, y0, _z0, x1, y1, _z1 = self.ctx.box
+        x0, y0, z0, x1, y1, _z1 = self.ctx.box
         mid = np.hypot(self.gx - (x0 + x1) / 2, self.gy - (y0 + y1) / 2).ravel()
+        # As the gate's ``_nearest``: floor within FLOOR_LEVEL_TOL of the room's floor first
+        # (winding-control task 10: seed 644918873, a dais over room_12's middle; on its top
+        # no door had a wide way, so no Prop was checked, while the gate's core was its step).
+        with np.errstate(invalid="ignore"):
+            dz = np.abs(self.floor - z0).ravel()
+        mid = mid + np.where(dz <= FLOOR_LEVEL_TOL, 0.0, 1e6 + np.nan_to_num(dz))
         may = free if maybe is None else (self.wide & ~maybe).ravel()
         if maybe is not None and plans is not None and plans.any():
             inside = distance_transform_edt(plans) * self.cell >= WIDE_RADIUS

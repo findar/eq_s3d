@@ -326,9 +326,10 @@ def _overlap(a: Rect, b: Rect, axis: int) -> float:
 def _link(r: Rect, core: Rect, width: float) -> List[Rect]:
     """The rects joining ``r`` to the Core, none if they already touch: straight
     across when they share a range on one axis wide enough to walk (``LINK_MIN``),
-    otherwise an L."""
+    otherwise an L. A gap under ``SNAP`` (one vertex apart) is touching: linked, it
+    made a hairline Throat the gate couldn't read floor in (winding control task 10)."""
     ox, oy = _overlap(r, core, 0), _overlap(r, core, 1)
-    if ox > 1e-6 and oy >= -1e-6 or oy > 1e-6 and ox >= -1e-6:
+    if ox > 1e-6 and oy >= -SNAP or oy > 1e-6 and ox >= -SNAP:
         return []
     # A shared range thinner than a player made a hairline "straight" link the gate
     # can't walk (zone-generator-cave task 6: a 0.006 u strip); take the L instead.
