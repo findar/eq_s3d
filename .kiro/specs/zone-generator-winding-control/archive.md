@@ -61,4 +61,15 @@
    skips a corridor holding a Transition line (`corr_11`, room_9 hewn to room_11), leaving
    square bends. Requirement 4 is amended; Requirements 7 and 8 added; tasks 8–11.
 
+5. **The grid breaks in cave zones only, with straight doors** (task 8, the lead's call after a
+   first attempt at every zone gave 36 failures, cost warrens loops and wound caves less). The
+   switch is the cave style profile (`layout.JITTER_PROFILES`; the cave's graph rule set is
+   `warren`, so it can't key on the rule set). Each edge is offset 0.4-1.0 of its slack (the
+   half-extents across less 1.5 corridor widths) and its run spaced 1.25-1.75x, salted from
+   room ids and sizes; jittered builds put both doors mid-span so the corridor runs straight,
+   and keep U-route stair doors 3 u from a wall end. Built, hewn and warren zones keep their
+   bytes. Cave graph seeds 1000-1039 at Winding 1: grid score mean 0.170 -> 0.065 (731402518:
+   0.227 -> 0.030), wind 61% -> 69%, path 56% -> 60%, stray mean 1.13 -> 4.73 u, door to door
+   p50 102 -> 118 u, gate 40/40.
+
 ## Follow-ups
