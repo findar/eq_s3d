@@ -415,15 +415,20 @@ def _turn(d0: Point, d1: Point) -> float:
     return math.atan2(d0[0] * d1[1] - d0[1] * d1[0], d0[0] * d1[0] + d0[1] * d1[1])
 
 
-def _cuts(lengths: Sequence[float], lefts: Sequence[bool], run: float, lo: float) -> List[float]:
+def _cuts(lengths: Sequence[float], lefts: Sequence[bool], run: float, lo: float,
+          room: Optional[Sequence[Tuple[float, float]]] = None) -> List[float]:
     """How far each bend of the route is cut back from its corner, along both legs: the most
     that leaves every inner leg at least ``lo`` straight, or nothing straight where two cuts
     meet on a leg between bends of opposite turn (a Z's jog, one diagonal). The first and last
-    legs keep their run-outs (``run``) whole."""
+    legs keep their run-outs (``run``) whole. ``room`` (bend i: the most its cut may take from
+    leg i and from leg i + 1) replaces those limits when given (a held stretch, ``hold_route``)."""
     n = len(lengths) - 1                    # bends
     cuts = []
     for i in range(n):
-        own = [lengths[i] - (run if i == 0 else 0.0), lengths[i + 1] - (run if i + 1 == n else 0.0)]
+        if room is not None:
+            own = list(room[i])
+        else:
+            own = [lengths[i] - (run if i == 0 else 0.0), lengths[i + 1] - (run if i + 1 == n else 0.0)]
         cuts.append(max(0.0, min(own)))
     for k in range(1, n):                   # inner leg k, between bends k-1 and k
         length = lengths[k]
@@ -555,6 +560,148 @@ def wind_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
                                   for p, q in zip(line[2:-2], wps[1:-1])):
         return None
     return line
+
+
+@dataclass(frozen=True)
+class Hold:
+    """A stretch a route line runs straight along (winding-control Requirement 8): on leg
+    ``leg`` of the route, ``reach`` either side of ``point`` (a Transition's line), so the
+    frame or seam there stands square across it. ``wander`` is (before, after): may the line
+    wander on that side of the point (its style has a tunnel), or only cut its bends."""
+    leg: int
+    point: Point
+    reach: float
+    wander: Tuple[bool, bool] = (True, True)
+
+
+def hold_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str], hold: Hold,
+               wander: bool = True) -> Optional[List[Point]]:
+    """``wind_route``'s line for a route holding a Transition line: the same run-outs, cut
+    bends and wander, except that over ``hold.reach`` either side of ``hold.point`` it runs
+    straight on its leg's line, so the line stands square across it. A bend beside the held
+    stretch is cut back no further than the stretch leaves; a side of the point that
+    ``hold.wander`` says no to only has its bends cut. None when the point isn't on its leg,
+    the stretch would reach into a bend, or nothing on the line winds (the route's own legs)."""
+    wps = [(float(x), float(y)) for x, y in route.waypoints]
+    n = len(wps) - 1
+    k = hold.leg
+    run = max(hw, rules.end)
+    lengths = [math.hypot(wps[i + 1][0] - wps[i][0], wps[i + 1][1] - wps[i][1]) for i in range(n)]
+    if not 0 <= k < n or min(lengths) < 1e-6 or lengths[0] < run or lengths[-1] < run or \
+            (n == 1 and lengths[0] < 2 * run):
+        return None
+    dirs = [_unit(wps[i], wps[i + 1]) for i in range(n)]
+    for i in range(n - 1):
+        if abs(abs(_turn(dirs[i], dirs[i + 1])) - math.pi / 2) > 1e-6:
+            return None
+    d = dirs[k]
+    s_p = (hold.point[0] - wps[k][0]) * d[0] + (hold.point[1] - wps[k][1]) * d[1]
+    off = abs((hold.point[0] - wps[k][0]) * d[1] - (hold.point[1] - wps[k][1]) * d[0])
+    if off > 1e-3 or not 0.0 < s_p < lengths[k]:
+        return None
+    s0, s1 = s_p - hold.reach, s_p + hold.reach
+    if (k > 0 and s0 < 0.0) or (k < n - 1 and s1 > lengths[k]):
+        return None                         # the stretch would reach into a bend
+
+    def at(s):
+        return (wps[k][0] + d[0] * s, wps[k][1] + d[1] * s)
+
+    turns = max(1, int(math.ceil(90.0 / rules.max_turn - 1e-9)))
+    a_out = (wps[0][0] + dirs[0][0] * run, wps[0][1] + dirs[0][1] * run)
+    b_in = (wps[n][0] - dirs[-1][0] * run, wps[n][1] - dirs[-1][1] * run)
+    lefts = [_turn(dirs[i], dirs[i + 1]) > 0 for i in range(n - 1)]
+    room = []
+    for i in range(n - 1):
+        before = lengths[i] - (run if i == 0 else 0.0)
+        after = lengths[i + 1] - (run if i + 1 == n - 1 else 0.0)
+        if i == k:
+            before = min(before, lengths[i] - s1)
+        if i + 1 == k:
+            after = min(after, s0)
+        room.append((before, after))
+    cuts = _cuts(lengths, lefts, run, rules.segment[0], room)
+
+    # The bones: (point, side of the point the run ending there lies on, is that run held).
+    bones: List[Tuple[Point, int, bool]] = [(a_out, 0, False)]
+    for i in range(n):
+        if i == k:
+            start = run if i == 0 else cuts[i - 1]
+            end = lengths[i] - (run if i == n - 1 else cuts[i])
+            prev = start
+            for m in sorted({m for m in (s0, s_p, s1, end) if start + 1e-9 < m <= end + 1e-9}):
+                held = prev >= s0 - 1e-9 and m <= s1 + 1e-9
+                bones.append((at(m), 0 if (prev + m) / 2 < s_p else 1, held))
+                prev = m
+        side = 0 if i < k else 1
+        if i < n - 1:
+            chamfer = _chamfer(wps[i + 1], dirs[i], dirs[i + 1], cuts[i], turns)
+            bones += [(p, side, False) for p in (chamfer[1:] if i == k else chamfer)]
+        elif i != k:
+            bones.append((b_in, side, False))
+
+    line: List[Point] = [wps[0], a_out]
+    rng = random.Random(seed)
+    inner = TunnelRules(rules.segment, rules.max_turn, rules.wander, 0.0)
+    for (p, _, _), (q, side, held) in zip(bones, bones[1:]):
+        if math.hypot(q[0] - p[0], q[1] - p[1]) < 1e-9:
+            continue
+        if wander and not held and hold.wander[side]:
+            line += _wind_run(p, q, hw, inner, rng.getrandbits(64))[1:]
+        else:
+            line.append(q)
+    line.append(wps[n])
+    line = _tidy(line, (1, len(line) - 2))
+    if len(line) < 4:
+        return None
+    for i in range(1, len(line) - 1):
+        a, b = _unit(line[i - 1], line[i]), _unit(line[i], line[i + 1])
+        if abs(math.degrees(_turn(a, b))) > rules.max_turn + 1e-6:
+            return None
+    if len(line) == n + 3 and all(math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6
+                                  for p, q in zip(line[2:-2], wps[1:-1])):
+        return None
+    return line
+
+
+def path_zs(line: Sequence[Point], from_z: float, to_z: float) -> List[float]:
+    """The floor's height at each vertex of a route line, as ``transitions.path_pieces``
+    lays it: ``from_z`` over the first run (a run-out), ``to_z`` over the last, the rise
+    spread by length over the runs between."""
+    seg = [math.hypot(line[j + 1][0] - line[j][0], line[j + 1][1] - line[j][1]) for j in range(len(line) - 1)]
+    s0, s1 = seg[0], sum(seg) - seg[-1]
+
+    def z_at(s):
+        if s <= s0 or s1 <= s0:
+            return from_z
+        return to_z if s >= s1 else from_z + (to_z - from_z) * (s - s0) / (s1 - s0)
+
+    out, done = [z_at(0.0)], 0.0
+    for j in range(len(seg)):
+        done += seg[j]
+        out.append(z_at(done))
+    return out
+
+
+def split_path(line: Sequence[Point], zs: Sequence[float], point: Point, reach: float = 0.0):
+    """``line`` (``zs`` its vertex heights, ``path_zs``) cut in two at ``point``: (first line,
+    its zs, second line, its zs), the first ending and the second starting at ``point``. None
+    unless ``point`` lies inside one run of the line, at least ``reach`` from that run's ends
+    (a held stretch, ``hold_route``), so both parts end square on one section there."""
+    for j in range(len(line) - 1):
+        (ax, ay), (bx, by) = line[j], line[j + 1]
+        length = math.hypot(bx - ax, by - ay)
+        if length < 1e-9:
+            continue
+        ux, uy = (bx - ax) / length, (by - ay) / length
+        s = (point[0] - ax) * ux + (point[1] - ay) * uy
+        if abs((point[0] - ax) * uy - (point[1] - ay) * ux) > 1e-3:
+            continue
+        if not max(reach - 1e-6, 1e-6) < s < length - max(reach - 1e-6, 1e-6):
+            continue
+        p = (ax + ux * s, ay + uy * s)      # on the run's line exactly
+        z = zs[j] + (zs[j + 1] - zs[j]) * s / length
+        return (list(line[:j + 1]) + [p], list(zs[:j + 1]) + [z], [p] + list(line[j + 1:]), [z] + list(zs[j + 1:]))
+    return None
 
 
 def strip_corners(line: Sequence[Point], hw: float) -> Optional[List[Tuple[Point, Point]]]:

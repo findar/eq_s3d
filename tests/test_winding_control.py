@@ -228,3 +228,143 @@ def test_map_line_runs_the_scaled_legs(seed, monkeypatch):
         pts = [p for line in winding_legs(cor, rooms, tunnel_for(cor, spec)) if line for p in line]
         it = iter(drawn[cor.id])
         assert all(any(q == p for q in it) for p in pts), (seed, cor.id)
+
+
+# --- Framed corridors wind (task 9, Requirement 8) ----------------------------------------
+
+FRAMED_SEEDS = (2, 6, 12)       # a straight seam, a breach and a Z frame, a Z seam and breaches
+
+
+@functools.lru_cache(maxsize=None)
+def _framed(seed):
+    spec = _cave(seed)
+    return spec, backend_for(spec.zone_type).build(spec, f"ter_framed{seed}", 2)
+
+
+def _along(line, p):
+    """How far along polyline ``line`` its nearest point to ``p`` lies, and how far off it."""
+    best, done = (math.inf, 0.0), 0.0
+    for a, b in zip(line, line[1:]):
+        length = math.hypot(b[0] - a[0], b[1] - a[1])
+        t = 0.0 if length < 1e-12 else max(0.0, min(1.0, ((p[0] - a[0]) * (b[0] - a[0]) +
+                                                          (p[1] - a[1]) * (b[1] - a[1])) / length ** 2))
+        off = math.hypot(p[0] - a[0] - t * (b[0] - a[0]), p[1] - a[1] - t * (b[1] - a[1]))
+        if off < best[0]:
+            best = (off, done + t * length)
+        done += length
+    return best[1], best[0]
+
+
+def _floor_under(ter, p):
+    """(z, material name) of the floor triangle of ``ter`` holding plan point ``p``, nearest
+    from above at ``p``'s height if it has one (``p`` = (x, y, z))."""
+    best = None
+    for poly in ter.polygons:
+        a, b, c = (ter.vertices[i] for i in (poly.v1, poly.v2, poly.v3))
+        det = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y)
+        if abs(det) < 1e-9:
+            continue
+        l1 = ((b.y - c.y) * (p[0] - c.x) + (c.x - b.x) * (p[1] - c.y)) / det
+        l2 = ((c.y - a.y) * (p[0] - c.x) + (a.x - c.x) * (p[1] - c.y)) / det
+        l3 = 1.0 - l1 - l2
+        if min(l1, l2, l3) < -1e-6:
+            continue
+        nz = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+        if nz <= 0:
+            continue                        # a floor faces up
+        z = l1 * a.z + l2 * b.z + l3 * c.z
+        if best is None or abs(z - p[2]) < abs(best[0] - p[2]):
+            best = (z, ter.materials[poly.material].name)
+    return best
+
+
+def test_framed_corridors_take_a_path_on_the_test_seeds():
+    """The cases below have teeth: every form, straight and Z routes, a split Seam."""
+    seen = set()
+    for seed in FRAMED_SEEDS:
+        spec, _ = _framed(seed)
+        rooms = {r.id: r for r in spec.rooms}
+        for cor in spec.corridors:
+            if cor.transition is not None and cor.path:
+                seen.add((cor.transition.form, bool(cor.transition.floor_material),
+                          len(corridor_route(cor, rooms).waypoints) > 2))
+    assert {("seam", True, False), ("seam", True, True), ("frame", False, True), ("breach", False, False)} <= seen
+
+
+@pytest.mark.parametrize("seed", FRAMED_SEEDS)
+def test_framed_line_stands_square_and_every_reader_reads_it(seed, monkeypatch):
+    """A corridor holding a Transition line has a path straight along the line's axis for
+    its depth and a half-width either side, through the line. The mesh splits a Seam there
+    (each look on its own side, its floor at the line's ``z``); ``corridor_continuity`` and
+    the walk through the line pass; the decor context has floor through the line and its
+    jambs on it; the map's door spot stands across the drawn line, square to it."""
+    from analyzer.traverse import AgentModel, build_walk_surface, check_transition, corridor_continuity
+
+    spec, ter = _framed(seed)
+    held = [c for c in spec.corridors if c.transition is not None and c.path]
+    assert held, seed
+    agent = AgentModel()
+    surf = build_walk_surface(ter, agent)
+    cont = {r.corridor_id: r for r in corridor_continuity(surf, spec, agent)}
+    ctxs = {c.id: c for c in corridor_contexts(spec, ter)}
+    for cor in held:
+        t, hw = cor.transition, cor.width / 2
+        p, d = (t.x, t.y), ((1.0, 0.0) if t.along_x else (0.0, 1.0))
+        path = [tuple(q) for q in cor.path]
+        s_p, off = _along(path, p)
+        assert off < 1e-3, (seed, cor.id)
+        total = _along(path, path[-1])[0]
+        reach = t.depth + hw
+        a, b = min(zip(path, path[1:]), key=lambda ab: _seg_dist(p, *ab))
+        u = ((b[0] - a[0]) / math.dist(a, b), (b[1] - a[1]) / math.dist(a, b))
+        assert abs(u[0] * d[0] + u[1] * d[1]) > 1 - 1e-9, (seed, cor.id, u)      # square to the line
+        for s in np.linspace(max(-reach, -s_p), min(reach, total - s_p), 9):
+            q = (p[0] + u[0] * s, p[1] + u[1] * s)
+            s_q, off_q = _along(path, q)
+            assert off_q < 1e-3 and abs(s_q - s_p - s) < 1e-3, (seed, cor.id, s)
+
+        # Mesh: the floor at the line is the line's z; a Seam's two looks either side of it.
+        z, _ = _floor_under(ter, (*p, t.z))
+        assert abs(z - t.z) < 0.01, (seed, cor.id, z, t.z)
+        if t.floor_material:
+            near = min(reach - 0.5, 4.0)
+            before, after = (p[0] - u[0] * near, p[1] - u[1] * near), (p[0] + u[0] * near, p[1] + u[1] * near)
+            assert _floor_under(ter, (*before, t.z))[1] == spec.materials[cor.floor_material].name
+            assert _floor_under(ter, (*after, t.z))[1] == spec.materials[t.floor_material].name
+
+        # Continuity and the walk through the line.
+        assert cont[cor.id].connected, (seed, cor.id, cont[cor.id].reason)
+        assert check_transition(surf, cor, spec, agent).ok, (seed, cor.id)
+
+        # Decor: floor through the line, the jambs standing on it.
+        ctx = ctxs[cor.id]
+        for s in (-t.depth, 0.0, t.depth):
+            x, y = p[0] + d[0] * s, p[1] + d[1] * s
+            i, j = (int(round((v - o) / ctx.cell)) for v, o in zip((x, y), ctx.origin))
+            assert not np.isnan(ctx.floor[i, j]), (seed, cor.id, s)
+        for f in (f for f in ctx.features if f["kind"] == "opening"):
+            along = [q[0] if t.along_x else q[1] for q in f["plan"]]
+            assert min(along) == pytest.approx(p[0 if t.along_x else 1] - t.depth, abs=0.01)
+            assert max(along) == pytest.approx(p[0 if t.along_x else 1] + t.depth, abs=0.01)
+
+    # Map: each door spot's bar crosses a drawn corridor line at its middle, square to it.
+    xs = [v for r in spec.rooms for v in (r.bounds[0][0], r.bounds[1][0])]
+    ys = [v for r in spec.rooms for v in (r.bounds[0][1], r.bounds[1][1])]
+    outline = OutlineSet((), (DepthBand(0, -math.inf, math.inf, 0.0, "main", 0),),
+                         (min(xs), min(ys), 0.0, max(xs), max(ys), 0.0), 0, True)
+    svg = mapview.render_map_svg(spec, outline=outline)
+    import re
+    lines = [[tuple(map(float, q.split(","))) for q in m.split()]
+             for m in re.findall(r'<polyline[^>]*points="([^"]+)"', svg)]
+    bars = [tuple(map(float, m)) for m in
+            re.findall(r'class="door-spot" x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)"', svg)]
+    frames = [c for c in held if c.transition.form == "frame"]
+    assert len(bars) >= len(frames)
+    for x1, y1, x2, y2 in bars:
+        mid = ((x1 + x2) / 2, (y1 + y2) / 2)
+        line = min(lines, key=lambda ln: _along(ln, mid)[1])
+        assert _along(line, mid)[1] < 0.2, (seed, mid)
+        a = min(zip(line, line[1:]), key=lambda ab: _seg_dist(mid, *ab))
+        run = (a[1][0] - a[0][0], a[1][1] - a[0][1])
+        dot = (run[0] * (x2 - x1) + run[1] * (y2 - y1)) / (math.hypot(*run) * math.hypot(x2 - x1, y2 - y1))
+        assert abs(dot) < 0.05, (seed, mid, dot)

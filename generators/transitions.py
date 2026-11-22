@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, stair_layout
-from .routing import (corridor_route, route_footprint, route_seed, scaled_tunnel, strip_corners, wind_leg,
-                      wind_route, wind_seed)
+from .routing import (Hold, corridor_route, hold_route, path_zs, route_footprint, route_seed, scaled_tunnel,
+                      split_path, strip_corners, wind_leg, wind_route, wind_seed)
 from .semantics import ROOM_TYPES, body_height
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import _Checker, _is_number, _one_of, _read_toml
@@ -290,6 +290,7 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
     holders: List[Tuple[object, object]] = []
     written: List[Dict[str, object]] = []
     tunnels = {}
+    holds = {}
     winding = float(getattr(spec, "winding", 1.0))
     for cor in spec.corridors:
         cor.transition = None
@@ -311,9 +312,16 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
         cor.rough = style.corridor_break if plain else 0.0
         # The zone's Winding scales the tunnel's wander (winding-control Req 2): None at 0.
         tunnels[cor.id] = scaled_tunnel(getattr(style, "tunnel", None), winding)
+        if t is not None and plain:
+            # Its route line holds the line straight (winding-control Req 8). Each side winds
+            # by its own look: past a line the corridor changes at, the to_room's.
+            sides = (a, b) if t.floor_material else (style, style)
+            held = scaled_tunnel(next((s.tunnel for s in sides if getattr(s, "tunnel", None)), None), winding)
+            if held is not None:
+                holds[cor.id] = (held, tuple(getattr(s, "tunnel", None) is not None for s in sides))
         holders.append((cor, style))
     spec.layout["transitions"] = written
-    measure_winds(spec, tunnels)
+    measure_winds(spec, tunnels, holds)
     return holders
 
 
@@ -383,20 +391,22 @@ def leg_clearance(ends, along_x: bool, hw: float, z0: float, z1: float, height: 
     return max(room - PLAYER_HALF_WIDTH, 0.0)
 
 
-def measure_winds(spec: ZoneSpec, tunnels: Mapping[str, object]) -> None:
+def measure_winds(spec: ZoneSpec, tunnels: Mapping[str, object],
+                  holds: Optional[Mapping[str, object]] = None) -> None:
     """Set each corridor's ``wind``: per leg of its route, how far that plain leg of a rough
     corridor may stray (``min(clearance, wander × span)``, floored to 0.01 u), 0 for a leg that
     stays straight. ``tunnels`` is corridor id -> its style's ``TunnelRules`` (None: no
     winding). Only reads the finished spec: routes, footprints, conflicts and Levels stay.
 
     A leg winds when it is plain (a corridor with a ``rough`` break, so no stair or bridge),
-    has a part that may wind, and holds no Transition line; past a Seam the corridor takes
-    the other style, which has no tunnel (one style at most has one), so it stays straight
-    there too."""
+    has a part that may wind, and holds no Transition line; past a Seam it stays straight
+    too. ``holds`` (corridor id -> (rules, (may it wander before the line, after it))) names
+    the corridors holding a Transition line: ``measure_routes`` gives them a route line held
+    straight there, winding by whichever of their two looks has a tunnel."""
     for cor in spec.corridors:
         cor.wind = []
         cor.path = []
-    if not any(tunnels.get(cor.id) is not None and cor.rough > 0 for cor in spec.corridors):
+    if not holds and not any(tunnels.get(cor.id) is not None and cor.rough > 0 for cor in spec.corridors):
         return
     rooms = {r.id: r for r in spec.rooms}
     boxes = {cor.id: _corridor_boxes(cor, rooms) for cor in spec.corridors}
@@ -427,7 +437,7 @@ def measure_winds(spec: ZoneSpec, tunnels: Mapping[str, object]) -> None:
             line = wind_leg(ends[0], ends[1], route.axes[k], hw, limit, rules, wind_seed(cor, k, ends[0]))
             wind.append(limit if len(line) > 2 else 0.0)
         cor.wind = wind if any(wind) else []
-    measure_routes(spec, tunnels, rooms, boxes, room_boxes)
+    measure_routes(spec, tunnels, rooms, boxes, room_boxes, holds)
 
 
 # --- Winding routes (step 25, winding-routes Requirement 2) -----------------------------
@@ -533,22 +543,30 @@ def route_clear(cor: CorridorSpec, line, solids: Sequence[_Solid]) -> bool:
 
 
 def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, boxes=None,
-                   room_boxes=None) -> None:
+                   room_boxes=None, holds: Optional[Mapping[str, object]] = None) -> None:
     """Set each rough plain corridor's ``path``: ``routing.wind_route``'s line, opening to
-    opening, when its strip clears everything else (``route_clear``); else ``[]``. A corridor
-    with a Transition line keeps its legs. Checked against every room, every other
-    corridor's route boxes, the legs step 23 winds and the paths already set, so no two
-    lines meet. A line that wanders and fails is tried again without the wander (its bends
-    still cut).
+    opening, when its strip clears everything else (``route_clear``); else ``[]``. Checked
+    against every room, every other corridor's route boxes, the legs step 23 winds and the
+    paths already set, so no two lines meet. A line that wanders and fails is tried again
+    without the wander (its bends still cut).
+
+    A corridor holding a Transition line (``holds``, winding-control Requirement 8) takes
+    ``routing.hold_route``'s line instead, after every other: straight on its leg's line for
+    the line's depth and a half-width either side, so the frame, breach or seam stands
+    square across it, and the Transition's ``z`` is the path's floor there (a frame's lintel
+    judged again on the path's grade). Failing everything, it keeps its legs.
 
     Its ``wind`` stays as step 23 measured it, so the mesh, which reads only ``wind`` until
     winding-routes task 2, is unchanged (the design has ``wind = []`` alongside a path)."""
     for cor in spec.corridors:
         cor.path = []
+    holds = holds or {}
     eligible = [cor for cor in spec.corridors
                 if tunnels.get(cor.id) is not None and cor.rough > 0 and cor.steps == 0
                 and not cor.bridge and cor.transition is None]
-    if not eligible:
+    held = [cor for cor in spec.corridors
+            if cor.id in holds and cor.transition is not None and cor.steps == 0 and not cor.bridge]
+    if not eligible and not held:
         return
     if rooms is None:
         rooms = {r.id: r for r in spec.rooms}
@@ -584,6 +602,43 @@ def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, bo
                 for quad, za, zb in path_pieces(line, cor.width / 2, cor.from_z, cor.to_z):
                     solids[cor.id].append(_solid(quad, min(za, zb), max(za, zb) + cor.height))
                 break
+    h = body_height(spec.dungeon_race)
+    written = {w["corridor"]: w for w in spec.layout.get("transitions", ())}
+    for cor in held:
+        rules, sides = holds[cor.id]
+        t = cor.transition
+        hw = cor.width / 2
+        route = corridor_route(cor, rooms)
+        waypoints = list(route.waypoints)
+        zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
+                                         cor.from_z, cor.to_z)
+        leg = _held_leg(cor, waypoints, zs)
+        if leg is None:
+            continue
+        hold = Hold(leg, (t.x, t.y), t.depth + hw, sides)
+        others = [s for cid, ss in solids.items() if cid != cor.id for s in ss]
+        for wander in (True, False):
+            line = hold_route(route, hw, rules, route_seed(cor), hold, wander)
+            if line is None or not route_clear(cor, line, others):
+                continue
+            cut = split_path(line, path_zs(line, cor.from_z, cor.to_z), (t.x, t.y))
+            if cut is None:
+                continue
+            past, past_zs = cut[2], cut[3]
+            z = round(past_zs[0], 3)
+            lintel = t.lintel
+            if t.form == FRAME:
+                run = math.hypot(past[1][0] - past[0][0], past[1][1] - past[0][1])
+                lintel = _lintel(cor, h, abs(past_zs[1] - past_zs[0]) / max(run, 1e-9) * t.depth)
+                if lintel is None:
+                    continue
+            cor.path = [(float(x), float(y)) for x, y in line]
+            t.z, t.lintel = z, lintel
+            if cor.id in written:
+                written[cor.id]["z"] = z
+            for quad, za, zb in path_pieces(line, hw, cor.from_z, cor.to_z):
+                solids[cor.id].append(_solid(quad, min(za, zb), max(za, zb) + cor.height))
+            break
 
 
 def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:
