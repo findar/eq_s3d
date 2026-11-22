@@ -59,7 +59,7 @@ Bytes (Req 4): at `winding = 1`, every zone stays byte-identical. Prove it with:
 
 ## First-look fixes (decision 4)
 
-- [ ] 8. Break the Graph grid
+- [x] 8. Break the Graph grid
   - Card: [cards/08-grid.md](cards/08-grid.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: generators/topology/embed.py, tests/test_topology_embed.py, goldens it moves (named in the commit)

@@ -36,12 +36,14 @@ upper room sits partly over its partner (:data:`STAIR_REST`). Without
 overlaps.
 
 Nothing here draws from the rng except :func:`room_size`; the spring layout is
-a fixed number of fixed-size steps, so the same graph and sizes always give
-the same positions.
+a fixed number of fixed-size steps, and each edge's offset and spacing
+(:func:`edge_jitter`, winding control task 8) are hashed from the build's salt
+and the edge's ids, so the same graph and sizes always give the same positions.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
@@ -255,6 +257,96 @@ STAIR_REST = 0.5
 #: Level, crossing the lower room one of them is stair-joined to.
 BRIDGE_TAG = "bridge"
 
+#: Per-edge jitter (winding control task 8), for a placement whose corridors
+#: are rough (``spring(jitter=True)``: a cave): without it every neighbour sits
+#: centred one run past a wall and the springs hold it there, so rooms of
+#: similar size fall on a lattice. Each edge gets a sideways offset along the
+#: wall and a spacing factor on its run, SPACING_LO to SPACING_HI. The offset
+#: is OFFSET_MIN to OFFSET, either way, of the edge's slack: the two rooms'
+#: half-extents across less :data:`STRAIGHT_NEED` corridor widths, so the
+#: rooms still share a span a straight corridor fits across (the layout puts
+#: the doors there, ``LayoutGenerator._wall_point``) and :func:`_side_toward`
+#: keeps the edge's side. Both are drawn per edge from the build's salt and
+#: the two room ids (:func:`edge_jitter`), never from the shared rng. A stair
+#: edge (across Levels) and a Bridge keep none: their overlap is placed on
+#: purpose. The floor keeps an edge from landing centred; the spacing alone
+#: moves no row or column (they are the centred offsets). The spacing runs
+#: long because a straight rough corridor winds only with room to: at 0.75-
+#: 1.25 half the cave's corridors wound and 28 % took a path (centred, the
+#: Z corridors' cut bends gave 61 % and 56 %); at 1.25-1.75, 69 % and 60 %,
+#: door to door p50 102 -> 118 u (measured over 40 cave graph builds).
+OFFSET = 1.0
+OFFSET_MIN = 0.4
+SPACING_LO, SPACING_HI = 1.25, 1.75
+#: The span two facing rooms keep in common, in corridor widths: the corridor
+#: and a quarter-width pier each side of its doors.
+STRAIGHT_NEED = 1.5
+
+
+class Jitter(NamedTuple):
+    """A placement's per-edge jitter: ``edges`` {frozenset((a, b)): (spacing,
+    offset share)} (:func:`edge_jitter`) and the span (u) facing rooms keep."""
+
+    edges: Dict[frozenset, Tuple[float, float]]
+    need: float
+
+    def cross(self, across: float) -> float:
+        """The offset a share of 1 moves across a wall: the slack."""
+        return max(0.0, across - self.need)
+
+
+def jitter_salt(order: Sequence[str], half: Dict[str, Point], seed: Optional[int] = None) -> str:
+    """The build's salt for :func:`edge_jitter`: ``seed`` when given, else the
+    rooms' ids and sizes (drawn from the build's rng before placement, so a
+    build seed always gives the same salt and two seeds almost never share
+    one). Reads nothing from the rng."""
+    if seed is not None:
+        return f"seed:{int(seed)}"
+    return "size:" + ";".join(f"{r}={half[r][0]:.6f},{half[r][1]:.6f}" for r in order)
+
+
+def edge_jitter(salt: str, a: str, b: str) -> Tuple[float, float]:
+    """(spacing factor, sideways offset share) of edge ``a``-``b`` for
+    ``salt``: the factor within :data:`SPACING_LO`-:data:`SPACING_HI`, the
+    share :data:`OFFSET_MIN` to :data:`OFFSET` either way, as the displacement of the greater id's room from the
+    lesser's (so either end reads the same edge)."""
+    lo, hi = (a, b) if a <= b else (b, a)
+    h = hashlib.blake2b(f"{salt}|{lo}|{hi}".encode(), digest_size=8).digest()
+    u1 = int.from_bytes(h[:4], "little") / 2 ** 32
+    u2 = int.from_bytes(h[4:], "little") / 2 ** 32
+    v = 2 * u2 - 1
+    t = math.copysign(OFFSET_MIN + (OFFSET - OFFSET_MIN) * abs(v), v)
+    return SPACING_LO + (SPACING_HI - SPACING_LO) * u1, t
+
+
+def _jitter_table(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
+                  storeys: Optional[Dict[str, Any]], seed: Optional[int],
+                  corridor_width: float) -> Optional[Jitter]:
+    """The :class:`Jitter` of every edge between rooms of ``order`` that
+    takes one (not a stair, not a Bridge); None when there's none to take."""
+    if OFFSET == 0 and SPACING_LO == SPACING_HI == 1:
+        return None
+    salt = jitter_salt(order, half, seed)
+    keys = _plan_keys(graph, order, storeys)
+    inset = set(order)
+    out: Dict[frozenset, Tuple[float, float]] = {}
+    for e in graph.edges():
+        if e.a not in inset or e.b not in inset or BRIDGE_TAG in e.tags:
+            continue
+        if is_stair(keys[e.a], keys[e.b]):
+            continue
+        out[frozenset((e.a, e.b))] = edge_jitter(salt, e.a, e.b)
+    return Jitter(out, STRAIGHT_NEED * corridor_width)
+
+
+def _jitter_of(jitter: Optional[Jitter], a: str, b: str) -> Tuple[float, float]:
+    """(spacing, offset share) for the edge's ``b`` seen from ``a``: the share
+    signed as b's displacement from a. (1, 0) for an edge without one."""
+    if not jitter:
+        return 1.0, 0.0
+    f, t = jitter.edges.get(frozenset((a, b)), (1.0, 0.0))
+    return f, (t if b > a else -t)
+
 
 def bridge_twins(graph: TopologyGraph, order: Sequence[str],
                  storeys: Optional[Dict[str, Any]]) -> Dict[str, List[frozenset]]:
@@ -389,11 +481,14 @@ def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Po
 
 def start_positions(graph: TopologyGraph, order: Sequence[str],
                     half: Dict[str, Point], run: float, gap: float,
-                    storeys: Optional[Dict[str, Any]] = None) -> Dict[str, Point]:
+                    storeys: Optional[Dict[str, Any]] = None,
+                    jitter: Optional[Jitter] = None
+                    ) -> Dict[str, Point]:
     """The best of :func:`start_once` over START_ROOTS roots (the first room,
     then the best-connected) and :data:`SIDE_ORDERS` (fewest
     :func:`layout_clashes`, the first on a tie; a clash-free start ends the
-    search), then :func:`repair` if it still clashes."""
+    search), then :func:`repair` if it still clashes. ``jitter`` goes to
+    :func:`start_once`."""
     inset = set(order)
     deg = {r: sum(1 for m in graph.neighbours(r) if m in inset) for r in order}
     rank = {r: k for k, r in enumerate(order)}
@@ -401,7 +496,7 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
     best = None
     for root in roots:
         for sides in SIDE_ORDERS:
-            pos = start_once(graph, order, half, run, gap, sides, root, storeys)
+            pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter)
             score = layout_clashes(graph, order, pos, half, gap, storeys)
             if best is None or score < best[0]:
                 best = (score, pos)
@@ -494,9 +589,13 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                half: Dict[str, Point], run: float, gap: float,
                side_order: Sequence[str] = ("E", "N", "W", "S"),
                root: Optional[str] = None,
-               storeys: Optional[Dict[str, Any]] = None) -> Dict[str, Point]:
+               storeys: Optional[Dict[str, Any]] = None,
+               jitter: Optional[Jitter] = None
+               ) -> Dict[str, Point]:
     """Breadth-first start: each room beside a placed neighbour on a free wall
     side, or in the corner where two placed neighbours' free sides meet.
+    ``jitter`` (:func:`_jitter_table`) moves "beside" by each edge's spacing
+    and offset; None places every neighbour centred one run off the wall.
 
     Candidates are ranked by (twice the wall clashes plus footprint clashes,
     footprint clashes, ring-mate sides, distance to its placed neighbours and
@@ -516,9 +615,15 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
     dirs = dict(SIDES)
 
     def beside(q: str, u: str, d: Point) -> Point:
+        # One run (times the edge's spacing) past q's wall, moved along it
+        # by the edge's offset share of the two rooms' half-extents across.
         dx, dy = d
+        f, t = _jitter_of(jitter, q, u)
         ext = abs(dx) * (half[q][0] + half[u][0]) + abs(dy) * (half[q][1] + half[u][1])
-        return (pos[q][0] + dx * (ext + run), pos[q][1] + dy * (ext + run))
+        across = abs(dx) * (half[q][1] + half[u][1]) + abs(dy) * (half[q][0] + half[u][0])
+        off = t * jitter.cross(across) if jitter else 0.0
+        return (pos[q][0] + dx * (ext + run * f) + abs(dy) * off,
+                pos[q][1] + dy * (ext + run * f) + abs(dx) * off)
 
     def ring_bad(u: str, q: str, side: str) -> int:
         """u on q's ``side``: ring mates of u at q on the opposite side, or
@@ -627,10 +732,13 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
 def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
                  pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
                  run: float, gap: float,
-                 iterations: Optional[int] = None) -> Dict[str, Point]:
+                 iterations: Optional[int] = None,
+                 jitter: Optional[Jitter] = None
+                 ) -> Dict[str, Point]:
     """Spring iterations: each edge keeps the wall side it starts on (b rests
-    one run past a's wall on that axis, centred across it, so its corridor
-    runs straight and stays on that wall); every other pair repels, more
+    one run past a's wall on that axis, times the edge's ``jitter`` spacing,
+    and moved along the wall by its offset, as :func:`start_once` put it: an
+    offset under 1 keeps the rooms facing, so the side holds); every other pair repels, more
     strongly the nearer their footprints. ``nodes`` are what the pair tests
     read (graph nodes, or Storeys): a pair that may overlap in plan doesn't
     repel, and a stair edge (across Levels) rests :data:`STAIR_REST` of the
@@ -651,6 +759,11 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     dirs = dict(SIDES)
     S = np.array([dirs[_side_toward(pos[a], half[a], pos[b], half[b])] for a, b in edges],
                  dtype=float).reshape(-1, 2)
+    # Each edge's spacing on its run and offset along the wall (b's from a),
+    # on the axis across S.
+    J = np.array([_jitter_of(jitter, a, b) for a, b in edges], dtype=float).reshape(-1, 2)
+    T = S[:, ::-1].copy()
+    T[:] = np.abs(T)
     joined = np.zeros((n, n), dtype=bool)
     if len(E):
         joined[E[:, 0], E[:, 1]] = True
@@ -672,11 +785,16 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
         if len(E):
             a, b = E[:, 0], E[:, 1]
             d = P[b] - P[a]
-            rest = (np.abs(S[:, 0]) * (H[a, 0] + H[b, 0])
-                    + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]) + run)
+            ext = (np.abs(S[:, 0]) * (H[a, 0] + H[b, 0])
+                   + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]))
+            rest = ext + run * J[:, 0]
             if stair.any():
-                rest = np.where(stair, (rest - run) * STAIR_REST, rest)
-            f = K_SPRING * (d - S * rest[:, None])
+                # (rest less the run, not ext: the same floats as before jitter.)
+                rest = np.where(stair, (rest - run * J[:, 0]) * STAIR_REST, rest)
+            across = (np.abs(S[:, 0]) * (H[a, 1] + H[b, 1])
+                      + np.abs(S[:, 1]) * (H[a, 0] + H[b, 0]))
+            slack = np.maximum(0.0, across - (jitter.need if jitter else 0.0))
+            f = K_SPRING * (d - S * rest[:, None] - T * (J[:, 1] * slack)[:, None])
             np.add.at(F, a, f)
             np.add.at(F, b, -f)
         # Repulsion over every pair kept apart in plan.
@@ -705,22 +823,28 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
 def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
            corridor_width: float, gap: float,
            storeys: Optional[Dict[str, Storey]] = None,
-           run_factor: Optional[float] = None) -> Dict[str, Point]:
+           run_factor: Optional[float] = None,
+           jitter: bool = False) -> Dict[str, Point]:
     """The ``spring`` placement: room centres for ``order`` (before separation
     and the Envelope; :func:`place` does those). With ``storeys`` (step 7)
     rooms on different Levels may overlap and stair edges pull together.
     ``run_factor`` (None: :data:`RUN_FACTOR`) is one corridor run in corridor
-    widths; a style profile sets its own (winding tunnels task 9: a cave's)."""
+    widths; a style profile sets its own (winding tunnels task 9: a cave's).
+    ``jitter`` (a zone whose corridors are rough: winding control task 8)
+    gives each edge its spacing and offset (:func:`edge_jitter`, salted with
+    the rooms' sizes); off, every neighbour sits centred one run off a wall."""
     run = (RUN_FACTOR if run_factor is None else run_factor) * corridor_width
-    pos = start_positions(graph, order, half, run, gap, storeys)
+    table = (_jitter_table(graph, order, half, storeys, None, corridor_width)
+             if jitter else None)
+    pos = start_positions(graph, order, half, run, gap, storeys, table)
     edges = [(e.a, e.b) for e in graph.edges()
              if graph.node(e.a).is_room and graph.node(e.b).is_room]
     nodes = _plan_keys(graph, order, storeys)
-    return spring_relax(order, edges, pos, half, nodes, run, gap)
+    return spring_relax(order, edges, pos, half, nodes, run, gap, jitter=table)
 
 
 #: The Placement registry: name -> callable(graph, order, half, corridor_width,
-#: gap, storeys=None, run_factor=None) -> {room id: centre}. Names must be the checker's
+#: gap, storeys=None, run_factor=None, jitter=False) -> {room id: centre}. Names must be the checker's
 #: ``ruleset.PLACEMENTS``. ``storeys`` (step 7) is passed only when the build
 #: stacks, so a placement written before it still works on one Level.
 PLACEMENT_FUNCS: Dict[str, Callable[..., Dict[str, Point]]] = {"spring": spring}
@@ -805,4 +929,5 @@ __all__ = [
     "start_once", "repair", "spring_relax", "spring",
     "PLACEMENT_FUNCS", "fit_to_envelope", "FACINGS", "face_entry",
     "RUN_FACTOR", "REPEL_RUNS", "ITERATIONS", "K_SPRING", "K_REPEL",
+    "OFFSET", "OFFSET_MIN", "SPACING_LO", "SPACING_HI", "STRAIGHT_NEED", "Jitter", "jitter_salt", "edge_jitter",
 ]
