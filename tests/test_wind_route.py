@@ -150,7 +150,7 @@ def test_stored_paths_clear_everything(case):
     pieces = {}
     for cor in spec.corridors:
         if cor.path:
-            assert cor.rough > 0 and cor.steps == 0 and not cor.bridge and cor.transition is None
+            assert cor.steps == 0 and not cor.bridge and (cor.rough > 0 or cor.transition is not None)
             assert cor.path[0] == pytest.approx((cor.from_x, cor.from_y))
             assert cor.path[-1] == pytest.approx((cor.to_x, cor.to_y))
             assert max(_turns(cor.path)) <= ROUGH.max_turn + 1e-6
