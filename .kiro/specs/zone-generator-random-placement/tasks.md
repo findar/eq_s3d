@@ -13,27 +13,22 @@ specs" in `.kiro/steering/project.md`.
 - Fill the card's Result and tick the task here.
 - **Never tick a `Type: human` task.**
 
-Bytes (Req 6): classic-layout zones, cities and wilderness stay byte-identical. Prove it with:
+Bytes (Req 6): classic-layout zones, cities, wilderness and built/hewn Graph dungeons stay
+byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove it with:
 
 `EQ_PATH='F:\everquest_rof2' python -m pytest tests/test_layout_engine.py tests/test_site_builds.py tests/test_partial_rebuild.py -q -n 4`
 
 ## Tasks
 
-- [ ] 1. Measure, and jitter every built and hewn Graph dungeon
+- [ ] 1. Measure, and the build seed for the cave jitter (built and hewn tried, kept on the lattice: decision 2)
   - Card: [cards/01-dungeons.md](cards/01-dungeons.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/topology/embed.py, generators/layout.py, generators/layout_engine.py, scripts/grid_score.py, tests/test_topology_embed.py, goldens it moves (named in the commit)
   - Reqs: 1, 2, 5, 6
 
-- [ ] 2. Warrens keep their loops
-  - Card: [cards/02-warrens.md](cards/02-warrens.md)
-  - Type: agent · Size: M · Depends: 1
-  - Owns: generators/topology/embed.py, generators/layout.py, tests/test_topology_embed.py, goldens it moves
-  - Reqs: 1, 3
-
 - [ ] 3. Outdoor dungeons
   - Card: [cards/03-outdoor.md](cards/03-outdoor.md)
-  - Type: agent · Size: M · Depends: 2
+  - Type: agent · Size: M · Depends: 1
   - Owns: generators/topology/embed.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_outdoor_levels.py, goldens it moves
   - Reqs: 1, 2
 

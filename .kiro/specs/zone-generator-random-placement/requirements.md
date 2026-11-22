@@ -28,9 +28,11 @@ The classic layout (TinyKeep: scattered rooms, separation, MST plus loops) and c
 
 ## Requirements
 
-1. **Random positions everywhere.** Every Graph-layout zone (every dungeon theme and rule set,
-   and the outdoor dungeon) places its rooms off the lattice: per theme, the grid score's mean
-   over the measuring set is at most 0.10 and no build reads as rows and columns.
+1. **Random positions where the walls are natural.** *Amended by decision 2 (the user's
+   choice): built and hewn Graph dungeons (fortress, temple, tomb, mine and the rest, and
+   warrens) keep the lattice, as stock built zones do.* Cave Graph zones (step 26) and the
+   outdoor dungeon place their rooms off the lattice: per kind, the grid score's mean over the
+   measuring set is at most 0.10 and no build reads as rows and columns.
 2. **Still connected, the same way.** The grown graph is unchanged: the same rooms, the same
    edges, every edge on its wall side (one opening per wall, step 6 finding 1). Rooms join their
    own neighbours, not across the zone: `relations_broken` and `edge_fidelity` hold, and the
@@ -41,5 +43,6 @@ The classic layout (TinyKeep: scattered rooms, separation, MST plus loops) and c
    new sweep over the other Graph themes and the outdoor dungeon. Quality bands stay under 5%.
 5. **Randomness, not noise.** Different seeds give different placements; the same seed gives the
    same zone. The offset comes from the build, not from a global rng stream other code shares.
-6. **Bytes.** Classic-layout zones, cities and wilderness stay byte-identical. Graph zones change
+6. **Bytes.** Classic-layout zones, cities and wilderness stay byte-identical; so do built and
+   hewn Graph dungeons, except where a general fix (decor, grade cap) moves them, named. Graph zones change
    (the user's request); each moved golden is named in its commit.
