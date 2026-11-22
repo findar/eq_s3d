@@ -2138,6 +2138,8 @@ class LayoutGenerator:
                     bl = cand and bridge_layout(cand, by_id)
                     if not bl:
                         continue
+                    if self._straight_doors and self._slot_meets_door(bl.slot, hall, corridors, k):
+                        continue
                     shaft = (bl.slot, bl.ceiling, bl.top)
                     if self._shaft_clear(rooms, edges, k, m, shaft, shafts):
                         for f in ("from_x", "from_y", "to_x", "to_y", "bridge"):
@@ -2196,6 +2198,31 @@ class LayoutGenerator:
             if any(self._doors_clash(new, other.cor, rooms[m]) for m in shared):
                 return None
         return new
+
+    @classmethod
+    def _slot_meets_door(cls, slot, hall: RoomSpec, corridors: List[CorridorSpec],
+                         k: int) -> bool:
+        """Does a Bridge's ``slot`` in ``hall`` overlap the piece of a door's corridor inside
+        ``hall`` (from the wall to ``_wall_point``'s inset)? The slot is a Throat of the
+        hall's floor, and that piece's side walls would stand in it (winding control task 10:
+        seed 2071938654, Winding 2, room_5's straight west door 2 u into corr_8's slot, "wall
+        across throat"). ``_shaft_clear`` reads the shaft only from the hall's ceiling up."""
+        (x0, y0, _), (x1, y1, _) = hall.bounds
+        inset = 2.0                      # _wall_point's inset
+        for q, other in enumerate(corridors):
+            if q == k:
+                continue
+            at = cls._door_on_wall(other, hall)
+            if at is None:
+                continue
+            wall, c = at
+            hw = other.width / 2
+            piece = {"W": (x0, c - hw, x0 + inset, c + hw), "E": (x1 - inset, c - hw, x1, c + hw),
+                     "S": (c - hw, y0, c + hw, y0 + inset), "N": (c - hw, y1 - inset, c + hw, y1)}[wall]
+            if (min(slot[2], piece[2]) - max(slot[0], piece[0]) > _TOUCH
+                    and min(slot[3], piece[3]) - max(slot[1], piece[1]) > _TOUCH):
+                return True
+        return False
 
     @staticmethod
     def _pieces_clash(pa, pb, shared) -> bool:
