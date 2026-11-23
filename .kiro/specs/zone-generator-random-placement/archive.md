@@ -34,4 +34,24 @@
    "Caves only" for any-bearing placement and angled entries, and "Every zone" for size
    variance. Requirements 7 and 8 added; tasks 9–13.
 
+5. **Targets for tasks 10 and 11** (task 9, measured on 48 stock zones' chambers; full tables
+   in `ba87985`; `python scripts/grid_score.py --shapes`, `scripts/stock_room_shapes.py`).
+   - Task 10, caves (spec, seeds 2000–2039 and 731402518): edge bearings within 10° of an axis
+     ≤ 0.35 (stock caves 0.28, ours 0.64; 0.85 at 731402518) and ≥ 0.25 of them 30–45° off
+     (stock 0.33, ours 0.05). Clumping: nearest neighbour min ≤ 1.0 median side (stock 0.63,
+     ours 1.64) and CV ≥ 0.30 (stock 0.38, ours 0.19). Entry angle on the spec p50 ≥ 15°,
+     share over 20° ≥ 0.30, p90 ≤ 55° (stock can't set it: the raster reads our square doors
+     at 9–22°; stock p90 56°). Stock chambers also open straight into each other on 0.30 of
+     edges (ours never).
+   - Task 11, every kind (built, cave and enclosed-city stock agree, so one distribution):
+     keep each zone's median side where the class puts it (stock 8.5–15 H, ours 11–13.5 H)
+     and spread side/median as stock p5/p25/p75/p95 0.66/0.84/1.30/2.1 (ln sd 0.35; max/median
+     about 2.3, ours 1.45–1.66); area CV 0.8–0.95 (ours 0.42–0.55), area max/min 9–16 per
+     zone (ours 4–6); aspect p50 1.25 on the spec (stock 1.31 read, less ~0.07 for door stubs),
+     p90 1.8, share over 1.5 0.25–0.30 (ours 0–0.15), the odd hall to 3–6. In H the stock
+     p90 is 20–22 H, p95 24–26 H, so the 20 H band top clips the big rooms: open it to about
+     26 H (a human's 156 u still under a dragon's 168 u minimum). The Size control keeps
+     shifting the median. Outdoor dungeons take the cave numbers (stock outdoor "rooms" are
+     open ground cut at narrowings).
+
 ## Follow-ups
