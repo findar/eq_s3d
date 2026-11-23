@@ -782,6 +782,24 @@ class Room:
             for f in ctx.features:
                 if f.get("kind") != "dais" and len(f.get("plan") or ()) >= 3:
                     free &= _polygon_distance(self.sx, self.sy, f["plan"]) > PLAYER_HALF_WIDTH
+            # A cell that's a rise over the sample's own floor (a dais's side) or floor not
+            # reached (a solid) covers it within the half-width of the cell's square: the
+            # side stands about there (seed 478076965's war_city room_4: a slot between a
+            # dais and the wall, open to the cells by the dais's corner, an urn in its mouth).
+            nx, ny = self.shape
+            hi = np.pad(np.where(np.isnan(self.floor), -np.inf, self.floor), 2,
+                        constant_values=-np.inf)
+            solid = np.pad(~np.isnan(self.floor) & ~self.ok, 2, constant_values=False)
+            base = np.where(np.isnan(self.floor), np.inf, self.floor)
+            for di in range(-2, 3):
+                for dj in range(-2, 3):
+                    if di == 0 and dj == 0:
+                        continue
+                    ex = np.maximum(np.abs(self.sx - self.gx - di * self.cell) - self.cell / 2, 0.0)
+                    ey = np.maximum(np.abs(self.sy - self.gy - dj * self.cell) - self.cell / 2, 0.0)
+                    edge = (hi[2 + di:2 + di + nx, 2 + dj:2 + dj + ny] > base + STEP_UP) | \
+                        solid[2 + di:2 + di + nx, 2 + dj:2 + dj + ny]
+                    free &= ~(edge & (np.hypot(ex, ey) <= PLAYER_HALF_WIDTH))
             self._gate = (free,) + self._graph(free)
             self._gate_starts = self._starts(door_cells, *self._gate)
             self.gate_before = self._joined(np.zeros(self.shape, bool), graph=self._gate,
