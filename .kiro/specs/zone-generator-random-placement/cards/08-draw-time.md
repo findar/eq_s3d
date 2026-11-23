@@ -13,7 +13,7 @@ near `b77d5a9` without putting rooms back on the lattice.
       `b77d5a9` time, and no draw over 300 s.
 - [ ] Task 3's targets still hold (`scripts/grid_score.py` or task 3's `od_grid.py` over outdoor
       graph seeds 2000–2039): grid mean ≤ 0.10 per theme, door-to-door p50 ≤ 4/3 of before.
-- [ ] `EQ_PATH='F:\everquest_rof2' python scripts/sweep_themed_navigability.py --outdoor --rooms 2-30 --seeds 2 --seed 23 --verticality flat moderate dramatic` ≥ 173/174.
+- [ ] `EQ_PATH='F:\everquest_rof2' python scripts/sweep_themed_navigability.py --outdoor --layouts graph --rooms 2-30 --seeds 2 --seed 23 --verticality flat moderate dramatic` ≥ 173/174.
 - [ ] `EQ_PATH='F:\everquest_rof2' python -m pytest tests/ -q -n 4` (full, alone) green.
 
 ## Pitfalls
