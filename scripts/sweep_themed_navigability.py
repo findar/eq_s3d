@@ -16,12 +16,22 @@ first (``cave_first``) or second (``cave_second``). Each build draws its built
 Purpose from every non-cave archetype; with 14 or more rooms the third District
 is left to the relationship. The CSV records the resolved District Purposes.
 
+``--outdoor`` (zone-generator-random-placement task 4) sweeps outdoor dungeons
+(``zone_type`` ``outdoor_dungeon``) instead, judged with the outdoor gate
+(``generators.outdoor_dungeon.outdoor_dungeon_report``: the bowl, every room
+reached from the outdoor Spawn, every corridor continuous) and the Format_Checker.
+The archetype axis is the dungeon theme: ``default`` (none pinned) unless
+``--only`` names themes. A plan error (``PLAN_ERRORS``, which the pipeline retries
+with a fresh seed) counts as a failure with the reason ``plan: ...``.
+
 Usage:
     python -m scripts.sweep_themed_navigability [--seeds N] [--rooms N ...] [--keep]
     python -m scripts.sweep_themed_navigability --only cave --layouts classic graph \\
         --verticality flat moderate dramatic --rooms 2-30 --seeds 2 --jobs 3
     python -m scripts.sweep_themed_navigability --pair cave_first cave_second \\
         --layouts classic graph --verticality flat moderate dramatic --rooms 8-30 --jobs 3
+    python -m scripts.sweep_themed_navigability --outdoor --layouts graph \\
+        --verticality flat moderate dramatic --rooms 2-30 --seeds 2 --seed 23 --jobs 3
 
 Prints a per-zone OK/FAIL line, a tally per (archetype, layout, verticality),
 writes one CSV row per build (``--csv``, default ``output/themed_navigability.csv``)
@@ -74,7 +84,9 @@ def _room_counts(tokens):
 
 def build_one(job):
     """One build: plan, build, gate. Returns a CSV row."""
-    arch, layout, verticality, rooms, seed, out_dir, winding = job
+    arch, layout, verticality, rooms, seed, out_dir, winding, *rest = job
+    if rest and rest[0]:
+        return _build_outdoor(arch, layout, verticality, rooms, seed, out_dir, winding)
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from analyzer.rof2check import check_eqg
@@ -112,9 +124,53 @@ def build_one(job):
             "total": report.total_rooms, "reasons": " | ".join(reasons)}
 
 
+def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding):
+    """One outdoor-dungeon build (``--outdoor``): plan, build, the outdoor gate."""
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from analyzer.rof2check import check_eqg
+    from generators.builder import ZoneBuilder
+    from generators.outdoor_dungeon import PLAN_ERRORS, outdoor_dungeon_report
+    from generators.pipeline import _with_decor
+
+    c = {"zone_type": "outdoor_dungeon", "room_count": rooms, "verticality": verticality,
+         "layout": layout}
+    if theme != "default":
+        c["dungeon_theme"] = theme
+    if winding is not None:
+        c["winding"] = winding
+    plan = ZonePlan.from_controls(c, [])
+    plan.name = (f"odnav_{verticality[0]}{rooms}_{seed}" if theme == "default"
+                 else f"odnav_{theme}_{verticality[0]}{rooms}_{seed}")
+    row = {"archetype": theme, "layout": layout, "verticality": verticality,
+           "room_count": rooms, "n_rooms": 0, "seed": seed, "districts": "",
+           "passed": 0, "reachable": 0, "total": 0, "reasons": ""}
+    try:
+        spec = _with_decor(plan_to_spec(plan, seed=seed, warnings=[]))
+    except PLAN_ERRORS as e:
+        return dict(row, reasons=f"plan: {type(e).__name__}: {e}"[:200])
+    res = ZoneBuilder(spec).build(output_dir=Path(out_dir), write_glb=False)
+    report = outdoor_dungeon_report(res.eqg_path, spec)
+    fmt = check_eqg(res.eqg_path, spec)
+    reasons = [f"{r.room_id}: {r.reason or 'unreachable'}" for r in report.rooms
+               if not r.reachable]
+    reasons += [f"{o.room_id}: {o.reason}" for o in getattr(report, "outlines", []) if not o.ok]
+    reasons += [f"corridor {c.corridor_id}: {c.reason}" for c in report.corridors
+                if not c.connected]
+    reasons += [f"conflict {c}" for c in report.conflicts]
+    reasons += [f"format {c}" for c in (fmt.failed_checks or ([] if fmt.passed else ["format"]))]
+    passed = report.passed and report.corridors_passed and fmt.passed
+    return dict(row, n_rooms=len(spec.rooms), passed=int(passed),
+                reachable=report.reachable_rooms, total=report.total_rooms,
+                reasons=" | ".join(reasons))
+
+
 def run(args) -> int:
     out_dir = Path(tempfile.mkdtemp(prefix="navsweep_")) if not args.keep else ROOT / "output"
-    archetypes = list(args.pair) or [a for a in ARCHETYPES if not args.only or a in args.only]
+    if args.outdoor:
+        archetypes = list(args.only) or ["default"]
+    else:
+        archetypes = list(args.pair) or [a for a in ARCHETYPES if not args.only or a in args.only]
     rng = random.Random(args.seed)
     jobs = []
     for arch in archetypes:
@@ -123,8 +179,9 @@ def run(args) -> int:
                 for n in _room_counts(args.rooms):
                     for _ in range(max(args.seeds, 1)):
                         cell = f"{arch}:{rng.choice(BUILT)}" if arch in PAIRS else arch
-                        jobs.append((cell, layout, v, n, rng.randint(0, 2 ** 31 - 1),
-                                     str(out_dir), args.winding))
+                        job = (cell, layout, v, n, rng.randint(0, 2 ** 31 - 1),
+                               str(out_dir), args.winding)
+                        jobs.append(job + (True,) if args.outdoor else job)
 
     rows = []
     if args.jobs > 1:
@@ -158,7 +215,7 @@ def run(args) -> int:
         cave = sum(1 for r in rows if "cave" in r["districts"].split("+"))
         print(f"\n{cave}/{len(rows)} builds resolved a cave District "
               f"({sum(1 for r in rows if not r['districts'])} resolved one District)")
-    print(f"\nTally: {passed}/{len(rows)} themed zones pass the gate "
+    print(f"\nTally: {passed}/{len(rows)} {'outdoor dungeons' if args.outdoor else 'themed zones'} pass the gate "
           f"(rooms {args.rooms}, {args.seeds} seed(s) per cell). CSV: {path}")
 
     if not args.keep:
@@ -188,6 +245,9 @@ if __name__ == "__main__":
     ap.add_argument("--pair", nargs="+", default=[], choices=PAIRS,
                     help="districted builds pinning a cave District and a built one, in "
                          "these orders (replaces the archetype axis)")
+    ap.add_argument("--outdoor", action="store_true",
+                    help="sweep outdoor dungeons with the outdoor gate (--only names themes; "
+                         "default: no theme pinned)")
     ap.add_argument("--winding", type=float, default=None,
                     help="the plan's Winding (0..WINDING_MAX; default unset, the plan's default)")
     ap.add_argument("--jobs", type=int, default=1, help="worker processes")

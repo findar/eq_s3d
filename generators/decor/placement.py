@@ -112,7 +112,10 @@ WALLED_OFF = 64.0
 #: inset, mirrored. Its side walls stand in the room that far at each door's edges (``_door_stubs``).
 DOOR_STUB = 2.0
 #: Layers of a blocked mask (``Room.footprint``).
-LAYERS = 4
+LAYERS = 5
+#: The gate's sample step (``analyzer.footprints.GATE_STEP``): its samples lie on odd world
+#: coordinates (``floor_samples`` anchors its grid at a multiple of the step).
+GATE_STEP = 2.0
 #: A wall is kept clear this far each side of a door's clear zone (u): the opening's frame.
 FRAME = 3.0
 #: Wall lights' spacing (finding 1: a wall light's nearest wall light, p50 over zones).
@@ -759,6 +762,48 @@ class Room:
         self.faces = self._faces()
         self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
         self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
+        #: The gate's own samples, one by each cell (within 1 u of its middle), for the POIs:
+        #: the cells grow a Prop by half a cell for the gate's samples but read a wall line at
+        #: the half-width alone, so a strip between a Prop and a wall under the gate's 2 u
+        #: across can read open on them and shut on the gate's (random-placement task 4,
+        #: seed 1801994134: an urn by a treasure POI in a corner left a 1.7 u strip by the
+        #: wall; the cells' column stood in it, no gate sample did). Free: the cell's floor
+        #: reached, the half-width from the wall lines, door stubs and solid Features; a
+        #: Prop covers a sample within the half-width of its plan (``footprint``'s layer 4).
+        self._gate = None
+        if ctx.source == "room" and ctx.pois and abs(self.cell - GATE_STEP) < 1e-9:
+            dx = (1.0 - self.xs[0]) % GATE_STEP
+            dy = (1.0 - self.ys[0]) % GATE_STEP
+            self.sx = self.gx + (dx - GATE_STEP if dx > 1.0 else dx)
+            self.sy = self.gy + (dy - GATE_STEP if dy > 1.0 else dy)
+            free = self.ok.copy()
+            for (ax, ay), (bx, by) in list(ctx.wall_lines) + _door_stubs(ctx):
+                free &= _segment_distance(self.sx, self.sy, ax, ay, bx, by) > PLAYER_HALF_WIDTH
+            for f in ctx.features:
+                if f.get("kind") != "dais" and len(f.get("plan") or ()) >= 3:
+                    free &= _polygon_distance(self.sx, self.sy, f["plan"]) > PLAYER_HALF_WIDTH
+            # A cell that's a rise over the sample's own floor (a dais's side) or floor not
+            # reached (a solid) covers it within the half-width of the cell's square: the
+            # side stands about there (seed 478076965's war_city room_4: a slot between a
+            # dais and the wall, open to the cells by the dais's corner, an urn in its mouth).
+            nx, ny = self.shape
+            hi = np.pad(np.where(np.isnan(self.floor), -np.inf, self.floor), 2,
+                        constant_values=-np.inf)
+            solid = np.pad(~np.isnan(self.floor) & ~self.ok, 2, constant_values=False)
+            base = np.where(np.isnan(self.floor), np.inf, self.floor)
+            for di in range(-2, 3):
+                for dj in range(-2, 3):
+                    if di == 0 and dj == 0:
+                        continue
+                    ex = np.maximum(np.abs(self.sx - self.gx - di * self.cell) - self.cell / 2, 0.0)
+                    ey = np.maximum(np.abs(self.sy - self.gy - dj * self.cell) - self.cell / 2, 0.0)
+                    edge = (hi[2 + di:2 + di + nx, 2 + dj:2 + dj + ny] > base + STEP_UP) | \
+                        solid[2 + di:2 + di + nx, 2 + dj:2 + dj + ny]
+                    free &= ~(edge & (np.hypot(ex, ey) <= PLAYER_HALF_WIDTH))
+            self._gate = (free,) + self._graph(free)
+            self._gate_starts = self._starts(door_cells, *self._gate)
+            self.gate_before = self._joined(np.zeros(self.shape, bool), graph=self._gate,
+                                            starts=self._gate_starts)
 
     # -- connectivity (the gate's "reached floor stays joined") ----------------
 
@@ -804,11 +849,13 @@ class Room:
                        shape=(nx * ny, nx * ny))
         return connected_components(m, directed=False)
 
-    def _joined(self, blocked: np.ndarray, loose: bool = False, graph=None) -> np.ndarray:
+    def _joined(self, blocked: np.ndarray, loose: bool = False, graph=None,
+                starts=None) -> np.ndarray:
         """Reached floor (``walk``; ``loose``: all of ``ok``; or ``graph``'s) not blocked and
-        joined to a door (or a Site's approach)."""
+        joined to a door (or a Site's approach; ``starts``, when given)."""
         mask, ea, eb = graph or (self._loose if loose else (self.walk, self._ea, self._eb))
-        starts = self._loose_starts if loose else self.starts
+        if starts is None:
+            starts = self._loose_starts if loose else self.starts
         _n, lab = self._components(blocked, mask, ea, eb)
         lab = lab.reshape(self.shape)
         free = mask & ~blocked
@@ -968,6 +1015,15 @@ class Room:
         m[1][wide] = True
         m[2][least] = True
         m[3][bare] = True
+        if self._gate is not None:
+            if outline is None:
+                c, s = math.cos(yaw), math.sin(yaw)
+                plan = np.array([(x + c * u - s * v, y + s * u + c * v)
+                                 for u, v in ((-w / 2, -d / 2), (w / 2, -d / 2),
+                                              (w / 2, d / 2), (-w / 2, d / 2))])
+            reach = float(np.max(np.hypot(plan[:, 0] - x, plan[:, 1] - y))) + PLAYER_HALF_WIDTH
+            near = (np.abs(self.sx - x) <= reach) & (np.abs(self.sy - y) <= reach)
+            m[4][near] = _polygon_distance(self.sx[near], self.sy[near], plan) <= PLAYER_HALF_WIDTH
         return grown, m
 
     def _pockets(self, plans: np.ndarray) -> np.ndarray:
@@ -994,7 +1050,7 @@ class Room:
     def problems(self, blocked: np.ndarray) -> List[str]:
         """What a blocked mask (``LAYERS`` layers, as ``self.blocked``) breaks: floor cut off, a
         door or a POI no longer reached, a door's way narrower than ``CLEAR_WIDTH``."""
-        wide_blocked, maybe, plans = blocked[1], blocked[2], blocked[3]
+        wide_blocked, maybe, plans, gate_blocked = blocked[1], blocked[2], blocked[3], blocked[4]
         blocked = blocked[0]
         after = self._joined(blocked)
         out = []
@@ -1030,6 +1086,17 @@ class Room:
                                            else (near & was & ~now).any())
                    for was, now in ((self.before, after), (self.loose_before, loose_after))):
                 out.append(f"POI {k} ({p.get('purpose')}) no longer reached")
+        if self._gate is not None and gate_blocked.any():
+            # The gate's own samples (``__init__``): a POI with a sample in reach before keeps one.
+            now = self._joined(gate_blocked, graph=self._gate, starts=self._gate_starts)
+            for k, p in enumerate(self.ctx.pois):
+                with np.errstate(invalid="ignore"):
+                    level = np.abs(self.floor - float(p.get("z", 0.0))) <= STEP_UP
+                near = (np.hypot(self.sx - p["x"], self.sy - p["y"]) <= POI_REACH) & level
+                if (near & self.gate_before).any() and not (near & now).any():
+                    msg = f"POI {k} ({p.get('purpose')}) no longer reached"
+                    if msg not in out:
+                        out.append(msg)
         if any(self.wide_doors) and wide_blocked.any():
             for k, (was, now) in enumerate(zip(self.wide_doors, self._wide_doors(wide_blocked, maybe, plans))):
                 if was and not now:

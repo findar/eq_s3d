@@ -249,6 +249,34 @@ def test_p1_an_unreached_poi_fails(zone):
     assert [f.subjects for f in report.of("poi_unreached")] == [("shrine altar",)]
 
 
+def test_the_raster_reads_each_pixels_own_face_with_a_quad_cut(zone):
+    """An outdoor dungeon's TER drops its notch quad's two triangles and appends the
+    Mouth's (``outdoor_dungeon.build_outdoor_ter``). Each pixel still reads the grid
+    triangle under it, and the notch's pixels aren't ground (random-placement task 4:
+    with every later face read two places on, a shrine's altar read the bowl's rim)."""
+    spec, ter, _ = zone
+    land = wb.landscape_for(spec)
+    nx, ny = land.synth.heights.shape
+    cut = 2 * ((nx // 3) * (ny - 1) + ny // 2)
+    notched = TerFile(name=ter.name, magic=ter.magic, version=ter.version)
+    notched.materials, notched.vertices = ter.materials, ter.vertices
+    notched.polygons = [p for k, p in enumerate(ter.polygons) if k not in (cut, cut + 1)]
+    notched.polygons += [Polygon(p.v3, p.v2, p.v1, p.material, p.flags)     # stand-ins for the Mouth
+                         for p in (ter.polygons[cut], ter.polygons[cut + 1])]
+    ground = wb._ground_raster(spec, notched, AgentModel())
+    v = np.array([(p.x, p.y) for p in notched.vertices])
+    tris = np.array([(p.v1, p.v2, p.v3) for p in notched.polygons])
+    ii, jj = np.nonzero(ground.walk)
+    t = v[tris[ground.face_of[ii, jj]]]
+    px, py = ground.xs[ii], ground.ys[jj]
+    lo, hi = t.min(axis=1), t.max(axis=1)
+    assert ((lo[:, 0] <= px) & (px <= hi[:, 0]) & (lo[:, 1] <= py) & (py <= hi[:, 1])).all()
+    qi, qj = divmod(cut // 2, ny - 1)
+    (x0, y0), (x1, y1) = v[qi * ny + qj], v[(qi + 1) * ny + qj + 1]
+    inside = (px > x0) & (px < x1) & (py > y0) & (py < y1)
+    assert not inside.any()
+
+
 # ---------------------------------------------------------------------------
 # The raster: thin walls don't slip through, door gaps don't close up
 # ---------------------------------------------------------------------------

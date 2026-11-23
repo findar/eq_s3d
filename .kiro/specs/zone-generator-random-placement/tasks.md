@@ -32,10 +32,10 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: generators/topology/embed.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_outdoor_levels.py, goldens it moves; widened by the lead: generators/layout_engine.py, tests/test_topology_embed.py, generators/room_context.py, generators/decor/placement.py, tests/test_room_context.py, tests/test_graph_layout_build.py (a re-pinned seed)
   - Reqs: 1, 2
 
-- [ ] 4. Gate and bands
+- [x] 4. Gate and bands
   - Card: [cards/04-gate.md](cards/04-gate.md)
   - Type: agent · Size: S · Depends: 3
-  - Owns: fixes only where a failure is new (stop and report first)
+  - Owns: fixes only where a failure is new (stop and report first); widened by the lead: scripts/sweep_themed_navigability.py; fixes: generators/wilderness/build.py, generators/decor/placement.py, tests/test_gate_footprints.py, tests/test_decor_placement.py
   - Reqs: 4
 
 - [ ] 5. Acceptance section
