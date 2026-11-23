@@ -63,7 +63,9 @@ DISTRICT_ATTEMPTS = 8
 PROFILE_RUN_FACTOR = {"cave": 4.0}
 
 # Style profiles whose corridors are rough: the graph placement jitters each
-# edge off the lattice (``LayoutContext.jitter``; winding control task 8).
+# edge off the lattice (``LayoutContext.jitter``; winding control task 8). An
+# Envelope build (an outdoor dungeon) jitters whatever its profile (random
+# placement task 3); built and hewn dungeons keep the lattice (decision 2).
 JITTER_PROFILES = frozenset({"cave"})
 
 # Widths of run a profile's corridors gain per unit of Winding above 1
@@ -606,9 +608,12 @@ class LayoutGenerator:
         # (classic: scatter in an ellipse, separate, Delaunay, MST + a few
         # loop edges). Then Job B: pacing, elevation over the graph,
         # wall-to-wall corridors.
-        result = self.engine.generate(
-            self._layout_context(room_count, dungeon_theme, dungeon_race),
-            room_count, envelope)
+        ctx = self._layout_context(room_count, dungeon_theme, dungeon_race)
+        if envelope is not None:
+            # An Envelope build (an outdoor dungeon) leaves the lattice too,
+            # whatever its walls (random placement task 3).
+            ctx.jitter = True
+        result = self.engine.generate(ctx, room_count, envelope)
         self._straight_doors = getattr(result, "jittered", False)
         rooms = result.rooms
         # Job B works on plain (i, j) pairs; the vertical relations go to the

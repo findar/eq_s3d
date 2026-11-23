@@ -332,6 +332,9 @@ class GraphEngine:
     facing: int = 0
     entrance_side: float = 0.0
     DESCEND_TRIES = 8
+    # Jitter draws a jittered Envelope build tries for its entrance room to
+    # face the way in (``generate``).
+    ENTRY_DRAWS = 8
 
     def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
                  theme: Optional[str] = None,
@@ -395,7 +398,22 @@ class GraphEngine:
             place = functools.partial(place, run_factor=ctx.run_factor)
         jittered = ctx.jitter
         if jittered:
-            place = functools.partial(place, jitter=True, seed=ctx.seed)
+            # An Envelope build takes its own spacing and offset floor: the
+            # fit to the hill shrinks the layout (``embed.ENVELOPE_JITTER``).
+            extra = {"ranges": embed.ENVELOPE_JITTER} if envelope is not None else {}
+            place = functools.partial(place, jitter=True, seed=ctx.seed, **extra)
+        # A jittered Envelope build (an outdoor dungeon, random placement task
+        # 3) draws its jitter again, up to ENTRY_DRAWS times, while no facing
+        # puts the rules' entrance room nearest the way in (the pacing's
+        # entrance, where the Tunnel goes; an offset neighbour can stand out
+        # past it). Then once more with the entrance room's neighbours
+        # centred on its walls, as on the lattice (case a of
+        # tests/test_outdoor_levels.py, a hub entrance). The first draw is
+        # kept if none faces it.
+        tries = [{}]
+        if jittered and envelope is not None and entrance is not None:
+            tries = ([{}] + [{"draw": d} for d in range(1, self.ENTRY_DRAWS)]
+                     + [{"centred": entrance}])
         gap = ctx.corridor_width + 1.0
         # Levels go in before placement (step 7): heights as the rooms are
         # placed.
@@ -414,9 +432,14 @@ class GraphEngine:
             heights = {r: sizes[r][2] for r in order}
             level_h = embed.level_height(list(heights.values()))
             storeys = embed.storeys(levels, heights, level_h)
-            centres = place(graph, order, half, ctx.corridor_width, gap, storeys=storeys)
-        else:
-            centres = place(graph, order, half, ctx.corridor_width, gap)
+        kw = {"storeys": storeys} if storeys is not None else {}
+        centres = None
+        for extra in tries:
+            placed = place(graph, order, half, ctx.corridor_width, gap, **kw, **extra)
+            centres = centres or placed
+            if len(tries) > 1 and embed.entry_faced(placed, half, envelope, entrance):
+                centres = placed
+                break
         if envelope is not None:
             # Face the rules' entrance room toward the Envelope's way in (a
             # quarter turn / mirror of the whole layout), so the pacing's

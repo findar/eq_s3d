@@ -456,6 +456,48 @@ def test_edge_jitter_is_bounded_symmetric_and_salted():
         ["a", "b"], {"a": (40.0, 50.0), "b": (45.0, 45.5)})
 
 
+def test_envelope_jitter_has_its_own_ranges_and_further_draws():
+    """Random placement task 3: an Envelope build's edges take
+    ``ENVELOPE_JITTER``'s spacing and offset floor, and a further draw of the
+    same build's salt (``draw``) differs while draw 0 is the build's own."""
+    lo, hi, floor = embed.ENVELOPE_JITTER
+    for k in range(200):
+        f, t = embed.edge_jitter("s", f"n{k}", f"n{k + 7}", embed.ENVELOPE_JITTER)
+        assert lo <= f <= hi and floor <= abs(t) <= embed.OFFSET
+    half = {"a": (40.0, 50.0), "b": (45.0, 45.0)}
+    first = embed.jitter_salt(["a", "b"], half, 7)
+    assert embed.jitter_salt(["a", "b"], half, 7, 0) == first == "seed:7"
+    assert len({embed.jitter_salt(["a", "b"], half, 7, d) for d in range(8)}) == 8
+
+
+def test_outdoor_dungeon_leaves_the_lattice_on_its_wall_sides(monkeypatch):
+    """Random placement task 3: an outdoor dungeon (an Envelope build) jitters
+    whatever its walls, and every edge on one Level keeps its wall side."""
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    seen = []
+    relax = embed.spring_relax
+
+    def watched(order, edges, pos, half, nodes, run, gap, iterations=None, jitter=None):
+        out = relax(order, edges, pos, half, nodes, run, gap, iterations, jitter=jitter)
+        assert jitter is not None
+        for a, b in edges:
+            if embed.is_stair(nodes[a], nodes[b]):
+                continue
+            seen.append((a, b))
+            assert (embed._side_toward(pos[a], half[a], pos[b], half[b])
+                    == embed._side_toward(out[a], half[a], out[b], half[b])), (a, b)
+        return out
+
+    monkeypatch.setattr(embed, "spring_relax", watched)
+    plan = ZonePlan.from_controls({"zone_type": "outdoor_dungeon", "dungeon_theme": "temple",
+                                   "layout": "graph", "room_count": 12,
+                                   "verticality": "moderate"}, [])
+    plan.name = "odgrid"
+    spec = plan_to_spec(plan, seed=2005, warnings=[])
+    assert seen and spec.layout.get("jitter")
+
+
 def _controls_spec(seed, n, theme, verticality):
     """A Graph dungeon as the controls build it (``plan_to_spec``)."""
     from ai.expand import plan_to_spec
