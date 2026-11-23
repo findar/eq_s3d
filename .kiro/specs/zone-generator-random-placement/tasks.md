@@ -26,10 +26,10 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: generators/topology/embed.py, generators/layout.py, generators/layout_engine.py, scripts/grid_score.py, tests/test_topology_embed.py, goldens it moves (named in the commit)
   - Reqs: 1, 2, 5, 6
 
-- [ ] 3. Outdoor dungeons
+- [x] 3. Outdoor dungeons
   - Card: [cards/03-outdoor.md](cards/03-outdoor.md)
   - Type: agent · Size: M · Depends: 1
-  - Owns: generators/topology/embed.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_outdoor_levels.py, goldens it moves
+  - Owns: generators/topology/embed.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_outdoor_levels.py, goldens it moves; widened by the lead: generators/layout_engine.py, tests/test_topology_embed.py, generators/room_context.py, generators/decor/placement.py, tests/test_room_context.py, tests/test_graph_layout_build.py (a re-pinned seed)
   - Reqs: 1, 2
 
 - [ ] 4. Gate and bands

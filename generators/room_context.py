@@ -666,7 +666,12 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
     m = mesh if isinstance(mesh, _Mesh) else _Mesh(mesh)
     h = body_height(spec.dungeon_race)
     rooms = {r.id: r for r in spec.rooms}
-    boxes = [(r.bounds[0][0], r.bounds[0][1], r.bounds[1][0], r.bounds[1][1]) for r in spec.rooms]
+    # Each room's plan box with its height range: a corridor's cells under a room are the
+    # room's (its doorway), but only a room at the corridor's own heights; a room on another
+    # Level may stand over it in plan (random placement task 3: outdoor_cave's corr_2, Level
+    # -1, under room_1 on Level 0, had no floor left).
+    spans = [((r.bounds[0][0], r.bounds[0][1], r.bounds[1][0], r.bounds[1][1]),
+              r.bounds[0][2], r.bounds[1][2]) for r in spec.rooms]
     out = []
     for cor in spec.corridors:
         if _corridor_left_out(cor):
@@ -715,6 +720,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         if len(xs) == 0 or len(ys) == 0:
             continue
         gx, gy = np.meshgrid(xs, ys, indexing="ij")
+        boxes = [b for b, lo, hi in spans if lo < z1 and hi > z0]
         inside = _in_pieces(gx, gy, pieces) & ~_in_rects(gx, gy, boxes)
 
         t = cor.transition

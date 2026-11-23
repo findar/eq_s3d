@@ -75,6 +75,24 @@ def test_the_corpus_is_small():
     assert size < CORPUS_MB, f"corpus is {size:.2f} MB"
 
 
+@pytest.mark.slow
+def test_a_corridor_under_a_room_on_another_level_keeps_its_floor():
+    """Random placement task 3: outdoor_cave's corr_2 runs on Level -1 under room_1, which
+    stands on Level 0 over it in plan. A corridor's cells under a room are that room's
+    doorway only when the room is at the corridor's heights; dropped under any room, corr_2
+    had no floor at all."""
+    now = {c.id: c for c in record_rooms.record(record_rooms.recipe_named("outdoor_cave"))}
+    cor = now["corr_2"]
+    x0, y0, z0, x1, y1, z1 = cor.box
+    over = [c for c in now.values() if c.source == "room" and c.box[2] >= z1
+            and c.box[0] < x1 and c.box[3] > x0 and c.box[1] < y1 and c.box[4] > y0]
+    assert over, "no room stands over corr_2 in plan any more: re-pin the case"
+    floor = ~np.isnan(cor.floor)
+    assert floor.mean() > 0.5 and cor.reached.any()
+    _recipe, saved = load(record_rooms.path_for("outdoor_cave"))
+    assert next(c for c in saved if c.id == "corr_2").to_json() == cor.to_json()
+
+
 def test_contexts_are_consistent():
     """What every decor test leans on: the grid's parts agree, walls face into the room,
     doors and POIs sit in the room."""

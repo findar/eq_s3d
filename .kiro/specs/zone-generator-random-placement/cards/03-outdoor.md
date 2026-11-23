@@ -16,3 +16,4 @@ intact.
 - `fit_to_envelope` and `layout_in_envelope`: an offset must not push a room out of the hill.
 
 ## Result
+✔ 9208d2b · 4105 passed
