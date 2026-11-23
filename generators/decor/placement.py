@@ -149,6 +149,9 @@ WALK_GRADE = math.tan(math.radians(40.0))
 #: How near (u) a wall sample turned from a wall Prop's own face must be to its plan's corner
 #: to stop it there: about the samples' spacing.
 WALL_TURN_NEAR = 3.0
+#: How far apart ``into_a_wall`` reads a wall Prop's edges (u): under WALL_TURN_NEAR, so no
+#: stretch of an edge passes a turned wall's face unread.
+EDGE_STEP = 1.0
 #: A wall model whose own reach to its wall side is more than this past stock's standoff (model
 #: units) has a part stock sinks into the wall (DNTORCH101: reach 5.14, stock's origin 2.89 off);
 #: hung flush it stands that much further out than stock ever shows it, so a wall line takes
@@ -1085,13 +1088,18 @@ class Room:
     def into_a_wall(self, w: WallFace, across: float, half: float) -> bool:
         """A wall Prop's plan on face ``w`` (``across`` off it, ``half`` either way along it)
         crosses another wall turned from it: at an inside corner its side would stand in the
-        wall beside it (task 14: a torch 0.68 u into the next wall)."""
+        wall beside it (task 14: a torch 0.68 u into the next wall). Its edges are read along
+        their length, not only at the corners: a wide Prop at a wall's end can reach past a
+        bend in an outline wall, its corner far from any face while its edge runs through the
+        wall beyond the bend (random placement task 3: a 20.5 u banner on outdoor seed 2's
+        room_4, 8.6 u of it behind the wall)."""
         if not len(self.wall_xy):
             return False
         n = np.array([w.nx, w.ny])
         t = np.array([-w.ny, w.nx])
         o = np.array([w.x, w.y])
-        corners = np.array([o + n * a + t * s for a in (0.0, across) for s in (-half, half)])
+        along = np.linspace(-half, half, max(2, int(math.ceil(2 * half / EDGE_STEP)) + 1))
+        corners = np.array([o + n * a + t * s for a in (0.0, across) for s in along])
         reach = half + across + WALL_TURN_NEAR
         near = (np.hypot(*(self.wall_xy - o).T) <= reach) & (self.wall_n @ n < 0.5)
         if not near.any():
