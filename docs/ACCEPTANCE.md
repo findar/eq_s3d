@@ -3655,3 +3655,260 @@ the Server. At `b70c5fc` each passed too, with its rooms elsewhere (still on the
       TER in capitals). Their vertex counts match too (18,948, 9,810 and 21,622). Only cave
       zones jitter (archive decision 5). As a check that the comparison can tell: case a1 against `b70c5fc` differs in 28
       files.
+
+## Step 27 — Random room placement
+
+> Roadmap step 27 (`zone-generator-random-placement`). At the step 26 look the user asked that
+> generated rooms "end up randomly positioned and connected". The plan was to take every Graph
+> zone off the lattice. Task 1 tried that for built and hewn dungeons, but no setting kept both
+> stock wall runs and hall length, and the user chose to keep built zones on the grid (archive
+> decision 2). So two kinds of zone leave the lattice: **cave** Graph dungeons, as since step 26,
+> now salted by the build's own seed, and **outdoor dungeons** (Envelope builds). An outdoor
+> dungeon's grid score drops from about 0.22 to about 0.09, and its doors are closer together. The
+> room nearest the way in is still the entrance room. Every other Graph dungeon (fortress, temple,
+> tomb, warren and the rest), classic layouts, cities and wilderness keep their room layout. The
+> grown graph doesn't change: the same rooms, the same edges, the same Levels and stairs. (A big
+> plan that now fits on a different try is the exception; see case d.) Along the way the step
+> fixed these:
+> - Decor reads the corridor's wall stubs at a door's edges, and a ceiling Prop's whole plan stays
+>   inside its room (task 1).
+> - Wall decor checks its whole edge across an outline bend, and a corridor's context counts only
+>   the rooms on its own Level (task 3).
+> - The outdoor ground raster reads each pixel's own face past the tunnel notch, and a POI keeps a
+>   gate sample between a Prop and a wall (task 4).
+> - A 30-room outdoor dungeon draws in under a minute again (task 8).
+>
+> Restart the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and
+> check no stale-code banner shows. Then walk the cases in the viewer (http://localhost:5180/).
+
+Build each case in Controls with the seed shown. Cases a, f, w and k use Size **medium** and Decor
+**Normal**. The others leave Size and Decor at their defaults (medium, Normal) unless the row says
+otherwise. Every case was built through the Server's `/api/generate` (rule planner, no API key,
+`EQ_PATH` set) on master `c1dcfb2`. Every build passed the gate and the Format_Checker on the
+first build with its seed kept. None was Quality_Degraded, and no seed had to be swapped. The
+"before" builds ran the same requests on the code from before the step (`b77d5a9`) on its own
+Server. In Y.5, "before the fix" for cases s and p is the gate sweep's own build (no retry),
+rerun for this section on `7e5f41d` (task 3 merged, before task 4's fixes). For cases b and u it
+is the suite failure recorded in task 3's commit 9208d2b, not rebuilt here. The grid score is `scripts/grid_score.py`'s: the share of
+room-centre pairs whose x or y agree within 10 u. Rooms scattered at random score 0.06 to 0.09.
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| a | Dungeon | Layout **Graph**, Rooms 12, Theme **Cave**, Verticality **Moderate** (step 26's case a1) | 731402518 |
+| o | Outdoor dungeon | Layout **Graph**, Rooms 14, Verticality **Moderate**, no theme | 731402518 |
+| t | Outdoor dungeon | Layout **Graph**, Rooms 14, Theme **Temple**, Verticality **Dramatic** | 731402518 |
+| f | Dungeon | Layout **Graph**, Rooms 16, Theme **Fortress**, Walls **Built**, Verticality **Moderate** (step 26's case d1); also with Decor **None** | 731402518 |
+| w | Dungeon | Layout **Graph**, Rooms 12, Theme **Warren**, Verticality **Moderate** (step 26's case c1); also Rooms 20 at seed 13 | 731402518, 13 |
+| k | Dungeon | Layout **Classic**, Rooms 12, Theme **Fortress**, Verticality **Moderate**; also with Decor **None** | 731402518 |
+| c | City | defaults | 731402518 |
+| b | Outdoor dungeon | Rooms 5, everything else default (the decor suite's pinned build) | 2 |
+| u | Outdoor dungeon | Rooms 8, Size **small** (the `outdoor_cave` room recording) | 114 |
+| s | Outdoor dungeon | Layout **Graph**, Rooms 17, Verticality **Dramatic** | 1139996531 |
+| p | Outdoor dungeon | Layout **Graph**, Rooms 26, Verticality **Dramatic** | 1801994134 |
+| d | Outdoor dungeon | Layout **Graph**, Rooms 30, Theme **Corrupted Sanctum**, Verticality **Flat** | 1078956947 |
+
+### Y.1 — A cave, salted by its own seed
+
+Case a. The same 12 rooms and 13 corridors join the same rooms as before. 11 rooms are on Level 0
+and room_8 is on Level 1, reached by the stair `corr_10` (room_5 → room_8, 102 u up). Before, the
+cave's offsets used a salt shared by every build. Now the build's seed draws them (Requirement 5),
+so every centre moves. The before column is step 26's X.7.1 "Now, Winding 0 and 1" layout, built
+again here with the same centres.
+
+| Room | Before (`b77d5a9`) | Now |
+|---|---|---|
+| room_0 (entrance) | (8.3, −1.8) | (22.8, 2.1) |
+| room_1 | (181.1, −20.9) | (215.8, −5.8) |
+| room_2 | (−14.8, 172.8) | (−133.4, 21.4) |
+| room_3 | (−25.3, −200.6) | (24.8, −177.0) |
+| room_4 (climax) | (158.7, −235.2) | (196.8, −209.6) |
+| room_5 | (369.9, −39.9) | (196.8, 186.9) |
+| room_6 | (−218.9, −168.0) | (−184.9, −223.8) |
+| room_7 | (−48.4, −370.6) | (0.3, −347.8) |
+| room_8 (Level 1) | (403.0, −39.9) | (230.0, 186.9) |
+| room_9 | (−392.9, −156.3) | (−368.6, −223.1) |
+| room_10 | (−238.5, 22.4) | (−173.7, −395.4) |
+| room_11 | (−425.6, 3.8) | (−345.7, −416.0) |
+
+Grid score **0.076** now (5 of 66 pairs), 0.030 before (2 pairs). It is one new random draw, not
+a trend: over seeds 2000–2039 the cave's mean is 0.065 (0.066 before; task 1). The 5 pairs:
+room_5 / room_8 (the stacked stair pair, never offset), room_0 / room_1 and room_6 / room_9 in y,
+and room_0 / room_3 and room_4 / room_5 in x, each of those four at least 179 u apart. The rooms now span
+599 × 603 u (829 × 543 before). The median corridor is 121.0 u door to door at both. 10,820
+vertices (10,800 before).
+
+- [ ] **[MUST] Still a cave off the grid** — Case a: look at the map and fly over the cave. No three
+      rooms should line up. room_5 and room_8 share a row at y 186.9, as a stacked pair always
+      does. Say whether it still reads as chambers placed by hand. Not looked at in the 3D
+      viewer for this section.
+- [ ] **[MUST] The stair and the Level** — Case a: walk room_5 → `corr_10` → room_8 (102 u up).
+      The stair should land flush in both rooms. Not looked at in the 3D viewer for this section.
+
+### Y.2 — Outdoor dungeons off the lattice
+
+Cases o and t. Each keeps its 14 rooms, its 15 edges between the same rooms, its Levels and its
+stairs. Only the positions inside the hill change. The Tunnel still comes in on the entrance
+room's wall from the way in, and that room is still the nearest top-Level room to the mouth.
+
+**Case o** (no theme, Moderate). room_2, room_5 (climax) and room_11 are on Level −1, reached by
+two stairs, `corr_1` (room_1 → room_2) and `corr_8` (room_8 → room_11), each 102 u down.
+
+| Room | Before (`b77d5a9`) | Now |
+|---|---|---|
+| room_0 (entrance) | (−79.8, −148.1) | (−160.1, −141.2) |
+| room_1 | (−69.3, −29.8) | (−125.9, −29.6) |
+| room_2 (Level −1) | (−109.6, −29.8) | (−166.2, −29.6) |
+| room_3 | (70.3, −32.8) | (−166.8, 82.8) |
+| room_4 | (−58.2, 95.8) | (−20.2, −38.8) |
+| room_5 (Level −1, climax) | (−240.4, −29.8) | (−118.6, 108.5) |
+| room_6 | (70.9, 105.8) | (−2.0, 106.5) |
+| room_7 | (64.9, 226.7) | (34.5, 227.1) |
+| room_8 | (208.0, 116.8) | (117.5, 54.7) |
+| room_9 | (80.0, 341.0) | (3.3, 333.4) |
+| room_10 | (−64.9, 228.7) | (154.8, 206.4) |
+| room_11 (Level −1) | (208.0, 76.9) | (154.2, 54.7) |
+| room_12 | (4.4, 355.5) | (96.3, 363.2) |
+| room_13 | (−84.3, 347.1) | (199.0, 326.0) |
+
+Grid score **0.132** now (12 of 91 pairs), **0.209** before (19). This seed sits above the
+outdoor mean, which is 0.090 over seeds 2000–2039 (0.221 before; task 8). Two of its 12 pairs
+are the stair pairs (room_1 / room_2 and room_8 / room_11), which are never offset. The other
+ten agree by chance, 106 to 227 u apart. Before, a row of four ran at y −30 to −33
+(room_1, room_2, room_3, room_5) and a column of four at x 65 to 80 (room_3, room_6, room_7, room_9). The
+entrance is room_0 now and before. The Tunnel's mouth is at (−160.0, −220.0) on its S wall (it was
+at (−80.0, −220.0)), 79 u from its centre. The next-nearest top-Level room is room_1, at 193 u.
+The median corridor is **48.7 u** door to door (65.2 before). `corr_13` (room_3 → room_6) is now a
+Bridge over room_5; before, no corridor bridged. 15,141 vertices (14,449 before).
+
+**Case t** (Temple, Dramatic). room_7 and room_11 (climax) are on Level −1. The stair `corr_5`
+(room_7 → room_4) runs 102 u up.
+
+| Room | Before (`b77d5a9`) | Now |
+|---|---|---|
+| room_0 (entrance) | (149.7, −79.9) | (−73.2, −138.6) |
+| room_1 | (146.6, 52.4) | (−131.8, −11.2) |
+| room_2 | (274.2, 55.6) | (−269.9, 1.1) |
+| room_3 | (145.9, 169.9) | (−159.3, 122.0) |
+| room_4 | (−10.6, 58.1) | (12.9, 50.9) |
+| room_5 | (145.9, 273.2) | (−186.6, 237.9) |
+| room_6 | (−163.3, 61.4) | (135.5, 101.2) |
+| room_7 (Level −1) | (−10.6, 13.3) | (15.4, 6.2) |
+| room_8 | (−25.1, 201.5) | (−0.3, 202.1) |
+| room_9 | (−167.6, −48.8) | (240.2, 73.5) |
+| room_10 | (−172.6, 200.1) | (146.0, 234.8) |
+| room_11 (Level −1, climax) | (−130.5, 13.3) | (141.0, 60.5) |
+| room_12 | (−25.5, 325.8) | (−12.5, 324.5) |
+| room_13 | (−155.6, 327.8) | (142.7, 359.0) |
+
+Grid score **0.099** now (9 of 91 pairs), **0.231** before (21). Before, rooms stood in a column
+at x 146 to 150 (room_0, room_1, room_3, room_5) and rows at y 52 to 61 (room_1, room_2, room_4,
+room_6). Now room_6, room_10, room_11 and room_13 stand at x 135.5 to 146.0 (five of the nine pairs),
+y 60 to 359. The entrance is room_0 now and before: the mouth at (−80.0, −220.0) on
+its S wall, 82 u away. The next-nearest top-Level room is room_1, at 215 u. The median corridor is
+**54.5 u** door to door (58.9 before). Before, `corr_0` (room_6 → room_4) bridged room_11; now no
+corridor bridges. 12,436 vertices (12,162 before).
+
+- [ ] **[MUST] The grid is gone** — Cases o and t: look at the map and fly over each hill. Before,
+      rooms stood in rows and columns (see above). Now only the stair pairs share a line by
+      design. In case t, say whether room_6, room_10, room_11 and room_13 (x 135.5 to 146.0)
+      read as a column. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] The way in faces the entrance room** — Cases o and t: walk in from the outdoor
+      Spawn through the Tunnel. Each time it should open on room_0's S wall, with no other room
+      nearer the mouth. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] Stairs and Levels intact** — Case o: walk room_1 → `corr_1` → room_2 and room_8 →
+      `corr_8` → room_11 (102 u down each). Case t: walk room_7 → `corr_5` → room_4 (102 u up).
+      Each stair should land flush, and no room should poke out of the hill or through another
+      Level's room. In case o, cross `corr_13` over room_5 (the climax): the Bridge's floor
+      should be whole and room_5's ceiling slot clear. Not looked at in the 3D viewer for this
+      section.
+- [ ] **[SHOULD] Shorter halls** — Cases o and t: door to door is shorter now (median 48.7 and
+      54.5 u, from 65.2 and 58.9), because facing doors run straight and the fit to the hill is
+      smaller. Say whether the halls feel too short. Hall length is a later step. Not looked at
+      in the 3D viewer for this section.
+
+### Y.3 — Built and warren Graph dungeons keep the lattice
+
+- [ ] **[MUST] Fortress: the same layout** — Case f against `b77d5a9`: the spec is identical,
+      zone name aside, with the same 16 rooms, room_0 at (−6.2, −17.7), the climax room_5 at
+      (475.0, −17.0), 4 stairs, and grid score **0.158** at both (19 of 120 pairs, on the
+      lattice). With Decor **None** every file in the `.eqg` is identical (5 of 5). With Decor
+      **Normal** 208 of the 217 files are the same, and the Props differ in room_1 (the
+      barracks, redrawn), room_4 (a brazier moved 2.9 u), room_5 and room_7 (a banner moved
+      each) and `corr_13` (a torch moved). Building at each commit of the step places those
+      moves at task 1's decor fixes (the door stubs, 8ed510d, and the ceiling Prop's plan,
+      4a1d27a) and at 9208d2b (wall Props read along their edge, and corridor contexts per
+      Level). These are the general fixes Requirement 6 allows. 18,948 vertices at both. In 3D,
+      the fortress should look as it did in step 26 (room_5's banner now hangs at (430.6, 21.6)
+      and room_7's at (277.2, 345.9)). Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] Warrens byte-identical** — Case w against `b77d5a9`, Decor **Normal**: every file is
+      identical, 122 of 122 (12 rooms) and 140 of 140 (seed 13, 20 rooms). Grid score 0.288 and
+      0.100, the same at both. 9,810 and 21,622 vertices.
+
+### Y.4 — Classic and city
+
+- [ ] **[MUST] City byte-identical** — Case c against `b77d5a9`: every file in the `.eqg` is
+      identical, 65 of 65. 456 vertices.
+- [ ] **[MUST] Classic fortress: the same layout, decor moved by two fixes** — Case k against
+      `b77d5a9`: the spec is identical, zone name aside, with the same 12 rooms (room_7 the
+      entrance at (209.6, −92.7), room_6 the climax at (−102.0, −208.8)), and grid score 0.121
+      at both. With Decor **None** every file is identical (5 of 5). With Decor **Normal** 87 of
+      95 files are the same, and the Props differ in room_7 (the gatehouse: a chain and two
+      rocks) and room_8 (the prison cell: a chain, buckets, a torch, rocks). Building at each
+      commit places the moves at 4a1d27a (a ceiling Prop's whole plan inside the room) and
+      9208d2b. **Requirement 6 says classic
+      zones keep their bytes**, and its byte check (`tasks.md`) passes because the pinned
+      classic goldens don't hit these rooms. Decide whether a general decor fix may move a
+      decorated classic zone, as it may a built Graph one. In 3D, look at room_8's chain at
+      (−71.3, 188.5) and room_7's at (190.3, −73.3): each should hang wholly inside its room.
+      Not looked at in the 3D viewer for this section.
+
+### Y.5 — The fixes found on the way
+
+- [ ] **[MUST] A banner across an outline bend** — Case b, room_4: a deep room with an outline
+      wall (centre (274.9, 49.8), floor −63.0, 110 × 108 u) on Level −1. Before the fix (9b95ac0), the 20.5 u banner stood at the end of a short outline
+      wall whose next stretch bends 105°, and 8.6 u of it hung behind the wall
+      (`test_banners_show_in_the_glb_in_front_of_their_wall` failed). Decor now reads a wall
+      Prop's edges every 1 u, so that spot is refused. room_4's banner hangs at (326.4, 36.2),
+      beside the throne at (280.7, 15.6). Grid score 0.200 (2 of 10 pairs; 0.600 before). 7,046
+      vertices. In 3D, look at room_4's banner from the room: all of its cloth should be in front
+      of the wall, with no corner through the bend. Not looked at in the 3D viewer for this
+      section.
+- [ ] **[MUST] A corridor under another Level's room** — Case u (the `outdoor_cave` recording),
+      `corr_2`: room_5 → room_3 on Level −1, from (74.4, −5.3) to (74.4, 17.7), floor −96.1. It
+      runs under room_1 (Level 0, centre (39.0, 52.9), 118 × 120 u, floor 5.9). Room context
+      used to drop every corridor cell inside any room's plan box as that room's doorway,
+      whatever its Level, so `corr_2` had no floor to dress
+      (`test_contexts_are_consistent` failed on the re-recorded corpus). Now only rooms at the
+      corridor's heights count. `corr_2` carries no Props in this build, so the fix shows only in
+      the context. 10,161 vertices. In 3D, walk room_5 → `corr_2` → room_3 under room_1: one
+      continuous floor the whole way. Not looked at in the 3D
+      viewer for this section.
+- [ ] **[MUST] The shrine altar** — Case s. Before the fix (`7e5f41d`, the gate sweep's build), it
+      failed the gate: "bowl: poi_unreached: site0:shrine altar: at (438, 470) is not on reached
+      ground". The ground raster mapped each pixel to grid triangle 2q / 2q+1, but the Tunnel's
+      notch drops one quad's two triangles. So every pixel past the notch read the quad north
+      of it, and the altar's pixel read the bowl's rim (a face 414 u tall). Now each pixel reads
+      its own face. The shrine Site stands at (448.8, 457.4), with its altar POI at (437.9,
+      469.7, −13.8). It passes (20,236 vertices). Grid score **0.066** (0.206 before). In 3D, walk from the outdoor Spawn to the shrine and stand at the
+      altar: open ground, no lip or step. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] The treasure POI by a wall** — Case p, room_24 (centre (435.7, 19.1), 53 × 49 u,
+      floor −5.7, Level 0, up the stair `corr_14` from room_21). Before the fix
+      (`7e5f41d`, the gate sweep's build), it failed: "room_24: poi_unreached: treasure: the
+      treasure POI at (458, -0, -6) is not on reached floor". An urn by the corner POI left a
+      1.7 u strip by the wall. That strip read open on decor's cells but shut on the gate's 2 u
+      samples. Decor now also reads the room on the gate's own samples. The treasure POI is at
+      (458.3, −0.2), with the chest at (447.3, 2.6) and urns at (453.0, 0.2) and (453.0, 4.9).
+      It passes (25,358 vertices). Grid score **0.071** (0.154 before). In 3D, walk to room_24's
+      treasure corner: you should reach the POI past the urns, with no squeeze against the wall.
+      Not looked at in the 3D viewer for this section.
+- [ ] **[SHOULD] A 30-room outdoor dungeon builds in good time** — Case d. Through the Server,
+      with each build running alone, the whole generate (draw, build and gate) took **72.0 s**
+      now and 128.0 s at `b77d5a9`. Task 8 timed the draw alone (quality_sweep's spec): 103 s at
+      `b77d5a9`, 367 s after task 3's Envelope jitter (`7e5f41d`), and 44 s now. Over task 4's
+      sample of 27–30 room draws, the p95 is 50 s and the max 97 s, against 627 s and 655 s
+      before task 8. The zone is Flat, with no stairs. The plan fits a different try now, so the
+      graph isn't the one from before: 30 corridors (35 before). Grid score 0.064 (0.099
+      before). The entrance is room_18, with the mouth at (340.0, −40.0) on its E wall, 170 u
+      away (the next-nearest room is 200 u). 19,515 vertices (16,537 before). Generate it in
+      Controls and say whether the wait feels acceptable. Not looked at in the 3D viewer for
+      this section.
