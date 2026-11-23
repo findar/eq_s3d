@@ -60,7 +60,7 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
 
 ## First-look fixes (decision 4)
 
-- [ ] 9. Measure what the eye sees, and stock room sizes
+- [x] 9. Measure what the eye sees, and stock room sizes
   - Card: [cards/09-measure.md](cards/09-measure.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: scripts/grid_score.py, scripts/ (a new measuring script), .kiro/specs/zone-generator-random-placement/archive.md (targets only)
