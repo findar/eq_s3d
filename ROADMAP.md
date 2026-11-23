@@ -485,6 +485,11 @@ particular are a cheap, high-impact quick win.)
       mostly uses ramps (lessons-learned: ramp subdivision). Candidates: switchbacks with
       N landings for a big rise, a spiral stairwell, a multi-level stair hall linking
       three Levels. Must keep the 3 u step-up and flush openings.
+      Addendum (the user, same day): all stairs look the same; they should vary with the
+      area. A cave's "stair" may just be a smooth (rough-walled, winding) ramp; a built
+      fortress has dressed stone steps; a mine, timber-edged steps or a cut ramp; a ruin,
+      broken or sloping steps. Pick the stair's form and finish from the corridor's wall
+      style and Purpose (related: step 8's "stairs and bridges square in caves").
 - [ ] **Every outdoor area gets a lava patch whatever its theme** — the user, 2026-11-22:
       outdoor areas always seem to have a lava section even where lava never fits the
       zone. Cause: `generators/wilderness/matrix.py` (~line 917) places a 1-2 cell interior
