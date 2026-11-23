@@ -512,7 +512,8 @@ class LayoutGenerator:
                  envelope: Optional[Envelope] = None,
                  districts: bool = False,
                  district_plan: Optional[list] = None,
-                 district_relationship: str = "") -> ZoneSpec:
+                 district_relationship: str = "",
+                 drop_rooms: bool = True) -> ZoneSpec:
         """
         Generate a zone. *locks* > 0 produces a keyed dungeon with that many
         lock-and-key gates (solvability guaranteed); 0 is a fully open dungeon.
@@ -531,6 +532,10 @@ class LayoutGenerator:
         redrawn; after ``ENVELOPE_ATTEMPTS`` misses a room is dropped, down to
         ``MIN_ENVELOPE_ROOMS``, with a ``rooms_reduced`` warning in
         ``self.warnings``. If even that many don't fit, ``EnvelopeFitError``.
+        With *drop_rooms* off no room is dropped: ``EnvelopeFitError`` after
+        the attempts at the full count, which are the same layouts the
+        dropping run starts with (``outdoor_dungeon.plan_dungeon`` asks for
+        the full count everywhere first; random placement task 8).
         Without an Envelope the layout is exactly as before.
 
         *districts* (districts spec Req 3) splits a dungeon of 8 or more rooms
@@ -561,7 +566,7 @@ class LayoutGenerator:
                     del self.warnings[kept:]
                     if attempt == DISTRICT_ATTEMPTS - 1:
                         raise
-        floor = min(room_count, MIN_ENVELOPE_ROOMS)
+        floor = min(room_count, MIN_ENVELOPE_ROOMS) if drop_rooms else room_count
         self._apply_room_scale(room_count)
         for count in range(room_count, floor - 1, -1):
             for _ in range(ENVELOPE_ATTEMPTS):

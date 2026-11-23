@@ -335,6 +335,8 @@ class GraphEngine:
     # Jitter draws a jittered Envelope build tries for its entrance room to
     # face the way in (``generate``).
     ENTRY_DRAWS = 8
+    # Placements an engine keeps for an Envelope build to reuse (``generate``).
+    PLACED_KEPT = 256
 
     def __init__(self, rule_set: Union[str, "RuleSet", None] = None,
                  theme: Optional[str] = None,
@@ -347,6 +349,7 @@ class GraphEngine:
         self.theme = theme
         self.rules_dir = Path(rules_dir) if rules_dir is not None else RULES_DIR
         self._loaded: Dict[Tuple[Optional[str], Optional[str]], "RuleSet"] = {}
+        self._placed: Dict[tuple, Dict[str, Tuple[float, float]]] = {}
 
     def rules_for(self, theme: Optional[str]) -> "RuleSet":
         from .topology.ruleset import RuleSet, load_for_theme
@@ -409,7 +412,8 @@ class GraphEngine:
         # past it). Then once more with the entrance room's neighbours
         # centred on its walls, as on the lattice (case a of
         # tests/test_outdoor_levels.py, a hub entrance). The first draw is
-        # kept if none faces it.
+        # kept if none faces it. A first draw whose entrance room is flanked
+        # skips the other draws for the centred try (task 8).
         tries = [{}]
         if jittered and envelope is not None and entrance is not None:
             tries = ([{}] + [{"draw": d} for d in range(1, self.ENTRY_DRAWS)]
@@ -433,13 +437,42 @@ class GraphEngine:
             level_h = embed.level_height(list(heights.values()))
             storeys = embed.storeys(levels, heights, level_h)
         kw = {"storeys": storeys} if storeys is not None else {}
-        centres = None
-        for extra in tries:
-            placed = place(graph, order, half, ctx.corridor_width, gap, **kw, **extra)
-            centres = centres or placed
-            if len(tries) > 1 and embed.entry_faced(placed, half, envelope, entrance):
-                centres = placed
-                break
+        # The placement reads nothing from the rng, so the same graph, sizes
+        # and options always give the same centres. An Envelope build lays
+        # the same graph out again and again (``plan_dungeon`` tries each
+        # facing at a size, with the same seed), so it keeps what it placed
+        # (random placement task 8: the entry draws made that the bulk of a
+        # big outdoor dungeon's time).
+        key = None
+        if envelope is not None:
+            key = (rs.placement, tuple(graph.nodes()), tuple(graph.edges()), tuple(order),
+                   tuple(half[r] for r in order), ctx.corridor_width, gap,
+                   tuple(sorted(storeys.items())) if storeys is not None else None,
+                   ctx.run_factor, jittered, ctx.seed, entrance,
+                   tuple(envelope.centre), envelope.inradius,
+                   None if envelope.entry is None else tuple(envelope.entry))
+        centres = self._placed.get(key) if key is not None else None
+        if centres is None:
+            k = 0
+            while k < len(tries):
+                extra = tries[k]
+                placed = place(graph, order, half, ctx.corridor_width, gap, **kw, **extra)
+                centres = centres or placed
+                if len(tries) > 1 and embed.entry_faced(placed, half, envelope, entrance):
+                    centres = placed
+                    break
+                # A first draw whose entrance room is flanked (neighbours on
+                # two opposite walls) goes straight to the centred try:
+                # hardly any jitter draw of such a graph faces the way in
+                # (``embed.entry_flanked``; task 8), and centred a hub
+                # entrance can (case a).
+                k = (len(tries) - 1 if k == 0 and len(tries) > 1
+                     and embed.entry_flanked(graph, placed, half, entrance) else k + 1)
+            if key is not None:
+                if len(self._placed) >= self.PLACED_KEPT:
+                    self._placed.pop(next(iter(self._placed)))
+                self._placed[key] = centres
+        centres = dict(centres)
         if envelope is not None:
             # Face the rules' entrance room toward the Envelope's way in (a
             # quarter turn / mirror of the whole layout), so the pacing's
