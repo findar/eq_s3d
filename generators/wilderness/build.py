@@ -617,6 +617,36 @@ def _reached_faces(spec: ZoneSpec, ter: TerFile, agent: AgentModel):
     return surf, _flood_excluding(surf, seed, _invisible_wall_faces(surf, land.bowl))
 
 
+def _grid_faces(ter: TerFile, nx: int, ny: int) -> np.ndarray:
+    """For each grid triangle (quad q's a-b-c is 2q, its a-c-d 2q+1, as
+    ``build_wilderness_ter`` builds them), its index among the TER's polygons, or -1
+    when the TER has no such triangle (an outdoor dungeon's notch quad). The identity
+    for a plain wilderness TER."""
+    n = 2 * (nx - 1) * (ny - 1)
+    head = ter.polygons[:n]
+    if len(head) == n and all(_is_grid_tri(p, k, ny) for k, p in ((0, head[0]), (n - 1, head[-1]))):
+        return np.arange(n)
+    out = np.full(n, -1, dtype=np.int64)
+    for k, p in enumerate(ter.polygons[:n]):
+        qi, qj = divmod(p.v1, ny)
+        if qi >= nx - 1 or qj >= ny - 1:
+            continue
+        b = (qi + 1) * ny + qj
+        g = 2 * (qi * (ny - 1) + qj)
+        if (p.v2, p.v3) == (b, b + 1):
+            out[g] = k
+        elif (p.v2, p.v3) == (b + 1, p.v1 + 1):
+            out[g + 1] = k
+    return out
+
+
+def _is_grid_tri(p, g: int, ny: int) -> bool:
+    """Is polygon ``p`` grid triangle ``g``?"""
+    qi, qj = divmod(g // 2, ny - 1)
+    a, b = qi * ny + qj, (qi + 1) * ny + qj
+    return (p.v1, p.v2, p.v3) == ((a, b, b + 1) if g % 2 == 0 else (a, b + 1, a + 1))
+
+
 def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
                    step: float = TREE_CHECK_STEP):
     """The reached ground of the grid TER as a ``footprints.GroundRaster`` at
@@ -643,11 +673,18 @@ def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
     qi, fx = np.floor(gx).astype(int), gx - np.floor(gx)
     qj, fy = np.floor(gy).astype(int), gy - np.floor(gy)
     tri = 2 * (qi[:, None] * (ny - 1) + qj[None, :]) + (fx[:, None] < fy[None, :])
+    # The TER's own index of each grid triangle: an outdoor dungeon's TER drops the
+    # notch quad's two (``outdoor_dungeon.build_outdoor_ter``), so every grid triangle
+    # after it sits two places earlier, and the notch has none (random-placement task 4:
+    # a shrine's altar read the quad north of it, the bowl's rim, and wasn't reached).
+    faces = _grid_faces(ter, nx, ny)
+    walk = on[np.maximum(faces[tri], 0)] & (faces[tri] >= 0)
+    tri = np.maximum(faces[tri], 0)
 
     sx, sy = spec.safe_point[0], spec.safe_point[1]
     si = min(max(int((sx - x0) / step), 0), len(xs) - 1)
     sj = min(max(int((sy - y0) / step), 0), len(ys) - 1)
-    return GroundRaster(xs=xs, ys=ys, walk=on[tri], spawn=(si, sj), face_of=tri,
+    return GroundRaster(xs=xs, ys=ys, walk=walk, spawn=(si, sj), face_of=tri,
                         face_verts=surf.verts[surf.faces], cell_origin=(ox, oy),
                         cell_res=res)
 

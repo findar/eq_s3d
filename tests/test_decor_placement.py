@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 from generators.decor.catalogue import KINDS, Catalogue, Model, Tags
-from generators.decor.placement import (CORRIDOR, FRAME, HEAD_HEIGHT, PLAYER_HALF_WIDTH, Decorated, Room, check,
+from generators.decor.placement import (CORRIDOR, FRAME, HEAD_HEIGHT, LAYERS, PLAYER_HALF_WIDTH, Decorated, Room, check,
                                         place, size_of)
 from generators.decor.rules import MOUNTS_FILLING, NEUTRAL, asks, load_decor
 from generators.room_context import Door, RoomContext, WallFace, load
@@ -851,6 +851,27 @@ def test_a_door_edges_corridor_wall_shuts_a_slot():
     room = Room(ctx)
     slot = (room.gx > door.c1 + 2) & (room.gx < 58) & (room.gy < 6)
     assert (room.walk & slot).any() and (room.before & slot).any()
-    blocked = np.zeros((4,) + room.shape, bool)
+    blocked = np.zeros((LAYERS,) + room.shape, bool)
     blocked |= room.footprint(64.0, 3.0, 0.0, 8.0, 6.0)[1]
     assert any(p.startswith("cuts off") for p in room.problems(blocked))
+
+
+def test_a_poi_keeps_a_gate_sample_between_a_prop_and_a_wall():
+    """Random placement task 4: the cells grow a Prop by half a cell for the gate's 2 u samples
+    but read a wall line at the half-width alone, so a strip between a Prop and a wall can read
+    open on them and shut on the gate's samples (which lie on odd coordinates). Here the cells'
+    column x = 52.75 stands in the strip (2.75 u off the Prop, 1.65 u off the wall); the gate's
+    x = 51 is 1 u off the Prop and x = 53 1.4 u off the wall, so the POI up the strip loses its
+    floor (seed 1801994134's outdoor room_24: an urn by a treasure POI in a corner)."""
+    ctx = box_room(pois=[{"purpose": "treasure", "name": "", "x": 52.5, "y": 46.0, "z": 0.0,
+                          "feature": None}])
+    ctx.origin = (0.75, 1.0)                                # cells off the gate's samples
+    ctx.wall_lines = [((54.4, 0.0), (54.4, 50.0))]
+    room = Room(ctx)
+    blocked = np.zeros((LAYERS,) + room.shape, bool)
+    blocked |= room.footprint(45.0, 30.0, 0.0, 10.0, 40.0)[1]
+    lost = "POI 0 (treasure) no longer reached"
+    cells_only = blocked.copy()
+    cells_only[4] = False
+    assert lost not in room.problems(cells_only)
+    assert lost in room.problems(blocked)
