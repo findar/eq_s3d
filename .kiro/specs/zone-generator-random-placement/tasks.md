@@ -44,7 +44,7 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: generators/layout_engine.py, generators/topology/embed.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_topology_embed.py, tests/test_outdoor_levels.py, goldens it moves (named in the commit)
   - Reqs: 1, 2
 
-- [ ] 5. Acceptance section
+- [x] 5. Acceptance section
   - Card: [cards/05-acceptance.md](cards/05-acceptance.md)
   - Type: agent · Size: S · Depends: 4, 8
   - Owns: docs/ACCEPTANCE.md
