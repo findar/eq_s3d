@@ -512,6 +512,16 @@ particular are a cheap, high-impact quick win.)
       leaking in from one point and running down to a pool; a forge's lava is channelled
       on purpose (troughs, a sluice from a vent). The pool's shape should follow its
       source: a flow from a seep or crack to the low point, not a square in the middle.
+- [ ] **Outdoor dungeon entrance: always a narrow tunnel into a hill** — the user,
+      2026-11-22: the way in is almost always in a hill and feels restricted; widen it,
+      and consider other ways in. Cause: the Tunnel is one terrain cell wide, run between
+      vertex columns `cross` and `cross + 1` (`generators/outdoor_dungeon.py` `Entrance`,
+      ~line 555), from a room's wall out to the Apron. Widen: a Mouth several cells across
+      that flares at the portal (stock cave mouths are wide). Other entries to consider:
+      a sinkhole or open pit with a ramp down, a ravine or gully cut into the ground, a
+      ruin or tower on the surface with stairs down, a cliff-face opening, a well or
+      shaft. Keep the gate's entrance rule (the rules' entrance room nearest the way in)
+      and the Apron's no-fall, no-see-through guarantees.
 - [ ] **Elevation-on overwrites the semantic sink/raise** — with elevation on,
       `_assign_elevation` re-derives every `floor_z` and discards the content
       layer's `sink` bias (M0 fixed only the elevation-off path). Content-layer
