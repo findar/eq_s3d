@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, stair_layout
-from .routing import (Hold, corridor_route, hold_route, path_zs, route_footprint, route_seed, scaled_tunnel,
+from .routing import (ENTRY_RUN, Hold, corridor_route, entry_line, held_entry_line, hold_route, path_zs, route_footprint, route_seed, scaled_tunnel,
                       split_path, strip_corners, wind_leg, wind_route, wind_seed)
 from .semantics import ROOM_TYPES, body_height
 from .topology.graph import ROOM_KINDS
@@ -149,13 +149,37 @@ def _legs(cor: CorridorSpec, rooms):
                                          cor.from_z, cor.to_z)
     bridge = bridge_layout(cor, rooms) if cor.bridge else None
     out = []
+    last = len(waypoints) - 2
     for k in range(len(waypoints) - 1):
         ends = MeshBuilder._leg_ends(waypoints, k, cor.width / 2, zs)
         if ends is None:
             continue
+        if any(route.heading) and k in (0, last):
+            # An angled run-out (random placement task 10) isn't on its leg: a line stands
+            # past it, where the corridor runs along the leg.
+            ends = _past_run_outs(ends, route.heading if k == 0 == last else
+                                  (route.heading[0], 0.0) if k == 0 else (0.0, route.heading[1]),
+                                  cor.width / 2)
+            if ends is None:
+                continue
         flight = cor.steps != 0 and k == carry
         out.append((ends, zs[k], zs[k + 1], axes[k], not flight and (bridge is None or k != bridge.leg)))
     return out
+
+
+def _past_run_outs(ends, heading, hw: float):
+    """A leg's ends moved in past its angled run-outs (``heading``, from end and to end):
+    ``ENTRY_RUN`` and a half width along the leg from each end that leaves at an angle, so a
+    line's held stretch (its depth and a half width either side, ``measure_routes``) starts
+    past the run-out. None when nothing is left."""
+    (x0, y0), (x1, y1) = ends
+    span = abs(x1 - x0) + abs(y1 - y0)
+    a = ENTRY_RUN + hw if heading[0] else 0.0
+    b = ENTRY_RUN + hw if heading[1] else 0.0
+    if span <= a + b:
+        return None
+    ux, uy = (x1 - x0) / span, (y1 - y0) / span
+    return (x0 + ux * a, y0 + uy * a), (x1 - ux * b, y1 - uy * b)
 
 
 def _span(ends) -> float:
@@ -407,6 +431,7 @@ def measure_winds(spec: ZoneSpec, tunnels: Mapping[str, object],
         cor.wind = []
         cor.path = []
     if not holds and not any(tunnels.get(cor.id) is not None and cor.rough > 0 for cor in spec.corridors):
+        entry_paths(spec, tunnels)
         return
     rooms = {r.id: r for r in spec.rooms}
     boxes = {cor.id: _corridor_boxes(cor, rooms) for cor in spec.corridors}
@@ -567,6 +592,7 @@ def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, bo
     held = [cor for cor in spec.corridors
             if cor.id in holds and cor.transition is not None and cor.steps == 0 and not cor.bridge]
     if not eligible and not held:
+        entry_paths(spec, tunnels, rooms)
         return
     if rooms is None:
         rooms = {r.id: r for r in spec.rooms}
@@ -617,9 +643,16 @@ def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, bo
             continue
         hold = Hold(leg, (t.x, t.y), t.depth + hw, sides)
         others = [s for cid, ss in solids.items() if cid != cor.id for s in ss]
-        for wander in (True, False):
-            line = hold_route(route, hw, rules, route_seed(cor), hold, wander)
-            if line is None or not route_clear(cor, line, others):
+        for wander in (True, False, None):
+            if wander is None:
+                # An angled corridor (random placement task 10): its doors were cut for the
+                # angle, so failing a wound line it still leaves them at it.
+                line = held_entry_line(route, hw, max(hw, rules.end), hold) if cor.entry else None
+            else:
+                line = hold_route(route, hw, rules, route_seed(cor), hold, wander)
+                if line is not None and not route_clear(cor, line, others):
+                    line = None
+            if line is None:
                 continue
             cut = split_path(line, path_zs(line, cor.from_z, cor.to_z), (t.x, t.y))
             if cut is None:
@@ -639,6 +672,47 @@ def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, bo
             for quad, za, zb in path_pieces(line, hw, cor.from_z, cor.to_z):
                 solids[cor.id].append(_solid(quad, min(za, zb), max(za, zb) + cor.height))
             break
+    entry_paths(spec, tunnels, rooms)
+
+
+def entry_paths(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None) -> None:
+    """Each angled corridor (``CorridorSpec.entry``, random placement task 10) that no wound
+    line fits takes ``routing.entry_line``'s: its doors were cut for the angle, so it still
+    leaves them at it. Unchecked for clearance, as the legs it stands for are."""
+    if not any(cor.entry and not cor.path for cor in spec.corridors):
+        return
+    if rooms is None:
+        rooms = {r.id: r for r in spec.rooms}
+    for cor in spec.corridors:
+        if cor.path or not cor.entry or cor.steps != 0 or cor.bridge:
+            continue
+        hw = cor.width / 2
+        rules = tunnels.get(cor.id)
+        run = max(hw, rules.end if rules is not None else ENTRY_RUN)
+        route = corridor_route(cor, rooms)
+        line = None
+        t = cor.transition
+        if t is not None:
+            # Through its Transition's line, straight there, as its legs would be.
+            waypoints = list(route.waypoints)
+            zs, _ = MeshBuilder._waypoint_zs(waypoints, None if route.carry < 0 else route.carry,
+                                             cor.from_z, cor.to_z)
+            leg = _held_leg(cor, waypoints, zs)
+            if leg is not None:
+                line = held_entry_line(route, hw, run, Hold(leg, (t.x, t.y), t.depth + hw))
+            cut = line and split_path(line, path_zs(line, cor.from_z, cor.to_z), (t.x, t.y))
+            if cut:
+                # The line's floor there, as measure_routes sets a held one's.
+                t.z = round(cut[3][0], 3)
+                for w in spec.layout.get("transitions", ()):
+                    if w.get("corridor") == cor.id and "z" in w:
+                        w["z"] = t.z
+            else:
+                line = None
+        if line is None:
+            line = entry_line(route, hw, run)
+        if line is not None:
+            cor.path = [(float(x), float(y)) for x, y in line]
 
 
 def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:

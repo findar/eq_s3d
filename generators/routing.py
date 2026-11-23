@@ -59,12 +59,16 @@ class Route:
                  -1 to mean "carry the longest leg" (the geometry builder's
                  default).
     `kind`       "straight" | "z" | "l" | "u".
+    `heading`    (from end, to end): the angle (radians, counter-clockwise)
+                 each run-out leaves its opening at, off the wall's normal
+                 (``CorridorSpec.entry``); (0, 0) runs both out square.
     """
 
     waypoints: Tuple[Tuple[float, float], ...]   # >= 2 points
     axes: Tuple[bool, ...]                        # True = leg runs along X
     carry: int                                    # leg that carries the rise
     kind: str                                     # "straight" | "z" | "l" | "u"
+    heading: Tuple[float, float] = (0.0, 0.0)
 
 
 def plan_route(from_xy: Tuple[float, float], to_xy: Tuple[float, float],
@@ -225,9 +229,79 @@ def corridor_route(cor: CorridorSpec, rooms: Mapping[str, RoomSpec]) -> Route:
         dy = cor.to_y - cor.from_y
         exit_from_x = exit_to_x = abs(dx) >= abs(dy)
 
-    return plan_route(
+    route = plan_route(
         (cor.from_x, cor.from_y), (cor.to_x, cor.to_y),
         exit_from_x, exit_to_x, cor.width / 2, cor.steps)
+    if cor.entry:
+        route = Route(route.waypoints, route.axes, route.carry, route.kind,
+                      (math.radians(cor.entry[0]), math.radians(cor.entry[1])))
+    return route
+
+
+#: A run-out's length (u) where no tunnel says (``TunnelRules.end``): the rough
+#: wall style's, so an angled corridor built without a wound line
+#: (``entry_line``) leaves its opening as a wound one would.
+ENTRY_RUN = 20.0
+
+
+def run_outs(route: Route, run: float) -> Tuple[Point, Point]:
+    """The ends of a route's two run-outs, ``run`` from its openings: along each end leg,
+    turned by the route's ``heading`` (``CorridorSpec.entry``). An angled run-out reaches
+    out along the normal no further than its end leg runs (half of a straight route's one
+    leg), so a Z route's line never doubles back towards the room it left."""
+    wps = route.waypoints
+    out = []
+    for p, q, h in ((wps[0], wps[1], route.heading[0]), (wps[-1], wps[-2], route.heading[1])):
+        dx, dy = _unit(p, q)
+        r = run
+        if h:
+            c, s_ = math.cos(h), math.sin(h)
+            dx, dy = dx * c - dy * s_, dx * s_ + dy * c
+            leg = math.dist(p, q) / (2.0 if len(wps) == 2 else 1.0)
+            r = min(run, leg / c)
+        out.append((float(p[0]) + dx * r, float(p[1]) + dy * r))
+    return out[0], out[1]
+
+
+#: How far a door point stands inside its room (``LayoutGenerator._wall_point``'s inset): a
+#: square corridor's floor overlaps the room's by this much.
+DOOR_INSET = 2.0
+
+
+def door_ends(route: Route) -> Tuple[Point, Point]:
+    """Where a route line starts and ends: its openings' door points, or for an angled end
+    (``Route.heading``) where its run-out crosses the wall plane, ``DOOR_INSET`` out along
+    the normal, so the strip's end (cut along the wall, ``strip_corners``) is the opening
+    ``geometry._door_openings`` cuts, and no corridor wall stands inside the room."""
+    wps = route.waypoints
+    out = []
+    for p, q, h in ((wps[0], wps[1], route.heading[0]), (wps[-1], wps[-2], route.heading[1])):
+        p = (float(p[0]), float(p[1]))
+        if h:
+            dx, dy = _unit(p, q)
+            c, s_ = math.cos(h), math.sin(h)
+            reach = DOOR_INSET / c
+            p = (p[0] + (dx * c - dy * s_) * reach, p[1] + (dx * s_ + dy * c) * reach)
+        out.append(p)
+    return out[0], out[1]
+
+
+def entry_line(route: Route, hw: float, run: float) -> Optional[List[Point]]:
+    """An angled corridor's line when it has no wound one (random placement task 10): each
+    run-out along its heading (``run_outs``), then straight between them, past an L's bend
+    (a straight or Z route's openings face each other, so its line runs across directly).
+    None when the route has no heading, or its strip would fold (``strip_corners``)."""
+    if not any(route.heading):
+        return None
+    wps = [(float(x), float(y)) for x, y in route.waypoints]
+    a_out, b_in = run_outs(route, run)
+    bends = wps[1:-1] if route.kind == "l" else []
+    start, end = door_ends(route)
+    line = [start, a_out] + bends + [b_in, end]
+    line = _tidy(line, (1, len(line) - 2))
+    if len(line) < 3 or strip_corners(line, hw) is None:
+        return None
+    return line
 
 
 def route_footprint(route: Route, hw: float) -> List[Rect]:
@@ -528,6 +602,8 @@ def wind_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
     turns = max(1, int(math.ceil(90.0 / rules.max_turn - 1e-9)))
     a_out = (wps[0][0] + dirs[0][0] * run, wps[0][1] + dirs[0][1] * run)
     b_in = (wps[n][0] - dirs[-1][0] * run, wps[n][1] - dirs[-1][1] * run)
+    if any(route.heading):
+        a_out, b_in = run_outs(route, run)
 
     # The bones: the run-outs' ends, and each bend cut as its chamfer.
     lefts = [_turn(dirs[i], dirs[i + 1]) > 0 for i in range(n - 1)]
@@ -538,7 +614,7 @@ def wind_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
     bones.append(b_in)
     bones = _tidy(bones, (0, len(bones) - 1))
 
-    line: List[Point] = [wps[0], bones[0]]
+    line: List[Point] = [door_ends(route)[0], bones[0]]
     if wander:
         rng = random.Random(seed)
         inner = TunnelRules(rules.segment, rules.max_turn, rules.wander, 0.0)
@@ -546,7 +622,7 @@ def wind_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
             line += _wind_run(p, q, hw, inner, rng.getrandbits(64))[1:]
     else:
         line += bones[1:]
-    line.append(wps[n])
+    line.append(door_ends(route)[1])
     line = _tidy(line, (1, len(line) - 2))
     if len(line) < 4:
         return None
@@ -555,9 +631,10 @@ def wind_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
         a, b = _unit(line[i - 1], line[i]), _unit(line[i], line[i + 1])
         if abs(math.degrees(_turn(a, b))) > rules.max_turn + 1e-6:
             return None
-    # Only the route's own legs again (no bend cut, no wander): nothing wound.
-    if len(line) == n + 3 and all(math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6
-                                  for p, q in zip(line[2:-2], wps[1:-1])):
+    # Only the route's own legs again (no bend cut, no wander): nothing wound. An angled
+    # route's run-outs already leave its legs.
+    if not any(route.heading) and len(line) == n + 3 and all(
+            math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6 for p, q in zip(line[2:-2], wps[1:-1])):
         return None
     return line
 
@@ -602,6 +679,9 @@ def hold_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
     s0, s1 = s_p - hold.reach, s_p + hold.reach
     if (k > 0 and s0 < 0.0) or (k < n - 1 and s1 > lengths[k]):
         return None                         # the stretch would reach into a bend
+    if (k == 0 and route.heading[0] and s0 < run) or \
+            (k == n - 1 and route.heading[1] and s1 > lengths[k] - run):
+        return None                         # ... or into an angled run-out
 
     def at(s):
         return (wps[k][0] + d[0] * s, wps[k][1] + d[1] * s)
@@ -609,6 +689,8 @@ def hold_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
     turns = max(1, int(math.ceil(90.0 / rules.max_turn - 1e-9)))
     a_out = (wps[0][0] + dirs[0][0] * run, wps[0][1] + dirs[0][1] * run)
     b_in = (wps[n][0] - dirs[-1][0] * run, wps[n][1] - dirs[-1][1] * run)
+    if any(route.heading):
+        a_out, b_in = run_outs(route, run)
     lefts = [_turn(dirs[i], dirs[i + 1]) > 0 for i in range(n - 1)]
     room = []
     for i in range(n - 1):
@@ -639,7 +721,7 @@ def hold_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
         elif i != k:
             bones.append((b_in, side, False))
 
-    line: List[Point] = [wps[0], a_out]
+    line: List[Point] = [door_ends(route)[0], a_out]
     rng = random.Random(seed)
     inner = TunnelRules(rules.segment, rules.max_turn, rules.wander, 0.0)
     for (p, _, _), (q, side, held) in zip(bones, bones[1:]):
@@ -649,7 +731,7 @@ def hold_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
             line += _wind_run(p, q, hw, inner, rng.getrandbits(64))[1:]
         else:
             line.append(q)
-    line.append(wps[n])
+    line.append(door_ends(route)[1])
     line = _tidy(line, (1, len(line) - 2))
     if len(line) < 4:
         return None
@@ -657,10 +739,87 @@ def hold_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
         a, b = _unit(line[i - 1], line[i]), _unit(line[i], line[i + 1])
         if abs(math.degrees(_turn(a, b))) > rules.max_turn + 1e-6:
             return None
-    if len(line) == n + 3 and all(math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6
-                                  for p, q in zip(line[2:-2], wps[1:-1])):
+    if not any(route.heading) and len(line) == n + 3 and all(
+            math.hypot(p[0] - q[0], p[1] - q[1]) < 1e-6 for p, q in zip(line[2:-2], wps[1:-1])):
         return None
     return line
+
+
+def held_entry_line(route: Route, hw: float, run: float, hold: Hold) -> Optional[List[Point]]:
+    """``entry_line`` for an angled corridor holding a Transition line that no wound line
+    fits: each run-out along its heading, then by the bends (or past a Z's, to its held middle leg) straight along the
+    held leg through ``hold.point`` for ``hold.reach`` either side, so the line stands
+    square across it. None without a heading, when the point isn't on its leg, the held
+    stretch would reach a run-out or a bend, or the strip would fold."""
+    if not any(route.heading):
+        return None
+    wps = [(float(x), float(y)) for x, y in route.waypoints]
+    n = len(wps) - 1
+    k = hold.leg
+    if not 0 <= k < n:
+        return None
+    d = _unit(wps[k], wps[k + 1])
+    length = math.hypot(wps[k + 1][0] - wps[k][0], wps[k + 1][1] - wps[k][1])
+    if d is None:
+        return None
+    s_p = (hold.point[0] - wps[k][0]) * d[0] + (hold.point[1] - wps[k][1]) * d[1]
+    off = abs((hold.point[0] - wps[k][0]) * d[1] - (hold.point[1] - wps[k][1]) * d[0])
+    s0, s1 = s_p - hold.reach, s_p + hold.reach
+    if off > 1e-3 or s0 < 0.0 or s1 > length:
+        return None
+    start, end = door_ends(route)
+    # A held stretch near an opening shortens the run-outs (to half, then a quarter) so
+    # they end short of it.
+    best = None
+    for share in HELD_RUNS:
+        r = run * share
+        lo = r if k == 0 else 0.0
+        hi = length - (r if k == n - 1 else 0.0)
+        if s0 < lo or s1 > hi:
+            continue
+        a_out, b_in = run_outs(route, r)
+        # Through the route's bends; for a Z holding its middle leg, also straight from
+        # the run-outs to the held stretch, when going by the bends turns back too hard.
+        for bends in (True, False) if route.kind != "l" and 0 < k < n - 1 else (True,):
+            line = [start, a_out]
+            for i in range(n):
+                if i == k:
+                    line += [(wps[k][0] + d[0] * s0, wps[k][1] + d[1] * s0),
+                             (wps[k][0] + d[0] * s1, wps[k][1] + d[1] * s1)]
+                if i < n - 1 and bends:
+                    line.append(wps[i + 1])
+            line += [b_in, end]
+            line = _tidy(line, (1, len(line) - 2))
+            if len(line) >= 3 and strip_corners(line, hw) is not None:
+                turn = _max_turn(line)
+                if turn <= (HELD_TURN if bends else HELD_TURN_DIRECT):
+                    return line
+                if best is None or turn < best[0]:
+                    best = (turn, line)
+    return best[1] if best is not None and best[0] <= HELD_TURN_MAX else None
+
+
+def _max_turn(line: Sequence[Point]) -> float:
+    """The sharpest turn (degrees) at a line's interior vertices."""
+    most = 0.0
+    for a, b, c in zip(line, line[1:], line[2:]):
+        u = (b[0] - a[0], b[1] - a[1])
+        v = (c[0] - b[0], c[1] - b[1])
+        most = max(most, abs(math.degrees(math.atan2(u[0] * v[1] - u[1] * v[0],
+                                                     u[0] * v[0] + u[1] * v[1]))))
+    return most
+
+
+#: A held entry line by the bends turning no sharper than HELD_TURN (one straight to the
+#: held leg, HELD_TURN_DIRECT) is taken as found; failing all, the line (to HELD_TURN_MAX)
+#: that turns least, as a run-out doubling back opens no floor.
+HELD_TURN = 120.0
+HELD_TURN_DIRECT = 90.0
+HELD_TURN_MAX = 150.0
+
+
+#: The run-out lengths ``held_entry_line`` tries, as shares of the tunnel's.
+HELD_RUNS = (1.0, 0.5, 0.25)
 
 
 def path_zs(line: Sequence[Point], from_z: float, to_z: float) -> List[float]:
@@ -718,8 +877,20 @@ def strip_corners(line: Sequence[Point], hw: float) -> Optional[List[Tuple[Point
     corners = []
     for i in range(m + 1):
         ns = [lefts[j] for j in (i - 1, i) if 0 <= j < m]
+        if i in (0, m) and abs(ns[0][0]) > 1e-9 and abs(ns[0][1]) > 1e-9:
+            # An angled run-out (``CorridorSpec.entry``): its end cut along the wall it
+            # leaves, the axis nearest the run's normal (at most 45 degrees off).
+            n0 = ns[0]
+            ax = (math.copysign(1.0, n0[0]), 0.0) if abs(n0[0]) >= abs(n0[1]) else \
+                (0.0, math.copysign(1.0, n0[1]))
+            reach = hw / (ax[0] * n0[0] + ax[1] * n0[1])
+            px, py = pts[i]
+            corners.append(((px + ax[0] * reach, py + ax[1] * reach), (px - ax[0] * reach, py - ax[1] * reach)))
+            continue
         mx, my = sum(v[0] for v in ns), sum(v[1] for v in ns)
         size = math.hypot(mx, my)
+        if size < 1e-9:
+            return None      # the line turns straight back on itself
         mx, my = mx / size, my / size
         reach = hw / (mx * ns[0][0] + my * ns[0][1])
         px, py = pts[i]

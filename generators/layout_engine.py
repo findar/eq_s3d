@@ -98,6 +98,11 @@ class LayoutContext:
     # (``embed.jitter_salt``; random placement task 1, Requirement 5); None:
     # the rooms' sizes salt it.
     seed: Optional[int] = None
+    # A cave places by bearing (random placement task 10, Requirement 7): its
+    # jitter draws each neighbour at an angle off its wall side and a wide
+    # spacing (``embed.BEARING_SPACING``), so rooms clump and spread. An
+    # Envelope build (an outdoor dungeon) ignores it and keeps its own jitter.
+    bearing: bool = False
 
 
 @dataclass
@@ -117,6 +122,10 @@ class EngineResult:
     # puts a facing pair's doors across their shared span, so the corridor
     # runs straight where one fits (winding control task 8).
     jittered: bool = False
+    # The placement placed by bearing (``LayoutContext.bearing``): Job B then
+    # cuts a door off the shared span where the line to the other room leaves
+    # the wall, not at the wall's middle (task 10).
+    bearing: bool = False
 
 
 class LayoutEngine(Protocol):
@@ -400,10 +409,13 @@ class GraphEngine:
         if ctx.run_factor is not None:
             place = functools.partial(place, run_factor=ctx.run_factor)
         jittered = ctx.jitter
+        bearing = jittered and ctx.bearing and envelope is None
         if jittered:
             # An Envelope build takes its own spacing and offset floor: the
             # fit to the hill shrinks the layout (``embed.ENVELOPE_JITTER``).
-            extra = {"ranges": embed.ENVELOPE_JITTER} if envelope is not None else {}
+            # A cave without one places by bearing (task 10).
+            extra = ({"ranges": embed.ENVELOPE_JITTER} if envelope is not None else
+                     {"bearing": True} if bearing else {})
             place = functools.partial(place, jitter=True, seed=ctx.seed, **extra)
         # A jittered Envelope build (an outdoor dungeon, random placement task
         # 3) draws its jitter again, up to ENTRY_DRAWS times, while no facing
@@ -522,7 +534,7 @@ class GraphEngine:
             record["level_height"] = level_h
         return EngineResult(rooms=rooms, edges=edges, entry=entry, climax=climax,
                             record=record, levels=room_levels, level_height=level_h,
-                            jittered=jittered)
+                            jittered=jittered, bearing=bearing)
 
     def _descending(self, rs, room_count: int, ctx: LayoutContext, grown):
         """``grown``, or a graph grown again (``descend``): the first whose

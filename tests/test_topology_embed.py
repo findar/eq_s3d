@@ -577,7 +577,9 @@ def test_graph_rooms_leave_the_lattice():
 def test_jittered_facing_rooms_get_a_straight_corridor(seed):
     """In a jittered cave, two rooms that face each other across a shared span
     holding the corridor and its piers (``embed.STRAIGHT_NEED`` widths) get
-    their doors on one line across it: a straight corridor, not a Z."""
+    their doors on one line across it: a straight corridor, not a Z. A cave's
+    bearing placement (task 10) keeps its doors ``embed.door_span`` in from
+    each wall's ends, so the span counts only where both walls allow a door."""
     from generators.routing import corridor_route, exit_axis_x
     spec = _controls_spec(seed, 14, "cave", "moderate")
     rooms = {r.id: r for r in spec.rooms}
@@ -595,6 +597,12 @@ def test_jittered_facing_rooms_get_a_straight_corridor(seed):
                   (max(a.center_x - a.width / 2, b.center_x - b.width / 2),
                    min(a.center_x + a.width / 2, b.center_x + b.width / 2)))
         if hi - lo < embed.STRAIGHT_NEED * cor.width:
+            continue
+        for r in (a, b):
+            c, h = (r.center_y, r.depth / 2) if ax else (r.center_x, r.width / 2)
+            dlo, dhi = embed.door_span(c - h, c + h, cor.width)
+            lo, hi = max(lo, dlo), min(hi, dhi)
+        if hi < lo:
             continue
         checked += 1
         assert corridor_route(cor, rooms).kind == "straight", (seed, cor.id)

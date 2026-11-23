@@ -20,7 +20,8 @@ from typing import Dict, List, Optional, Tuple
 
 from core.ter import FLAG_PASSABLE, TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
-from .routing import corridor_route, path_zs, split_path, strip_corners, tunnel_for, winding_legs
+from .routing import (ENTRY_RUN, corridor_route, entry_line, path_zs, split_path, strip_corners,
+                      tunnel_for, winding_legs)
 
 
 # A sloped corridor floor is subdivided so each segment rises at most this much
@@ -916,9 +917,20 @@ class MeshBuilder:
             avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
             bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough,
             seam=self._seam(cor, spec), winds=winding_legs(cor, rooms, tunnel_for(cor, spec)),
-            path=cor.path)
+            path=cor.path or self._entry_path(cor, route, spec), angled=bool(cor.entry))
         if cor.transition is not None and cor.transition.material:
             self._add_opening(cor, spec)
+
+    @staticmethod
+    def _entry_path(cor: CorridorSpec, route, spec: ZoneSpec):
+        """An angled corridor's line (``CorridorSpec.entry``, random placement task 10)
+        when it has none: ``routing.entry_line``, so a corridor whose doors were cut for
+        the angle leaves them at it however it was routed. None for any other."""
+        if not cor.entry or cor.steps != 0 or cor.bridge:
+            return None
+        rules = tunnel_for(cor, spec)
+        hw = cor.width / 2
+        return entry_line(route, hw, max(hw, rules.end if rules is not None else ENTRY_RUN))
 
     def _seam(self, cor: CorridorSpec, spec: ZoneSpec):
         """Where a corridor's look changes: ((x, y), the materials past it, the break past it).
@@ -983,7 +995,7 @@ class MeshBuilder:
 
     def _emit_route(self, waypoints, axes, carry, from_z, to_z, hw, height,
                     steps, floor_mat, wall_mat, ceiling_mat, avoid=(), bridge=None, rough=0.0, seam=None,
-                    winds=None, path=None):
+                    winds=None, path=None, angled=False):
         """
         Shared multi-segment corridor builder. `waypoints` is an ordered list of
         (x, y) points (>= 2); each consecutive pair is one axis-aligned leg, and
@@ -1020,7 +1032,7 @@ class MeshBuilder:
         (``routing.split_path``) and each part built in its own look, at the path's heights
         (``routing.path_zs``), the two meeting square on one section.
         """
-        if path and steps == 0 and bridge is None and seam is None and rough > 0 and \
+        if path and steps == 0 and bridge is None and seam is None and (rough > 0 or angled) and \
                 self._add_winding_leg(path, from_z, to_z, hw, height, rough, floor_mat, wall_mat,
                                       ceiling_mat, flat_ends=True):
             return
@@ -1031,6 +1043,11 @@ class MeshBuilder:
                 self._add_winding_leg(cut[0], from_z, to_z, hw, height, rough, floor_mat, wall_mat,
                                       ceiling_mat, zs=cut[1])
                 self._add_winding_leg(cut[2], from_z, to_z, hw, height, past_rough, *past, zs=cut[3])
+                return
+            # An angled corridor's line (``angled``, random placement task 10) with its seam
+            # on an angled run: one look, as its doors were cut for the angle.
+            if angled and self._add_winding_leg(path, from_z, to_z, hw, height, rough, floor_mat,
+                                                wall_mat, ceiling_mat, flat_ends=True):
                 return
         zs, carry = self._waypoint_zs(waypoints, carry, from_z, to_z)
         seam_leg = self._seam_leg(waypoints, seam, hw, zs) if seam else None
@@ -2023,8 +2040,28 @@ def _door_openings(room: RoomSpec, spec: ZoneSpec
             else:
                 t = 0.0
             top = za + (zb - za) * t + cor.height
-            out.setdefault(side, []).append((cross - hw, cross + hw, top))
+            half = hw
+            heading = route.heading[0 if end == "from" else 1]
+            if heading:
+                # An angled run-out (``CorridorSpec.entry``, random placement task 10): the
+                # strip meets the wall plane wider, 2 hw / cos, and shifted along the wall by
+                # the inset times the tangent, as the run-out leans.
+                px, py = wps[0] if end == "from" else wps[-1]
+                qx, qy = wps[1] if end == "from" else wps[-2]
+                (nx, ny), c, s_ = _unit_xy(qx - px, qy - py), math.cos(heading), math.sin(heading)
+                ux, uy = nx * c - ny * s_, nx * s_ + ny * c
+                if along_x:
+                    cross = py + uy * (plane - px) / ux
+                else:
+                    cross = px + ux * (plane - py) / uy
+                half = hw / c
+            out.setdefault(side, []).append((cross - half, cross + half, top))
     return out
+
+
+def _unit_xy(dx: float, dy: float) -> Tuple[float, float]:
+    d = math.hypot(dx, dy)
+    return dx / d, dy / d
 
 
 def _merge_openings(openings, lo: float, hi: float

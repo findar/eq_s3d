@@ -223,6 +223,30 @@ def gate_key_room(depths: List[int], entrance: int, far: set,
     return min(candidates, key=lambda i: depths[i])
 
 
+def _box_gap_xy(p: Tuple[float, float], room: RoomSpec) -> float:
+    """How far point ``p`` stands outside ``room``'s plan box (Chebyshev; negative inside)."""
+    return max(abs(p[0] - room.center_x) - room.width / 2, abs(p[1] - room.center_y) - room.depth / 2)
+
+
+def _line_clear(line, cor: CorridorSpec, rooms: List[RoomSpec], step: float = 2.0) -> bool:
+    """Does an angled corridor's line (``routing.entry_line``) keep a half width clear of
+    every room's plan box, bar its own two rooms over its first and last runs (where it
+    leaves and enters them)? Sampled every ``step`` u."""
+    import math
+    hw = cor.width / 2
+    last = len(line) - 2
+    for j in range(len(line) - 1):
+        (ax, ay), (bx, by) = line[j], line[j + 1]
+        n = max(1, int(math.ceil(math.dist(line[j], line[j + 1]) / step)))
+        pts = [(ax + (bx - ax) * i / n, ay + (by - ay) * i / n) for i in range(n + 1)]
+        for r in rooms:
+            if (j == 0 and r.id == cor.from_room) or (j == last and r.id == cor.to_room):
+                continue
+            if any(_box_gap_xy(q, r) < hw - 1e-6 for q in pts):
+                return False
+    return True
+
+
 def gate_spec(gate_id: str, cor: CorridorSpec, key_room: RoomSpec,
               tier: int) -> "GateSpec":
     """A Gate: its lock at the middle of ``cor``, its key 5 u over
@@ -256,6 +280,17 @@ U_DOOR_MARGIN = 2.0
 # the corner never stands in the door's Throat (s7 cave 14 moderate, room_2:
 # wall across throat). Other layouts keep U_DOOR_MARGIN and their bytes.
 U_CORNER_MARGIN = 3.0
+# A bearing placement's entry angles (random placement task 10,
+# ``LayoutGenerator._set_entries``): a run-out leaves its opening at most
+# ENTRY_MAX degrees off the wall's normal, and square under ENTRY_MIN.
+ENTRY_MAX = 40.0
+ENTRY_MIN = 1.0
+# The least a straight route's run-outs leave square (its openings face each other).
+ENTRY_SWEEP = 25.0
+# The shares of its target an entry angle tries before the corridor runs out square.
+ENTRY_SHARES = (1.0, 0.5, 0.25)
+# The least wall (u) an angled opening leaves to the next door on its wall.
+ENTRY_PIER = 2.0
 # Where a U-route's doors may stand along their walls once the two ends have
 # been tried (LayoutGenerator._u_cor). A finer grid found no more loops.
 U_DOOR_STOPS = (-1.0, -0.5, 0.0, 0.5, 1.0)
@@ -355,8 +390,9 @@ class LayoutGenerator:
         # (``profile_run_factor``); None: ``embed.RUN_FACTOR``.
         self.run_factor = profile_run_factor(profile, winding)
         self.jitter = (profile or "") in JITTER_PROFILES
-        # Set per generate from the engine (``EngineResult.jittered``).
+        # Set per generate from the engine (``EngineResult.jittered``, ``.bearing``).
         self._straight_doors = False
+        self._bearing_doors = False
         if profile:
             import math
             base_area = _profile_mean(self.profile, ["geometry", "floor_area"], 2_000_000.0)
@@ -620,6 +656,7 @@ class LayoutGenerator:
             ctx.jitter = True
         result = self.engine.generate(ctx, room_count, envelope)
         self._straight_doors = getattr(result, "jittered", False)
+        self._bearing_doors = getattr(result, "bearing", False)
         rooms = result.rooms
         # Job B works on plain (i, j) pairs; the vertical relations go to the
         # elevation pass alone (only the ones that constrain anything).
@@ -908,7 +945,8 @@ class LayoutGenerator:
                                room_count=room_count),
             size_shift=self.size_shift,
             height_shift=self.size_shift - self.profile_shift,
-            run_factor=self.run_factor, jitter=self.jitter, seed=self.seed)
+            run_factor=self.run_factor, jitter=self.jitter, seed=self.seed,
+            bearing=self.jitter)
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement
@@ -2012,6 +2050,8 @@ class LayoutGenerator:
                     self._open_facing_walls(b, a)
             self._mark_bridges(spec.corridors[len(spec.corridors) - len(edges):],
                                rooms, edges)
+            self._set_entries(spec.corridors[len(spec.corridors) - len(edges):], rooms,
+                              spec.corridors)
             return
         for k, (i, j) in enumerate(edges):
             a, b = rooms[i], rooms[j]
@@ -2037,6 +2077,99 @@ class LayoutGenerator:
             ))
             self._open_facing_walls(a, b)
             self._open_facing_walls(b, a)
+        self._set_entries(spec.corridors[len(spec.corridors) - len(edges):], rooms,
+                          spec.corridors)
+
+    def _set_entries(self, corridors: List[CorridorSpec], rooms: List[RoomSpec],
+                     every: List[CorridorSpec]) -> None:
+        """A bearing placement's entry angles (random placement task 10): each
+        plain corridor's run-outs leave their openings toward the other opening,
+        up to ``ENTRY_MAX`` off the wall's normal (``CorridorSpec.entry``), so a
+        corridor meets a room at an angle as the room stands. Left square when
+        both angles are under ``ENTRY_MIN`` or the angled line would fold
+        (``routing.entry_line``), or when its wider opening would come within
+        ``ENTRY_PIER`` of another door on its wall (``every``: all the build's
+        corridors). Nothing without a bearing placement."""
+        if not self._bearing_doors:
+            return
+        import math
+        from .routing import ENTRY_RUN, entry_line
+        by_id = {r.id: r for r in rooms}
+        cap = math.radians(ENTRY_MAX)
+        for cor in corridors:
+            if cor.steps != 0 or cor.side or cor.bridge:
+                continue
+            wps = corridor_route(cor, by_id).waypoints
+            fr, to = by_id[cor.from_room], by_id[cor.to_room]
+            # Toward the other opening; when the openings face each other square (a
+            # straight route through a shared span), toward the other room's centre, so
+            # the tunnel sweeps across between rooms that stand at an angle.
+            target = [0.0, 0.0]
+            for fars in ((wps[-1], wps[0]), ((to.center_x, to.center_y), (fr.center_x, fr.center_y))):
+                for e, (p, q, far) in enumerate(((wps[0], wps[1], fars[0]), (wps[-1], wps[-2], fars[1]))):
+                    nx, ny = q[0] - p[0], q[1] - p[1]
+                    tx, ty = far[0] - p[0], far[1] - p[1]
+                    a = math.atan2(nx * ty - ny * tx, nx * tx + ny * ty)
+                    target[e] = max(-cap, min(cap, a))
+                if any(abs(math.degrees(a)) >= ENTRY_MIN for a in target):
+                    break
+            if len(wps) == 2 and math.dist(wps[0], wps[1]) >= 2 * ENTRY_RUN:
+                # A straight route long enough to sweep across leaves at least ENTRY_SWEEP
+                # off square, toward the other room's side (left when they stand square on).
+                sweep = math.radians(ENTRY_SWEEP)
+                target = [math.copysign(max(abs(a), sweep), a) for a in target]
+            if len(wps) > 2:
+                # A bend closer than 3/4 of a corridor width to its opening leaves no room to angle.
+                target = [a if math.dist(p, q) >= 0.75 * cor.width else 0.0
+                          for a, (p, q) in zip(target, ((wps[0], wps[1]), (wps[-1], wps[-2])))]
+            # The first that keeps clear: both ends, then one end alone, at full, half and a
+            # quarter of the target; an angled line can fold, bend within a half width of a
+            # room (rooms close together: the run-outs overshoot), or leave its rise too
+            # short a run between its flat run-outs (steeper than max_grade).
+            angles = []
+            for share in ENTRY_SHARES:
+                for keep in ((1, 1), (1, 0), (0, 1)):
+                    tried = [round(math.degrees(a * share * k), 2) for a, k in zip(target, keep)]
+                    tried = [a if abs(a) >= ENTRY_MIN else 0.0 for a in tried]
+                    if not any(tried):
+                        continue
+                    cor.entry = tried
+                    line = entry_line(corridor_route(cor, by_id), cor.width / 2, ENTRY_RUN)
+                    if line is None or not _line_clear(line, cor, rooms):
+                        continue
+                    seg = [math.dist(line[k], line[k + 1]) for k in range(len(line) - 1)]
+                    carry = sum(seg) - seg[0] - seg[-1]
+                    if abs(cor.to_z - cor.from_z) <= max(carry, 0.0) * self.max_grade:
+                        angles = tried
+                        break
+                if angles:
+                    break
+            cor.entry = angles
+        # A wider, shifted opening must keep a pier to the doors beside it.
+        from types import SimpleNamespace
+        from .geometry import _door_openings
+        build = SimpleNamespace(rooms=rooms, corridors=every)
+
+        def pier(room: RoomSpec) -> float:
+            """The least wall between two doors on one of the room's walls."""
+            least = math.inf
+            for cuts in _door_openings(room, build).values():
+                cuts = sorted(cuts)
+                least = min([least] + [b[0] - a[1] for a, b in zip(cuts, cuts[1:])])
+            return least
+
+        for cor in corridors:
+            if not cor.entry:
+                continue
+            for rid in (cor.from_room, cor.to_room):
+                angled = pier(by_id[rid])
+                if angled >= ENTRY_PIER:
+                    continue
+                kept, cor.entry = cor.entry, []
+                if pier(by_id[rid]) <= angled:
+                    cor.entry = kept        # as tight square: not the angle's doing
+                else:
+                    break
 
     # ------------------------------------------------------------------
     # Stacked builds (step 7): Job B in 3D
@@ -2694,6 +2827,8 @@ class LayoutGenerator:
         # Small inset so the corridor overlaps the wall slightly (clean join).
         inset = 2.0
         across = self._straight_across(room, toward, exit_x)
+        if across is None:
+            across = self._bearing_across(room, toward, exit_x)
         if exit_x:
             # East/West wall
             x = room.center_x + (hw - inset) * (1 if dx >= 0 else -1)
@@ -2731,7 +2866,38 @@ class LayoutGenerator:
         lo, hi = max(a0, b0), min(a1, b1)
         if hi - lo < STRAIGHT_NEED * self.corridor_width:
             return None
+        if self._bearing_doors:
+            # A bearing placement's doors keep off the walls' ends as its
+            # bearing doors do (``embed.door_span``), or the stubs of two
+            # corridors round a corner meet.
+            from .topology.embed import door_span
+            lo, hi = max(lo, door_span(a0, a1, self.corridor_width)[0],
+                         door_span(b0, b1, self.corridor_width)[0]), \
+                min(hi, door_span(a0, a1, self.corridor_width)[1],
+                    door_span(b0, b1, self.corridor_width)[1])
+            if hi < lo:
+                return None
         return (lo + hi) / 2
+
+    def _bearing_across(self, room: RoomSpec, toward: RoomSpec,
+                        exit_x: bool) -> Optional[float]:
+        """A bearing placement's door off a shared span (random placement task
+        10): where the line between the two rooms' centres crosses the wall,
+        kept ``embed.door_span`` in from the wall's ends, so a
+        room met at an angle is met there and not at the wall's middle. None
+        (the middle) without a bearing placement, or when the rooms aren't
+        apart across the wall (a stair's are: its doors are planned with it)."""
+        if not self._bearing_doors:
+            return None
+        if exit_x:
+            apart = abs(toward.center_x - room.center_x) - (room.width + toward.width) / 2
+        else:
+            apart = abs(toward.center_y - room.center_y) - (room.depth + toward.depth) / 2
+        if apart <= 0:
+            return None
+        from .topology.embed import bearing_door
+        return bearing_door((room.center_x, room.center_y), (room.width / 2, room.depth / 2),
+                            (toward.center_x, toward.center_y), exit_x, self.corridor_width)
 
     def _open_facing_walls(self, room: RoomSpec, toward: RoomSpec) -> None:
         """Open the wall of *room* that faces *toward* so a corridor connects."""

@@ -187,6 +187,12 @@ class CorridorSpec:
     # only when set, so a spec from before step 25 loads with [] (built from ``wind``).
     path: List[Tuple[float, float]] = field(default_factory=list)
 
+    # A cave's bearing placement (random placement task 10): the angle (degrees, signed,
+    # counter-clockwise in plan) each run-out leaves its opening at, off the wall's normal,
+    # [from end, to end]; [] runs both out square. The JSON carries it only when set, so
+    # every other corridor's bytes are unchanged.
+    entry: List[float] = field(default_factory=list)
+
     # Where two wall styles meet in this corridor; None for most. The JSON carries it only when set.
     transition: Optional[Transition] = None
 
@@ -290,11 +296,11 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
-    """A corridor's JSON; ``side``, ``bridge``, ``rough``, ``wind``, ``path``, ``transition`` and
-    ``threshold`` only when set (step 6 corridors carry none of them; ``wind`` only when a leg
-    winds)."""
+    """A corridor's JSON; ``side``, ``bridge``, ``rough``, ``wind``, ``path``, ``entry``,
+    ``transition`` and ``threshold`` only when set (step 6 corridors carry none of them;
+    ``wind`` only when a leg winds)."""
     d = asdict(cor)
-    for key in ("side", "bridge", "rough", "path", "transition", "threshold"):
+    for key in ("side", "bridge", "rough", "path", "entry", "transition", "threshold"):
         if not d.get(key):
             d.pop(key, None)
     if not any(d.get("wind") or ()):
