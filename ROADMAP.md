@@ -477,6 +477,20 @@ particular are a cheap, high-impact quick win.)
       though `source_fingerprint` is unchanged (`/api/version` `stale`); consider
       keying it on the fingerprint. (`web/src/main.ts` ~line 123,
       `server/app.py` version route.)
+- [ ] **Stairs come in two shapes only, so big rises make very long stairs** — the user,
+      2026-11-22: stairs generally have one intermediate landing, which makes some very
+      long stairs; wants other variations such as spiral and multi-level stairs. Today a
+      stair corridor is a straight flight or a Switchback (two half-rise flights, one
+      landing; `generators/geometry.py` `StairPlan`, ~line 65), and the generated rise
+      mostly uses ramps (lessons-learned: ramp subdivision). Candidates: switchbacks with
+      N landings for a big rise, a spiral stairwell, a multi-level stair hall linking
+      three Levels. Must keep the 3 u step-up and flush openings.
+- [ ] **Every outdoor area gets a lava patch whatever its theme** — the user, 2026-11-22:
+      outdoor areas always seem to have a lava section even where lava never fits the
+      zone. Cause: `generators/wilderness/matrix.py` (~line 917) places a 1-2 cell interior
+      lava hazard unconditionally whenever the interior has 9+ cells. Fix: make the hazard
+      themed (lava only for volcanic/fire prompts; a bog, tar pit or none elsewhere) and
+      off by default, keeping the matrix's Property 5 (no stranded pocket).
 - [ ] **Elevation-on overwrites the semantic sink/raise** — with elevation on,
       `_assign_elevation` re-derives every `floor_z` and discards the content
       layer's `sink` bias (M0 fixed only the elevation-off path). Content-layer
