@@ -38,9 +38,15 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: fixes only where a failure is new (stop and report first); widened by the lead: scripts/sweep_themed_navigability.py; fixes: generators/wilderness/build.py, generators/decor/placement.py, tests/test_gate_footprints.py, tests/test_decor_placement.py
   - Reqs: 4
 
+- [ ] 8. Outdoor draw time
+  - Card: [cards/08-draw-time.md](cards/08-draw-time.md)
+  - Type: agent · Size: M · Depends: 4
+  - Owns: generators/layout_engine.py, generators/topology/embed.py, generators/layout.py, generators/outdoor_dungeon.py, tests/test_topology_embed.py, tests/test_outdoor_levels.py, goldens it moves (named in the commit)
+  - Reqs: 1, 2
+
 - [ ] 5. Acceptance section
   - Card: [cards/05-acceptance.md](cards/05-acceptance.md)
-  - Type: agent · Size: S · Depends: 4
+  - Type: agent · Size: S · Depends: 4, 8
   - Owns: docs/ACCEPTANCE.md
 
 - [ ] 6. HUMAN: first look
