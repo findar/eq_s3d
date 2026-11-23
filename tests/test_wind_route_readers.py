@@ -24,7 +24,7 @@ from generators.mapgeom import DepthBand, OutlineSet, extract_outline
 from generators.mapview import corridor_path, render_map_svg
 from generators.pipeline import _with_decor
 from generators.room_context import _in_polygon, corridor_contexts
-from generators.routing import Route, TunnelRules, corridor_route, strip_corners, wind_route
+from generators.routing import Route, TunnelRules, corridor_route, door_ends, strip_corners, wind_route
 from generators.zone_spec import ZoneSpec
 
 ROUGH = TunnelRules((20.0, 72.0), 60.0, 0.2, 20.0)
@@ -177,8 +177,8 @@ def test_map_svg_draws_the_path(seed):
     paths = _paths(spec)
     for cid, cor in paths.items():
         assert corridor_path(cor, rooms) == [tuple(p) for p in cor.path]
-        wps = corridor_route(cor, rooms).waypoints
-        assert cor.path[0] == pytest.approx(wps[0]) and cor.path[-1] == pytest.approx(wps[-1])
+        a, b = door_ends(corridor_route(cor, rooms))    # an angled end: on the wall plane
+        assert cor.path[0] == pytest.approx(a) and cor.path[-1] == pytest.approx(b)
     svg = render_map_svg(spec, outline=_plain_outline(spec))
     lines = re.findall(r'<polyline (?:class="threshold" )?points="([^"]*)"', svg)
     assert len(lines) == len(spec.corridors)

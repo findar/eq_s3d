@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 
 from core.ter import FLAG_PASSABLE, TerFile, Material, Vertex, Polygon, MAGIC_TERRAIN
 from .zone_spec import ZoneSpec, RoomSpec, CorridorSpec, MaterialSpec
-from .routing import (ENTRY_RUN, corridor_route, entry_line, path_zs, split_path, strip_corners,
+from .routing import (angled, built_line, corridor_route, path_zs, split_path, strip_corners,
                       tunnel_for, winding_legs)
 
 
@@ -917,20 +917,9 @@ class MeshBuilder:
             avoid=_room_rects(spec.rooms) if cor.steps < 0 else (),
             bridge=bridge_layout(cor, rooms) if cor.bridge else None, rough=cor.rough,
             seam=self._seam(cor, spec), winds=winding_legs(cor, rooms, tunnel_for(cor, spec)),
-            path=cor.path or self._entry_path(cor, route, spec), angled=bool(cor.entry))
+            path=built_line(cor, rooms, tunnel_for(cor, spec)) or None, angled=angled(cor))
         if cor.transition is not None and cor.transition.material:
             self._add_opening(cor, spec)
-
-    @staticmethod
-    def _entry_path(cor: CorridorSpec, route, spec: ZoneSpec):
-        """An angled corridor's line (``CorridorSpec.entry``, random placement task 10)
-        when it has none: ``routing.entry_line``, so a corridor whose doors were cut for
-        the angle leaves them at it however it was routed. None for any other."""
-        if not cor.entry or cor.steps != 0 or cor.bridge:
-            return None
-        rules = tunnel_for(cor, spec)
-        hw = cor.width / 2
-        return entry_line(route, hw, max(hw, rules.end if rules is not None else ENTRY_RUN))
 
     def _seam(self, cor: CorridorSpec, spec: ZoneSpec):
         """Where a corridor's look changes: ((x, y), the materials past it, the break past it).

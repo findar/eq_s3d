@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
-from .routing import corridor_route, tunnel_for, winding_legs
+from .routing import built_line, corridor_route, tunnel_for, winding_legs
 from .zone_spec import ZoneSpec
 
 if TYPE_CHECKING:
@@ -35,11 +35,12 @@ def corridor_path(c, rooms_by_id, rules=None) -> List[Tuple[float, float]]:
     """A corridor's centreline in plan: its route's waypoints, a winding leg (step 23,
     ``routing.winding_legs``) along its tunnel between its bend squares. Without a winding
     leg it is the route's waypoints, as it always was. A route line (step 25,
-    ``CorridorSpec.path``) is the whole centreline, opening to opening, and wins over any
-    winding leg. ``rules`` is the zone's tunnel (``routing.tunnel_for``); None is the stock
+    ``CorridorSpec.path``, or an angled corridor's line: ``routing.built_line``) is the
+    whole centreline, opening to opening, and wins over any winding leg. ``rules`` is the zone's tunnel (``routing.tunnel_for``); None is the stock
     one, right only for a zone whose Winding is 1."""
-    if len(getattr(c, "path", None) or ()) >= 2:
-        return [(float(x), float(y)) for x, y in c.path]
+    line = built_line(c, rooms_by_id, rules)
+    if line:
+        return line
     route = corridor_route(c, rooms_by_id)
     wps = list(route.waypoints)
     lines = winding_legs(c, rooms_by_id, rules) if any(c.wind) else [None] * (len(wps) - 1)

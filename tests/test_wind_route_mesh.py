@@ -11,6 +11,8 @@ import pytest
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.geometry import MAX_SEG_RISE, MeshBuilder, _ensure_materials
+from generators.layout import ENTRY_MAX
+from generators.routing import strip_corners
 
 #: (theme, seed, rooms, verticality): 10 cave and 5 warren graph builds, 8-30 rooms, each verticality.
 BUILDS = [("cave", s, r, v) for s, (r, v) in enumerate(
@@ -58,18 +60,32 @@ def test_path_strip_pieces_and_ends(case):
             zs = [p[2] for p in tri]
             assert max(zs) - min(zs) <= MAX_SEG_RISE + 1e-6, (cor.id, tri)
         hw = cor.width / 2
-        for end, z, nxt in ((cor.path[0], cor.from_z, cor.path[1]), (cor.path[-1], cor.to_z, cor.path[-2])):
-            d = math.hypot(nxt[0] - end[0], nxt[1] - end[1])
-            left = (-(nxt[1] - end[1]) / d, (nxt[0] - end[0]) / d)
-            for sign in (1, -1):
-                want = (end[0] + sign * left[0] * hw, end[1] + sign * left[1] * hw, z)
+        # Each end's two corners: square across the line, or for an angled end (random
+        # placement task 10) cut along the wall it leaves, as ``strip_corners`` lays them.
+        corners = strip_corners(cor.path, hw)
+        for pair, z in ((corners[0], cor.from_z), (corners[-1], cor.to_z)):
+            for x, y in pair:
+                want = (x, y, z)
                 assert any(math.dist(p, want) < 1e-6 for tri in tris for p in tri), (cor.id, want)
         lo, hi = min(cor.from_z, cor.to_z), max(cor.from_z, cor.to_z)
         for tri in tris:
             for x, y, z in tri:
                 assert lo - 1e-6 <= z <= hi + 1e-6
                 near = min(_seg_dist((x, y), p, q) for p, q in zip(cor.path, cor.path[1:]))
-                assert near <= hw / math.cos(math.radians(30)) + 1e-6, (cor.id, x, y)
+                # A mitre at a 60 degree turn; an angled end's cap, up to ENTRY_MAX off
+                # square, and the mitres of its entry line's turns (random placement task 10).
+                most = max(30.0, ENTRY_MAX if cor.entry else 0.0,
+                           max(_turns(cor.path)) / 2 if cor.entry else 0.0)
+                assert near <= hw / math.cos(math.radians(most)) + 1e-6, (cor.id, x, y)
+
+
+def _turns(line):
+    """The turn (degrees) at each interior vertex of ``line``."""
+    out = []
+    for a, b, c in zip(line, line[1:], line[2:]):
+        u, v = (b[0] - a[0], b[1] - a[1]), (c[0] - b[0], c[1] - b[1])
+        out.append(abs(math.degrees(math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]))))
+    return out or [0.0]
 
 
 def _seg_dist(pt, a, b):

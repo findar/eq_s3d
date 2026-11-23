@@ -17,7 +17,7 @@ from generators.geometry import MeshBuilder
 from generators.mapgeom import DepthBand, OutlineSet
 from generators.mapview import corridor_path
 from generators.room_context import _in_polygon, _strip_plan, corridor_contexts
-from generators.routing import corridor_route, strip_corners, tunnel_for, winding_legs
+from generators.routing import angled, corridor_route, strip_corners, tunnel_for, winding_legs
 from generators.wall_styles import tunnel_rules, tunnel_rules_for
 from generators.zone_spec import ZoneSpec
 
@@ -99,11 +99,18 @@ def test_winding_zero_one_two():
         zero, one, base = _cave(seed, 0.0), _cave(seed, 1.0), _cave(seed)
         two = _cave(seed, 2.0, layout.PROFILE_RUN_FACTOR["cave"])
         assert zero.winding == 0.0 and two.winding == 2.0
-        assert all(not c.wind and not c.path for c in zero.corridors), seed
+        # An angled corridor (random placement task 10) has its entry line as a path at 0.
+        assert all(not c.wind and (not c.path or angled(c)) for c in zero.corridors), seed
         assert one.to_dict() == base.to_dict() and "winding" not in one.to_dict()
         s1, s2 = _stray(one), _stray(two)
         assert s1.keys() == s2.keys()
-        for cid in s1:
+        # Per corridor, where it's read along its legs (each leg's wander clipped at a limit
+        # that doubles). A route line (step 25) is drawn afresh at each wander and an angled
+        # one strays by its entry angle at any Winding: neither is monotone, so they count
+        # only in the aggregate below (random placement task 10's layout gives one square
+        # route line at seed 0 that strays 20.1 at 1 and 18.5 at 2).
+        legs = {c.id for c in one.corridors if not c.path and not angled(c)}
+        for cid in legs:
             assert s2[cid] >= s1[cid] - 1e-6, (seed, cid, s1[cid], s2[cid])
     assert any(s2[c] > s1[c] + 0.1 for c in s1), "winding 2 strays no further anywhere"
 
@@ -122,10 +129,13 @@ def test_cave_run_follows_winding_above_one():
 def test_winding_two_strays_clearly_more_than_one():
     """Over ten caves, the rough corridors at 2 stray clearly further than at 1: the mean and
     p90 of the largest stray per corridor (the median is 0 at both, most cave corridors being
-    Z diagonals with no room to wander), and more of them wind."""
+    Z diagonals with no room to wander), and more of them wind. Square ones only: an angled
+    corridor (random placement task 10) strays off its route by its entry angle at any
+    Winding."""
     def stats(k):
         cors = [(_stray(s)[c.id], bool(c.path) or any(c.wind))
-                for s in (_cave(seed, k) for seed in range(10)) for c in s.corridors if c.rough > 0]
+                for s in (_cave(seed, k) for seed in range(10)) for c in s.corridors
+                if c.rough > 0 and not angled(c)]
         strays = sorted(x for x, _ in cors)
         return (sum(strays) / len(strays), strays[int(0.9 * (len(strays) - 1))],
                 sum(w for _, w in cors) / len(cors))

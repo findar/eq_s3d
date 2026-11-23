@@ -304,6 +304,27 @@ def entry_line(route: Route, hw: float, run: float) -> Optional[List[Point]]:
     return line
 
 
+def angled(cor: CorridorSpec) -> bool:
+    """Whether ``cor`` leaves its openings at an angle (``CorridorSpec.entry``): a plain
+    corridor, built along one line opening to opening, its legs never wound."""
+    return bool(cor.entry) and cor.steps == 0 and not cor.bridge
+
+
+def built_line(cor: CorridorSpec, rooms: Mapping[str, RoomSpec],
+               rules: Optional[TunnelRules] = None) -> List[Point]:
+    """The one line a corridor is built along, opening to opening, that every reader (mesh,
+    decor, map, gate) takes: its route line (``CorridorSpec.path``), else for an angled
+    corridor its ``entry_line`` (``rules``: the zone's tunnel, ``tunnel_for``; its run-out
+    ``max(hw, end)``), else none (its legs, wound or straight)."""
+    if len(cor.path or ()) >= 2:
+        return [(float(x), float(y)) for x, y in cor.path]
+    if not angled(cor):
+        return []
+    hw = cor.width / 2
+    line = entry_line(corridor_route(cor, rooms), hw, max(hw, rules.end if rules is not None else ENTRY_RUN))
+    return line or []
+
+
 def route_footprint(route: Route, hw: float) -> List[Rect]:
     """The XY footprint of a route as a list of axis-aligned rectangles.
 
@@ -443,14 +464,15 @@ def tunnel_for(cor: CorridorSpec, spec) -> Optional[TunnelRules]:
 def winding_legs(cor: CorridorSpec, rooms: Mapping[str, RoomSpec],
                  rules: Optional[TunnelRules] = None) -> List[Optional[List[Point]]]:
     """One entry per leg of ``cor``'s route: the winding centreline of a leg ``cor.wind``
-    lets wind, over the leg's built span (``MeshBuilder._leg_ends``), else None. The one
+    lets wind, over the leg's built span (``MeshBuilder._leg_ends``), else None (and for an
+    angled corridor, built along its line: ``built_line``). The one
     source the mesh, decor and map read, so they agree. ``rules`` defaults to the tunnel of
     the wall styles (``wall_styles.tunnel_rules``), the stock tunnel: a zone with a Winding
     other than 1 must pass its own (``wall_styles.tunnel_rules_for(spec)``), or
     ``_wind_limit`` clips its legs at the stock wander."""
     route = corridor_route(cor, rooms)
     n = len(route.waypoints) - 1
-    if not any(cor.wind):
+    if not any(cor.wind) or angled(cor):
         return [None] * n
     from .geometry import MeshBuilder       # geometry imports this module
     if rules is None:
@@ -782,14 +804,19 @@ def held_entry_line(route: Route, hw: float, run: float, hold: Hold) -> Optional
         # the run-outs to the held stretch, when going by the bends turns back too hard.
         for bends in (True, False) if route.kind != "l" and 0 < k < n - 1 else (True,):
             line = [start, a_out]
+            at = 0
             for i in range(n):
                 if i == k:
-                    line += [(wps[k][0] + d[0] * s0, wps[k][1] + d[1] * s0),
-                             (wps[k][0] + d[0] * s1, wps[k][1] + d[1] * s1)]
+                    # The held point inside a run of its own, square at both ends, so the
+                    # floor there is the line's height (a run mitred askew at one end tilts
+                    # its floor off its centreline on a rise).
+                    at = len(line) + 1
+                    line += [(wps[k][0] + d[0] * s, wps[k][1] + d[1] * s)
+                             for s in (s0, s_p - hold.reach / 2, s_p + hold.reach / 2, s1)]
                 if i < n - 1 and bends:
                     line.append(wps[i + 1])
             line += [b_in, end]
-            line = _tidy(line, (1, len(line) - 2))
+            line = _tidy(line, (1, at, at + 1, len(line) - 2))
             if len(line) >= 3 and strip_corners(line, hw) is not None:
                 turn = _max_turn(line)
                 if turn <= (HELD_TURN if bends else HELD_TURN_DIRECT):

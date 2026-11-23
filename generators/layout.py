@@ -230,19 +230,29 @@ def _box_gap_xy(p: Tuple[float, float], room: RoomSpec) -> float:
 
 def _line_clear(line, cor: CorridorSpec, rooms: List[RoomSpec], step: float = 2.0) -> bool:
     """Does an angled corridor's line (``routing.entry_line``) keep a half width clear of
-    every room's plan box, bar its own two rooms over its first and last runs (where it
-    leaves and enters them)? Sampled every ``step`` u."""
+    every room's plan box, and its strip (``routing.strip_corners``: an angled end's cap runs
+    wider along the wall) ``ENTRY_SPARE`` clear, bar its own two rooms over its first and
+    last runs (where it leaves and enters them)? Sampled every ``step`` u."""
     import math
+    from .routing import strip_corners
+
+    def samples(p, q):
+        n = max(1, int(math.ceil(math.dist(p, q) / step)))
+        return [(p[0] + (q[0] - p[0]) * i / n, p[1] + (q[1] - p[1]) * i / n) for i in range(n + 1)]
+
     hw = cor.width / 2
+    corners = strip_corners(line, hw)
+    if corners is None:
+        return False
     last = len(line) - 2
     for j in range(len(line) - 1):
-        (ax, ay), (bx, by) = line[j], line[j + 1]
-        n = max(1, int(math.ceil(math.dist(line[j], line[j + 1]) / step)))
-        pts = [(ax + (bx - ax) * i / n, ay + (by - ay) * i / n) for i in range(n + 1)]
+        pts = samples(line[j], line[j + 1])
+        (l0, r0), (l1, r1) = corners[j], corners[j + 1]
+        edge = samples(l0, l1) + samples(r0, r1) + samples(l0, r0) + samples(l1, r1)
         for r in rooms:
             if (j == 0 and r.id == cor.from_room) or (j == last and r.id == cor.to_room):
                 continue
-            if any(_box_gap_xy(q, r) < hw - 1e-6 for q in pts):
+            if any(_box_gap_xy(q, r) < hw - 1e-6 for q in pts) or                     any(_box_gap_xy(q, r) < ENTRY_SPARE - 1e-6 for q in edge):
                 return False
     return True
 
@@ -289,6 +299,9 @@ ENTRY_MIN = 1.0
 ENTRY_SWEEP = 25.0
 # The shares of its target an entry angle tries before the corridor runs out square.
 ENTRY_SHARES = (1.0, 0.5, 0.25)
+# How far an angled corridor's strip keeps off any room but the two it joins (the player's
+# half width, transitions.PLAYER_HALF_WIDTH).
+ENTRY_SPARE = 1.5
 # The least wall (u) an angled opening leaves to the next door on its wall.
 ENTRY_PIER = 2.0
 # Where a U-route's doors may stand along their walls once the two ends have
