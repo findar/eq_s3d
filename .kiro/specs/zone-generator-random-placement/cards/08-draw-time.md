@@ -22,3 +22,4 @@ near `b77d5a9` without putting rooms back on the lattice.
 - Don't trade the grid score or the entrance rule for speed without reporting.
 
 ## Result
+✔ e319c13 · 4108 passed

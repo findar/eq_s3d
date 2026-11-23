@@ -330,54 +330,84 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     (the graph engine) tries each of its turns of the layout at a size before
     shrinking it, best-facing first, and keeps its entrance room at least
     :func:`tunnel_wall` on a side through every shrink. If no size keeps them
-    all, the largest plan that drops rooms wins; if none plans at all, the
-    last ``PLAN_ERRORS`` error is raised."""
+    all, the largest plan that drops rooms wins (the first try that plans
+    with rooms dropped; those are laid out only once no try plans them
+    all); if none plans at all, the last ``PLAN_ERRORS`` error is raised."""
     socket, grid = _hill(host, terrain)
     if socket is None:
         raise EntranceError(f"spec {host.name!r} has no Landform")
     facings = int(getattr(engine, "facings", 1)) if engine is not None else 1
     side = tunnel_wall(grid.res) if facings > 1 else 0.0
-    reduced, error = None, None
-    # Layouts whose entrance wall gave no Tunnel, in the order tried: only
-    # when nothing else plans are they lowered for it (step 21; the fit sets
-    # a layout as high as the cover over its rooms allows, which can leave
-    # too little over the Tunnel).
-    no_tunnel = []
-    for shrink in range(FIT_SHRINKS + 1):
-        for facing in range(facings):
-            try:
-                layout, warnings = layout_in_envelope(
-                    name, seed, envelope, room_count, scale=FIT_SHRINK ** shrink,
-                    engine=engine, facing=facing, entrance_side=side, **kwargs)
-                # The Tunnel opens into the layout's entrance room, so the
-                # pacing (depth, climax, keys) runs from the way in.
-                first = next(r.id for r in layout.rooms if r.role == "entrance")
-                _entrance_on_top_level(layout, first)
-                layout = align_to_grid(socket, grid, envelope, layout, first)
-            except PLAN_ERRORS as e:
-                error = e
-                continue
-            try:
-                entrance = plan_entrance(socket, grid, layout, room_id=first)
-            except EntranceError as e:
-                error = e
-                no_tunnel.append((layout, warnings, first))
-                continue
-            if len(layout.rooms) == room_count:
-                return layout, warnings, entrance
-            reduced = reduced or (layout, warnings, entrance)
-    if reduced is not None:
-        return reduced
-    for layout, warnings, first in no_tunnel:
+    tries = [(shrink, facing) for shrink in range(FIT_SHRINKS + 1) for facing in range(facings)]
+    errors = {}
+    # Layouts whose entrance wall gave no Tunnel, by try: only when nothing
+    # else plans are they lowered for it (step 21; the fit sets a layout as
+    # high as the cover over its rooms allows, which can leave too little
+    # over the Tunnel).
+    no_tunnel = {}
+
+    def plan(k: int, drop_rooms: bool):
+        """Try ``k``: its layout and Entrance, or None (``errors`` /
+        ``no_tunnel`` take why)."""
+        shrink, facing = tries[k]
+        try:
+            layout, warnings = layout_in_envelope(
+                name, seed, envelope, room_count, scale=FIT_SHRINK ** shrink,
+                engine=engine, facing=facing, entrance_side=side, drop_rooms=drop_rooms,
+                **kwargs)
+            # The Tunnel opens into the layout's entrance room, so the
+            # pacing (depth, climax, keys) runs from the way in.
+            first = next(r.id for r in layout.rooms if r.role == "entrance")
+            _entrance_on_top_level(layout, first)
+            layout = align_to_grid(socket, grid, envelope, layout, first)
+        except PLAN_ERRORS as e:
+            errors[k] = e
+            return None
+        try:
+            return layout, warnings, plan_entrance(socket, grid, layout, room_id=first)
+        except EntranceError as e:
+            errors[k] = e
+            no_tunnel[k] = (layout, warnings, first)
+            return None
+
+    # Every try at the full count first; only then, from the first, those
+    # whose full count didn't fit, dropping rooms. The same plan as trying
+    # each in turn with rooms dropped (the dropping run starts with the same
+    # layouts), without laying out the reduced plans a later try's full one
+    # beats (random placement task 8).
+    crowded, reduced = [], {}
+    for k in range(len(tries)):
+        planned = plan(k, drop_rooms=False)
+        if planned is not None:
+            if len(planned[0].rooms) == room_count:
+                return planned
+            reduced[k] = planned
+        elif isinstance(errors.get(k), EnvelopeFitError):
+            crowded.append(k)
+            del errors[k]
+    for k in crowded:
+        if reduced and k > min(reduced):
+            break
+        planned = plan(k, drop_rooms=True)
+        if planned is not None:
+            if len(planned[0].rooms) == room_count:
+                return planned
+            reduced[k] = planned
+    if reduced:
+        return reduced[min(reduced)]
+    error = errors[max(errors)] if errors else None
+    fallback = None
+    for k in sorted(no_tunnel):
+        layout, warnings, first = no_tunnel[k]
         lowered = _lowered_for_tunnel(socket, grid, envelope, layout, first)
         if lowered is None:
             continue
         if len(lowered[0].rooms) == room_count:
             return lowered[0], warnings, lowered[1]
-        reduced = reduced or (lowered[0], warnings, lowered[1])
-    if reduced is None:
+        fallback = fallback or (lowered[0], warnings, lowered[1])
+    if fallback is None:
         raise error
-    return reduced
+    return fallback
 
 
 def _lowered_for_tunnel(host, grid, envelope: Envelope, layout: ZoneSpec,

@@ -498,6 +498,32 @@ def test_outdoor_dungeon_leaves_the_lattice_on_its_wall_sides(monkeypatch):
     assert seen and spec.layout.get("jitter")
 
 
+def test_outdoor_draws_lay_nothing_out_twice(monkeypatch):
+    """Random placement task 8: an outdoor warren's entrance room is flanked
+    (three ways out), so each graph is placed at its first jitter draw and,
+    if that doesn't face the way in, centred, and no placement is laid out
+    twice in one plan (the facings and shrinks reuse it)."""
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    calls = []
+    spring = embed.spring
+
+    def watched(graph, order, half, *args, **kw):
+        calls.append((tuple(graph.edges()), tuple(half[r] for r in order),
+                      kw.get("draw", 0), kw.get("centred")))
+        return spring(graph, order, half, *args, **kw)
+
+    monkeypatch.setitem(embed.PLACEMENT_FUNCS, "spring", watched)
+    plan = ZonePlan.from_controls({"zone_type": "outdoor_dungeon", "dungeon_theme": "warren",
+                                   "layout": "graph", "room_count": 14,
+                                   "verticality": "flat"}, [])
+    plan.name = "oddraw"
+    plan_to_spec(plan, seed=2001, warnings=[])
+    assert calls
+    assert len(calls) == len(set(calls))
+    assert all(draw == 0 for _e, _h, draw, _c in calls)
+
+
 def _controls_spec(seed, n, theme, verticality):
     """A Graph dungeon as the controls build it (``plan_to_spec``)."""
     from ai.expand import plan_to_spec

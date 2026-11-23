@@ -964,12 +964,28 @@ def entry_faced(centres: Dict[str, Point], half: Dict[str, Point], envelope,
     return dist[entrance] <= min(dist.values()) + 1e-9
 
 
+def entry_flanked(graph: TopologyGraph, centres: Dict[str, Point], half: Dict[str, Point],
+                  entrance: Optional[str]) -> bool:
+    """Do the *entrance* room's neighbours take two opposite walls of it?
+    Then the wall a facing turns toward the way in has a neighbour level
+    with it either side, one of which the fit to the hill (centred on the
+    layout) leaves nearer the way in: such a draw almost never faces it
+    (:func:`entry_faced`; 5 of 1234 jitter draws of outdoor graph builds,
+    against 2341 of 4940 unflanked; a warren's entrance, three ways out,
+    always is). Random placement task 8."""
+    if entrance not in centres:
+        return False
+    walls = {_side_toward(centres[entrance], half[entrance], centres[m], half[m])
+             for m in graph.neighbours(entrance) if m in centres}
+    return {"E", "W"} <= walls or {"N", "S"} <= walls
+
+
 __all__ = [
     "SPREAD", "room_size", "may_overlap_in_plan",
     "SLAB", "Storey", "assign_levels", "level_height", "storeys", "is_stair", "STAIR_REST",
     "bfs_order", "SIDES", "SIDE_ORDERS", "START_ROOTS", "layout_clashes", "start_positions",
     "start_once", "repair", "spring_relax", "spring",
-    "PLACEMENT_FUNCS", "fit_to_envelope", "FACINGS", "face_entry", "entry_faced",
+    "PLACEMENT_FUNCS", "fit_to_envelope", "FACINGS", "face_entry", "entry_faced", "entry_flanked",
     "RUN_FACTOR", "REPEL_RUNS", "ITERATIONS", "K_SPRING", "K_REPEL",
     "OFFSET", "OFFSET_MIN", "SPACING_LO", "SPACING_HI", "STRAIGHT_NEED", "ENVELOPE_JITTER", "Jitter", "jitter_salt", "edge_jitter",
 ]
