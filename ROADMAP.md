@@ -491,6 +491,17 @@ particular are a cheap, high-impact quick win.)
       lava hazard unconditionally whenever the interior has 9+ cells. Fix: make the hazard
       themed (lava only for volcanic/fire prompts; a bog, tar pit or none elsewhere) and
       off by default, keeping the matrix's Property 5 (no stranded pocket).
+- [ ] **Lava rooms: the lava stands too high and has no pit to pool in** — the user,
+      2026-11-22: some rooms show they're lava-flooded with the level far too high (as the
+      water was before step 24); plan for lava-flooded rooms to have depth in the floor for
+      the lava to pool into. Cause: `generators/semantics.py` `_add_room_region` (~line 886)
+      gives every non-water kind (a forge's lava) a box over 76% of the room from the floor
+      up to at least 16 u, higher than a player, with no surface and no hollow; step 24
+      fixed only water (`FLOOD_DEPTH_H`). Plan: cut a pool or channels (slag channels) into
+      the floor, set the lava region and a visible lava surface just under the walkable
+      floor level, keep a walkable floor round it and every door, and teach the gate and
+      decor that the pool is a hazard, not floor. Also check `ai/expand.py` `_add_regions`
+      (planner-requested regions, the same raised box).
 - [ ] **Elevation-on overwrites the semantic sink/raise** — with elevation on,
       `_assign_elevation` re-derives every `floor_z` and discards the content
       layer's `sink` bias (M0 fixed only the elevation-off path). Content-layer
