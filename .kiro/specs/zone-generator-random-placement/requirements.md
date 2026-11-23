@@ -43,6 +43,9 @@ The classic layout (TinyKeep: scattered rooms, separation, MST plus loops) and c
    new sweep over the other Graph themes and the outdoor dungeon. Quality bands stay under 5%.
 5. **Randomness, not noise.** Different seeds give different placements; the same seed gives the
    same zone. The offset comes from the build, not from a global rng stream other code shares.
-6. **Bytes.** Classic-layout zones, cities and wilderness stay byte-identical; so do built and
-   hewn Graph dungeons, except where a general fix (decor, grade cap) moves them, named. Graph zones change
+6. **Bytes.** Classic-layout zones, cities and wilderness stay byte-identical in layout and
+   geometry; so do built and hewn Graph dungeons. *Amended by decision 3:* decor bug fixes found
+   on the way (ceiling Props inside the room `4a1d27a`, wall decor read along its edges
+   `9208d2b`, door stubs `8ed510d`) apply to every zone and may move decorated builds' Props,
+   named in the acceptance section. Graph zones change
    (the user's request); each moved golden is named in its commit.

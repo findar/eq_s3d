@@ -21,4 +21,11 @@
    fixes (decor reads door stubs, ceiling Props inside the room, grade cap, layout independent
    of wall style) and wires the build seed into the cave jitter.
 
+3. **Decor bug fixes apply everywhere** (the lead, 2026-11-23, at task 5). The acceptance
+   build found a decorated classic fortress (seed 731402518) with Props moved in room_7 and
+   room_8 (87 of 95 files match; Decor None identical). They trace to `4a1d27a` (a ceiling Prop
+   kept inside its room; a chain hung 4.4 u through a wall) and `9208d2b` (wall decor read along
+   its edges; a banner 8.6 u behind a wall). Those are fixes, so they stay; Requirement 6 is
+   amended to name them rather than keep the bug for byte-identity.
+
 ## Follow-ups
