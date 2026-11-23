@@ -49,3 +49,14 @@ The classic layout (TinyKeep: scattered rooms, separation, MST plus loops) and c
    `9208d2b`, door stubs `8ed510d`) apply to every zone and may move decorated builds' Props,
    named in the acceptance section. Graph zones change
    (the user's request); each moved golden is named in its commit.
+7. **Caves at any bearing** (first look, decision 4). A cave Graph zone's neighbours stand at
+   any bearing and at varied distances, so rooms can clump and spread; a corridor leaves and
+   enters a room's wall at an angle, not square across a wall side. Measured by bearing spread
+   (share of edges within 10° of an axis) and clumping (spread of nearest-neighbour distance),
+   against stock caves where they can be measured. Built, hewn and warren zones and outdoor
+   dungeons keep their wall sides (the user: "Caves only").
+8. **Room sizes vary** (first look, decision 4). Every zone's rooms (dungeons, outdoor
+   dungeons, cities) take sizes and shapes from stock measurements per kind of zone: small
+   alcoves, long galleries and big halls or caverns in stock's proportions, not one base size
+   per class ±15% and near-square. Every zone's layout may change (the user: "Every zone");
+   this amends Requirement 6; each moved golden is named in its commit.

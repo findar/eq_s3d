@@ -51,9 +51,41 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
 
 - [ ] 6. HUMAN: first look
   - Card: [cards/06-first-look.md](cards/06-first-look.md)
-  - Type: human · Depends: 5
+  - Type: human · Depends: 5, 13
 
 - [ ] 7. Close step 27
   - Card: [cards/07-close.md](cards/07-close.md)
   - Type: agent · Size: S · Depends: 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-random-placement/, .kiro/specs/zone-generator/
+
+## First-look fixes (decision 4)
+
+- [ ] 9. Measure what the eye sees, and stock room sizes
+  - Card: [cards/09-measure.md](cards/09-measure.md)
+  - Type: agent · Size: M · Depends: 5
+  - Owns: scripts/grid_score.py, scripts/ (a new measuring script), .kiro/specs/zone-generator-random-placement/archive.md (targets only)
+  - Reqs: 7, 8
+
+- [ ] 10. Caves at any bearing
+  - Card: [cards/10-bearing.md](cards/10-bearing.md)
+  - Type: agent · Size: L · Depends: 9
+  - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/routing.py, generators/geometry.py, generators/outline.py, tests/test_topology_embed.py, goldens it moves (named in the commit); stop and report before widening
+  - Reqs: 7
+
+- [ ] 11. Room sizes vary
+  - Card: [cards/11-sizes.md](cards/11-sizes.md)
+  - Type: agent · Size: M · Depends: 10
+  - Owns: generators/topology/embed.py (`room_size`), generators/semantics.py (size bands, room types), generators/layout.py (classic sizes), tests it moves, goldens it moves (named in the commit)
+  - Reqs: 8
+
+- [ ] 12. Gate and bands again
+  - Card: [cards/12-gate.md](cards/12-gate.md)
+  - Type: agent · Size: S · Depends: 11
+  - Owns: fixes only where a failure is new (stop and report first)
+  - Reqs: 4
+
+- [ ] 13. Acceptance addendum
+  - Card: [cards/13-acceptance.md](cards/13-acceptance.md)
+  - Type: agent · Size: S · Depends: 12
+  - Owns: docs/ACCEPTANCE.md
+

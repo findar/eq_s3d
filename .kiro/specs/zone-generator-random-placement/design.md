@@ -42,3 +42,28 @@ Grid score, door-to-door median, `relations_broken`, `edge_fidelity`, cycles and
 over Graph seeds 2000–2039 (8–30 rooms, verticality cycling) for each dungeon theme and the
 outdoor dungeon, at `b77d5a9` and after. `scratchpad` has a starting script; put the measuring
 script in `scripts/` if it is reused by a later task.
+
+## First-look fixes (tasks 9–13, decision 4)
+
+**Why caves still read as a grid.** The jitter offsets each neighbour sideways along the wall
+side it was given, bounded so `_side_toward` keeps that side; doors are cut straight across.
+Every edge still points within about 30° of N, S, E or W, and every corridor meets its wall
+square, so the eye reads a lattice the grid score (axis-aligned centres) no longer sees.
+
+**Measure (task 9).** Add to `scripts/grid_score.py` (or a sibling): edge bearing spread,
+nearest-neighbour distance spread (clumping), door entry angle, and room side, aspect and area
+spread. Measure stock: room sizes and shapes per kind of zone (built dungeon, cave, city,
+outdoor) from stock zones, and the cave placement measures where stock caves allow it. Record
+targets in archive.md.
+
+**Caves at any bearing (task 10, `generators/topology/embed.py`, routing and doors).** For
+cave-profile builds, place each neighbour at a drawn bearing and distance (a wide range so rooms
+clump and spread), keep plan clearance, and cut the door where the bearing leaves the wall. One
+opening per wall stays a rule for box walls; a rough wall can take two openings spaced apart.
+The corridor leaves at the bearing (rough corridors already wind and cut bends). Gate, decor
+and maps must read the angled openings.
+
+**Room sizes (task 11, `room_size` and room types).** Replace the ±15% gaussian around one class
+side with stock-measured distributions per kind of zone (side, aspect, area), keeping the Size
+control's shift and the race bands. Room types keep their footprint and aspect hints as weights.
+

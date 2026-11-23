@@ -28,4 +28,10 @@
    its edges; a banner 8.6 u behind a wall). Those are fixes, so they stay; Requirement 6 is
    amended to name them rather than keep the bug for byte-identity.
 
+4. **First look: caves still read as a grid; room sizes too alike** (the user, 2026-11-23: "Looking at a cave, the layout still seems roughly on a grid using the seed 731402518in the acceptance pass.  i would expect the potential for rooms to clump, entrances to come in at angles.  also this makes me realize that our room sizes feel mostly similar, when there would normally be some kind of variance").
+   Cause: each neighbour is offset only along its N/S/E/W wall side and doors cut square, so
+   edges stay near the axes; rooms are one class side ±15% and near-square. The user chose
+   "Caves only" for any-bearing placement and angled entries, and "Every zone" for size
+   variance. Requirements 7 and 8 added; tasks 9–13.
+
 ## Follow-ups
