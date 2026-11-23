@@ -502,6 +502,11 @@ particular are a cheap, high-impact quick win.)
       floor level, keep a walkable floor round it and every door, and teach the gate and
       decor that the pool is a hazard, not floor. Also check `ai/expand.py` `_add_regions`
       (planner-requested regions, the same raised box).
+      Addendum (the user, same day): give the lava a how and why — where it came from
+      and why it's in this room. A cave might have a hole in its wall or floor with lava
+      leaking in from one point and running down to a pool; a forge's lava is channelled
+      on purpose (troughs, a sluice from a vent). The pool's shape should follow its
+      source: a flow from a seep or crack to the low point, not a square in the middle.
 - [ ] **Elevation-on overwrites the semantic sink/raise** — with elevation on,
       `_assign_elevation` re-derives every `floor_z` and discards the content
       layer's `sink` bias (M0 fixed only the elevation-off path). Content-layer
