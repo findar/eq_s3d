@@ -54,4 +54,13 @@
      shifting the median. Outdoor dungeons take the cave numbers (stock outdoor "rooms" are
      open ground cut at narrowings).
 
+6. **Cave bearing placement costs 2.7x draw time at 30 rooms** (the lead, 2026-11-23, at task 10).
+   A 30-room cave draws in 25.7 s against 9.5 s on master (card bar 1.5x); capping bearing tries
+   cost fidelity (0.928 < 0.936), so the time is accepted against the ~5 min budget. Angled
+   corridors whose Transition no line holds square lose it (about 2 of 130 over seeds 2000-2039).
+
 ## Follow-ups
+- **Cave draw time** (task 10, decision 6): `start_positions` spends 10.5 s of a 30-room cave on
+  64 tries, ~70% in `_start_crossings`; `_untangle` 5.4 s. Incremental crossing counts would cut it.
+- **Not looked at in 3D** (task 10): angled openings, long straight tunnels aimed at a room
+  centre, held lines through frames.
