@@ -348,6 +348,8 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     # high as the cover over its rooms allows, which can leave too little
     # over the Tunnel).
     no_tunnel = {}
+    # Plans with a corridor through a third room (``crosses_room``), by try: the last resort.
+    crossing = {}
 
     def plan(k: int, drop_rooms: bool):
         """Try ``k``: its layout and Entrance, or None (``errors`` /
@@ -367,11 +369,19 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
             errors[k] = e
             return None
         try:
-            return layout, warnings, plan_entrance(socket, grid, layout, room_id=first)
+            planned = layout, warnings, plan_entrance(socket, grid, layout, room_id=first)
         except EntranceError as e:
             errors[k] = e
             no_tunnel[k] = (layout, warnings, first)
             return None
+        if any(w.startswith("crosses_room:") for w in warnings):
+            # A corridor the layout couldn't route clear of a third room (a stair under a hill
+            # crowded by big rooms: random placement task 12, seed 1654615998's dragon temple)
+            # fails the gate's corridor_continuity. Another try may route it clear; this plan
+            # stands only if none does.
+            crossing.setdefault(k, planned)
+            return None
+        return planned
 
     # Every try at the full count first; only then, from the first, those
     # whose full count didn't fit, dropping rooms. The same plan as trying
@@ -385,6 +395,8 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
             if len(planned[0].rooms) == room_count:
                 return planned
             reduced[k] = planned
+        elif k in crossing:
+            crowded.append(k)
         elif isinstance(errors.get(k), EnvelopeFitError):
             crowded.append(k)
             del errors[k]
@@ -398,6 +410,9 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
             reduced[k] = planned
     if reduced:
         return reduced[min(reduced)]
+    if crossing:
+        full = [k for k, p in crossing.items() if len(p[0].rooms) == room_count]
+        return crossing[min(full or crossing)]
     error = errors[max(errors)] if errors else None
     fallback = None
     for k in sorted(no_tunnel):
