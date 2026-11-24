@@ -151,6 +151,12 @@ Door = Tuple[str, float, float]             # side (N/S/E/W), c0, c1 along that 
 #: The narrowest way a player walks through: the gate's body (``analyzer.traverse.BODY_RADIUS``
 #: 2 u either side). A link to the Core, or growth from one Cell to the next, needs this much.
 LINK_MIN = 4.0
+#: The shared edge two Cells need for the gate to walk from one to the other: a body
+#: (``LINK_MIN``) and the gate's sampling cell (``analyzer.traverse.CLEAR_CELL``, 2 u), since
+#: it reads the floor on a 2 u grid and a gap a body only just fits can fall between its
+#: samples (random placement task 12: warren graph flat 17, seed 597651992, room_10's finger
+#: joined by a 4.8 u edge read as walled off). Growth across thinner edges strands floor.
+PASS_MIN = LINK_MIN + 2.0
 #: Floor stranded behind a sliver this big (u^2) is dropped and regrown: the gate's
 #: "floor walled off" pocket (``analyzer.traverse.WALLED_OFF``).
 STRANDED_POCKET = 64.0
@@ -575,6 +581,30 @@ def _wander(verts: list, cells: list, keep_still: List[Rect], wobble: float,
         """Would a wall from vertex i to a neighbour cut through a Throat or the Core?"""
         return any(_segment_enters(moved[i], moved[n], r) for n in along[i] for r in keep_still)
 
+    # The length two Cells share, by pair, and the pairs each vertex bounds: a wall vertex
+    # moving in must not narrow a way between Cells the gate walks under ``PASS_MIN``.
+    pair_edges: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
+    seen: Dict[Tuple[int, int], int] = {}
+    for k, c in enumerate(cells):
+        for a, b in zip(c, c[1:] + c[:1]):
+            e = (min(a, b), max(a, b))
+            if e in seen and seen[e] != k:
+                pair_edges.setdefault((min(seen[e], k), max(seen[e], k)), []).append(e)
+            seen[e] = k
+    by_vertex: Dict[int, List[Tuple[int, int]]] = {}
+    for pair, es in pair_edges.items():
+        for e in es:
+            for v in e:
+                by_vertex.setdefault(v, []).append(pair)
+
+    def shared_len(pair, pts) -> float:
+        return sum(math.dist(pts[a], pts[b]) for a, b in pair_edges[pair])
+
+    wide = {pair for pair in pair_edges if shared_len(pair, verts) >= PASS_MIN}
+
+    def narrows(i: int) -> bool:
+        return any(shared_len(pair, moved) < PASS_MIN for pair in by_vertex.get(i, ()) if pair in wide)
+
     moved = list(verts)
     tol = 1e-3
     for i in wall:
@@ -590,7 +620,8 @@ def _wander(verts: list, cells: list, keep_still: List[Rect], wobble: float,
         for scale in (1.0, 0.5, 0.25):
             moved[i] = (round(x + to[0] / dist * step * scale, PLACES),
                         round(y + to[1] / dist * step * scale, PLACES))
-            if all(_fans_sound(moved, c) for c in owners[i]) and not crosses_throat(i):
+            if (all(_fans_sound(moved, c) for c in owners[i]) and not crosses_throat(i)
+                    and not narrows(i)):
                 break
         else:
             moved[i] = (x, y)
@@ -666,10 +697,10 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
         if len(owners) == 2:
             pair = (min(owners), max(owners))
             shared[pair] = shared.get(pair, 0.0) + math.dist(verts[a], verts[b])
-    # Cells sharing edges a player fits through (``LINK_MIN``), for the stranded check below.
+    # Cells sharing edges the gate walks through (``PASS_MIN``), for the stranded check below.
     passable: List[set] = [set() for _ in cells]
     for (a, b), length in shared.items():
-        if length >= LINK_MIN:
+        if length >= PASS_MIN:
             passable[a].add(b)
             passable[b].add(a)
 
