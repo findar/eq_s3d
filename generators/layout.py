@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import random
 from functools import partial
 from pathlib import Path
@@ -42,6 +43,11 @@ from .zone_types import STYLE_PROFILE
 
 # Overlap below this (u) is two faces touching, not one inside the other.
 _TOUCH = 1e-6
+#: The XY cell the gate compares two corridors' floors on (``analyzer.traverse.
+#: _corridor_floor_z``: ``max(4 * adjacency_eps, 16)``). Two tubes 3 u apart on one cell read
+#: as crossing there (random placement task 12: warren graph moderate 21, seed 1093450890,
+#: corr_13's and corr_23's Switchback stairwells 3.3 u apart, a conflict on the gate).
+CONFLICT_CELL = 16.0
 
 # Fitting a layout inside an Envelope: the fewest rooms a build keeps, and how
 # many fresh layouts are tried at each room count before dropping a room.
@@ -2433,14 +2439,26 @@ class LayoutGenerator:
         A piece pinned to a room both corridors leave (``shared``) may meet
         the other's piece pinned there: they share that doorway's stub."""
         from .topology.embed import SLAB
+
+        def cells(r):
+            return (math.floor(r[0] / CONFLICT_CELL), math.floor(r[1] / CONFLICT_CELL),
+                    math.floor((r[2] - _TOUCH) / CONFLICT_CELL), math.floor((r[3] - _TOUCH) / CONFLICT_CELL))
+
         for (ra, za0, za1, ka) in pa:
             for (rb, zb0, zb1, kb) in pb:
                 if ka is not None and ka == kb and ka in shared:
                     continue
+                if not (zb0 - za1 < SLAB and za0 - zb1 < SLAB):
+                    continue
                 if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
-                        and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH
-                        and zb0 - za1 < SLAB and za0 - zb1 < SLAB):
+                        and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH):
                     return True
+                if not shared:
+                    # The gate compares two corridors sharing no room cell by cell on its
+                    # CONFLICT_CELL grid, so pieces apart in plan but on one cell clash too.
+                    a, b = cells(ra), cells(rb)
+                    if a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]:
+                        return True
         return False
 
     @staticmethod
