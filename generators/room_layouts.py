@@ -31,6 +31,8 @@ WALL_MARGIN_H = 1.0     # a solid stands this far from a wall, in H, so nothing 
 BODY_RADIUS = 2.0       # a player's middle stays this far from a solid (u), as the gate has it
 POCKET = 16.0           # free floor this big cut off from the doors is too much (u^2). Smaller than
                         # the gate's: this reckons a body wider, which shrinks what it sees
+LOOSE_POCKET = 32.0     # the same on the gate's own reading (``_loose``): half the gate's 64 u^2
+                        # (``analyzer.traverse.WALLED_OFF``), as this grid's cells are coarser
 ARRANGEMENTS: Tuple[str, ...] = ("centre", "far_end", "ring", "rows", "corners", "along_wall",
                                  "scatter", "on_dais")
 MIN_HEAD_H = 2.0        # a dais leaves this much headroom, in H
@@ -81,6 +83,7 @@ class RoomGrid:
         self.spine = self._spine(doors)
         self.by_wall = self._by_wall()
         self.cut_already = self._cut_off(self._free(self.taken))
+        self.cut_loose = self._cut_off(self._loose(self.taken))
 
     def _by_wall(self) -> np.ndarray:
         """Cells a body's radius from the outline's own walls, measured from the wall edges
@@ -187,6 +190,16 @@ class RoomGrid:
         walled = binary_dilation(walls, iterations=reach)[1:-1, 1:-1] | self.by_wall
         return (self.floor & ~placed) & (~walled | self.spine)
 
+    def _loose(self, solid: np.ndarray) -> np.ndarray:
+        """The floor as the gate reads it: a body's radius from the outline's walls (``by_wall``)
+        and from what's placed (a cell's middle beside a taken cell is within a body's radius of
+        its plan). ``_free`` reads a cell stricter, which joins no gap the gate shuts but also
+        shrinks the floor behind one: a strip between boulders and a wall can vanish there while
+        the gate finds it walled off (random placement task 12: outdoor case a, seed 7,
+        room_1's two boulders left 2.8-3.7 u gaps to a 52 u^2 strip by the north wall)."""
+        placed = binary_dilation(solid) if solid.any() else solid
+        return self.floor & ~placed & (~self.by_wall | self.spine)
+
     def _cut_off(self, free: np.ndarray) -> np.ndarray:
         """The free floor not joined to a door. Measured on the bare room (``cut_already``): what
         the outline itself cuts off, a voronoi room's thin finger say, which placement can't
@@ -210,7 +223,14 @@ class RoomGrid:
         marks = {int(labels[c]) for c in self.door_cells}
         joined = next(iter(marks), 0)
         sizes = np.bincount(labels[free & ~self.cut_already], minlength=n + 1)
-        return not any(sizes[k] * CELL * CELL >= POCKET for k in range(1, n + 1) if k != joined)
+        if any(sizes[k] * CELL * CELL >= POCKET for k in range(1, n + 1) if k != joined):
+            return False
+        # And as the gate reads the floor: a pocket it would find walled off.
+        loose = self._loose(self.taken | cells)
+        labels, n = label(loose | (binary_dilation(over, iterations=reach) & self.floor) if over.any() else loose)
+        marks = {int(labels[c]) for c in self.door_cells} - {0}
+        sizes = np.bincount(labels[loose & ~self.cut_loose], minlength=n + 1)
+        return not any(sizes[k] * CELL * CELL >= LOOSE_POCKET for k in range(1, n + 1) if k not in marks)
 
 
 def _door_side(grid: RoomGrid) -> Tuple[float, float]:
