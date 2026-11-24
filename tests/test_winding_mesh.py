@@ -84,7 +84,10 @@ def _straight(spec):
 
 
 def test_caves_wind_and_warrens_mostly_do_not():
-    caves = sum(len(_winding_ends(_spec(*z))) for z in ZONES if z[0] == "cave")
+    # An angled cave corridor (random placement task 10) winds along its route line, its legs
+    # never: its two ends count with the winding legs' (test_wind_route_mesh welds them).
+    caves = sum(len(_winding_ends(_spec(*z))) + 2 * sum(1 for c in _spec(*z).corridors if c.entry and c.path)
+                for z in ZONES if z[0] == "cave")
     assert caves > 50, "cave legs wind"
 
 

@@ -769,10 +769,10 @@ def hold_route(route: Route, hw: float, rules: TunnelRules, seed: Union[int, str
 
 def held_entry_line(route: Route, hw: float, run: float, hold: Hold) -> Optional[List[Point]]:
     """``entry_line`` for an angled corridor holding a Transition line that no wound line
-    fits: each run-out along its heading, then by the bends (or past a Z's, to its held middle leg) straight along the
-    held leg through ``hold.point`` for ``hold.reach`` either side, so the line stands
-    square across it. None without a heading, when the point isn't on its leg, the held
-    stretch would reach a run-out or a bend, or the strip would fold."""
+    fits: each run-out along its heading, then by the bends (or straight past a Z's) to the
+    held leg, straight along it through ``hold.point`` for ``hold.reach`` either side, so the
+    line stands square across it. None without a heading, when the point isn't on its leg,
+    the held stretch would reach a run-out or a bend, or the strip would fold."""
     if not any(route.heading):
         return None
     wps = [(float(x), float(y)) for x, y in route.waypoints]
@@ -800,9 +800,9 @@ def held_entry_line(route: Route, hw: float, run: float, hold: Hold) -> Optional
         if s0 < lo or s1 > hi:
             continue
         a_out, b_in = run_outs(route, r)
-        # Through the route's bends; for a Z holding its middle leg, also straight from
-        # the run-outs to the held stretch, when going by the bends turns back too hard.
-        for bends in (True, False) if route.kind != "l" and 0 < k < n - 1 else (True,):
+        # Through the route's bends; for a straight or Z route, also straight between the
+        # run-outs and the held stretch, when going by the bends turns back too hard.
+        for bends in (True, False) if route.kind != "l" else (True,):
             line = [start, a_out]
             at = 0
             for i in range(n):

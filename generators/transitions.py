@@ -154,12 +154,14 @@ def _legs(cor: CorridorSpec, rooms):
         ends = MeshBuilder._leg_ends(waypoints, k, cor.width / 2, zs)
         if ends is None:
             continue
-        if any(route.heading) and k in (0, last):
+        if any(route.heading) and (k in (0, last) or k in (1, last - 1)):
             # An angled run-out (random placement task 10) isn't on its leg: a line stands
-            # past it, where the corridor runs along the leg.
-            ends = _past_run_outs(ends, route.heading if k == 0 == last else
-                                  (route.heading[0], 0.0) if k == 0 else (0.0, route.heading[1]),
-                                  cor.width / 2)
+            # past it, where the corridor runs along the leg. It reaches across the next
+            # leg's start too (and the line from it needs room to turn onto that leg), so
+            # that leg's line stands as far past the bend.
+            ends = _past_run_outs(ends, (route.heading[0] if k in (0, 1) else 0.0,
+                                         route.heading[1] if k in (last, last - 1) else 0.0),
+                                  cor.width / 2, (k != 0, k != last))
             if ends is None:
                 continue
         flight = cor.steps != 0 and k == carry
@@ -167,15 +169,16 @@ def _legs(cor: CorridorSpec, rooms):
     return out
 
 
-def _past_run_outs(ends, heading, hw: float):
+def _past_run_outs(ends, heading, hw: float, beside=(False, False)):
     """A leg's ends moved in past its angled run-outs (``heading``, from end and to end):
     ``ENTRY_RUN`` and a half width along the leg from each end that leaves at an angle, so a
     line's held stretch (its depth and a half width either side, ``measure_routes``) starts
-    past the run-out. None when nothing is left."""
+    past the run-out; at an end ``beside`` one (the leg after the run-out's own), as far as
+    the run-out reaches across it, and a half width. None when nothing is left."""
     (x0, y0), (x1, y1) = ends
     span = abs(x1 - x0) + abs(y1 - y0)
-    a = ENTRY_RUN + hw if heading[0] else 0.0
-    b = ENTRY_RUN + hw if heading[1] else 0.0
+    a, b = ((ENTRY_RUN * abs(math.sin(h)) if side else ENTRY_RUN) + hw if h else 0.0
+            for h, side in zip(heading, beside))
     if span <= a + b:
         return None
     ux, uy = (x1 - x0) / span, (y1 - y0) / span
@@ -678,7 +681,9 @@ def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, bo
 def entry_paths(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None) -> None:
     """Each angled corridor (``CorridorSpec.entry``, random placement task 10) that no wound
     line fits takes ``routing.entry_line``'s: its doors were cut for the angle, so it still
-    leaves them at it. Unchecked for clearance, as the legs it stands for are."""
+    leaves them at it. Unchecked for clearance, as the legs it stands for are. One holding a
+    Transition line takes ``held_entry_line``'s through it, or loses the Transition when none
+    fits."""
     if not any(cor.entry and not cor.path for cor in spec.corridors):
         return
     if rooms is None:
@@ -708,7 +713,13 @@ def entry_paths(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None) -> No
                     if w.get("corridor") == cor.id and "z" in w:
                         w["z"] = t.z
             else:
+                # No line stands square through it on this angled corridor: it has no
+                # Transition (a line the corridor crosses askew opens no floor through it).
                 line = None
+                cor.transition = None
+                if "transitions" in spec.layout:
+                    spec.layout["transitions"] = [w for w in spec.layout["transitions"]
+                                                  if w.get("corridor") != cor.id]
         if line is None:
             line = entry_line(route, hw, run)
         if line is not None:
