@@ -43,6 +43,7 @@ and the edge's ids, so the same graph and sizes always give the same positions.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import math
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
@@ -189,8 +190,21 @@ def _plan_keys(graph: TopologyGraph, order: Sequence[str],
                storeys: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """What the pair tests read per room: its Storey, or its graph node."""
     if storeys is not None:
-        return {r: storeys[r] for r in order}
-    return {r: graph.node(r) for r in order}
+        return _Keys({r: storeys[r] for r in order})
+    return _Keys({r: graph.node(r) for r in order})
+
+
+class _Keys(dict):
+    """:func:`_plan_keys`'s rooms, with the pairs of them that may overlap in
+    plan (``over``), worked out once for the crossing tests (task 10)."""
+
+    @functools.cached_property
+    def over(self) -> frozenset:
+        rooms = sorted(self)
+        if len({getattr(self[r], "level", None) for r in rooms}) < 2:
+            return frozenset()
+        return frozenset((r, s) for r in rooms for s in rooms
+                         if r != s and may_overlap_in_plan(self[r], self[s]))
 
 
 # ---------------------------------------------------------------------------
@@ -292,18 +306,53 @@ STRAIGHT_NEED = 1.5
 #: 0.214). Stair and Bridge pairs keep their alignment on purpose (about half
 #: the stair pairs line up), which holds the floor near 0.09.
 ENVELOPE_JITTER = (1.0, 1.5, 0.6)
+#: A cave's bearing placement (random placement task 10, Requirement 7; the user
+#: at the first look: "i would expect the potential for rooms to clump"). Each
+#: edge keeps its wall side, but its far room stands at a drawn bearing off that
+#: side's axis, uniform up to BEARING_MAX either way, not just slid along a shared
+#: span, and at a drawn spacing BEARING_SPACING x a run (from close by the
+#: separation gap to far): (spacing low, spacing high, offset floor) as
+#: :func:`edge_jitter` reads them, the floor 0 so the share is uniform.
+#: The bearing is clamped so the gap along the side's axis beats the gap
+#: across it by BEARING_MARGIN corridor widths (:func:`_side_toward` keeps the
+#: side, so each wall still holds one opening).
+BEARING_SPACING = (0.25, 2.5, 0.0)
+BEARING_MAX = math.radians(45.0)
+BEARING_MARGIN = 2.0
+#: The drawn share's power before it scales BEARING_MAX: under 1 leans the bearings
+#: off the axes (the clamp above pulls some back toward them).
+BEARING_POWER = 0.8
+#: Unjoined rooms repel inside this many runs of each other in a bearing
+#: placement (REPEL_RUNS elsewhere): at 1.5 runs no two chambers could clump.
+BEARING_REPEL_RUNS = 1.0
 
 
 class Jitter(NamedTuple):
     """A placement's per-edge jitter: ``edges`` {frozenset((a, b)): (spacing,
-    offset share)} (:func:`edge_jitter`) and the span (u) facing rooms keep."""
+    offset share)} (:func:`edge_jitter`) and the span (u) facing rooms keep.
+    ``bearing`` (radians, a cave's :data:`BEARING_MAX`; 0 otherwise) makes the
+    share a bearing off the wall side's axis instead of a slide along the
+    shared span; ``margin`` (u) is what the axis gap keeps over the cross gap."""
 
     edges: Dict[frozenset, Tuple[float, float]]
     need: float
+    bearing: float = 0.0
+    margin: float = 0.0
 
     def cross(self, across: float) -> float:
         """The offset a share of 1 moves across a wall: the slack."""
         return max(0.0, across - self.need)
+
+    def offset(self, t: float, across: float, gap: float, ext: float) -> float:
+        """How far across the wall a share ``t`` moves the far room: ``t`` x the
+        slack, or (a bearing placement) the bearing ``t`` x :attr:`bearing` off
+        the axis over the rest distance ``ext + gap``, kept short of turning
+        the edge onto another wall side."""
+        if not self.bearing:
+            return t * self.cross(across)
+        off = math.tan(abs(t) ** BEARING_POWER * self.bearing) * (ext + gap)
+        off = min(off, max(0.0, across + gap - self.margin))
+        return math.copysign(off, t)
 
 
 def jitter_salt(order: Sequence[str], half: Dict[str, Point], seed: Optional[int] = None,
@@ -341,10 +390,15 @@ def _jitter_table(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Po
                   storeys: Optional[Dict[str, Any]], seed: Optional[int],
                   corridor_width: float, draw: int = 0,
                   ranges: Optional[Tuple[float, float, float]] = None,
-                  centred: Optional[str] = None) -> Optional[Jitter]:
+                  centred: Optional[str] = None,
+                  bearing: bool = False) -> Optional[Jitter]:
     """The :class:`Jitter` of every edge between rooms of ``order`` that
     takes one (not a stair, not a Bridge); None when there's none to take.
-    The edges of room ``centred`` keep their spacing but no offset."""
+    The edges of room ``centred`` keep their spacing but no offset.
+    ``bearing`` draws a cave's bearing placement (:data:`BEARING_SPACING`,
+    :data:`BEARING_MAX`) instead."""
+    if bearing:
+        ranges = BEARING_SPACING
     if OFFSET == 0 and SPACING_LO == SPACING_HI == 1:
         return None
     salt = jitter_salt(order, half, seed, draw)
@@ -357,8 +411,33 @@ def _jitter_table(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Po
         if is_stair(keys[e.a], keys[e.b]):
             continue
         f, t = edge_jitter(salt, e.a, e.b, ranges)
+        if bearing:
+            f = _bearing_spacing(f)
         out[frozenset((e.a, e.b))] = (f, 0.0 if centred in (e.a, e.b) else t)
+    if bearing:
+        return Jitter(out, STRAIGHT_NEED * corridor_width, BEARING_MAX,
+                      BEARING_MARGIN * corridor_width)
     return Jitter(out, STRAIGHT_NEED * corridor_width)
+
+
+#: A bearing placement's clumps: this share of edges (the lowest draws) rest at
+#: BEARING_CLUMP[1] runs, the rest spread over the remainder of
+#: BEARING_SPACING, so chambers sit close in knots and far between them
+#: (nearest-neighbour spread, stock CV 0.38).
+BEARING_CLUMP = (0.3, 0.27)
+
+
+def _bearing_spacing(f: float) -> float:
+    """A drawn spacing (uniform over :data:`BEARING_SPACING`) as a bearing
+    placement's: the lowest :data:`BEARING_CLUMP` share of draws at the clump's
+    spacing, the rest uniform from the middle of the range up."""
+    lo, hi, _ = BEARING_SPACING
+    u = (f - lo) / (hi - lo) if hi > lo else 0.0
+    share, close = BEARING_CLUMP
+    if u < share:
+        return close
+    mid = (lo + hi) / 2
+    return mid + (hi - mid) * (u - share) / (1.0 - share)
 
 
 def _jitter_of(jitter: Optional[Jitter], a: str, b: str) -> Tuple[float, float]:
@@ -468,6 +547,12 @@ def _placing_order(graph: TopologyGraph, order: Sequence[str],
 #: first. The start keeps the first try with the fewest wall and footprint
 #: clashes.
 START_ROOTS = 8
+#: A bearing start (task 10) tries at most this many of the roots x side
+#: orders: each counts its crossings, so all 64 cost a 30-room cave ~5x its
+#: draw time.
+BEARING_START_TRIES = 64
+#: ... and past this many rooms, this many.
+BEARING_BIG = (20, 64)
 SIDE_ORDERS: Tuple[Tuple[str, ...], ...] = (
     ("E", "N", "W", "S"), ("N", "W", "S", "E"), ("W", "S", "E", "N"), ("S", "E", "N", "W"),
     ("E", "S", "W", "N"), ("S", "W", "N", "E"), ("W", "N", "E", "S"), ("N", "E", "S", "W"))
@@ -516,20 +601,451 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
     rank = {r: k for k, r in enumerate(order)}
     roots = list(order[:1]) + sorted(order[1:], key=lambda r: (-deg[r], rank[r]))[:START_ROOTS - 1]
     best = None
+    bearing = jitter is not None and jitter.bearing
+    tries = 0
     for root in roots:
         for sides in SIDE_ORDERS:
-            pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter)
-            score = layout_clashes(graph, order, pos, half, gap, storeys)
+            tries += 1
+            if bearing and tries > (BEARING_START_TRIES if len(order) <= BEARING_BIG[0]
+                                    else BEARING_BIG[1]):
+                break
+            if bearing:
+                # A bearing start (task 10) also counts its edges' crossings and
+                # keeps the bearings it settled on for the springs.
+                scales: Dict[frozenset, float] = {}
+                pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter,
+                                 scales)
+                clashes = layout_clashes(graph, order, pos, half, gap, storeys)
+                if best is not None and clashes > best[0][0]:
+                    continue             # can't win: crossings only break a tie
+                score = (clashes, plan_crossings(graph, order, pos, half,
+                                                 jitter.need / STRAIGHT_NEED, storeys))
+                done = score == (0, 0)
+                pos = (pos, scales)
+            else:
+                pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter)
+                score = layout_clashes(graph, order, pos, half, gap, storeys)
+                done = score == 0
             if best is None or score < best[0]:
                 best = (score, pos)
-            if score == 0:
+            if done:
                 break
-        if best[0] == 0:
+        if (best[0] == (0, 0)) if bearing else best[0] == 0:
             break
     pos = best[1]
-    if best[0]:
+    if bearing:
+        pos, scales = pos
+        for e, s in scales.items():
+            if e not in jitter.edges:          # a stair or Bridge: no jitter
+                continue
+            f, t = jitter.edges[e]
+            jitter.edges[e] = (f, t * s)
+    if (best[0][0] if bearing else best[0]):
         repair(graph, order, pos, half, run, gap, storeys)
     return pos
+
+
+#: The bearings a bearing start tries per wall side, as shares of the edge's
+#: drawn one: the drawn bearing, then nearer the side's axis, when it would
+#: cross a placed room or edge (:func:`_start_crossings`).
+BEARING_FALLBACK = (1.0, -1.0)
+
+
+#: Where a bearing placement's door may stand along its wall: a corridor width
+#: and the inset from either end of the wall, and this far (u) more. A door's
+#: stub reaches a half width round it and the inset plus a half width into the
+#: room, so two doors on walls meeting at a corner keep their stubs apart (Job
+#: B drops a corridor whose floor meets another's, ``_resolve_conflicts``).
+DOOR_END_MARGIN = 1.0
+#: The wall-point inset Job B cuts doors at (``LayoutGenerator._wall_point``).
+DOOR_INSET = 2.0
+
+
+def bearing_door(c: Point, h: Point, to: Point, exit_x: bool, width: float) -> Optional[float]:
+    """A bearing placement's door along the wall of the room at ``c`` (half-
+    extents ``h``) facing a room centred at ``to`` (task 10): where the line
+    between the centres crosses the wall, kept a half ``width`` and
+    :data:`DOOR_END_MARGIN` off the wall's ends. None when the wall is too short."""
+    ax = 0 if exit_x else 1
+    d_ax, d_cr = to[ax] - c[ax], to[1 - ax] - c[1 - ax]
+    lo, hi = door_span(c[1 - ax] - h[1 - ax], c[1 - ax] + h[1 - ax], width)
+    if hi < lo:
+        return None
+    slope = d_cr / d_ax if d_ax else 0.0
+    return min(hi, max(lo, c[1 - ax] + slope * h[ax]))
+
+
+def door_span(lo: float, hi: float, width: float) -> Tuple[float, float]:
+    """Where a bearing placement's door centre may stand on a wall running
+    ``lo``..``hi``: a corridor width, the inset and :data:`DOOR_END_MARGIN` in
+    from each end (empty, hi < lo, on a short wall)."""
+    m = width + DOOR_INSET + DOOR_END_MARGIN
+    return lo + m, hi - m
+
+
+def _edge_rects_drawn(pa: Point, ha: Point, pb: Point, hb: Point, width: float) -> List[Tuple[float, float, float, float]]:
+    """The floor rects of the corridor Job B would route between two rooms of a
+    bearing placement (doors straight across a shared span that holds
+    :data:`STRAIGHT_NEED` widths, else at :func:`bearing_door`): what
+    :func:`_start_crossings` tests."""
+    from generators.routing import exit_axis_x, plan_route, route_footprint
+    ex_a = exit_axis_x(pa[0], pa[1], ha[0], ha[1], pb[0], pb[1], hb[0], hb[1])
+    ex_b = exit_axis_x(pb[0], pb[1], hb[0], hb[1], pa[0], pa[1], ha[0], ha[1])
+
+    def door(c, h, oc, oh, ex):
+        ax = 0 if ex else 1
+        across = None
+        if ex_a == ex_b:
+            lo = max(c[1 - ax] - h[1 - ax], oc[1 - ax] - oh[1 - ax])
+            hi = min(c[1 - ax] + h[1 - ax], oc[1 - ax] + oh[1 - ax])
+            if hi - lo >= STRAIGHT_NEED * width:
+                lo = max(lo, door_span(c[1 - ax] - h[1 - ax], c[1 - ax] + h[1 - ax], width)[0],
+                         door_span(oc[1 - ax] - oh[1 - ax], oc[1 - ax] + oh[1 - ax], width)[0])
+                hi = min(hi, door_span(c[1 - ax] - h[1 - ax], c[1 - ax] + h[1 - ax], width)[1],
+                         door_span(oc[1 - ax] - oh[1 - ax], oc[1 - ax] + oh[1 - ax], width)[1])
+                if hi >= lo:
+                    across = (lo + hi) / 2
+        if across is None:
+            across = bearing_door(c, h, oc, ex, width)
+        if across is None:
+            across = c[1 - ax]
+        wall = c[ax] + (h[ax] - DOOR_INSET) * (1 if oc[ax] >= c[ax] else -1)
+        return (wall, across) if ex else (across, wall)
+
+    route = plan_route(door(pa, ha, pb, hb, ex_a), door(pb, hb, pa, ha, ex_b), ex_a, ex_b,
+                       width / 2, 0)
+    return _Rects(route_footprint(route, width / 2))
+
+
+#: Most entries :func:`_memo_rects` keeps before it starts afresh.
+RECTS_MEMO_MAX = 200_000
+
+
+def _memo_rects(draw):
+    """``draw(pa, ha, pb, hb, width)`` remembered by its arguments' values: the
+    bearing start asks again for most routes it drew (a placed corridor for each
+    candidate, a pair at each try). The rects it returns are shared: read only."""
+    memo: Dict[Tuple, Any] = {}
+
+    @functools.wraps(draw)
+    def rects(pa, ha, pb, hb, width):
+        key = (float(pa[0]), float(pa[1]), float(ha[0]), float(ha[1]),
+               float(pb[0]), float(pb[1]), float(hb[0]), float(hb[1]), float(width))
+        got = memo.get(key)
+        if got is None:
+            if len(memo) >= RECTS_MEMO_MAX:
+                memo.clear()
+            got = memo[key] = draw(pa, ha, pb, hb, width)
+        return got
+    return rects
+
+
+class _Rects(list):
+    """A corridor's floor rects with their bounding box (``box``), so the
+    crossing tests skip pairs that can't meet."""
+
+    def __init__(self, rects=()):
+        super().__init__(rects)
+        self.box = ((min(r[0] for r in self), min(r[1] for r in self),
+                     max(r[2] for r in self), max(r[3] for r in self)) if self else None)
+
+
+def _rects_hit(rects, c: Point, h: Point, eps: float = 1.0) -> bool:
+    x0, y0, x1, y1 = c[0] - h[0], c[1] - h[1], c[0] + h[0], c[1] + h[1]
+    box = getattr(rects, "box", 0)
+    if box is None or (box and (box[2] - x0 <= eps or x1 - box[0] <= eps
+                                or box[3] - y0 <= eps or y1 - box[1] <= eps)):
+        return False
+    return any(min(r[2], x1) - max(r[0], x0) > eps and min(r[3], y1) - max(r[1], y0) > eps
+               for r in rects)
+
+
+def _rects_meet(ra, rb, eps: float = 1e-6, inside: Optional[Tuple[Point, Point]] = None) -> bool:
+    """Do two corridors' rects overlap (outside the box ``inside``, (centre,
+    half-extents): the room two corridors share)?"""
+    ba, bb = getattr(ra, "box", 0), getattr(rb, "box", 0)
+    if ba is None or bb is None or (ba and bb and (
+            min(ba[2], bb[2]) - max(ba[0], bb[0]) <= eps or min(ba[3], bb[3]) - max(ba[1], bb[1]) <= eps)):
+        return False
+    for a in ra:
+        for b in rb:
+            x0, x1 = max(a[0], b[0]), min(a[2], b[2])
+            y0, y1 = max(a[1], b[1]), min(a[3], b[3])
+            if x1 - x0 <= eps or y1 - y0 <= eps:
+                continue
+            if inside is not None:
+                (cx, cy), (hx, hy) = inside
+                if x0 >= cx - hx - eps and x1 <= cx + hx + eps and \
+                        y0 >= cy - hy - eps and y1 <= cy + hy + eps:
+                    continue
+            return True
+    return False
+
+
+def _corridor_rects(a: str, b: str, pos: Dict[str, Point], half: Dict[str, Point],
+                    nodes: Dict[str, Any], width: float,
+                    others: Sequence[Tuple[Tuple[str, str], list]] = ()
+                    ) -> List[Tuple[float, float, float, float]]:
+    """What :func:`crossing_edges` reads of edge a-b's corridor: Job B's route
+    (:func:`_edge_rects`), or for a stair the first of its ways
+    (:func:`_stair_rects`) that crosses the fewest rooms beside it and meets
+    the fewest of the corridors ``others`` ((edge, rects)), as Job B takes
+    the first clear one (``_stair_candidates``)."""
+    if not is_stair(nodes[a], nodes[b]):
+        return _edge_rects(pos[a], half[a], pos[b], half[b], width)
+    best, fewest = _Rects(), None
+    for rects in _stair_rects(pos[a], half[a], pos[b], half[b], width):
+        hits = sum(1 for r in pos if r not in (a, b) and _rects_hit(rects, pos[r], half[r])
+                   and _beside(nodes, r, a, b))
+        for (c, d), theirs in others:
+            if len({a, b} & {c, d}) > 1:
+                continue
+            shared = ({a, b} & {c, d}) or None
+            inside = (pos[next(iter(shared))], half[next(iter(shared))]) if shared else None
+            if _rects_meet(rects, theirs, inside=inside) and (
+                    _beside(nodes, c, a, b) or _beside(nodes, d, a, b)):
+                hits += 1
+        if fewest is None or hits < fewest:
+            best, fewest = rects, hits
+            if not hits:
+                break
+    return best
+
+
+def _stair_rects_drawn(pa: Point, ha: Point, pb: Point, hb: Point, width: float
+                       ) -> List[List[Tuple[float, float, float, float]]]:
+    """The floor rects of the ways Job B tries a stair between two rooms on
+    different Levels (``LayoutGenerator._stair_candidates``), in its order:
+    between their facing walls when they stand a corridor apart, then a
+    U-route on each side (across the pair's offset first) with its doors at
+    the walls' far ends."""
+    from generators.geometry import MIN_LANE
+    from generators.layout import U_CORNER_MARGIN
+    from generators.routing import exit_axis_x, plan_u_route, route_footprint
+    hw = width / 2
+    out = []
+    ex = exit_axis_x(pa[0], pa[1], ha[0], ha[1], pb[0], pb[1], hb[0], hb[1])
+    ax = 0 if ex else 1
+    if abs(pb[ax] - pa[ax]) - (ha[ax] + hb[ax]) >= width:
+        out.append(_edge_rects(pa, ha, pb, hb, width))
+    across_x = abs(pb[0] - pa[0]) >= abs(pb[1] - pa[1])
+    for side in (("N", "S", "E", "W") if across_x else ("E", "W", "N", "S")):
+        sx = side in ("E", "W")
+        sign = 1.0 if side in ("N", "E") else -1.0
+        w, t = (0, 1) if sx else (1, 0)
+        reach_a, reach_b = ha[t] - hw - U_CORNER_MARGIN, hb[t] - hw - U_CORNER_MARGIN
+        if reach_a < 0 or reach_b < 0:
+            continue
+        sgn = 1.0 if pb[t] >= pa[t] else -1.0
+        da, db = pa[t] - sgn * reach_a, pb[t] + sgn * reach_b
+        if abs(db - da) < 2 * hw + 2 * MIN_LANE:
+            continue
+        wa = pa[w] + sign * (ha[w] - DOOR_INSET)
+        wb = pb[w] + sign * (hb[w] - DOOR_INSET)
+        fa, fb = ((wa, da), (wb, db)) if sx else ((da, wa), (db, wb))
+        out.append(_Rects(route_footprint(plan_u_route(fa, fb, side, width), hw)))
+    return out
+
+
+_edge_rects = _memo_rects(_edge_rects_drawn)
+_stair_rects = _memo_rects(_stair_rects_drawn)
+
+
+def _beside(nodes: Dict[str, Any], r: str, a: str, b: str) -> bool:
+    """Is room (or a corridor's room) ``r`` on a Level corridor a-b passes,
+    with no Slab between (it may stand in the way)?"""
+    over = getattr(nodes, "over", None)
+    if over is not None:
+        return not ((r, a) in over and (r, b) in over)
+    return not (may_overlap_in_plan(nodes[r], nodes[a]) and may_overlap_in_plan(nodes[r], nodes[b]))
+
+
+def _start_crossings(u: str, c: Point, nbrs: Sequence[str], placed: Sequence[Tuple[str, str]],
+                     pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
+                     width: float, routes: Dict[Any, Any]) -> int:
+    """Room ``u`` at ``c``: its corridors to placed ``nbrs`` (as Job B would
+    route them, :func:`_corridor_rects`) through a placed room or across a
+    placed corridor, plus placed corridors through u's box. ``routes`` caches
+    the placed corridors' rects, and (as arrays, :class:`_Placed`) what one
+    ``placed`` list reads, for every candidate of one room."""
+    got = routes.get(_PLACED)
+    if got is None or got.placed is not placed or got.n != len(pos):
+        for a, b in placed:
+            if (a, b) not in routes:
+                routes[(a, b)] = _corridor_rects(a, b, pos, half, nodes, width,
+                                                 [(e, r) for e, r in routes.items() if e is not _PLACED])
+        got = routes[_PLACED] = _Placed(placed, pos, half, routes)
+    bad = 0
+    x0, y0, x1, y1 = c[0] - half[u][0], c[1] - half[u][1], c[0] + half[u][0], c[1] + half[u][1]
+    R = got.rects
+    if len(R):
+        hit = (np.minimum(R[:, 2], x1) - np.maximum(R[:, 0], x0) > 1.0) & \
+              (np.minimum(R[:, 3], y1) - np.maximum(R[:, 1], y0) > 1.0)
+        for k in sorted(set(got.owner[hit].tolist())):
+            a, b = placed[k]
+            if _beside(nodes, u, a, b):
+                bad += 1
+    mine_all = []
+    for m in nbrs:
+        # As _corridor_rects would draw it (a stair: its first way that hits
+        # least), counted as it counts a stair's ways.
+        if is_stair(nodes[u], nodes[m]):
+            mine, fewest = _Rects(), None
+            for rects in _stair_rects(c, half[u], pos[m], half[m], width):
+                n = got.score(rects, u, m, pos, half, nodes)
+                if fewest is None or n < fewest:
+                    mine, fewest = rects, n
+                    if not n:
+                        break
+            bad += fewest or 0
+        else:
+            mine = _edge_rects(c, half[u], pos[m], half[m], width)
+            bad += got.score(mine, u, m, pos, half, nodes)
+        mine_all.append(mine)
+    # u's own corridors meeting outside u.
+    for k, ra in enumerate(mine_all):
+        for rb in mine_all[k + 1:]:
+            if _rects_meet(ra, rb, inside=(c, half[u])):
+                bad += 1
+    return bad
+
+
+#: :func:`_start_crossings`'s key in its ``routes`` cache for :class:`_Placed`.
+_PLACED = object()
+
+
+class _Placed:
+    """What :func:`_start_crossings` reads of one ``placed`` list, as arrays:
+    every placed corridor's rects (``rects``, with ``owner`` the index of its
+    edge in ``placed``) and the placed rooms' boxes (``boxes``, ``rooms``)."""
+
+    def __init__(self, placed, pos, half, routes):
+        self.placed = placed
+        self.n = len(pos)
+        rects, owner = [], []
+        for k, e in enumerate(placed):
+            for r in routes[e]:
+                rects.append(r)
+                owner.append(k)
+        self.rects = np.array(rects, dtype=float).reshape(-1, 4)
+        self.owner = np.array(owner, dtype=int)
+        self.rooms = list(pos)
+        self.boxes = np.array([(pos[r][0] - half[r][0], pos[r][1] - half[r][1],
+                                pos[r][0] + half[r][0], pos[r][1] + half[r][1]) for r in self.rooms],
+                              dtype=float).reshape(-1, 4)
+        self._has: Dict[str, np.ndarray] = {}
+        # Boxes then rects, to overlap with a corridor's rects in one pass.
+        self.nb = len(self.boxes)
+        self.both = np.vstack([self.boxes, self.rects])
+
+    def score(self, rects, u: str, m: str, pos, half, nodes) -> int:
+        """Room u's corridor to placed room m on ``rects``: the placed rooms
+        (not m) it passes through on its Levels, plus the placed corridors it
+        meets (outside m, when they leave m too)."""
+        if not rects:
+            return 0
+        M = getattr(rects, "arr", None)
+        if M is None:
+            M = np.array(rects, dtype=float)
+            if isinstance(rects, _Rects):
+                rects.arr = M
+        bad = 0
+        A, nb = self.both, self.nb
+        X0 = np.maximum(M[:, None, 0], A[None, :, 0])
+        X1 = np.minimum(M[:, None, 2], A[None, :, 2])
+        Y0 = np.maximum(M[:, None, 1], A[None, :, 1])
+        Y1 = np.minimum(M[:, None, 3], A[None, :, 3])
+        if nb:
+            ox, oy = X1[:, :nb] - X0[:, :nb], Y1[:, :nb] - Y0[:, :nb]
+            for j in np.nonzero(((ox > 1.0) & (oy > 1.0)).any(axis=0))[0].tolist():
+                r = self.rooms[j]
+                if r != m and _beside(nodes, r, u, m):
+                    bad += 1
+        if len(A) > nb:
+            ix0, ix1, iy0, iy1 = X0[:, nb:], X1[:, nb:], Y0[:, nb:], Y1[:, nb:]
+            meet = (ix1 - ix0 > 1e-6) & (iy1 - iy0 > 1e-6)
+            if meet.any():
+                (mx, my), (hx, hy) = pos[m], half[m]
+                eps = 1e-6
+                inside = (ix0 >= mx - hx - eps) & (ix1 <= mx + hx + eps) & \
+                         (iy0 >= my - hy - eps) & (iy1 <= my + hy + eps)
+                meet &= ~(inside & self.has(m)[None, :])
+                for k in sorted(set(self.owner[meet.any(axis=0)].tolist())):
+                    a, b = self.placed[k]
+                    if _beside(nodes, a, u, m) or _beside(nodes, b, u, m):
+                        bad += 1
+        return bad
+
+    def has(self, m: str) -> np.ndarray:
+        """Per rect: is its corridor one of room m's?"""
+        if m not in self._has:
+            self._has[m] = np.array([m in self.placed[k] for k in self.owner.tolist()], dtype=bool)
+        return self._has[m]
+
+
+def plan_crossings(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
+                   half: Dict[str, Point], width: float,
+                   storeys: Optional[Dict[str, Any]] = None) -> int:
+    """Corridors (as Job B would route them in a bearing placement,
+    :func:`_corridor_rects`) through a third room on their Levels, plus pairs
+    of corridors that meet outside a room they share: what Job B splits or
+    drops (``_resolve_crossings``, ``_resolve_conflicts``)."""
+    return len(crossing_edges(graph, order, pos, half, width, storeys)[1])
+
+
+def crossing_edges(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
+                   half: Dict[str, Point], width: float,
+                   storeys: Optional[Dict[str, Any]] = None
+                   ) -> Tuple[set, List[Tuple]]:
+    """(the edges in a crossing, the crossings) of :func:`plan_crossings`."""
+    keys = _plan_keys(graph, order, storeys)
+    inset = set(order)
+    segs = [(e.a, e.b) for e in graph.edges() if e.a in inset and e.b in inset
+            and e.a in pos and e.b in pos]
+    # Level corridors first, then each stair on its way clear of them.
+    rects = {s: _corridor_rects(s[0], s[1], pos, half, keys, width) for s in segs
+             if not is_stair(keys[s[0]], keys[s[1]])}
+    for s in segs:
+        if s not in rects:
+            rects[s] = _corridor_rects(s[0], s[1], pos, half, keys, width, list(rects.items()))
+    hits: List[Tuple] = []
+    # Which pairs could meet at all, by bounding box (with the eps _rects_hit
+    # and _rects_meet allow), before the exact tests, in the same order.
+    rooms = list(pos)
+    rb = np.array([(pos[r][0] - half[r][0], pos[r][1] - half[r][1],
+                    pos[r][0] + half[r][0], pos[r][1] + half[r][1]) for r in rooms],
+                  dtype=float).reshape(-1, 4)
+    cb = np.array([rects[s].box if getattr(rects[s], "box", None) else (np.inf, np.inf, -np.inf, -np.inf)
+                   for s in segs], dtype=float).reshape(-1, 4)
+    near_room = ((np.minimum(cb[:, None, 2], rb[None, :, 2]) - np.maximum(cb[:, None, 0], rb[None, :, 0]) > 1.0)
+                 & (np.minimum(cb[:, None, 3], rb[None, :, 3]) - np.maximum(cb[:, None, 1], rb[None, :, 1]) > 1.0))
+    near_cor = ((np.minimum(cb[:, None, 2], cb[None, :, 2]) - np.maximum(cb[:, None, 0], cb[None, :, 0]) > 1e-6)
+                & (np.minimum(cb[:, None, 3], cb[None, :, 3]) - np.maximum(cb[:, None, 1], cb[None, :, 1]) > 1e-6))
+    for k, (a, b) in enumerate(segs):
+        for j in np.nonzero(near_room[k])[0].tolist():
+            r = rooms[j]
+            if r not in (a, b) and _rects_hit(rects[(a, b)], pos[r], half[r]) \
+                    and _beside(keys, r, a, b):
+                hits.append(((a, b), r))
+    for k, (a, b) in enumerate(segs):
+        for m in np.nonzero(near_cor[k, k + 1:])[0].tolist():
+            c, d = segs[k + 1 + m]
+            shared = {a, b} & {c, d}
+            if len(shared) > 1:
+                continue
+            inside = None
+            if shared:
+                (s,) = shared
+                inside = (pos[s], half[s])
+            if _rects_meet(rects[(a, b)], rects[(c, d)], inside=inside) and (
+                    _beside(keys, c, a, b) or _beside(keys, d, a, b)):
+                hits.append(((a, b), (c, d)))
+    edges = set()
+    for x, y in hits:
+        edges.add(frozenset(x))
+        if isinstance(y, tuple):
+            edges.add(frozenset(y))
+    return edges, hits
 
 
 #: Sweeps of :func:`repair` at most.
@@ -612,7 +1128,8 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                side_order: Sequence[str] = ("E", "N", "W", "S"),
                root: Optional[str] = None,
                storeys: Optional[Dict[str, Any]] = None,
-               jitter: Optional[Jitter] = None
+               jitter: Optional[Jitter] = None,
+               scales: Optional[Dict[frozenset, float]] = None
                ) -> Dict[str, Point]:
     """Breadth-first start: each room beside a placed neighbour on a free wall
     side, or in the corner where two placed neighbours' free sides meet.
@@ -636,14 +1153,18 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
     twins = bridge_twins(graph, order, storeys)
     dirs = dict(SIDES)
 
-    def beside(q: str, u: str, d: Point) -> Point:
+    bearing = jitter is not None and jitter.bearing
+    routes: Dict[Tuple[str, str], list] = {}      # placed corridors' rects (bearing)
+
+    def beside(q: str, u: str, d: Point, scale: float = 1.0) -> Point:
         # One run (times the edge's spacing) past q's wall, moved along it
-        # by the edge's offset share of the two rooms' half-extents across.
+        # by the edge's offset share of the two rooms' half-extents across
+        # (a bearing placement: its bearing, times ``scale`` toward the axis).
         dx, dy = d
         f, t = _jitter_of(jitter, q, u)
         ext = abs(dx) * (half[q][0] + half[u][0]) + abs(dy) * (half[q][1] + half[u][1])
         across = abs(dx) * (half[q][1] + half[u][1]) + abs(dy) * (half[q][0] + half[u][0])
-        off = t * jitter.cross(across) if jitter else 0.0
+        off = jitter.offset(t * scale if bearing else t, across, run * f, ext) if jitter else 0.0
         return (pos[q][0] + dx * (ext + run * f) + abs(dy) * off,
                 pos[q][1] + dy * (ext + run * f) + abs(dx) * off)
 
@@ -702,7 +1223,12 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
             if q in twin_side and twin_side[q] not in sides:
                 sides = sides + [twin_side[q]]
             for k, sd in enumerate(sides):
-                cands.append(((qk, k), beside(q, u, dirs[sd])))
+                if bearing:
+                    # The drawn bearing first, then nearer the axis (task 10).
+                    for si, s in enumerate(BEARING_FALLBACK):
+                        cands.append(((qk, k, si), beside(q, u, dirs[sd], s), (q, s)))
+                else:
+                    cands.append(((qk, k), beside(q, u, dirs[sd]), None))
         npl = len(placed_nbrs)
         for qk, q in enumerate(placed_nbrs):
             for rk, r in enumerate(placed_nbrs):
@@ -711,9 +1237,13 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                 for sx in (sd for sd in free[q] if sd in "EW"):
                     for sy in (sd for sd in free[r] if sd in "NS"):
                         c = (beside(q, u, dirs[sx])[0], beside(r, u, dirs[sy])[1])
-                        cands.append(((npl + qk, rk), c))
+                        cands.append(((npl + qk, rk), c, None))
+        if bearing:
+            # Edges already placed, and the placed rooms u's own edges may pass.
+            placed_edges = [(e.a, e.b) for e in graph.edges()
+                            if e.a in pos and e.b in pos]
         best = None
-        for tie, c in cands:
+        for tie, c, how in cands:
             walls = 0
             miss = 0
             mine = set()
@@ -741,14 +1271,44 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                         for m in placed_nbrs)
             close += sum(max(0.0, _box_gap(c, half[u], pos[m], half[m])) / (h - 1)
                          for m, h in pending.items())
-            key = (2 * walls + clashes, clashes, miss, rings, round(close, 6), -room, tie)
+            if bearing:
+                if best is not None and (2 * walls + clashes, clashes) > best[0][:2]:
+                    continue        # can't win: skip counting its crossings
+                cross = _start_crossings(u, c, placed_nbrs, placed_edges, pos, half, nodes,
+                                         jitter.need / STRAIGHT_NEED, routes)
+                key = (2 * walls + clashes, clashes, cross, miss, rings, round(close, 6), -room,
+                       tie)
+            else:
+                key = (2 * walls + clashes, clashes, miss, rings, round(close, 6), -room, tie)
             if best is None or key < best[0]:
-                best = (key, c)
+                best = (key, c, how)
         pos[u] = best[1]
+        if scales is not None and best[2] is not None:
+            q, s = best[2]
+            scales[frozenset((q, u))] = s
         for m in placed_nbrs:
             used[m].setdefault(_side_toward(pos[m], half[m], pos[u], half[u]), u)
             used[u].setdefault(_side_toward(pos[u], half[u], pos[m], half[m]), m)
     return pos
+
+
+def _overlap_matrix(rooms: Sequence[Any], slab: float = SLAB) -> np.ndarray:
+    """:func:`may_overlap_in_plan` of every pair of ``rooms``, as a matrix."""
+    n = len(rooms)
+    lv = [getattr(r, "level", None) for r in rooms]
+    if n == 0 or any(v is None for v in lv):
+        out = np.zeros((n, n), dtype=bool)
+        known = [k for k, v in enumerate(lv) if v is not None]
+        if len(known) > 1:
+            sub = _overlap_matrix([rooms[k] for k in known], slab)
+            out[np.ix_(known, known)] = sub
+        return out
+    L = np.array(lv, dtype=float)
+    F = np.array([r.floor for r in rooms], dtype=float)
+    C = np.array([r.ceiling for r in rooms], dtype=float)
+    up = L[:, None] < L[None, :]          # a below b: b's floor less a's ceiling
+    gap = np.where(up, F[None, :] - C[:, None], F[:, None] - C[None, :])
+    return (L[:, None] != L[None, :]) & (gap >= slab - 1e-9)
 
 
 def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
@@ -790,56 +1350,129 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     if len(E):
         joined[E[:, 0], E[:, 1]] = True
         joined[E[:, 1], E[:, 0]] = True
-    apart = np.ones((n, n), dtype=bool)
-    for a in range(n):
-        for b in range(n):
-            if a == b or may_overlap_in_plan(nodes[order[a]], nodes[order[b]]):
-                apart[a, b] = False
+    apart = ~_overlap_matrix([nodes[r] for r in order])
+    np.fill_diagonal(apart, False)
     # Joined rooms repel only inside the separation gap (their spring does the
     # rest); others inside REPEL_RUNS runs.
-    reach = np.where(joined, gap, gap + REPEL_RUNS * run)
+    repel = BEARING_REPEL_RUNS if jitter is not None and jitter.bearing else REPEL_RUNS
+    reach = np.where(joined, gap, gap + repel * run)
     np.fill_diagonal(reach, 0.0)
     iu = np.triu_indices(n, 1)
+    # A bearing placement's edges on one Level, held on their sides outright.
+    hold = (~stair) if jitter is not None and jitter.bearing and len(E) else None
+
+    # What the loop reads that no step changes, worked out once, by the same
+    # expressions (so the same floats) the loop used to work out each step.
+    if len(E):
+        a, b = E[:, 0], E[:, 1]
+        ext = (np.abs(S[:, 0]) * (H[a, 0] + H[b, 0])
+               + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]))
+        rest = ext + run * J[:, 0]
+        if stair.any():
+            # (rest less the run, not ext: the same floats as before jitter.)
+            rest = np.where(stair, (rest - run * J[:, 0]) * STAIR_REST, rest)
+        across = (np.abs(S[:, 0]) * (H[a, 1] + H[b, 1])
+                  + np.abs(S[:, 1]) * (H[a, 0] + H[b, 0]))
+        if jitter is not None and jitter.bearing:
+            # A cave's bearing (task 10): the far room off the side's axis by
+            # its drawn angle over the rest distance, short of the other side.
+            gapv = rest - ext
+            slack = np.minimum(np.tan(np.abs(J[:, 1]) ** BEARING_POWER * jitter.bearing) * rest,
+                               np.maximum(0.0, across + gapv - jitter.margin))
+            slack = np.where(stair, 0.0, np.copysign(slack, J[:, 1]))
+            pull_s, pull_t = S * rest[:, None], T * slack[:, None]
+        else:
+            slack = np.maximum(0.0, across - (jitter.need if jitter else 0.0))
+            pull_s, pull_t = S * rest[:, None], T * (J[:, 1] * slack)[:, None]
+    ri, rj = iu
+    hx, hy = H[ri, 0] + H[rj, 0], H[ri, 1] + H[rj, 1]
+    want_all = reach[ri, rj]
+    # Coincident centres: a fixed direction by index, deterministic.
+    fall_all = np.stack([np.cos(ri + 0.5 * rj), np.sin(ri + 0.5 * rj)], axis=1)
+    apart_all = apart[ri, rj]
+    held = _HoldSums(H, E, S, T) if hold is not None else None
 
     for it in range(iterations):
         step = STEP_START + (STEP_END - STEP_START) * it / max(1, iterations - 1)
         F = np.zeros_like(P)
         if len(E):
-            a, b = E[:, 0], E[:, 1]
             d = P[b] - P[a]
-            ext = (np.abs(S[:, 0]) * (H[a, 0] + H[b, 0])
-                   + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]))
-            rest = ext + run * J[:, 0]
-            if stair.any():
-                # (rest less the run, not ext: the same floats as before jitter.)
-                rest = np.where(stair, (rest - run * J[:, 0]) * STAIR_REST, rest)
-            across = (np.abs(S[:, 0]) * (H[a, 1] + H[b, 1])
-                      + np.abs(S[:, 1]) * (H[a, 0] + H[b, 0]))
-            slack = np.maximum(0.0, across - (jitter.need if jitter else 0.0))
-            f = K_SPRING * (d - S * rest[:, None] - T * (J[:, 1] * slack)[:, None])
-            np.add.at(F, a, f)
-            np.add.at(F, b, -f)
+            f = K_SPRING * (d - pull_s - pull_t)
+            at, push = [a, b], [f, -f]
+        else:
+            at, push = [], []
         # Repulsion over every pair kept apart in plan.
-        i, j = iu
-        d = P[j] - P[i]
-        gx = np.abs(d[:, 0]) - (H[i, 0] + H[j, 0])
-        gy = np.abs(d[:, 1]) - (H[i, 1] + H[j, 1])
+        d = P[rj] - P[ri]
+        gx = np.abs(d[:, 0]) - hx
+        gy = np.abs(d[:, 1]) - hy
         g = np.maximum(gx, gy)
-        want = reach[i, j]
-        hit = apart[i, j] & (g < want)
+        hit = apart_all & (g < want_all)
         if hit.any():
-            i, j, d, g, want = i[hit], j[hit], d[hit], g[hit], want[hit]
+            i, j, d, g, want = ri[hit], rj[hit], d[hit], g[hit], want_all[hit]
             dist = np.hypot(d[:, 0], d[:, 1])
-            # Coincident centres: a fixed direction by index, deterministic.
-            fallback = np.stack([np.cos(i + 0.5 * j), np.sin(i + 0.5 * j)], axis=1)
+            fallback = fall_all[hit]
             u = np.where(dist[:, None] < 1e-6, fallback, d / np.maximum(dist, 1e-6)[:, None])
             depth = (want - g) / np.maximum(want, 1e-6)        # 0 at reach, 1 at touching
             mag = K_REPEL * (want - g) * (1.0 + depth)
             f = mag[:, None] * u
-            np.add.at(F, i, -f)
-            np.add.at(F, j, f)
+            at += [i, j]
+            push += [-f, f]
+        if at:
+            # Summed per room in the order np.add.at would (springs' a then b, then
+            # the repulsions' i then j), from zero: the same floats, in one pass.
+            k = np.concatenate(at)
+            w = np.concatenate(push)
+            F[:, 0] = np.bincount(k, weights=w[:, 0], minlength=n)
+            F[:, 1] = np.bincount(k, weights=w[:, 1], minlength=n)
         P += step * F
+        if hold is not None and it % HOLD_EVERY == 0:
+            _hold_sides(P, H, E, S, T, hold, held)
+    if hold is not None:
+        # The last step's pushes can tip a neighbour; settle (task 10).
+        for _ in range(HOLD_PASSES):
+            if not _hold_sides(P, H, E, S, T, hold, held):
+                break
     return {r: (float(P[k, 0]), float(P[k, 1])) for k, r in enumerate(order)}
+
+
+#: A bearing placement holds each edge's wall side outright (task 10): when
+#: the gap across the side's axis comes within HOLD_MARGIN u of the gap along
+#: it, the pair is pushed apart along the axis. Settled after the springs in
+#: at most HOLD_PASSES passes.
+HOLD_MARGIN = 2.0
+#: ... checked every HOLD_EVERY spring iterations (and settled after them).
+HOLD_EVERY = 1
+HOLD_PASSES = 50
+
+
+def _HoldSums(H: np.ndarray, E: np.ndarray, S: np.ndarray, T: np.ndarray
+              ) -> Tuple[np.ndarray, np.ndarray]:
+    """What :func:`_hold_sides` reads of the rooms' half-extents, per edge: the
+    two rooms' extents along its side's axis and across it."""
+    a, b = E[:, 0], E[:, 1]
+    return (np.abs(S) * (H[a] + H[b])).sum(axis=1), (T * (H[a] + H[b])).sum(axis=1)
+
+
+def _hold_sides(P: np.ndarray, H: np.ndarray, E: np.ndarray, S: np.ndarray, T: np.ndarray,
+                hold: np.ndarray, sums: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> bool:
+    """Push apart, along its side's axis, each held edge (``hold``) whose gap
+    along that axis is not HOLD_MARGIN past its gap across it, so
+    :func:`_side_toward` keeps the side. True when any edge was pushed.
+    ``sums``: :func:`_HoldSums` of the same H, E, S, T, when worked out."""
+    if sums is None:
+        sums = _HoldSums(H, E, S, T)
+    a, b = E[:, 0], E[:, 1]
+    d = P[b] - P[a]
+    along = (S * d).sum(axis=1) - sums[0]
+    across = np.abs((T * d).sum(axis=1)) - sums[1]
+    short = across + HOLD_MARGIN - along
+    push = hold & (short > 0)
+    if not push.any():
+        return False
+    f = S[push] * (short[push] / 2)[:, None]
+    np.add.at(P, b[push], f)
+    np.add.at(P, a[push], -f)
+    return True
 
 
 def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
@@ -849,7 +1482,7 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
            jitter: bool = False, seed: Optional[int] = None,
            draw: int = 0,
            ranges: Optional[Tuple[float, float, float]] = None,
-           centred: Optional[str] = None) -> Dict[str, Point]:
+           centred: Optional[str] = None, bearing: bool = False) -> Dict[str, Point]:
     """The ``spring`` placement: room centres for ``order`` (before separation
     and the Envelope; :func:`place` does those). With ``storeys`` (step 7)
     rooms on different Levels may overlap and stair edges pull together.
@@ -860,16 +1493,97 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
     the build's ``seed``, the rooms' sizes when None; ``draw`` a further
     draw, :func:`jitter_salt`; ``ranges`` its spacing and offset floor,
     :func:`edge_jitter`; room ``centred``'s neighbours sit centred on its
-    walls); off, every neighbour sits centred one run off a wall."""
+    walls); off, every neighbour sits centred one run off a wall. ``bearing``
+    (a cave, random placement task 10) jitters by bearing and a wide spacing
+    instead (:data:`BEARING_SPACING`, :class:`Jitter`)."""
     run = (RUN_FACTOR if run_factor is None else run_factor) * corridor_width
     table = (_jitter_table(graph, order, half, storeys, seed, corridor_width, draw, ranges,
-                           centred)
+                           centred, bearing)
              if jitter else None)
     pos = start_positions(graph, order, half, run, gap, storeys, table)
     edges = [(e.a, e.b) for e in graph.edges()
              if graph.node(e.a).is_room and graph.node(e.b).is_room]
     nodes = _plan_keys(graph, order, storeys)
-    return spring_relax(order, edges, pos, half, nodes, run, gap, jitter=table)
+    out = spring_relax(order, edges, pos, half, nodes, run, gap, jitter=table)
+    if table is not None and table.bearing:
+        out = _untangle(graph, order, edges, pos, out, half, nodes, run, gap, table, storeys)
+    return out
+
+
+#: Rounds of :func:`_untangle` at most, and the share of its bearing an edge in
+#: a crossing keeps each round.
+UNTANGLE_ROUNDS = 8
+UNTANGLE_KEEP = 0.7
+
+
+def _untangle(graph, order, edges, start, out, half, nodes, run, gap, table: Jitter,
+              storeys) -> Dict[str, Point]:
+    """A bearing placement after its springs (task 10): while a corridor would
+    cross a room or another corridor (:func:`crossing_edges`), turn the
+    bearings of the edges in each crossing toward their axes
+    (:data:`UNTANGLE_KEEP`) and relax again from the start, up to
+    :data:`UNTANGLE_ROUNDS` times; keep the placement with fewest crossings
+    (the first on a tie). In place on ``table``'s edges."""
+    width = table.need / STRAIGHT_NEED
+    bad, _ = crossing_edges(graph, order, out, half, width, storeys)
+    best = (len(_), out, dict(table.edges))
+    for _round in range(UNTANGLE_ROUNDS):
+        if not bad:
+            break
+        moved = False
+        # The first round mirrors each bearing about its axis (as steep, the
+        # other way); later rounds turn it toward the axis.
+        keep = -1.0 if _round == 0 else UNTANGLE_KEEP
+        for e in sorted(bad, key=sorted):
+            if e in table.edges:
+                f, t = table.edges[e]
+                if t:
+                    table.edges[e] = (f, t * keep if abs(t) > 0.05 else 0.0)
+                    moved = True
+        if not moved:
+            break
+        out = spring_relax(order, edges, start, half, nodes, run, gap, jitter=table)
+        bad, hits = crossing_edges(graph, order, out, half, width, storeys)
+        if len(hits) < best[0]:
+            best = (len(hits), out, dict(table.edges))
+    table.edges.clear()
+    table.edges.update(best[2])
+    # Then one edge at a time: each edge still in a crossing tries its mirror,
+    # half its bearing, the axis and a longer spacing in turn, relaxed from
+    # where the layout stands, and keeps the first that leaves fewer crossings.
+    count, out = best[0], best[1]
+    for _sweep in range(UNTANGLE_SWEEPS):
+        if not count:
+            break
+        bad, _hits = crossing_edges(graph, order, out, half, width, storeys)
+        better = False
+        for e in sorted(bad, key=sorted):
+            if e not in table.edges:
+                continue
+            f, t = table.edges[e]
+            for alt in ((f, -t), (f, t * 0.5), (f, 0.0), (f * UNTANGLE_STRETCH, t)):
+                if alt == (f, t):
+                    continue
+                table.edges[e] = alt
+                cand = spring_relax(order, edges, out, half, nodes, run, gap,
+                                    iterations=UNTANGLE_ITERS, jitter=table)
+                n = len(crossing_edges(graph, order, cand, half, width, storeys)[1])
+                if n < count:
+                    count, out, better = n, cand, True
+                    break
+                table.edges[e] = (f, t)
+            if not count:
+                break
+        if not better:
+            break
+    return out
+
+
+#: Sweeps of the one-edge search, the spring iterations of each try, and the
+#: spacing a try stretches an edge by.
+UNTANGLE_SWEEPS = 3
+UNTANGLE_ITERS = 100
+UNTANGLE_STRETCH = 1.4
 
 
 #: The Placement registry: name -> callable(graph, order, half, corridor_width,

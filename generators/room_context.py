@@ -616,14 +616,15 @@ def _in_pieces(px, py, pieces, grow: float = 0.0) -> np.ndarray:
     return out
 
 
-def _path_runs(cor):
-    """A corridor's route line (step 25, ``CorridorSpec.path``) as its strip's runs, (quad, z
-    at its start, z at its end) each (``transitions.path_pieces``), or None when it has no
-    line (or the line's strip folds, which ``measure_routes`` never keeps)."""
-    if len(cor.path) < 2:
+def _path_runs(cor, line):
+    """A corridor's built line (step 25's ``CorridorSpec.path``, or an angled corridor's:
+    ``routing.built_line``) as its strip's runs, (quad, z at its start, z at its end) each
+    (``transitions.path_pieces``), or None when it has no line (or the line's strip folds,
+    which ``measure_routes`` never keeps)."""
+    if len(line) < 2:
         return None
     from generators.transitions import path_pieces
-    return path_pieces([tuple(p) for p in cor.path], cor.width / 2, cor.from_z, cor.to_z)
+    return path_pieces(line, cor.width / 2, cor.from_z, cor.to_z)
 
 
 def _floor_at(floor: np.ndarray, xs: np.ndarray, ys: np.ndarray, x: float, y: float) -> bool:
@@ -660,7 +661,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
     every Prop off its way through."""
     from generators.geometry import MeshBuilder
     from generators.room_layouts import CELL
-    from generators.routing import corridor_route, tunnel_for, winding_legs
+    from generators.routing import built_line, corridor_route, tunnel_for, winding_legs
     from generators.semantics import body_height
 
     m = mesh if isinstance(mesh, _Mesh) else _Mesh(mesh)
@@ -688,11 +689,11 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         # A route line (step 25, ``cor.path``) replaces all of them: one piece per run of its
         # strip, mitred, at the heights the mesh gives it (``transitions.path_pieces``: flat
         # over the run-outs, the rise spread by length between). It wins over any ``wind``.
-        runs = _path_runs(cor)
+        path = built_line(cor, rooms, tunnel_for(cor, spec))
+        runs = _path_runs(cor, path)
         lines = [None] * (len(wps) - 1) if runs is not None else winding_legs(cor, rooms, tunnel_for(cor, spec))
         pieces = []
         if runs is not None:
-            path = [tuple(p) for p in cor.path]
             for j, (quad, za, zb) in enumerate(runs):
                 box = (min(p[0] for p in quad), min(p[1] for p in quad),
                        max(p[0] for p in quad), max(p[1] for p in quad))

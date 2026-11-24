@@ -13,8 +13,9 @@ from hypothesis import given, settings, strategies as st
 
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
-from generators.routing import (TunnelRules, corridor_route, plan_route, plan_u_route, route_seed,
-                                strip_corners, wind_route)
+from generators.layout import ENTRY_MAX
+from generators.routing import (HELD_TURN_MAX, TunnelRules, angled, corridor_route, door_ends, entry_line,
+                                plan_route, plan_u_route, route_seed, strip_corners, wind_route)
 from generators.transitions import (PLAYER_HALF_WIDTH, WIND_Z_SPARE, _corridor_boxes, path_pieces,
                                     poly_gap)
 from generators.zone_spec import CorridorSpec, ZoneSpec
@@ -134,6 +135,20 @@ def _spec(seed, rooms, verticality):
     return plan_to_spec(plan, seed=seed, warnings=[])
 
 
+def _entry_fallback(cor, rooms):
+    """Whether ``cor``'s path is an angled corridor's entry line (random placement task 10:
+    ``routing.entry_line`` or ``held_entry_line``, when no wound line fits), not one
+    ``wind_route`` or ``hold_route`` draws."""
+    if not angled(cor):
+        return False
+    route = corridor_route(cor, rooms)
+    if any(wind_route(route, cor.width / 2, ROUGH, route_seed(cor), w) == cor.path for w in (True, False)):
+        return False
+    if cor.transition is None:
+        return cor.path == entry_line(route, cor.width / 2, max(cor.width / 2, ROUGH.end))
+    return True
+
+
 def _band(z0, z1, height):
     return min(z0, z1) - WIND_Z_SPARE, max(z0, z1) + height + WIND_Z_SPARE
 
@@ -151,11 +166,22 @@ def test_stored_paths_clear_everything(case):
     for cor in spec.corridors:
         if cor.path:
             assert cor.steps == 0 and not cor.bridge and (cor.rough > 0 or cor.transition is not None)
-            assert cor.path[0] == pytest.approx((cor.from_x, cor.from_y))
-            assert cor.path[-1] == pytest.approx((cor.to_x, cor.to_y))
-            assert max(_turns(cor.path)) <= ROUGH.max_turn + 1e-6
+            # An angled end (random placement task 10) starts on the wall plane
+            # (``door_ends``), and its run-out may turn the entry angle more.
+            a, b = door_ends(corridor_route(cor, rooms))
+            assert cor.path[0] == pytest.approx(a) and cor.path[-1] == pytest.approx(b)
             pieces[cor.id] = path_pieces(cor.path, cor.width / 2, cor.from_z, cor.to_z)
             assert pieces[cor.id] is not None, f"{cor.id}'s strip folds"
+            turns = _turns(cor.path)
+            if _entry_fallback(cor, rooms):
+                # No wound line fit: the entry line by the route's own bends (square as a Z's,
+                # or a held line's turn back to its held stretch).
+                assert max(turns) <= HELD_TURN_MAX + 1e-6, (cor.id, turns)
+                continue
+            extra = [ENTRY_MAX if cor.entry and cor.entry[e] else 0.0 for e in (0, 1)]
+            for i, t in enumerate(turns):
+                spare = extra[0] if i == 0 else extra[1] if i == len(turns) - 1 else 0.0
+                assert t <= ROUGH.max_turn + spare + 1e-6, (cor.id, i, t)
     for cor in spec.corridors:
         if not cor.path:
             continue
@@ -198,7 +224,11 @@ def test_path_is_the_route_line():
     for cor in stored:
         route = corridor_route(cor, rooms)
         lines = [wind_route(route, cor.width / 2, ROUGH, route_seed(cor), w) for w in (True, False)]
-        assert any(line == cor.path for line in lines)
+        if angled(cor) and cor.transition is None:
+            # Random placement task 10: failing a wound line, an angled corridor still
+            # leaves its doors at the angle they were cut for, along its entry line.
+            lines.append(entry_line(route, cor.width / 2, max(cor.width / 2, ROUGH.end)))
+        assert any(line == cor.path for line in lines), cor.id
 
 
 # --- Data --------------------------------------------------------------------------------

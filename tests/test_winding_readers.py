@@ -94,7 +94,8 @@ def _cave(seed, rooms=12):
     finally:
         layout.PROFILE_RUN_FACTOR["cave"] = saved
     for cor in spec.corridors:       # every route as step 23 lays it: no route line (step 25)
-        cor.path = []
+        cor.path = []                # and square ends (random placement task 10's entry)
+        cor.entry = []
     ter = backend_for(spec.zone_type).build(spec, "ter_windr", 2)
     return spec, ter
 

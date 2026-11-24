@@ -66,10 +66,10 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: scripts/grid_score.py, scripts/ (a new measuring script), .kiro/specs/zone-generator-random-placement/archive.md (targets only)
   - Reqs: 7, 8
 
-- [ ] 10. Caves at any bearing
+- [x] 10. Caves at any bearing
   - Card: [cards/10-bearing.md](cards/10-bearing.md)
   - Type: agent · Size: L · Depends: 9
-  - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/routing.py, generators/geometry.py, generators/outline.py, tests/test_topology_embed.py, goldens it moves (named in the commit); stop and report before widening
+  - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/routing.py, generators/geometry.py, generators/outline.py, generators/zone_spec.py, generators/transitions.py, generators/mapview.py, generators/room_context.py, analyzer/traverse.py, tests/test_topology_embed.py, tests/test_wind_route.py, tests/test_wind_route_mesh.py, tests/test_wind_route_readers.py, tests/test_winding_control.py, tests/test_winding_readers.py, tests/test_winding_mesh.py, tests/test_bridges.py, goldens it moves (named in the commit); stop and report before widening
   - Reqs: 7
 
 - [ ] 11. Room sizes vary
