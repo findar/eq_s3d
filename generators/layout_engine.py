@@ -103,6 +103,11 @@ class LayoutContext:
     # spacing (``embed.BEARING_SPACING``), so rooms clump and spread. An
     # Envelope build (an outdoor dungeon) ignores it and keeps its own jitter.
     bearing: bool = False
+    # A room-graph zone's classic footprints: the spread ``semantics.room_footprint``
+    # draws round the medium side ``room_min`` (``layout.CLASSIC_SPREAD``;
+    # random placement task 11). None (a heightfield zone): the gaussian
+    # between ``room_min`` and ``room_max``.
+    footprint_spread: Optional[Tuple[float, float, float]] = None
 
 
 @dataclass
@@ -154,8 +159,11 @@ class ClassicEngine:
         """
         Scatter rooms inside an ellipse. Sizes drawn from a normal
         distribution around the theme's room scale so a few rooms are large
-        (hubs) and most are smaller (connective), à la TinyKeep. With an
-        Envelope the ellipse is centred on its footprint and no wider than it.
+        (hubs) and most are smaller (connective), à la TinyKeep; a room-graph
+        zone (``ctx.footprint_spread``) draws them in stock's proportions
+        round the medium side instead (``semantics.room_footprint``; random
+        placement task 11). With an Envelope the ellipse is centred on its
+        footprint and no wider than it.
         """
         mean_side = (ctx.room_min + ctx.room_max) / 2
         std_side = (ctx.room_max - ctx.room_min) / 3
@@ -171,8 +179,13 @@ class ClassicEngine:
             # Random point in an ellipse (slightly wider than tall for a
             # natural footprint ratio).
             px, py = self._rand_in_ellipse(ctx.rng, spread, spread * 0.75)
-            w = max(ctx.room_min * 0.6, ctx.rng.gauss(mean_side, std_side))
-            d = max(ctx.room_min * 0.6, ctx.rng.gauss(mean_side, std_side))
+            if ctx.footprint_spread is not None:
+                from . import semantics
+                w, d = semantics.room_footprint(ctx.room_min, ctx.build.race, ctx.rng,
+                                                ctx.footprint_spread)
+            else:
+                w = max(ctx.room_min * 0.6, ctx.rng.gauss(mean_side, std_side))
+                d = max(ctx.room_min * 0.6, ctx.rng.gauss(mean_side, std_side))
             rooms.append(RoomSpec(
                 id=f"room_{i}",
                 center_x=px + ox, center_y=py + oy, floor_z=0.0,

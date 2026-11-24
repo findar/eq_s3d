@@ -144,6 +144,8 @@ def test_room_count_that_fits_has_no_warning():
 
 
 def test_too_small_for_the_minimum_raises():
+    # Radius 100 since random placement task 11 (stock-proportioned footprints draw small
+    # rooms too: three fit a 120 disc at seed 0; none fit 110 or less).
     with pytest.raises(EnvelopeFitError):
         LayoutGenerator("dungeon", seed=0).generate("tiny", room_count=6,
-                                                    envelope=_disc(120))
+                                                    envelope=_disc(100))

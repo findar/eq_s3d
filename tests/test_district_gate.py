@@ -49,9 +49,10 @@ def test_pinhole_collapses_onto_the_throat_corner():
 def test_bridge_slot_ceiling_hole_stays_on_the_slot():
     """A pinhole collapsed off the slot's corner, an open seam (first seen at seed 486546126,
     8 dramatic cave+fortress; re-pinned by winding-tunnels task 5 once the cave run moved
-    that layout: seed 2103223021 collapses a pinhole by room_1's slot)."""
+    that layout: seed 2103223021 collapses a pinhole by room_1's slot; random placement task 11
+    moved its Bridge to room_4)."""
     spec = _spec(8, "moderate", ["cave", "wizard_lair"], 2103223021)
-    room = _room(spec, "room_1")
+    room = _room(spec, "room_4")
     slots = _bridge_slots(room, spec)
     assert slots
     o = room.outline

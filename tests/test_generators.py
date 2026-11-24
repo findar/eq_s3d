@@ -612,7 +612,9 @@ class TestElevation:
         assert floor_zs == {0.0}
 
     def test_elevated_zone_builds(self, tmp_path):
-        gen = LayoutGenerator(zone_type="dungeon", seed=7)
+        # Seed 0 since random placement task 11 (seed 7's layout moved to a 45 u
+        # span; over seeds 0-29 the median span rose 45 -> 51.5 u).
+        gen = LayoutGenerator(zone_type="dungeon", seed=0)
         spec = gen.generate("evbuild", room_count=6, elevation=True)
         result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
         assert result.eqg_path.exists()

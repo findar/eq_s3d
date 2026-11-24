@@ -150,7 +150,8 @@ def test_valid_ops_validate_to_themselves():
     ("crypt", ["room_1"]),
     ("the vault", ["room_5"]),
     ("entry hall", ["room_0"]),                   # the type, not the role word "entry"
-    ("collapsed gallery", ["room_7", "room_8", "room_9", "room_10", "room_11"]),
+    # room_2 joins since random placement task 11 (sizes vary, so the type draw moved).
+    ("collapsed gallery", ["room_2", "room_7", "room_8", "room_9", "room_10", "room_11"]),
     ("deep", ["room_5"]),                         # rule-set kind
     ("the hall", ["room_6"]),
     ("room_99", []),

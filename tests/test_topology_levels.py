@@ -63,19 +63,21 @@ def _spec_hash(spec) -> str:
 # triangle steeper than the gate's slope (classic_eq, warren, ogre: lift only).
 # Recaptured by winding-routes task 1: warren and ogre's rough corridors gain a
 # ``path`` (the hash without it is unchanged).
+# Recaptured by random placement task 11: every room's footprint is drawn in
+# stock's proportions (sizes and aspects vary; Requirement 8).
 GOLDENS = {
     "classic_eq": (dict(zone_type="dungeon", room_count=12, layout="graph",
                         verticality="flat"), 2,
-                   "78db5eee95998d38fdbe6001878e80092be0a3c51adadb954613a2f1233c7ca0"),
+                   "48796cacd744756b2455ef735ad1366ed6853741584faaaa79daf94ff0c19eb3"),
     "warren": (dict(zone_type="dungeon", room_count=12, layout="graph",
                     rule_set="warren", verticality="flat"), 2,
-               "cb4469c24d76c5155daac6b9942bc68043d5c2457877d7e1867c9d95bea0239a"),
+               "f5e237c548dead13e215efa5c6427556e424e67576e4e8a504c6703110667785"),
     "temple": (dict(zone_type="dungeon", room_count=10, layout="graph",
                     dungeon_theme="temple", verticality="flat"), 3,
-               "bb2039e4153522da964ab569a1623ce08ecf56a68ba5464c9ed5a61248956dea"),
+               "dbc941f1e2aee4bbe1acc570702373310cb2f608b0d22b95b89d44cec227d649"),
     "ogre": (dict(zone_type="dungeon", room_count=9, layout="graph",
                   dungeon_race="ogre", locks=1, verticality="flat"), 21,
-             "ba2a2b3fa8b58b1843673d8898d955ccea44a7fc2d6dda4216bde5e2398b39ec"),
+             "9120b72556d61aa5793fea32e688c16704a852712c2b71c1ae36376e1b034e11"),
 }
 
 

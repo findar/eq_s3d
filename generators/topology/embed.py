@@ -8,9 +8,10 @@ Three parts:
 
 - :func:`room_size` turns a node's Size_Class into a footprint and height:
   the class's point in the race's room bands (``semantics``, step 7 task 17:
-  room height 2.5-10 H, footprint side 8-20 H, tiny at the minimum and huge
-  at the maximum), with the classic engine's spread (within 15 %) on the
-  footprint. Rooms are placed at that final size; nothing scales them again.
+  room height 2.5-10 H, class side 8-20 H, tiny at the minimum and huge
+  at the maximum), the footprint drawn round it in stock's proportions
+  (``semantics.room_footprint``, sides 8-26 H; random placement task 11).
+  Rooms are placed at that final size; nothing scales them again.
 - :data:`PLACEMENT_FUNCS`, the Placement registry: a rule set names its
   placement (``[set] placement``), the checker reads the names from
   ``ruleset.PLACEMENTS`` and this module registers the callables under the
@@ -60,10 +61,12 @@ Point = Tuple[float, float]
 # Size classes (design "Size classes")
 # ---------------------------------------------------------------------------
 
-#: The classic engine's spread around the class side: a gaussian factor on
-#: each axis, clamped to 1 +- SPREAD (and then to the race's band).
-SPREAD = 0.15
-_SPREAD_SIGMA = SPREAD / 2
+#: The graph engine's footprint spread round the class side: the split
+#: log-normal's ln sd below and above it and its ln offset
+#: (``semantics.room_footprint``). The grown graph's class mix already
+#: spreads a zone's sides (ln sd about 0.2), so the draw adds the rest of
+#: stock's (random placement task 11).
+SPREAD: Tuple[float, float, float] = (0.17, 0.62, -0.17)
 
 
 def room_size(size: Optional[str], race: str, rng,
@@ -72,19 +75,18 @@ def room_size(size: Optional[str], race: str, rng,
     """(width, depth, height) of a room of Size_Class ``size`` for ``race``
     (step 7 task 17): the class's point in the race's bands
     (``semantics.band_position``, after the Size control's ``shift``), the
-    footprint spread by up to SPREAD on each axis and kept inside the band.
+    footprint drawn round that side in stock's proportions
+    (``semantics.room_footprint`` with ``SPREAD``; random placement task 11)
+    and kept inside the band.
 
-    Two rng draws (width, then depth). An unknown or missing class is medium.
-    ``height_shift`` (None: ``shift``) places the height instead.
+    Three rng draws (``room_footprint``'s). An unknown or missing class is
+    medium. ``height_shift`` (None: ``shift``) places the height instead.
     """
     from generators import semantics
     t = semantics.band_position(size, shift)
-    side = semantics.room_side(race, t)
-    (s0, s1), _h = semantics.room_bands(race)
-    w = side * min(1 + SPREAD, max(1 - SPREAD, rng.gauss(1.0, _SPREAD_SIGMA)))
-    d = side * min(1 + SPREAD, max(1 - SPREAD, rng.gauss(1.0, _SPREAD_SIGMA)))
+    w, d = semantics.room_footprint(semantics.room_side(race, t), race, rng, SPREAD)
     th = t if height_shift is None else semantics.band_position(size, height_shift)
-    return (min(s1, max(s0, w)), min(s1, max(s0, d)), semantics.room_height(race, th))
+    return w, d, semantics.room_height(race, th)
 
 
 # ---------------------------------------------------------------------------

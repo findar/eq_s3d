@@ -25,8 +25,9 @@ import generators.wilderness.build as wb
 STEP9 = {
     ("wild", 1955208177): "8aaf8daf8112fbf2d5a6ce2a02c7de3ee60496c33ca82f6d877f8ef66e1f7aa0",
     ("wild", 31337): "413bbd2c9b4268d5c5efe2435ddb8317cb9e78472cf50d5d7f6c52117bba619e",
-    # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape).
-    ("od", 3): "e6d3f33ca633cfc0ad850ba76cd24362a67f93d23dabfb84752711c65a68cad8",
+    # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape),
+    # and by random placement task 11 (room footprints in stock's proportions).
+    ("od", 3): "dbed8a45903355bc19a47277107632b0f69378ea9bf8c1557ed37cb21d4a6324",
 }
 
 
@@ -38,8 +39,9 @@ STEP10 = {
     ("wild", 1955208177, "normal"): "fe855e0543925b4f76db2af32601d59300ac2d73ce651b5e91288673e415f0de",
     ("wild", 31337, "dense"): "f2d5eb7a5430a9a3f4dc2a5e8c4b28c6e3fb6df3396d8859c2064d8acebdda67",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape), and by
-    # site-sockets task 7 (Sites keep off the dungeon's rooms, not the hill).
-    ("od", 1001, "dense"): "fdb0b3159a590dedb9ae357082dbf0ca7a4883091a844667bdf70fbd69d289d6",
+    # site-sockets task 7 (Sites keep off the dungeon's rooms, not the hill), and by
+    # random placement task 11 (room footprints in stock's proportions).
+    ("od", 1001, "dense"): "5183c39cf2bac5d1c5bfc4ba51dcf09de2f0d0808a9a608e9beedb712db0537e",
 }
 
 

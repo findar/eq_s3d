@@ -192,6 +192,11 @@ def test_stored_paths_clear_everything(case):
             others += [("", [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1)
                        for _, (x0, y0, x1, y1, z0, z1) in _corridor_boxes(o, rooms)]
             others += [("", quad, min(za, zb), max(za, zb) + o.height) for quad, za, zb in pieces.get(o.id, ())]
+        # An angled corridor's entry line (random placement task 10) is unchecked, as the
+        # legs it stands for are: it keeps the half-width, or no less than its legs do.
+        legs = ([[(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+                 for _, (x0, y0, x1, y1, _z0, _z1) in _corridor_boxes(cor, rooms)]
+                if _entry_fallback(cor, rooms) else None)
         last = len(pieces[cor.id]) - 1
         for j, (quad, za, zb) in enumerate(pieces[cor.id]):
             lo, hi = _band(za, zb, cor.height)
@@ -200,7 +205,10 @@ def test_stored_paths_clear_everything(case):
                     continue
                 if (j == 0 and rid == cor.from_room) or (j == last and rid == cor.to_room):
                     continue
-                assert poly_gap(quad, poly) >= PLAYER_HALF_WIDTH - 1e-6, (cor.id, j, rid)
+                need = PLAYER_HALF_WIDTH
+                if legs is not None:
+                    need = min(need, min(poly_gap(leg, poly) for leg in legs))
+                assert poly_gap(quad, poly) >= need - 1e-6, (cor.id, j, rid)
 
 
 def test_paths_wind_most_cave_corridors():

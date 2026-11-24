@@ -292,12 +292,14 @@ def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
     An engine that takes them (the graph engine) lays out with ``facing``
     (which of its ranked turns faces the entrance room toward the way in)
     and ``entrance_side`` (the entrance room's least side, not scaled);
-    the engine's own values are restored afterwards.
+    the engine's own values are restored afterwards. Every engine's entrance
+    room keeps ``entrance_side`` on both sides (the layout sees to it).
     Returns the layout and the generator's warnings (``rooms_reduced`` when
     rooms were dropped)."""
     gen = LayoutGenerator("dungeon", seed=seed, engine=engine)
     lo, hi = semantics.ROOM_SIDE_BAND
     gen.size_shift = math.log(scale) / math.log(hi / lo)
+    gen.entrance_side = entrance_side
     options = hasattr(engine, "facing") and hasattr(engine, "entrance_side")
     if options:
         saved = (engine.facing, engine.entrance_side)
@@ -329,7 +331,8 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     with ``facings``
     (the graph engine) tries each of its turns of the layout at a size before
     shrinking it, best-facing first, and keeps its entrance room at least
-    :func:`tunnel_wall` on a side through every shrink. If no size keeps them
+    :func:`tunnel_wall` on a side through every shrink (any engine: the
+    layout keeps its entrance room so, random placement task 11). If no size keeps them
     all, the largest plan that drops rooms wins (the first try that plans
     with rooms dropped; those are laid out only once no try plans them
     all); if none plans at all, the last ``PLAN_ERRORS`` error is raised."""
@@ -337,7 +340,7 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     if socket is None:
         raise EntranceError(f"spec {host.name!r} has no Landform")
     facings = int(getattr(engine, "facings", 1)) if engine is not None else 1
-    side = tunnel_wall(grid.res) if facings > 1 else 0.0
+    side = tunnel_wall(grid.res)
     tries = [(shrink, facing) for shrink in range(FIT_SHRINKS + 1) for facing in range(facings)]
     errors = {}
     # Layouts whose entrance wall gave no Tunnel, by try: only when nothing

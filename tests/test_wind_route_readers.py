@@ -57,7 +57,23 @@ def _strip(cor, grow=0.0):
 
 
 def _on_strip(x, y, cor, grow):
-    return _in_polygon(np.asarray(x, float), np.asarray(y, float), _strip(cor, grow))
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    if grow > 0 and strip_corners(cor.path, cor.width / 2 + grow) is None:
+        # The grown strip folds at a tight turn (random placement task 11: an angled
+        # entry's short run-out, cave seeds 3 and 4): on the strip, or within its
+        # half-width and ``grow`` of the path.
+        return _in_polygon(x, y, _strip(cor)) | (_path_gap(x, y, cor.path) <= cor.width / 2 + grow)
+    return _in_polygon(x, y, _strip(cor, grow))
+
+
+def _path_gap(x, y, line):
+    """How far each point is from polyline ``line``."""
+    best = np.full(np.shape(x), np.inf)
+    for (ax, ay), (bx, by) in zip(line, line[1:]):
+        dx, dy = bx - ax, by - ay
+        t = np.clip(((x - ax) * dx + (y - ay) * dy) / max(dx * dx + dy * dy, 1e-12), 0.0, 1.0)
+        best = np.minimum(best, np.hypot(x - ax - t * dx, y - ay - t * dy))
+    return best
 
 
 def test_some_cave_corridor_has_a_path():
