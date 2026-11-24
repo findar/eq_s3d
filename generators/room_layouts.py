@@ -137,12 +137,22 @@ class RoomGrid:
         return out
 
     def _spine(self, doors) -> np.ndarray:
-        """Paths joining the doors, a corridor's clear width wide, and each door's own strip
-        going in. The entrance room keeps its middle clear too: the spawn stands there."""
+        """Paths joining the doors, and in a shaped room each door to its Core's edge, a
+        corridor's clear width wide, and each door's own strip going in. The entrance room
+        keeps its middle clear too: the spawn stands there. The gate walks each door's way to
+        the Core a body ``CLEAR_WIDTH`` wide (``throat_narrow``); with Features across its
+        Throat, the only wide way left can be a detour a single Prop shuts (random placement
+        task 12: warren graph moderate 19, seed 1960233453, room_11's one door, two boulders
+        in its Throat). The Core itself stays free for a centre piece."""
         spine = np.zeros(self.floor.shape, bool)
         for a, b in zip(self.door_cells, self.door_cells[1:]):
             for c in self._path(a, b):
                 spine[c] = True
+        for a in self.door_cells:
+            edge = self._core_edge_cell(a)
+            if edge is not None:
+                for c in self._path(a, edge):
+                    spine[c] = True
         for c in self.door_cells:
             spine[c] = True
         if self.room.role == "entrance":
@@ -155,6 +165,22 @@ class RoomGrid:
         for door in doors:
             spine |= self.rect(self.door_clear(door))
         return spine & self.floor
+
+    def _core_edge_cell(self, door_cell: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        """The floor cell of a shaped room's Core nearest a door's cell; None in a plain Box
+        (no Outline: its floor is all one) or with the door already in the Core."""
+        o = self.room.outline
+        if o is None or o.core is None:
+            return None
+        inside = self.floor & self.rect(o.core)
+        if inside[door_cell]:
+            return None
+        cand = np.argwhere(inside)
+        if len(cand) == 0:
+            return None
+        dx, dy = self.xs[door_cell[0]], self.ys[door_cell[1]]
+        k = int(np.hypot(self.xs[cand[:, 0]] - dx, self.ys[cand[:, 1]] - dy).argmin())
+        return int(cand[k, 0]), int(cand[k, 1])
 
     def door_clear(self, door) -> Tuple[float, float, float, float]:
         """A door's own strip going in, (x0, y0, x1, y1): the door's width, two bodies and a

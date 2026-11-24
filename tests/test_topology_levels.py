@@ -66,7 +66,8 @@ def _spec_hash(spec) -> str:
 # Recaptured by random placement task 11: every room's footprint is drawn in
 # stock's proportions (sizes and aspects vary; Requirement 8).
 # Recaptured by random placement task 12: an outline's wall wander no longer
-# narrows a way between Cells under the gate's ``PASS_MIN`` (classic_eq, warren).
+# narrows a way between Cells under the gate's ``PASS_MIN`` (classic_eq, warren);
+# and a shaped room's Spine runs from each door to its Core's edge (ogre).
 GOLDENS = {
     "classic_eq": (dict(zone_type="dungeon", room_count=12, layout="graph",
                         verticality="flat"), 2,
@@ -79,7 +80,7 @@ GOLDENS = {
                "dbc941f1e2aee4bbe1acc570702373310cb2f608b0d22b95b89d44cec227d649"),
     "ogre": (dict(zone_type="dungeon", room_count=9, layout="graph",
                   dungeon_race="ogre", locks=1, verticality="flat"), 21,
-             "9120b72556d61aa5793fea32e688c16704a852712c2b71c1ae36376e1b034e11"),
+             "b6169f0921fbe5ac87d382a965869a69436ba6f6c33604af9ef1a0d40760154b"),
 }
 
 
