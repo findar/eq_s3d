@@ -51,7 +51,7 @@ DECORATED = {
 #: Recaptured by winding-routes task 5: two floor POIs keep a body's radius off the outline
 #: walls, and their Dressing follows them.
 TOMB = (dict(zone_type="dungeon", dungeon_theme="tomb"), 4,
-        "f3a6ba7b7d263e712091b2545388231c35137d91a21f0eb79a9e323aa03e2038")
+        "40c2590b10ccccea1681701c47ee4223002d61c8fb470d238bc1e42c23057c09")
 
 
 def _spec(fields, seed, decor, name="dec"):

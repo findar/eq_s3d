@@ -747,6 +747,7 @@ class Room:
         lane = self.walk & ~self.before
         self.by_lane = binary_dilation(lane, np.ones((3, 3), bool), iterations=LANE_NEAR)             if lane.any() else lane
         self.door_masks = [_in_rect(self.gx, self.gy, d.clear) for d in ctx.doors if d.clear]
+        self.wide_islands: Optional[np.ndarray] = None
         self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
         if self.door_masks and not any(self.wide_doors):
             # No door's way reads CLEAR_WIDTH wide, so no Prop would be checked for narrowing
@@ -759,6 +760,16 @@ class Room:
             self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
             if not any(self.wide_doors):
                 self.wide = strict
+        #: Wide floor no door reaches with nothing placed (random placement task 11: the
+        #: ice-keep corpus room_3, an 8-cell island on dais steps by the room's middle). The
+        #: empty room reads a door wide when ANY middle cell is joined to it; the strict
+        #: reading a Prop is checked by needs ALL of them, so an island already cut off made
+        #: every blocking Prop read as narrowing the way. The strict reading skips them.
+        lab = self._wide_labels(self.wide.ravel()).reshape(self.shape)
+        joined = set()
+        for door in self.door_masks:
+            joined |= set(int(v) for v in np.unique(lab[door & (lab >= 0)]))
+        self.wide_islands = (lab >= 0) & ~np.isin(lab, sorted(joined))
         self.faces = self._faces()
         self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
         self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
@@ -897,6 +908,14 @@ class Room:
         good = np.unique(lab[self.starts & free])
         return free & np.isin(lab, good)
 
+    def _wide_labels(self, free: np.ndarray) -> np.ndarray:
+        """Each free cell's (flat) component over the side-by-side graph, -1 where not free."""
+        nx, ny = self.shape
+        keep = free[self._ea] & free[self._eb]
+        m = csr_matrix((np.ones(int(keep.sum()), np.int8), (self._ea[keep], self._eb[keep])),
+                       shape=(nx * ny, nx * ny))
+        return np.where(free, connected_components(m, directed=False)[1], -1)
+
     def _wide_doors(self, blocked: np.ndarray, maybe: Optional[np.ndarray] = None,
                     plans: Optional[np.ndarray] = None) -> List[bool]:
         """Which doors a body ``CLEAR_WIDTH`` wide walks from to the room's middle, read as
@@ -929,10 +948,10 @@ class Room:
         d = np.where(may, mid, np.inf)
         targets = np.nonzero(d <= d.min() + 1.5 * self.cell)[0]
         strict = maybe is not None
-        keep = free[self._ea] & free[self._eb]
-        m = csr_matrix((np.ones(int(keep.sum()), np.int8), (self._ea[keep], self._eb[keep])),
-                       shape=(nx * ny, nx * ny))
-        lab = np.where(free, connected_components(m, directed=False)[1], -1)
+        if strict and self.wide_islands is not None:
+            reached = targets[~self.wide_islands.ravel()[targets]]
+            targets = reached if len(reached) else targets
+        lab = self._wide_labels(free)
         labels = np.unique(lab[targets[free[targets]]])
         # A target that may be free but reads blocked here goes with the free floor beside it.
         grid = lab.reshape(self.shape)

@@ -698,6 +698,34 @@ def test_dressing_at_every_poi_that_asks(decorated, hand, rules):
     assert asked > 100
 
 
+def test_a_middle_island_no_door_reaches_doesnt_shut_every_way():
+    """Random placement task 11: the ice-keep corpus room_3 (dragon ossuary) has an 8-cell
+    island of wide floor on the dais steps by its middle, which no door reaches with nothing
+    placed. The empty room read door S wide (any middle cell joined); a Prop was checked by
+    the strict reading (every middle cell joined), so every blocking Prop anywhere read as
+    narrowing the way and the treasure POI got no dressing. The strict reading now skips
+    such islands, and still refuses a row of Props that narrows the way under 8 u."""
+    room3 = [c for c in CORPUS if c.id == "room_3" and c.race == "dragon" and c.room_type == "ossuary"]
+    assert len(room3) == 1, "the corpus moved: re-pin"
+    c = room3[0]
+    r = Room(c)
+    assert r.wide_doors == [True] and r.wide_islands.any(), "the corpus moved: re-pin"
+    chest = r.footprint(370.0, 470.0, 0.0, 2.6, 4.0, None)
+    assert r.problems(r.blocked | chest[1]) == []
+    x0, _y0, _z0, x1, _y1, _z1 = c.box
+
+    def row(gap):
+        m = r.blocked.copy()
+        for x in np.arange(x0 - 2, x1 + 2, 2.0):
+            if abs(x - 420.0) >= gap / 2 + 1.0:
+                f = r.footprint(float(x), 370.0, 0.0, 2.0, 2.0, None)
+                if f is not None:
+                    m |= f[1]
+        return [p for p in r.problems(m) if "way under" in p]
+
+    assert row(8.0) and not row(10.0)
+
+
 def test_dressing_comes_first(decorated):
     order = ("dressing", "group", "prop", "debris")
     for _c, d, _ in decorated:
