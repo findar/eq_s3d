@@ -10,6 +10,7 @@ First pass (2026-11-23), not accepted: "Looking at a cave, the layout still seem
 reopens on task 13's addendum.
 
 ## Checklist
-- [ ] Walk the section.
+- [x] Walk the section (first pass done; second pass skipped).
 
 ## Result
+Second look skipped at the user's word (2026-11-25: "Skip validation for now and continue"). Tasks 9–13 not looked at in 3D.

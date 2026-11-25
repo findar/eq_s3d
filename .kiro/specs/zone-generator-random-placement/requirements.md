@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **STATUS: roadmap step 27, ready.** Drafted 2026-11-22 at master `b77d5a9`. At the step 26
+> **STATUS: done (closed 2026-11-25; second look skipped at the user's word: "Skip validation for now and continue").** Drafted 2026-11-22 at master `b77d5a9`. At the step 26
 > second look the user said: "i would say it looks good but a future task should also adjust length of halls and also when we generate rooms they should end up randomly positioned and connected", then chose this one as step 27 ("Random room placement").
 > Task index: `tasks.md` (card format). Decisions: `archive.md`.
 

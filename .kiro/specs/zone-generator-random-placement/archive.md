@@ -4,6 +4,14 @@
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | `scripts/grid_score.py`; the build seed salts the cave jitter; built and hewn Graph dungeons tried off the lattice and kept on it (decision 2); general fixes kept: decor reads door stubs, ceiling Props inside the room, grade cap reads the build's routes | 13 |
+| 3, 8 | Outdoor dungeons leave the lattice inside their Envelope; fewer thrown-away placements for big outdoor dungeons | 6 |
+| 4, 12 | Gate and bands, twice: decor gate-sample reading, outdoor ground raster after the notch, a corridor on a gate cell counts as crossing, a shaped room's Spine, an outline wall's wander, walled-off pockets refuse Features. Gate 694/696, 1730/1740, 173/174; bands under 5% | 10 |
+| 5, 13 | `docs/ACCEPTANCE.md` step 27 section and its first-look addendum | 6 |
+| 6 | First look not accepted (decision 4); second look skipped at the user's word | 1 |
+| 9 | Bearing, clumping, entry-angle and room-size measures; stock room shapes; targets (decision 5) | 2 |
+| 10 | Caves at any bearing, corridors entering at an angle; every reader follows an angled corridor; Transitions where a line fits (decision 6). Cave seed 731402518: axis share 0.85 -> 0.38, entry p50 0° -> 30° | 6 |
+| 11 | Room sizes and shapes vary in stock's proportions, every zone kind (26 H top, decision 7): area CV 0.48 -> 0.73 on the cave, max/min 6–9x | 3 |
 
 ## Decisions
 

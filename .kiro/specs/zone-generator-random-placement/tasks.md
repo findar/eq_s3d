@@ -49,11 +49,11 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Type: agent · Size: S · Depends: 4, 8
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 6. HUMAN: first look
+- [x] 6. HUMAN: first look (second look skipped at the user's word)
   - Card: [cards/06-first-look.md](cards/06-first-look.md)
   - Type: human · Depends: 5, 13
 
-- [ ] 7. Close step 27
+- [x] 7. Close step 27
   - Card: [cards/07-close.md](cards/07-close.md)
   - Type: agent · Size: S · Depends: 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-random-placement/, .kiro/specs/zone-generator/
