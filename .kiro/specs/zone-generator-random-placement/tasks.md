@@ -72,13 +72,13 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: generators/topology/embed.py, generators/layout_engine.py, generators/layout.py, generators/routing.py, generators/geometry.py, generators/outline.py, generators/zone_spec.py, generators/transitions.py, generators/mapview.py, generators/room_context.py, analyzer/traverse.py, tests/test_topology_embed.py, tests/test_wind_route.py, tests/test_wind_route_mesh.py, tests/test_wind_route_readers.py, tests/test_winding_control.py, tests/test_winding_readers.py, tests/test_winding_mesh.py, tests/test_bridges.py, goldens it moves (named in the commit); stop and report before widening
   - Reqs: 7
 
-- [ ] 11. Room sizes vary
+- [x] 11. Room sizes vary
   - Card: [cards/11-sizes.md](cards/11-sizes.md)
   - Type: agent · Size: M · Depends: 10
-  - Owns: generators/topology/embed.py (`room_size`), generators/semantics.py (size bands, room types), generators/layout.py (classic sizes), tests it moves, goldens it moves (named in the commit)
+  - Owns: generators/topology/embed.py (`room_size`), generators/semantics.py (size bands, room types), generators/layout.py (classic sizes), generators/layout_engine.py, generators/outdoor_dungeon.py, generators/decor/placement.py (widened by the lead), tests it moves, goldens it moves (named in the commit)
   - Reqs: 8
 
-- [ ] 12. Gate and bands again
+- [x] 12. Gate and bands again
   - Card: [cards/12-gate.md](cards/12-gate.md)
   - Type: agent · Size: S · Depends: 11
   - Owns: fixes only where a failure is new (stop and report first)

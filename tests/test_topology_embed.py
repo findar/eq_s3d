@@ -149,10 +149,11 @@ def test_record_names_set_layers_and_rooms():
 @settings(max_examples=scaled(25), deadline=None)
 @given(s=seeds, n=st.integers(1, 30), theme=THEMES)
 def test_engine_sizes_rooms_by_class(s, n, theme):
-    """Straight from the engine: every room's footprint is its class's side
-    in the race's band (step 7 task 17) within the spread and inside the
-    band, its height the class's height (the theme's room types come later,
-    in semantics)."""
+    """Straight from the engine: every room's footprint is drawn round its
+    class's side in the race's band (step 7 task 17; in stock's proportions
+    since random placement task 11), inside the band and no longer than the
+    aspect table allows, its height the class's height (the theme's room
+    types come later, in semantics)."""
     from generators import semantics
     gen = LayoutGenerator("dungeon", seed=s)
     gen._apply_room_scale(n)
@@ -162,10 +163,10 @@ def test_engine_sizes_rooms_by_class(s, n, theme):
     assert len(res.rooms) == n
     for r in res.rooms:
         t = semantics.band_position(res.record["rooms"][r.id]["size"])
-        side = semantics.room_side("", t)
-        lo, hi = max(s0, side * (1 - embed.SPREAD)), min(s1, side * (1 + embed.SPREAD))
         for v in (r.width, r.depth):
-            assert lo - 1e-6 <= v <= hi + 1e-6
+            assert s0 - 1e-6 <= v <= s1 + 1e-6
+        long_, short = max(r.width, r.depth), min(r.width, r.depth)
+        assert long_ / short <= semantics.ASPECT_QUANTILES[-1][1] + 1e-6
         assert r.height == pytest.approx(semantics.room_height("", t))
 
 

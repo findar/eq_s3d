@@ -182,7 +182,7 @@ def test_connectivity_and_roles(seed, zone_type, n, semantic):
 #
 # The pinned `@example` is the input task 10.3 found by scanning the real
 # generator (the first case where a gate's key_room_id lands on the entrance id,
-# i.e. the key-room FALLBACK path): seed=16, dungeon, 5 rooms, 4 locks. For that
+# i.e. the key-room FALLBACK path): seed=16 then (task 11) seed=6, dungeon, 5 rooms, 4 locks. For that
 # case (expect_fallback=True) the test additionally asserts that at least one
 # gate.key_room_id == the entrance id, proving the fallback is exercised and the
 # keyed dungeon is still solvable from the entrance.
@@ -192,7 +192,9 @@ def test_connectivity_and_roles(seed, zone_type, n, semantic):
 # -- the case where a gate's key_room_id lands on the entrance id.
 @settings(deadline=None, max_examples=scaled(100))
 @example(
-    seed=16,
+    # Re-pinned from 16 by random placement task 11 (room sizes vary, so seed
+    # 16's layout moved and no longer keys off the entrance; 6 does).
+    seed=6,
     zone_type="dungeon",
     n=5,
     locks=4,
@@ -219,7 +221,7 @@ def test_gating_solvable(seed, zone_type, n, locks, semantic, expect_fallback):
     sits on the path before its own lock, so the keyed dungeon is always
     solvable.
 
-    The pinned ``@example`` (seed 16 / dungeon / 5 rooms / 4 locks) is the input
+    The pinned ``@example`` (seed 6 / dungeon / 5 rooms / 4 locks; 16 before) is the input
     task 10.3 found that drives the key-room FALLBACK: at least one gate keys off
     the entrance room itself. For that case (``expect_fallback=True``) the test
     also asserts ``key_room_id == entrance_id`` for some gate, so the fallback

@@ -57,9 +57,13 @@ def test_water_fills_each_flooded_room(build):
     V = np.array([(v.x, v.y, v.z) for v in ter.vertices])
     for room in flooded:
         level = flood_level(room, spec)
-        (x0, y0, _), (x1, y1, _) = room.bounds
+        (x0, y0, z0), (x1, y1, z1) = room.bounds
+        # In the room's box, Z too: a stacked build's rooms on other Levels can
+        # overlap it in plan (random placement task 11: sunken_ruin graph 5's
+        # room_4 over room_8).
         mine = [p for p in water
                 if all(x0 - 0.01 <= V[i, 0] <= x1 + 0.01 and y0 - 0.01 <= V[i, 1] <= y1 + 0.01
+                       and z0 - 0.01 <= V[i, 2] <= z1 + 0.01
                        for i in (p.v1, p.v2, p.v3))]
         assert mine, f"{room.id} has no water surface"
         zs = V[[i for p in mine for i in (p.v1, p.v2, p.v3)], 2]

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import random
 from functools import partial
 from pathlib import Path
@@ -42,6 +43,11 @@ from .zone_types import STYLE_PROFILE
 
 # Overlap below this (u) is two faces touching, not one inside the other.
 _TOUCH = 1e-6
+#: The XY cell the gate compares two corridors' floors on (``analyzer.traverse.
+#: _corridor_floor_z``: ``max(4 * adjacency_eps, 16)``). Two tubes 3 u apart on one cell read
+#: as crossing there (random placement task 12: warren graph moderate 21, seed 1093450890,
+#: corr_13's and corr_23's Switchback stairwells 3.3 u apart, a conflict on the gate).
+CONFLICT_CELL = 16.0
 
 # Fitting a layout inside an Envelope: the fewest rooms a build keeps, and how
 # many fresh layouts are tried at each room count before dropping a room.
@@ -345,6 +351,22 @@ class _Shape(NamedTuple):
 # (Cave/wilderness backends are organic/heightfield and out of scope here.)
 _SEMANTIC_ZONE_TYPES = {"dungeon", "city"}
 
+#: The classic engine's footprint spread round the medium side in a
+#: room-graph zone: the split log-normal's ln sd below and above it and its
+#: ln offset (``semantics.room_footprint``; random placement task 11). The
+#: pacing roles' sizes (``_bias_rooms_by_role``) already spread a zone's
+#: sides, so the draw adds the rest of stock's.
+CLASSIC_SPREAD: Tuple[float, float, float] = (0.08, 0.7, -0.17)
+
+#: An outdoor dungeon's greatest room side, in H (random placement task 11): one
+#: big hall under the hill takes the ground Sites need (``stages.dungeon_keep_clear``
+#: covers a room's corners with a capsule), so the footprint limit's 26 H top is
+#: lowered under a hill.
+ENVELOPE_SIDE_TOP = 22.0
+
+#: The outdoor-dungeon entrance room's greatest long/short side ratio.
+ENTRANCE_ASPECT = 1.5
+
 
 # ---------------------------------------------------------------------------
 # Layout generator
@@ -501,6 +523,9 @@ class LayoutGenerator:
         # The Envelope the layout pass fits (outdoor dungeons), or None: a
         # stair route leaving its footprint is the last one tried.
         self._envelope: Optional[Envelope] = None
+        # An Envelope build's least entrance-room side (u; ``outdoor_dungeon.
+        # layout_in_envelope`` sets it to ``tunnel_wall``), whatever the engine.
+        self.entrance_side = 0.0
         # A stair's route as the conflict pass re-routed it (an index into
         # its ``_stair_candidates``), kept while the floors move.
         self._stair_route: Dict[Tuple[int, int], int] = {}
@@ -510,7 +535,7 @@ class LayoutGenerator:
         Room-graph zones (dungeon, city; step 7 task 17): the room band, the
         rooms' height, the corridors and the elevation rises from the build's
         race (``self.race``) through ``semantics``: the classic engine scatters
-        around the band's medium side (``size_shift`` moves it), +-30 %. The
+        around the band's medium side (``size_shift`` moves it) in stock's proportions. The
         room count no longer sizes rooms: a zone's total size follows from its
         rooms.
 
@@ -522,8 +547,9 @@ class LayoutGenerator:
         if self.corridor_clearance:
             t = semantics.band_position("medium", self.size_shift)
             side = semantics.room_side(self.race, t)
-            self.room_min = side * 0.7
-            self.room_max = side * 1.3
+            # The classic engine draws each footprint round the medium side
+            # (``LayoutContext.footprint_spread``: ``CLASSIC_SPREAD``).
+            self.room_min = self.room_max = side
             # A profile's shift sizes footprints only; heights keep the
             # Size control's position (district-looks task 4).
             self.ceiling = semantics.room_height(
@@ -689,6 +715,14 @@ class LayoutGenerator:
         entry = envelope.entry if envelope is not None else None
         if entry is None:
             entry = result.entry
+        # Under a hill the Tunnel enters at the top Level, so a stacked layout's
+        # entrance is the room nearest the way in on that Level (random
+        # placement task 11: sized in stock's proportions, a deeper room's
+        # centre could lie nearer the way in on every facing, outdoor seed 2037).
+        among = None
+        if envelope is not None and result.levels is not None and len(set(result.levels)) > 1:
+            top = max(result.levels)
+            among = [i for i, lv in enumerate(result.levels) if lv == top]
 
         # Districts (districts spec A4): find the zone entrance by pacing's
         # rule (no rng), cut the graph into Districts and drop the
@@ -700,7 +734,7 @@ class LayoutGenerator:
         climaxes = None
         k = _districts.district_count(len(rooms), districts is not None)
         if k >= 2:
-            first = self._find_entrance(rooms, entry)
+            first = self._find_entrance(rooms, entry, among)
             part = _districts.partition_districts(rooms, edges, first, k, self.rng)
             if part.k < part.requested:
                 self.warnings.append(
@@ -714,7 +748,7 @@ class LayoutGenerator:
                 climaxes = _districts.district_climaxes(part, part.edges, first)
             else:
                 part = None
-        entrance = self._apply_pacing(rooms, edges, entry,
+        entrance = self._apply_pacing(rooms, edges, entry, among=among,
                                       size_bias=not self.engine.sizes_rooms,
                                       climax=result.climax, climaxes=climaxes)
 
@@ -745,6 +779,21 @@ class LayoutGenerator:
         if self.corridor_clearance:
             for room in rooms:
                 semantics.fit_to_band(room, self.race)
+        # An outdoor dungeon's entrance room must fit a Tunnel under the hill
+        # (``outdoor_dungeon.plan_entrance``): its footprint is capped at the
+        # medium class side (after the Size control's shift), aspect 1.5, so
+        # the size draw's big halls land deeper in, and no side is under
+        # ``entrance_side`` (``outdoor_dungeon.tunnel_wall``: the wall facing
+        # the way in must hold a terrain cell) (random placement task 11).
+        if envelope is not None and self.corridor_clearance:
+            top = ENVELOPE_SIDE_TOP * semantics.body_height(self.race)
+            for room in rooms:
+                semantics.cap_footprint(room, top, float("inf"))
+            least = self.entrance_side
+            side = semantics.room_side(self.race, semantics.band_position("medium", self.size_shift))
+            room = rooms[entrance]
+            semantics.cap_footprint(room, max(side, least), ENTRANCE_ASPECT)
+            room.width, room.depth = max(room.width, least), max(room.depth, least)
 
         # A stacked build (an engine gave rooms on more than one Level) runs
         # Job B in 3D from here: rooms on different Levels may overlap in plan,
@@ -953,6 +1002,7 @@ class LayoutGenerator:
             room_min=self.room_min, room_max=self.room_max,
             ceiling=self.ceiling, corridor_width=self.corridor_width,
             separate=self._separate_rooms,
+            footprint_spread=CLASSIC_SPREAD if self.corridor_clearance else None,
             build=BuildContext(zone_type=self.zone_type, theme=theme, race=race,
                                race_scale=semantics.race_scale(race),
                                room_count=room_count),
@@ -1043,7 +1093,8 @@ class LayoutGenerator:
                       entry: Optional[Tuple[float, float]] = None,
                       size_bias: bool = True,
                       climax: Optional[int] = None,
-                      climaxes: Optional[List[int]] = None) -> int:
+                      climaxes: Optional[List[int]] = None,
+                      among: Optional[List[int]] = None) -> int:
         """
         Analyse the room graph to assign each room a role and depth:
 
@@ -1081,7 +1132,7 @@ class LayoutGenerator:
             adj[i].append(j)
             adj[j].append(i)
 
-        entrance = self._find_entrance(rooms, entry)
+        entrance = self._find_entrance(rooms, entry, among)
 
         # BFS graph-depth from the entrance.
         gdepth = {entrance: 0}
@@ -1126,15 +1177,17 @@ class LayoutGenerator:
 
     @staticmethod
     def _find_entrance(rooms: List[RoomSpec],
-                       entry: Optional[Tuple[float, float]] = None) -> int:
+                       entry: Optional[Tuple[float, float]] = None,
+                       among: Optional[List[int]] = None) -> int:
         """Pacing's zone entrance (no rng): the room nearest *entry* when
-        there is a way in, else the one farthest from the layout centroid."""
+        there is a way in (of the rooms ``among``, when given), else the one
+        farthest from the layout centroid."""
         n = len(rooms)
         if entry is not None:
             # Entrance = the room nearest the way in.
             ex, ey = entry
             return min(
-                range(n),
+                among or range(n),
                 key=lambda i: (rooms[i].center_x - ex) ** 2 + (rooms[i].center_y - ey) ** 2,
             )
         # Entrance = the room farthest from the layout centroid (peripheral).
@@ -2386,14 +2439,26 @@ class LayoutGenerator:
         A piece pinned to a room both corridors leave (``shared``) may meet
         the other's piece pinned there: they share that doorway's stub."""
         from .topology.embed import SLAB
+
+        def cells(r):
+            return (math.floor(r[0] / CONFLICT_CELL), math.floor(r[1] / CONFLICT_CELL),
+                    math.floor((r[2] - _TOUCH) / CONFLICT_CELL), math.floor((r[3] - _TOUCH) / CONFLICT_CELL))
+
         for (ra, za0, za1, ka) in pa:
             for (rb, zb0, zb1, kb) in pb:
                 if ka is not None and ka == kb and ka in shared:
                     continue
+                if not (zb0 - za1 < SLAB and za0 - zb1 < SLAB):
+                    continue
                 if (min(ra[2], rb[2]) - max(ra[0], rb[0]) > _TOUCH
-                        and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH
-                        and zb0 - za1 < SLAB and za0 - zb1 < SLAB):
+                        and min(ra[3], rb[3]) - max(ra[1], rb[1]) > _TOUCH):
                     return True
+                if not shared:
+                    # The gate compares two corridors sharing no room cell by cell on its
+                    # CONFLICT_CELL grid, so pieces apart in plan but on one cell clash too.
+                    a, b = cells(ra), cells(rb)
+                    if a[0] <= b[2] and b[0] <= a[2] and a[1] <= b[3] and b[1] <= a[3]:
+                        return True
         return False
 
     @staticmethod

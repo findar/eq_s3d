@@ -20,9 +20,11 @@ def _build(seed, edges):
     host = wilderness_spec("hill", seed, edges, landform=DEFAULT_HOST_HILL,
                            zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
     ter = build_wilderness_ter(host, "hill", 1)
-    dungeon, warnings = od.layout_in_envelope("d", seed * 7 + 1, od.host_envelope(host, ter))
-    first = next(r.id for r in dungeon.rooms if r.role == "entrance")
-    entrance = od.plan_entrance(host, ter, dungeon, room_id=first)
+    # Planned as the pipeline plans (random placement task 11: the raw layout
+    # skipped ``align_to_grid`` and the entrance room's ``tunnel_wall``, so
+    # whether its wall held a terrain cell was down to how the seed drew it).
+    dungeon, warnings, entrance = od.plan_dungeon(host, ter, od.host_envelope(host, ter),
+                                                  "d", seed * 7 + 1)
     merged = od.build_outdoor_ter(host, ter, dungeon, entrance, "zone")
     return host, ter, dungeon, entrance, merged
 

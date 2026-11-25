@@ -245,7 +245,10 @@ def test_map_line_runs_the_scaled_legs(seed, monkeypatch):
 # A straight seam and a breach, a Z seam and a Z breach, a straight and a Z frame. Re-pinned
 # by random placement task 1 (a cave's offsets now salt with the build's seed: seeds 2 and 12
 # lost their cases).
-FRAMED_SEEDS = (6, 23, 55)
+#: Re-pinned from (6, 23, 55) by random placement task 11: room sizes vary, so seed 23's and
+#: 55's layouts moved and no straight Breach held a path (over cave seeds 0-79 the held share
+#: is 97 of 133 against master's 89 of 124).
+FRAMED_SEEDS = (3, 6, 19)
 
 
 @functools.lru_cache(maxsize=None)

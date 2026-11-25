@@ -31,6 +31,8 @@ WALL_MARGIN_H = 1.0     # a solid stands this far from a wall, in H, so nothing 
 BODY_RADIUS = 2.0       # a player's middle stays this far from a solid (u), as the gate has it
 POCKET = 16.0           # free floor this big cut off from the doors is too much (u^2). Smaller than
                         # the gate's: this reckons a body wider, which shrinks what it sees
+LOOSE_POCKET = 32.0     # the same on the gate's own reading (``_loose``): half the gate's 64 u^2
+                        # (``analyzer.traverse.WALLED_OFF``), as this grid's cells are coarser
 ARRANGEMENTS: Tuple[str, ...] = ("centre", "far_end", "ring", "rows", "corners", "along_wall",
                                  "scatter", "on_dais")
 MIN_HEAD_H = 2.0        # a dais leaves this much headroom, in H
@@ -81,6 +83,7 @@ class RoomGrid:
         self.spine = self._spine(doors)
         self.by_wall = self._by_wall()
         self.cut_already = self._cut_off(self._free(self.taken))
+        self.cut_loose = self._cut_off(self._loose(self.taken))
 
     def _by_wall(self) -> np.ndarray:
         """Cells a body's radius from the outline's own walls, measured from the wall edges
@@ -134,12 +137,22 @@ class RoomGrid:
         return out
 
     def _spine(self, doors) -> np.ndarray:
-        """Paths joining the doors, a corridor's clear width wide, and each door's own strip
-        going in. The entrance room keeps its middle clear too: the spawn stands there."""
+        """Paths joining the doors, and in a shaped room each door to its Core's edge, a
+        corridor's clear width wide, and each door's own strip going in. The entrance room
+        keeps its middle clear too: the spawn stands there. The gate walks each door's way to
+        the Core a body ``CLEAR_WIDTH`` wide (``throat_narrow``); with Features across its
+        Throat, the only wide way left can be a detour a single Prop shuts (random placement
+        task 12: warren graph moderate 19, seed 1960233453, room_11's one door, two boulders
+        in its Throat). The Core itself stays free for a centre piece."""
         spine = np.zeros(self.floor.shape, bool)
         for a, b in zip(self.door_cells, self.door_cells[1:]):
             for c in self._path(a, b):
                 spine[c] = True
+        for a in self.door_cells:
+            edge = self._core_edge_cell(a)
+            if edge is not None:
+                for c in self._path(a, edge):
+                    spine[c] = True
         for c in self.door_cells:
             spine[c] = True
         if self.room.role == "entrance":
@@ -152,6 +165,22 @@ class RoomGrid:
         for door in doors:
             spine |= self.rect(self.door_clear(door))
         return spine & self.floor
+
+    def _core_edge_cell(self, door_cell: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        """The floor cell of a shaped room's Core nearest a door's cell; None in a plain Box
+        (no Outline: its floor is all one) or with the door already in the Core."""
+        o = self.room.outline
+        if o is None or o.core is None:
+            return None
+        inside = self.floor & self.rect(o.core)
+        if inside[door_cell]:
+            return None
+        cand = np.argwhere(inside)
+        if len(cand) == 0:
+            return None
+        dx, dy = self.xs[door_cell[0]], self.ys[door_cell[1]]
+        k = int(np.hypot(self.xs[cand[:, 0]] - dx, self.ys[cand[:, 1]] - dy).argmin())
+        return int(cand[k, 0]), int(cand[k, 1])
 
     def door_clear(self, door) -> Tuple[float, float, float, float]:
         """A door's own strip going in, (x0, y0, x1, y1): the door's width, two bodies and a
@@ -187,6 +216,16 @@ class RoomGrid:
         walled = binary_dilation(walls, iterations=reach)[1:-1, 1:-1] | self.by_wall
         return (self.floor & ~placed) & (~walled | self.spine)
 
+    def _loose(self, solid: np.ndarray) -> np.ndarray:
+        """The floor as the gate reads it: a body's radius from the outline's walls (``by_wall``)
+        and from what's placed (a cell's middle beside a taken cell is within a body's radius of
+        its plan). ``_free`` reads a cell stricter, which joins no gap the gate shuts but also
+        shrinks the floor behind one: a strip between boulders and a wall can vanish there while
+        the gate finds it walled off (random placement task 12: outdoor case a, seed 7,
+        room_1's two boulders left 2.8-3.7 u gaps to a 52 u^2 strip by the north wall)."""
+        placed = binary_dilation(solid) if solid.any() else solid
+        return self.floor & ~placed & (~self.by_wall | self.spine)
+
     def _cut_off(self, free: np.ndarray) -> np.ndarray:
         """The free floor not joined to a door. Measured on the bare room (``cut_already``): what
         the outline itself cuts off, a voronoi room's thin finger say, which placement can't
@@ -210,7 +249,14 @@ class RoomGrid:
         marks = {int(labels[c]) for c in self.door_cells}
         joined = next(iter(marks), 0)
         sizes = np.bincount(labels[free & ~self.cut_already], minlength=n + 1)
-        return not any(sizes[k] * CELL * CELL >= POCKET for k in range(1, n + 1) if k != joined)
+        if any(sizes[k] * CELL * CELL >= POCKET for k in range(1, n + 1) if k != joined):
+            return False
+        # And as the gate reads the floor: a pocket it would find walled off.
+        loose = self._loose(self.taken | cells)
+        labels, n = label(loose | (binary_dilation(over, iterations=reach) & self.floor) if over.any() else loose)
+        marks = {int(labels[c]) for c in self.door_cells} - {0}
+        sizes = np.bincount(labels[loose & ~self.cut_loose], minlength=n + 1)
+        return not any(sizes[k] * CELL * CELL >= LOOSE_POCKET for k in range(1, n + 1) if k not in marks)
 
 
 def _door_side(grid: RoomGrid) -> Tuple[float, float]:

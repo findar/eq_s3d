@@ -14,7 +14,7 @@ from generators.topology.ruleset import RuleSetError, load_theme_map
 from generators.wall_styles import WALLS_DIR, load_style, load_styles, style_for_finish
 
 #: A plan naming a style, in master's bytes before finish chose a room's style, footer aside.
-NAMED = {"rough": "6489aa79238da65d4b19dd57f3659d1434910fd13489a5d4d728bb73fb2bdef7", "hewn": "22a685a8791f2ee422ee668229b47373027410dd49c2cd9c9ed81777f9b97735", "built": "21232dbb6603ee17edf2de2a55c83ce50498dc3965bbb66939f102998f5b7267"}
+NAMED = {"rough": "0b7875b29b5e075954c0d094da882995f1841b1e02299bf56806a3fa1bc9747f", "hewn": "d0f29b92139b4ca9a15dfc13e54a9f735a05cd14d033da38471d916c3ed60d9e", "built": "b47699190e817cf8e1f727aa409a3ce7eded97a3ea8081778f10b64513c29af5"}
 
 
 def _plan(**fields):

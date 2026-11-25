@@ -59,7 +59,24 @@
    cost fidelity (0.928 < 0.936), so the time is accepted against the ~5 min budget. Angled
    corridors whose Transition no line holds square lose it (about 2 of 130 over seeds 2000-2039).
 
+7. **Task 11's amended bars** (the lead, 2026-11-23). Under the 26 H top with class medians kept:
+   area CV ≥ 0.70 and max/min ≥ 8 per kind. Fidelity: cave ≥ 0.930; outdoor −0.020 and warren
+   −0.011 accepted while every final corridor graph stays connected and every dropped tree edge's
+   rooms stay joined (master drops tree edges too, re-routed through a third room). Warren 27
+   outdoor draw at 1.7x accepted (keeps all 27 rooms). Outdoor dungeons cap rooms at 22 H under
+   the hill (one big hall under the hill takes the ground Sites need); outdoor bars CV ≥ 0.60,
+   max/min ≥ 6.5 (measured 0.63, 6.7); outdoor_w zero-site 4/30 (master 1) accepted. Outdoor
+   draw p95 (`quality_sweep --per-key 200 --seed 23`, master → branch): classic 3.9–6.2 s → 7.3–7.5 s,
+   graph flat 34 s → 56 s (graph dramatic and moderate faster); plan errors 11 → 1 of 1200.
+
 ## Follow-ups
+- **Rooms opening straight into each other** (stock 0.30 of edges; nn min 1.39 vs stock 0.63).
+- **Outdoor loop corridors under size variance:** fidelity 0.925 → 0.905, loops lost fitting
+  bigger rooms on the hill (163 vs 102 layout tries at warren 27).
+- **Fit `dungeon_keep_clear` to the rooms** so big halls under a hill leave ground for Sites
+  (outdoor_w zero-site 8/30 at 26 H).
+- **Decor survey reads the zone's tallest room as open sky** (city seed 11 drops its climax, 13
+  of 21 Props; master drops 1 of 5 rooms the same way).
 - **Cave draw time** (task 10, decision 6): `start_positions` spends 10.5 s of a 30-room cave on
   64 tries, ~70% in `_start_crossings`; `_untangle` 5.4 s. Incremental crossing counts would cut it.
 - **Not looked at in 3D** (task 10): angled openings, long straight tunnels aimed at a room

@@ -38,7 +38,7 @@ needs_install = pytest.mark.skipif(EQ is None, reason="EQ_PATH is not set (no EQ
 #: A build with Locks 2, and its bytes with no Door model (``temple_locks`` before task 5).
 GATED = (dict(zone_type="dungeon", room_count=9, locks=2, dungeon_theme="temple",
               dungeon_race="troll", verticality="dramatic", layout="classic"), 11,
-         "c5e9125f3a11aa7c040ded8d3010496a90550090f0f7e876b9b82fcb6243388c")
+         "1793b59d3b3522182e51d99c1ebc99e31e7c1c87f45e7391af4c7caa6c3e25c1")
 
 
 def _gated_spec(name="door"):

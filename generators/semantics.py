@@ -364,12 +364,16 @@ def unmapped_kinds(archetype: str, kinds) -> List[str]:
 # that lives in them; the user chose stock scale, 2026-11-04):
 #
 #   room height     [2.5 H, 10 H]   human 15-60 u, dragon 53-210 u
-#   footprint side  [8 H, 20 H]     human 48-120 u, dragon 168-420 u
+#   footprint side  [8 H, 26 H]     human 48-156 u, dragon 168-546 u
 #
-# A Size_Class picks a point in the band (``CLASS_POSITION``: tiny at the
-# minimum, huge at the maximum), geometrically, so each class step is the same
-# ratio. The plan's Size control shifts that point (``SIZE_SHIFT``), still
-# inside the band. Corridors are a fixed multiple of H (stock corridors are
+# A Size_Class picks a point in the class band (``ROOM_SIDE_BAND``, 8-20 H;
+# ``CLASS_POSITION``: tiny at the minimum, huge at the maximum),
+# geometrically, so each class step is the same ratio. The plan's Size
+# control shifts that point (``SIZE_SHIFT``), still inside the band. Each
+# room's footprint is then drawn round that side in stock's proportions
+# (``room_footprint``; random placement task 11): small alcoves, long
+# galleries and big halls up to ``ROOM_SIDE_LIMIT``'s 26 H (stock's p95 is
+# 24-26 H; a human's 156 u is still under a dragon's 168 u minimum). Corridors are a fixed multiple of H (stock corridors are
 # 12-28 u for humans, about 2-5 H wide). The measured whole-zone floor area no
 # longer sizes room-graph rooms; a zone's total size follows from its room
 # count and its rooms' classes.
@@ -391,9 +395,12 @@ RACE_HEIGHT: Dict[str, float] = {
 }
 DEFAULT_RACE_HEIGHT = RACE_HEIGHT["default"]
 
-#: Room height and footprint side bands, as multiples of H.
+#: Room height band and the Size_Classes' side band, as multiples of H.
 ROOM_HEIGHT_BAND: Tuple[float, float] = (2.5, 10.0)
 ROOM_SIDE_BAND: Tuple[float, float] = (8.0, 20.0)
+#: Every room's footprint side (width and depth), as multiples of H: the
+#: class band with its top opened for stock's big halls (``room_bands``).
+ROOM_SIDE_LIMIT: Tuple[float, float] = (ROOM_SIDE_BAND[0], 26.0)
 
 #: Size_Class -> position in the bands (0 the minimum, 1 the maximum).
 CLASS_POSITION: Dict[str, float] = {
@@ -456,14 +463,86 @@ def room_height(race: str, t: float) -> float:
 def room_bands(race: str) -> Tuple[Tuple[float, float], Tuple[float, float]]:
     """``((side_min, side_max), (height_min, height_max))`` in u."""
     h = body_height(race)
-    return ((ROOM_SIDE_BAND[0] * h, ROOM_SIDE_BAND[1] * h),
+    return ((ROOM_SIDE_LIMIT[0] * h, ROOM_SIDE_LIMIT[1] * h),
             (ROOM_HEIGHT_BAND[0] * h, ROOM_HEIGHT_BAND[1] * h))
+
+
+# ---------------------------------------------------------------------------
+# Room footprints in stock's proportions (random placement task 11, Req 8)
+#
+# Stock chambers (48 zones; archive decision 5) agree across built, cave and
+# enclosed-city zones: side over the zone's median side is p5/p25/p75/p95
+# 0.66/0.84/1.30/2.1 (skewed: a long tail of big halls), aspect (long/short)
+# p50 about 1.25, p90 1.8, a quarter of rooms over 1.5 and the odd hall at 3.
+# ``room_footprint`` draws a room's side round its class side with a split
+# log-normal (``spread``: the ln sd below and above) and its aspect from
+# ``ASPECT_QUANTILES``. The engines' own spread (the graph engine's class
+# mix, the classic engine's pacing roles) adds to the draw's, so each engine
+# passes the share that brings its zones to stock's.
+# ---------------------------------------------------------------------------
+
+#: The aspect's quantile function, as (quantile, aspect) knots joined
+#: linearly: p50 1.28 and p90 1.9 as drawn; the band's floor and top square a
+#: few rooms, bringing zones to about stock's 1.25 and 1.8 (seeds 2000-2039).
+ASPECT_QUANTILES: Tuple[Tuple[float, float], ...] = (
+    (0.0, 1.0), (0.5, 1.28), (0.7, 1.5), (0.9, 1.9), (0.97, 2.4), (1.0, 3.3),
+)
+
+
+def draw_aspect(u: float) -> float:
+    """The aspect at quantile ``u`` in [0, 1] (``ASPECT_QUANTILES``)."""
+    pts = ASPECT_QUANTILES
+    for (q0, a0), (q1, a1) in zip(pts, pts[1:]):
+        if u <= q1:
+            return a0 + (a1 - a0) * (u - q0) / (q1 - q0)
+    return pts[-1][1]
+
+
+def room_footprint(side: float, race: str, rng,
+                   spread: Tuple[float, float, float]) -> Tuple[float, float]:
+    """(width, depth) of a room round ``side`` (u) for ``race``: its side
+    (sqrt of the area) times exp(c + z * sd), z a standard normal, sd
+    ``spread[0]`` below the median and ``spread[1]`` above, and ``c``
+    (``spread[2]``) the engine's offset that keeps its zones' median side
+    where the classes put it (the skewed draw lifts a zone's); its aspect from
+    ``draw_aspect``, the long axis along x or y at even odds. Both axes stay
+    in the race's footprint band: a short side under the band's floor is
+    raised to it and the room keeps its aspect (a small room is a little
+    bigger, not squarer), the long side up to the band's top.
+
+    Three rng draws: the side's normal, the aspect's quantile, the axis.
+    """
+    import math
+    (s0, s1), _h = room_bands(race)
+    z = rng.gauss(0.0, 1.0)
+    a = draw_aspect(rng.random())
+    along_x = rng.random() < 0.5
+    sd = spread[0] if z < 0 else spread[1]
+    area = (side * math.exp(spread[2] + z * sd)) ** 2
+    short = max(s0, math.sqrt(area / a))
+    long_ = min(s1, short * a)
+    short = min(short, long_)
+    return (long_, short) if along_x else (short, long_)
 
 
 def corridor_size(race: str) -> Tuple[float, float]:
     """``(width, height)`` of the race's corridors, in u."""
     h = body_height(race)
     return CORRIDOR_WIDTH_H * h, CORRIDOR_HEIGHT_H * h
+
+
+def cap_footprint(room: RoomSpec, side: float, aspect: float) -> None:
+    """Shrink ``room``'s footprint, about its centre, to sides of at most
+    ``side`` and a long/short ratio of at most ``aspect`` (the long side
+    gives way); a room already inside both is left alone."""
+    long_, short = max(room.width, room.depth), min(room.width, room.depth)
+    long_ = min(long_, side)
+    short = min(short, long_)
+    long_ = min(long_, short * aspect)
+    if room.width >= room.depth:
+        room.width, room.depth = long_, short
+    else:
+        room.width, room.depth = short, long_
 
 
 def fit_to_band(room: RoomSpec, race: str) -> None:
@@ -655,7 +734,7 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
 
     A room grown by a rule set (it carries a ``kind``) has its footprint area
     from its Size_Class (graph-layout Req 6.1: rules own size), so the type
-    keeps only its PROPORTION: the aspect stretch is applied, then the
+    keeps only its PROPORTION: the aspect pull is applied, then the
     footprint is renormalised to the area the room came with (the type's
     footprint multiplier drops out). Ceiling mood and floor sink still apply.
 
@@ -665,14 +744,19 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
     floor sink is in H (``SINK_PER_H``), so a giant's sunken arena sinks
     proportionally.
     """
-    # Footprint + aspect: stretch the longer axis for processional rooms.
+    # Footprint + aspect: a processional room drawn squarer than its type's
+    # aspect is pulled halfway (in log) toward it along its longer axis, its
+    # area kept (random placement task 11: the footprint draw already gives
+    # stock's aspects, so the type's hint weights it, not a stretch on top).
     fw = rt.footprint
     fd = rt.footprint
-    if rt.aspect != 1.0:
+    have = max(room.width, room.depth) / max(1e-9, min(room.width, room.depth))
+    if rt.aspect > have:
+        k = (rt.aspect / have) ** 0.25
         if room.width >= room.depth:
-            fw *= rt.aspect
+            fw, fd = fw * k, fd / k
         else:
-            fd *= rt.aspect
+            fw, fd = fw / k, fd * k
     if room.kind:
         k = (fw * fd) ** -0.5
         fw *= k

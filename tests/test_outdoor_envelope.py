@@ -91,7 +91,9 @@ def test_default_room_count_fits_every_sampled_seed():
             assert LayoutGenerator.fits(layout, env)
 
 
-@pytest.mark.parametrize("seed", [8])
+# Seed 17 since random placement task 11 (seed 8 now plans unshrunk; of seeds 0-59, 17, 39
+# and 57 need the shrink, and 37 plans at no size, against master's 8 and none).
+@pytest.mark.parametrize("seed", [17])
 def test_themed_dungeon_shrinks_rooms_to_plan(seed, monkeypatch):
     """A fortress's room types and climax outgrow the Envelope's sizing; this
     seed fails to plan (rooms miss the hill, or the sunk entrance room gets

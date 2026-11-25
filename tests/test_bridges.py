@@ -365,16 +365,18 @@ def test_a_slot_keeps_off_a_door_on_the_bridged_rooms_wall():
     782009009 the rule refuses two Bridges, and corr_24's slot in room_22 comes within 2.5 u
     of the north wall, where corr_2 has its door. Re-pinned by random placement task 10
     (caves at any bearing; 782009009 now makes no Bridge): at seed 1001 corr_19's slot in
-    room_21 comes within 2.5 u of the west wall, where corr_8 has its door."""
+    room_21 comes within 2.5 u of the west wall, where corr_8 has its door. Re-pinned by random
+    placement task 11 (room sizes vary): at seed 1013 corr_21's slot in room_17 reaches the west
+    wall, where corr_17 has its door."""
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 27, "verticality": "moderate",
                                    "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
     plan.name = "slots"
-    spec = plan_to_spec(plan, seed=1001, warnings=[])
+    spec = plan_to_spec(plan, seed=1013, warnings=[])
     rooms = {r.id: r for r in spec.rooms}
-    room_21 = rooms["room_21"]
-    assert any((LayoutGenerator._door_on_wall(c, room_21) or ("",))[0] == "W" for c in spec.corridors
-               if c.id == "corr_8"), "the layout moved: re-pin"
-    assert any(c.id == "corr_19" and c.bridge == "room_21" for c in spec.corridors), "the layout moved: re-pin"
+    room_17 = rooms["room_17"]
+    assert any((LayoutGenerator._door_on_wall(c, room_17) or ("",))[0] == "W" for c in spec.corridors
+               if c.id == "corr_17"), "the layout moved: re-pin"
+    assert any(c.id == "corr_21" and c.bridge == "room_17" for c in spec.corridors), "the layout moved: re-pin"
     checked = 0
     for cor in spec.corridors:
         bl = bridge_layout(cor, rooms) if cor.bridge else None

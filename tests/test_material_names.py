@@ -51,11 +51,11 @@ CASES = {
 # task 17 (stock room scale). The city and the plain dungeon now hash alike:
 # same seed, same classic layout, and both are sized at the human's bands.
 GOLDEN = {
-    "city": "bc3b11e6ea48b85efb9af85b",
-    "dungeon_gnoll_temple": "242f92fff99bf3790928f08f",
-    "dungeon_kobold_tomb_lava": "8fe9a37a759634e83fadcfd3",
-    "dungeon_plain": "bc3b11e6ea48b85efb9af85b",
-    "dungeon_temple_no_race": "594f6c4090e6e445fc3e0d76",
+    "city": "1b51d9699253d99741071ddf",
+    "dungeon_gnoll_temple": "5ad464eab8df2ca6e3a3a09a",
+    "dungeon_kobold_tomb_lava": "53bf6d9180b9c824404b67e7",
+    "dungeon_plain": "1b51d9699253d99741071ddf",
+    "dungeon_temple_no_race": "74cea2de66ab813cc9af30be",
     "wilderness": "8a84f45ee3baab987ea27961",
 }
 

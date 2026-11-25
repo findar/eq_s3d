@@ -112,8 +112,9 @@ def test_nothing_outside_the_affected_set_moves(label):
             moved = sorted(k for k in base if parts[k] != base[k] and k not in keep)
             assert not moved, (room, op, res.notes, moved)
     # Task 2 measured two refusals, both widening across corr_3's ramp.
-    want = [("room_1", "widen_room"), ("room_4", "widen_room")] \
-        if label == "graph12_dramatic_s7" else []
+    # Random placement task 11 (room sizes vary): classic seed 3's room_3 has no room to widen.
+    want = {"graph12_dramatic_s7": [("room_1", "widen_room"), ("room_4", "widen_room")],
+            "classic8_s3": [("room_3", "widen_room")]}.get(label, [])
     assert refused == want
 
 
@@ -128,17 +129,18 @@ def test_re_dressing_an_unchanged_spec_changes_nothing():
 def test_a_clamped_resize_notes_the_size_asked_and_applied():
     doc = _doc("graph16_s2")
     before = copy.deepcopy(doc)
-    res = apply_edits(doc, [{"op": "widen_room", "target": "room_6", "by": 0.25}], 7, 1)
+    # room_4 since random placement task 11 (room sizes vary: room_6 widens in full now).
+    res = apply_edits(doc, [{"op": "widen_room", "target": "room_4", "by": 0.25}], 7, 1)
     assert doc == before
     assert res.how == FULL and not res.rejected
-    assert res.notes == ["widened room_6 by 4% of the 25% asked; "
-                         "any more and corr_5 would overlap room_6"]
+    assert res.notes == ["widened room_4 by 9% of the 25% asked; "
+                         "any more and corr_13's ramp would be too steep (grade 0.71)"]
     assert res.changed == ["width", "depth"]
-    room = next(r for r in res.doc["rooms"] if r["id"] == "room_6")
-    old = next(r for r in doc["rooms"] if r["id"] == "room_6")
+    room = next(r for r in res.doc["rooms"] if r["id"] == "room_4")
+    old = next(r for r in doc["rooms"] if r["id"] == "room_4")
     assert 1.0 < room["width"] / old["width"] < 1.25
     assert room["floor_z"] == old["floor_z"] and room["height"] == old["height"]
-    assert res.affected_rooms[0] == "room_6" and "room_12" in res.affected_rooms
+    assert res.affected_rooms[0] == "room_4" and "room_10" in res.affected_rooms
 
 
 def test_a_full_resize_scales_about_the_centre():
@@ -160,7 +162,7 @@ def test_a_resize_nothing_fits_is_rejected():
     assert doc == before
     assert [r["op"]["op"] for r in res.rejected] == ["widen_room"]
     assert res.notes[0] == ("widen_room: can't widen room_1 at all (25% asked): "
-                            "corr_3's ramp would be too steep (grade 0.80)")
+                            "corr_3's ramp would be too steep (grade 0.82)")  # 0.80 before task 11
     assert res.changed == ["decor"]                 # the rest still apply
     alone = resize_room(doc, "room_1", "widen_room", 0.25)
     assert not alone.applied and alone.doc == before and alone.affected == {"rooms": [],
@@ -170,7 +172,7 @@ def test_a_resize_nothing_fits_is_rejected():
 def test_lower_stops_where_the_room_is_no_taller_than_its_corridors():
     doc = _doc("graph16_s2")
     spec, got, why = fit(doc, "room_1", "lower_room", 0.7)
-    assert spec is not None and 0.7 < got < 0.72 and why == "the room would be lower than corr_8"
+    assert spec is not None and 0.7 < got < 0.72 and why == "the room would be lower than corr_9"
 
 
 def test_rooms_under_a_hill_are_not_resized():

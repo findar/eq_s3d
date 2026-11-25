@@ -40,17 +40,19 @@ needs_install = pytest.mark.skipif(EQ is None, reason="EQ_PATH is not set (no EQ
 DECORATED = {
     "dungeon": (dict(zone_type="dungeon"), 4),
     "city": (dict(zone_type="city"), 5),
-    # seed 2: task 14's retune left seed 1 with no banner for the banner test to look at
-    "outdoor_dungeon": (dict(zone_type="outdoor_dungeon", room_count=5), 2),
+    # seed 2: task 14's retune left seed 1 with no banner for the banner test to look at;
+    # seed 4: random placement task 11 (room sizes vary) left seeds 1-3 with none
+    "outdoor_dungeon": (dict(zone_type="outdoor_dungeon", room_count=5), 4),
 }
 
 
 #: A decorated Theme Tomb build's ``.eqg`` hash (decor-rules task 3), captured before the
 #: tomb's decor moved into ``rules/decor/layers/tomb.toml``: the move keeps its bytes.
 #: Recaptured by winding-routes task 5: two floor POIs keep a body's radius off the outline
-#: walls, and their Dressing follows them.
+#: walls, and their Dressing follows them. Recaptured by random placement task 12: a shaped
+#: room's Spine runs from each door to its Core's edge, so Features leave that way clear.
 TOMB = (dict(zone_type="dungeon", dungeon_theme="tomb"), 4,
-        "7f495cd942c175bba43fa2d68a25076b901fcf505af9aea523c430d170f06caa")
+        "10b8625c8900eac6706da82b5a2dfda16e5ea344504e99efbecefdc760a1cb13")
 
 
 def _spec(fields, seed, decor, name="dec"):
@@ -284,9 +286,13 @@ def test_a_diagonal_lane_is_a_way_through(tmp_path, monkeypatch):
     read it shut (side-by-side steps only) and joined that floor round the dais's foot instead,
     so a gem dressing its POI shut the lane and cut 476 u^2 off on the gate. ``walk`` is now
     read corner to corner too (``Room._diag_joined``). Built unjittered (winding-control task 8 moved
-    the cave's rooms off the lattice), so the room is the one the regression was found in."""
+    the cave's rooms off the lattice), so the room is the one the regression was found in.
+    Re-pinned by random placement task 11 (room sizes vary; seed 2096692951 has no dais now)
+    and again by task 12 (the Spine to the Core moved seed 42's room_1): seed 191's room_7
+    has the same shape, floor joined to the doors only corner to corner (64 cells), 35 of them
+    within 6 u of the dais. Of seeds 0-200 it has the most such cells beside a dais."""
     monkeypatch.setattr("generators.layout.JITTER_PROFILES", frozenset())
-    room, report, failures = _cave_graph(tmp_path, "flat", 19, 2096692951, "room_17")
+    room, report, failures = _cave_graph(tmp_path, "flat", 19, 191, "room_7")
     assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
     assert report.passed and not failures, failures
 
@@ -311,8 +317,11 @@ def test_a_dais_over_the_middle_still_has_its_doors_checked_wide(tmp_path):
     level). Decor aimed at the dais top and, with its half-cell slack, read the steps' foot shut,
     so no door had a wide way and no Prop was checked; a crystal and a stalactite shut both
     ways round the dais (throat_narrow, door S). ``_wide_doors`` now aims as the gate does and,
-    when no door reads wide, reads the walls at the gate's own radius."""
-    room, report, failures = _cave_graph(tmp_path, "dramatic", 21, 644918873, "room_12")
+    when no door reads wide, reads the walls at the gate's own radius. Re-pinned by random
+    placement task 11 (room sizes vary; seed 644918873 has no dais now) and again by task 12
+    (seed 1's room_17 lost its dais): seed 2's room_4, a dais room where again no door reads
+    wide at the half-cell slack (the fallback runs)."""
+    room, report, failures = _cave_graph(tmp_path, "dramatic", 21, 2, "room_4")
     assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
     assert report.passed and not failures, failures
 

@@ -45,25 +45,25 @@ _GOLDENS = {
     # Plain dungeon with elevation (moderate verticality).
     "dungeon": (
         dict(zone_type="dungeon", room_count=8, layout="classic"), 7,
-        "a3a6e9b1ff09cc68b0a83869d5968edcf7fef465386c7365fbe076db22ec5732",
-        "4b483b3a713d88d656e96da3150a54578401adc0e19a327d23dc2afbd6f9d1e1"),
+        "547ceb208d39eb3e7a947775307c4e21ca6fb0aa8b78bfd57badd8d9d2855ae9",
+        "7200816d4f9ae2bc673a6da3e80dcba97686808f6c062f796618d6acdacf72a4"),
     # Flat dungeon (no elevation pass).
     "dungeon_flat": (
         dict(zone_type="dungeon", room_count=6, elevation=False,
              layout="classic"), 3,
-        "8bd24445db6d130d1e6302515742dc2eede008b4422b2729ab12f3ed50362efa",
-        "e8c65bbc2df78b3a8c4d2c5258143df24872d08287a613fb64459517bd917314"),
+        "cdd9513050d466df626a3d88dd99b151481e62d3ccc34c95689ef3dd8fc94a4c",
+        "4397f34e2dd6eb89682b9755dfee02a84355162b9c54c24c0f814e6f3c680b12"),
     # Themed dungeon with locks, race scale and dramatic elevation.
     "temple_locks": (
         dict(zone_type="dungeon", room_count=9, locks=2, dungeon_theme="temple",
              dungeon_race="troll", verticality="dramatic",
              layout="classic"), 11,
-        "c85faeb2f301fa8a8b8d236dbe623d757b684e39e11d8fbaced806117fa618f5",
-        "c5e9125f3a11aa7c040ded8d3010496a90550090f0f7e876b9b82fcb6243388c"),
+        "1476e3cd5cd67f00878c235f1a7586b5d03656a6c80edfdf79fb1489cebaf2ad",
+        "1793b59d3b3522182e51d99c1ebc99e31e7c1c87f45e7391af4c7caa6c3e25c1"),
     "city": (
         dict(zone_type="city", room_count=7), 5,
-        "6a22604a597e2b805346bbad1d1dad640c408015592d8e8adb3c0c4c1e7ce170",
-        "2467f660f243c0e8061e643049622d3542ab51d891e20019b70e95c840c75ff5"),
+        "ef1fb7f01756116367490ffad5c8e4f6c7194f2affbeab3b3ec5348d6a72f3fd",
+        "c80ad210ae2ed20442e7ebbcee412521496e124d7954003ac8b1e421171f0c8c"),
     # Recaptured once, deliberately, by wilderness POIs task 7: the default
     # (Sites normal) build now packs Site Structures. Moved by tasks 15 and 10
     # (Site recipes and weights), by site-sockets task 6 (Sites on points)
@@ -81,8 +81,8 @@ _GOLDENS = {
     "outdoor_dungeon": (
         dict(zone_type="outdoor_dungeon", room_count=5, locks=1,
              layout="classic"), 3,
-        "e9c7e4dc2365d3ebe140f41c4f18c73ca37a2be312b0f8777be90fbe954956d7",
-        "64ef46885fcafcf07b370e1e09063c740e795ea38a8083f75a6010c85547b1e0"),
+        "92a80b10116cec966346fd1a535ea61189a8b14388182c9efd6eb46ec156313d",
+        "7b6658b3b6f86615f3b0a5a8b7f40bbe31d96ffca8e69463d96f44f6d10436af"),
 }
 
 # The .eqg goldens above are the bytes with no install. With one (EQ_PATH), a
@@ -90,8 +90,8 @@ _GOLDENS = {
 # once, deliberately, for exactly the labels with locks. Builds with no Gates
 # don't move.
 WITH_INSTALL = {
-    "temple_locks": "41cacaf3c8420dec932ef0eb8f6fe03abaa8653895bf1ca68d306976d783caf8",
-    "outdoor_dungeon": "48b436d9cab0eb8db37f602bb3c4b0459cdd1c2854d2533a817dd2aa5fa1394e",
+    "temple_locks": "6642a351b56a4d0e433b9c2d4a44fcb9f969823625f51a7a9e71721c8ed8b21f",
+    "outdoor_dungeon": "c6ddbc38975912dcc59e429bcdc6bf849cbbdd961224b6a82e46c7a2b38dd39e",
 }
 
 

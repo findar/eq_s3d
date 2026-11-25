@@ -159,19 +159,25 @@ def test_type_keeps_the_size_class_area():
     """A grown room keeps its footprint area through the type's shape bias
     (rules own size), race or no race: the graph engine applies the race
     scale before placement (task 20), so semantics doesn't scale it again.
-    Classic rooms still take the type's footprint multiplier."""
+    The type's aspect pulls a squarer room halfway (in log) toward it, and
+    leaves one already as long alone (random placement task 11). Classic
+    rooms still take the type's footprint multiplier."""
     from generators.zone_spec import RoomSpec
     throne = semantics.ROOM_TYPES["throne"]           # footprint 1.6, aspect 1.5
     grown = RoomSpec(id="g", center_x=0, center_y=0, width=300, depth=200, kind="deep")
     semantics._apply_shape(grown, throne, "")
     assert grown.width * grown.depth == pytest.approx(300 * 200)
-    assert grown.width / grown.depth == pytest.approx(1.5 * 1.5)
+    assert grown.width / grown.depth == pytest.approx(1.5)
+    square = RoomSpec(id="s", center_x=0, center_y=0, width=240, depth=240, kind="deep")
+    semantics._apply_shape(square, throne, "")
+    assert square.width * square.depth == pytest.approx(240 * 240)
+    assert square.width / square.depth == pytest.approx(1.5 ** 0.5)
     ogre = RoomSpec(id="o", center_x=0, center_y=0, width=300, depth=200, kind="deep")
     semantics._apply_shape(ogre, throne, "ogre")
     assert ogre.width * ogre.depth == pytest.approx(300 * 200)
     classic = RoomSpec(id="c", center_x=0, center_y=0, width=300, depth=200)
     semantics._apply_shape(classic, throne, "")
-    assert classic.width * classic.depth == pytest.approx(300 * 200 * 1.6 ** 2 * 1.5)
+    assert classic.width * classic.depth == pytest.approx(300 * 200 * 1.6 ** 2)
 
 
 # --- the sidecar ---------------------------------------------------------------

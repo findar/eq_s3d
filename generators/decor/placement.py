@@ -747,6 +747,7 @@ class Room:
         lane = self.walk & ~self.before
         self.by_lane = binary_dilation(lane, np.ones((3, 3), bool), iterations=LANE_NEAR)             if lane.any() else lane
         self.door_masks = [_in_rect(self.gx, self.gy, d.clear) for d in ctx.doors if d.clear]
+        self.wide_islands: Optional[np.ndarray] = None
         self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
         if self.door_masks and not any(self.wide_doors):
             # No door's way reads CLEAR_WIDTH wide, so no Prop would be checked for narrowing
@@ -759,6 +760,16 @@ class Room:
             self.wide_doors = self._wide_doors(np.zeros(self.shape, bool))
             if not any(self.wide_doors):
                 self.wide = strict
+        #: Wide floor no door reaches with nothing placed (random placement task 11: the
+        #: ice-keep corpus room_3, an 8-cell island on dais steps by the room's middle). The
+        #: empty room reads a door wide when ANY middle cell is joined to it; the strict
+        #: reading a Prop is checked by needs ALL of them, so an island already cut off made
+        #: every blocking Prop read as narrowing the way. The strict reading skips them.
+        lab = self._wide_labels(self.wide.ravel()).reshape(self.shape)
+        joined = set()
+        for door in self.door_masks:
+            joined |= set(int(v) for v in np.unique(lab[door & (lab >= 0)]))
+        self.wide_islands = (lab >= 0) & ~np.isin(lab, sorted(joined))
         self.faces = self._faces()
         self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
         self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
@@ -791,19 +802,33 @@ class Room:
                         constant_values=-np.inf)
             solid = np.pad(~np.isnan(self.floor) & ~self.ok, 2, constant_values=False)
             base = np.where(np.isnan(self.floor), np.inf, self.floor)
+            # The same read with each such cell's side at its middle instead (``loose``): the
+            # cell's square can stand up to a cell past the side, so a strip the gate walks can
+            # read shut on it, and a POI there read as never reached, so unguarded (random
+            # placement task 12: warren temple 16, seed 1654615998, room_11's treasure in a 6 u
+            # strip between a dais's sheer side and the wall, joined past the dais's end 1.7 u
+            # from its side; a chest shut it). A POI either reading reached must stay reached.
+            loose = free.copy()
             for di in range(-2, 3):
                 for dj in range(-2, 3):
                     if di == 0 and dj == 0:
                         continue
-                    ex = np.maximum(np.abs(self.sx - self.gx - di * self.cell) - self.cell / 2, 0.0)
-                    ey = np.maximum(np.abs(self.sy - self.gy - dj * self.cell) - self.cell / 2, 0.0)
+                    ox = np.abs(self.sx - self.gx - di * self.cell)
+                    oy = np.abs(self.sy - self.gy - dj * self.cell)
+                    ex = np.maximum(ox - self.cell / 2, 0.0)
+                    ey = np.maximum(oy - self.cell / 2, 0.0)
                     edge = (hi[2 + di:2 + di + nx, 2 + dj:2 + dj + ny] > base + STEP_UP) | \
                         solid[2 + di:2 + di + nx, 2 + dj:2 + dj + ny]
                     free &= ~(edge & (np.hypot(ex, ey) <= PLAYER_HALF_WIDTH))
+                    loose &= ~(edge & (np.hypot(ox, oy) <= PLAYER_HALF_WIDTH))
             self._gate = (free,) + self._graph(free)
             self._gate_starts = self._starts(door_cells, *self._gate)
             self.gate_before = self._joined(np.zeros(self.shape, bool), graph=self._gate,
                                             starts=self._gate_starts)
+            self._gate_loose = (loose,) + self._graph(loose)
+            self._gate_loose_starts = self._starts(door_cells, *self._gate_loose)
+            self.gate_loose_before = self._joined(np.zeros(self.shape, bool), graph=self._gate_loose,
+                                                  starts=self._gate_loose_starts)
 
     # -- connectivity (the gate's "reached floor stays joined") ----------------
 
@@ -897,6 +922,14 @@ class Room:
         good = np.unique(lab[self.starts & free])
         return free & np.isin(lab, good)
 
+    def _wide_labels(self, free: np.ndarray) -> np.ndarray:
+        """Each free cell's (flat) component over the side-by-side graph, -1 where not free."""
+        nx, ny = self.shape
+        keep = free[self._ea] & free[self._eb]
+        m = csr_matrix((np.ones(int(keep.sum()), np.int8), (self._ea[keep], self._eb[keep])),
+                       shape=(nx * ny, nx * ny))
+        return np.where(free, connected_components(m, directed=False)[1], -1)
+
     def _wide_doors(self, blocked: np.ndarray, maybe: Optional[np.ndarray] = None,
                     plans: Optional[np.ndarray] = None) -> List[bool]:
         """Which doors a body ``CLEAR_WIDTH`` wide walks from to the room's middle, read as
@@ -929,10 +962,10 @@ class Room:
         d = np.where(may, mid, np.inf)
         targets = np.nonzero(d <= d.min() + 1.5 * self.cell)[0]
         strict = maybe is not None
-        keep = free[self._ea] & free[self._eb]
-        m = csr_matrix((np.ones(int(keep.sum()), np.int8), (self._ea[keep], self._eb[keep])),
-                       shape=(nx * ny, nx * ny))
-        lab = np.where(free, connected_components(m, directed=False)[1], -1)
+        if strict and self.wide_islands is not None:
+            reached = targets[~self.wide_islands.ravel()[targets]]
+            targets = reached if len(reached) else targets
+        lab = self._wide_labels(free)
         labels = np.unique(lab[targets[free[targets]]])
         # A target that may be free but reads blocked here goes with the free floor beside it.
         grid = lab.reshape(self.shape)
@@ -1089,11 +1122,13 @@ class Room:
         if self._gate is not None and gate_blocked.any():
             # The gate's own samples (``__init__``): a POI with a sample in reach before keeps one.
             now = self._joined(gate_blocked, graph=self._gate, starts=self._gate_starts)
+            loose_now = self._joined(gate_blocked, graph=self._gate_loose, starts=self._gate_loose_starts)
             for k, p in enumerate(self.ctx.pois):
                 with np.errstate(invalid="ignore"):
                     level = np.abs(self.floor - float(p.get("z", 0.0))) <= STEP_UP
                 near = (np.hypot(self.sx - p["x"], self.sy - p["y"]) <= POI_REACH) & level
-                if (near & self.gate_before).any() and not (near & now).any():
+                if any((near & was).any() and not (near & is_now).any()
+                       for was, is_now in ((self.gate_before, now), (self.gate_loose_before, loose_now))):
                     msg = f"POI {k} ({p.get('purpose')}) no longer reached"
                     if msg not in out:
                         out.append(msg)

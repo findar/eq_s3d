@@ -327,7 +327,9 @@ def test_classic_tries_one_facing(monkeypatch):
     monkeypatch.setattr(od, "layout_in_envelope", spy)
     with pytest.raises(od.EntranceError):
         plan_to_spec(_plan("e", "classic"), seed=5)
-    assert seen == [(0, 0.0)] * (od.FIT_SHRINKS + 1)
+    # The entrance room's Tunnel minimum holds for classic too (random placement task 11).
+    (side,) = {side for _f, side in seen}
+    assert seen == [(0, side)] * (od.FIT_SHRINKS + 1) and side > 2 * od.DOOR_MARGIN
 
 
 def test_graph_entrance_room_holds_a_tunnel_through_the_shrink():

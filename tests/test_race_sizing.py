@@ -3,7 +3,9 @@ property V11): rooms and corridors sized for their race, at stock scale.
 
 Every race has a body height H (``semantics.RACE_HEIGHT``, from the client's
 racedata.txt; the default race is a human, H 6 u). Every room-graph room's
-height lies in [2.5 H, 10 H] and each footprint side in [8 H, 20 H], whatever
+height lies in [2.5 H, 10 H] and each footprint side in [8 H, 26 H] (the
+classes sit in [8 H, 20 H]; random placement task 11 opened the top for big
+halls), whatever
 its Size_Class, room type, pacing role or the plan's Size control, in both
 layout engines and under a hill; corridors are 3 H wide and 2.5 H tall, over
 the walk agent's player height.
@@ -59,8 +61,10 @@ def test_every_dungeon_race_has_a_body_height():
 
 
 def test_bands_in_units():
-    # Design finding 8: human rooms 15-60 u tall and 48-120 u across.
-    assert semantics.room_bands("") == ((48.0, 120.0), (15.0, 60.0))
+    # Design finding 8: human rooms 15-60 u tall and 48-120 u across at the
+    # classes; random placement task 11 opened the footprint top to 26 H
+    # (156 u, still under a dragon's 168 u minimum) for stock's big halls.
+    assert semantics.room_bands("") == ((48.0, 156.0), (15.0, 60.0))
     assert semantics.corridor_size("") == (18.0, 15.0)
 
 
@@ -81,8 +85,10 @@ def test_size_classes_pick_inside_the_band(race):
             side = semantics.room_side(race, t)
             assert last is None or side >= last
             last = side
-    assert semantics.room_side(race, semantics.band_position("tiny")) == pytest.approx(s0)
-    assert semantics.room_side(race, semantics.band_position("huge")) == pytest.approx(s1)
+    c0, c1 = (x * semantics.body_height(race) for x in semantics.ROOM_SIDE_BAND)
+    assert semantics.room_side(race, semantics.band_position("tiny")) == pytest.approx(c0)
+    assert semantics.room_side(race, semantics.band_position("huge")) == pytest.approx(c1)
+    assert c0 == pytest.approx(s0) and c1 < s1
     assert semantics.room_height(race, semantics.band_position("tiny")) == pytest.approx(h0)
     assert semantics.room_height(race, semantics.band_position("huge")) == pytest.approx(h1)
 
