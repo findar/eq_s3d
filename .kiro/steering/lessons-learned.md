@@ -190,6 +190,17 @@ read before touching the relevant area so it isn't rediscovered.
   message. Give each agent its own file in its own worktree (`.commitmsg-<n>.txt`). Three full
   suites at once ran out of memory (80 MemoryError failures) and push time-limit tests over;
   check for a running `pytest tests/` before starting one, and re-run such failures alone.
+- **The quick tier is not the full suite.** It skips the `gate` sweeps (every build through the
+  gate over seeds/settings) and every `slow` test, which includes goldens and checks on slow
+  builds. `slow` means a case took 10 s or more at the `-n` it was timed at, so a test near
+  the line can move tiers with the worker count. Tests that only read a module or sweep fixture
+  stay unmarked and pay its setup in quick (test_export, test_decor_placement, test_handoffs...).
+  Green quick is for iterating; close a task on the full run, plus `-m gate` after geometry,
+  layout or gate changes.
+- **`conftest.gated_attempts` must pass the plan's `verticality` to `generate_validated`.**
+  Without it the quality Draws judge every plan by `moderate`'s bands, so a `flat` plan failed
+  all 32 Draws (~20 s each) and built the lowest score: slow, and not what a user's generate
+  builds (main.py and the server both pass it). Found in test-speed task 2 (d71a268).
 
 ## Design calls already settled (don't relitigate)
 

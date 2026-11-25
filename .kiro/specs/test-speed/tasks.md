@@ -35,7 +35,7 @@ or sweep first. Wall times in commit bodies are measured alone.
   - Owns: nothing committed until the user agrees; scratch measurements only
   - Reqs: 5
 
-- [ ] 4. The rules name the tiers
+- [x] 4. The rules name the tiers
   - Card: [cards/04-rules.md](cards/04-rules.md)
   - Type: agent · Size: S · Depends: 1, 2
   - Owns: .kiro/steering/project.md, .kiro/steering/lessons-learned.md
