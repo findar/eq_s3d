@@ -23,3 +23,4 @@ Cave rooms open straight into each other on about 0.3 of edges and clump as stoc
 - If decor, outline or gate needs a fix, stop and report.
 
 ## Result
+✔ e528688 · 4241 passed (gate 702; sweep 692/696, the two decor throat_narrow left open)

@@ -95,7 +95,11 @@ def test_scaled_rules_are_the_stock_object_at_one_and_none_at_zero():
 def test_winding_zero_one_two():
     """0: no corridor has a wind or a path. 1: the zone a plan without the field builds, with
     no key on the spec. 2 on the same run (the coupling pinned off, so the rooms stand where
-    they do at 1): the largest stray per corridor is never smaller than at 1."""
+    they do at 1): the largest stray per corridor is never smaller than at 1, and somewhere
+    over the seeds larger. (That was read off the last seed alone; cave clumps task 3's
+    throats took seed 4's wound legs, leaving there only angled corridors, which stray by
+    their entry angle at any Winding. Seeds 0, 2 and 3 stray further at 2.)"""
+    further = False
     for seed in SEEDS:
         zero, one, base = _cave(seed, 0.0), _cave(seed, 1.0), _cave(seed)
         two = _cave(seed, 2.0, layout.PROFILE_RUN_FACTOR["cave"])
@@ -113,7 +117,8 @@ def test_winding_zero_one_two():
         legs = {c.id for c in one.corridors if not c.path and not angled(c)}
         for cid in legs:
             assert s2[cid] >= s1[cid] - 1e-6, (seed, cid, s1[cid], s2[cid])
-    assert any(s2[c] > s1[c] + 0.1 for c in s1), "winding 2 strays no further anywhere"
+        further = further or any(s2[c] > s1[c] + 0.1 for c in s1)
+    assert further, "winding 2 strays no further anywhere"
 
 
 def test_cave_run_follows_winding_above_one():

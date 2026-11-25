@@ -38,7 +38,10 @@ Graph, classic fortress, city; the same seeds and room counts):
   1 is rooms nearly touching).
 - entry: the angle between a corridor's first leg (its ``path`` or route) and
   the outward normal of the wall it leaves, at both ends; p50/p90 and the share
-  over 20 deg.
+  over 20 deg, over the corridors that aren't throats (below): a throat is a
+  direct contact, which ``stock_room_shapes.py`` reads as having no entry angle
+  (its ends are square by design; cave clumps decision 4). ``all50``: the p50
+  over every end, throats' included.
 - throat: the share of edges (room pairs) whose corridor is no longer than one corridor
   width door to door (the shortest corridor of the pair, its ``path`` or route as d2d
   reads it): rooms opening into each other, read as ``stock_room_shapes.py`` reads
@@ -212,10 +215,29 @@ def spec_shape(spec) -> dict:
                       [max(r.width, r.depth) / min(r.width, r.depth) for r in spec.rooms],
                       [r.width * r.depth for r in spec.rooms],
                       semantics.body_height(spec.dungeon_race or "default"))
-    m["entry"] = entry_angles(spec)
+    m["entry_all"] = entry_angles(spec)
     m["grid"] = grid_score(spec)
     m["throats"], m["pairs"] = throat_count(spec)
+    # Entry angles over the corridors that aren't throats (cave clumps decision 4).
+    ids = throat_ids(spec)
+    rest = type("S", (), {"rooms": spec.rooms,
+                          "corridors": [c for c in spec.corridors if c.id not in ids]})
+    m["entry"] = entry_angles(rest)
     return m
+
+
+def throat_ids(spec):
+    """The ids of the corridors no longer than their width door to door (throats)."""
+    from generators.routing import corridor_route
+    by = {r.id: r for r in spec.rooms}
+    out = set()
+    for cor in spec.corridors:
+        if cor.from_room not in by or cor.to_room not in by or cor.from_room == cor.to_room:
+            continue
+        line = cor.path or list(corridor_route(cor, by).waypoints)
+        if sum(math.dist(a, b) for a, b in zip(line, line[1:])) - cor.width <= 1e-6:
+            out.add(cor.id)
+    return out
 
 
 def throat_count(spec):
@@ -261,6 +283,7 @@ def summarise_shapes(rows) -> dict:
         off = [o for r in rs for o in r["offsets"]]
         hist = [sum(r["hist"][b] for r in rs) for b in range(len(rs[0]["hist"]))]
         ent = [a for r in rs for a in r.get("entry", [])]
+        ent_all = [a for r in rs for a in r.get("entry_all", [])]
         asp = [a for r in rs for a in r["aspects"]]
         rel = [a for r in rs for a in r["side_rel"]]
         sh = [a for r in rs for a in r["side_h"]]
@@ -277,6 +300,7 @@ def summarise_shapes(rows) -> dict:
             "nn_max": fm("nn_max"),
             "entry_p50": pct(ent, 50), "entry_p90": pct(ent, 90),
             "entry_over20": sum(a > 20 for a in ent) / len(ent) if ent else nan,
+            "entry_all_p50": pct(ent_all, 50) if ent_all else nan,
             "side_min": fm("side_min"), "side_max": fm("side_max"),
             "rel_p10": pct(rel, 10), "rel_p90": pct(rel, 90),
             "h_p10": pct(sh, 10), "h_p50": pct(sh, 50), "h_p90": pct(sh, 90),
@@ -295,7 +319,7 @@ def shape_table(s: dict) -> str:
     head = (f"{'kind':16s} {'n':>3s} {'grid':>5s} {'ax10':>5s} {'axbst':>5s} "
             f"{'nnCV':>5s} {'nn mn/md/mx':>14s} {'ent 50/90/>20':>14s} "
             f"{'side mn/mx':>10s} {'rel10-90':>9s} {'H 10/50/90':>14s} "
-            f"{'asp 50/90/mx >1.5':>19s} {'arCV':>5s} {'mx/mn':>6s} {'thrt':>5s}")
+            f"{'asp 50/90/mx >1.5':>19s} {'arCV':>5s} {'mx/mn':>6s} {'thrt':>5s} {'all50':>5s}")
     lines = [head]
     for kind, r in s.items():
         lines.append(
@@ -305,7 +329,8 @@ def shape_table(s: dict) -> str:
             f"{r['side_min']:4.2f}/{r['side_max']:4.2f} {r['rel_p10']:4.2f}-{r['rel_p90']:4.2f} "
             f"{r['h_p10']:4.1f}/{r['h_p50']:4.1f}/{r['h_p90']:4.1f} "
             f"{r['asp_p50']:4.2f}/{r['asp_p90']:4.2f}/{r['asp_max']:4.2f} {r['asp_over15']:4.2f} "
-            f"{r['area_cv']:5.2f} {r['area_ratio']:6.1f} {r.get('throat', float('nan')):5.2f}")
+            f"{r['area_cv']:5.2f} {r['area_ratio']:6.1f} {r.get('throat', float('nan')):5.2f} "
+            f"{r.get('entry_all_p50', float('nan')):5.0f}")
     lines.append("bearing offsets from the nearest axis, 5 deg bins 0-45 (shares of edges):")
     for kind, r in s.items():
         lines.append(f"  {kind:14s} " + " ".join(f"{h:4.2f}" for h in r["hist"]))

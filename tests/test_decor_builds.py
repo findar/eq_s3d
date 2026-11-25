@@ -320,8 +320,10 @@ def test_a_dais_over_the_middle_still_has_its_doors_checked_wide(tmp_path):
     when no door reads wide, reads the walls at the gate's own radius. Re-pinned by random
     placement task 11 (room sizes vary; seed 644918873 has no dais now) and again by task 12
     (seed 1's room_17 lost its dais): seed 2's room_4, a dais room where again no door reads
-    wide at the half-cell slack (the fallback runs)."""
-    room, report, failures = _cave_graph(tmp_path, "dramatic", 21, 2, "room_4")
+    wide at the half-cell slack (the fallback runs). Re-pinned by cave clumps task 3 (throats
+    moved the cave's rooms; seed 2 has no dais now): seed 8's room_17, a dais room where the
+    fallback runs."""
+    room, report, failures = _cave_graph(tmp_path, "dramatic", 21, 8, "room_17")
     assert any(f.kind == "dais" for f in room.features), "the layout moved: re-pin"
     assert report.passed and not failures, failures
 

@@ -329,6 +329,36 @@ BEARING_POWER = 0.8
 #: Unjoined rooms repel inside this many runs of each other in a bearing
 #: placement (REPEL_RUNS elsewhere): at 1.5 runs no two chambers could clump.
 BEARING_REPEL_RUNS = 1.0
+#: A cave's throats (cave clumps step 29, task 3; that spec's archive decision 2:
+#: stock chambers open straight into each other on 0.30 of edges). An edge whose
+#: spacing draw is among the lowest THROAT_SHARE (never a stair, a Bridge or an
+#: edge with a vertical relation) rests its rooms THROAT_GAP u wall to wall, 12 u
+#: door to door at the 2 u door inset: below 8 u the gate finds open seams, at
+#: 4 u Transitions give way 4x (task 2). Its far room slides along the wall at a
+#: bearing up to THROAT_BEARING[1] (drawn from THROAT_BEARING[0] up), kept
+#: where both doors still stand on one line across the shared span
+#: (:meth:`Jitter.throat_slack`), so the doors face and the short corridor runs
+#: straight: a jogged short corridor fails the gate's outline check (task 2).
+#: The springs don't push a throat's rooms apart, and the layout's separation
+#: holds them THROAT_GAP apart (``LayoutGenerator._separate_rooms``).
+THROAT_SHARE = 0.33
+THROAT_GAP = 8.0
+THROAT_BEARING = (math.radians(12.0), math.radians(30.0))
+#: What a throat's slide keeps spare of its slack (u), for the separation's
+#: rounding.
+THROAT_SPARE = 2.0
+#: Throats lean toward small rooms: an edge's share is THROAT_SHARE x (the
+#: zone's median side over its rooms' mean side) ** THROAT_LEAN[0], at most
+#: THROAT_LEAN[1] x.
+THROAT_LEAN = (3.0, 2.5)
+
+
+def throat_slack(across: float, width: float) -> float:
+    """How far (u) a throat's far room may slide along the wall, its rooms'
+    half-extents across summing to ``across``: both doors keep
+    :func:`door_span` in from their walls' ends on one line across the span
+    the rooms share (``LayoutGenerator._straight_across``)."""
+    return max(0.0, across - 2.0 * (width + DOOR_INSET + DOOR_END_MARGIN) - THROAT_SPARE)
 
 
 class Jitter(NamedTuple):
@@ -336,22 +366,31 @@ class Jitter(NamedTuple):
     offset share)} (:func:`edge_jitter`) and the span (u) facing rooms keep.
     ``bearing`` (radians, a cave's :data:`BEARING_MAX`; 0 otherwise) makes the
     share a bearing off the wall side's axis instead of a slide along the
-    shared span; ``margin`` (u) is what the axis gap keeps over the cross gap."""
+    shared span; ``margin`` (u) is what the axis gap keeps over the cross gap.
+    ``throats`` are the edges (of ``edges``) that are throats
+    (:data:`THROAT_SHARE`): their share is a bearing up to
+    :data:`THROAT_BEARING` kept within :func:`throat_slack`."""
 
     edges: Dict[frozenset, Tuple[float, float]]
     need: float
     bearing: float = 0.0
     margin: float = 0.0
+    throats: frozenset = frozenset()
 
     def cross(self, across: float) -> float:
         """The offset a share of 1 moves across a wall: the slack."""
         return max(0.0, across - self.need)
 
-    def offset(self, t: float, across: float, gap: float, ext: float) -> float:
+    def offset(self, t: float, across: float, gap: float, ext: float,
+               throat: bool = False) -> float:
         """How far across the wall a share ``t`` moves the far room: ``t`` x the
         slack, or (a bearing placement) the bearing ``t`` x :attr:`bearing` off
         the axis over the rest distance ``ext + gap``, kept short of turning
-        the edge onto another wall side."""
+        the edge onto another wall side; a ``throat``'s at ``t`` x
+        :data:`THROAT_BEARING`, kept within :func:`throat_slack`."""
+        if throat:
+            off = math.tan(abs(t) * THROAT_BEARING[1]) * (ext + gap)
+            return math.copysign(min(off, throat_slack(across, self.need / STRAIGHT_NEED)), t)
         if not self.bearing:
             return t * self.cross(across)
         off = math.tan(abs(t) ** BEARING_POWER * self.bearing) * (ext + gap)
@@ -395,12 +434,14 @@ def _jitter_table(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Po
                   corridor_width: float, draw: int = 0,
                   ranges: Optional[Tuple[float, float, float]] = None,
                   centred: Optional[str] = None,
-                  bearing: bool = False) -> Optional[Jitter]:
+                  bearing: bool = False, run: Optional[float] = None) -> Optional[Jitter]:
     """The :class:`Jitter` of every edge between rooms of ``order`` that
     takes one (not a stair, not a Bridge); None when there's none to take.
     The edges of room ``centred`` keep their spacing but no offset.
     ``bearing`` draws a cave's bearing placement (:data:`BEARING_SPACING`,
-    :data:`BEARING_MAX`) instead."""
+    :data:`BEARING_MAX`) instead, with its throats (:data:`THROAT_SHARE`;
+    ``run``, one corridor run in u, sets their spacing: :data:`RUN_FACTOR`
+    corridor widths when None)."""
     if bearing:
         ranges = BEARING_SPACING
     if OFFSET == 0 and SPACING_LO == SPACING_HI == 1:
@@ -409,26 +450,63 @@ def _jitter_table(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Po
     keys = _plan_keys(graph, order, storeys)
     inset = set(order)
     out: Dict[frozenset, Tuple[float, float]] = {}
+    throats = set()
+    if run is None:
+        run = RUN_FACTOR * corridor_width
+    side = {r: math.sqrt(4.0 * half[r][0] * half[r][1]) for r in order}
+    med = float(np.median([side[r] for r in order])) if order else 1.0
     for e in graph.edges():
         if e.a not in inset or e.b not in inset or BRIDGE_TAG in e.tags:
             continue
         if is_stair(keys[e.a], keys[e.b]):
             continue
         f, t = edge_jitter(salt, e.a, e.b, ranges)
+        key = frozenset((e.a, e.b))
         if bearing:
+            lean = min(THROAT_LEAN[1], (2.0 * med / (side[e.a] + side[e.b])) ** THROAT_LEAN[0])
+            if (_is_throat(f, lean) and e.rel in ("any", "level")
+                    and centred not in (e.a, e.b)):
+                # A throat: THROAT_GAP wall to wall, its share a bearing from
+                # THROAT_BEARING[0] up (as a share of THROAT_BEARING[1]).
+                lo_b, hi_b = THROAT_BEARING
+                throats.add(key)
+                out[key] = (THROAT_GAP / run,
+                            math.copysign((lo_b + (hi_b - lo_b) * abs(t)) / hi_b, t))
+                continue
             f = _bearing_spacing(f)
-        out[frozenset((e.a, e.b))] = (f, 0.0 if centred in (e.a, e.b) else t)
+        out[key] = (f, 0.0 if centred in (e.a, e.b) else t)
     if bearing:
         return Jitter(out, STRAIGHT_NEED * corridor_width, BEARING_MAX,
-                      BEARING_MARGIN * corridor_width)
+                      BEARING_MARGIN * corridor_width, frozenset(throats))
     return Jitter(out, STRAIGHT_NEED * corridor_width)
+
+
+def throat_pairs(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
+                 storeys: Optional[Dict[str, Any]], seed: Optional[int],
+                 corridor_width: float) -> frozenset:
+    """The throats of a cave's bearing placement (:data:`THROAT_SHARE`) as
+    ``frozenset((a, b))`` node pairs: what :func:`spring` places with
+    ``jitter=True, bearing=True`` and the same ``seed``. Reads no rng."""
+    table = _jitter_table(graph, order, half, storeys, seed, corridor_width, bearing=True)
+    return table.throats if table is not None else frozenset()
 
 
 #: A bearing placement's clumps: this share of edges (the lowest draws) rest at
 #: BEARING_CLUMP[1] runs, the rest spread over the remainder of
 #: BEARING_SPACING, so chambers sit close in knots and far between them
-#: (nearest-neighbour spread, stock CV 0.38).
-BEARING_CLUMP = (0.3, 0.27)
+#: (nearest-neighbour spread, stock CV 0.38). Throats (:data:`THROAT_SHARE`)
+#: took the clump's place (cave clumps task 3): the low draws a throat doesn't
+#: take, its rooms too big (:data:`THROAT_LEAN`) or the edge on a vertical
+#: relation, spread with the rest. At 0.3 they rested a corridor width apart,
+#: mostly square: non-throat entry p50 11 deg against 21 (seeds 2000-2039).
+BEARING_CLUMP = (0.0, 0.27)
+
+
+def _is_throat(f: float, lean: float = 1.0) -> bool:
+    """Is a drawn spacing (uniform over :data:`BEARING_SPACING`) among the
+    lowest :data:`THROAT_SHARE` x ``lean`` of draws?"""
+    lo, hi, _ = BEARING_SPACING
+    return hi > lo and (f - lo) / (hi - lo) < THROAT_SHARE * lean
 
 
 def _bearing_spacing(f: float) -> float:
@@ -564,9 +642,11 @@ SIDE_ORDERS: Tuple[Tuple[str, ...], ...] = (
 
 def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
                    half: Dict[str, Point], gap: float,
-                   storeys: Optional[Dict[str, Any]] = None) -> int:
+                   storeys: Optional[Dict[str, Any]] = None,
+                   throats: frozenset = frozenset()) -> int:
     """Wall clashes (a room's corridors sharing a wall, as the router picks
-    walls) plus pairs of rooms kept apart in plan that sit within ``gap``."""
+    walls) plus pairs of rooms kept apart in plan that sit within ``gap``
+    (a pair of ``throats`` within :data:`THROAT_GAP`)."""
     inset = set(order)
     keys = _plan_keys(graph, order, storeys)
     twins = bridge_twins(graph, order, storeys)
@@ -586,7 +666,8 @@ def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Po
     for i, a in enumerate(order):
         for b in order[i + 1:]:
             if ((a, b) not in over
-                    and _box_gap(pos[a], half[a], pos[b], half[b]) < gap - 1e-6):
+                    and _box_gap(pos[a], half[a], pos[b], half[b])
+                    < (THROAT_GAP if throats and frozenset((a, b)) in throats else gap) - 1e-6):
                 bad += 1
     return bad
 
@@ -621,7 +702,7 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
                 scales: Dict[frozenset, float] = {}
                 pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter,
                                  scales, memo)
-                clashes = layout_clashes(graph, order, pos, half, gap, storeys)
+                clashes = layout_clashes(graph, order, pos, half, gap, storeys, jitter.throats)
                 if best is not None and clashes > best[0][0]:
                     continue             # can't win: crossings only break a tie
                 score = (clashes, plan_crossings(graph, order, pos, half,
@@ -648,7 +729,8 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
             f, t = jitter.edges[e]
             jitter.edges[e] = (f, t * s)
     if (best[0][0] if bearing else best[0]):
-        repair(graph, order, pos, half, run, gap, storeys)
+        repair(graph, order, pos, half, run, gap, storeys,
+               jitter.throats if bearing else frozenset())
     return pos
 
 
@@ -1140,10 +1222,12 @@ REPAIR_SHIFTS = (0.0, -0.5, 0.5, -1.0, 1.0)
 
 def repair(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
            half: Dict[str, Point], run: float, gap: float,
-           storeys: Optional[Dict[str, Any]] = None) -> None:
+           storeys: Optional[Dict[str, Any]] = None,
+           throats: frozenset = frozenset()) -> None:
     """Move rooms, one at a time, to the spot beside or in the corner of their
     neighbours that leaves fewer clashes (:func:`layout_clashes`, counted
-    locally), until a sweep moves nothing. In place."""
+    locally, ``throats`` as it counts them), until a sweep moves nothing. In
+    place."""
     inset = set(order)
     nbrs = {u: [m for m in graph.neighbours(u) if m in inset] for u in order}
     nodes = _plan_keys(graph, order, storeys)
@@ -1168,7 +1252,8 @@ def repair(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
                        and not _twin(twins, m, u, x))
         for r in order:
             if (r != u and not may_overlap_in_plan(nodes[u], nodes[r])
-                    and _box_gap(c, half[u], pos[r], half[r]) < gap - 1e-6):
+                    and _box_gap(c, half[u], pos[r], half[r])
+                    < (THROAT_GAP if throats and frozenset((u, r)) in throats else gap) - 1e-6):
                 bad += 1
         return bad
 
@@ -1249,6 +1334,7 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
     dirs = dict(SIDES)
 
     bearing = jitter is not None and jitter.bearing
+    throats = jitter.throats if bearing else frozenset()
     # States by (state before, room, spot): 0 is no room placed.
     states: Dict[Tuple, int] = memo.setdefault("states", {})
     # Per state, the placed corridors' rects as this try's routes would hold
@@ -1271,7 +1357,9 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
         f, t = _jitter_of(jitter, q, u)
         ext = abs(dx) * (half[q][0] + half[u][0]) + abs(dy) * (half[q][1] + half[u][1])
         across = abs(dx) * (half[q][1] + half[u][1]) + abs(dy) * (half[q][0] + half[u][0])
-        off = jitter.offset(t * scale if bearing else t, across, run * f, ext) if jitter else 0.0
+        off = (jitter.offset(t * scale if bearing else t, across, run * f, ext,
+                             bool(throats) and frozenset((q, u)) in throats)
+               if jitter else 0.0)
         return (pos[q][0] + dx * (ext + run * f) + abs(dy) * off,
                 pos[q][1] + dy * (ext + run * f) + abs(dx) * off)
 
@@ -1376,7 +1464,13 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                 ex = np.array([hu[0] + half[r][0] for r in others], dtype=float)
                 ey = np.array([hu[1] + half[r][1] for r in others], dtype=float)
                 gaps = np.maximum(np.abs(qx - cx) - ex, np.abs(qy - cy) - ey)
-                n_clash = (gaps < gap).sum(axis=1).tolist()
+                if throats and any(frozenset((u, r)) in throats for r in others):
+                    # A throat's rooms clash only within THROAT_GAP.
+                    want = np.array([THROAT_GAP - 1e-6 if frozenset((u, r)) in throats
+                                     else gap for r in others], dtype=float)
+                    n_clash = (gaps < want).sum(axis=1).tolist()
+                else:
+                    n_clash = (gaps < gap).sum(axis=1).tolist()
                 far = np.array([r not in placed_nbrs for r in others], dtype=bool)
                 left = (np.where(far, gaps, math.inf).min(axis=1).tolist() if far.any()
                         else [math.inf] * len(new))
@@ -1520,6 +1614,14 @@ def spring_relax_many(order: Sequence[str], edges: Sequence[Tuple[str, str]],
         joined[E[:, 1], E[:, 0]] = True
     apart = ~_overlap_matrix([nodes[r] for r in order])
     np.fill_diagonal(apart, False)
+    throats = jitter.throats if jitter is not None and jitter.bearing else frozenset()
+    TH = None
+    if throats:
+        # A throat's rooms don't repel: its spring holds them THROAT_GAP apart.
+        TH = np.array([frozenset((x, y)) in throats for x, y in edges], dtype=bool)
+        for x, y in edges:
+            if frozenset((x, y)) in throats:
+                apart[idx[x], idx[y]] = apart[idx[y], idx[x]] = False
     # Joined rooms repel only inside the separation gap (their spring does the
     # rest); others inside REPEL_RUNS runs.
     repel = BEARING_REPEL_RUNS if jitter is not None and jitter.bearing else REPEL_RUNS
@@ -1562,6 +1664,13 @@ def spring_relax_many(order: Sequence[str], edges: Sequence[Tuple[str, str]],
                 gapv = rest - ext
                 slack = np.minimum(np.tan(np.abs(J[:, 1]) ** BEARING_POWER * jt.bearing) * rest,
                                    np.maximum(0.0, across + gapv - jt.margin))
+                if TH is not None:
+                    # A throat's slide: Jitter.offset's, element by element.
+                    width = jt.need / STRAIGHT_NEED
+                    lim = np.array([throat_slack(float(x), width) for x in across], dtype=float)
+                    t_slack = np.array([min(math.tan(abs(float(s)) * THROAT_BEARING[1]) * float(r), m)
+                                        for s, r, m in zip(J[:, 1], rest, lim)], dtype=float)
+                    slack = np.where(TH, t_slack, slack)
                 slack = np.where(stair, 0.0, np.copysign(slack, J[:, 1]))
                 pull_s, pull_t = S * rest[:, None], T * slack[:, None]
             else:
@@ -1723,7 +1832,7 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
     instead (:data:`BEARING_SPACING`, :class:`Jitter`)."""
     run = (RUN_FACTOR if run_factor is None else run_factor) * corridor_width
     table = (_jitter_table(graph, order, half, storeys, seed, corridor_width, draw, ranges,
-                           centred, bearing)
+                           centred, bearing, run)
              if jitter else None)
     pos = start_positions(graph, order, half, run, gap, storeys, table)
     edges = [(e.a, e.b) for e in graph.edges()
@@ -1786,7 +1895,9 @@ def _untangle(graph, order, edges, start, out, half, nodes, run, gap, table: Jit
             if e not in table.edges:
                 continue
             f, t = table.edges[e]
-            alts = [alt for alt in ((f, -t), (f, t * 0.5), (f, 0.0), (f * UNTANGLE_STRETCH, t))
+            # (A throat keeps its gap: the layout's separation holds it there.)
+            stretch = () if e in table.throats else ((f * UNTANGLE_STRETCH, t),)
+            alts = [alt for alt in ((f, -t), (f, t * 0.5), (f, 0.0), *stretch)
                     if alt != (f, t)]
             if not alts:
                 continue

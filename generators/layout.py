@@ -428,6 +428,9 @@ class LayoutGenerator:
         # Set per generate from the engine (``EngineResult.jittered``, ``.bearing``).
         self._straight_doors = False
         self._bearing_doors = False
+        # A bearing placement's throats (``EngineResult.throats``, as room id
+        # pairs), set per generate: the separation holds them (cave clumps task 3).
+        self._throats: set = set()
         if profile:
             import math
             base_area = _profile_mean(self.profile, ["geometry", "floor_area"], 2_000_000.0)
@@ -697,6 +700,8 @@ class LayoutGenerator:
         self._straight_doors = getattr(result, "jittered", False)
         self._bearing_doors = getattr(result, "bearing", False)
         rooms = result.rooms
+        throat_ix = list(getattr(result, "throats", None) or ())
+        self._throats = {frozenset((rooms[i].id, rooms[j].id)) for i, j in throat_ix}
         # Job B works on plain (i, j) pairs; the vertical relations go to the
         # elevation pass alone (only the ones that constrain anything).
         edges = [(e[0], e[1]) for e in result.edges]
@@ -803,13 +808,21 @@ class LayoutGenerator:
         # Role biasing resized rooms (climax/hub grew, dead-ends shrank), so
         # re-separate to resolve any overlaps the new sizes introduced. Keep
         # the graph edges — only positions shift slightly.
-        self._separate_rooms(rooms, storeys=self._storeys(rooms))
+        self._separate_rooms(rooms, storeys=self._storeys(rooms), throats=self._throats)
 
+        # A throat's rooms keep one floor where the graph asks nothing else of
+        # them (its 12 u run carries little rise; cave clumps task 3).
+        elev_rel = relations
+        if throat_ix:
+            elev_rel = dict(relations)
+            for i, j in throat_ix:
+                if (i, j) not in relations and (j, i) not in relations:
+                    elev_rel[(i, j)] = "level"
         if self._stack is not None:
-            self._assign_stacked_elevation(rooms, edges, entrance, relations,
+            self._assign_stacked_elevation(rooms, edges, entrance, elev_rel,
                                            elevation, themed)
         elif elevation:
-            self._assign_elevation(rooms, edges, entrance, relations)
+            self._assign_elevation(rooms, edges, entrance, elev_rel)
         elif themed:
             # Elevation is off, but the semantic layer perturbed floor_z (sunk
             # arenas / sumps, raised thrones). Those biased floors never went
@@ -1226,7 +1239,8 @@ class LayoutGenerator:
 
     def _separate_rooms(self, rooms: List[RoomSpec],
                         iterations: Optional[int] = None,
-                        storeys: Optional[list] = None) -> None:
+                        storeys: Optional[list] = None,
+                        throats: Optional[set] = None) -> None:
         """
         Step 2: push overlapping rooms apart (no physics engine needed). Each
         iteration nudges any overlapping pair apart along their centre-to-centre
@@ -1242,12 +1256,19 @@ class LayoutGenerator:
         *storeys* (a stacked build, step 7): each room's ``embed.Storey``. A
         pair that ``embed.may_overlap_in_plan`` (different Levels, the Slab
         between them) is left where it is, one over the other.
+
+        *throats* (a cave's bearing placement, cave clumps task 3): room id
+        pairs (frozensets) to hold ``embed.THROAT_GAP`` apart with their doors
+        in line (:meth:`_separate_with_throats`). None or empty: as before.
         """
         stacked = None
         if storeys is not None:
             from .topology.embed import may_overlap_in_plan
             stacked = {(a, b) for a in range(len(rooms)) for b in range(a + 1, len(rooms))
                        if may_overlap_in_plan(storeys[a], storeys[b])}
+        if throats and self.corridor_clearance:
+            self._separate_with_throats(rooms, throats, stacked, iterations or 200)
+            return
         if self.corridor_clearance:
             # (Before stock scale this read max(width, 30): corridors were at
             # least 40 u, so the 30 never applied. Stock corridors are 3 H.)
@@ -1283,6 +1304,169 @@ class LayoutGenerator:
                         moved = True
             if not moved:
                 break
+
+    def _separate_with_throats(self, rooms: List[RoomSpec], throats: set,
+                               stacked: Optional[set], iterations: int) -> None:
+        """:meth:`_separate_rooms` for a cave's bearing placement with throats
+        (cave clumps task 3; that spec's archive decision 2). First each
+        throat's far room is squared up off its partner's wall
+        (:meth:`_snap_throats`): ``embed.THROAT_GAP`` wall to wall, slid along
+        the wall no further than both doors still stand on one line
+        (``embed.throat_slack``), so its short corridor runs straight. Then
+        pairs are pushed apart as before, a throat's to THROAT_GAP, every
+        other pair's to a corridor width plus 1; rooms joined by throats move
+        together when pushed by another, so the throats hold."""
+        from .topology.embed import THROAT_GAP
+        gap = self.corridor_width + 1.0
+        at = {r.id: k for k, r in enumerate(rooms)}
+        pairs = sorted({tuple(sorted((at[a], at[b]))) for a, b in (tuple(p) for p in throats)
+                        if a in at and b in at})
+        pairs = [p for p in pairs if not (stacked and p in stacked)]
+        kept = self._snap_throats(rooms, pairs, gap, THROAT_GAP)
+        # The rooms each throat-joined group moves together.
+        root = list(range(len(rooms)))
+
+        def find(x: int) -> int:
+            while root[x] != x:
+                root[x] = root[root[x]]
+                x = root[x]
+            return x
+        for a, b in sorted(kept):
+            ra_, rb_ = find(a), find(b)
+            if ra_ != rb_:
+                root[max(ra_, rb_)] = min(ra_, rb_)
+        group: Dict[int, List[int]] = {}
+        for k in range(len(rooms)):
+            group.setdefault(find(k), []).append(k)
+        # Groups pushed whole first; if that hasn't settled (a group wedged
+        # between others can rock back and forth), room by room, a throat
+        # that no longer stands as one (:meth:`_throat_stands`) then kept a
+        # corridor width plus 1 apart like any pair.
+        if self._push_apart(rooms, stacked, iterations, gap, THROAT_GAP, kept,
+                            lambda k: group[find(k)]):
+            return
+        self._push_apart(rooms, stacked, iterations, gap, THROAT_GAP, kept, None)
+
+    def _push_apart(self, rooms: List[RoomSpec], stacked: Optional[set], iterations: int,
+                    gap: float, tgap: float, kept: set, group) -> bool:
+        """:meth:`_separate_with_throats`'s pushes: pairs of *kept* ``tgap``
+        apart, others *gap*. With *group* (room index -> the rooms that move
+        with it) a pair in two groups moves both groups; without, rooms move
+        alone and a throat counts only while it stands. True when settled."""
+        for _ in range(iterations):
+            moved = False
+            held = kept if group is not None else {
+                (a, b) for a, b in kept if self._throat_stands(rooms[a], rooms[b], tgap)}
+            for a in range(len(rooms)):
+                for b in range(a + 1, len(rooms)):
+                    if stacked and (a, b) in stacked:
+                        continue
+                    ra, rb = rooms[a], rooms[b]
+                    g = tgap if (a, b) in held else gap
+                    dx = rb.center_x - ra.center_x
+                    dy = rb.center_y - ra.center_y
+                    ox = (ra.width + rb.width) / 2 + g - abs(dx)
+                    oy = (ra.depth + rb.depth) / 2 + g - abs(dy)
+                    if ox > 1e-9 and oy > 1e-9:
+                        ga = group(a) if group is not None else [a]
+                        gb = group(b) if group is not None else [b]
+                        movers = (ga, gb) if ga is not gb else ([a], [b])
+                        if ox < oy:
+                            push = ox / 2 * (1 if dx >= 0 else -1)
+                            for k in movers[0]:
+                                rooms[k].center_x -= push
+                            for k in movers[1]:
+                                rooms[k].center_x += push
+                        else:
+                            push = oy / 2 * (1 if dy >= 0 else -1)
+                            for k in movers[0]:
+                                rooms[k].center_y -= push
+                            for k in movers[1]:
+                                rooms[k].center_y += push
+                        moved = True
+            if not moved:
+                return True
+        return False
+
+    def _snap_throats(self, rooms: List[RoomSpec], pairs: List[Tuple[int, int]],
+                      gap: float, tgap: float) -> set:
+        """Square each throat up (:meth:`_square_throat`), over each tree of
+        throats breadth first from its lowest room; returns the throats that
+        stand (index pairs). A far room that would come within the separation
+        gap of another room of its tree stays where it was, and its throat
+        is an ordinary corridor; so is a throat closing a loop of throats
+        unless it already stands as one."""
+        nbrs: Dict[int, List[int]] = {}
+        for a, b in pairs:
+            nbrs.setdefault(a, []).append(b)
+            nbrs.setdefault(b, []).append(a)
+        is_pair = set(pairs)
+        kept: set = set()
+        done: set = set()
+
+        def box_gap(p: RoomSpec, q: RoomSpec) -> float:
+            return max(abs(q.center_x - p.center_x) - (p.width + q.width) / 2,
+                       abs(q.center_y - p.center_y) - (p.depth + q.depth) / 2)
+        for start in sorted(nbrs):
+            if start in done:
+                continue
+            done.add(start)
+            tree = [start]
+            queue = [start]
+            while queue:
+                a = queue.pop(0)
+                for b in sorted(nbrs[a]):
+                    pair = (min(a, b), max(a, b))
+                    if b in done:
+                        if pair not in kept and self._throat_stands(rooms[a], rooms[b], tgap):
+                            kept.add(pair)
+                        continue
+                    done.add(b)
+                    queue.append(b)
+                    rb = rooms[b]
+                    was = (rb.center_x, rb.center_y)
+                    self._square_throat(rooms[a], rb, tgap)
+                    if any(box_gap(rb, rooms[c]) < (tgap if (min(b, c), max(b, c)) in is_pair
+                                                    else gap) - 1e-6
+                           for c in tree if c != a):
+                        rb.center_x, rb.center_y = was
+                    else:
+                        kept.add(pair)
+                    tree.append(b)
+        return kept
+
+    def _square_throat(self, ra: RoomSpec, rb: RoomSpec, tgap: float) -> None:
+        """Put *rb* ``tgap`` off *ra*'s wall facing it (the axis they're most
+        apart on), slid along that wall as it stood, up to
+        ``embed.throat_slack`` either way. In place on *rb*."""
+        from .topology.embed import throat_slack
+        gx = abs(rb.center_x - ra.center_x) - (ra.width + rb.width) / 2
+        gy = abs(rb.center_y - ra.center_y) - (ra.depth + rb.depth) / 2
+        if gx >= gy:
+            lim = throat_slack((ra.depth + rb.depth) / 2, self.corridor_width)
+            sx = 1.0 if rb.center_x >= ra.center_x else -1.0
+            rb.center_x = ra.center_x + sx * ((ra.width + rb.width) / 2 + tgap)
+            rb.center_y = ra.center_y + max(-lim, min(lim, rb.center_y - ra.center_y))
+        else:
+            lim = throat_slack((ra.width + rb.width) / 2, self.corridor_width)
+            sy = 1.0 if rb.center_y >= ra.center_y else -1.0
+            rb.center_y = ra.center_y + sy * ((ra.depth + rb.depth) / 2 + tgap)
+            rb.center_x = ra.center_x + max(-lim, min(lim, rb.center_x - ra.center_x))
+
+    def _throat_stands(self, ra: RoomSpec, rb: RoomSpec, tgap: float) -> bool:
+        """Do *ra* and *rb* already stand as a throat: ``tgap`` apart (within
+        a unit) on the axis they're most apart on, slid within
+        ``embed.throat_slack``?"""
+        from .topology.embed import throat_slack
+        gx = abs(rb.center_x - ra.center_x) - (ra.width + rb.width) / 2
+        gy = abs(rb.center_y - ra.center_y) - (ra.depth + rb.depth) / 2
+        if gx >= gy:
+            lim = throat_slack((ra.depth + rb.depth) / 2, self.corridor_width)
+            off = abs(rb.center_y - ra.center_y)
+        else:
+            lim = throat_slack((ra.width + rb.width) / 2, self.corridor_width)
+            off = abs(rb.center_x - ra.center_x)
+        return abs(max(gx, gy) - tgap) <= 1.0 and off <= lim + 1e-6
 
     def _resolve_crossings(self, rooms: List[RoomSpec],
                            edges: List[Tuple[int, int]]) -> bool:
@@ -2271,9 +2455,13 @@ class LayoutGenerator:
         planned stair at the stair grade (RISER_CAP / TREAD_DEPTH), which
         folds into a Switchback when its leg is short, so any rise its Levels
         ask for fits: its band is unbounded and each room keeps to its own
-        Level's band instead (``_Stack.band``)."""
+        Level's band instead (``_Stack.band``). A throat (cave clumps task 3)
+        keeps its two rooms level: its 12 u run is too short a ramp to read as
+        one room opening into the next."""
         if self._is_stair(i, m):
             return float("inf")
+        if self._throats and frozenset((rooms[i].id, rooms[m].id)) in self._throats:
+            return 0.0
         return self._elevation_run(rooms[i], rooms[m]) * self.max_grade
 
     def _assign_stacked_elevation(self, rooms: List[RoomSpec],
