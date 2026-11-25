@@ -78,7 +78,7 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: generators/topology/embed.py (`room_size`), generators/semantics.py (size bands, room types), generators/layout.py (classic sizes), generators/layout_engine.py, generators/outdoor_dungeon.py, generators/decor/placement.py (widened by the lead), tests it moves, goldens it moves (named in the commit)
   - Reqs: 8
 
-- [ ] 12. Gate and bands again
+- [x] 12. Gate and bands again
   - Card: [cards/12-gate.md](cards/12-gate.md)
   - Type: agent · Size: S · Depends: 11
   - Owns: fixes only where a failure is new (stop and report first)
