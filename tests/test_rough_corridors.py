@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from analyzer.traverse import AgentModel, build_walk_surface, corridor_continuity
@@ -43,7 +45,7 @@ def _faces(mb, up):
     return np.array(out)
 
 
-@settings(max_examples=25, deadline=None)
+@settings(max_examples=scaled(25), deadline=None)
 @given(length=st.floats(30.0, 300.0), rise=st.floats(0.0, 20.0), rough=st.floats(0.01, 0.15))
 def test_w8_clear_width_ends_and_floor(length, rise, rough):
     spec = _spec(rough, length, rise)

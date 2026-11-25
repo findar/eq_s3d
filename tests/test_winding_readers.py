@@ -17,6 +17,8 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from core.ter import Material, Polygon, TerFile, Vertex
@@ -57,7 +59,7 @@ def _mitred(line, hw):
     return left, right
 
 
-@settings(max_examples=60, deadline=None)
+@settings(max_examples=scaled(60), deadline=None)
 @given(span=st.floats(80.0, 400.0), hw=st.floats(4.0, 16.0), along_x=st.booleans(),
        back=st.booleans(), seed=st.integers(0, 10_000))
 def test_the_strip_is_the_centreline_mitred(span, hw, along_x, back, seed):

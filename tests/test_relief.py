@@ -8,6 +8,8 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from analyzer.traverse import AgentModel, build_walk_surface, check_outline
@@ -29,7 +31,7 @@ def _room(seed, rise, fall, height=40.0, min_head=8.0, complex="voronoi"):
     return o
 
 
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=scaled(40), deadline=None)
 @given(seed=st.integers(0, 10 ** 6), rise=st.floats(0.0, 8.0), fall=st.floats(0.0, 30.0),
        height=st.floats(15.0, 60.0), complex=st.sampled_from(["voronoi", "grid"]))
 def test_w7_floors_only_rise_and_ceilings_only_fall_within_bounds(seed, rise, fall, height, complex):

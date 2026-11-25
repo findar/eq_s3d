@@ -6,6 +6,8 @@ from collections import deque
 
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from generators.districts import (
     Partition, district_climaxes, district_count, min_district_size,
     partition_districts,
@@ -78,7 +80,7 @@ graphs = st.integers(1, 30).flatmap(
                         st.integers(1, 3), st.integers(0, 2**31)))
 
 
-@settings(max_examples=60, deadline=None)
+@settings(max_examples=scaled(60), deadline=None)
 @given(graphs)
 def test_partition_properties(case):
     n, gseed, entrance, k, seed = case
@@ -138,7 +140,7 @@ def test_partition_properties(case):
         assert cl == min(members, key=lambda i: (-dist[i], i))
 
 
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=scaled(40), deadline=None)
 @given(graphs)
 def test_one_district_draws_nothing(case):
     n, gseed, entrance, k, seed = case

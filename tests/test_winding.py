@@ -9,6 +9,8 @@ import statistics
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.geometry import MeshBuilder
@@ -64,7 +66,7 @@ def _edges(local, hw):
     return out
 
 
-@settings(max_examples=300, deadline=None)
+@settings(max_examples=scaled(300), deadline=None)
 @given(leg=legs(), clearance=st.floats(0.0, 120.0), rules=rules_st, seed=st.integers(0, 2 ** 32))
 def test_wind_leg_properties(leg, clearance, rules, seed):
     start, end, along_x, hw = leg
@@ -98,7 +100,7 @@ def test_wind_leg_properties(leg, clearance, rules, seed):
         assert max(abs(v) for _, v in edge) <= hw + clearance + 1e-6
 
 
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=scaled(100), deadline=None)
 @given(leg=legs(), rules=rules_st, seed=st.integers(0, 2 ** 32))
 def test_zero_clearance_is_the_straight_leg(leg, rules, seed):
     start, end, along_x, hw = leg
@@ -166,7 +168,7 @@ def boxes_beside(draw):
     return out
 
 
-@settings(max_examples=200, deadline=None)
+@settings(max_examples=scaled(200), deadline=None)
 @given(boxes=boxes_beside(), span=st.floats(60.0, 300.0), hw=st.floats(3.0, 12.0), seed=st.integers(0, 999))
 def test_a_strip_keeps_off_what_its_clearance_counted(boxes, span, hw, seed):
     start, end, height = (0.0, 0.0), (span, 0.0), 15.0
