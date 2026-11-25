@@ -36,6 +36,7 @@ Usage::
 
 from __future__ import annotations
 
+import bisect
 import math
 import sys
 from dataclasses import dataclass, field, replace
@@ -629,6 +630,131 @@ def _plane_z_at(tri: np.ndarray, px: float, py: float) -> float:
     return float(l1 * tri[0, 2] + l2 * tri[1, 2] + l3 * tri[2, 2])
 
 
+# ---- The same three helpers over many pairs at once -------------------------
+#
+# The seam passes (``build_walk_surface`` and ``_local_adjacency``) ask the contact
+# question of thousands of face pairs; one Python call per pair was about half a
+# gate run (test-speed task 6). These are the scalar helpers above written over
+# arrays: the same float64 operations in the same order, so every distance,
+# contact point and height is bitwise the scalar one, and ties go the same way
+# (the scalar code keeps the FIRST strict minimum; ``argmin`` returns the first).
+
+def _in_tri_xy_batch(px, py, T):
+    """``_point_in_tri_xy`` per row: points (N,) against triangles ``T`` (N, 3, >=2)."""
+    ax, ay = T[:, 0, 0], T[:, 0, 1]
+    bx, by = T[:, 1, 0], T[:, 1, 1]
+    cx, cy = T[:, 2, 0], T[:, 2, 1]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    ok = np.abs(det) >= 1e-12
+    det = np.where(ok, det, 1.0)
+    l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / det
+    l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / det
+    l3 = 1.0 - l1 - l2
+    tol = 1e-9
+    return ok & (l1 >= -tol) & (l2 >= -tol) & (l3 >= -tol)
+
+
+def _plane_z_at_batch(T, px, py):
+    """``_plane_z_at`` per row: triangles ``T`` (N, 3, 3) at points (N,)."""
+    ax, ay = T[:, 0, 0], T[:, 0, 1]
+    bx, by = T[:, 1, 0], T[:, 1, 1]
+    cx, cy = T[:, 2, 0], T[:, 2, 1]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    flat = np.abs(det) < 1e-12
+    det = np.where(flat, 1.0, det)
+    l1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / det
+    l2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / det
+    l3 = 1.0 - l1 - l2
+    z = l1 * T[:, 0, 2] + l2 * T[:, 1, 2] + l3 * T[:, 2, 2]
+    return np.where(flat, (T[:, 0, 2] + T[:, 1, 2] + T[:, 2, 2]) / 3.0, z)
+
+
+def _pt_seg_batch(p, a, b):
+    """``_seg_seg_closest_xy``'s ``pt_seg`` per row: (distance, midpoint of p and its
+    projection), points ``p`` and segments ``a``-``b`` each (N, 2)."""
+    abx, aby = b[:, 0] - a[:, 0], b[:, 1] - a[:, 1]
+    denom = abx * abx + aby * aby
+    dx, dy = p[:, 0] - a[:, 0], p[:, 1] - a[:, 1]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = np.clip((dx * abx + dy * aby) / denom, 0.0, 1.0)
+    t = np.where(denom <= 1e-12, 0.0, t)
+    projx, projy = a[:, 0] + t * abx, a[:, 1] + t * aby
+    ex, ey = p[:, 0] - projx, p[:, 1] - projy
+    d = np.sqrt(ex * ex + ey * ey)
+    return d, np.stack([(p[:, 0] + projx) * 0.5, (p[:, 1] + projy) * 0.5], axis=1)
+
+
+def _seg_seg_closest_xy_batch(p1, p2, p3, p4):
+    """``_seg_seg_closest_xy`` per row: (distance (N,), point (N, 2))."""
+    def ccw(a, b, c):
+        return (c[:, 1] - a[:, 1]) * (b[:, 0] - a[:, 0]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])
+
+    d1, d2 = ccw(p3, p4, p1), ccw(p3, p4, p2)
+    d3, d4 = ccw(p1, p2, p3), ccw(p1, p2, p4)
+    proper = ((d1 > 0) != (d2 > 0)) & ((d3 > 0) != (d4 > 0))
+    den = (p1[:, 0] - p2[:, 0]) * (p3[:, 1] - p4[:, 1]) - (p1[:, 1] - p2[:, 1]) * (p3[:, 0] - p4[:, 0])
+    crossing = np.abs(den) > 1e-12
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t = ((p1[:, 0] - p3[:, 0]) * (p3[:, 1] - p4[:, 1]) -
+             (p1[:, 1] - p3[:, 1]) * (p3[:, 0] - p4[:, 0])) / np.where(crossing, den, 1.0)
+    ip = np.where(crossing[:, None], p1 + t[:, None] * (p2 - p1), (p1 + p3) * 0.5)
+
+    cands = [_pt_seg_batch(p1, p3, p4), _pt_seg_batch(p2, p3, p4),
+             _pt_seg_batch(p3, p1, p2), _pt_seg_batch(p4, p1, p2)]
+    ds = np.stack([c[0] for c in cands], axis=1)             # (N, 4)
+    mids = np.stack([c[1] for c in cands], axis=1)           # (N, 4, 2)
+    k = np.argmin(ds, axis=1)
+    rows = np.arange(len(k))
+    d = np.where(proper, 0.0, ds[rows, k])
+    pt = np.where(proper[:, None], ip, mids[rows, k])
+    return d, pt
+
+
+def _tri_tri_xy_contact_batch(TI: np.ndarray, TJ: np.ndarray):
+    """``_tri_tri_xy_contact`` per row of ``TI``, ``TJ`` (N, 3, 3): (distance (N,),
+    point (N, 2)). A vertex inside the other triangle wins first (TI's vertices in
+    order, then TJ's); otherwise the nearest of the nine edge pairs, in the scalar
+    loop's order."""
+    n = len(TI)
+    dist = np.full(n, np.inf)
+    pt = np.zeros((n, 2))
+    todo = np.ones(n, bool)
+    for src, other in ((TI, TJ), (TJ, TI)):
+        for k in range(3):
+            hit = todo & _in_tri_xy_batch(src[:, k, 0], src[:, k, 1], other)
+            dist[hit] = 0.0
+            pt[hit] = src[hit, k, :2]
+            todo &= ~hit
+    rest = np.nonzero(todo)[0]
+    if len(rest):
+        A, B = TI[rest, :, :2], TJ[rest, :, :2]
+        ds, pts = [], []
+        for k in range(3):
+            for m in range(3):
+                d, p = _seg_seg_closest_xy_batch(A[:, k], A[:, (k + 1) % 3],
+                                                 B[:, m], B[:, (m + 1) % 3])
+                ds.append(d)
+                pts.append(p)
+        ds = np.stack(ds, axis=1)                             # (R, 9)
+        best = np.argmin(ds, axis=1)
+        rows = np.arange(len(rest))
+        dist[rest] = ds[rows, best]
+        pt[rest] = np.stack(pts, axis=1)[rows, best]
+    return dist, pt
+
+
+def _seam_joins(TI: np.ndarray, TJ: np.ndarray, eps: float, step: float) -> np.ndarray:
+    """(N,) bool: do faces ``TI`` and ``TJ`` meet across a seam, by the scalar test the
+    seam passes apply to one pair: XY contact within ``eps`` and floors within ``step``
+    of each other at the contact point (each limit with ``CONTACT_TOL``)."""
+    if not len(TI):
+        return np.zeros(0, bool)
+    dist, pt = _tri_tri_xy_contact_batch(TI, TJ)
+    zi = _plane_z_at_batch(TI, pt[:, 0], pt[:, 1])
+    zj = _plane_z_at_batch(TJ, pt[:, 0], pt[:, 1])
+    return (dist <= eps + CONTACT_TOL) & (np.abs(zi - zj) <= step + CONTACT_TOL)
+
+
 def build_walk_surface(ter: TerFile, agent: AgentModel, *,
                        skip_passable: bool = True,
                        floors_up: bool = True) -> WalkSurface:
@@ -785,44 +911,26 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
     # isolated and the seam pass is empty (design: "a terrain is one weld
     # component, so its seam pass is empty").
     weld_root = np.array([_find(k) for k in range(S)], dtype=np.int64)
-    comp_min: Dict[int, np.ndarray] = {}
-    comp_max: Dict[int, np.ndarray] = {}
-    for k, fi in enumerate(std_idx):
-        r = int(weld_root[k])
-        lo = fxy_min[fi]
-        hi = fxy_max[fi]
-        if r not in comp_min:
-            comp_min[r] = lo.copy()
-            comp_max[r] = hi.copy()
-        else:
-            np.minimum(comp_min[r], lo, out=comp_min[r])
-            np.maximum(comp_max[r], hi, out=comp_max[r])
-
-    roots = list(comp_min.keys())
+    roots, inv = np.unique(weld_root, return_inverse=True)
     if len(roots) <= 1:
         # One weld component (e.g. terrain): nothing can merge. Seam pass empty.
-        touches_other = {}
+        seam_pos = np.zeros(0, np.int64)
     else:
-        rmin = np.array([comp_min[r] for r in roots])          # (C, 2)
-        rmax = np.array([comp_max[r] for r in roots])          # (C, 2)
-        touches_other = {}
-        for ri, r in enumerate(roots):
+        rmin = np.full((len(roots), 2), np.inf)                # (C, 2)
+        rmax = np.full((len(roots), 2), -np.inf)               # (C, 2)
+        np.minimum.at(rmin, inv, fxy_min[std_idx])
+        np.maximum.at(rmax, inv, fxy_max[std_idx])
+        touches = np.zeros(len(roots), bool)
+        for ri in range(len(roots)):
             # bbox(r) within eps of bbox(other) on both axes, for any other.
             near = (
                 (rmin[:, 0] - eps <= rmax[ri, 0]) & (rmax[:, 0] + eps >= rmin[ri, 0]) &
                 (rmin[:, 1] - eps <= rmax[ri, 1]) & (rmax[:, 1] + eps >= rmin[ri, 1])
             )
             near[ri] = False
-            touches_other[r] = bool(near.any())
-
-    # Only faces in a component that touches another component feed the grid.
-    if touches_other:
-        seam_pos = np.array(
-            [k for k in range(S) if touches_other.get(int(weld_root[k]), False)],
-            dtype=np.int64,
-        )
-    else:
-        seam_pos = np.zeros(0, np.int64)
+            touches[ri] = bool(near.any())
+        # Only faces in a component that touches another component feed the grid.
+        seam_pos = np.nonzero(touches[inv])[0].astype(np.int64)
     seam_faces = std_idx[seam_pos] if len(seam_pos) else np.zeros(0, np.int64)
 
     cell = max(eps * 4.0, 16.0)
@@ -847,7 +955,12 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
                 fxy_min[fi, 1] - eps <= fxy_max[fj, 1] and
                 fxy_max[fi, 1] + eps >= fxy_min[fj, 1])
 
+    # The pairs the seam pass may test, in the order the cells are walked. A pair
+    # counts at its first meeting only (``seen``), and a pair inside one weld
+    # component never (it is same-component now and always, so redundant).
     seen_pairs: set = set()
+    cand_i: List[int] = []
+    cand_j: List[int] = []
     for key, flist in grid.items():
         if len(flist) < 2:
             # A cell holding a single face can produce no pair; skip it.
@@ -856,18 +969,16 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
         # pair is same-component (redundant) and would be skipped below anyway,
         # so the per-cell pair loop produces no edge. (Design: "skip the
         # per-cell pair loop for cells holding one component.")
-        if len({int(weld_root[pos_of[f]]) for f in flist}) == 1:
+        roots_here = [int(weld_root[pos_of[f]]) for f in flist]
+        if len(set(roots_here)) == 1:
             continue
         for i in range(len(flist)):
+            fi, ri = flist[i], roots_here[i]
             for j in range(i + 1, len(flist)):
-                fi, fj = flist[i], flist[j]
-                if fj in adjacency[fi]:
+                if roots_here[j] == ri:
                     continue
-                # Redundant-edge skip: already in the same component, so this
-                # edge (accepted or not) changes nothing. Skip BEFORE the
-                # expensive contact test. This is the whole speed-up and it
-                # cannot change components.
-                if _find(pos_of[fi]) == _find(pos_of[fj]):
+                fj = flist[j]
+                if fj in adjacency[fi]:
                     continue
                 pk = (fi, fj) if fi < fj else (fj, fi)
                 if pk in seen_pairs:
@@ -875,17 +986,25 @@ def build_walk_surface(ter: TerFile, agent: AgentModel, *,
                 seen_pairs.add(pk)
                 if not _bbox_near(fi, fj):
                     continue
-                # True XY contact test: do the triangles actually touch?
-                dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
-                if pt is None or dist > eps + CONTACT_TOL:
-                    continue
-                # Floors must agree in height WHERE they touch, not at centroids.
-                zi = _plane_z_at(tris[fi], pt[0], pt[1])
-                zj = _plane_z_at(tris[fj], pt[0], pt[1])
-                if abs(zi - zj) <= agent.max_step_up + CONTACT_TOL:
-                    adjacency[fi].add(fj)
-                    adjacency[fj].add(fi)
-                    _union(pos_of[fi], pos_of[fj])
+                cand_i.append(fi)
+                cand_j.append(fj)
+
+    # True XY contact, and floors agreeing in height WHERE they touch (not at
+    # centroids), for every candidate at once; then the pairs are replayed in
+    # order. Redundant-edge skip: a pair already in one component (joined by an
+    # earlier seam) changes nothing, so it is dropped here as the per-pair loop
+    # dropped it before its contact test. Components, and the edges recorded,
+    # are the per-pair loop's.
+    joins = _seam_joins(tris[cand_i], tris[cand_j], eps, agent.max_step_up)
+    for fi, fj, ok in zip(cand_i, cand_j, joins.tolist()):
+        if not ok:
+            continue
+        pi, pj = pos_of[fi], pos_of[fj]
+        if _find(pi) == _find(pj):
+            continue
+        adjacency[fi].add(fj)
+        adjacency[fj].add(fi)
+        _union(pi, pj)
 
     adjacency_lists = {k: sorted(v) for k, v in adjacency.items()}
 
@@ -1063,6 +1182,25 @@ def _storey_band(room: RoomSpec, rooms: Optional[List[RoomSpec]]):
 FLOOR_Z_TOL = 8.0
 
 
+class _RoomFloors:
+    """``_faces_in_room(surf, room, rooms)`` for each room, worked out once: one gate run
+    asks for a room's floor from the room pass, every corridor touching it, and its
+    outline check (a shaped room's is the costly ``outline.contains``). A room is
+    looked up as that object, so another room with the same id is worked out anew."""
+
+    def __init__(self, surf: "WalkSurface", rooms: Optional[List[RoomSpec]]):
+        self.surf = surf
+        self.rooms = rooms
+        self.memo: Dict[int, Tuple[RoomSpec, np.ndarray]] = {}
+
+    def __call__(self, room: RoomSpec) -> np.ndarray:
+        hit = self.memo.get(id(room))
+        if hit is None or hit[0] is not room:
+            hit = (room, _faces_in_room(self.surf, room, self.rooms))
+            self.memo[id(room)] = hit
+        return hit[1]
+
+
 # ---------------------------------------------------------------------------
 # Shaped rooms (step 8, Requirement 3)
 # ---------------------------------------------------------------------------
@@ -1146,27 +1284,31 @@ def _open_seam(surf: WalkSurface, room: RoomSpec, faces: np.ndarray, doors, slot
         return False
 
     tri = surf.verts[surf.faces[faces]]
-    keys = np.round(tri, 2)
-    count: Dict[tuple, int] = {}
-    ends: Dict[tuple, tuple] = {}
-    for t, k in zip(tri, keys):
-        for i in range(3):
-            j = (i + 1) % 3
-            a, b = tuple(k[i]), tuple(k[j])
-            key = (a, b) if a < b else (b, a)
-            count[key] = count.get(key, 0) + 1
-            ends[key] = (t[i], t[j])
-    for key in sorted(count):
-        if count[key] == 1 and not allowed(*ends[key]):
-            a, b = ends[key]
-            mid = (a + b) / 2
+    if not len(tri):
+        return None
+    # Each edge keyed by its two ends rounded to 0.01 u (+0.0 folds -0.0 into 0.0, as
+    # a tuple key did), the lesser end first; an edge one face uses is a seam, and
+    # the seams are judged in key order.
+    keys = np.round(tri, 2) + 0.0
+    a_raw = np.concatenate([tri[:, i] for i in range(3)])
+    b_raw = np.concatenate([tri[:, (i + 1) % 3] for i in range(3)])
+    ka = np.concatenate([keys[:, i] for i in range(3)])
+    kb = np.concatenate([keys[:, (i + 1) % 3] for i in range(3)])
+    lt = ((ka[:, 0] < kb[:, 0]) | ((ka[:, 0] == kb[:, 0]) & (
+        (ka[:, 1] < kb[:, 1]) | ((ka[:, 1] == kb[:, 1]) & (ka[:, 2] < kb[:, 2])))))
+    key = np.where(lt[:, None], np.hstack([ka, kb]), np.hstack([kb, ka]))
+    _, first, count = np.unique(key, axis=0, return_index=True, return_counts=True)
+    for e in first[count == 1].tolist():
+        if not allowed(a_raw[e], b_raw[e]):
+            mid = (a_raw[e] + b_raw[e]) / 2
             return f"({mid[0]:.1f}, {mid[1]:.1f}, {mid[2]:.1f})"
     return None
 
 
 def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
-                  agent: AgentModel) -> OutlineResult:
-    """Judge one shaped room from the mesh (see ``OutlineResult``)."""
+                  agent: AgentModel, *, floors: Optional[_RoomFloors] = None) -> OutlineResult:
+    """Judge one shaped room from the mesh (see ``OutlineResult``). ``floors`` is the
+    gate run's room floors when it has them."""
     outline = room.outline
     (x0, y0, z0), (x1, y1, z1) = room.bounds
     planes = {"S": y0, "N": y1, "W": x0, "E": x1}
@@ -1217,7 +1359,7 @@ def check_outline(surf: WalkSurface, room: RoomSpec, spec: ZoneSpec,
                 return fail(f"wall across throat {tuple(round(v, 1) for v in t)}")
 
     # The floor joins the Core to every Throat, on the room's own floor faces.
-    own = _faces_in_room(surf, room, spec.rooms)
+    own = floors(room) if floors is not None else _faces_in_room(surf, room, spec.rooms)
     if len(own) == 0:
         return fail("no walkable floor in the core")
     cen = surf.centroids[own]
@@ -1270,14 +1412,25 @@ def _free_cells(surf: WalkSurface, room: RoomSpec, agent: AgentModel):
     nz = np.abs(surf.normals[faces, 2])
     body = z0 + agent.player_height / 2
     tall = (nz < 0.7) & (tri[:, :, 2].min(axis=1) <= body) & (tri[:, :, 2].max(axis=1) >= body)
+    def window(lo_x: float, lo_y: float, hi_x: float, hi_y: float):
+        """The grid's index slices covering x in [lo_x, hi_x], y in [lo_y, hi_y]."""
+        i0, i1 = np.searchsorted(xs, lo_x, side="left"), np.searchsorted(xs, hi_x, side="right")
+        j0, j1 = np.searchsorted(ys, lo_y, side="left"), np.searchsorted(ys, hi_y, side="right")
+        return slice(int(i0), int(i1)), slice(int(j0), int(j1))
+
     for w in tri[tall]:
         pts = w[:, :2]
         d = np.linalg.norm(pts[:, None] - pts[None], axis=2)
         i, j = np.unravel_index(d.argmax(), d.shape)
         a, b = pts[i], pts[j]
         ab = b - a
-        t = np.clip(((gx - a[0]) * ab[0] + (gy - a[1]) * ab[1]) / max(float(ab @ ab), 1e-9), 0.0, 1.0)
-        free &= np.hypot(gx - (a[0] + t * ab[0]), gy - (a[1] + t * ab[1])) >= BODY_RADIUS
+        # Only cells within a body's radius of the wall's box can be within it of the
+        # wall; the rest keep what they had (each cell's test is the whole grid's).
+        r = BODY_RADIUS + 1.0
+        wx, wy = window(min(a[0], b[0]) - r, min(a[1], b[1]) - r, max(a[0], b[0]) + r, max(a[1], b[1]) + r)
+        sx, sy = gx[wx, wy], gy[wx, wy]
+        t = np.clip(((sx - a[0]) * ab[0] + (sy - a[1]) * ab[1]) / max(float(ab @ ab), 1e-9), 0.0, 1.0)
+        free[wx, wy] &= np.hypot(sx - (a[0] + t * ab[0]), sy - (a[1] + t * ab[1])) >= BODY_RADIUS
     # The floor runs on under a solid, so inside one looks free. A solid shows by a cap: a
     # raised top inside the room, or an underside wound down at the floor's height.
     (_, _, _), (_, _, z1) = room.bounds
@@ -1292,12 +1445,20 @@ def _free_cells(surf: WalkSurface, room: RoomSpec, agent: AgentModel):
         d0 = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
         if abs(d0) < 1e-9:
             continue
-        l0 = ((b[1] - c[1]) * (gx - c[0]) + (c[0] - b[0]) * (gy - c[1])) / d0
-        l1 = ((c[1] - a[1]) * (gx - c[0]) + (a[0] - c[0]) * (gy - c[1])) / d0
+        # A cell outside the cap's box (grown by 1 u) is outside the cap; a sliver cap
+        # (|d0| < 1), whose rounding no box bounds, is judged on the whole grid.
+        if abs(d0) >= 1.0:
+            lo, hi = cap[:, :2].min(axis=0) - 1.0, cap[:, :2].max(axis=0) + 1.0
+            wx, wy = window(lo[0], lo[1], hi[0], hi[1])
+        else:
+            wx, wy = slice(None), slice(None)
+        sx, sy = gx[wx, wy], gy[wx, wy]
+        l0 = ((b[1] - c[1]) * (sx - c[0]) + (c[0] - b[0]) * (sy - c[1])) / d0
+        l1 = ((c[1] - a[1]) * (sx - c[0]) + (a[0] - c[0]) * (sy - c[1])) / d0
         inside = (l0 >= 0) & (l1 >= 0) & (l0 + l1 <= 1)
-        free &= ~inside
+        free[wx, wy] &= ~inside
         if walkable:
-            over |= inside
+            over[wx, wy] |= inside
     return xs, ys, free, over
 
 
@@ -1511,10 +1672,13 @@ def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent
     return OutlineResult(cor.id, True)
 
 
-def outline_checks(surf: WalkSurface, spec: ZoneSpec, agent: AgentModel) -> List[OutlineResult]:
+def outline_checks(surf: WalkSurface, spec: ZoneSpec, agent: AgentModel, *,
+                   floors: Optional[_RoomFloors] = None) -> List[OutlineResult]:
     """Every shaped room's verdict, every room holding Features or POIs, and every corridor
     with a Transition; none for a build of plain empty Boxes."""
-    out = [check_outline(surf, r, spec, agent) for r in spec.rooms if r.outline is not None]
+    floors = floors or _RoomFloors(surf, spec.rooms)
+    out = [check_outline(surf, r, spec, agent, floors=floors)
+           for r in spec.rooms if r.outline is not None]
     out += [check_features(surf, r, spec, agent) for r in spec.rooms if r.features or r.pois]
     out += [check_transition(surf, c, spec, agent) for c in spec.corridors if c.transition is not None]
     return out
@@ -1580,16 +1744,17 @@ def _region_faces(surf: WalkSurface, include: List[Rect],
     if len(std_idx) == 0:
         return std_idx
     cen = surf.centroids[std_idx]
-    keep = np.zeros(len(std_idx), dtype=bool)
-    for k in range(len(std_idx)):
-        x, y = float(cen[k, 0]), float(cen[k, 1])
-        if _xy_in_rects(x, y, include) and not _xy_in_rects(x, y, exclude):
-            if exclude_outside_z:
-                z = float(cen[k, 2])
-                if any(_xy_in_rects(x, y, [r]) and not (lo <= z <= hi)
-                       for r, lo, hi in exclude_outside_z):
-                    continue
-            keep[k] = True
+    x, y, z = cen[:, 0], cen[:, 1], cen[:, 2]
+
+    def in_rects(rects) -> np.ndarray:
+        m = np.zeros(len(std_idx), dtype=bool)
+        for x0, y0, x1, y1 in rects:
+            m |= (x0 <= x) & (x <= x1) & (y0 <= y) & (y <= y1)
+        return m
+
+    keep = in_rects(include) & ~in_rects(exclude)
+    for r, lo, hi in exclude_outside_z or ():
+        keep &= ~(in_rects([r]) & ~((lo <= z) & (z <= hi)))
     return std_idx[keep]
 
 
@@ -1605,76 +1770,129 @@ def _local_adjacency(surf: WalkSurface, agent: AgentModel,
     the speed-up having thrown away a seam between two faces already in the same
     global component.
     """
-    subset = [int(f) for f in face_subset]
-    if not subset:
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+
+    ids = np.asarray(face_subset, dtype=np.int64).ravel()
+    if not len(ids):
         return {}
-    subset_set = set(subset)
-    adj: Dict[int, set] = {f: set() for f in subset}
+    # Positions 0..n-1 stand for the subset's faces (a region lists each face once).
+    ids, first = np.unique(ids, return_index=True)
+    ids = ids[np.argsort(first)]
+    n = len(ids)
+    tri_v = surf.faces[ids]                                   # (n, 3) vertex ids
+    tris = surf.verts[tri_v]                                  # (n, 3, 3)
 
-    faces = surf.faces
-    verts = surf.verts
-
-    # 1) Shared-vertex adjacency within the subset.
-    vert_to_faces: Dict[int, List[int]] = {}
-    for fi in subset:
-        for vi in faces[fi]:
-            vert_to_faces.setdefault(int(vi), []).append(fi)
-    for flist in vert_to_faces.values():
-        for i in range(len(flist)):
-            for j in range(i + 1, len(flist)):
-                fi, fj = flist[i], flist[j]
-                adj[fi].add(fj)
-                adj[fj].add(fi)
-
-    # 2) Footprint-contact adjacency across seams (true XY overlap / gap within
-    #    adjacency_eps, floors agreeing in Z at the contact within max_step_up).
-    eps = agent.adjacency_eps
-    tris = {fi: np.stack([verts[faces[fi, 0]],
-                          verts[faces[fi, 1]],
-                          verts[faces[fi, 2]]], axis=0) for fi in subset}
-    fxy_min = {fi: np.minimum.reduce(tris[fi][:, :2]) for fi in subset}
-    fxy_max = {fi: np.maximum.reduce(tris[fi][:, :2]) for fi in subset}
+    # 1) Shared-vertex adjacency within the subset: the faces at one vertex are a
+    #    clique. Pairs come from the (vertex, position) list sorted by vertex.
+    ent_v = tri_v.ravel()
+    ent_p = np.repeat(np.arange(n), 3)
+    order = np.argsort(ent_v, kind="stable")
+    ent_v, ent_p = ent_v[order], ent_p[order]
+    weld_a, weld_b = [], []
+    for d in range(1, len(ent_v)):
+        same = ent_v[d:] == ent_v[:-d]
+        if not same.any():
+            break
+        weld_a.append(ent_p[:-d][same])
+        weld_b.append(ent_p[d:][same])
+    weld_a = np.concatenate(weld_a) if weld_a else np.zeros(0, np.int64)
+    weld_b = np.concatenate(weld_b) if weld_b else np.zeros(0, np.int64)
 
     # Faces already joined can't change what a flood reaches, so their seam needn't be
     # worked out; a shaped room's many welded floor faces would otherwise cost seconds.
-    parent = {f: f for f in subset}
+    if len(weld_a):
+        g = coo_matrix((np.ones(len(weld_a), np.int8), (weld_a, weld_b)), shape=(n, n))
+        _nc, comp = connected_components(g, directed=False)
+    else:
+        comp = np.arange(n)
+    parent = list(range(int(comp.max()) + 1))
 
-    def find(f: int) -> int:
-        while parent[f] != f:
-            parent[f] = parent[parent[f]]
-            f = parent[f]
-        return f
+    def find(c: int) -> int:
+        while parent[c] != c:
+            parent[c] = parent[parent[c]]
+            c = parent[c]
+        return c
 
-    for fi, nbrs in adj.items():
-        for fj in nbrs:
-            parent[find(fi)] = find(fj)
-
-    lo = np.array([fxy_min[f] for f in subset])
-    hi = np.array([fxy_max[f] for f in subset])
-    # Two faces whose heights never come within a step can't meet, wherever they touch.
-    zlo = np.array([tris[f][:, 2].min() for f in subset])
-    zhi = np.array([tris[f][:, 2].max() for f in subset])
+    # 2) Footprint-contact adjacency across seams (true XY overlap / gap within
+    #    adjacency_eps, floors agreeing in Z at the contact within max_step_up).
+    #    The pairs near enough to test are every (i < j) with XY boxes within eps
+    #    and heights within a step: two faces whose heights never come within a
+    #    step can't meet, wherever they touch. A grid finds the candidates; the
+    #    exact box test below then keeps the same pairs the all-pairs scan kept.
+    eps = agent.adjacency_eps
     step = agent.max_step_up
-    n = len(subset)
-    for i in range(n):
-        fi = subset[i]
-        near = (((lo[i + 1:] - eps <= hi[i]) & (hi[i + 1:] + eps >= lo[i])).all(axis=1)
-                & (zlo[i + 1:] <= zhi[i] + step) & (zhi[i + 1:] >= zlo[i] - step))
-        for j in np.nonzero(near)[0] + i + 1:
-            fj = subset[int(j)]
-            if find(fi) == find(fj):
-                continue
-            dist, pt = _tri_tri_xy_contact(tris[fi], tris[fj])
-            if pt is None or dist > eps + CONTACT_TOL:
-                continue
-            zi = _plane_z_at(tris[fi], pt[0], pt[1])
-            zj = _plane_z_at(tris[fj], pt[0], pt[1])
-            if abs(zi - zj) <= agent.max_step_up + CONTACT_TOL:
-                adj[fi].add(fj)
-                adj[fj].add(fi)
-                parent[find(fi)] = find(fj)
+    lo = tris[:, :, :2].min(axis=1)
+    hi = tris[:, :, :2].max(axis=1)
+    zlo = tris[:, :, 2].min(axis=1)
+    zhi = tris[:, :, 2].max(axis=1)
+    ci, cj = _grid_pairs(lo - eps, hi + eps, max(eps * 4.0, 16.0))
+    keep = (((lo[cj] - eps <= hi[ci]) & (hi[cj] + eps >= lo[ci])).all(axis=1)
+            & (zlo[cj] <= zhi[ci] + step) & (zhi[cj] >= zlo[ci] - step)
+            & (comp[ci] != comp[cj]))
+    ci, cj = ci[keep], cj[keep]
+    joins = _seam_joins(tris[ci], tris[cj], eps, step)
+    # Replayed in the scan's order (by i, then j): a pair is skipped once an
+    # earlier seam has joined its faces, as the scan skipped it.
+    seam_a: List[int] = []
+    seam_b: List[int] = []
+    for i, j, li, lj in zip(ci[joins].tolist(), cj[joins].tolist(),
+                            comp[ci[joins]].tolist(), comp[cj[joins]].tolist()):
+        ri, rj = find(li), find(lj)
+        if ri == rj:
+            continue
+        seam_a.append(i)
+        seam_b.append(j)
+        parent[ri] = rj
 
-    return {k: sorted(v) for k, v in adj.items() if k in subset_set}
+    # Each face's neighbours, sorted by face id, keyed in the subset's order.
+    pa = np.concatenate([weld_a, weld_b, np.asarray(seam_a, np.int64), np.asarray(seam_b, np.int64)])
+    pb = np.concatenate([weld_b, weld_a, np.asarray(seam_b, np.int64), np.asarray(seam_a, np.int64)])
+    span = int(ids.max()) + 1
+    edge = np.unique(ids[pa] * span + ids[pb])
+    src, dst = edge // span, edge % span
+    out: Dict[int, List[int]] = {}
+    for f in ids.tolist():
+        k0, k1 = np.searchsorted(src, [f, f + 1])
+        out[f] = dst[k0:k1].tolist()
+    return out
+
+
+def _grid_pairs(lo: np.ndarray, hi: np.ndarray, cell: float):
+    """Every pair ``(i, j)``, ``i < j``, of the XY boxes ``lo``..``hi`` (each (n, 2))
+    that share a grid cell of side ``cell`` (a superset of the boxes that overlap),
+    unique and sorted by ``i`` then ``j``."""
+    n = len(lo)
+    if n < 2:
+        return np.zeros(0, np.int64), np.zeros(0, np.int64)
+    c_lo = np.floor(lo / cell).astype(np.int64)
+    c_hi = np.floor(hi / cell).astype(np.int64)
+    nx = c_hi[:, 0] - c_lo[:, 0] + 1
+    ny = c_hi[:, 1] - c_lo[:, 1] + 1
+    cnt = nx * ny
+    box = np.repeat(np.arange(n), cnt)
+    k = np.arange(len(box)) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+    cx = c_lo[box, 0] + k // ny[box]
+    cy = c_lo[box, 1] + k % ny[box]
+    # One key per cell (Cantor-free: offset the cell ids so both are >= 0).
+    cx -= cx.min()
+    cy -= cy.min()
+    key = cx * (int(cy.max()) + 1) + cy
+    order = np.lexsort((box, key))
+    key, box = key[order], box[order]
+    pi, pj = [], []
+    for d in range(1, len(key)):
+        same = key[d:] == key[:-d]
+        if not same.any():
+            break
+        pi.append(box[:-d][same])
+        pj.append(box[d:][same])
+    if not pi:
+        return np.zeros(0, np.int64), np.zeros(0, np.int64)
+    pi = np.concatenate(pi)
+    pj = np.concatenate(pj)
+    pair = np.unique(np.minimum(pi, pj) * n + np.maximum(pi, pj))
+    return pair // n, pair % n
 
 
 def _flood_subset(adj: Dict[int, List[int]], start: set) -> set:
@@ -1763,7 +1981,8 @@ def _genuinely_crossed_rooms(route, hw: float, spec: ZoneSpec,
 
 
 def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
-                        agent: AgentModel) -> List[CorridorResult]:
+                        agent: AgentModel, *,
+                        floors: Optional[_RoomFloors] = None) -> List[CorridorResult]:
     """Per-corridor floor-continuity verdicts (Requirement 5.2).
 
     For each corridor joining rooms A and B:
@@ -1784,6 +2003,7 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
     """
     rooms_by_id: Dict[str, RoomSpec] = {r.id: r for r in spec.rooms}
     results: List[CorridorResult] = []
+    floors = floors or _RoomFloors(surf, spec.rooms)
 
     for cor in spec.corridors:
         a = rooms_by_id.get(cor.from_room)
@@ -1853,8 +2073,8 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
         region_faces = _region_faces(surf, include, exclude, deck_band)
         faces_set = {int(f) for f in region_faces}
 
-        start = {int(f) for f in _faces_in_room(surf, a, spec.rooms)} & faces_set
-        goal = {int(f) for f in _faces_in_room(surf, b, spec.rooms)} & faces_set
+        start = {int(f) for f in floors(a)} & faces_set
+        goal = {int(f) for f in floors(b)} & faces_set
 
         connected = False
         reason = ""
@@ -2413,6 +2633,92 @@ def _bary_z(P: np.ndarray, T: np.ndarray):
     return inside, z
 
 
+class _TriBuckets:
+    """An XY grid over triangles ``T`` (M, 3, 3) for one-point lookups: ``heights(x, y)``
+    looks at, in ascending order, every triangle ``_bary_z`` could find holding (x, y).
+
+    A triangle goes in each cell its XY box touches, the box grown by more than
+    ``_bary_z``'s tolerance can reach (1e-7 of a barycentric coordinate is under
+    1e-6 of the triangle's size). A near-degenerate triangle (|det| < 1), whose
+    rounding no box bounds, is in every lookup."""
+
+    def __init__(self, T: np.ndarray, cell: float = 16.0):
+        self.cell = cell
+        self.cells: Dict[Tuple[int, int], tuple] = {}
+        self.always = np.zeros(0, np.int64)
+        if not len(T):
+            return
+        lo = T[:, :, :2].min(axis=1)
+        hi = T[:, :, :2].max(axis=1)
+        slack = 0.01 + 1e-6 * (hi - lo).max(axis=1, keepdims=True)
+        c_lo = np.floor((lo - slack) / cell).astype(np.int64)
+        c_hi = np.floor((hi + slack) / cell).astype(np.int64)
+        ax, ay, bx, by = T[:, 0, 0], T[:, 0, 1], T[:, 1, 0], T[:, 1, 1]
+        cx, cy = T[:, 2, 0], T[:, 2, 1]
+        det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        self.always = np.nonzero(np.abs(det) < 1.0)[0]
+        ny = c_hi[:, 1] - c_lo[:, 1] + 1
+        cnt = (c_hi[:, 0] - c_lo[:, 0] + 1) * ny
+        box = np.repeat(np.arange(len(T)), cnt)
+        k = np.arange(len(box)) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+        gx = c_lo[box, 0] + k // ny[box]
+        gy = c_lo[box, 1] + k % ny[box]
+        order = np.lexsort((box, gy, gx))
+        gx, gy, box = gx[order], gy[order], box[order]
+        starts = np.nonzero(np.r_[True, (gx[1:] != gx[:-1]) | (gy[1:] != gy[:-1])])[0]
+        ends = np.r_[starts[1:], len(box)]
+        # ``_bary_z``'s per-triangle terms, worked out once: per call only the
+        # point's own terms are left (each value is the one ``_bary_z`` computes).
+        ok = np.abs(det) > 1e-12
+        self.coef = np.stack([by - cy, cx - bx, cy - ay, ax - cx, cx, cy,
+                              np.where(ok, det, 1.0), T[:, 0, 2], T[:, 1, 2], T[:, 2, 2]])
+        self.ok = ok
+        for s0, s1 in zip(starts.tolist(), ends.tolist()):
+            here = box[s0:s1]
+            if len(self.always):
+                here = np.union1d(here, self.always)
+            self.cells[(int(gx[s0]), int(gy[s0]))] = (here, self.coef[:, here], ok[here])
+        self.none = (self.always, self.coef[:, self.always], ok[self.always])
+
+    def pairs(self, P: np.ndarray):
+        """``_bary_z`` of points ``P`` (N, 2) against their cells' triangles, as pairs:
+        (point, triangle, inside, z), each (K,), by point then triangle. A pair left
+        out is one ``_bary_z`` finds outside."""
+        if not self.cells or not len(P):
+            e = np.zeros(0, np.int64)
+            return e, e, np.zeros(0, bool), np.zeros(0)
+        lists = [self.cells.get((math.floor(x / self.cell), math.floor(y / self.cell)),
+                                self.none)[0] for x, y in P[:, :2].tolist()]
+        k = np.repeat(np.arange(len(P)), [len(t) for t in lists])
+        t = np.concatenate(lists).astype(np.int64)
+        a1, b1, a2, b2, cx, cy, det, az, bz, cz = self.coef[:, t]
+        dx = P[k, 0] - cx
+        dy = P[k, 1] - cy
+        l1 = (a1 * dx + b1 * dy) / det
+        l2 = (a2 * dx + b2 * dy) / det
+        l3 = 1.0 - l1 - l2
+        tol = 1e-7
+        inside = self.ok[t] & (l1 >= -tol) & (l2 >= -tol) & (l3 >= -tol)
+        return k, t, inside, l1 * az + l2 * bz + l3 * cz
+
+    def heights(self, x: float, y: float):
+        """``_bary_z`` of the point against the triangles of its cell: (inside, z),
+        each (k,), the triangles in ascending order."""
+        if not self.cells:
+            return np.zeros(0, bool), np.zeros(0)
+        _idx, c, ok = self.cells.get((math.floor(x / self.cell), math.floor(y / self.cell)),
+                                     self.none)
+        a1, b1, a2, b2, cx, cy, det, az, bz, cz = c
+        dx = x - cx
+        dy = y - cy
+        l1 = (a1 * dx + b1 * dy) / det
+        l2 = (a2 * dx + b2 * dy) / det
+        l3 = 1.0 - l1 - l2
+        tol = 1e-7
+        inside = ok & (l1 >= -tol) & (l2 >= -tol) & (l3 >= -tol)
+        return inside, l1 * az + l2 * bz + l3 * cz
+
+
 def check_connector(surf: WalkSurface, cor: CorridorSpec,
                     rooms: Mapping[str, RoomSpec], agent: AgentModel, *,
                     route=None, bridged: Optional[set] = None) -> ConnectorCheck:
@@ -2540,15 +2846,27 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
     T_steep = tris_all[steep_m]
     T_ceil = tris_all[ceil_m]
 
+    floor_grid = _TriBuckets(T_floor)
+    cum_l, seg_l = cum.tolist(), seg.tolist()
+    pts_l = pts_a.tolist()
+
+    def xy_at(s: float) -> Tuple[float, float]:
+        """``point_at`` for one position, in Python floats (the same operations)."""
+        i = min(max(bisect.bisect_right(cum_l, s) - 1, 0), len(seg_l) - 1)
+        t = (s - cum_l[i]) / seg_l[i] if seg_l[i] > 1e-12 else 0.0
+        (ax_, ay_), (bx_, by_) = pts_l[i][:2], pts_l[i + 1][:2]
+        return ax_ + (bx_ - ax_) * t, ay_ + (by_ - ay_) * t
+
     def floors_at(s: float) -> np.ndarray:
         """Floor heights in the band at arc position ``s``."""
         if not len(T_floor):
             return np.zeros(0)
-        P = point_at(s)
-        ins, z = _bary_z(P, T_floor)
+        # Only the floors whose box holds the point can hold it: ``_bary_z`` on
+        # those alone, in the same order with the same arithmetic per face.
+        ins, z = floor_grid.heights(*xy_at(s))
         ze = float(expected_z(s))
-        m = ins[0] & (np.abs(z[0] - ze) <= band)
-        return z[0][m]
+        m = ins & (np.abs(z - ze) <= band)
+        return z[m]
 
     def continues(s: float, s_ref: float, z_ref: float) -> bool:
         """Is the floor at ``s`` a continuous surface from (s_ref, z_ref)?"""
@@ -2579,22 +2897,19 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
     jump_thr = slope_rate * ds + 1e-3
     zexp = expected_z(S)
 
-    cand: List[np.ndarray] = []
+    # ``_bary_z`` of every sample against the faces of its grid cell only (the
+    # faces it can be inside), as (sample, face) pairs in face order: each
+    # sample's floors in the band, and whether a too-steep face is underfoot.
+    P_all = point_at(S)
+    k, _t, ins, z = floor_grid.pairs(P_all)
+    m = ins & (np.abs(z - zexp[k]) <= band)
+    k, z = k[m], z[m]
+    cut = np.searchsorted(k, np.arange(len(S) + 1))
+    cand: List[np.ndarray] = [z[cut[i]:cut[i + 1]] for i in range(len(S))]
     steep_at = np.zeros(len(S), bool)
-    chunk = max(1, 2_000_000 // max(1, len(T_floor) + len(T_steep)))
-    for c0 in range(0, len(S), chunk):
-        P = point_at(S[c0:c0 + chunk])
-        ze = zexp[c0:c0 + chunk, None]
-        if len(T_floor):
-            ins, z = _bary_z(P, T_floor)
-            m = ins & (np.abs(z - ze) <= band)
-            cand.extend(z[k][m[k]] for k in range(len(P)))
-        else:
-            cand.extend(np.zeros(0) for _ in range(len(P)))
-        if len(T_steep):
-            ins, z = _bary_z(P, T_steep)
-            steep_at[c0:c0 + chunk] = np.any(
-                ins & (np.abs(z - ze) <= band + agent.player_height), axis=1)
+    if len(T_steep):
+        k, _t, ins, z = _TriBuckets(T_steep).pairs(P_all)
+        steep_at[k[ins & (np.abs(z - zexp[k]) <= band + agent.player_height)]] = True
 
     floor_z = np.full(len(S), np.nan)
     risers: List[Tuple[float, float, float]] = []  # (pos, signed rise, floor before)
@@ -2663,15 +2978,16 @@ def check_connector(surf: WalkSurface, cor: CorridorSpec,
     if head_pts and len(T_ceil):
         hs = np.array([p[0] for p in head_pts])
         hz = np.array([p[1] for p in head_pts])
-        chunk = max(1, 2_000_000 // len(T_ceil))
-        for c0 in range(0, len(hs), chunk):
-            ins, z = _bary_z(point_at(hs[c0:c0 + chunk]), T_ceil)
-            above = ins & (z > hz[c0:c0 + chunk, None] + 1e-6)
-            room = np.where(above, z - hz[c0:c0 + chunk, None], np.inf).min(axis=1)
-            k = int(np.argmin(room))
-            if room[k] < min_head:
-                min_head = float(room[k])
-                head_at = float(hs[c0 + k])
+        # The lowest ceiling over each point (of the faces in its grid cell, the
+        # only ones it can be under), and the first point where it is lowest.
+        k, _t, ins, z = _TriBuckets(T_ceil).pairs(point_at(hs))
+        above = ins & (z > hz[k] + 1e-6)
+        room = np.full(len(hs), np.inf)
+        np.minimum.at(room, k[above], z[above] - hz[k[above]])
+        k = int(np.argmin(room))
+        if room[k] < min_head:
+            min_head = float(room[k])
+            head_at = float(hs[k])
 
     # ---- verdict -------------------------------------------------------------
     failures: List[Tuple[str, str]] = []
@@ -2972,8 +3288,9 @@ def shell_report(ter: TerFile, spec: ZoneSpec, agent: Optional[AgentModel] = Non
     # which asks "is this unreachable room adjacent to a reachable one?").
     room_faces_by_id: Dict[str, np.ndarray] = {}
     reached_by_id: Dict[str, List[int]] = {}
+    floors = _RoomFloors(surf, spec.rooms)
     for room in spec.rooms:
-        rf = _faces_in_room(surf, room, spec.rooms)
+        rf = floors(room)
         room_faces_by_id[room.id] = rf
         reached_by_id[room.id] = [int(f) for f in rf if int(f) in reachable]
     reachable_room_ids = {rid for rid, rl in reached_by_id.items() if rl}
@@ -3001,11 +3318,11 @@ def shell_report(ter: TerFile, spec: ZoneSpec, agent: Optional[AgentModel] = Non
         if is_reachable:
             shell.reachable_rooms += 1
 
-    shell.outlines = outline_checks(surf, spec, agent)
+    shell.outlines = outline_checks(surf, spec, agent, floors=floors)
 
     if check_corridors:
         shell.checked_corridors = True
-        results = corridor_continuity(surf, spec, agent)
+        results = corridor_continuity(surf, spec, agent, floors=floors)
         conflicts = corridor_conflicts(surf, spec, agent)
         shell.conflicts = conflicts
         # Attach the conflict reason to each corridor in a conflicting pair
