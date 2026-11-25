@@ -1338,21 +1338,39 @@ class LayoutGenerator:
         group: Dict[int, List[int]] = {}
         for k in range(len(rooms)):
             group.setdefault(find(k), []).append(k)
+        # Groups pushed whole first; if that hasn't settled (a group wedged
+        # between others can rock back and forth), room by room, a throat
+        # that no longer stands as one (:meth:`_throat_stands`) then kept a
+        # corridor width plus 1 apart like any pair.
+        if self._push_apart(rooms, stacked, iterations, gap, THROAT_GAP, kept,
+                            lambda k: group[find(k)]):
+            return
+        self._push_apart(rooms, stacked, iterations, gap, THROAT_GAP, kept, None)
+
+    def _push_apart(self, rooms: List[RoomSpec], stacked: Optional[set], iterations: int,
+                    gap: float, tgap: float, kept: set, group) -> bool:
+        """:meth:`_separate_with_throats`'s pushes: pairs of *kept* ``tgap``
+        apart, others *gap*. With *group* (room index -> the rooms that move
+        with it) a pair in two groups moves both groups; without, rooms move
+        alone and a throat counts only while it stands. True when settled."""
         for _ in range(iterations):
             moved = False
+            held = kept if group is not None else {
+                (a, b) for a, b in kept if self._throat_stands(rooms[a], rooms[b], tgap)}
             for a in range(len(rooms)):
                 for b in range(a + 1, len(rooms)):
                     if stacked and (a, b) in stacked:
                         continue
                     ra, rb = rooms[a], rooms[b]
-                    g = THROAT_GAP if (a, b) in kept else gap
+                    g = tgap if (a, b) in held else gap
                     dx = rb.center_x - ra.center_x
                     dy = rb.center_y - ra.center_y
                     ox = (ra.width + rb.width) / 2 + g - abs(dx)
                     oy = (ra.depth + rb.depth) / 2 + g - abs(dy)
                     if ox > 1e-9 and oy > 1e-9:
-                        ga, gb = find(a), find(b)
-                        movers = (group[ga], group[gb]) if ga != gb else ([a], [b])
+                        ga = group(a) if group is not None else [a]
+                        gb = group(b) if group is not None else [b]
+                        movers = (ga, gb) if ga is not gb else ([a], [b])
                         if ox < oy:
                             push = ox / 2 * (1 if dx >= 0 else -1)
                             for k in movers[0]:
@@ -1367,7 +1385,8 @@ class LayoutGenerator:
                                 rooms[k].center_y += push
                         moved = True
             if not moved:
-                break
+                return True
+        return False
 
     def _snap_throats(self, rooms: List[RoomSpec], pairs: List[Tuple[int, int]],
                       gap: float, tgap: float) -> set:
