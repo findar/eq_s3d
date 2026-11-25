@@ -30,7 +30,7 @@ specs" in `.kiro/steering/project.md`.
 - [ ] 3. Throats and clumps
   - Card: [cards/03-throats.md](cards/03-throats.md)
   - Type: agent · Size: M · Depends: 1, 2
-  - Owns: generators/topology/embed.py, generators/layout_engine.py, tests/test_topology_embed.py, goldens it moves (named in the commit); stop and report before widening
+  - Owns: generators/topology/embed.py, generators/layout_engine.py, tests/test_topology_embed.py, goldens it moves (named in the commit); widened by the lead (task 2's finding): generators/layout.py (`_separate_rooms` keeps same-floor rooms w + 1 apart); stop and report before widening further
   - Reqs: 2, 3, 4
 
 - [ ] 4. Gate and bands
