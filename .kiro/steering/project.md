@@ -77,8 +77,16 @@ output is a starting point for a human authoring pass, not a finished zone.
   note** — the Done-table row, "Pick up here" line, commit hash/count, and the
   `tasks/README.md` status change — so whoever integrates applies it in that one
   serialized step.
-- **Run the suite before claiming done**: `python -m pytest tests/ -q`. Build the
-  frontend when web files change: `cd web && npx vite build`.
+- **Run the suite before claiming done**, in tiers (wall times measured alone,
+  `EQ_PATH` set, `-n auto`; run one heavy suite at a time on the machine):
+  - **Quick, on every edit:** `python -m pytest tests/ -q -m "not slow and not gate" --hypothesis-profile quick`
+    (~210 s, 3029 tests, ~6.7 GB).
+  - **Full, alone, once at a task's close:** `python -m pytest tests/ -q`
+    (~1670 s at test-speed task 2, ~13 GB).
+  - **Gate, after geometry, layout or gate changes:** `python -m pytest tests/ -q -m gate`
+    (~1040 s, 702 tests; the same sweeps also run in full).
+  - `--hypothesis-profile thorough` only where a card asks for it.
+  Build the frontend when web files change: `cd web && npx vite build`.
 - **Don't add tests unless they're warranted** by the change (regressions, new
   features). The user doesn't want test-for-test's-sake.
 - Prefer fixing a root cause over loosening a test. When a walkability or
