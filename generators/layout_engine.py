@@ -26,7 +26,7 @@ from __future__ import annotations
 import functools
 import math
 import random
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import (TYPE_CHECKING, Callable, Dict, List, NamedTuple, Optional,
                     Protocol, Tuple, Type, Union)
@@ -76,7 +76,9 @@ class LayoutContext:
     room_max: float
     ceiling: float                       # classic room height
     corridor_width: float
-    separate: Callable[[List[RoomSpec]], None]   # LayoutGenerator._separate_rooms
+    # LayoutGenerator._separate_rooms (``throats=``: room id pairs it holds
+    # ``embed.THROAT_GAP`` apart, a bearing placement's throats)
+    separate: Callable[..., None]
     build: BuildContext
     # The plan's Size control as a shift of the rooms' position in the race's
     # bands (``semantics.SIZE_SHIFT``); the graph engine sizes its classes
@@ -131,6 +133,11 @@ class EngineResult:
     # cuts a door off the shared span where the line to the other room leaves
     # the wall, not at the wall's middle (task 10).
     bearing: bool = False
+    # A bearing placement's throats (cave clumps step 29, task 3): room index
+    # pairs whose rooms the placement rests ``embed.THROAT_GAP`` wall to wall,
+    # doors in line (``embed.THROAT_SHARE``). Job B's separation holds them
+    # there (``LayoutGenerator._separate_rooms``). Empty: none.
+    throats: List[Tuple[int, int]] = field(default_factory=list)
 
 
 class LayoutEngine(Protocol):
@@ -518,14 +525,23 @@ class GraphEngine:
         # (Separation pushes pairs symmetrically, so an Envelope layout stays
         # centred on the footprint.) Stacked, each Level separates on its own:
         # ``ctx.separate`` (Job B's ``_separate_rooms``) is a plan test, and
-        # rooms on different Levels may overlap.
+        # rooms on different Levels may overlap. A bearing placement's throats
+        # (cave clumps task 3) are held THROAT_GAP apart, doors in line.
+        idx = {r: k for k, r in enumerate(order)}
+        throats: List[Tuple[int, int]] = []
+        sep = {}
+        if bearing:
+            throats = sorted(tuple(sorted((idx[a], idx[b]))) for a, b in
+                             (tuple(p) for p in embed.throat_pairs(
+                                 graph, order, half, storeys, ctx.seed, ctx.corridor_width)))
+            if throats:
+                sep = {"throats": {frozenset((rooms[i].id, rooms[j].id)) for i, j in throats}}
         if levels is None:
-            ctx.separate(rooms)
+            ctx.separate(rooms, **sep)
         else:
             for lv in sorted({levels[r] for r in order}):
-                ctx.separate([rooms[k] for k, r in enumerate(order) if levels[r] == lv])
+                ctx.separate([rooms[k] for k, r in enumerate(order) if levels[r] == lv], **sep)
 
-        idx = {r: k for k, r in enumerate(order)}
         edges: List[Edge] = []
         for e in graph.edges():
             i, j = idx[e.a], idx[e.b]
@@ -547,7 +563,7 @@ class GraphEngine:
             record["level_height"] = level_h
         return EngineResult(rooms=rooms, edges=edges, entry=entry, climax=climax,
                             record=record, levels=room_levels, level_height=level_h,
-                            jittered=jittered, bearing=bearing)
+                            jittered=jittered, bearing=bearing, throats=throats)
 
     def _descending(self, rs, room_count: int, ctx: LayoutContext, grown):
         """``grown``, or a graph grown again (``descend``): the first whose

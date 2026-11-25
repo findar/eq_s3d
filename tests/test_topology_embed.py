@@ -651,6 +651,35 @@ def test_jittered_facing_rooms_get_a_straight_corridor(seed):
     assert checked
 
 
+@pytest.mark.parametrize("seed,n,theme,verticality", [
+    (731402518, 12, "cave", "moderate"), (2006, 14, "cave", "flat"),
+    (2021, 29, "cave", "dramatic"), (4, 20, "temple", "moderate")])
+def test_cave_rooms_open_into_each_other_through_throats(seed, n, theme, verticality):
+    """Cave clumps task 3 (Requirement 2): a cave's throats stand
+    ``embed.THROAT_GAP`` wall to wall with their doors in line, a straight
+    corridor no longer than its width door to door, both rooms on one floor,
+    never a stair or a Bridge. Only a cave has them."""
+    import math
+    from generators.routing import corridor_route
+    spec = _controls_spec(seed, n, theme, verticality)
+    rooms = {r.id: r for r in spec.rooms}
+    throats = 0
+    for cor in spec.corridors:
+        a, b = rooms[cor.from_room], rooms[cor.to_room]
+        route = corridor_route(cor, rooms)
+        line = cor.path or list(route.waypoints)
+        if sum(math.dist(p, q) for p, q in zip(line, line[1:])) > cor.width + 1e-6:
+            continue
+        throats += 1
+        gap = max(abs(b.center_x - a.center_x) - (a.width + b.width) / 2,
+                  abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2)
+        assert gap == pytest.approx(embed.THROAT_GAP), (seed, cor.id, gap)
+        assert route.kind == "straight", (seed, cor.id)
+        assert not cor.steps and not cor.bridge, (seed, cor.id)
+        assert abs(a.floor_z - b.floor_z) < 0.01, (seed, cor.id)
+    assert (throats > 0) == (theme == "cave"), (seed, throats)
+
+
 def test_jitter_salt_is_the_build_seed():
     """Random placement task 1 (Requirement 5): a cave's offsets come from the
     build's seed. Two builds whose rooms match (one rng stream) but whose
