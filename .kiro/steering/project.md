@@ -82,9 +82,9 @@ output is a starting point for a human authoring pass, not a finished zone.
   - **Quick, on every edit:** `python -m pytest tests/ -q -m "not slow and not gate" --hypothesis-profile quick`
     (~210 s, 3029 tests, ~6.7 GB).
   - **Full, alone, once at a task's close:** `python -m pytest tests/ -q`
-    (~1670 s at test-speed task 2, ~13 GB).
+    (~1320 s at test-speed task 6, ~13 GB).
   - **Gate, after geometry, layout or gate changes:** `python -m pytest tests/ -q -m gate`
-    (~1040 s, 702 tests; the same sweeps also run in full).
+    (~770 s, 702 tests; the same sweeps also run in full).
   - `--hypothesis-profile thorough` only where a card asks for it.
   Build the frontend when web files change: `cd web && npx vite build`.
 - **Don't add tests unless they're warranted** by the change (regressions, new

@@ -27,7 +27,16 @@
    scale with the profile, except `test_w1_outline...` (see Follow-ups). Coverage cuts were not
    taken.
 
+4. **The gate is 2.8x faster with identical reports; 1323 s accepted** (the lead, 2026-11-25, at
+   task 6). Full suite 1670 -> 1323 s, gate tier 1040 -> 768 s, quick 205 s. 144 reports (72
+   builds and 72 with 3% of polygons dropped) equal field for field against master's gate. The
+   gate is now 10-17% of a sweep build; the rest is decor, map outline and room outlines.
+
 ## Follow-ups
+- **Build time outside the gate** (task 6): decor placement, map outline and `generators/outline.py`
+  containment now dominate a sweep build; speeding them helps tests and generates alike.
+- **`test_corridor_clearance::test_no_corridor_clips_a_room_over_the_sweep`** is one 271 s call;
+  split it per case like task 2's splits.
 - **Outline fault at thorough** (task 2): `test_outline::test_w1_outline_is_inside_connected_and_reaches_every_door`
   fails in `draw_outline` at 300 examples (Voronoi blob, w=70, fill 0.75, N 0.846, W 0.0: d=61
   seed 0 gives two wall loops; d=50 seed 1 a folded fan). Kept at a literal 60; a generator fix.
