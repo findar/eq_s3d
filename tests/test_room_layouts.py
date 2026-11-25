@@ -158,6 +158,7 @@ def _clutter(spec):
     return sum(f.kind == "boulder" for r in spec.rooms for f in r.features) / len(spec.rooms)
 
 
+@pytest.mark.slow
 def test_a_temple_stands_clear_and_a_mine_is_a_mess():
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan

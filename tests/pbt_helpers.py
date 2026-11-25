@@ -44,9 +44,10 @@ def scaled(n: int) -> int:
     ``max_examples``. Under the default profile (max_examples=100) this returns
     ``n``; under ``thorough`` (max_examples=500) it returns ``5 * n`` — so every
     test scales by exactly 5x with the profile even when it pins its own budget
-    (design Req 1.3).
+    (design Req 1.3). Never below 1: under ``quick`` (max_examples=25) a small
+    budget such as ``scaled(4)`` still draws one example beside its ``@example``s.
     """
-    return n * settings().max_examples // 100
+    return max(1, n * settings().max_examples // 100)
 
 
 def build_settings(n: int) -> settings:

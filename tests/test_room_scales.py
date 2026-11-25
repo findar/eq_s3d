@@ -207,6 +207,7 @@ def test_lean_can_rule_nothing_out_entirely():
     assert lean(w, [10], 10)[0] > 0
 
 
+@pytest.mark.slow
 def test_coherence_0_ignores_neighbours_and_more_means_less_drift():
     """F12, over many seeds, on the same graphs."""
     specs = [_spec(seed=s, rooms=24) for s in range(16)]
@@ -223,6 +224,7 @@ def test_coherence_0_ignores_neighbours_and_more_means_less_drift():
     assert free > some > tight
 
 
+@pytest.mark.slow
 def test_a_rooms_type_and_race_are_felt_in_its_draw():
     """A fortress's throne is finer than a warren's burrow, over seeds."""
     fine = [v for s in range(8) for v in _finishes(_spec(seed=s, dungeon_theme="fortress")).values()]
@@ -234,6 +236,7 @@ def _edges(spec):
     return [(c.from_room, c.to_room) for c in spec.corridors]
 
 
+@pytest.mark.slow
 def test_a_wing_inherits_as_it_grows_and_sets_its_finish():
     """F12: rooms grown from a wing's placeholder keep it, and its finish holds."""
     winged = []
@@ -260,6 +263,7 @@ def test_a_room_does_not_lean_across_a_wings_edge():
     assert records[room.id]["scales"][FINISH] == expected
 
 
+@pytest.mark.slow
 def test_stock_shaped_zones():
     """Req 11.5: drift and breaks in stock's bands, and drift under shuffled, over many zones."""
     from random import Random

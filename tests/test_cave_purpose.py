@@ -75,6 +75,7 @@ def test_the_cave_palette_and_light_are_its_own():
             assert t.light not in cave_lights, name
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("layout", ["classic", "graph"])
 @pytest.mark.parametrize("rooms", [8, 15, 30])
 def test_a_cave_dungeon(layout, rooms):
@@ -125,6 +126,7 @@ def test_a_cave_room_takes_cave_light_for_a_warm_type():
     assert semantics._room_light(cave, semantics.ROOM_TYPES["sump"]) == semantics._COLD
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("layout", ["classic", "graph"])
 @pytest.mark.parametrize("rooms", [8, 15, 30])
 def test_no_cave_room_is_torch_lit(layout, rooms):

@@ -204,6 +204,7 @@ def _check_props(seed, ctx, props, cor, rooms):
         assert ok, f"seed {seed} {ctx.id}: {p.key} at ({p.x}, {p.y}) is off the strip"
 
 
+@pytest.mark.slow
 def test_lights_placed_in_a_winding_corridor_stand_on_its_strip():
     """A cave's corridors are dark (``layers/cave.toml``), so the base rules light the 5 caves'
     winding corridors here: every Prop placed from their contexts is on the strip."""

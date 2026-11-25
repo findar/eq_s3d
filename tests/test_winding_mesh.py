@@ -83,6 +83,7 @@ def _straight(spec):
     return flat
 
 
+@pytest.mark.slow
 def test_caves_wind_and_warrens_mostly_do_not():
     # An angled cave corridor (random placement task 10) winds along its route line, its legs
     # never: its two ends count with the winding legs' (test_wind_route_mesh welds them).
@@ -91,6 +92,7 @@ def test_caves_wind_and_warrens_mostly_do_not():
     assert caves > 50, "cave legs wind"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("zone", ZONES, ids=lambda z: f"{z[0]}{z[1]}-{z[2]}-{z[3]}")
 def test_winding_ends_weld_and_floor_steps_stay_small(zone):
     spec = _spec(*zone)

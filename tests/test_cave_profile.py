@@ -48,6 +48,7 @@ def test_the_profile_shrinks_rooms_and_nothing_else_moves():
     assert cave.size_shift == cave.profile_shift
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("layout", ["classic", "graph"])
 def test_cave_rooms_are_smaller_than_without_the_profile(layout, monkeypatch):
     """Same seeds, same Purpose: the profile alone shrinks the mean room area."""
@@ -60,6 +61,7 @@ def test_cave_rooms_are_smaller_than_without_the_profile(layout, monkeypatch):
 # Classic re-pinned from 0.076 by random placement task 11: these ten seeds' ratio moved
 # 0.936 -> 0.887 with the footprint draw, though over seeds 1-40 it holds (0.915 -> 0.913;
 # the shift alone would give 0.850), so the ten seeds' draw moved, not the shrink.
+@pytest.mark.slow
 @pytest.mark.parametrize("layout, shrink", [("classic", 0.113), ("graph", 0.139)])
 def test_the_profile_shrinks_footprints_not_heights(layout, shrink, monkeypatch):
     """District-looks task 4: the shift sizes footprints only. Ten seeds with

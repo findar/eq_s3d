@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -103,6 +104,7 @@ sizes = st.integers(200, 1600)
 paddings = st.integers(0, 90)
 
 
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(100))
 @given(spec=zone_specs(), size=sizes, padding=paddings)
 def test_schematic_unchanged(spec, size, padding):
@@ -134,6 +136,7 @@ def _unframed(svg: str) -> str:
     return _FRAME_ATTRS.sub("", head) + ">" + rest
 
 
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(100))
 @given(data=st.data(), spec=zone_specs(), size=sizes, padding=paddings)
 def test_frame_maps_rooms_to_their_labels(data, spec, size, padding):
@@ -166,6 +169,7 @@ def _path_points(d: str):
     return list(zip(nums[0::2], nums[1::2]))
 
 
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(100))
 @given(data=st.data(), spec=zone_specs(), size=sizes, padding=paddings)
 def test_outline_under_annotations(data, spec, size, padding):

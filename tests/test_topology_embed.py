@@ -237,6 +237,7 @@ def _built_shape(spec, record):
             "deep_end": max(dist.values()) / n}
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("label", sorted(SWEEP_SETS))
 def test_edge_fidelity_over_the_sweep(label):
     fids = [rec["edge_fidelity"] for _spec, rec in _sweep(label)]
@@ -245,6 +246,7 @@ def test_edge_fidelity_over_the_sweep(label):
     assert mean >= bar, f"{label}: mean Edge_Fidelity {mean:.4f} < bar {bar:.4f}"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("label", sorted(BUILT_BANDS))
 def test_built_graph_keeps_the_survey_shape(label):
     """Loops survive placement (task 18): the corridors Job B builds still
@@ -259,6 +261,7 @@ def test_built_graph_keeps_the_survey_shape(label):
     assert not bad, f"{label}: " + "; ".join(bad)
 
 
+@pytest.mark.slow
 def test_relations_hold_unless_counted():
     held = total = 0
     for spec, rec in (x for label in SWEEP_SETS for x in _sweep(label)):
@@ -300,6 +303,7 @@ def _race_sweep(shared, race):
                            _race_spec)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("race", ["ogre", "giant"])
 def test_big_races_keep_their_loops(shared_results, race):
     """Rooms are placed at their race-scaled size, so the loops survive Job B
@@ -316,6 +320,7 @@ def test_big_races_keep_their_loops(shared_results, race):
     assert any(a[1] == "great_hall" for sp in specs for a in sp.layout["applied"])
 
 
+@pytest.mark.slow
 def test_race_scale_applies_once(shared_results):
     """The race goes on grown rooms once (in the engine, from its bands): a
     giant's rooms average (22/6)^2 the floor area of no race's (H 22 against

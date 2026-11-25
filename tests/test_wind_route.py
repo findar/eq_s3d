@@ -153,6 +153,7 @@ def _band(z0, z1, height):
     return min(z0, z1) - WIND_Z_SPARE, max(z0, z1) + height + WIND_Z_SPARE
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("case", CAVES, ids=[f"{r}-{v}" for _, r, v in CAVES])
 def test_stored_paths_clear_everything(case):
     """A2: every stored path's strip keeps the player's half-width from every room box and
@@ -211,6 +212,7 @@ def test_stored_paths_clear_everything(case):
                 assert poly_gap(quad, poly) >= need - 1e-6, (cor.id, j, rid)
 
 
+@pytest.mark.slow
 def test_paths_wind_most_cave_corridors():
     """Most rough cave corridors that hold no Transition line get a path (87 of 132 at the
     cave run of 4 widths, winding routes task 4; 75% held at 9)."""

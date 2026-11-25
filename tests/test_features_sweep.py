@@ -94,6 +94,7 @@ def _key(walls, rule_set, theme, race, features, rooms, vert, zone_type, seed):
     return gated_key(fields, seed, 4, 300.0)
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("walls, rule_set, theme, race, features, rooms, vert, zone_type, seed",
                          [case + (s,) for case in CASES for s in SEEDS])
@@ -106,6 +107,7 @@ def test_f10_passes_within_the_retries(shared_results, walls, rule_set, theme, r
     assert tries is not None, "out of retries"
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("walls, rule_set, theme, race, features, rooms, vert, zone_type", CASES)
 def test_f10_first_try(shared_results, walls, rule_set, theme, race, features, rooms, vert, zone_type):

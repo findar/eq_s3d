@@ -138,6 +138,7 @@ def _od_zone(key: tuple) -> dict:
     return {"plan": True, "gate": bool(gate), "kinds": [s["kind"] for s in side]}
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 def test_outdoor_dungeons_gate_first_try_with_a_site(shared_results):
     """Site-sockets Req 5.3, 8.1: outdoor dungeons at seeds 0-39, built, at Normal and Dense

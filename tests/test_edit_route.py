@@ -119,6 +119,7 @@ def test_text_edit_is_the_next_version_with_its_edit_block(server):
     assert (listing[n]["parent"], listing[n]["how"]) == (1, "partial")
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("fault", [None, "stale"])
 def test_ops_edit_equals_a_full_build_of_the_edited_spec(server, fault, monkeypatch, tmp_path):
     """A partial edit builds from the parent's stages; stale stages are built in full

@@ -78,6 +78,7 @@ def client(tmp_path, monkeypatch):
     return TestClient(app_mod.app)
 
 
+@pytest.mark.slow
 def test_server_builds_it_and_the_sidecar_has_the_block(client):
     resp = client.post("/api/generate", json={
         "mode": "controls", "seed": 5,

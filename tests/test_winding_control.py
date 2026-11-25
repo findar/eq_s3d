@@ -91,6 +91,7 @@ def test_scaled_rules_are_the_stock_object_at_one_and_none_at_zero():
 
 # --- The measure ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 def test_winding_zero_one_two():
     """0: no corridor has a wind or a path. 1: the zone a plan without the field builds, with
     no key on the spec. 2 on the same run (the coupling pinned off, so the rooms stand where
@@ -126,6 +127,7 @@ def test_cave_run_follows_winding_above_one():
     assert layout.profile_run_factor("dungeon", 2.0) is None
 
 
+@pytest.mark.slow
 def test_winding_two_strays_clearly_more_than_one():
     """Over ten caves, the rough corridors at 2 stray clearly further than at 1: the mean and
     p90 of the largest stray per corridor (the median is 0 at both, most cave corridors being

@@ -262,6 +262,7 @@ def _bridges(spec):
     return [c.bridge for c in spec.corridors if c.bridge]
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 def test_bridge_dungeons_pass_the_gate_first_try(tmp_path):
     grown = []
