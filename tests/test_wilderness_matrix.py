@@ -293,7 +293,7 @@ def test_edge_declaration_strategy_shapes():
     """
     from hypothesis import given, settings
 
-    @settings(max_examples=50, deadline=None)
+    @settings(max_examples=scaled(50), deadline=None)
     @given(edges=edge_declarations())
     def _check(edges):
         sides = [e.side for e in edges]

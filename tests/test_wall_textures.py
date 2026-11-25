@@ -6,6 +6,8 @@ classic Look_Stats bands still hold.
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.semantics import _THEME_PALETTES
@@ -76,7 +78,7 @@ def test_rock_recipes_are_found_by_theme():
     assert resolve("gnoll_temple_rock_floor").params["scale"] == 6
 
 
-@settings(max_examples=20, deadline=None)
+@settings(max_examples=scaled(20), deadline=None)
 @given(surface=st.sampled_from(["wall", "floor", "ceiling"]), seed=st.integers(0, 2 ** 31 - 1),
        colour=st.sampled_from(PALETTE_COLOURS))
 def test_rock_lies_in_the_classic_band(surface, seed, colour):

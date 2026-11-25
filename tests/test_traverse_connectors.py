@@ -22,6 +22,8 @@ import numpy as np
 import pytest
 from hypothesis import assume, example, given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 import analyzer.traverse as T
 from analyzer.traverse import AgentModel, build_walk_surface
 from core.ter import Polygon, TerFile, Vertex
@@ -126,7 +128,7 @@ def expected_classes(rise, steps, run, height, agent=AGENT):
 # Property: generated staircases (V1)
 # ---------------------------------------------------------------------------
 
-@settings(max_examples=60, deadline=None)
+@settings(max_examples=scaled(60), deadline=None)
 @given(
     rise=st.floats(1.0, 40.0).flatmap(
         lambda m: st.sampled_from([m, -m])),
@@ -166,7 +168,7 @@ def test_generated_stairs_gate_agrees_with_numbers(rise, steps, run, width,
     assert all(abs(abs(h) - r) < 1e-6 for h in mesh.risers)
 
 
-@settings(max_examples=25, deadline=None)
+@settings(max_examples=scaled(25), deadline=None)
 @given(
     rise=st.floats(4.0, 30.0),
     steps=st.integers(3, 12),

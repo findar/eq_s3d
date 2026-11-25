@@ -238,28 +238,54 @@ def test_points_cluster_on_worlds_alone():
     assert not bad, bad
 
 
+def _stock_zones() -> list:
+    import site_survey as ss
+    return [z for z in ss.ZONES if z not in ss.TOWNS]
+
+
+def _stock_measure(key: tuple) -> dict:
+    """``("stock_r", zone)`` -> the zone's Sites by the survey's own code
+    (``site_survey.main``'s per-zone steps, ground cached under output/site_survey/cache):
+    how many, its Clark-Evans R, the share within the Group gap and its NN p10."""
+    import site_survey as ss
+    _tag, zone = key
+    ground = ss.ground_of(EQ, zone, AgentModel(), ROOT / "output" / "site_survey" / "cache")
+    _nodes, kinds = ss.regions(EQ, zone)
+    ground.cell_wet = np.array([kinds.get(int(r), "") for r in ground.cell_region]) == "water"
+    m = site_measures(cluster(ss.placed(EQ, zone)), ground, np.zeros((0, 2)), np.zeros((0, 2)))
+    out = {"sites": int(m["sites"]), "ground": float(m["ground"])}
+    if m["sites"] >= MIN_SITES_R:
+        out.update(r=clark_evans(m), in_gap=float(np.mean(m["spacing"] <= GROUPS.gap)),
+                   nn_p10=float(np.percentile(m["spacing"], 10)))
+    return out
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(not EQ.exists(), reason="EQ install not present (set EQ_PATH)")
-def test_stock_r_band():
+@pytest.mark.parametrize("zone", _stock_zones())
+def test_stock_zone_reads_through_the_survey(shared_results, zone):
+    """One stock zone of ``test_stock_r_band`` (a test each, so the slow cold-cache ground
+    reads spread over the workers): it has walked ground to measure Sites on."""
+    m = shared_results.get(("stock_r", zone), _stock_measure)
+    assert m["ground"] > 0 and m["sites"] >= 0, m
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(not EQ.exists(), reason="EQ install not present (set EQ_PATH)")
+def test_stock_r_band(shared_results):
     """``STOCK_R`` from the stock zones, by the survey's own code (``site_survey.main``'s
     per-zone steps; towns left out, ground cached under output/site_survey/cache); and the
     plains targets in ``biomes.toml`` as the plains zones' min-max of R, of the share within
     the Group gap and of NN p10 (design finding 1, ``scripts/site_clustering.py``)."""
-    import site_survey as ss
     from site_clustering import BIOME as ZONE_BIOME
-    agent, rs, plains = AgentModel(), {}, []
-    for zone in ss.ZONES:
-        if zone in ss.TOWNS:
-            continue
-        ground = ss.ground_of(EQ, zone, agent, ROOT / "output" / "site_survey" / "cache")
-        _nodes, kinds = ss.regions(EQ, zone)
-        ground.cell_wet = np.array([kinds.get(int(r), "") for r in ground.cell_region]) == "water"
-        m = site_measures(cluster(ss.placed(EQ, zone)), ground, np.zeros((0, 2)), np.zeros((0, 2)))
+    zones = _stock_zones()
+    got = shared_results.get_many([("stock_r", z) for z in zones][::-1], _stock_measure)[::-1]
+    rs, plains = {}, []
+    for zone, m in zip(zones, got):
         if m["sites"] >= MIN_SITES_R:
-            rs[zone] = clark_evans(m)
+            rs[zone] = m["r"]
             if ZONE_BIOME.get(zone) == BIOME:
-                plains.append((rs[zone], float(np.mean(m["spacing"] <= GROUPS.gap)),
-                               float(np.percentile(m["spacing"], 10))))
+                plains.append((m["r"], m["in_gap"], m["nn_p10"]))
     v = list(rs.values())
     print(f"\nstock R: {len(v)} zones, p10 {np.percentile(v, 10):.2f}, median {median(v):.2f}, "
           f"p90 {np.percentile(v, 90):.2f}; " + ", ".join(f"{z} {r:.2f}" for z, r in rs.items()))

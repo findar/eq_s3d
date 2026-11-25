@@ -11,6 +11,8 @@ import math
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.layout import ENTRY_MAX
@@ -62,7 +64,7 @@ def _exit(route, end):
     return (x1 - x0) / d, (y1 - y0) / d
 
 
-@settings(max_examples=300, deadline=None)
+@settings(max_examples=scaled(300), deadline=None)
 @given(routes(), rules_st, st.integers(0, 2 ** 32), st.booleans())
 def test_route_line_shape(case, rules, seed, wander):
     """Ends exactly at the openings, straight ``max(hw, end)`` out of each along its exit axis,
@@ -81,7 +83,7 @@ def test_route_line_shape(case, rules, seed, wander):
     assert all(_dist(p, q) > 1e-6 for p, q in zip(line, line[1:]))
 
 
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=scaled(100), deadline=None)
 @given(routes(), rules_st, st.integers(0, 2 ** 32))
 def test_route_line_is_pure(case, rules, seed):
     route, hw = case

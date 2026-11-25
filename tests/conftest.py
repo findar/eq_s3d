@@ -317,7 +317,12 @@ def gated_attempts(key: tuple) -> object:
     """``("gated", plan fields, seed, max_attempts, timeout_s)`` -> the pipeline's
     build -> gate -> retry loop on ``random.Random(seed)``: the attempts it took,
     or None when the budget ran out. Every sweep builds through this, so a zone
-    two sweeps share is built once. The build goes in a temporary folder."""
+    two sweeps share is built once. The build goes in a temporary folder.
+
+    The quality Draws judge the plan's own verticality, as the CLI and the Server
+    pass it (``main.py``, ``request["plan"]``). Left out, the meter judged every plan
+    by ``moderate``'s bands, so a ``flat`` plan failed every Draw (32 plans drawn and
+    measured) and built the lowest score."""
     import random
 
     from ai.expand import plan_to_spec
@@ -333,7 +338,8 @@ def gated_attempts(key: tuple) -> object:
                                     zone_type=plan.zone_type, zone_id=plan.name,
                                     output_dir=Path(tmp), write_glb=False,
                                     rng=random.Random(seed), failure_log=None,
-                                    max_attempts=max_attempts, timeout_s=timeout_s)
+                                    max_attempts=max_attempts, timeout_s=timeout_s,
+                                    verticality=plan.verticality)
         except GenerationFailed:
             return None
     assert vb.validated

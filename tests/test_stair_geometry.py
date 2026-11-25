@@ -26,6 +26,8 @@ import numpy as np
 import pytest
 from hypothesis import assume, example, given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 import analyzer.traverse as T
 from analyzer.traverse import AgentModel, build_walk_surface
 from generators.geometry import (AUTO_STAIRS, MIN_LANE, RISER_CAP, TREAD_DEPTH,
@@ -147,7 +149,7 @@ def risers_of(S, fz, tol=1e-3):
 # The plan
 # ---------------------------------------------------------------------------
 
-@settings(max_examples=200, deadline=None)
+@settings(max_examples=scaled(200), deadline=None)
 @given(rise=st.floats(0.05, 200.0), leg=st.floats(0.0, 600.0))
 def test_plan_risers_under_cap_and_straight_iff_leg_holds_run(rise, leg):
     p = stair_plan(rise, leg)
@@ -332,7 +334,7 @@ def crosses_wall(mesh, p, q, z):
 
 
 @pytest.mark.slow
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=scaled(40), deadline=None)
 @given(
     rise=st.floats(1.0, 60.0).flatmap(lambda m: st.sampled_from([m, -m])),
     run=st.floats(12.0, 240.0),
@@ -479,7 +481,7 @@ def assert_gate_passes(spec):
     assert cont.connected, cont.reason
 
 
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=scaled(30), deadline=None)
 @given(
     rise=st.floats(1.0, 60.0).flatmap(lambda m: st.sampled_from([m, -m])),
     run=st.floats(12.0, 240.0),

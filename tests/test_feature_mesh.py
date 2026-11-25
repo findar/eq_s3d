@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from analyzer.traverse import AgentModel, build_walk_surface, check_features, check_outline
 from generators.geometry import MeshBuilder, _ensure_materials, build_mesh, dais_steps, room_doors, step_plans
 from generators.outline import add_relief, draw_outline
@@ -48,7 +50,7 @@ def _solid_faces(plan, z0, z1):
     return mb
 
 
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=scaled(40), deadline=None)
 @given(form=st.sampled_from(FORMS), side=st.floats(3.0, 60.0), height=st.floats(4.0, 90.0), seed=st.integers(0, 9999))
 def test_f2_a_solid_is_closed_and_faces_outward(form, side, height, seed):
     plan = solid_plan(form, 5.0, -7.0, side, random.Random(seed))

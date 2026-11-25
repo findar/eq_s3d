@@ -264,34 +264,38 @@ def _bridges(spec):
 
 @pytest.mark.gate
 @pytest.mark.slow
-def test_bridge_dungeons_pass_the_gate_first_try(tmp_path):
-    grown = []
-    failed = []
-    for v, n, seed in SWEEP:
-        plan = _plan(n, v)
-        want = _bridges(plan_to_spec(plan, seed=seed))
-        if not want:
-            continue
-        grown.append((v, n, seed))
-        try:
-            vb = generate_validated(lambda s: plan_to_spec(plan, seed=s),
-                                    zone_type="dungeon", zone_id=f"br{n}_{seed}_{v}",
-                                    seed=seed, output_dir=tmp_path, write_glb=False,
-                                    max_attempts=1, failure_log=None)
-        except GenerationFailed as e:
-            failed.append((v, n, seed, str(e)[:300]))
-            continue
-        assert _bridges(vb.spec) == want
-        # A fall off a deck lands in the room under it: that room must be
-        # one the walk reaches on foot from the spawn.
-        reach = {r.room_id: r.reachable for r in vb.report.rooms}
-        assert all(reach[h] for h in want), (v, n, seed, want)
-        res = {r.corridor_id: r for r in vb.report.corridors}
-        for c in vb.spec.corridors:
-            if c.bridge:
-                assert res[c.id].connected, (c.id, res[c.id].reason)
+@pytest.mark.parametrize("v, n, seed", SWEEP, ids=[f"{v}-{n}-{s}" for v, n, s in SWEEP])
+def test_bridge_dungeons_pass_the_gate_first_try(tmp_path, v, n, seed):
+    """One case of the sweep (a test each, so the sweep spreads over the workers): a
+    plan that grows a Bridge passes the gate on its pinned seed, every deck connected."""
+    plan = _plan(n, v)
+    want = _bridges(plan_to_spec(plan, seed=seed))
+    if not want:
+        return
+    try:
+        vb = generate_validated(lambda s: plan_to_spec(plan, seed=s),
+                                zone_type="dungeon", zone_id=f"br{n}_{seed}_{v}",
+                                seed=seed, output_dir=tmp_path, write_glb=False,
+                                max_attempts=1, failure_log=None)
+    except GenerationFailed as e:
+        pytest.fail(f"{(v, n, seed)}: {str(e)[:300]}")
+    assert _bridges(vb.spec) == want
+    # A fall off a deck lands in the room under it: that room must be
+    # one the walk reaches on foot from the spawn.
+    reach = {r.room_id: r.reachable for r in vb.report.rooms}
+    assert all(reach[h] for h in want), (v, n, seed, want)
+    res = {r.corridor_id: r for r in vb.report.corridors}
+    for c in vb.spec.corridors:
+        if c.bridge:
+            assert res[c.id].connected, (c.id, res[c.id].reason)
+
+
+@pytest.mark.slow
+def test_a_third_of_the_sweep_grows_a_bridge():
+    """The sweep above reaches Bridges: at least a third of its plans grow one (planning
+    only; the builds are the per-case tests')."""
+    grown = [(v, n, s) for v, n, s in SWEEP if _bridges(plan_to_spec(_plan(n, v), seed=s))]
     print(f"\nbridges grown in {len(grown)}/{len(SWEEP)} builds")
-    assert not failed, failed
     assert len(grown) >= len(SWEEP) // 3, grown
 
 

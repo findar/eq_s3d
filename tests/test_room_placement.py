@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 from hypothesis import example, given, settings, strategies as st
 
+from tests.pbt_helpers import scaled
+
 from generators.outline import draw_outline
 from generators.room_features import CUT, DAIS, PILLAR, PLINTH, ROUGH, SQUARE
 from generators.room_layouts import ARRANGEMENTS, Ask, RoomGrid, place
@@ -41,7 +43,7 @@ ASKS = [Ask(DAIS, "far_end", poi="boss"), Ask(PLINTH, "centre", height_h=1.0), A
         Ask(PLINTH, "scatter", count=(1, 4), height_h=1.0)]
 
 
-@settings(max_examples=60, deadline=None)
+@settings(max_examples=scaled(60), deadline=None)
 @given(w=st.floats(48.0, 200.0), d=st.floats(48.0, 200.0), complex=SHAPES, seed=st.integers(0, 10 ** 6),
        picks=st.lists(st.tuples(st.sampled_from("NSEW"), st.floats(0.0, 1.0)), min_size=1, max_size=4),
        asks=st.lists(st.sampled_from(ASKS), min_size=1, max_size=4))

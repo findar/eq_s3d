@@ -140,6 +140,17 @@ def _od_zone(key: tuple) -> dict:
 
 @pytest.mark.gate
 @pytest.mark.slow
+@pytest.mark.parametrize("seed", OD_SWEEP)
+def test_an_outdoor_dungeon_that_plans_gates_first_try(shared_results, seed):
+    """One seed of the sweep below (a test each, so its builds spread over the workers): at
+    Normal and Dense, when it plans, it passes the gate first try."""
+    for c in ("normal", "dense"):
+        z = shared_results.get(("od_sweep", seed, c), _od_zone)
+        assert not z["plan"] or z["gate"], (c, seed)
+
+
+@pytest.mark.gate
+@pytest.mark.slow
 def test_outdoor_dungeons_gate_first_try_with_a_site(shared_results):
     """Site-sockets Req 5.3, 8.1: outdoor dungeons at seeds 0-39, built, at Normal and Dense
     pass the gate first try on every seed that plans (step 12: 40 of 40), and at Normal get a

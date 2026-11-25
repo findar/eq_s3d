@@ -13,6 +13,8 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from tests.pbt_helpers import scaled
+
 from generators.topology.graph import AREA, Edge, Node, TopologyGraph
 from generators.topology.rewrite import (
     BuildContext, TopologyError, apply_rule, find_matches, grow, invariant_violation,
@@ -334,7 +336,7 @@ def _check_g3(res, n):
         assert c is None or 4 <= c <= 5
 
 
-@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@settings(max_examples=scaled(60), deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(seed=st.integers(0, 2**32 - 1), n=st.integers(1, 30),
        scale=st.sampled_from([1.0, 2.0]))
 def test_g3_g4_grown_graphs(grow_set, seed, n, scale):
