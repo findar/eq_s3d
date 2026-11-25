@@ -205,8 +205,10 @@ class _Keys(dict):
         rooms = sorted(self)
         if len({getattr(self[r], "level", None) for r in rooms}) < 2:
             return frozenset()
-        return frozenset((r, s) for r in rooms for s in rooms
-                         if r != s and may_overlap_in_plan(self[r], self[s]))
+        # :func:`may_overlap_in_plan` of every pair in one pass (the same
+        # comparison of the same floats: :func:`_overlap_matrix`).
+        ii, jj = np.nonzero(_overlap_matrix([self[r] for r in rooms]))
+        return frozenset((rooms[i], rooms[j]) for i, j in zip(ii.tolist(), jj.tolist()))
 
 
 # ---------------------------------------------------------------------------
@@ -580,9 +582,10 @@ def layout_clashes(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Po
                 if (x in nb and y in nb and walls[nb.index(x)] == walls[nb.index(y)]
                         and walls.count(walls[nb.index(x)]) == 2):
                     bad -= 1
+    over = keys.over
     for i, a in enumerate(order):
         for b in order[i + 1:]:
-            if (not may_overlap_in_plan(keys[a], keys[b])
+            if ((a, b) not in over
                     and _box_gap(pos[a], half[a], pos[b], half[b]) < gap - 1e-6):
                 bad += 1
     return bad
@@ -604,6 +607,7 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
     roots = list(order[:1]) + sorted(order[1:], key=lambda r: (-deg[r], rank[r]))[:START_ROOTS - 1]
     best = None
     bearing = jitter is not None and jitter.bearing
+    memo: Dict[str, Any] = {}           # what the tries share (start_once)
     tries = 0
     for root in roots:
         for sides in SIDE_ORDERS:
@@ -616,7 +620,7 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
                 # keeps the bearings it settled on for the springs.
                 scales: Dict[frozenset, float] = {}
                 pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter,
-                                 scales)
+                                 scales, memo)
                 clashes = layout_clashes(graph, order, pos, half, gap, storeys)
                 if best is not None and clashes > best[0][0]:
                     continue             # can't win: crossings only break a tie
@@ -625,7 +629,8 @@ def start_positions(graph: TopologyGraph, order: Sequence[str],
                 done = score == (0, 0)
                 pos = (pos, scales)
             else:
-                pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter)
+                pos = start_once(graph, order, half, run, gap, sides, root, storeys, jitter,
+                                 memo=memo)
                 score = layout_clashes(graph, order, pos, half, gap, storeys)
                 done = score == 0
             if best is None or score < best[0]:
@@ -748,8 +753,11 @@ class _Rects(list):
 
     def __init__(self, rects=()):
         super().__init__(rects)
-        self.box = ((min(r[0] for r in self), min(r[1] for r in self),
-                     max(r[2] for r in self), max(r[3] for r in self)) if self else None)
+        if self:
+            x0, y0, x1, y1 = zip(*self)
+            self.box = (min(x0), min(y0), max(x1), max(y1))
+        else:
+            self.box = None
 
 
 def _rects_hit(rects, c: Point, h: Point, eps: float = 1.0) -> bool:
@@ -797,15 +805,25 @@ def _corridor_rects(a: str, b: str, pos: Dict[str, Point], half: Dict[str, Point
         return _edge_rects(pos[a], half[a], pos[b], half[b], width)
     best, fewest = _Rects(), None
     for rects in _stair_rects(pos[a], half[a], pos[b], half[b], width):
-        hits = sum(1 for r in pos if r not in (a, b) and _rects_hit(rects, pos[r], half[r])
-                   and _beside(nodes, r, a, b))
+        # (A way at the fewest hits so far can't be taken, so counting stops
+        # there; the cheap Level test goes before the overlap test.)
+        hits = 0
+        for r in pos:
+            if fewest is not None and hits >= fewest:
+                break
+            if r not in (a, b) and _beside(nodes, r, a, b) and \
+                    _rects_hit(rects, pos[r], half[r]):
+                hits += 1
         for (c, d), theirs in others:
-            if len({a, b} & {c, d}) > 1:
+            if fewest is not None and hits >= fewest:
+                break
+            if c in (a, b) and d in (a, b):
                 continue
-            shared = ({a, b} & {c, d}) or None
-            inside = (pos[next(iter(shared))], half[next(iter(shared))]) if shared else None
-            if _rects_meet(rects, theirs, inside=inside) and (
-                    _beside(nodes, c, a, b) or _beside(nodes, d, a, b)):
+            if not (_beside(nodes, c, a, b) or _beside(nodes, d, a, b)):
+                continue
+            shared = c if c in (a, b) else (d if d in (a, b) else None)
+            inside = (pos[shared], half[shared]) if shared is not None else None
+            if _rects_meet(rects, theirs, inside=inside):
                 hits += 1
         if fewest is None or hits < fewest:
             best, fewest = rects, hits
@@ -864,31 +882,30 @@ def _beside(nodes: Dict[str, Any], r: str, a: str, b: str) -> bool:
 
 def _start_crossings(u: str, c: Point, nbrs: Sequence[str], placed: Sequence[Tuple[str, str]],
                      pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
-                     width: float, routes: Dict[Any, Any]) -> int:
+                     width: float, routes: Dict[Any, Any], limit: Optional[int] = None) -> int:
     """Room ``u`` at ``c``: its corridors to placed ``nbrs`` (as Job B would
     route them, :func:`_corridor_rects`) through a placed room or across a
     placed corridor, plus placed corridors through u's box. ``routes`` caches
     the placed corridors' rects, and (as arrays, :class:`_Placed`) what one
-    ``placed`` list reads, for every candidate of one room."""
+    ``placed`` list reads, for every candidate of one room. Past ``limit``
+    the count stops (some number over it): the caller only asks whether it
+    beats a count already found."""
     got = routes.get(_PLACED)
     if got is None or got.placed is not placed or got.n != len(pos):
-        for a, b in placed:
-            if (a, b) not in routes:
-                routes[(a, b)] = _corridor_rects(a, b, pos, half, nodes, width,
-                                                 [(e, r) for e, r in routes.items() if e is not _PLACED])
-        got = routes[_PLACED] = _Placed(placed, pos, half, routes)
+        got = _placed_routes(routes, placed, pos, half, nodes, width)
     bad = 0
     x0, y0, x1, y1 = c[0] - half[u][0], c[1] - half[u][1], c[0] + half[u][0], c[1] + half[u][1]
     R = got.rects
     if len(R):
         hit = (np.minimum(R[:, 2], x1) - np.maximum(R[:, 0], x0) > 1.0) & \
               (np.minimum(R[:, 3], y1) - np.maximum(R[:, 1], y0) > 1.0)
-        for k in sorted(set(got.owner[hit].tolist())):
-            a, b = placed[k]
+        for a, b in {got.owner[i] for i in np.flatnonzero(hit).tolist()}:
             if _beside(nodes, u, a, b):
                 bad += 1
     mine_all = []
     for m in nbrs:
+        if limit is not None and bad > limit:
+            return bad
         # As _corridor_rects would draw it (a stair: its first way that hits
         # least), counted as it counts a stair's ways.
         if is_stair(nodes[u], nodes[m]):
@@ -907,6 +924,8 @@ def _start_crossings(u: str, c: Point, nbrs: Sequence[str], placed: Sequence[Tup
     # u's own corridors meeting outside u.
     for k, ra in enumerate(mine_all):
         for rb in mine_all[k + 1:]:
+            if limit is not None and bad > limit:
+                return bad
             if _rects_meet(ra, rb, inside=(c, half[u])):
                 bad += 1
     return bad
@@ -916,73 +935,136 @@ def _start_crossings(u: str, c: Point, nbrs: Sequence[str], placed: Sequence[Tup
 _PLACED = object()
 
 
-class _Placed:
-    """What :func:`_start_crossings` reads of one ``placed`` list, as arrays:
-    every placed corridor's rects (``rects``, with ``owner`` the index of its
-    edge in ``placed``) and the placed rooms' boxes (``boxes``, ``rooms``)."""
+def _placed_routes(routes: Dict[Any, Any], placed: Sequence[Tuple[str, str]],
+                   pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
+                   width: float) -> "_Placed":
+    """Fill ``routes`` with the rects of the ``placed`` corridors it lacks, in
+    ``placed`` order (a stair's way read against the corridors before it),
+    and keep their :class:`_Placed` in it, which it returns."""
+    parent = routes.get(_PLACED)
+    for a, b in placed:
+        if (a, b) not in routes:
+            routes[(a, b)] = _corridor_rects(a, b, pos, half, nodes, width,
+                                             [(e, r) for e, r in routes.items() if e is not _PLACED])
+    got = routes[_PLACED] = _Placed(placed, pos, half, routes, parent)
+    return got
 
-    def __init__(self, placed, pos, half, routes):
+
+def _rows(rects) -> np.ndarray:
+    """A corridor's rects as an (n, 4) float array, kept on a :class:`_Rects`
+    (shared: read only)."""
+    got = getattr(rects, "arr4", None)
+    if got is None:
+        got = np.array(rects, dtype=float).reshape(-1, 4)
+        if isinstance(rects, _Rects):
+            rects.arr4 = got
+    return got
+
+
+class _Placed:
+    """What :func:`_start_crossings` reads of one ``placed`` list: every placed
+    corridor's rects (``rects``, with ``owner`` the edge of each) and the placed
+    rooms' boxes (``rooms``), as one table, boxes first (``both``: rows as
+    floats, and its columns as arrays for the bounding-box pass of
+    :meth:`score`). Built on ``parent`` (the _Placed of the state before:
+    its rooms first in ``pos``, its edges among ``placed``) when given; the
+    rows' order is not read, only which rows meet what."""
+
+    def __init__(self, placed, pos, half, routes, parent: Optional["_Placed"] = None):
         self.placed = placed
         self.n = len(pos)
-        rects, owner = [], []
-        for k, e in enumerate(placed):
-            for r in routes[e]:
-                rects.append(r)
-                owner.append(k)
-        self.rects = np.array(rects, dtype=float).reshape(-1, 4)
-        self.owner = np.array(owner, dtype=int)
         self.rooms = list(pos)
-        self.boxes = np.array([(pos[r][0] - half[r][0], pos[r][1] - half[r][1],
-                                pos[r][0] + half[r][0], pos[r][1] + half[r][1]) for r in self.rooms],
-                              dtype=float).reshape(-1, 4)
-        self._has: Dict[str, np.ndarray] = {}
-        # Boxes then rects, to overlap with a corridor's rects in one pass.
-        self.nb = len(self.boxes)
-        self.both = np.vstack([self.boxes, self.rects])
+        if parent is None or self.rooms[:len(parent.rooms)] != parent.rooms or \
+                not parent.edges <= set(placed):
+            parent = None
+        new_rooms = self.rooms if parent is None else self.rooms[len(parent.rooms):]
+        new_edges = [e for e in placed if parent is None or e not in parent.edges]
+        box_rows = [[pos[r][0] - half[r][0], pos[r][1] - half[r][1],
+                     pos[r][0] + half[r][0], pos[r][1] + half[r][1]] for r in new_rooms]
+        rect_arrs, owner = [], []
+        for e in new_edges:
+            rows = _rows(routes[e])
+            rect_arrs.append(rows)
+            owner += [e] * len(rows)
+        boxes = np.array(box_rows, dtype=float).reshape(-1, 4)
+        rects = np.concatenate(rect_arrs) if rect_arrs else np.zeros((0, 4))
+        if parent is not None:
+            boxes = np.concatenate([parent.boxes, boxes])
+            rects = np.concatenate([parent.rects, rects])
+            owner = parent.owner + owner
+            box_rows = parent.box_rows + boxes[len(parent.boxes):].tolist()
+            rect_rows = parent.rect_rows + rects[len(parent.rects):].tolist()
+        else:
+            box_rows, rect_rows = boxes.tolist(), rects.tolist()
+        self.edges = set(placed)
+        self.boxes, self.rects, self.owner = boxes, rects, owner
+        self.box_rows, self.rect_rows = box_rows, rect_rows
+        self.nb = len(boxes)
+        self.both = box_rows + rect_rows
+        both = np.concatenate([boxes, rects])
+        self.x0, self.y0, self.x1, self.y1 = (both[:, i].copy() for i in range(4))
 
     def score(self, rects, u: str, m: str, pos, half, nodes) -> int:
         """Room u's corridor to placed room m on ``rects``: the placed rooms
         (not m) it passes through on its Levels, plus the placed corridors it
-        meets (outside m, when they leave m too)."""
+        meets (outside m, when they leave m too).
+
+        Only rows whose overlap with the corridor's bounding box is positive
+        can meet one of its rects (the overlap of a rect inside the box is never
+        more, rounding included), so the exact tests run on those alone."""
         if not rects:
             return 0
-        M = getattr(rects, "arr", None)
-        if M is None:
-            M = np.array(rects, dtype=float)
+        got = getattr(rects, "rows", None)
+        if got is None:
+            M = np.array(rects, dtype=float).reshape(-1, 4)
+            got = (M.tolist(), float(M[:, 0].min()), float(M[:, 1].min()),
+                   float(M[:, 2].max()), float(M[:, 3].max()))
             if isinstance(rects, _Rects):
-                rects.arr = M
+                rects.rows = got
+        M, bx0, by0, bx1, by1 = got
+        near = ((np.minimum(self.x1, bx1) - np.maximum(self.x0, bx0) > 1e-6)
+                & (np.minimum(self.y1, by1) - np.maximum(self.y0, by0) > 1e-6)).nonzero()[0]
+        if not near.size:
+            return 0
         bad = 0
-        A, nb = self.both, self.nb
-        X0 = np.maximum(M[:, None, 0], A[None, :, 0])
-        X1 = np.minimum(M[:, None, 2], A[None, :, 2])
-        Y0 = np.maximum(M[:, None, 1], A[None, :, 1])
-        Y1 = np.minimum(M[:, None, 3], A[None, :, 3])
-        if nb:
-            ox, oy = X1[:, :nb] - X0[:, :nb], Y1[:, :nb] - Y0[:, :nb]
-            for j in np.nonzero(((ox > 1.0) & (oy > 1.0)).any(axis=0))[0].tolist():
+        nb, A = self.nb, self.both
+        lo_x = lo_y = hi_x = hi_y = None
+        hit, away = set(), set()
+        for j in near.tolist():
+            a0, a1, a2, a3 = A[j]
+            if j < nb:
                 r = self.rooms[j]
-                if r != m and _beside(nodes, r, u, m):
+                # (min and max written out: the same floats, called less.)
+                if r != m and _beside(nodes, r, u, m) and any(
+                        (a2 if a2 < r2 else r2) - (a0 if a0 > r0 else r0) > 1.0
+                        and (a3 if a3 < r3 else r3) - (a1 if a1 > r1 else r1) > 1.0
+                        for r0, r1, r2, r3 in M):
                     bad += 1
-        if len(A) > nb:
-            ix0, ix1, iy0, iy1 = X0[:, nb:], X1[:, nb:], Y0[:, nb:], Y1[:, nb:]
-            meet = (ix1 - ix0 > 1e-6) & (iy1 - iy0 > 1e-6)
-            if meet.any():
-                (mx, my), (hx, hy) = pos[m], half[m]
-                eps = 1e-6
-                inside = (ix0 >= mx - hx - eps) & (ix1 <= mx + hx + eps) & \
-                         (iy0 >= my - hy - eps) & (iy1 <= my + hy + eps)
-                meet &= ~(inside & self.has(m)[None, :])
-                for k in sorted(set(self.owner[meet.any(axis=0)].tolist())):
-                    a, b = self.placed[k]
-                    if _beside(nodes, a, u, m) or _beside(nodes, b, u, m):
-                        bad += 1
-        return bad
-
-    def has(self, m: str) -> np.ndarray:
-        """Per rect: is its corridor one of room m's?"""
-        if m not in self._has:
-            self._has[m] = np.array([m in self.placed[k] for k in self.owner.tolist()], dtype=bool)
-        return self._has[m]
+                continue
+            k = self.owner[j - nb]
+            if k in hit or k in away:
+                continue
+            ea, eb = k
+            if not (_beside(nodes, ea, u, m) or _beside(nodes, eb, u, m)):
+                away.add(k)             # not on u-m's Levels: never counted
+                continue
+            mine = m in k
+            for r0, r1, r2, r3 in M:
+                ix0, ix1 = (a0 if a0 > r0 else r0), (a2 if a2 < r2 else r2)
+                iy0, iy1 = (a1 if a1 > r1 else r1), (a3 if a3 < r3 else r3)
+                if not (ix1 - ix0 > 1e-6 and iy1 - iy0 > 1e-6):
+                    continue
+                if mine:
+                    if lo_x is None:
+                        (mx, my), (hx, hy) = pos[m], half[m]
+                        eps = 1e-6
+                        lo_x, hi_x = mx - hx - eps, mx + hx + eps
+                        lo_y, hi_y = my - hy - eps, my + hy + eps
+                    if ix0 >= lo_x and ix1 <= hi_x and iy0 >= lo_y and iy1 <= hi_y:
+                        continue        # inside m, where m's own corridors meet
+                hit.add(k)
+                break
+        return bad + len(hit)
 
 
 def plan_crossings(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Point],
@@ -1026,8 +1108,8 @@ def crossing_edges(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Po
     for k, (a, b) in enumerate(segs):
         for j in np.nonzero(near_room[k])[0].tolist():
             r = rooms[j]
-            if r not in (a, b) and _rects_hit(rects[(a, b)], pos[r], half[r]) \
-                    and _beside(keys, r, a, b):
+            if r not in (a, b) and _beside(keys, r, a, b) \
+                    and _rects_hit(rects[(a, b)], pos[r], half[r]):
                 hits.append(((a, b), r))
     for k, (a, b) in enumerate(segs):
         for m in np.nonzero(near_cor[k, k + 1:])[0].tolist():
@@ -1039,8 +1121,8 @@ def crossing_edges(graph: TopologyGraph, order: Sequence[str], pos: Dict[str, Po
             if shared:
                 (s,) = shared
                 inside = (pos[s], half[s])
-            if _rects_meet(rects[(a, b)], rects[(c, d)], inside=inside) and (
-                    _beside(keys, c, a, b) or _beside(keys, d, a, b)):
+            if (_beside(keys, c, a, b) or _beside(keys, d, a, b)) and \
+                    _rects_meet(rects[(a, b)], rects[(c, d)], inside=inside):
                 hits.append(((a, b), (c, d)))
     edges = set()
     for x, y in hits:
@@ -1131,7 +1213,8 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                root: Optional[str] = None,
                storeys: Optional[Dict[str, Any]] = None,
                jitter: Optional[Jitter] = None,
-               scales: Optional[Dict[frozenset, float]] = None
+               scales: Optional[Dict[frozenset, float]] = None,
+               memo: Optional[Dict[str, Any]] = None
                ) -> Dict[str, Point]:
     """Breadth-first start: each room beside a placed neighbour on a free wall
     side, or in the corner where two placed neighbours' free sides meet.
@@ -1146,17 +1229,39 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
     through a wall another of its corridors uses: the router exits a room
     through the wall facing the other room, so two corridors on one wall
     overlap past the doorway and Job B splits or drops one (finding 1: one
-    opening per wall side; degree <= 4 makes it possible)."""
+    opening per wall side; degree <= 4 makes it possible).
+
+    ``memo`` (one dict for every try of one :func:`start_positions`) keeps
+    what a try works out for the rooms placed so far, the same rooms at the
+    same spots in the same order (a state), so a later try that reaches the
+    same state reads it instead: each candidate's rank and crossing count and
+    (a bearing start) the placed corridors' rects. Each depends only on the
+    state and the candidate, so it is what the try would work out itself."""
     pos: Dict[str, Point] = {}
     used: Dict[str, Dict[str, str]] = {r: {} for r in order}   # side -> neighbour
     rank = {r: k for k, r in enumerate(order)}
-    nodes = _plan_keys(graph, order, storeys)
-    mates = _ring_mates(graph, order)
-    twins = bridge_twins(graph, order, storeys)
+    if memo is None:
+        memo = {}
+    if "nodes" not in memo:             # the same for every try
+        memo["nodes"] = (_plan_keys(graph, order, storeys), _ring_mates(graph, order),
+                         bridge_twins(graph, order, storeys))
+    nodes, mates, twins = memo["nodes"]
     dirs = dict(SIDES)
 
     bearing = jitter is not None and jitter.bearing
-    routes: Dict[Tuple[str, str], list] = {}      # placed corridors' rects (bearing)
+    # States by (state before, room, spot): 0 is no room placed.
+    states: Dict[Tuple, int] = memo.setdefault("states", {})
+    # Per state, the placed corridors' rects as this try's routes would hold
+    # them once the room after it is counted (bearing): the last state's,
+    # then the corridors the state adds, as :func:`_start_crossings` fills
+    # them.
+    routes_at: Dict[int, Dict[Any, Any]] = memo.setdefault("routes", {})
+    # (state, room, candidate) -> (crossings, exact: not cut at a limit).
+    crossings: Dict[Tuple, Tuple[int, bool]] = memo.setdefault("crossings", {})
+    # (state, room, candidate) -> its rank before the crossings (see below).
+    ranks: Dict[Tuple, Tuple] = memo.setdefault("ranks", {})
+    sid = 0
+    routes: Dict[Any, Any] = {}       # placed corridors' rects (bearing)
 
     def beside(q: str, u: str, d: Point, scale: float = 1.0) -> Point:
         # One run (times the edge's spacing) past q's wall, moved along it
@@ -1195,6 +1300,7 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
             else:
                 x1 = max(p[0] + half[r][0] for r, p in pos.items())
                 pos[u] = (x1 + run + half[u][0], 0.0)
+            sid = states.setdefault((sid, u, pos[u]), len(states) + 1)
             continue
         # Placed rooms a loop through u will close on later, through rooms not
         # placed yet (2 or 3 hops away): u leans toward them.
@@ -1242,49 +1348,99 @@ def start_once(graph: TopologyGraph, order: Sequence[str],
                         cands.append(((npl + qk, rk), c, None))
         if bearing:
             # Edges already placed, and the placed rooms u's own edges may pass.
-            placed_edges = [(e.a, e.b) for e in graph.edges()
-                            if e.a in pos and e.b in pos]
+            got = routes_at.get(sid)
+            if got is None:
+                placed_edges = [(e.a, e.b) for e in graph.edges()
+                                if e.a in pos and e.b in pos]
+                got = dict(routes)
+                _placed_routes(got, placed_edges, pos, half, nodes, jitter.need / STRAIGHT_NEED)
+                routes_at[sid] = got
+            routes = got
+            placed_edges = routes[_PLACED].placed
         best = None
-        for tie, c, how in cands:
-            walls = 0
-            miss = 0
-            mine = set()
-            for m in placed_nbrs:
-                sm = _side_toward(pos[m], half[m], c, half[u])
-                su = _side_toward(c, half[u], pos[m], half[m])
-                walls += (sm in used[m] and not _twin(twins, m, u, used[m][sm])) + (su in mine)
-                mine.add(su)
-                miss += m in twin_side and sm != twin_side[m]
-            clashes = 0
-            room = math.inf
-            for r, qq in pos.items():
-                if may_overlap_in_plan(nodes[u], nodes[r]):
-                    continue
-                g = _box_gap(c, half[u], qq, half[r])
-                if g < gap:
-                    clashes += 1
-                if r not in placed_nbrs:
-                    room = min(room, g)
-            rings = sum(ring_bad(u, m, _side_toward(pos[m], half[m], c, half[u]))
-                        for m in placed_nbrs)
-            # A room closing a loop sits as near its other placed neighbours
-            # as the free sides allow, so the loop is drawn locally.
-            close = sum(max(0.0, _box_gap(c, half[u], pos[m], half[m]))
-                        for m in placed_nbrs)
-            close += sum(max(0.0, _box_gap(c, half[u], pos[m], half[m])) / (h - 1)
-                         for m, h in pending.items())
-            if bearing:
-                if best is not None and (2 * walls + clashes, clashes) > best[0][:2]:
-                    continue        # can't win: skip counting its crossings
-                cross = _start_crossings(u, c, placed_nbrs, placed_edges, pos, half, nodes,
-                                         jitter.need / STRAIGHT_NEED, routes)
-                key = (2 * walls + clashes, clashes, cross, miss, rings, round(close, 6), -room,
-                       tie)
+        # What ranks each candidate but its crossings, worked out once per
+        # state, room and spot (a later try reaching the state reads it).
+        new = [c for _t, c, _h in cands if (sid, u, c) not in ranks]
+        if new:
+            # The footprint clashes and room left, against the placed rooms
+            # kept apart from u in plan, in one pass: _box_gap's operations on
+            # the same floats, so the same gaps.
+            over = nodes.over           # may_overlap_in_plan of every pair, worked out once
+            others = [r for r in pos if (u, r) not in over]
+            if others:
+                hu = half[u]
+                cx = np.array([c[0] for c in new], dtype=float)[:, None]
+                cy = np.array([c[1] for c in new], dtype=float)[:, None]
+                qx = np.array([pos[r][0] for r in others], dtype=float)
+                qy = np.array([pos[r][1] for r in others], dtype=float)
+                ex = np.array([hu[0] + half[r][0] for r in others], dtype=float)
+                ey = np.array([hu[1] + half[r][1] for r in others], dtype=float)
+                gaps = np.maximum(np.abs(qx - cx) - ex, np.abs(qy - cy) - ey)
+                n_clash = (gaps < gap).sum(axis=1).tolist()
+                far = np.array([r not in placed_nbrs for r in others], dtype=bool)
+                left = (np.where(far, gaps, math.inf).min(axis=1).tolist() if far.any()
+                        else [math.inf] * len(new))
             else:
-                key = (2 * walls + clashes, clashes, miss, rings, round(close, 6), -room, tie)
+                n_clash, left = [0] * len(new), [math.inf] * len(new)
+            for ci, c in enumerate(new):
+                walls = 0
+                miss = 0
+                mine = set()
+                for m in placed_nbrs:
+                    sm = _side_toward(pos[m], half[m], c, half[u])
+                    su = _side_toward(c, half[u], pos[m], half[m])
+                    walls += (sm in used[m] and not _twin(twins, m, u, used[m][sm])) + (su in mine)
+                    mine.add(su)
+                    miss += m in twin_side and sm != twin_side[m]
+                rings = sum(ring_bad(u, m, _side_toward(pos[m], half[m], c, half[u]))
+                            for m in placed_nbrs)
+                # A room closing a loop sits as near its other placed neighbours
+                # as the free sides allow, so the loop is drawn locally.
+                close = sum(max(0.0, _box_gap(c, half[u], pos[m], half[m]))
+                            for m in placed_nbrs)
+                close += sum(max(0.0, _box_gap(c, half[u], pos[m], half[m])) / (h - 1)
+                             for m, h in pending.items())
+                ranks[(sid, u, c)] = (2 * walls + n_clash[ci], n_clash[ci], miss, rings,
+                                      round(close, 6), -left[ci])
+        def count(c: Point, limit: Optional[int]) -> int:
+            """The candidate's crossings (:func:`_start_crossings`; past
+            ``limit``, some number over it), read from ``crossings`` when known."""
+            ck = (sid, u, c)
+            was = crossings.get(ck)
+            if was is not None and (was[1] or (limit is not None and was[0] > limit)):
+                return was[0]
+            n = _start_crossings(u, c, placed_nbrs, placed_edges, pos, half, nodes,
+                                 jitter.need / STRAIGHT_NEED, routes, limit)
+            crossings[ck] = (n, limit is None or n <= limit)
+            return n
+
+        for tie, c, how in cands:
+            lead, clashes, miss, rings, close, room = ranks[(sid, u, c)]
+            if bearing:
+                # The key is (lead, clashes, crossings, the rest): crossings
+                # only decide between candidates level on the first two, so
+                # they are counted only then (None until), and a candidate's
+                # past the best's can't win, so its count stops there.
+                if best is not None:
+                    if (lead, clashes) > best[0][:2]:
+                        continue        # can't win: skip counting its crossings
+                    if (lead, clashes) == best[0][:2]:
+                        if best[0][2] is None:
+                            best = (best[0][:2] + (count(best[1], None),) + best[0][3:],
+                                    best[1], best[2])
+                        key = (lead, clashes, count(c, best[0][2]), miss, rings, close, room,
+                               tie)
+                        if key < best[0]:
+                            best = (key, c, how)
+                        continue
+                # Ahead of the best on the first two (or the first): the best.
+                best = ((lead, clashes, None, miss, rings, close, room, tie), c, how)
+                continue
+            key = (lead, clashes, miss, rings, close, room, tie)
             if best is None or key < best[0]:
                 best = (key, c, how)
         pos[u] = best[1]
+        sid = states.setdefault((sid, u, pos[u]), len(states) + 1)
         if scales is not None and best[2] is not None:
             q, s = best[2]
             scales[frozenset((q, u))] = s
@@ -1328,10 +1484,23 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     repel, and a stair edge (across Levels) rests :data:`STAIR_REST` of the
     two rooms' extents apart, with no run, so the upper room sits partly over
     its partner."""
+    return spring_relax_many(order, edges, pos, half, nodes, run, gap, iterations, [jitter])[0]
+
+
+def spring_relax_many(order: Sequence[str], edges: Sequence[Tuple[str, str]],
+                      pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
+                      run: float, gap: float, iterations: Optional[int],
+                      jitters: Sequence[Optional[Jitter]]) -> List[Dict[str, Point]]:
+    """:func:`spring_relax` from ``pos`` once per jitter of ``jitters`` (all
+    bearing or none), side by side in one set of arrays: each relaxation
+    reads only its own part of them, every float worked out by the same
+    operation on the same operands, so each result is the one
+    :func:`spring_relax` gives for that jitter alone."""
     n = len(order)
     if n < 2:
-        return dict(pos)
+        return [dict(pos) for _ in jitters]
     iterations = ITERATIONS if iterations is None else iterations
+    jitter = jitters[0]
     idx = {r: k for k, r in enumerate(order)}
     P = np.array([pos[r] for r in order], dtype=float)
     H = np.array([half[r] for r in order], dtype=float)
@@ -1343,9 +1512,6 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     dirs = dict(SIDES)
     S = np.array([dirs[_side_toward(pos[a], half[a], pos[b], half[b])] for a, b in edges],
                  dtype=float).reshape(-1, 2)
-    # Each edge's spacing on its run and offset along the wall (b's from a),
-    # on the axis across S.
-    J = np.array([_jitter_of(jitter, a, b) for a, b in edges], dtype=float).reshape(-1, 2)
     T = S[:, ::-1].copy()
     T[:] = np.abs(T)
     joined = np.zeros((n, n), dtype=bool)
@@ -1363,78 +1529,113 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     # A bearing placement's edges on one Level, held on their sides outright.
     hold = (~stair) if jitter is not None and jitter.bearing and len(E) else None
 
+    # The loop runs on one flat array: per relaxation (``nb`` of them, w apart),
+    # every x then every y (Z[w * q + k] is room k's x in relaxation q,
+    # Z[w * q + n + k] its y), with index arrays to match, so each step is one
+    # numpy call for every axis and relaxation (on arrays this small the
+    # calls are the cost). Every float is worked out by the same operation on
+    # the same operands as on rows of P, so it is the same float.
+    nb, w = len(jitters), 2 * n
+    off = (w * np.arange(nb))[:, None]
+    Z = np.tile(np.concatenate([P[:, 0], P[:, 1]]), nb)
+
     # What the loop reads that no step changes, worked out once, by the same
     # expressions (so the same floats) the loop used to work out each step.
     if len(E):
         a, b = E[:, 0], E[:, 1]
         ext = (np.abs(S[:, 0]) * (H[a, 0] + H[b, 0])
                + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]))
-        rest = ext + run * J[:, 0]
-        if stair.any():
-            # (rest less the run, not ext: the same floats as before jitter.)
-            rest = np.where(stair, (rest - run * J[:, 0]) * STAIR_REST, rest)
         across = (np.abs(S[:, 0]) * (H[a, 1] + H[b, 1])
                   + np.abs(S[:, 1]) * (H[a, 0] + H[b, 0]))
-        if jitter is not None and jitter.bearing:
-            # A cave's bearing (task 10): the far room off the side's axis by
-            # its drawn angle over the rest distance, short of the other side.
-            gapv = rest - ext
-            slack = np.minimum(np.tan(np.abs(J[:, 1]) ** BEARING_POWER * jitter.bearing) * rest,
-                               np.maximum(0.0, across + gapv - jitter.margin))
-            slack = np.where(stair, 0.0, np.copysign(slack, J[:, 1]))
-            pull_s, pull_t = S * rest[:, None], T * slack[:, None]
-        else:
-            slack = np.maximum(0.0, across - (jitter.need if jitter else 0.0))
-            pull_s, pull_t = S * rest[:, None], T * (J[:, 1] * slack)[:, None]
+        pulls = []
+        for jt in jitters:
+            # Each edge's spacing on its run and offset along the wall (b's
+            # from a), on the axis across S.
+            J = np.array([_jitter_of(jt, x, y) for x, y in edges], dtype=float).reshape(-1, 2)
+            rest = ext + run * J[:, 0]
+            if stair.any():
+                # (rest less the run, not ext: the same floats as before jitter.)
+                rest = np.where(stair, (rest - run * J[:, 0]) * STAIR_REST, rest)
+            if jt is not None and jt.bearing:
+                # A cave's bearing (task 10): the far room off the side's axis by
+                # its drawn angle over the rest distance, short of the other side.
+                gapv = rest - ext
+                slack = np.minimum(np.tan(np.abs(J[:, 1]) ** BEARING_POWER * jt.bearing) * rest,
+                                   np.maximum(0.0, across + gapv - jt.margin))
+                slack = np.where(stair, 0.0, np.copysign(slack, J[:, 1]))
+                pull_s, pull_t = S * rest[:, None], T * slack[:, None]
+            else:
+                slack = np.maximum(0.0, across - (jt.need if jt else 0.0))
+                pull_s, pull_t = S * rest[:, None], T * (J[:, 1] * slack)[:, None]
+            pulls.append((np.concatenate([pull_s[:, 0], pull_s[:, 1]]),
+                          np.concatenate([pull_t[:, 0], pull_t[:, 1]])))
+        pull_s2 = np.concatenate([p[0] for p in pulls])
+        pull_t2 = np.concatenate([p[1] for p in pulls])
+        a2 = (np.concatenate([a, a + n])[None, :] + off).ravel()
+        b2 = (np.concatenate([b, b + n])[None, :] + off).ravel()
+        k_ab = np.concatenate([a2, b2])
     ri, rj = iu
-    hx, hy = H[ri, 0] + H[rj, 0], H[ri, 1] + H[rj, 1]
+    m = len(ri)
+    i2 = (np.concatenate([ri, ri + n])[None, :] + off).ravel()
+    j2 = (np.concatenate([rj, rj + n])[None, :] + off).ravel()
+    # The pairs' extents, and their reach with the pairs that may overlap in
+    # plan at -inf, so ``g < want_hit`` is ``apart & (g < want)``.
+    hxy = np.tile(np.concatenate([H[ri, 0] + H[rj, 0], H[ri, 1] + H[rj, 1]]), nb)
     want_all = reach[ri, rj]
+    want_hit = np.where(apart[ri, rj], want_all, -np.inf)
     # Coincident centres: a fixed direction by index, deterministic.
-    fall_all = np.stack([np.cos(ri + 0.5 * rj), np.sin(ri + 0.5 * rj)], axis=1)
-    apart_all = apart[ri, rj]
-    held = _HoldSums(H, E, S, T) if hold is not None else None
+    fall = np.concatenate([np.cos(ri + 0.5 * rj), np.sin(ri + 0.5 * rj)])
+    held = _Hold(H, E, S, T, hold, n, nb) if hold is not None else None
+    want_cmp = np.tile(want_hit, nb)
+    zero = np.zeros(nb * w)
 
     for it in range(iterations):
         step = STEP_START + (STEP_END - STEP_START) * it / max(1, iterations - 1)
-        F = np.zeros_like(P)
         if len(E):
-            d = P[b] - P[a]
-            f = K_SPRING * (d - pull_s - pull_t)
-            at, push = [a, b], [f, -f]
+            d = Z[b2] - Z[a2]
+            f = K_SPRING * (d - pull_s2 - pull_t2)
+            at, push = [k_ab], [f, -f]
         else:
             at, push = [], []
         # Repulsion over every pair kept apart in plan.
-        d = P[rj] - P[ri]
-        gx = np.abs(d[:, 0]) - hx
-        gy = np.abs(d[:, 1]) - hy
-        g = np.maximum(gx, gy)
-        hit = apart_all & (g < want_all)
-        if hit.any():
-            i, j, d, g, want = ri[hit], rj[hit], d[hit], g[hit], want_all[hit]
-            dist = np.hypot(d[:, 0], d[:, 1])
-            fallback = fall_all[hit]
-            u = np.where(dist[:, None] < 1e-6, fallback, d / np.maximum(dist, 1e-6)[:, None])
-            depth = (want - g) / np.maximum(want, 1e-6)        # 0 at reach, 1 at touching
-            mag = K_REPEL * (want - g) * (1.0 + depth)
-            f = mag[:, None] * u
-            at += [i, j]
+        d = Z[j2] - Z[i2]
+        gxy = (np.abs(d) - hxy).reshape(nb, 2, m)
+        g = np.maximum(gxy[:, 0], gxy[:, 1]).ravel()
+        hit = (g < want_cmp).nonzero()[0]
+        if hit.size:
+            h = hit.size
+            pair = hit % m if nb > 1 else hit
+            hx = hit + (hit // m) * m if nb > 1 else hit      # the pair's x in d
+            hit2 = np.concatenate([hx, hx + m])
+            d, g, want = d[hit2], g[hit], want_all[pair]
+            dist = np.hypot(d[:h], d[h:])
+            u = np.where(dist < 1e-6, fall[np.concatenate([pair, pair + m])].reshape(2, h),
+                         d.reshape(2, h) / np.maximum(dist, 1e-6))
+            wg = want - g
+            depth = wg / np.maximum(want, 1e-6)        # 0 at reach, 1 at touching
+            mag = K_REPEL * wg * (1.0 + depth)
+            f = (mag * u).ravel()
+            at += [i2[hit2], j2[hit2]]
             push += [-f, f]
         if at:
-            # Summed per room in the order np.add.at would (springs' a then b, then
-            # the repulsions' i then j), from zero: the same floats, in one pass.
-            k = np.concatenate(at)
-            w = np.concatenate(push)
-            F[:, 0] = np.bincount(k, weights=w[:, 0], minlength=n)
-            F[:, 1] = np.bincount(k, weights=w[:, 1], minlength=n)
-        P += step * F
-        if hold is not None and it % HOLD_EVERY == 0:
-            _hold_sides(P, H, E, S, T, hold, held)
-    if hold is not None:
-        # The last step's pushes can tip a neighbour; settle (task 10).
+            # Summed per room and axis in the order np.add.at would on rows
+            # (springs' a then b, then the repulsions' i then j), from zero:
+            # the same floats, in one pass.
+            Z += step * np.bincount(np.concatenate(at), weights=np.concatenate(push),
+                                    minlength=nb * w)
+        else:
+            Z += step * zero
+        if held is not None and it % HOLD_EVERY == 0:
+            held.push(Z)
+    if held is not None:
+        # The last step's pushes can tip a neighbour; settle (task 10). A
+        # relaxation with nothing to push is left as it is by a further pass,
+        # so passing until none pushes settles each as it would alone.
         for _ in range(HOLD_PASSES):
-            if not _hold_sides(P, H, E, S, T, hold, held):
+            if not held.push(Z):
                 break
-    return {r: (float(P[k, 0]), float(P[k, 1])) for k, r in enumerate(order)}
+    return [{r: (float(Z[w * q + k]), float(Z[w * q + n + k])) for k, r in enumerate(order)}
+            for q in range(nb)]
 
 
 #: A bearing placement holds each edge's wall side outright (task 10): when
@@ -1447,34 +1648,56 @@ HOLD_EVERY = 1
 HOLD_PASSES = 50
 
 
-def _HoldSums(H: np.ndarray, E: np.ndarray, S: np.ndarray, T: np.ndarray
-              ) -> Tuple[np.ndarray, np.ndarray]:
-    """What :func:`_hold_sides` reads of the rooms' half-extents, per edge: the
-    two rooms' extents along its side's axis and across it."""
-    a, b = E[:, 0], E[:, 1]
-    return (np.abs(S) * (H[a] + H[b])).sum(axis=1), (T * (H[a] + H[b])).sum(axis=1)
+class _Hold:
+    """Holding each edge (E, rows of room indices) of ``hold`` on its wall
+    side S (unit axes; T the axes across, as absolute values) for ``n`` rooms
+    of half-extents H, on positions kept flat as :func:`spring_relax_many`
+    keeps them (``nb`` relaxations of every x, then every y: :meth:`push`)."""
 
+    def __init__(self, H: np.ndarray, E: np.ndarray, S: np.ndarray, T: np.ndarray,
+                 hold: np.ndarray, n: int, nb: int = 1):
+        a, b = E[:, 0], E[:, 1]
+        self.e, self.n, self.w = len(E), n, 2 * n
+        self.a, self.b = a, b
+        off = (2 * n * np.arange(nb))[:, None]
+        self.a2 = (np.concatenate([a, a + n])[None, :] + off).ravel()
+        self.b2 = (np.concatenate([b, b + n])[None, :] + off).ravel()
+        hab = H[a] + H[b]
+        # The two rooms' extents along the side's axis and across it.
+        self.along = np.tile((np.abs(S) * hab).sum(axis=1), nb)
+        self.across = np.tile((T * hab).sum(axis=1), nb)
+        self.s2 = np.tile(np.concatenate([S[:, 0], S[:, 1]]), nb)
+        self.t2 = np.tile(np.concatenate([T[:, 0], T[:, 1]]), nb)
+        self.sx, self.sy = S[:, 0].copy(), S[:, 1].copy()
+        self.hold = np.tile(hold, nb)
+        self.nb = nb
 
-def _hold_sides(P: np.ndarray, H: np.ndarray, E: np.ndarray, S: np.ndarray, T: np.ndarray,
-                hold: np.ndarray, sums: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> bool:
-    """Push apart, along its side's axis, each held edge (``hold``) whose gap
-    along that axis is not HOLD_MARGIN past its gap across it, so
-    :func:`_side_toward` keeps the side. True when any edge was pushed.
-    ``sums``: :func:`_HoldSums` of the same H, E, S, T, when worked out."""
-    if sums is None:
-        sums = _HoldSums(H, E, S, T)
-    a, b = E[:, 0], E[:, 1]
-    d = P[b] - P[a]
-    along = (S * d).sum(axis=1) - sums[0]
-    across = np.abs((T * d).sum(axis=1)) - sums[1]
-    short = across + HOLD_MARGIN - along
-    push = hold & (short > 0)
-    if not push.any():
-        return False
-    f = S[push] * (short[push] / 2)[:, None]
-    np.add.at(P, b[push], f)
-    np.add.at(P, a[push], -f)
-    return True
+    def push(self, Z: np.ndarray) -> bool:
+        """Push apart, along its side's axis, each held edge whose gap along
+        that axis is not HOLD_MARGIN past its gap across it, so
+        :func:`_side_toward` keeps the side. In place; True when an edge was
+        pushed. A row's ``(S * d).sum(axis=1)`` is its two products added,
+        as here."""
+        e, nb = self.e, self.nb
+        d = Z[self.b2] - Z[self.a2]
+        sd = (self.s2 * d).reshape(nb, 2, e)
+        td = (self.t2 * d).reshape(nb, 2, e)
+        along = (sd[:, 0] + sd[:, 1]).ravel() - self.along
+        across = np.abs((td[:, 0] + td[:, 1]).ravel()) - self.across
+        short = across + HOLD_MARGIN - along
+        p = (self.hold & (short > 0)).nonzero()[0]
+        if not p.size:
+            return False
+        half = short[p] / 2
+        k = p % e if nb > 1 else p
+        fx, fy = self.sx[k] * half, self.sy[k] * half
+        base = (p // e) * self.w if nb > 1 else 0
+        bp, ap = self.b[k] + base, self.a[k] + base
+        # np.add.at on rows adds b's pushes in turn, then a's; per room and
+        # axis these are the same adds in the same order.
+        np.add.at(Z, np.concatenate([bp, bp + self.n, ap, ap + self.n]),
+                  np.concatenate([fx, fy, -fx, -fy]))
+        return True
 
 
 def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
@@ -1563,17 +1786,21 @@ def _untangle(graph, order, edges, start, out, half, nodes, run, gap, table: Jit
             if e not in table.edges:
                 continue
             f, t = table.edges[e]
-            for alt in ((f, -t), (f, t * 0.5), (f, 0.0), (f * UNTANGLE_STRETCH, t)):
-                if alt == (f, t):
-                    continue
-                table.edges[e] = alt
-                cand = spring_relax(order, edges, out, half, nodes, run, gap,
-                                    iterations=UNTANGLE_ITERS, jitter=table)
+            alts = [alt for alt in ((f, -t), (f, t * 0.5), (f, 0.0), (f * UNTANGLE_STRETCH, t))
+                    if alt != (f, t)]
+            if not alts:
+                continue
+            # The tries relax side by side (spring_relax_many: each as it
+            # would alone); the first that leaves fewer crossings is kept.
+            cands = spring_relax_many(order, edges, out, half, nodes, run, gap, UNTANGLE_ITERS,
+                                      [table._replace(edges={**table.edges, e: alt})
+                                       for alt in alts])
+            for alt, cand in zip(alts, cands):
                 n = len(crossing_edges(graph, order, cand, half, width, storeys)[1])
                 if n < count:
+                    table.edges[e] = alt
                     count, out, better = n, cand, True
                     break
-                table.edges[e] = (f, t)
             if not count:
                 break
         if not better:
