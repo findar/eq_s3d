@@ -46,7 +46,7 @@ or sweep first. Wall times in commit bodies are measured alone.
   - Type: agent · Size: S · Depends: 2, 3, 4, 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/test-speed/
 
-- [ ] 6. A faster gate
+- [x] 6. A faster gate
   - Card: [cards/06-gate.md](cards/06-gate.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: analyzer/traverse.py, tests/test_traverse*.py (new equivalence test if warranted); stop and report before widening
