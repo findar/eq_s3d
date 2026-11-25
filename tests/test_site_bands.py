@@ -279,6 +279,7 @@ def _band(name, value, band):
     return None if lo <= value <= hi else f"{name} {value:.2f} outside {lo}-{hi}"
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 def test_p9_normal_zones_measure_inside_the_stock_bands(shared_results):
     built = _zones(shared_results, "normal", SEEDS)
@@ -317,6 +318,7 @@ def test_p9_normal_zones_measure_inside_the_stock_bands(shared_results):
     assert not bad, bad
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 def test_dense_sites_still_group(shared_results):
     """Archive decision 11: Dense (denser than any stock zone, so no stock figure) keeps its
@@ -332,6 +334,7 @@ def test_dense_sites_still_group(shared_results):
     assert not bad, bad
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 def test_gate_first_try_rate_holds(shared_results):
     """Req 9.2: at Normal and Dense the gate passes on the first try at least as often as

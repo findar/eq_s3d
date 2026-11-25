@@ -213,6 +213,7 @@ def test_no_corridor_clips_a_room_over_the_sweep():
     assert not bad, f"{len(bad)} of {len(builds)} builds: {bad[:5]}"
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("rule_set", ["classic_eq", "warren"])
 def test_stacked_corridors_clear_each_other_on_their_final_floors(monkeypatch, rule_set):
     """Job B's last word on a stacked build: on the floors it builds, no two

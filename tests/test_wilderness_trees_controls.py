@@ -130,6 +130,7 @@ def _find_vegetation(doc):
     return None
 
 
+@pytest.mark.slow
 def test_server_controls_trees_reach_the_sidecar(client):
     resp = client.post("/api/generate", json={
         "mode": "controls", "seed": 2024,

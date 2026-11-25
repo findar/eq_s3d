@@ -79,6 +79,7 @@ def _keys(sweep, theme, rooms, seed):
             gated_key(_fields(zone_type, "classic", "", theme, rooms), seed, 1, TIMEOUT_S))
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("sweep, theme, rooms, seed", CASES,
                          ids=[f"{w}-{t or 'plain'}-{n}-{s}" for w, t, n, s in CASES])
@@ -90,6 +91,7 @@ def test_graph_build_passes_within_the_retries(shared_results, sweep, theme, roo
     assert g is not None, f"graph build out of retries: {(sweep, theme or 'plain', rooms, seed)}"
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("sweep", sorted(SWEEPS))
 def test_graph_builds_pass_the_gate_no_worse_than_classic(shared_results, sweep):

@@ -51,6 +51,9 @@ settings.register_profile(
     derandomize=False,
     deadline=None,
 )  # default DirectoryBasedExampleDatabase
+# The quick tier (``-m "not slow and not gate" --hypothesis-profile quick``):
+# ``default`` at a quarter of the examples, so ``scaled(n)`` runs n/4.
+settings.register_profile("quick", parent=settings.get_profile("default"), max_examples=25)
 settings.load_profile("default")
 
 

@@ -496,6 +496,7 @@ def _find_theme_keys(obj, path="root"):
     return hits
 
 
+@pytest.mark.slow
 def test_serialized_output_has_no_theme_key():
     """No ``"theme"`` key in any serialized output; content fields survive.
 

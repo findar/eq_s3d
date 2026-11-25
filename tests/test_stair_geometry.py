@@ -331,6 +331,7 @@ def crosses_wall(mesh, p, q, z):
     return False
 
 
+@pytest.mark.slow
 @settings(max_examples=40, deadline=None)
 @given(
     rise=st.floats(1.0, 60.0).flatmap(lambda m: st.sampled_from([m, -m])),

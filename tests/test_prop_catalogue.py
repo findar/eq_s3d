@@ -97,6 +97,7 @@ def test_build_carries_tags_over():
     assert "tags" in pc.KEPT and "observed" in pc.KEPT
 
 
+@pytest.mark.slow
 def test_rebuild_from_install_keeps_reviews(tmp_path):
     eq = env_value("EQ_PATH")
     if not eq or not (Path(eq) / "befallen_obj.s3d").is_file():

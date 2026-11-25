@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
@@ -54,6 +55,7 @@ from .strategies import (
 # layout-tier test disables the deadline while keeping the 100-example budget
 # (scaled by the active profile, per design Req 1.3). It is NOT a build-tier
 # test, so no `slow` marker and no `build_settings`.
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(100))
 @given(
     seed=seeds,
@@ -120,6 +122,7 @@ def _connected(adj, nodes):
 # property failure. Disable the deadline, keep the 100-example budget (scaled by
 # the active profile). Layout-tier (no binary build), so no `slow` marker and no
 # `build_settings`.
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(100))
 @given(
     seed=seeds,
@@ -281,6 +284,7 @@ def test_gating_solvable(seed, zone_type, n, locks, semantic, expect_fallback):
 # the bound, or assuming the sink case away would defeat the whole point of this
 # property, which exists to catch exactly that. If any input fails, that is a
 # REAL elevation bug to report, never a reason to loosen the assertion.
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(100))
 @given(
     seed=seeds,
@@ -519,6 +523,7 @@ def test_relax_conflict_fallback():
 # strategy are untouched, and a genuinely non-flush opening (threshold floor cut
 # above/below z_ref at a height that is NOT the far room's floor) is STILL caught
 # -- confirmed against an injected 1.5 u lip, which the probe still flags.
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(50))
 @example(seed=13, zone_type="dungeon", n=13, verticality="dramatic").via("discovered failure")
 # Two Throats 0.002 u apart shared a vertex that add_relief lifted, so a rough floor
@@ -947,6 +952,7 @@ def test_cave_words_mean_dungeon(prompt):
 # in `from_dict` / `canonical_zone_type` -- fix it at the root (never weaken the
 # assertion) and pin the counterexample as a Regression_Example via
 # `@example(...).via("discovered failure")`.
+@pytest.mark.slow
 @settings(deadline=None, max_examples=scaled(100))
 @given(
     seed=seeds,

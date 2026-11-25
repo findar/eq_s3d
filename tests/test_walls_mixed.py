@@ -91,6 +91,7 @@ def test_a_zone_mixes_styles_and_a_corridor_without_a_seam_is_the_rougher_rooms(
             assert cor.rough >= styles["rough"].corridor_break * 0.75
 
 
+@pytest.mark.slow
 def test_a_warren_is_mostly_rough_and_a_fortress_mostly_built():
     warren, fort = Counter(), Counter()
     for seed in range(6):
@@ -114,6 +115,7 @@ CASES = [dict(rule_set="classic_eq", verticality="moderate"), dict(rule_set="cla
          dict(zone_type="outdoor_dungeon", room_count=8, verticality="dramatic")]
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("fields", CASES, ids=lambda f: "-".join(str(v) for v in f.values()))
 def test_mixed_zones_pass_the_gate(tmp_path, fields):

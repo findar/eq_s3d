@@ -90,6 +90,7 @@ def _keys(sweep, rooms, seed):
             for v in ("flat",) + stacked}
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("sweep, rooms, seed", CASES, ids=[f"{w}-{n}-{s}" for w, n, s in CASES])
 def test_stacked_build_passes_within_the_retries(shared_results, sweep, rooms, seed):
@@ -102,6 +103,7 @@ def test_stacked_build_passes_within_the_retries(shared_results, sweep, rooms, s
     assert not failed, f"stacked builds out of retries: {[(v, rooms, seed) for v in failed]}"
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("sweep", sorted(SWEEPS))
 def test_stacked_builds_pass_the_gate_no_worse_than_flat(shared_results, sweep):

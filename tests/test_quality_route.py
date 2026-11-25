@@ -93,6 +93,7 @@ def _generate(server, bands):
     return r.json()
 
 
+@pytest.mark.slow
 def test_generate_carries_the_block(server):
     _, root, _ = server
     passed = _generate(server, PASS)
@@ -103,6 +104,7 @@ def test_generate_carries_the_block(server):
     assert failed["quality"]["metrics"] == passed["quality"]["metrics"]
 
 
+@pytest.mark.slow
 def test_rebuild_and_edits_carry_the_block(server):
     client, root, holder = server
     zone = _generate(server, PASS)["id"]

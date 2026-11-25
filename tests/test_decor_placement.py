@@ -218,6 +218,7 @@ def _footprint(ctx, p):
 
 # --- P5: placement keeps the room open --------------------------------------------------------------
 
+@pytest.mark.slow
 def test_every_room_passes_its_own_check(decorated, hand):
     """Req 13.4: reached floor stays joined, doors and POIs reached, in every corpus room."""
     bad = [(c.id, c.room_type, check(c, d)) for c, d, _ in decorated + hand if check(c, d)]
@@ -322,6 +323,7 @@ def test_floor_and_raised_props_stand_on_their_bottom(decorated, hand):
     assert n > 500 and stacked > 10
 
 
+@pytest.mark.slow
 def test_a_site_prop_tops_out_clear_of_a_step(rules):
     """Room-decor task 13: at a Site, a solid floor Prop's top a step over the ground round it
     is half in the gate's band; the half out of it is a pocket walled in (wilderness seed 23,
@@ -770,6 +772,7 @@ def test_a_decor_seed_rerolls_props(rules, fixture):
     assert len(rolls) > 1
 
 
+@pytest.mark.slow
 def test_the_control_moves_the_count(rules, fixture):
     def total(control):
         return sum(len(place(c, rules, fixture, control).props) for c in CORPUS)

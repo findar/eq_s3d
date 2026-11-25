@@ -129,6 +129,7 @@ assert (
 # That cost scales with entry count and is not a correctness signal, so the
 # per-example wall-clock deadline would flake on the big cases. The budget
 # (scaled(100)) and the property itself are unchanged.
+@pytest.mark.slow
 @settings(max_examples=scaled(100), deadline=None)
 @given(entries=pfs_entries())
 @example(entries=_BULK_600x60)

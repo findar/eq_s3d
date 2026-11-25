@@ -93,6 +93,7 @@ def test_size_classes_pick_inside_the_band(race):
     assert semantics.room_height(race, semantics.band_position("huge")) == pytest.approx(h1)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("layout", ["classic", "graph"])
 @pytest.mark.parametrize("race", RACES)
 def test_v11_rooms_and_corridors_in_the_race_bands(race, layout):

@@ -47,6 +47,7 @@ def _files(vb):
     return {k: vb.build_dir / f"{name}.{k}.json" for k in NAMES}
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("zone_type", ZONE_TYPES)
 def test_every_build_directory_holds_the_three_files(builds, zone_type):
     vb = builds[zone_type]
@@ -117,6 +118,7 @@ def test_the_attachments_rerun_from_the_world_file(builds, zone_type):
     assert stages.attachments_json(again) == text
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("zone_type", ZONE_TYPES)
 def test_the_rooms_rerun_from_their_file(builds, zone_type):
     """The RoomContexts read back give the same text, and decor placed from them is the

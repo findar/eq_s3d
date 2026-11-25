@@ -626,6 +626,7 @@ from tests.pbt_helpers import scaled as _scaled  # noqa: E402
 # ``slow``: it must run in the Default_Run (the gate/availability surface is the
 # point of the property). ``scaled(50)`` scales with the active profile exactly
 # like ``build_settings`` does (50 under default, 250 under thorough).
+@pytest.mark.slow
 @_settings(
     max_examples=_scaled(50),
     deadline=None,

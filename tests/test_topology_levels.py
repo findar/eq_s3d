@@ -539,6 +539,7 @@ def _v7_means(shared, label, vert):
     return {k: fmean(r[k] for r in rows) for k in ("stacked", "levels", "span", "fidelity")}
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("label", sorted(V7_SETS))
 def test_v7_moderate_falls_in_the_survey_bands(shared_results, label):
     m = _v7_means(shared_results, label, "moderate")
@@ -547,6 +548,7 @@ def test_v7_moderate_falls_in_the_survey_bands(shared_results, label):
     assert not bad, f"{label}: " + "; ".join(bad)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("label", sorted(V7_SETS))
 def test_v7_flat_is_one_level_and_dramatic_is_more(shared_results, label):
     for spec, m in _v7_sweep(shared_results, label, "flat"):
@@ -563,6 +565,7 @@ def test_v7_flat_is_one_level_and_dramatic_is_more(shared_results, label):
 STACKED_FIDELITY_MEASURED = {"classic_eq": 0.963, "warren": 0.933, "temple": 0.955}
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("label", sorted(V7_SETS))
 def test_v7_stacked_fidelity(shared_results, label):
     for vert in ("moderate", "dramatic"):
@@ -577,6 +580,7 @@ def test_v7_stacked_fidelity(shared_results, label):
 # Job B keeping its edges (doors along the wall for a stair, a dropped edge
 # restored once clear), not the grammar: its n >= 20 cycles are at the warren
 # band's 0.29 already (tests/test_ruleset_warren.py).
+@pytest.mark.slow
 @pytest.mark.parametrize("label", ["classic_eq", "warren"])
 def test_v7_stacked_builds_keep_the_built_shape(shared_results, label):
     from tests.test_topology_embed import BUILT_BANDS, _built_shape

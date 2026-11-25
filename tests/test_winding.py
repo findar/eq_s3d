@@ -241,6 +241,7 @@ def _rough_corridors(spec):
     return out
 
 
+@pytest.mark.slow
 def test_cave_corridors_run_as_long_as_stock_tunnels_and_most_wind():
     """Winding routes task 4 (was step 23 task 9's per-leg check, at a run of 9): over ten
     caves at 12 and 25 rooms, the median rough corridor, door to door, is within the stock

@@ -17,7 +17,7 @@ or sweep first. Wall times in commit bodies are measured alone.
 
 ## Tasks
 
-- [ ] 1. Tiers: markers, the quick profile, the quick command
+- [x] 1. Tiers: markers, the quick profile, the quick command
   - Card: [cards/01-tiers.md](cards/01-tiers.md)
   - Type: agent · Size: M · Depends: —
   - Owns: pytest.ini, tests/conftest.py, tests/pbt_helpers.py, marker and `settings` lines in tests/test_*.py

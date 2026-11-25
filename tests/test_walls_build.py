@@ -104,6 +104,7 @@ SWEEP = [(style, rule_set, theme, race, rooms, vert)
 SEEDS = range(4)
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("style, rule_set, theme, race, rooms, vert, seed",
                          [case + (s,) for case in SWEEP for s in SEEDS])

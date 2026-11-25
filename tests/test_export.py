@@ -71,6 +71,7 @@ def one(request, exports):
     return exports[request.param]
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("which, short", [("first", "arena"), ("second", SECOND)])
 def test_archive_is_the_build_renamed(one, which, short):
     vb, res = one["vb"], one[which]

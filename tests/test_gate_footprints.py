@@ -214,6 +214,7 @@ def test_p1_a_footprint_that_cuts_off_ground_fails(zone, yaw, half):
     assert not report.of("opening_narrow") and not report.of("opening_low")
 
 
+@pytest.mark.slow
 @given(yaw=st.floats(0.0, 2 * math.pi), door=st.floats(0.0, CLEAR_WIDTH - 1.0))
 @example(yaw=0.0, door=0.0)                 # no door at all
 @example(yaw=0.0, door=CLEAR_WIDTH - 1.0)
@@ -225,6 +226,7 @@ def test_p1_a_narrow_opening_fails(zone, yaw, door):
     assert [f.subjects for f in report.of("opening_narrow")] == [("hut_0",)]
 
 
+@pytest.mark.slow
 @given(yaw=st.floats(0.0, 2 * math.pi), lintel=st.floats(AgentModel().player_height + 0.3,
                                                           HEAD_HEIGHT - 0.5))
 @example(yaw=0.0, lintel=7.0)
@@ -294,6 +296,7 @@ def test_an_opening_of_the_clear_width_passes_at_any_angle(yaw, door, wall_t):
     assert op.enterable and not op.narrow and not op.low
 
 
+@pytest.mark.slow
 @given(yaw=st.floats(0.0, 2 * math.pi), wall_t=st.floats(0.0, 0.3))
 @example(yaw=math.pi / 4, wall_t=0.0)       # a wall of no thickness, diagonal
 @example(yaw=0.1, wall_t=0.0)

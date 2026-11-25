@@ -29,6 +29,7 @@ def _graph_cave(seed):
     return plan_to_spec(plan, seed=seed)
 
 
+@pytest.mark.slow
 def test_cave_rooms_are_mostly_rough_and_never_built():
     """A1. Only the graph layout draws a finish per room (the classic layout's rooms keep the
     box walls), so the share is over 20 graph caves of 6-25 rooms."""

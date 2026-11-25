@@ -176,6 +176,7 @@ def _q(v) -> str:
             f"(min {min(v):.2f}, max {max(v):.2f})")
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @needs_install
 @pytest.mark.parametrize("zone_type, seed", [(z, s) for z in sorted(BANDS) for s in SEEDS])
@@ -196,6 +197,7 @@ def _sweep(shared, zone_type: str, decor: str) -> list:
     return _zones(shared, [_key(zone_type, s, decor) for s in SEEDS][::-1])[::-1]
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @needs_install
 @pytest.mark.parametrize("zone_type", sorted(BANDS))
@@ -229,6 +231,7 @@ def test_p12_normal_rooms_measure_inside_the_stock_bands(shared_results, zone_ty
     assert not bad, bad
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @needs_install
 @pytest.mark.parametrize("zone_type", sorted(BANDS))
@@ -245,6 +248,7 @@ def test_gate_first_try_rate_holds(shared_results, zone_type):
 DENSE_CASES = [(z, r, s) for z, r in DENSE for s in SEEDS]
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @needs_install
 @pytest.mark.parametrize("zone_type,rooms,seed", DENSE_CASES,

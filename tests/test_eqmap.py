@@ -184,6 +184,7 @@ def test_convention_is_negate_and_swap():
 # Property 9: the Grounding_Check recovers a known candidate
 # ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 @settings(max_examples=scaled(100), deadline=None)
 @given(st.sampled_from(sorted(CANDIDATES)), asymmetric_wall_meshes())
 def test_grounding_recovers_candidate(name, mesh):

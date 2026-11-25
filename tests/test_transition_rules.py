@@ -195,6 +195,7 @@ def test_nothing_but_a_transitions_pieces_changes(monkeypatch):
     assert route(with_them) == route(without)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("kw", [dict(), dict(theme="temple"), dict(race="giant"), dict(verticality="vertical"),
                                 dict(walls="built"), dict(walls="rough")])
 def test_every_transition_built_passes_the_gate(kw):

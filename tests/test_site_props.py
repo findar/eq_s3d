@@ -103,6 +103,7 @@ def test_every_site_kind_has_a_recipe(rules):
         assert [r.name for r in rules.recipe_for(kind, source="site")] == [f"sites.{kind}"]
 
 
+@pytest.mark.slow
 def test_site_props_keep_off_the_site_clear_and_the_structures(placed):
     """P11: Site_Clear stays free; nothing stands on a Structure; decor's own check holds."""
     bad = []
@@ -113,6 +114,7 @@ def test_site_props_keep_off_the_site_clear_and_the_structures(placed):
     assert not bad, bad[:10]
 
 
+@pytest.mark.slow
 def test_sites_get_their_own_props(placed):
     """Haybales and a cart at a farmstead, crates at a camp, offerings at a shrine."""
     kinds = {}
@@ -125,6 +127,7 @@ def test_sites_get_their_own_props(placed):
         assert sum(kinds[kind].values()), f"no Site {kind} got a Prop"
 
 
+@pytest.mark.slow
 def test_dense_places_more_than_normal(placed):
     n = Counter()
     for _ctx, control, d in placed:
@@ -149,6 +152,7 @@ P11_BLOCKS = [P11_SEEDS[i:i + 10] for i in range(0, len(P11_SEEDS), 10)]
 
 
 
+@pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.skipif(EQ is None, reason="EQ_PATH is not set (no EQ install to read)")
 @pytest.mark.parametrize("control", CONTROLS)

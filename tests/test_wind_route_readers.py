@@ -141,6 +141,7 @@ def _check_props(seed, ctx, props, cor):
         assert ok, f"seed {seed} {ctx.id}: {p.key} at ({p.x}, {p.y}) is off the strip"
 
 
+@pytest.mark.slow
 def test_lights_placed_in_a_path_corridor_stand_on_its_strip():
     """A cave's corridors are dark (``layers/cave.toml``), so the base rules light the 5 caves'
     path corridors here: every Prop placed from their contexts is on the strip."""
@@ -158,6 +159,7 @@ def test_lights_placed_in_a_path_corridor_stand_on_its_strip():
     assert seen, "no Prop on a path corridor to check"
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(_install() is None, reason="EQ_PATH is not set (no EQ install to read)")
 def test_decor_places_no_path_corridor_prop_off_the_strip():
     """Decor on 5 cave builds (the Decor control resolved as a sweep build resolves it,
