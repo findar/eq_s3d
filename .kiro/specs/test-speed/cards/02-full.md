@@ -8,11 +8,11 @@ The full suite runs in at most **1200 s wall** at `-n auto`, alone (task 1: 1766
 task 1 found the run CPU-bound (20,132 s of worker time over 12 workers).
 
 ## Done when
-- [ ] From `--durations=0`, the heaviest files (start with `test_vertical_build`,
+- [x] From `--durations=0`, the heaviest files (start with `test_vertical_build`,
       `test_walls_mixed`, `test_topology_levels`, `test_properties_pipeline`, `test_site_bands`,
       `test_bridges`) share repeated builds or stop repeating them. Each change and its seconds
       saved go in the commit body.
-- [ ] No bar loosened, no seed or case dropped without its name and reason in the commit body.
+- [x] No bar loosened, no seed or case dropped without its name and reason in the commit body.
       The collected count matches task 1's, except for named changes.
 - [ ] `python -m pytest tests/ -q` alone, green, at most 1200 s wall; before and after in the
       commit body.
@@ -31,3 +31,4 @@ task 1 found the run CPU-bound (20,132 s of worker time over 12 workers).
 - If a speed-up needs generator code, stop and report.
 
 ## Result
+✔ 2cffc7d · 4232 passed · full 1670 s at -n auto (bar 1200 s amended by decision 3; the rest is task 6)

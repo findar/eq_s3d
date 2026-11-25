@@ -18,5 +18,17 @@
    208 s at auto (6.7 GB peak), 246 s at 6, 306 s at 4; full suite 1766 s at auto (13 GB peak),
    so the old 2000 s bar was met by worker count alone.
 
+3. **Task 2's bar is amended to what it measured; the gate's speed is task 6** (the lead,
+   2026-11-25). Full suite 1765 -> 1670 s at `-n auto` (worker time 20,256 -> 18,925 s). Repeated
+   builds were about 2% of the run, so sharing cannot reach 1200 s; the gate is about 50% of a
+   sweep build and also slows every generate. Sweep builds now pass the plan's verticality to
+   `generate_validated` (flat plans had failed all 32 quality Draws against moderate's bands).
+   Long single sweeps are split per case (collected 4114 -> 4243). Literal `max_examples`
+   scale with the profile, except `test_w1_outline...` (see Follow-ups). Coverage cuts were not
+   taken.
+
 ## Follow-ups
+- **Outline fault at thorough** (task 2): `test_outline::test_w1_outline_is_inside_connected_and_reaches_every_door`
+  fails in `draw_outline` at 300 examples (Voronoi blob, w=70, fill 0.75, N 0.846, W 0.0: d=61
+  seed 0 gives two wall loops; d=50 seed 1 a folded fan). Kept at a literal 60; a generator fix.
 - Comments in `tests/test_properties_layout.py` still say "no `slow` marker" (task 1).

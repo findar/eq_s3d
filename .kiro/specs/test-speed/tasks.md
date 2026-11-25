@@ -23,7 +23,7 @@ or sweep first. Wall times in commit bodies are measured alone.
   - Owns: pytest.ini, tests/conftest.py, tests/pbt_helpers.py, marker and `settings` lines in tests/test_*.py
   - Reqs: 1, 2
 
-- [ ] 2. A cheaper full suite
+- [x] 2. A cheaper full suite
   - Card: [cards/02-full.md](cards/02-full.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: tests/ (the files the timings name; stop and report before touching generator code)
@@ -43,5 +43,11 @@ or sweep first. Wall times in commit bodies are measured alone.
 
 - [ ] 5. Close step 28
   - Card: [cards/05-close.md](cards/05-close.md)
-  - Type: agent · Size: S · Depends: 2, 3, 4 · Where: MAIN checkout
+  - Type: agent · Size: S · Depends: 2, 3, 4, 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/test-speed/
+
+- [ ] 6. A faster gate
+  - Card: [cards/06-gate.md](cards/06-gate.md)
+  - Type: agent · Size: M · Depends: 2
+  - Owns: analyzer/traverse.py, tests/test_traverse*.py (new equivalence test if warranted); stop and report before widening
+  - Reqs: 3
