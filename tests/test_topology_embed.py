@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import statistics
-from functools import lru_cache
 
 import pytest
 from hypothesis import given, settings
@@ -204,15 +203,21 @@ def _ctx(s, n, theme):
 # G8 and G9 over the sweep
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=None)
-def _sweep(label):
-    rule_set, theme = SWEEP_SETS[label]
+def _sweep_layouts(key):
+    """``("embed_sweep", label)`` -> the set's sweep: (spec, layout record) per layout."""
+    rule_set, theme = SWEEP_SETS[key[1]]
     out = []
     for n in SWEEP_NS:
         for s in SWEEP_SEEDS:
             gen, spec = _graph_layout(1000 * n + s, n, theme, rule_set)
             out.append((spec, gen.layout_record))
     return out
+
+
+def _sweep(shared, label):
+    """The set's sweep, laid out once per session whichever worker asks first
+    (``conftest.SharedResults``): the G8/G9 tests below read the same sweeps."""
+    return shared.get(("embed_sweep", label), _sweep_layouts)
 
 
 def _built_shape(spec, record):
@@ -239,8 +244,8 @@ def _built_shape(spec, record):
 
 @pytest.mark.slow
 @pytest.mark.parametrize("label", sorted(SWEEP_SETS))
-def test_edge_fidelity_over_the_sweep(label):
-    fids = [rec["edge_fidelity"] for _spec, rec in _sweep(label)]
+def test_edge_fidelity_over_the_sweep(shared_results, label):
+    fids = [rec["edge_fidelity"] for _spec, rec in _sweep(shared_results, label)]
     mean = statistics.mean(fids)
     bar = FIDELITY_BAR[label]
     assert mean >= bar, f"{label}: mean Edge_Fidelity {mean:.4f} < bar {bar:.4f}"
@@ -248,10 +253,10 @@ def test_edge_fidelity_over_the_sweep(label):
 
 @pytest.mark.slow
 @pytest.mark.parametrize("label", sorted(BUILT_BANDS))
-def test_built_graph_keeps_the_survey_shape(label):
+def test_built_graph_keeps_the_survey_shape(shared_results, label):
     """Loops survive placement (task 18): the corridors Job B builds still
     have the set's survey shape on the sweep mean."""
-    rows = [_built_shape(spec, rec) for spec, rec in _sweep(label)
+    rows = [_built_shape(spec, rec) for spec, rec in _sweep(shared_results, label)
             if len(spec.rooms) >= SHAPE_MIN_ROOMS]
     bad = []
     for m, (lo, hi) in BUILT_BANDS[label].items():
@@ -262,9 +267,9 @@ def test_built_graph_keeps_the_survey_shape(label):
 
 
 @pytest.mark.slow
-def test_relations_hold_unless_counted():
+def test_relations_hold_unless_counted(shared_results):
     held = total = 0
-    for spec, rec in (x for label in SWEEP_SETS for x in _sweep(label)):
+    for spec, rec in (x for label in SWEEP_SETS for x in _sweep(shared_results, label)):
         broken = _broken(spec, rec)
         assert rec["relations_broken"] == broken
         n_rel = sum(1 for e in rec["edges"] if e[2] != "any")

@@ -1,7 +1,6 @@
 """Room layouts task 16 (Requirement 12; design F13): a room's finish is its wall style."""
 
 import hashlib
-import random
 from collections import Counter
 
 import pytest
@@ -9,9 +8,9 @@ import pytest
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators.builder import ZoneBuilder
-from generators.pipeline import generate_validated
 from generators.topology.ruleset import RuleSetError, load_theme_map
 from generators.wall_styles import WALLS_DIR, load_style, load_styles, style_for_finish
+from tests.conftest import gated_attempts, gated_key
 
 #: A plan naming a style, in master's bytes before finish chose a room's style, footer aside.
 NAMED = {"rough": "0b7875b29b5e075954c0d094da882995f1841b1e02299bf56806a3fa1bc9747f", "hewn": "d0f29b92139b4ca9a15dfc13e54a9f735a05cd14d033da38471d916c3ed60d9e", "built": "b47699190e817cf8e1f727aa409a3ce7eded97a3ea8081778f10b64513c29af5"}
@@ -115,18 +114,35 @@ CASES = [dict(rule_set="classic_eq", verticality="moderate"), dict(rule_set="cla
          dict(zone_type="outdoor_dungeon", room_count=8, verticality="dramatic")]
 
 
+MIXED_SEEDS = range(4)
+_CASE_ID = {i: "-".join(str(v) for v in f.values()) for i, f in enumerate(CASES)}
+
+
+def _mixed_key(fields: dict, seed: int) -> tuple:
+    """``conftest.gated_attempts``'s key for a case on sweep seed ``seed``: ``_plan``'s
+    fields, four attempts, 300 s."""
+    plan = {"room_count": 16, "verticality": "flat", "zone_type": "dungeon", "layout": "graph",
+            **fields}
+    return gated_key(plan, seed, 4, 300.0)
+
+
+@pytest.mark.gate
+@pytest.mark.slow
+@pytest.mark.parametrize("case, seed", [(i, s) for i in range(len(CASES)) for s in MIXED_SEEDS],
+                         ids=[f"{_CASE_ID[i]}-{s}" for i in range(len(CASES)) for s in MIXED_SEEDS])
+def test_mixed_zone_passes_within_the_retries(shared_results, case, seed):
+    """One seed of a case (a test each, so the sweep spreads over the workers): it passes
+    every step 8 check within four attempts. The first-try count below reads these."""
+    tries = shared_results.get(_mixed_key(CASES[case], seed), gated_attempts)
+    assert tries is not None, "out of retries"
+
+
 @pytest.mark.gate
 @pytest.mark.slow
 @pytest.mark.parametrize("fields", CASES, ids=lambda f: "-".join(str(v) for v in f.values()))
-def test_mixed_zones_pass_the_gate(tmp_path, fields):
+def test_mixed_zones_pass_the_gate(shared_results, fields):
     """Every step 8 check, on zones of more than one style, first try 3 times in 4."""
-    plan = _plan(**fields)
-    zone_type = fields.get("zone_type", "dungeon")
-    tries = []
-    for seed in range(4):
-        vb = generate_validated(lambda s: plan_to_spec(plan, seed=s), zone_type=zone_type, zone_id="wm",
-                                rng=random.Random(seed), output_dir=tmp_path / str(seed), write_glb=False,
-                                failure_log=None, max_attempts=4, timeout_s=300.0)
-        assert vb.validated
-        tries.append(vb.attempts)
+    keys = [_mixed_key(fields, s) for s in MIXED_SEEDS]
+    tries = shared_results.get_many(keys[::-1], gated_attempts)[::-1]
+    assert None not in tries, tries
     assert sum(t == 1 for t in tries) >= 3, tries
