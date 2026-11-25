@@ -15,7 +15,7 @@ specs" in `.kiro/steering/project.md`.
 
 ## Tasks
 
-- [ ] 1. Cave draw time
+- [x] 1. Cave draw time
   - Card: [cards/01-draw-time.md](cards/01-draw-time.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/topology/embed.py, tests/test_topology_embed.py

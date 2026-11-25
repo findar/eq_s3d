@@ -487,20 +487,21 @@ def test_outdoor_dungeon_leaves_the_lattice_on_its_wall_sides(monkeypatch):
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     seen = []
-    relax = embed.spring_relax
+    relax = embed.spring_relax_many
 
-    def watched(order, edges, pos, half, nodes, run, gap, iterations=None, jitter=None):
-        out = relax(order, edges, pos, half, nodes, run, gap, iterations, jitter=jitter)
-        assert jitter is not None
-        for a, b in edges:
-            if embed.is_stair(nodes[a], nodes[b]):
-                continue
-            seen.append((a, b))
-            assert (embed._side_toward(pos[a], half[a], pos[b], half[b])
-                    == embed._side_toward(out[a], half[a], out[b], half[b])), (a, b)
-        return out
+    def watched(order, edges, pos, half, nodes, run, gap, iterations, jitters):
+        outs = relax(order, edges, pos, half, nodes, run, gap, iterations, jitters)
+        for jitter, out in zip(jitters, outs):
+            assert jitter is not None
+            for a, b in edges:
+                if embed.is_stair(nodes[a], nodes[b]):
+                    continue
+                seen.append((a, b))
+                assert (embed._side_toward(pos[a], half[a], pos[b], half[b])
+                        == embed._side_toward(out[a], half[a], out[b], half[b])), (a, b)
+        return outs
 
-    monkeypatch.setattr(embed, "spring_relax", watched)
+    monkeypatch.setattr(embed, "spring_relax_many", watched)
     plan = ZonePlan.from_controls({"zone_type": "outdoor_dungeon", "dungeon_theme": "temple",
                                    "layout": "graph", "room_count": 12,
                                    "verticality": "moderate"}, [])
@@ -555,22 +556,52 @@ def test_offset_keeps_every_edge_on_its_wall_side(monkeypatch, seed, n, theme, v
     wall side, step 6 finding 1). A stair edge's rooms overlap in plan, so its
     side is not a wall's and isn't held."""
     seen = []
-    relax = embed.spring_relax
+    relax = embed.spring_relax_many
 
-    def watched(order, edges, pos, half, nodes, run, gap, iterations=None, jitter=None):
-        out = relax(order, edges, pos, half, nodes, run, gap, iterations, jitter=jitter)
-        assert (jitter is not None) == (theme == "cave"), theme
-        for a, b in edges:
-            if embed.is_stair(nodes[a], nodes[b]):
-                continue
-            seen.append((a, b))
-            assert (embed._side_toward(pos[a], half[a], pos[b], half[b])
-                    == embed._side_toward(out[a], half[a], out[b], half[b])), (seed, a, b)
-        return out
+    def watched(order, edges, pos, half, nodes, run, gap, iterations, jitters):
+        outs = relax(order, edges, pos, half, nodes, run, gap, iterations, jitters)
+        for jitter, out in zip(jitters, outs):
+            assert (jitter is not None) == (theme == "cave"), theme
+            for a, b in edges:
+                if embed.is_stair(nodes[a], nodes[b]):
+                    continue
+                seen.append((a, b))
+                assert (embed._side_toward(pos[a], half[a], pos[b], half[b])
+                        == embed._side_toward(out[a], half[a], out[b], half[b])), (seed, a, b)
+        return outs
 
-    monkeypatch.setattr(embed, "spring_relax", watched)
+    monkeypatch.setattr(embed, "spring_relax_many", watched)
     _controls_spec(seed, n, theme, verticality)
     assert seen
+
+
+#: A cave whose untangle sweep tries several edges (30 rooms, flat).
+SIDE_BY_SIDE_SEED = 2006
+
+
+def test_relaxations_side_by_side_are_each_their_own():
+    """Draw time (cave clumps task 1): ``spring_relax_many`` relaxes several
+    jitters in one set of arrays; each result is exactly (float ==) what
+    ``spring_relax`` gives for that jitter alone, holds and settling included."""
+    captured = []
+    relax = embed.spring_relax_many
+
+    def watched(order, edges, pos, half, nodes, run, gap, iterations, jitters):
+        outs = relax(order, edges, pos, half, nodes, run, gap, iterations, jitters)
+        if len(jitters) > 1 and len(captured) < 3:
+            captured.append(((order, edges, dict(pos), half, nodes, run, gap, iterations),
+                             [j._replace(edges=dict(j.edges)) for j in jitters], outs))
+        return outs
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(embed, "spring_relax_many", watched)
+        _controls_spec(SIDE_BY_SIDE_SEED, 30, "cave", "flat")
+    assert captured, "the untangle sweep relaxes its tries side by side"
+    for (order, edges, pos, half, nodes, run, gap, iterations), jitters, outs in captured:
+        for jitter, out in zip(jitters, outs):
+            alone = embed.spring_relax(order, edges, pos, half, nodes, run, gap,
+                                       iterations, jitter=jitter)
+            assert alone == out
 
 
 def test_graph_rooms_leave_the_lattice():
