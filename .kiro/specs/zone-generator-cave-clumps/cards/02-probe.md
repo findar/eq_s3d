@@ -23,3 +23,4 @@ RoomContexts, map, transitions) fails, so task 3 can pick the throat's length.
   between rooms at different heights can't carry a rise; throats join rooms on one floor).
 
 ## Result
+✔ 931db1c · 3033 passed (quick; the version test failed only by the commit landing mid-run, passes alone)

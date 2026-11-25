@@ -39,6 +39,10 @@ Graph, classic fortress, city; the same seeds and room counts):
 - entry: the angle between a corridor's first leg (its ``path`` or route) and
   the outward normal of the wall it leaves, at both ends; p50/p90 and the share
   over 20 deg.
+- throat: the share of edges (room pairs) whose corridor is no longer than one corridor
+  width door to door (the shortest corridor of the pair, its ``path`` or route as d2d
+  reads it): rooms opening into each other, read as ``stock_room_shapes.py`` reads
+  "direct" (chambers touching, no passage between). Stock caves 0.30 (step 29).
 - side: sqrt(width x depth): min and max over the zone's median, p10-p90 over
   the median (pooled), and p10/p50/p90 in H (the race's body height). Aspect
   long/short p50/p90/max and share over 1.5 (pooled); area CV and max/min. Per-zone
@@ -210,7 +214,24 @@ def spec_shape(spec) -> dict:
                       semantics.body_height(spec.dungeon_race or "default"))
     m["entry"] = entry_angles(spec)
     m["grid"] = grid_score(spec)
+    m["throats"], m["pairs"] = throat_count(spec)
     return m
+
+
+def throat_count(spec):
+    """(throat edges, edges): room pairs whose shortest corridor is no longer than its
+    width door to door (step 29, cave clumps task 2), of the pairs a corridor joins."""
+    from generators.routing import corridor_route
+    by = {r.id: r for r in spec.rooms}
+    best = {}
+    for cor in spec.corridors:
+        if cor.from_room not in by or cor.to_room not in by or cor.from_room == cor.to_room:
+            continue
+        line = cor.path or list(corridor_route(cor, by).waypoints)
+        d = sum(math.dist(a, b) for a, b in zip(line, line[1:]))
+        pair = frozenset((cor.from_room, cor.to_room))
+        best[pair] = min(best.get(pair, math.inf), d - cor.width)
+    return sum(v <= 1e-6 for v in best.values()), len(best)
 
 
 def one_shape(job):
@@ -262,6 +283,10 @@ def summarise_shapes(rows) -> dict:
             "asp_p50": pct(asp, 50), "asp_p90": pct(asp, 90), "asp_max": max(asp),
             "asp_over15": sum(a > 1.5 for a in asp) / len(asp),
             "area_cv": fm("area_cv"), "area_ratio": fm("area_ratio"),
+            # (a stock row's: its "direct" contacts over its edges)
+            "throat": (sum(r.get("throats", r.get("direct", 0)) for r in rs)
+                       / max(1, sum(r.get("pairs", r["edges"] if "direct" in r else 0) for r in rs))
+                       if any("pairs" in r or "direct" in r for r in rs) else nan),
         }
     return out
 
@@ -270,7 +295,7 @@ def shape_table(s: dict) -> str:
     head = (f"{'kind':16s} {'n':>3s} {'grid':>5s} {'ax10':>5s} {'axbst':>5s} "
             f"{'nnCV':>5s} {'nn mn/md/mx':>14s} {'ent 50/90/>20':>14s} "
             f"{'side mn/mx':>10s} {'rel10-90':>9s} {'H 10/50/90':>14s} "
-            f"{'asp 50/90/mx >1.5':>19s} {'arCV':>5s} {'mx/mn':>6s}")
+            f"{'asp 50/90/mx >1.5':>19s} {'arCV':>5s} {'mx/mn':>6s} {'thrt':>5s}")
     lines = [head]
     for kind, r in s.items():
         lines.append(
@@ -280,7 +305,7 @@ def shape_table(s: dict) -> str:
             f"{r['side_min']:4.2f}/{r['side_max']:4.2f} {r['rel_p10']:4.2f}-{r['rel_p90']:4.2f} "
             f"{r['h_p10']:4.1f}/{r['h_p50']:4.1f}/{r['h_p90']:4.1f} "
             f"{r['asp_p50']:4.2f}/{r['asp_p90']:4.2f}/{r['asp_max']:4.2f} {r['asp_over15']:4.2f} "
-            f"{r['area_cv']:5.2f} {r['area_ratio']:6.1f}")
+            f"{r['area_cv']:5.2f} {r['area_ratio']:6.1f} {r.get('throat', float('nan')):5.2f}")
     lines.append("bearing offsets from the nearest axis, 5 deg bins 0-45 (shares of edges):")
     for kind, r in s.items():
         lines.append(f"  {kind:14s} " + " ".join(f"{h:4.2f}" for h in r["hist"]))
