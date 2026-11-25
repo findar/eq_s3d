@@ -41,7 +41,7 @@ or sweep first. Wall times in commit bodies are measured alone.
   - Owns: .kiro/steering/project.md, .kiro/steering/lessons-learned.md
   - Reqs: 4
 
-- [ ] 5. Close step 28
+- [x] 5. Close step 28
   - Card: [cards/05-close.md](cards/05-close.md)
   - Type: agent · Size: S · Depends: 2, 3, 4, 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/test-speed/

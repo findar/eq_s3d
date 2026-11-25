@@ -1,6 +1,6 @@
 # Requirements — test-speed (roadmap step 28)
 
-STATUS: open. The user, 2026-11-24: "How can we optimize the tests so they don't take so long ?
+STATUS: done (closed 2026-11-25). The user, 2026-11-24: "How can we optimize the tests so they don't take so long ?
 That should be a priority to speed up iteration", then "Start as soon as it merged" (after step
 27 task 12).
 

@@ -4,6 +4,11 @@
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | `gate` marker, `quick` profile, 64 tests newly `slow`; quick tier 208 s | `afee5c4`, `01a81e3` |
+| 2 | sweep builds pass the plan's verticality; long sweeps split per case; literal examples scale; full 1765 -> 1670 s | `d71a268`, `5cc427f`, `2cffc7d`, `25f29b8` |
+| 3 | pytest-testmon measured, not adopted | `ab64237` |
+| 4 | `project.md` names the tiers; two lessons | `1821513`, `798b49e` |
+| 6 | the traversal gate 2.8x faster, reports identical; full 1323 s, gate tier 768 s | `6e10e38`, `d67c030`, `18bf5a4` |
 
 ## Decisions
 
@@ -31,6 +36,12 @@
    task 6). Full suite 1670 -> 1323 s, gate tier 1040 -> 768 s, quick 205 s. 144 reports (72
    builds and 72 with 3% of polygons dropped) equal field for field against master's gate. The
    gate is now 10-17% of a sweep build; the rest is decor, map outline and room outlines.
+
+5. **pytest-testmon is not adopted** (the lead, 2026-11-25, at task 3). Quick-tier reruns took
+   88-133 s after an edit (205 s plain), 44 s with nothing changed; the full suite saved 17% on
+   a traverse edit. It never reruns a test when only a data file changes (golden, room corpus,
+   `styles/*.json`), its selection drifts with Hypothesis draws, and plain `--testmon` silently
+   runs everything under `-m`. Not worth a dependency that can skip tests unseen.
 
 ## Follow-ups
 - **Build time outside the gate** (task 6): decor placement, map outline and `generators/outline.py`
