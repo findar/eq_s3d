@@ -113,12 +113,19 @@ def test_builds_pass_the_gate(case, tmp_path):
 
 def test_most_builds_have_paths():
     """The builds above exercise the path mesh: most rough cave corridors carry a path (warrens,
-    whose rooms sit closer, get fewer)."""
+    whose rooms sit closer, get fewer). A throat (cave clumps task 3: no longer than its width
+    door to door) is too short to wind and isn't counted."""
+    from generators.routing import corridor_route
     rough = with_path = 0
     for case in BUILDS:
         if case[0] != "cave":
             continue
-        for cor in _spec(*case).corridors:
+        spec = _spec(*case)
+        rooms = {r.id: r for r in spec.rooms}
+        for cor in spec.corridors:
+            wps = corridor_route(cor, rooms).waypoints
+            if sum(math.dist(a[:2], b[:2]) for a, b in zip(wps, wps[1:])) <= cor.width + 1e-6:
+                continue
             if cor.rough > 0 and cor.transition is None:
                 rough += 1
                 with_path += bool(cor.path)

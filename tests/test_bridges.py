@@ -342,17 +342,20 @@ def test_straightening_keeps_off_a_door_already_on_the_wall():
     from the stair to room_8's door, both 18 u wide; the overlapping openings left an open
     seam. ``_straight_cor`` judged the new route only against corridors leaving neither
     room. It now judges every corridor and keeps two doors on one wall a width and a pier
-    (``U_DOOR_MARGIN``) apart."""
+    (``U_DOOR_MARGIN``) apart. Re-pinned by cave clumps task 3 (throats moved the cave's
+    rooms; seed 432395022's room_2 has no west door now): at seed 21 the Bridge corr_12 and
+    corr_5 both leave room_7 by its west wall, 39.4 u apart."""
     import itertools
 
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 30, "verticality": "moderate",
                                    "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
     plan.name = "doors"
-    spec = plan_to_spec(plan, seed=432395022, warnings=[])
-    room_2 = next(r for r in spec.rooms if r.id == "room_2")
-    walls = {LayoutGenerator._door_on_wall(c, room_2)[0] for c in spec.corridors
-             if "room_2" in (c.from_room, c.to_room) and LayoutGenerator._door_on_wall(c, room_2)}
-    assert "W" in walls, "the layout moved: re-pin"
+    spec = plan_to_spec(plan, seed=21, warnings=[])
+    room_7 = next(r for r in spec.rooms if r.id == "room_7")
+    cors = {c.id: c for c in spec.corridors}
+    assert "corr_12" in cors and cors["corr_12"].bridge and "corr_5" in cors, "the layout moved: re-pin"
+    walls = [(LayoutGenerator._door_on_wall(cors[k], room_7) or ("",))[0] for k in ("corr_12", "corr_5")]
+    assert walls == ["W", "W"], "the layout moved: re-pin"
     for r in spec.rooms:
         cs = [c for c in spec.corridors if r.id in (c.from_room, c.to_room)]
         for a, b in itertools.combinations(cs, 2):
@@ -372,16 +375,18 @@ def test_a_slot_keeps_off_a_door_on_the_bridged_rooms_wall():
     (caves at any bearing; 782009009 now makes no Bridge): at seed 1001 corr_19's slot in
     room_21 comes within 2.5 u of the west wall, where corr_8 has its door. Re-pinned by random
     placement task 11 (room sizes vary): at seed 1013 corr_21's slot in room_17 reaches the west
-    wall, where corr_17 has its door."""
+    wall, where corr_17 has its door. Re-pinned by cave clumps task 3 (throats moved the cave's
+    rooms; seed 1013 bridges nothing near a door now): at seed 1040 corr_19's slot in room_17
+    comes within 2.5 u of the north wall, where corr_15 has its door."""
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 27, "verticality": "moderate",
                                    "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
     plan.name = "slots"
-    spec = plan_to_spec(plan, seed=1013, warnings=[])
+    spec = plan_to_spec(plan, seed=1040, warnings=[])
     rooms = {r.id: r for r in spec.rooms}
     room_17 = rooms["room_17"]
-    assert any((LayoutGenerator._door_on_wall(c, room_17) or ("",))[0] == "W" for c in spec.corridors
-               if c.id == "corr_17"), "the layout moved: re-pin"
-    assert any(c.id == "corr_21" and c.bridge == "room_17" for c in spec.corridors), "the layout moved: re-pin"
+    assert any((LayoutGenerator._door_on_wall(c, room_17) or ("",))[0] == "N" for c in spec.corridors
+               if c.id == "corr_15"), "the layout moved: re-pin"
+    assert any(c.id == "corr_19" and c.bridge == "room_17" for c in spec.corridors), "the layout moved: re-pin"
     checked = 0
     for cor in spec.corridors:
         bl = bridge_layout(cor, rooms) if cor.bridge else None

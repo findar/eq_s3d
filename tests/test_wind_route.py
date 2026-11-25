@@ -214,14 +214,23 @@ def test_stored_paths_clear_everything(case):
                 assert poly_gap(quad, poly) >= need - 1e-6, (cor.id, j, rid)
 
 
+def _throat(cor, rooms) -> bool:
+    """A throat (cave clumps task 3): its route no longer than its width door to door."""
+    wps = corridor_route(cor, rooms).waypoints
+    return sum(math.dist(a[:2], b[:2]) for a, b in zip(wps, wps[1:])) <= cor.width + 1e-6
+
+
 @pytest.mark.slow
 def test_paths_wind_most_cave_corridors():
     """Most rough cave corridors that hold no Transition line get a path (87 of 132 at the
-    cave run of 4 widths, winding routes task 4; 75% held at 9)."""
+    cave run of 4 widths, winding routes task 4; 75% held at 9). A throat (cave clumps task
+    3: no longer than its width door to door) is too short to wind and isn't counted."""
     eligible = with_path = 0
     for case in CAVES:
-        for cor in _spec(*case).corridors:
-            if cor.rough > 0 and cor.transition is None:
+        spec = _spec(*case)
+        rooms = {r.id: r for r in spec.rooms}
+        for cor in spec.corridors:
+            if cor.rough > 0 and cor.transition is None and not _throat(cor, rooms):
                 eligible += 1
                 with_path += bool(cor.path)
     assert with_path >= 0.6 * eligible, (with_path, eligible)
