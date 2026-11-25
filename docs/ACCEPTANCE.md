@@ -3912,3 +3912,176 @@ corridor bridges. 12,436 vertices (12,162 before).
       away (the next-nearest room is 200 u). 19,515 vertices (16,537 before). Generate it in
       Controls and say whether the wait feels acceptable. Not looked at in the 3D viewer for
       this section.
+
+### First-look fixes (tasks 9–13)
+
+> At the first look (archive decision 4) the user built case a and said the cave "still seems
+> roughly on a grid", expecting rooms that can clump and entrances that come in at angles. The
+> same look found that room sizes "feel mostly similar". The cause was that each neighbour moved
+> only sideways along its N/S/E/W wall, doors were cut square, and every room was one class side
+> ±15%, near-square. Task 10 places cave rooms at any bearing, with corridors that meet the wall
+> at an angle (caves only, the user's choice). Task 11 draws room sides, aspects and areas from
+> stock's spread for every kind of zone, up to 26 H (156 u; 48 u is the floor). Built and warren
+> Graph dungeons still keep the lattice, and only caves get angled entries.
+
+The cases below reuse a, f, o and c from the table above, with the same controls and seed
+731402518. Every "now" build ran through `/api/generate` on a Server started for this section
+(rule planner, no API key, `EQ_PATH` = `F:\everquest_rof2`, master `e741a86`, after task 12).
+Each passed the gate and the Format_Checker on its first build (validated, 1 attempt, not
+Quality_Degraded, no warnings). The "before" column is `71fbd06`, the merge just before task 10.
+It was drawn with `plan_to_spec` on a detached checkout of that commit with the same controls
+and seed, not built through a Server. On master, `plan_to_spec` gives the same rooms as the
+Server's `.spec.json` in all four cases, and the before cave and fortress match Y.1's and Y.3's
+"now" layouts. The measures are `scripts/grid_score.py`'s `spec_shape` (task 9):
+
+- **Bearing**: each corridor's centre-to-centre bearing, as its offset from the nearest axis
+  (0–45°). "ax10" is the share within 10° of an axis. Stock caves have 0.28, and about 0.33 of
+  their edges are 30–45° off.
+- **Nearest neighbour**: each room's nearest other centre, in 3D. The spread is given as its CV
+  and as min/median/max over the zone's median room side. Stock caves have CV 0.38 and a min of 0.63.
+- **Entry angle**: the angle between a corridor's first leg and its wall's outward normal, at
+  both ends (0° is square).
+- **Size**: the side is √(w·d), and the zone's median side is also given in H (6 u). The area CV
+  and max/min are per zone. The aspect is long/short. Stock has an area CV of 0.8–0.95, a
+  max/min of 9–16, and an aspect p50 of about 1.25 with 0.25–0.30 of rooms over 1.5.
+
+| Case | Build (now) | Gate | Vertices | Time |
+|---|---|---|---|---|
+| a, cave | `gen_1795604008_9f8d04` | passes, 1 attempt, format passed | 10,787 | 9.2 s |
+| f, fortress | `gen_1795604018_5b92e7` | passes, 1 attempt, format passed | 20,886 | 13.2 s |
+| o, outdoor dungeon | `gen_1795604031_d2282e` | passes, 1 attempt, format passed | 13,614 | 8.7 s |
+| c, city | `gen_1795604039_04d038` | passes, 1 attempt, format passed | 632 | 3.3 s |
+
+#### Z.1 — The first-look cave (case a)
+
+Dungeon, Layout **Graph**, Rooms **12**, Theme **Cave**, Verticality **Moderate**, Size
+**medium**, Decor **Normal**, seed **731402518**. It has the same 13 corridors between the same
+rooms. The stair `corr_10` (room_5 → room_8, 102 u up) is unchanged, and room_8 is still the one
+Level 1 room. room_0 is still the entrance and room_4 the climax.
+
+| Room | Before (`71fbd06`) centre, w × d | Now centre, w × d |
+|---|---|---|
+| room_0 (entrance) | (22.8, 2.1), 59.6 × 65.5 | (28.8, 1.2), 48 × 67 |
+| room_1 | (215.8, −5.8), 61.4 × 63.3 | (173.8, −0.4), 64.2 × 48 |
+| room_2 | (−133.4, 21.4), 53 × 54.7 | (34.8, 93.0), 48 × 66 |
+| room_3 (cavern) | (24.8, −177.0), 79.6 × 94.4 | (−88.6, −118.8), **156 × 98.6** |
+| room_4 (climax) | (196.8, −209.6), 99.7 × 104.1 | (80.7, −198.1), 98.4 × 78.2 |
+| room_5 | (196.8, 186.9), 74.1 × 67 | (389.8, 87.1), 48 × 81.6 |
+| room_6 | (−184.9, −223.8), 68.1 × 63.1 | (−272.1, −361.9), 106.6 × 48 |
+| room_7 | (0.3, −347.8), 52.1 × 56.5 | (−210.0, −179.5), 48 × 55.8 |
+| room_8 (Level 1) | (230.0, 186.9), 58.5 × 48 | (413.8, 87.1), 48 × 54.4 |
+| room_9 | (−368.6, −223.1), 51.9 × 52.9 | (−289.8, −629.5), 48 × 90.2 |
+| room_10 | (−173.7, −395.4), 59.9 × 54.1 | (−24.2, −380.1), 48 × 63.4 |
+| room_11 | (−345.7, −416.0), 68.3 × 76.1 | (−109.5, −527.1), 48 × 61.3 |
+
+| Measure | Before | Now | Stock caves / task 9 target |
+|---|---|---|---|
+| Edge bearings within 10° of an axis | **0.85** (11 of 13; max offset 12.6°) | **0.38** (5 of 13) | 0.28 / ≤ 0.35 |
+| Edge bearings 30–45° off | 0 | **0.23** (3 of 13: 30°, 37°, 44°) | 0.33 / ≥ 0.25 |
+| Nearest-neighbour CV | 0.16 | **0.27** | 0.38 / ≥ 0.30 |
+| Nearest neighbour min/med/max ÷ median side | 1.72 / 2.76 / 3.10 | 1.64 / 2.50 / 3.67 | min 0.63 / ≤ 1.0 |
+| Nearest neighbour, u | 107–194 (closest: the stair pair) | **93–208** (closest: room_0 / room_2) | |
+| Entry angle p50 / p90 / share over 20° | 0° / 0° / 0 | **29.9° / 40.0° / 0.69** | ≥ 15° / ≤ 55° / ≥ 0.30 |
+| Median side | 62.4 u (10.4 H) | 56.5 u (9.4 H) | 8.5–15 H |
+| Side min / max, max ÷ median | 52.4 / 101.9 u, 1.63 | 51.1 / 124.0 u, **2.20** | 2.35 |
+| Area CV, max/min | 0.48, 3.8 | **0.73, 5.9** | 0.80, 8.6 |
+| Aspect p50 / max / share over 1.5 | 1.10 / 1.22 / 0 | **1.37 / 2.22 / 0.33** | 1.31 / 1.93 / 0.32 |
+| Grid score | 0.076 | 0.076 | |
+
+The task 9 targets are bars over seeds 2000–2039, not for one seed. This seed meets the entry and
+aspect bars, and comes close on the bearing ones (0.38 and 0.23). Clumping is the weak spot. The
+spread is wider (CV 0.27, rooms 93 to 208 u from their nearest), but the closest pair (room_0 and
+room_2, 92.7 u) is still 1.64 median sides apart, against stock's 0.63. Rooms opening straight
+into each other remain a follow-up. Nine of the 13 corridors now meet their walls at 25–40°. The
+ones still square are `corr_6` (room_2 → room_0), `corr_9` (room_3 → room_7), the stair `corr_10`
+(0°) and `corr_5` (6°). room_3 (a 156 × 98.6 cavern, the 26 H cap) now has 5.9× the floor of
+room_8 (48 × 54.4). Before, the largest room had 3.8× the floor of the smallest.
+
+- [ ] **[MUST] No longer a grid** — Case a: look at the map, then fly over the cave. Edges
+      should run at many bearings, not mostly N/S/E/W. room_5 and room_8 (the stair pair)
+      still share y 87.1 by design. Say whether it reads as chambers placed by hand now.
+      Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] Entrances at an angle** — Case a: walk `corr_3` (room_6 → room_3), `corr_7`
+      (room_4 → room_3) and `corr_8` (room_0 → room_3), each about 40° off square, and `corr_0`
+      (room_1 → room_4, 32°). Each opening should be cut where the tunnel meets the rock, with no
+      sliver of wall across the doorway, no gap beside it and a flush floor at both ends. Also
+      walk `corr_5` (room_6 → room_10) and `corr_11` (room_9 → room_11), which carry seams. Not
+      looked at in the 3D viewer for this section.
+- [ ] **[MUST] Clumped and spread rooms** — Case a: room_0 and room_2 sit 92.7 u apart, while
+      room_9 is 208 u from its nearest (room_11). Say whether the cave now has tight clusters and
+      open gaps, or whether it should clump harder (stock's closest pairs are much closer).
+      Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] Small grottos beside a big cavern** — Case a: stand in room_3 (156 × 98.6 u),
+      then in room_7 (48 × 55.8) and room_2 (48 × 66). The sizes should read clearly different,
+      and room_6 (106.6 × 48) and room_9 (48 × 90.2) should read as long galleries. Not looked at
+      in the 3D viewer for this section.
+- [ ] **[MUST] Stair and Level intact** — Case a: walk room_5 → `corr_10` → room_8 (102 u up).
+      The stair should land flush in both rooms. Not looked at in the 3D viewer for this section.
+
+#### Z.2 — Size variance: a fortress, an outdoor dungeon and a city
+
+These keep their square doors (entry angles 0–7° before and now). Only room sizes and shapes
+change, and so does the placement that fits them.
+
+| Case | Median side | Side min–max (max ÷ median) | Area CV | Area max/min | Aspect p50 / max / over 1.5 |
+|---|---|---|---|---|---|
+| f, before | 78.8 u (13.1 H) | 55.4–118.8 u (1.51) | 0.50 | 4.6 | 1.10 / 1.22 / 0 |
+| f, now | 106.0 u (17.7 H) | 51.8–156.0 u (1.47) | **0.62** | **9.1** | 1.29 / 1.77 / 0.31 |
+| o, before | 72.3 u (12.0 H) | 55.6–117.5 u (1.63) | 0.48 | 4.5 | 1.08 / 1.24 / 0 |
+| o, now | 63.5 u (10.6 H) | 48.1–118.8 u (1.87) | **0.61** | **6.1** | 1.26 / 2.22 / 0.21 |
+| c, before | 86.1 u (14.4 H) | 52.3–110.7 u (1.28) | 0.44 | 4.5 | 1.23 / 1.39 / 0 |
+| c, now | 96.3 u (16.0 H) | 58.8–146.7 u (1.52) | **0.66** | **6.2** | 1.20 / 1.50 / 0 |
+
+Decision 7's per-kind bars (built and city: area CV ≥ 0.70, max/min ≥ 8; outdoor: ≥ 0.60 and
+≥ 6.5) are medians over many seeds. One zone can fall either side. Here the fortress clears
+max/min but not CV, the outdoor dungeon clears CV and falls just short on max/min, and the
+5-room city is under both.
+
+**Case f** (Dungeon, Layout **Graph**, Rooms **16**, Theme **Fortress**, Walls **Built**,
+Verticality **Moderate**, Size medium, Decor Normal). It has the same 17 corridors between the
+same rooms and the same 4 stairs: `corr_6` (room_3 → room_2), `corr_8` (room_7 → room_10),
+`corr_9` (room_10 → room_9) and `corr_10` (room_8 → room_11), each 102 u. It stays on the lattice
+(grid 0.125, 0.158 before; ax10 0.76 at both), but the layout is redrawn around the new sizes:
+room_0 (the gatehouse) moves from (−6.2, −17.7) to (776.4, 29.3), and the climax room_5 (the
+throne room) from (475.0, −17.0), 120 × 98, to (578.1, 83.7), 156 × 131.7. The biggest rooms
+are room_2 (an armory hub) and room_15 (a storeroom), each 156 × 156. The smallest are room_11
+(a storeroom, 55.9 × 48), room_13 (a guard post, 48 × 71.2) and room_6 (barracks, 48 × 78.6).
+Six of the 16 rooms touch the 156 u cap on one side and four the 48 u floor. The median side
+(17.7 H) is above the class's usual 11–13.5 H at this seed.
+
+- [ ] **[MUST] Halls and side rooms** — Case f: walk room_0 → room_1 → room_2 → room_4. Say
+      whether the big halls (room_2, room_5, room_15) and the small rooms (room_11, room_13)
+      read as a fortress's mix, or whether a 156 × 156 storeroom (room_15) looks wrong for its
+      type. Also say whether the fortress as a whole feels too big now. Not looked at in the 3D
+      viewer for this section.
+- [ ] **[MUST] Doorways flush, stairs intact** — Case f: walk the 4 stairs (`corr_6`, `corr_8`,
+      `corr_9`, `corr_10`). Each should land flush, with built walls whole around every door,
+      including where a long wall (room_9, 89.3 × 156) or a narrow room (room_10, 80.1 × 48)
+      takes a door. Not looked at in the 3D viewer for this section.
+
+**Case o** (Outdoor dungeon, Layout **Graph**, Rooms **14**, Verticality **Moderate**, no
+theme). Grid score 0.077 (0.132 before), ax10 0.27 (0.40 before). room_0 is still the entrance,
+with the Tunnel's mouth at (−160.0, −180.0) on its S wall. room_2, room_5 (climax) and room_11
+are still on Level −1. 14 of the 15 edges are the same. The stair room_1 → room_2 is gone:
+room_2 is now reached by `corr_13` from room_3 (90.5 u down), next to `corr_6` (room_8 →
+room_11, 102 u down). The biggest room is room_3 (132 × 107), and room_13 (102.3 × 101) is
+close behind. The smallest is room_12 (48.2 × 48). room_6 (106.6 × 48) is a long hall, and room_5
+(62.1 × 105.6) is a long climax.
+
+- [ ] **[MUST] Big and small under the hill** — Case o: walk in from the outdoor Spawn through
+      the Tunnel to room_0, then room_1 → room_3 → `corr_13` → room_2 → room_5. Say whether
+      room_3 and room_13 read as big halls and room_12 and room_4 (60.4 × 48) as small ones. No
+      room should poke out of the hill or through another Level's room. Not looked at in the 3D
+      viewer for this section.
+- [ ] **[MUST] Stairs and Levels intact** — Case o: walk `corr_13` (room_3 → room_2, 90.5 u
+      down) and `corr_6` (room_8 → room_11, 102 u down). Each should land flush. Not looked at
+      in the 3D viewer for this section.
+
+**Case c** (City, defaults: 5 rooms). The layout is redrawn. The hub is now room_3 (156 ×
+137.9, the 26 H cap) instead of room_4. The entrance is room_2 (111.6 × 121.2) and the climax
+room_4 (87.5 × 105.9). The smallest is room_1, a dead end (48 × 72). `corr_2` (room_1 → room_3)
+climbs 19.9 u. 632 vertices (456 at Y.4).
+
+- [ ] **[SHOULD] A city of unequal blocks** — Case c: walk every room. room_3 should read as the
+      big central space and room_1 as a small side court. Check that `corr_2`'s 19.9 u climb is a
+      walkable ramp that lands flush. Not looked at in the 3D viewer for this section.

@@ -84,7 +84,7 @@ byte-identical (decision 2). Task 2 (warrens) was dropped by decision 2. Prove i
   - Owns: fixes only where a failure is new (stop and report first)
   - Reqs: 4
 
-- [ ] 13. Acceptance addendum
+- [x] 13. Acceptance addendum
   - Card: [cards/13-acceptance.md](cards/13-acceptance.md)
   - Type: agent · Size: S · Depends: 12
   - Owns: docs/ACCEPTANCE.md
