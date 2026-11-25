@@ -21,7 +21,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/topology/embed.py, tests/test_topology_embed.py
   - Reqs: 1
 
-- [ ] 2. Probe the shortest corridor
+- [x] 2. Probe the shortest corridor
   - Card: [cards/02-probe.md](cards/02-probe.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/throat_probe.py (new), scripts/grid_score.py, .kiro/specs/zone-generator-cave-clumps/archive.md (decisions only)
