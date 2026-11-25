@@ -29,7 +29,7 @@ or sweep first. Wall times in commit bodies are measured alone.
   - Owns: tests/ (the files the timings name; stop and report before touching generator code)
   - Reqs: 3
 
-- [ ] 3. Affected-only runs: measure testmon
+- [x] 3. Affected-only runs: measure testmon
   - Card: [cards/03-testmon.md](cards/03-testmon.md)
   - Type: agent · Size: S · Depends: 1
   - Owns: nothing committed until the user agrees; scratch measurements only
