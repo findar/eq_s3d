@@ -27,7 +27,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: scripts/throat_probe.py (new), scripts/grid_score.py, .kiro/specs/zone-generator-cave-clumps/archive.md (decisions only)
   - Reqs: 2
 
-- [ ] 3. Throats and clumps
+- [x] 3. Throats and clumps
   - Card: [cards/03-throats.md](cards/03-throats.md)
   - Type: agent · Size: M · Depends: 1, 2
   - Owns: generators/topology/embed.py, generators/layout_engine.py, tests/test_topology_embed.py, goldens it moves (named in the commit); widened by the lead (task 2's finding): generators/layout.py (`_separate_rooms` keeps same-floor rooms w + 1 apart); stop and report before widening further
