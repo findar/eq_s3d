@@ -112,7 +112,7 @@ WALLED_OFF = 64.0
 #: inset, mirrored. Its side walls stand in the room that far at each door's edges (``_door_stubs``).
 DOOR_STUB = 2.0
 #: Layers of a blocked mask (``Room.footprint``).
-LAYERS = 5
+LAYERS = 6
 #: The gate's sample step (``analyzer.footprints.GATE_STEP``): its samples lie on odd world
 #: coordinates (``floor_samples`` anchors its grid at a multiple of the step).
 GATE_STEP = 2.0
@@ -356,8 +356,8 @@ def _in_polygon(gx, gy, plan) -> np.ndarray:
     return inside
 
 
-def _polygon_distance(gx, gy, plan) -> np.ndarray:
-    """Each point's plan distance to a polygon (0 inside it)."""
+def _polygon_edge_distance(gx, gy, plan) -> np.ndarray:
+    """Each point's plan distance to a polygon's edges."""
     d = np.full(gx.shape, np.inf)
     n = len(plan)
     for k in range(n):
@@ -366,7 +366,17 @@ def _polygon_distance(gx, gy, plan) -> np.ndarray:
         ln = dx * dx + dy * dy
         t = np.zeros(gx.shape) if ln == 0 else np.clip(((gx - ax) * dx + (gy - ay) * dy) / ln, 0.0, 1.0)
         d = np.minimum(d, np.hypot(gx - ax - t * dx, gy - ay - t * dy))
-    return np.where(_in_polygon(gx, gy, plan), 0.0, d)
+    return d
+
+
+def _polygon_distance(gx, gy, plan) -> np.ndarray:
+    """Each point's plan distance to a polygon (0 inside it)."""
+    return np.where(_in_polygon(gx, gy, plan), 0.0, _polygon_edge_distance(gx, gy, plan))
+
+
+def _polygon_depth(gx, gy, plan) -> np.ndarray:
+    """Each point's plan distance in from a polygon's edge (0 outside it)."""
+    return np.where(_in_polygon(gx, gy, plan), _polygon_edge_distance(gx, gy, plan), 0.0)
 
 
 def _hull(points: np.ndarray) -> np.ndarray:
@@ -691,7 +701,9 @@ class Room:
             self.poi_spot |= np.hypot(self.gx - p["x"], self.gy - p["y"]) <= self.cell * 0.75
         self.occupied = np.zeros(self.shape, bool)
         #: Blocking Props' plans grown by ``grow`` (layer 0), by ``grow_wide`` (layer 1), by
-        #: the least the gate's clear width may take (layer 2), and not grown (layer 3).
+        #: the least the gate's clear width may take (layer 2), and not grown (layer 3); the gate's
+        #: own 2 u samples they cover (layer 4, ``_gate``) and its clear-width samples nearer the
+        #: middle than a Feature's hollow (layer 5, ``hollow_core``).
         self.blocked = np.zeros((LAYERS,) + self.shape, bool)
         #: The same, as ``check`` reads them back: a wall Prop's plan about its origin, not its
         #: middle (the Prop doesn't record its reach off the wall). Placement keeps both clear,
@@ -770,6 +782,7 @@ class Room:
         for door in self.door_masks:
             joined |= set(int(v) for v in np.unique(lab[door & (lab >= 0)]))
         self.wide_islands = (lab >= 0) & ~np.isin(lab, sorted(joined))
+        self.hollow_core = self._hollow_core()
         self.faces = self._faces()
         self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
         self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
@@ -982,6 +995,71 @@ class Room:
                 out.append(bool(at & set(int(v) for v in labels)))
         return out
 
+    def _hollow_core(self) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+        """The gate's clear-width samples (its 1 u grid, on half-unit world coordinates) of free
+        wide floor nearer the room's middle than any solid Feature's hollow, when that hollow is
+        not already the nearest, as (x, y, each one's cell i, j): None when there's no such
+        hollow.
+
+        The gate samples the reached floor under a Feature too and reads only its mesh as walls,
+        so an open shell (a boulder) holds free samples deep inside its plan that no door
+        reaches. Its core is the free sample nearest the middle: once Props cover every sample
+        nearer than the hollow, the core is in the hollow and every door's way reads shut (step
+        29 task 4: cave graph dramatic 11 seed 154876844 room_9, 17 seed 500150329 room_13, a
+        rock by the middle beside a boulder's 5-8 sample hollow, while the cells' wide reading,
+        half a cell stricter, never held the hollow). Read as the gate does: a sample is wide
+        floor ``WIDE_RADIUS`` from every wall line, door stub and Feature's plan, a hollow's
+        sample that far inside a solid Feature's plan, each at the room's floor level."""
+        ctx = self.ctx
+        if ctx.source != "room" or not self.door_masks:
+            return None
+        feats = [f for f in ctx.features if len(f.get("plan") or ()) >= 3]
+        plans = [np.asarray(f["plan"], dtype=np.float64) for f in feats]
+        solids = [p for p, f in zip(plans, feats) if f.get("kind") != "dais"]
+        if not solids:
+            return None
+        x0, y0, z0, x1, y1, _z1 = ctx.box
+        px, py = np.meshgrid(np.arange(math.floor(x0) + 0.5, x1, 1.0),
+                             np.arange(math.floor(y0) + 0.5, y1, 1.0), indexing="ij")
+        nx, ny = self.shape
+        ci = np.rint((px - self.xs[0]) / self.cell).astype(np.int64)
+        cj = np.rint((py - self.ys[0]) / self.cell).astype(np.int64)
+        on = (ci >= 0) & (ci < nx) & (cj >= 0) & (cj < ny)
+        ci, cj = np.clip(ci, 0, nx - 1), np.clip(cj, 0, ny - 1)
+        fl = np.where(on, self.floor[ci, cj], np.nan)
+        with np.errstate(invalid="ignore"):
+            level = on & (np.abs(fl - z0) <= FLOOR_LEVEL_TOL)
+        mid = np.hypot(px - (x0 + x1) / 2, py - (y0 + y1) / 2)
+        depth = np.zeros(px.shape)
+        for p in solids:
+            depth = np.maximum(depth, _polygon_depth(px, py, p))
+        hollow = level & (depth >= WIDE_RADIUS)
+        if not hollow.any():
+            return None
+        far = float(mid[hollow].min())
+        wide = level & self.ok[ci, cj] & (mid < far)
+        lines = list(ctx.wall_lines) or [((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)),
+                                         ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))]
+        for (ax, ay), (bx, by) in lines + _door_stubs(ctx):
+            wide &= _segment_distance(px, py, ax, ay, bx, by) >= WIDE_RADIUS
+        for p in plans:
+            wide &= _polygon_distance(px, py, p) >= WIDE_RADIUS
+        # None nearer: the hollow was the gate's core with nothing placed, and no door's way read
+        # wide to it, so no Prop narrows one.
+        if not wide.any():
+            return None
+        return px[wide], py[wide], ci[wide], cj[wide]
+
+    def _hollow_shut(self, covered: np.ndarray) -> bool:
+        """Is every one of the gate's samples nearer the middle than a Feature's hollow
+        (``hollow_core``) covered? ``covered`` is ``footprint``'s layer 5: the cells holding a
+        sample within ``WIDE_RADIUS`` of a blocking Prop's plan (a cell holds up to four, so
+        one covered reads them all covered)."""
+        if self.hollow_core is None:
+            return False
+        _hx, _hy, hi, hj = self.hollow_core
+        return bool(covered[hi, hj].all())
+
     @staticmethod
     def outline_at(x: float, y: float, yaw: float, outline) -> np.ndarray:
         """A model's outline (model frame about the middle of its plan, scaled) turned by
@@ -1048,15 +1126,20 @@ class Room:
         m[1][wide] = True
         m[2][least] = True
         m[3][bare] = True
+        if outline is None and (self._gate is not None or self.hollow_core is not None):
+            c, s = math.cos(yaw), math.sin(yaw)
+            plan = np.array([(x + c * u - s * v, y + s * u + c * v)
+                             for u, v in ((-w / 2, -d / 2), (w / 2, -d / 2),
+                                          (w / 2, d / 2), (-w / 2, d / 2))])
         if self._gate is not None:
-            if outline is None:
-                c, s = math.cos(yaw), math.sin(yaw)
-                plan = np.array([(x + c * u - s * v, y + s * u + c * v)
-                                 for u, v in ((-w / 2, -d / 2), (w / 2, -d / 2),
-                                              (w / 2, d / 2), (-w / 2, d / 2))])
             reach = float(np.max(np.hypot(plan[:, 0] - x, plan[:, 1] - y))) + PLAYER_HALF_WIDTH
             near = (np.abs(self.sx - x) <= reach) & (np.abs(self.sy - y) <= reach)
             m[4][near] = _polygon_distance(self.sx[near], self.sy[near], plan) <= PLAYER_HALF_WIDTH
+        if self.hollow_core is not None:
+            # The gate's samples nearer the middle than a Feature's hollow this one covers.
+            hx, hy, hi, hj = self.hollow_core
+            hit = _polygon_distance(hx, hy, plan) <= WIDE_RADIUS
+            m[5][hi[hit], hj[hit]] = True
         return grown, m
 
     def _pockets(self, plans: np.ndarray) -> np.ndarray:
@@ -1084,6 +1167,7 @@ class Room:
         """What a blocked mask (``LAYERS`` layers, as ``self.blocked``) breaks: floor cut off, a
         door or a POI no longer reached, a door's way narrower than ``CLEAR_WIDTH``."""
         wide_blocked, maybe, plans, gate_blocked = blocked[1], blocked[2], blocked[3], blocked[4]
+        hollow_covered = blocked[5]
         blocked = blocked[0]
         after = self._joined(blocked)
         out = []
@@ -1136,6 +1220,8 @@ class Room:
             for k, (was, now) in enumerate(zip(self.wide_doors, self._wide_doors(wide_blocked, maybe, plans))):
                 if was and not now:
                     out.append(f"door {k}'s way under {CLEAR_WIDTH:g} u clear")
+        if self._hollow_shut(hollow_covered):
+            out.append(f"the middle in a Feature's hollow: every door's way under {CLEAR_WIDTH:g} u clear")
         return out
 
     # -- footprints -------------------------------------------------------------
