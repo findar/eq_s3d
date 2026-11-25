@@ -14,4 +14,9 @@
    test_properties_pipeline 268, test_site_bands 261, test_bridges 233,
    test_corridor_clearance 207, test_properties_mapgeom 176, test_properties_layout 171.
 
+2. **`-n auto` stays; task 2's bar is 1200 s** (the lead, 2026-11-25, at task 1). Quick tier
+   208 s at auto (6.7 GB peak), 246 s at 6, 306 s at 4; full suite 1766 s at auto (13 GB peak),
+   so the old 2000 s bar was met by worker count alone.
+
 ## Follow-ups
+- Comments in `tests/test_properties_layout.py` still say "no `slow` marker" (task 1).
