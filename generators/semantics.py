@@ -444,6 +444,28 @@ def body_height(race: str) -> float:
     return RACE_HEIGHT.get((race or "default").lower(), DEFAULT_RACE_HEIGHT)
 
 
+def room_race(spec: ZoneSpec, room: RoomSpec) -> str:
+    """The race that sizes everything in *room* (district races Req 4): its
+    District's own race, else the zone's (``spec.dungeon_race``, returned as it
+    is, so a zone whose Districts carry no race reads exactly what it did)."""
+    for d in spec.districts or ():
+        if d.id == room.district:
+            return d.race or spec.dungeon_race
+    return spec.dungeon_race
+
+
+def corridor_race(spec: ZoneSpec, cor, rooms: Optional[Dict[str, RoomSpec]] = None) -> str:
+    """The race that sizes *cor*: the smaller (by H) of its two rooms' races,
+    as the layout sizes it (a goblin hole into a giant hall); the zone's when
+    neither end is a room of the spec."""
+    if rooms is None:
+        rooms = {r.id: r for r in spec.rooms}
+    races = [room_race(spec, rooms[i]) for i in (cor.from_room, cor.to_room) if i in rooms]
+    if not races:
+        return spec.dungeon_race
+    return min(races, key=body_height)
+
+
 def race_scale(race: str) -> float:
     """H over a human's: what the topology rules' ``race_scale`` condition
     reads (``great_hall`` at >= 1.4: sarnak, ogres, giants, dragons)."""
@@ -754,7 +776,8 @@ def _apply_shape(room: RoomSpec, rt: RoomType, race: str) -> None:
     the race's bands, step 7 task 17), so it is never applied here; the
     layout clamps the biased room back into the bands (``fit_to_band``). The
     floor sink is in H (``SINK_PER_H``), so a giant's sunken arena sinks
-    proportionally.
+    proportionally. *race* is the room's (``room_race``: a District's own,
+    else the zone's).
     """
     # Footprint + aspect: a processional room drawn squarer than its type's
     # aspect is pulled halfway (in log) toward it along its longer axis, its
@@ -1182,7 +1205,8 @@ def _label_districted(spec: ZoneSpec, rooms: List[RoomSpec], rng: random.Random,
         r.boss = r.role == "climax"
         r.prop_hints = list(rt.props)
         r.encounter_intent = rt.encounter
-        _apply_shape(r, rt, race)
+        # A District with a race of its own sinks its floors in its H (Req 4).
+        _apply_shape(r, rt, (by_id[r.district].race if r.district in by_id else "") or race)
 
 
 def _realize_districted(spec: ZoneSpec, districts: Sequence[DistrictSpec],

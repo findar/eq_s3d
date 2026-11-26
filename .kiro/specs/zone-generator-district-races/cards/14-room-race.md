@@ -22,3 +22,4 @@ sized rooms and corridors only).
 - Decor placement's clear widths are the PLAYER's (6 u agent), not the race's: don't scale those.
 
 ## Result
+✔ c8d8138 · 4305 passed

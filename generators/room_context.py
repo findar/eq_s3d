@@ -484,15 +484,16 @@ def contexts(spec, mesh) -> List[RoomContext]:
     from generators.geometry import _bridge_slots, _door_openings, _merge_openings
     from generators.outline import _core_rect, _door_throats
     from generators.room_layouts import CELL, RoomGrid
-    from generators.semantics import body_height
+    from generators.semantics import body_height, room_race
 
     m = mesh if isinstance(mesh, _Mesh) else _Mesh(mesh)
-    h = body_height(spec.dungeon_race)
     records = (spec.layout or {}).get("rooms", {})
     extra = _extra_doors(spec)
     out = []
     for room in spec.rooms:
         record = records.get(room.id, {})
+        race = room_race(spec, room)        # its District's race, else the zone's
+        h = body_height(race)
         (x0, y0, z0), (x1, y1, z1) = room.bounds
         box = (x0, y0, x1, y1)
         # Doors as the mesh cuts them: merged per side, with the opening's top.
@@ -533,7 +534,7 @@ def contexts(spec, mesh) -> List[RoomContext]:
                                   tuple(_rr(grid.door_clear((side, c0, c1))))))
         out.append(RoomContext(
             id=room.id, source="room", zone_type=spec.zone_type,
-            theme=room.room_theme or spec.dungeon_theme or "", race=spec.dungeon_race or "",
+            theme=room.room_theme or spec.dungeon_theme or "", race=race or "",
             room_type=room.semantic_type or "", kind=record.get("kind", room.kind) or "",
             style=record.get("style", "") or "", seed=int(spec.seed or 0), body_height=_r(h),
             scales=dict(record.get("scales") or {}), box=tuple(_rr((x0, y0, z0, x1, y1, z1))),
@@ -662,10 +663,9 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
     from generators.geometry import MeshBuilder
     from generators.room_layouts import CELL
     from generators.routing import built_line, corridor_route, tunnel_for, winding_legs
-    from generators.semantics import body_height
+    from generators.semantics import body_height, corridor_race
 
     m = mesh if isinstance(mesh, _Mesh) else _Mesh(mesh)
-    h = body_height(spec.dungeon_race)
     rooms = {r.id: r for r in spec.rooms}
     # Each room's plan box with its height range: a corridor's cells under a room are the
     # room's (its doorway), but only a room at the corridor's own heights; a room on another
@@ -677,6 +677,8 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
     for cor in spec.corridors:
         if _corridor_left_out(cor):
             continue
+        race = corridor_race(spec, cor, rooms)     # the smaller of its rooms' races
+        h = body_height(race)
         route = corridor_route(cor, rooms)
         wps, axes = list(route.waypoints), list(route.axes)
         zs, _carry = MeshBuilder._waypoint_zs(wps, None if route.carry < 0 else route.carry,
@@ -817,7 +819,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
             # one-District zone every room's ``room_theme`` is the zone's.
             id=cor.id, source="corridor", zone_type=spec.zone_type,
             theme=(getattr(_look_room(rooms, cor), "room_theme", "") or spec.dungeon_theme or ""),
-            race=spec.dungeon_race or "", room_type="", kind="", style="", seed=int(spec.seed or 0),
+            race=race or "", room_type="", kind="", style="", seed=int(spec.seed or 0),
             body_height=_r(h), scales={}, box=tuple(_rr((x0, y0, z0, x1, y1, z1))), cell=CELL,
             origin=(_r(xs[0]), _r(ys[0])), floor=floor, reached=reached, ceiling=ceiling,
             spine=~np.isnan(floor), walls=walls, doors=doors, features=features))

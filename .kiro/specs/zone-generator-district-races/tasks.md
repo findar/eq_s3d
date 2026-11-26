@@ -91,7 +91,7 @@ specs" in `.kiro/steering/project.md`.
 
 ## Added at task 4
 
-- [ ] 14. Size everything in a room by the room's race
+- [x] 14. Size everything in a room by the room's race
   - Card: [cards/14-room-race.md](cards/14-room-race.md)
   - Type: agent · Size: M · Depends: 4, 5
   - Owns: generators/semantics.py (a per-room race helper, `_apply_shape`), generators/wall_styles.py, generators/room_layouts.py, generators/room_context.py, generators/transitions.py, tests/test_district_races.py
