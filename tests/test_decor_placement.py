@@ -892,6 +892,26 @@ def test_a_door_edges_corridor_wall_shuts_a_slot():
     assert any(p.startswith("cuts off") for p in room.problems(blocked))
 
 
+def test_a_prop_by_the_middle_doesnt_leave_the_core_in_a_boulders_hollow():
+    """Step 29 task 4: the gate samples the floor under a solid Feature too and reads only its
+    mesh as walls, so a boulder's open shell holds free clear-width samples no door reaches. Its
+    core is the free sample nearest the middle: a Prop covering every one nearer than the hollow
+    puts the core in it and every door's way reads shut (cave graph dramatic 11 seed 154876844
+    room_9, 17 seed 500150329 room_13: a rock by the middle beside a boulder)."""
+    boulder = [[36.0, 20.0], [46.0, 20.0], [46.0, 30.0], [36.0, 30.0]]
+    ctx = box_room(features=[{"kind": "boulder", "plan": boulder, "height": 9.0, "steps_side": ""}])
+    room = Room(ctx)
+    hx, hy, _hi, _hj = room.hollow_core
+    assert (np.hypot(hx - 30.0, hy - 25.0) < 9.51).all()    # nearer than the hollow's (39.5, 24.5)
+    shut = "the middle in a Feature's hollow: every door's way under 8 u clear"
+    over = np.zeros((LAYERS,) + room.shape, bool)
+    over |= room.footprint(25.0, 25.0, 0.0, 20.0, 24.0)[1]
+    assert shut in room.problems(over)
+    beside = np.zeros((LAYERS,) + room.shape, bool)
+    beside |= room.footprint(22.0, 25.0, 0.0, 4.0, 4.0)[1]
+    assert shut not in room.problems(beside)
+
+
 def test_a_poi_keeps_a_gate_sample_between_a_prop_and_a_wall():
     """Random placement task 4: the cells grow a Prop by half a cell for the gate's 2 u samples
     but read a wall line at the half-width alone, so a strip between a Prop and a wall can read
