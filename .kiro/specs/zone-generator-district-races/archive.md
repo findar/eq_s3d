@@ -18,5 +18,7 @@
    2026-11-26, at task 1). `MAX_DROP` 80 u is the gate's limit, inflated by water and steep slopes; task 7 draws each drop's
    height from stock's (p50 24 u) under it, not uniformly. Giant 3.0 rests on one zone (kael, 7 halls): it applies to giant
    Districts only (requirement 5), and the step 31 look decides whether it stays.
+4. **Classic takes a per-District hall length, by scaling the District's offsets from its centre** (task 5), as task 4
+   does for race: the zone-wide spread would lengthen the goblins' halls too. Graph uses a run per edge in the springs.
 
 ## Follow-ups

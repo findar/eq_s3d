@@ -395,6 +395,18 @@ RACE_HEIGHT: Dict[str, float] = {
 }
 DEFAULT_RACE_HEIGHT = RACE_HEIGHT["default"]
 
+#: A race's hall length default (district races step 31, archive decisions 2-3): what
+#: a District carrying that race of its own multiplies the plan's Hall length by
+#: (``layout.LayoutGenerator``; Requirement 5). Only giants show a signal in stock
+#: (Kael, 3.8x ours, clamped to ``HALL_MAX``); 3.0 is provisional, on one zone. Every
+#: other race, and a zone's own race, is 1.
+RACE_HALL_LENGTH: Dict[str, float] = {"giant": 3.0}
+
+
+def race_hall_length(race: str) -> float:
+    """The hall length default of a District carrying *race* (1: none)."""
+    return RACE_HALL_LENGTH.get((race or "").lower(), 1.0)
+
 #: Room height band and the Size_Classes' side band, as multiples of H.
 ROOM_HEIGHT_BAND: Tuple[float, float] = (2.5, 10.0)
 ROOM_SIDE_BAND: Tuple[float, float] = (8.0, 20.0)

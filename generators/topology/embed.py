@@ -1567,7 +1567,8 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
                  pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
                  run: float, gap: float,
                  iterations: Optional[int] = None,
-                 jitter: Optional[Jitter] = None
+                 jitter: Optional[Jitter] = None,
+                 runs: Optional[Dict[frozenset, float]] = None
                  ) -> Dict[str, Point]:
     """Spring iterations: each edge keeps the wall side it starts on (b rests
     one run past a's wall on that axis, times the edge's ``jitter`` spacing,
@@ -1577,19 +1578,26 @@ def spring_relax(order: Sequence[str], edges: Sequence[Tuple[str, str]],
     read (graph nodes, or Storeys): a pair that may overlap in plan doesn't
     repel, and a stair edge (across Levels) rests :data:`STAIR_REST` of the
     two rooms' extents apart, with no run, so the upper room sits partly over
-    its partner."""
-    return spring_relax_many(order, edges, pos, half, nodes, run, gap, iterations, [jitter])[0]
+    its partner. ``runs`` (district races task 5) maps an edge (a frozenset of its
+    two rooms) to its own run in u, in place of ``run`` (a throat keeps ``run``:
+    its gap is drawn in runs); None, or an edge it leaves out, rests at ``run``."""
+    if runs is None:
+        return spring_relax_many(order, edges, pos, half, nodes, run, gap, iterations, [jitter])[0]
+    return spring_relax_many(order, edges, pos, half, nodes, run, gap, iterations, [jitter],
+                             runs)[0]
 
 
 def spring_relax_many(order: Sequence[str], edges: Sequence[Tuple[str, str]],
                       pos: Dict[str, Point], half: Dict[str, Point], nodes: Dict[str, Any],
                       run: float, gap: float, iterations: Optional[int],
-                      jitters: Sequence[Optional[Jitter]]) -> List[Dict[str, Point]]:
+                      jitters: Sequence[Optional[Jitter]],
+                      runs: Optional[Dict[frozenset, float]] = None) -> List[Dict[str, Point]]:
     """:func:`spring_relax` from ``pos`` once per jitter of ``jitters`` (all
     bearing or none), side by side in one set of arrays: each relaxation
     reads only its own part of them, every float worked out by the same
     operation on the same operands, so each result is the one
-    :func:`spring_relax` gives for that jitter alone."""
+    :func:`spring_relax` gives for that jitter alone. ``runs``: as
+    :func:`spring_relax`'s."""
     n = len(order)
     if n < 2:
         return [dict(pos) for _ in jitters]
@@ -1649,15 +1657,22 @@ def spring_relax_many(order: Sequence[str], edges: Sequence[Tuple[str, str]],
                + np.abs(S[:, 1]) * (H[a, 1] + H[b, 1]))
         across = (np.abs(S[:, 0]) * (H[a, 1] + H[b, 1])
                   + np.abs(S[:, 1]) * (H[a, 0] + H[b, 0]))
+        # Each edge's own run (``runs``), a throat's the shared one; None: ``run``.
+        R = None
+        if runs is not None:
+            R = np.array([runs.get(frozenset((x, y)), run) for x, y in edges], dtype=float)
+            if TH is not None:
+                R = np.where(TH, run, R)
         pulls = []
         for jt in jitters:
             # Each edge's spacing on its run and offset along the wall (b's
             # from a), on the axis across S.
             J = np.array([_jitter_of(jt, x, y) for x, y in edges], dtype=float).reshape(-1, 2)
-            rest = ext + run * J[:, 0]
+            rest = ext + (run if R is None else R) * J[:, 0]
             if stair.any():
                 # (rest less the run, not ext: the same floats as before jitter.)
-                rest = np.where(stair, (rest - run * J[:, 0]) * STAIR_REST, rest)
+                rest = np.where(stair, (rest - (run if R is None else R) * J[:, 0]) * STAIR_REST,
+                                rest)
             if jt is not None and jt.bearing:
                 # A cave's bearing (task 10): the far room off the side's axis by
                 # its drawn angle over the rest distance, short of the other side.
@@ -1816,7 +1831,8 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
            jitter: bool = False, seed: Optional[int] = None,
            draw: int = 0,
            ranges: Optional[Tuple[float, float, float]] = None,
-           centred: Optional[str] = None, bearing: bool = False) -> Dict[str, Point]:
+           centred: Optional[str] = None, bearing: bool = False,
+           runs: Optional[Dict[frozenset, float]] = None) -> Dict[str, Point]:
     """The ``spring`` placement: room centres for ``order`` (before separation
     and the Envelope; :func:`place` does those). With ``storeys`` (step 7)
     rooms on different Levels may overlap and stair edges pull together.
@@ -1829,7 +1845,11 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
     :func:`edge_jitter`; room ``centred``'s neighbours sit centred on its
     walls); off, every neighbour sits centred one run off a wall. ``bearing``
     (a cave, random placement task 10) jitters by bearing and a wide spacing
-    instead (:data:`BEARING_SPACING`, :class:`Jitter`)."""
+    instead (:data:`BEARING_SPACING`, :class:`Jitter`). ``runs`` maps an edge (a
+    frozenset of its two rooms) to its own run in u for the springs
+    (:func:`spring_relax`; district races task 5): the start lays rooms out one
+    ``run_factor`` run apart and the springs stretch each edge to its own. None
+    (or an edge left out): every edge rests one run apart, as before."""
     run = (RUN_FACTOR if run_factor is None else run_factor) * corridor_width
     table = (_jitter_table(graph, order, half, storeys, seed, corridor_width, draw, ranges,
                            centred, bearing, run)
@@ -1838,9 +1858,10 @@ def spring(graph: TopologyGraph, order: Sequence[str], half: Dict[str, Point],
     edges = [(e.a, e.b) for e in graph.edges()
              if graph.node(e.a).is_room and graph.node(e.b).is_room]
     nodes = _plan_keys(graph, order, storeys)
-    out = spring_relax(order, edges, pos, half, nodes, run, gap, jitter=table)
+    out = spring_relax(order, edges, pos, half, nodes, run, gap, jitter=table, runs=runs)
     if table is not None and table.bearing:
-        out = _untangle(graph, order, edges, pos, out, half, nodes, run, gap, table, storeys)
+        out = _untangle(graph, order, edges, pos, out, half, nodes, run, gap, table, storeys,
+                        runs)
     return out
 
 
@@ -1851,7 +1872,7 @@ UNTANGLE_KEEP = 0.7
 
 
 def _untangle(graph, order, edges, start, out, half, nodes, run, gap, table: Jitter,
-              storeys) -> Dict[str, Point]:
+              storeys, runs: Optional[Dict[frozenset, float]] = None) -> Dict[str, Point]:
     """A bearing placement after its springs (task 10): while a corridor would
     cross a room or another corridor (:func:`crossing_edges`), turn the
     bearings of the edges in each crossing toward their axes
@@ -1876,7 +1897,7 @@ def _untangle(graph, order, edges, start, out, half, nodes, run, gap, table: Jit
                     moved = True
         if not moved:
             break
-        out = spring_relax(order, edges, start, half, nodes, run, gap, jitter=table)
+        out = spring_relax(order, edges, start, half, nodes, run, gap, jitter=table, runs=runs)
         bad, hits = crossing_edges(graph, order, out, half, width, storeys)
         if len(hits) < best[0]:
             best = (len(hits), out, dict(table.edges))
@@ -1903,9 +1924,11 @@ def _untangle(graph, order, edges, start, out, half, nodes, run, gap, table: Jit
                 continue
             # The tries relax side by side (spring_relax_many: each as it
             # would alone); the first that leaves fewer crossings is kept.
-            cands = spring_relax_many(order, edges, out, half, nodes, run, gap, UNTANGLE_ITERS,
-                                      [table._replace(edges={**table.edges, e: alt})
-                                       for alt in alts])
+            tries = [table._replace(edges={**table.edges, e: alt}) for alt in alts]
+            cands = (spring_relax_many(order, edges, out, half, nodes, run, gap, UNTANGLE_ITERS,
+                                       tries) if runs is None else
+                     spring_relax_many(order, edges, out, half, nodes, run, gap, UNTANGLE_ITERS,
+                                       tries, runs))
             for alt, cand in zip(alts, cands):
                 n = len(crossing_edges(graph, order, cand, half, width, storeys)[1])
                 if n < count:
