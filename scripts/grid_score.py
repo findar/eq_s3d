@@ -291,7 +291,8 @@ def hall_table(s: dict) -> str:
             f"{r['zmed_min']:4.0f}-{r['zmed_max']:4.0f} {r['zmed_cv']:5.2f} "
             f"{r['zmedh_p10']:6.1f}/{r['zmedh_p50']:5.1f}/{r['zmedh_p90']:6.1f} "
             f"{r['excluded']:5d}")
-    lines.append("(excl: throats, or stock's direct contacts, left out of the lengths)")
+    lines.append("(excl: left out of the lengths: throats; stock's direct contacts and passages "
+                 "<= 3 H)")
     return "\n".join(lines)
 
 

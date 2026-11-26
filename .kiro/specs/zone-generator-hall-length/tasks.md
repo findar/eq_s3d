@@ -15,7 +15,7 @@ specs" in `.kiro/steering/project.md`.
 
 ## Tasks
 
-- [ ] 1. Measure stock hall lengths and the range
+- [x] 1. Measure stock hall lengths and the range
   - Card: [cards/01-measure.md](cards/01-measure.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/stock_room_shapes.py, scripts/grid_score.py, .kiro/specs/zone-generator-hall-length/archive.md (decisions only)
