@@ -92,3 +92,34 @@ def test_halls_scale_and_the_graph_stays(kind):
             assert lg.layout["applied"] == b.layout["applied"]
             assert _graph(lg) == _graph(b)
             assert lg.layout.get("levels") == b.layout.get("levels")
+
+
+# --- Task 8: failures long and short halls exposed (hall-length archive decision 5) -------------
+
+@functools.lru_cache(maxsize=None)
+def _cave_like(theme, rooms, verticality, seed, hall_length):
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "dungeon_theme": theme, "layout": "graph",
+                                   "room_count": rooms, "verticality": verticality,
+                                   "hall_length": hall_length}, [])
+    plan.name = "halls"
+    return plan_to_spec(plan, seed=seed, warnings=[])
+
+
+@pytest.mark.parametrize("rooms,seed", [(4, 1704093923), (9, 473448209)])
+def test_angled_lines_keep_off_other_corridors(rooms, seed):
+    """At HALL_MAX an angled corridor's line cuts straight across its long Z route's bends,
+    far from the legs the layout cleared: it crossed another's line (seed 1704093923) or a
+    Switchback's stairwell (473448209, no headroom on the gate). Each line now keeps the
+    player's half-width off every other corridor beside it in Z, bar a shared room's run-out."""
+    from generators.layout import _entry_clear, _line_solids
+    from generators.routing import ENTRY_RUN, entry_line
+    spec = _cave_like("cave", rooms, "moderate", seed, HALL_MAX)
+    by = {r.id: r for r in spec.rooms}
+    lines = {c.id: entry_line(corridor_route(c, by), c.width / 2, ENTRY_RUN)
+             for c in spec.corridors if c.entry}
+    taken = {cid: _line_solids(line, next(c for c in spec.corridors if c.id == cid))
+             for cid, line in lines.items()}
+    for c in spec.corridors:
+        if c.id in lines:
+            assert _entry_clear(lines[c.id], c, spec.corridors, by, dict(taken)), c.id
+

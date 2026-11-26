@@ -303,6 +303,42 @@ def _line_clear(line, cor: CorridorSpec, rooms: List[RoomSpec], step: float = 2.
     return True
 
 
+def _line_solids(line, cor: CorridorSpec) -> list:
+    """An angled corridor's line as ``transitions`` solids: its strip's runs, floor to
+    headroom (``_entry_clear``)."""
+    from .transitions import _solid, path_pieces
+    return [_solid(quad, min(za, zb), max(za, zb) + cor.height)
+            for quad, za, zb in path_pieces(line, cor.width / 2, cor.from_z, cor.to_z) or ()]
+
+
+def _entry_clear(line, cor: CorridorSpec, every: List[CorridorSpec], by_id,
+                 taken: Dict[str, list]) -> bool:
+    """Does an angled corridor's line keep the player's half-width off every other corridor
+    beside it in Z (``transitions.strip_clear``): one already angled by its line (``taken``),
+    any other by its legs, bends and Switchback stairwell? A corridor sharing a room with it
+    may meet its run-out at that room. The line cuts straight across its route's bends, so a
+    long Z or U route's line strays far from the legs the layout cleared: hall length step 30,
+    task 8, cave graph at Hall length 3 (seeds 473448209, 680460140, 839608415, 1855383429: a
+    line across another corridor's stairwell; 1704093923: two lines crossing)."""
+    from .transitions import _corridor_boxes, _solid, path_pieces, strip_clear
+    pieces = path_pieces(line, cor.width / 2, cor.from_z, cor.to_z)
+    if pieces is None:
+        return False
+    solids = []
+    for other in every:
+        if other.id == cor.id:
+            continue
+        own = taken.get(other.id)
+        if own is None:
+            own = taken[other.id] = [
+                _solid([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1)
+                for _, (x0, y0, x1, y1, z0, z1) in _corridor_boxes(other, by_id)]
+        shared = ({other.from_room, other.to_room} & {cor.from_room, cor.to_room})
+        tag = (cor.from_room if cor.from_room in shared else cor.to_room) if shared else ""
+        solids.extend(s[:4] + (tag,) for s in own)
+    return strip_clear(cor, pieces, solids)
+
+
 def gate_spec(gate_id: str, cor: CorridorSpec, key_room: RoomSpec,
               tier: int) -> "GateSpec":
     """A Gate: its lock at the middle of ``cor``, its key 5 u over
@@ -2447,6 +2483,9 @@ class LayoutGenerator:
         from .routing import ENTRY_RUN, entry_line
         by_id = {r.id: r for r in rooms}
         cap = math.radians(ENTRY_MAX)
+        # What every corridor takes up, for ``_entry_clear``: its legs, bends and stairwell
+        # until it is angled, then its angled line's strip.
+        taken: Dict[str, list] = {}
         for cor in corridors:
             if cor.steps != 0 or cor.side or cor.bridge:
                 continue
@@ -2490,12 +2529,15 @@ class LayoutGenerator:
                         continue
                     seg = [math.dist(line[k], line[k + 1]) for k in range(len(line) - 1)]
                     carry = sum(seg) - seg[0] - seg[-1]
-                    if abs(cor.to_z - cor.from_z) <= max(carry, 0.0) * self.max_grade:
+                    if abs(cor.to_z - cor.from_z) <= max(carry, 0.0) * self.max_grade \
+                            and _entry_clear(line, cor, every, by_id, taken):
                         angles = tried
                         break
                 if angles:
                     break
             cor.entry = angles
+            if angles:
+                taken[cor.id] = _line_solids(line, cor)
         # A wider, shifted opening must keep a pier to the doors beside it.
         from types import SimpleNamespace
         from .geometry import _door_openings
