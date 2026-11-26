@@ -28,5 +28,10 @@
    Graph reaches ~0.7, classic/city ~0.82, outdoor ~1.0; only caves track 0.5. Task 2's 15% bar
    applies at 1 and above; below 1 it reports the ratio reached. `HALL_MAX` 3.0 stands if task 4's
    draw time and the outdoor hill fit hold; else it comes down, by measurement.
+4. **Outdoor dungeons stop at about 1.6x; `ai/expand.py` widened** (the lead, 2026-11-25, at
+   task 2). The hill can't hold longer halls with full-size rooms: door-to-door p50 1.61x at both
+   2 and 3 (1.28x at 30 rooms), no room dropped in 160 builds; accepted under the card's "as far
+   as the hill allows". `plan_to_spec` in `ai/expand.py` is the plan's only way to the layouts, so
+   its three-line pass-through is accepted outside task 2's Owns.
 
 ## Follow-ups
