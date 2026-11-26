@@ -26,12 +26,23 @@ the vertical gap between them at the shared boundary is within the max step-up.
 This is what catches cliff ramps (slope too steep) and oversized stairs (step
 gap too tall) — the exact failures per-triangle/component-count checks miss.
 
+Drops (district races step 31)
+------------------------------
+A floor edge the agent can walk off and fall from, onto floor more than the step-up
+and at most ``max_drop`` below with nothing in the way, is a ONE-WAY link, upper to
+lower (:func:`find_drops`). A room passes only if the player can reach it from the
+entrance AND get back: a forward flood from the entrance and a backward one over the
+reversed links (strong connectivity). A room reached only by falling, with no way
+back, fails as "stranded". With no drop the two floods are today's one undirected
+flood, so the report is unchanged.
+
 Usage::
 
     python -m analyzer.traverse output/badseed.eqg
     python -m analyzer.traverse output/badseed.eqg --spec output/badseed.json
     python -m analyzer.traverse badseed              # resolves output/badseed.*
     python -m analyzer.traverse output/badseed.eqg --slope-cap 40 --step-up 3
+    python -m analyzer.traverse output/badseed.eqg --max-drop 0     # no one-way drops
 """
 
 from __future__ import annotations
@@ -86,6 +97,9 @@ class AgentModel:
     max_step_up: float = 3.0
     adjacency_eps: float = 2.0
     player_height: float = 6.0
+    # The deepest fall the gate reads as a one-way link (u, district races decision 2);
+    # 0 (or anything up to ``max_step_up``) switches the directed pass off.
+    max_drop: float = 80.0
 
     @property
     def min_up_normal(self) -> float:
@@ -1100,6 +1114,290 @@ def flood_reachable(surf: WalkSurface, seed_face: int) -> set:
                 reached.add(nb)
                 stack.append(nb)
     return reached
+
+
+# ---------------------------------------------------------------------------
+# Drops: one-way links (district races step 31, task 2)
+# ---------------------------------------------------------------------------
+#
+# The walk joins two floors only within ``max_step_up``, both ways. A DROP is the
+# other way down: the agent walks off an open floor edge and falls onto floor more
+# than the step below, which it can't climb back. ``find_drops`` reads one per probe
+# along every open edge of the walk surface (an edge no other standable face shares):
+#
+#   * the probe stands ``DROP_PROBE`` u out past the edge, off the ledge;
+#   * looking down its column from a player height over the edge, the first solid face
+#     is a standable floor of ANOTHER walk component, more than ``max_step_up`` and at
+#     most ``max_drop`` below the edge (a floor at the edge's own height, a ceiling, a
+#     slab between storeys or a slope too steep to stand on is hit first otherwise, and
+#     there is no drop);
+#   * the step off is clear: a segment from ``DROP_BACK`` u back over the ledge out to
+#     the probe, at just over a step (a lip the agent can step onto doesn't block) and
+#     at a player height (headroom), crosses no solid face (a wall or a railing).
+#
+# Only links between DIFFERENT components are kept: inside one component the agent
+# walks both ways already, so a ramp, a stair and every seam the walk joined (the
+# seam test's slack included) stay two-way and add nothing here.
+
+#: How far past an open floor edge the drop probe looks down (u).
+DROP_PROBE = 1.0
+#: The step-off segment starts this far back over the ledge (u).
+DROP_BACK = 0.5
+#: One drop probe per this much of an open edge (u).
+DROP_SAMPLE = 4.0
+#: Probes judged per batch (memory).
+_DROP_CHUNK = 20000
+
+
+def _seg_tri(p0: np.ndarray, p1: np.ndarray, tri: np.ndarray, eps: float = 1e-9) -> np.ndarray:
+    """(N,) bool: does segment ``p0`` -> ``p1`` (N, 3) cross triangle ``tri`` (N, 3, 3)
+    strictly between its ends (Moller-Trumbore)."""
+    d = p1 - p0
+    e1 = tri[:, 1] - tri[:, 0]
+    e2 = tri[:, 2] - tri[:, 0]
+    h = np.cross(d, e2)
+    a = np.einsum("ij,ij->i", e1, h)
+    ok = np.abs(a) > eps
+    f = np.where(ok, 1.0 / np.where(ok, a, 1.0), 0.0)
+    s = p0 - tri[:, 0]
+    u = f * np.einsum("ij,ij->i", s, h)
+    q = np.cross(s, e1)
+    v = f * np.einsum("ij,ij->i", d, q)
+    t = f * np.einsum("ij,ij->i", e2, q)
+    return ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 1e-6) & (t < 1 - 1e-6)
+
+
+def _open_edge_probes(surf: WalkSurface):
+    """Probes along the walk surface's open edges: (face, edge point (N, 3), outward
+    unit XY normal (N, 2)). An open edge is one no other standable face shares (by
+    vertex); its outward side is away from the face's third vertex."""
+    std = np.nonzero(surf.standable)[0]
+    F = surf.faces[std]
+    ea, eb, eo = F[:, [0, 1, 2]].ravel(), F[:, [1, 2, 0]].ravel(), F[:, [2, 0, 1]].ravel()
+    owner = np.repeat(std, 3)
+    nv = max(len(surf.verts), 1)
+    key = np.minimum(ea, eb) * nv + np.maximum(ea, eb)
+    _u, inv, cnt = np.unique(key, return_inverse=True, return_counts=True)
+    open_ = cnt[inv] == 1
+    ea, eb, eo, owner = ea[open_], eb[open_], eo[open_], owner[open_]
+    A, B, O = surf.verts[ea], surf.verts[eb], surf.verts[eo]
+    d = B[:, :2] - A[:, :2]
+    length = np.hypot(d[:, 0], d[:, 1])
+    keep = length > 1e-6
+    A, B, O, owner, d, length = A[keep], B[keep], O[keep], owner[keep], d[keep], length[keep]
+    n = np.stack([d[:, 1], -d[:, 0]], axis=1) / length[:, None]
+    inward = np.einsum("ij,ij->i", n, O[:, :2] - A[:, :2]) > 0
+    n[inward] *= -1.0
+    ns = np.maximum(1, np.ceil(length / DROP_SAMPLE).astype(np.int64))
+    e = np.repeat(np.arange(len(ns)), ns)
+    k = np.arange(len(e)) - np.repeat(np.cumsum(ns) - ns, ns)
+    t = (k + 0.5) / ns[e]
+    M = A[e] + t[:, None] * (B[e] - A[e])
+    return owner[e], M, n[e]
+
+
+def _cells(lo: np.ndarray, hi: np.ndarray, cell: float) -> Dict[Tuple[int, int], np.ndarray]:
+    """XY grid: cell -> the indices of the boxes ``lo``..``hi`` (N, 2) touching it."""
+    c_lo = np.floor(lo / cell).astype(np.int64)
+    c_hi = np.floor(hi / cell).astype(np.int64)
+    ny = c_hi[:, 1] - c_lo[:, 1] + 1
+    cnt = (c_hi[:, 0] - c_lo[:, 0] + 1) * ny
+    box = np.repeat(np.arange(len(lo)), cnt)
+    k = np.arange(len(box)) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+    gx = c_lo[box, 0] + k // ny[box]
+    gy = c_lo[box, 1] + k % ny[box]
+    order = np.lexsort((box, gy, gx))
+    gx, gy, box = gx[order], gy[order], box[order]
+    starts = np.nonzero(np.r_[True, (gx[1:] != gx[:-1]) | (gy[1:] != gy[:-1])])[0]
+    ends = np.r_[starts[1:], len(box)]
+    return {(int(gx[s]), int(gy[s])): box[s:t] for s, t in zip(starts.tolist(), ends.tolist())}
+
+
+def _point_pairs(T: np.ndarray, P: np.ndarray, cell: float = 16.0):
+    """Points ``P`` (N, 2) against the triangles ``T`` (M, 3, 3) whose XY box holds them:
+    (point, triangle, inside, z), each (K,) — XY containment (edges inclusive, as
+    ``_bary_z``) and the plane's height there."""
+    e = np.zeros(0, np.int64)
+    if not len(T) or not len(P):
+        return e, e, np.zeros(0, bool), np.zeros(0)
+    grid = _cells(T[:, :, :2].min(axis=1) - 0.01, T[:, :, :2].max(axis=1) + 0.01, cell)
+    cx = np.floor(P[:, 0] / cell).astype(np.int64).tolist()
+    cy = np.floor(P[:, 1] / cell).astype(np.int64).tolist()
+    lists = [grid.get((x, y), e) for x, y in zip(cx, cy)]
+    k = np.repeat(np.arange(len(P)), [len(t) for t in lists])
+    if not len(k):
+        return e, e, np.zeros(0, bool), np.zeros(0)
+    t = np.concatenate(lists).astype(np.int64)
+    inside, z = _bary_pairs(P[k], T[t])
+    return k, t, inside, z
+
+
+def _bary_pairs(P: np.ndarray, T: np.ndarray):
+    """``_bary_z`` row by row: points ``P`` (K, 2) against triangles ``T`` (K, 3, 3)."""
+    ax, ay, az = T[:, 0, 0], T[:, 0, 1], T[:, 0, 2]
+    bx, by, bz = T[:, 1, 0], T[:, 1, 1], T[:, 1, 2]
+    cx, cy, cz = T[:, 2, 0], T[:, 2, 1], T[:, 2, 2]
+    det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    ok = np.abs(det) > 1e-12
+    det = np.where(ok, det, 1.0)
+    dx, dy = P[:, 0] - cx, P[:, 1] - cy
+    l1 = ((by - cy) * dx + (cx - bx) * dy) / det
+    l2 = ((cy - ay) * dx + (ax - cx) * dy) / det
+    l3 = 1.0 - l1 - l2
+    tol = 1e-7
+    return ok & (l1 >= -tol) & (l2 >= -tol) & (l3 >= -tol), l1 * az + l2 * bz + l3 * cz
+
+
+def find_drops(surf: WalkSurface, agent: AgentModel) -> Dict[int, List[int]]:
+    """The walk surface's drops: ``{upper face: [lower faces]}``, each a one-way link
+    the agent can fall down and not climb back (the module note above). Only links
+    between different walk components; empty when ``agent.max_drop`` is at most the
+    step-up (the pass switched off) or the surface is one component."""
+    if agent.max_drop <= agent.max_step_up or not len(surf.faces):
+        return {}
+    comp = surf.component
+    std = np.nonzero(surf.standable)[0]
+    if len(std) == 0 or len(np.unique(comp[std])) < 2:
+        return {}
+    owner, M, n = _open_edge_probes(surf)
+    if not len(owner):
+        return {}
+    tris = surf.verts[surf.faces]
+    tol = CONTACT_TOL
+    step, deepest, head = agent.max_step_up, agent.max_drop, agent.player_height
+    P = M[:, :2] + n * DROP_PROBE
+
+    # 0) Only a probe inside another component's XY box (and its drop band) can land on it.
+    roots, of = np.unique(comp[std], return_inverse=True)
+    T = tris[std]
+    blo = np.full((len(roots), 3), np.inf)
+    bhi = np.full((len(roots), 3), -np.inf)
+    np.minimum.at(blo, of, T.min(axis=1))
+    np.maximum.at(bhi, of, T.max(axis=1))
+    mine = np.searchsorted(roots, comp[owner])
+    near = np.zeros(len(P), bool)
+    for c in range(len(roots)):
+        near |= ((mine != c)
+                 & (P[:, 0] >= blo[c, 0] - 0.01) & (P[:, 0] <= bhi[c, 0] + 0.01)
+                 & (P[:, 1] >= blo[c, 1] - 0.01) & (P[:, 1] <= bhi[c, 1] + 0.01)
+                 & (blo[c, 2] < M[:, 2] - step) & (bhi[c, 2] >= M[:, 2] - deepest - tol))
+    idx = np.nonzero(near)[0]
+    if not len(idx):
+        return {}
+
+    # 1) Probes over another component's floor in the drop band.
+    cand = np.zeros(len(idx), bool)
+    for c0 in range(0, len(idx), _DROP_CHUNK):
+        sub = idx[c0:c0 + _DROP_CHUNK]
+        k, t, inside, z = _point_pairs(T, P[sub])
+        q = sub[k]
+        ok = (inside & (comp[std[t]] != comp[owner[q]])
+              & (z < M[q, 2] - step - tol) & (z >= M[q, 2] - deepest - tol))
+        cand[c0 + k[ok]] = True
+    idx = idx[cand]
+    if not len(idx):
+        return {}
+
+    # 2) The column under the probe: the first solid face down from a player height over
+    #    the edge must be that floor. Faces with no XY area (walls) can't cover a point.
+    solid = np.nonzero(_solid(surf))[0]
+    st = tris[solid]
+    det = ((st[:, 1, 1] - st[:, 2, 1]) * (st[:, 0, 0] - st[:, 2, 0])
+           + (st[:, 2, 0] - st[:, 1, 0]) * (st[:, 0, 1] - st[:, 2, 1]))
+    covering = solid[np.abs(det) >= 1e-6]
+    k, t, inside, z = _point_pairs(tris[covering], P[idx])
+    face = covering[t]
+    top = M[idx[k], 2] + head + tol
+    under = inside & (z <= top)
+    k, face, z = k[under], face[under], z[under]
+    landing = np.full(len(idx), -1, np.int64)
+    if len(k):
+        hit = np.full(len(idx), -np.inf)
+        np.maximum.at(hit, k, z)
+        # The landing is a standable face at the hit height (a two-sided slab's top
+        # ties with nothing above it; any standable face among the ties will do).
+        at_hit = (z >= hit[k] - tol) & surf.standable[face]
+        landing[k[at_hit]] = face[at_hit]
+        zl = hit
+    else:
+        zl = np.full(len(idx), -np.inf)
+    zm = M[idx, 2]
+    ok = ((landing >= 0) & (zl < zm - step - tol) & (zl >= zm - deepest - tol))
+    ok &= np.where(landing >= 0, comp[np.maximum(landing, 0)] != comp[owner[idx]], False)
+    idx, landing = idx[ok], landing[ok]
+    if not len(idx):
+        return {}
+
+    # 3) The step off: no solid face (a wall, a railing, a low ceiling) across the way out.
+    lo = st[:, :, :2].min(axis=1) - 0.01
+    hi = st[:, :, :2].max(axis=1) + 0.01
+    cell = 16.0
+    grid = _cells(lo, hi, cell)
+    clear = np.ones(len(idx), bool)
+    for h in (step + 0.5, head):
+        S = np.column_stack([M[idx, :2] - n[idx] * DROP_BACK, M[idx, 2] + h])
+        E = np.column_stack([P[idx], M[idx, 2] + h])
+        pk, pt = [], []
+        for j in range(len(idx)):
+            near = set()
+            for x, y in (S[j, :2], E[j, :2]):
+                near.update(grid.get((math.floor(x / cell), math.floor(y / cell)), ()).tolist())
+            pk.extend([j] * len(near))
+            pt.extend(near)
+        if not pk:
+            continue
+        pk = np.asarray(pk, np.int64)
+        pt = np.asarray(pt, np.int64)
+        crossed = _seg_tri(S[pk], E[pk], st[pt])
+        clear[pk[crossed]] = False
+    drops: Dict[int, set] = {}
+    for u, low in zip(owner[idx[clear]].tolist(), landing[clear].tolist()):
+        drops.setdefault(int(u), set()).add(int(low))
+    return {u: sorted(v) for u, v in sorted(drops.items())}
+
+
+def directed_reach(surf: WalkSurface, seed_face: int, drops: Mapping[int, Sequence[int]],
+                   reached: Optional[set] = None) -> Tuple[set, set]:
+    """``(both_ways, forward)``: the standable faces the agent can reach from
+    ``seed_face`` AND walk or fall back from (strong connectivity), and those it can
+    reach at all, over the walk plus the one-way ``drops``. ``reached`` is
+    ``flood_reachable(surf, seed_face)`` when the caller has it. With no drop both are
+    that flood."""
+    if reached is None:
+        reached = flood_reachable(surf, seed_face)
+    if not drops or seed_face is None:
+        return set(reached), set(reached)
+    comp = surf.component
+    out: Dict[int, set] = {}
+    into: Dict[int, set] = {}
+    for u, lows in drops.items():
+        for low in lows:
+            cu, cl = int(comp[u]), int(comp[low])
+            out.setdefault(cu, set()).add(cl)
+            into.setdefault(cl, set()).add(cu)
+
+    def flood(start: int, links: Dict[int, set]) -> set:
+        seen, stack = {start}, [start]
+        while stack:
+            for nxt in links.get(stack.pop(), ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    stack.append(nxt)
+        return seen
+
+    c0 = int(comp[seed_face])
+    fwd = flood(c0, out)
+    both = fwd & flood(c0, into)
+    std = np.nonzero(surf.standable)[0]
+
+    def faces_of(comps: set) -> set:
+        comps = comps - {c0}
+        if not comps:
+            return set()
+        sel = np.isin(comp[std], np.fromiter(comps, np.int64, len(comps)))
+        return set(std[sel].tolist())
+
+    return set(reached) | faces_of(both), set(reached) | faces_of(fwd)
 
 
 def _faces_in_room(surf: WalkSurface, room: RoomSpec,
@@ -3186,6 +3484,10 @@ def _diagnose_unreachable(surf: WalkSurface, agent: AgentModel,
 # Top-level validation
 # ---------------------------------------------------------------------------
 
+#: A room the agent reaches only by falling, with no way back to the entrance.
+STRANDED = "stranded: reached only by a drop, no way back to the entrance"
+
+
 @dataclass
 class Shell:
     """The part of the room gate the mesh alone decides (partial-rebuild Req 4.2): the walk
@@ -3209,6 +3511,8 @@ class Shell:
     checked_corridors: bool = False
     corridors: List[CorridorResult] = field(default_factory=list)
     conflicts: List[Tuple[str, str]] = field(default_factory=list)
+    # The walk surface's one-way drops (``find_drops``): upper face -> lower faces.
+    drops: Dict[int, List[int]] = field(default_factory=dict, repr=False)
     # The TER this shell was made from, kept until ``mesh`` is first read (the
     # collidable triangles are only needed when there are placed models).
     ter: Optional[TerFile] = field(default=None, repr=False)
@@ -3281,7 +3585,14 @@ def shell_report(ter: TerFile, spec: ZoneSpec, agent: Optional[AgentModel] = Non
                     "no floor in from_room"))
         return shell
 
-    reachable = flood_reachable(surf, seed_face)
+    # Reachable means both ways (strong connectivity): the faces the agent reaches
+    # from the entrance and can come back from, over the walk and the one-way drops.
+    # ``forward`` adds the faces reached only by falling. With no drop both are the
+    # undirected flood, as before step 31.
+    flooded = flood_reachable(surf, seed_face)
+    drops = find_drops(surf, agent)
+    shell.drops = drops
+    reachable, forward = directed_reach(surf, seed_face, drops, flooded)
     shell.reachable = frozenset(reachable)
 
     # First pass: determine reachability per room (needed before graph diagnosis,
@@ -3305,6 +3616,10 @@ def shell_report(ter: TerFile, spec: ZoneSpec, agent: Optional[AgentModel] = Non
             # corridor + the exact failure: cliff ramp / oversized step);
             # fall back to the mesh-geometry guess.
             reason = _diagnose_via_graph(room.id, spec, agent, reachable_room_ids)
+            if drops and any(int(f) in forward for f in room_faces):
+                # Reached by falling, with no way back: its own reason, the
+                # corridor graph's explanation (if any) after it.
+                reason = STRANDED + (f" ({reason})" if reason else "")
             if not reason:
                 reason = _diagnose_unreachable(surf, agent, room_faces, reachable)
         shell.rooms.append(RoomResult(
@@ -3473,13 +3788,17 @@ if __name__ == "__main__":
                         help="Max walkable slope in degrees (default: 40)")
     parser.add_argument("--step-up", type=float, default=3.0,
                         help="Max climbable vertical step in world units (default: 3.0)")
+    parser.add_argument("--max-drop", type=float, default=AgentModel().max_drop,
+                        help="Deepest fall read as a one-way link, in world units "
+                             "(default: 80; 0 switches drops off)")
     parser.add_argument("--check-corridors", action="store_true",
                         help="Also report per-corridor floor continuity and "
                              "corridor-corridor conflicts (Requirement 5.2)")
     args = parser.parse_args()
 
     eqg = _resolve_eqg(args.zone, args.output)
-    agent = AgentModel(walkable_slope_deg=args.slope_cap, max_step_up=args.step_up)
+    agent = AgentModel(walkable_slope_deg=args.slope_cap, max_step_up=args.step_up,
+                       max_drop=args.max_drop)
 
     spec_path = args.spec
     if spec_path is None and eqg.suffix.lower() == ".eqg":
