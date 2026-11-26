@@ -55,7 +55,7 @@ specs" in `.kiro/steering/project.md`.
 
 ## Gate fixes (decision 5)
 
-- [ ] 8. Long and short hall failures
+- [x] 8. Long and short hall failures
   - Card: [cards/08-fixes.md](cards/08-fixes.md)
   - Type: agent · Size: L · Depends: 2
   - Owns: generators/ (root-cause fixes; name each file in its commit), tests that pin the fixed seeds, goldens it moves (named); not analyzer/ (the gate's bars stay); stop and report before touching ai/, server/, web/
