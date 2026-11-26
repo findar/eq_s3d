@@ -4,6 +4,13 @@
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | `stock_room_shapes.py --halls`, `grid_score.py --halls`: stock built halls 1.05–2.96x ours at 1; `HALL_MIN` 0.5, `HALL_MAX` 3.0 and the knob per layout (decision 2) | 2 |
+| 2 | `ZonePlan.hall_length` / `ZoneSpec.hall_length` (written only when not 1) scale the Graph run, the classic/city scatter and the outdoor gap; at 1 every zone byte-identical; outdoor stops at ~1.6x (decisions 3, 4) | 4 |
+| 3 | Hall length slider, build summary, server pass-through, planner words (`match_hall_length`: short 0.6, long 2.0), LLM prompt line | 2 |
+| 4 | `--hall-length` on both sweeps; first run failed (decision 5); re-run on task 8's tree: gate 696/695/696 at 0.5/1/3.0, bands <= 3.5%, draw at 3.0 cave 3.7/5.0 s, outdoor 9.9/17.3 s | 3 |
+| 8 | Five root causes fixed in `generators/` (angled lines crossing sibling corridors, a corridor 0.04 u off a third room's wall, a stair over and under one room, a Prop cutting floor on the gate's samples, the classic scatter below the separation floor); 9 of 942 plans moved at 1, named | 7 |
+| 5 | `docs/ACCEPTANCE.md` "Step 30 — Hall length" (fortress, cave, outdoor at 0.5/1/3.0, seed 731402518) | 2 |
+| 6 | The user's look: "as far as look and feel goes hall length is good for now" | — |
 
 ## Decisions
 
@@ -40,5 +47,11 @@
 
 ## Follow-ups
 
+- `ZONE_PLAN_JSON_SCHEMA` lacks `winding` and `hall_length` (the LLM planner reads the prompt line).
+- WASD while the Hall length slider has focus, not checked.
+- Outdoor halls stop at ~1.6x (1.21x on seed 731402518); outdoor doesn't shorten below 1.
+- cave classic dramatic 21 s1866540615 still fails the gate at 1 (decor footprint_cut, pre-existing).
+- Per-district hall length, a race per district, intruder districts and one-way drops: the
+  user's ideas at the look, taken up as step 31.
 - Check corridor headroom, risers and room crossings on the plan, before the mesh is built
   (the user's question at task 8: catch what the gate finds earlier, cut retries).

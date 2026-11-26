@@ -11,3 +11,4 @@ Index entry: `tasks.md` task 7. **Where: MAIN checkout.**
 - [ ] Committed, and `master` pushed.
 
 ## Result
+✔ closed at the commit carrying this line · docs only

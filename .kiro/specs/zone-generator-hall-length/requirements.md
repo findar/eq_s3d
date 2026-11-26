@@ -1,6 +1,6 @@
 # Requirements — zone-generator-hall-length (roadmap step 30)
 
-> **STATUS: roadmap step 30, ready.** Drafted 2026-11-25 at master `83ec73a`. At the step 26
+> **STATUS: done (closed 2026-11-26; the user's look: "as far as look and feel goes hall length is good for now").** Drafted 2026-11-25 at master `83ec73a`. At the step 26
 > second look the user said "a future task should also adjust length of halls"; after step 29
 > closed they said "You pick next", and the lead picked this, the oldest of the user's open ideas.
 > Task index: `tasks.md` (card format). Decisions: `archive.md`.
