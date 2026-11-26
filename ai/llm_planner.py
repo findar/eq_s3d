@@ -19,7 +19,7 @@ from typing import Optional
 from core.env import env_value
 from .schema import (
     ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_DISTRICT_RELATIONSHIPS, VALID_DUNGEON_THEMES,
-    VALID_ZONE_TYPES, WINDING_MAX,
+    VALID_ZONE_TYPES, WINDING_MAX, HALL_MIN, HALL_MAX,
 )
 
 
@@ -37,6 +37,11 @@ Rules:
   twisty with longer cave tunnels. About 0.25 for "straight", "regular" or
   "orderly"; about 1.75 for "twisting", "winding", "meandering", "serpentine" or
   "labyrinthine" passages (not a "winding stair").
+- hall_length: a number from {hall_min} to {hall_max}, how long the halls between
+  rooms run, a multiple of the stock hall: 1 the default (omit it then). About 0.6
+  for "compact", "tight", "cramped", "close-set", "short halls" or "short
+  corridors"; about 2 for "long halls", "long corridors", "long passages",
+  "sprawling", "far-flung" or "spread out" (not a bare "long" or "short").
 - regions: list any special volumes implied by the description
   (water, lava, ice, pvp, zoneline, generic). Empty if none.
 - mood: a short atmosphere note (e.g. "dark and damp").
@@ -61,7 +66,8 @@ def system_prompt() -> str:
         zone_types=", ".join(VALID_ZONE_TYPES),
         purposes=", ".join(VALID_DUNGEON_THEMES),
         relationships=", ".join(VALID_DISTRICT_RELATIONSHIPS),
-        winding_max=f"{WINDING_MAX:g}")
+        winding_max=f"{WINDING_MAX:g}",
+        hall_min=f"{HALL_MIN:g}", hall_max=f"{HALL_MAX:g}")
 
 
 class LLMPlanner:

@@ -94,6 +94,22 @@ _WINDING_WORDS = {
 }
 _WINDING_STAIR = re.compile(r"\bwinding\s+(?:stair|stairs|staircase|stairway|steps)\b")
 
+# Hall length (hall-length step 30): how long the halls between rooms run, a multiple of
+# today's. Whole words and phrases on word boundaries; bare "long" and "short" never fire
+# ("a long-forgotten crypt", "short on light"), only before a hall word. Short words win a
+# tie, as Winding's straight words do. "sprawling" also means huge (_SIZE_WORDS) and many
+# rooms (_MANY_WORDS), "compact" and "cramped" also mean small: they agree (a sprawling
+# zone has its rooms far apart, a cramped one close together).
+_HALL_SHORT = 0.6
+_HALL_LONG = 2.0
+_HALL_NOUNS = r"(?:halls?|hallways?|corridors?|passages?|passageways?|tunnels?)"
+_HALL_WORDS = {
+    _HALL_SHORT: ["compact", "tight", "cramped", "close-set"],
+    _HALL_LONG: ["sprawling", "far-flung", "spread out"],
+}
+_HALL_SHORT_PHRASE = re.compile(rf"\bshort\s+{_HALL_NOUNS}\b")
+_HALL_LONG_PHRASE = re.compile(rf"\blong\s+{_HALL_NOUNS}\b")
+
 # Rough room-count hints
 _MANY_WORDS = ["many", "lots", "numerous", "maze", "labyrinth", "sprawling", "warren"]
 _FEW_WORDS = ["few", "couple", "single", "one big", "simple"]
@@ -242,6 +258,7 @@ class RulePlanner:
         size = self._match_one(text, _SIZE_WORDS, default="medium")
         verticality = self._match_one(text, _VERTICALITY_WORDS, default="moderate")
         winding = match_winding(text)
+        hall_length = match_hall_length(text)
         regions = self._match_regions(text)
         room_count = self._room_count(text, size)
         elevation = verticality != "flat"
@@ -275,6 +292,7 @@ class RulePlanner:
             elevation=elevation,
             verticality=verticality,
             winding=winding,
+            hall_length=hall_length,
             regions=regions,
             locks=locks,
             dungeon_theme=dungeon_theme,
@@ -433,6 +451,17 @@ def match_winding(text: str) -> float:
     """The Winding a prompt's words name: 0.25 for straight words, 1.75 for twisting
     ones, else 1.0 (the stock tunnel). *text* is lower-cased."""
     return _match_words(_WINDING_STAIR.sub(" ", text), _WINDING_WORDS, 1.0)
+
+
+def match_hall_length(text: str) -> float:
+    """The Hall length a prompt's words name: 0.6 for short words ("compact", "short
+    halls"), 2.0 for long ones ("sprawling", "long corridors"), else 1.0 (today's halls).
+    Short wins a tie. *text* is lower-cased."""
+    if _HALL_SHORT_PHRASE.search(text) or _match_words(text, _HALL_WORDS, 1.0) == _HALL_SHORT:
+        return _HALL_SHORT
+    if _HALL_LONG_PHRASE.search(text):
+        return _HALL_LONG
+    return _match_words(text, _HALL_WORDS, 1.0)
 
 
 def _match_words(text: str, mapping: dict, default):

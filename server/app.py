@@ -613,7 +613,9 @@ class GenerateRequest(BaseModel):
         default=None,
         description="Controls sub-object: zone_type, room_count, size, "
                     "verticality, winding (how far rough corridors stray, 0 straight to 2, "
-                    "1 the stock tunnel; anything else falls back to 1), locks, edges (wilderness Rim, e.g. "
+                    "1 the stock tunnel; anything else falls back to 1), hall_length (how long the "
+                    "halls between rooms run, 0.5 to 3, a multiple of today's 1; anything else "
+                    "falls back to 1), locks, edges (wilderness Rim, e.g. "
                     "{\"N\": \"zoneline\"}), trees (wilderness density: "
                     "none/sparse/normal/dense), sites (none/sparse/normal/dense) "
                     "and inhabitant (human/orc/gnoll/centaur, \"\" for the "
