@@ -186,6 +186,10 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
    and cave draw time comes back down (step 27 follow-ups the lead picked on the user's "You
    pick step 27 followups"). Spec: `.kiro/specs/zone-generator-cave-clumps/`. *(DONE — closed 2026-11-25, look skipped
    at the user's word; see the Done table)*
+30. **Hall length** — a Hall length scalar (1 today, lower compact, higher sprawling) scales
+   how far joined rooms stand apart, set by a Controls slider or prompt words (the user at the
+   step 26 look: "a future task should also adjust length of halls"; the lead picked it on
+   "You pick next"). Spec: `.kiro/specs/zone-generator-hall-length/`. *(In progress)*
 
 **Where the old `zone-generator-followup` runway goes (dispersed, not dropped).** Its three pieces are now prerequisites pulled into the steps that actually need them, rather than a milestone of their own: the **3D `Envelope` + gate-learns-connectors (staircase/bridge)** land with **step 5/7** (outdoor dungeon carved into terrain, and multi-level verticality); the pluggable **`LayoutEngine` seam** lands with **step 6** (graph-replacement dungeon gen). The existing specs are re-scoped to match: `.kiro/specs/zone-generator-wilderness/` is the basis for step 1 (expanded from its lean landmark-first v1 to Karanas with water/lava/cliffs/deformation); `.kiro/specs/zone-generator-followup/` is retired as a standalone milestone (its tasks survive as the step-5/6/7 prerequisite work). Each step gets its own spec authored when it starts.
 
