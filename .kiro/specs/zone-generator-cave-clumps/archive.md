@@ -25,4 +25,7 @@
    shares over windable corridors.
 
 ## Follow-ups
+- **The gate reads a solid Feature's hollow as floor** (task 4, `a8d84cf`): its clear-width samples
+  inside a boulder's open shell can become the room's core. Decor now refuses the Prop that
+  would move the core there; the gate itself should skip samples inside a solid Feature's plan.
 - **Cave draw time outside `embed.py`** (task 1): ~1.7–2.1 s of a 30-room cave draw; profile it.
