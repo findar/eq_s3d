@@ -51,6 +51,12 @@ Graph, classic fortress, city; the same seeds and room counts):
   long/short p50/p90/max and share over 1.5 (pooled); area CV and max/min. Per-zone
   values (grid, axbst, nn, side mn/mx, area) are the median over the zones.
 
+``--halls`` (hall length step 30, task 1) prints, per kind of ``--shapes`` build, the
+corridors' length door to door (as d2d reads it) with throats left out (stock's "direct"
+contacts have no passage either): pooled p10/p50/p90 in u and the p50 in H, and the
+spread of the builds' medians (p10/p50/p90, min-max, CV); ``hall_table`` prints stock's
+from ``scripts/stock_room_shapes.py --halls`` the same way.
+
 ``measure_shape`` takes centres, edges and room footprints only, so
 ``scripts/stock_room_shapes.py`` judges stock chambers with the same code.
 ``--one SEED --rooms N --vert V`` measures one build per kind (the first-look
@@ -99,6 +105,8 @@ KINDS = {
     "cave": {"zone_type": "dungeon", "dungeon_theme": "cave", "layout": "graph"},
     "fortress": {"zone_type": "dungeon", "dungeon_theme": "fortress", "layout": "graph"},
     "temple": {"zone_type": "dungeon", "dungeon_theme": "temple", "layout": "graph"},
+    "tomb": {"zone_type": "dungeon", "dungeon_theme": "tomb", "layout": "graph"},
+    "mine_delve": {"zone_type": "dungeon", "dungeon_theme": "mine_delve", "layout": "graph"},
     "warren": {"zone_type": "dungeon", "dungeon_theme": "warren", "layout": "graph"},
     "outdoor": {"zone_type": "outdoor_dungeon", "layout": "graph"},
     "classic_fortress": {"zone_type": "dungeon", "dungeon_theme": "fortress",
@@ -223,7 +231,68 @@ def spec_shape(spec) -> dict:
     rest = type("S", (), {"rooms": spec.rooms,
                           "corridors": [c for c in spec.corridors if c.id not in ids]})
     m["entry"] = entry_angles(rest)
+    m["d2d"] = hall_lengths(spec, ids)
+    m["excluded"] = len(ids)
+    m["h"] = semantics.body_height(spec.dungeon_race or "default")
     return m
+
+
+def corridor_length(cor, by) -> float:
+    """A corridor's length door to door (u): its ``path``, else its route's waypoints."""
+    from generators.routing import corridor_route
+    line = cor.path or list(corridor_route(cor, by).waypoints)
+    return sum(math.dist(a, b) for a, b in zip(line, line[1:]))
+
+
+def hall_lengths(spec, throats=None):
+    """Door-to-door length (u) of each corridor joining two rooms, throats left out
+    (``throat_ids``: stock's "direct" contacts have no passage to measure either)."""
+    throats = throat_ids(spec) if throats is None else throats
+    by = {r.id: r for r in spec.rooms}
+    return [corridor_length(c, by) for c in spec.corridors
+            if c.from_room in by and c.to_room in by and c.from_room != c.to_room
+            and c.id not in throats]
+
+
+def hall_summary(rows) -> dict:
+    """Per kind (``kind`` key): pooled hall length p10/p50/p90 (u, and p50 in H), and
+    the spread of the zones' (builds') medians, from each row's ``d2d`` list and ``h``."""
+    out = {}
+    for kind in dict.fromkeys(r["kind"] for r in rows):
+        rs = [r for r in rows if r["kind"] == kind and r.get("d2d")]
+        d = [x for r in rs for x in r["d2d"]]
+        dh = [x / r["h"] for r in rs for x in r["d2d"]]
+        med = [statistics.median(r["d2d"]) for r in rs]
+        medh = [statistics.median(r["d2d"]) / r["h"] for r in rs]
+        out[kind] = {
+            "n": len(rs), "halls": len(d),
+            "p10": pct(d, 10), "p50": pct(d, 50), "p90": pct(d, 90),
+            "h_p50": pct(dh, 50),
+            "zmed_p10": pct(med, 10), "zmed_p50": pct(med, 50), "zmed_p90": pct(med, 90),
+            "zmed_min": min(med) if med else float("nan"),
+            "zmed_max": max(med) if med else float("nan"),
+            "zmed_cv": _cv(med),
+            "zmedh_p10": pct(medh, 10), "zmedh_p50": pct(medh, 50), "zmedh_p90": pct(medh, 90),
+            "excluded": sum(r.get("excluded", 0) for r in rs),
+        }
+    return out
+
+
+def hall_table(s: dict) -> str:
+    head = (f"{'kind':16s} {'n':>3s} {'halls':>5s} {'d2d 10/50/90 u':>16s} {'p50 H':>6s} "
+            f"{'zone med 10/50/90 u':>20s} {'min-max':>10s} {'CV':>5s} "
+            f"{'zone med 10/50/90 H':>20s} {'excl':>5s}")
+    lines = [head]
+    for kind, r in s.items():
+        lines.append(
+            f"{kind:16s} {r['n']:3d} {r['halls']:5d} "
+            f"{r['p10']:5.0f}/{r['p50']:4.0f}/{r['p90']:5.0f} {r['h_p50']:6.1f} "
+            f"{r['zmed_p10']:6.0f}/{r['zmed_p50']:5.0f}/{r['zmed_p90']:6.0f} "
+            f"{r['zmed_min']:4.0f}-{r['zmed_max']:4.0f} {r['zmed_cv']:5.2f} "
+            f"{r['zmedh_p10']:6.1f}/{r['zmedh_p50']:5.1f}/{r['zmedh_p90']:6.1f} "
+            f"{r['excluded']:5d}")
+    lines.append("(excl: throats, or stock's direct contacts, left out of the lengths)")
+    return "\n".join(lines)
 
 
 def throat_ids(spec):
@@ -417,12 +486,14 @@ def main(argv=None):
     ap.add_argument("--compare", help="a --json summary to print beside this one")
     ap.add_argument("--shapes", action="store_true",
                     help="print what the eye sees per kind (task 9) instead")
+    ap.add_argument("--halls", action="store_true",
+                    help="print hall length door to door per kind (hall length task 1)")
     ap.add_argument("--kinds", nargs="+", default=list(KINDS))
     ap.add_argument("--one", type=int, help="--shapes: one build of this seed per kind")
     ap.add_argument("--rooms", type=int, default=12)
     ap.add_argument("--vert", default="moderate")
     a = ap.parse_args(argv)
-    if a.shapes:
+    if a.shapes or a.halls:
         if a.one is not None:
             sjobs = [(k, a.one, a.rooms, a.vert) for k in a.kinds]
         else:
@@ -430,6 +501,12 @@ def main(argv=None):
                      for k in a.kinds for i in range(a.seeds)]
         with ProcessPoolExecutor(a.jobs) as ex:
             srows = list(ex.map(one_shape, sjobs, chunksize=2))
+        if a.halls:
+            hnow = hall_summary(srows)
+            print(hall_table(hnow))
+            if a.json:
+                Path(a.json).write_text(json.dumps(hnow, indent=1))
+            return
         snow = summarise_shapes(srows)
         print(shape_table(snow))
         if a.json:

@@ -33,6 +33,20 @@ minimum reads high; a chamber's side includes its door stubs. Open land
 pieces of open ground cut where it narrows between hills or buildings, not
 rooms; read those kinds as "open areas", not rooms.
 
+``--halls`` (hall length step 30, task 1): **hall length door to door**, per
+passage link between two chambers, the shortest walk through that passage's own
+cells from one chamber's doorway cells to the other's, plus a cell (``hall_lengths``),
+per zone and pooled per kind (p10/p50/p90, and the spread of the zone medians;
+``grid_score.hall_table``). Direct contacts (chambers touching, no passage) have no
+length, and passages no longer than ``SHORT_H`` (3 H, a corridor's width) are openings;
+both are left out, as our throats are (``excl``). What the raster misses: the walk runs on
+an 8-neighbour 4 u grid and cuts inside corners, so it reads a winding passage a
+little short of its centreline and a straight diagonal up to ~8 % long; a passage
+under a cell wide, or broken where the walk's step limit parts it, joins nothing; a
+chamber's edge sits about a cell past its room's wall, so each hall reads a few u
+short; a passage room under the width threshold is counted as hall, so a chain of
+small rooms reads as one long hall. Outdoor kinds are open areas, not rooms.
+
 ``--eqg A.eqg ...`` runs the same method on built zones: the calibration, since a
 built room's true side, aspect and square doors are known from its spec.
 
@@ -66,7 +80,8 @@ from analyzer.traverse import AgentModel, build_walk_surface  # noqa: E402
 from dungeon_topology_survey import (CELL, WIDTH, Floor, _sub_components,  # noqa: E402
                                      chamber_graph, plot, split)
 from generators.semantics import RACE_HEIGHT  # noqa: E402
-from grid_score import angle_between, measure_shape, shape_table, summarise_shapes  # noqa: E402
+from grid_score import (angle_between, hall_summary, hall_table, measure_shape,  # noqa: E402
+                        shape_table, summarise_shapes)
 from race_size_survey import ZONE_RACE  # noqa: E402
 
 #: Kind -> stock zones. Built = built and hewn dungeons (wall_survey's styles);
@@ -100,6 +115,10 @@ EXTRA_RACE = {"karnor": "lizardman", "sebilis": "froglok", "charasis": "default"
 
 REACH = 24.0        # a passage's first leg: its cells this far from the doorway (u)
 LEVEL = 16.0        # and within this of the doorway's floor height (u)
+#: ``--halls``: a passage no longer than this many H (a stock corridor's width, the
+#: 3 H ours are cut to) is an opening, not a hall: read as a throat (ours: a corridor
+#: no longer than its width) and left out with the direct contacts.
+SHORT_H = 3.0
 
 
 #: Races replaced here: Nagafen's lair is one dragon cave in a kobold warren; at a
@@ -203,6 +222,43 @@ def entry_angles(floor: Floor, chamber: np.ndarray, nch: int, width: float):
     return out, len(direct)
 
 
+def hall_lengths(floor: Floor, chamber: np.ndarray) -> list:
+    """Door-to-door length (u) of each passage link between two chambers (``--halls``).
+
+    Per passage component touching two or more chambers: its doorway cells per chamber
+    (passage cells next to that chamber), the shortest walk through the passage's own
+    cells from one chamber's doorway to the other's, plus one cell (half a cell each
+    end, to the chamber's edge). A passage joining three or more chambers (a junction)
+    gives the links of Prim's tree over those walks, as ``chamber_graph`` joins it.
+    Chambers that touch directly (no passage) have no length and are left out."""
+    from scipy.sparse.csgraph import dijkstra
+    g = floor.graph.tocoo()
+    a, b = chamber[g.row], chamber[g.col]
+    plab = _sub_components(floor.graph, chamber < 0)
+    touch = (a < 0) & (b >= 0)
+    contacts: dict = {}
+    for r, c in zip(g.row[touch], b[touch]):
+        contacts.setdefault(int(plab[r]), {}).setdefault(int(c), set()).add(int(r))
+    out = []
+    for p, chs in contacts.items():
+        if len(chs) < 2:
+            continue                    # an alcove off one chamber
+        nodes = np.nonzero(plab == p)[0]
+        sub = floor.graph[nodes][:, nodes]
+        ids = sorted(chs)
+        door = {c: np.searchsorted(nodes, sorted(chs[c])) for c in ids}
+        dist = {c: dijkstra(sub, directed=False, indices=door[c], min_only=True) for c in ids}
+        d = {(u, v): float(dist[u][door[v]].min()) for u in ids for v in ids if u != v}
+        inside, rest = {ids[0]}, set(ids[1:])
+        while rest:
+            best, u, v = min((d[(u, v)], u, v) for u in inside for v in rest)
+            if np.isfinite(best):
+                out.append(best + CELL)
+            inside.add(v)
+            rest.discard(v)
+    return out
+
+
 def measure_zone(eq_path: Path, zone: str, agent: AgentModel, cache: Path = None,
                  plots: Path = None) -> dict:
     t0 = time.time()
@@ -222,7 +278,10 @@ def measure_zone(eq_path: Path, zone: str, agent: AgentModel, cache: Path = None
         asp.append(math.sqrt(ev[1] / max(ev[0], 1e-9)))
     m = measure_shape(cen, edges, sides, asp, areas, h)
     ent, direct = entry_angles(floor, chamber, nch, width)
-    m.update(zone=zone, race=race, nch=nch, entry=ent, direct=direct,
+    halls = hall_lengths(floor, chamber)
+    short = sum(x <= SHORT_H * h for x in halls)
+    m.update(zone=zone, race=race, nch=nch, entry=ent, direct=direct, short=short,
+             excluded=direct + short, d2d=[x for x in halls if x > SHORT_H * h], h=h,
              med_side=float(np.median(sides)), secs=time.time() - t0)
     if plots is not None:
         plots.mkdir(parents=True, exist_ok=True)
@@ -243,6 +302,8 @@ def main(argv=None) -> int:
     ap.add_argument("--eqg", nargs="+", type=Path,
                     help="measure these built .eqg zones instead (the method's calibration: "
                          "our rooms' true sizes and square doors are known)")
+    ap.add_argument("--halls", action="store_true",
+                    help="print passage length door to door per zone and per kind instead")
     a = ap.parse_args(argv)
     agent = AgentModel()
     rows = []
@@ -251,8 +312,10 @@ def main(argv=None) -> int:
             m = measure_zone(a.eq_path, str(path), agent, None, a.plots)
             m["kind"] = path.stem.rstrip("0123456789")    # p9cave2004 pools as p9cave
             rows.append(m)
-        print(shape_table(summarise_shapes(rows)))
+        print(hall_table(hall_summary(rows)) if a.halls else shape_table(summarise_shapes(rows)))
         return 0
+    if a.halls:
+        return _halls(a, agent)
     print(f"{'zone':12s} {'kind':8s} {'race':9s} {'N':>3s} {'E':>3s} {'ax10':>5s} {'axbst':>5s} "
           f"{'nnCV':>5s} {'nnmin':>5s} {'ent50':>5s} {'>20':>4s} {'dir':>3s} "
           f"{'side u':>6s} {'mn/mx':>9s} {'asp50':>5s} {'arCV':>5s} {'secs':>5s}")
@@ -281,6 +344,38 @@ def main(argv=None) -> int:
     print(shape_table(summarise_shapes(kept)))
     if a.json:
         a.json.write_text(json.dumps([{k: v for k, v in r.items()} for r in rows], indent=1))
+    return 0
+
+
+def _halls(a, agent) -> int:
+    """``--halls``: passage length door to door per zone, then per kind."""
+    rows = []
+    print(f"{'zone':12s} {'kind':8s} {'race':9s} {'N':>3s} {'halls':>5s} {'dir':>3s} {'shrt':>4s} "
+          f"{'d2d 10/50/90 u':>16s} {'p50 H':>6s} {'secs':>5s}")
+    for kind in a.kinds:
+        for zone in KINDS[kind]:
+            if a.zones and zone not in a.zones:
+                continue
+            try:
+                m = measure_zone(a.eq_path, zone, agent, a.cache, a.plots)
+            except Exception as e:  # noqa: BLE001 - a zone this install lacks or can't read
+                print(f"{zone:12s} {kind:8s} error: {type(e).__name__}: {e}")
+                continue
+            m["kind"] = kind
+            rows.append(m)
+            d = sorted(m["d2d"])
+            q = [float(np.percentile(d, k)) if d else float("nan") for k in (10, 50, 90)]
+            print(f"{zone:12s} {kind:8s} {m['race']:9s} {m['nch']:3d} {len(d):5d} "
+                  f"{m['direct']:3d} {m['short']:4d} {q[0]:5.0f}/{q[1]:4.0f}/{q[2]:5.0f} {q[1] / m['h']:6.1f} "
+                  f"{m['secs']:5.0f}" + ("  (left out)" if zone in LEFT_OUT else ""), flush=True)
+    kept = [r for r in rows if r["zone"] not in LEFT_OUT and r["nch"] >= 3]
+    print()
+    print("pooled per kind (zones with >= 3 chambers, LEFT_OUT dropped; outdoor = open areas):")
+    print(hall_table(hall_summary(kept)))
+    if a.json:
+        a.json.write_text(json.dumps([{k: r[k] for k in ("zone", "kind", "race", "h", "nch",
+                                                            "direct", "short", "d2d")} for r in rows],
+                                     indent=1))
     return 0
 
 
