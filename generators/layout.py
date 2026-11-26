@@ -141,6 +141,16 @@ def hall_gap_scale(hall_length: float = 1.0) -> float:
     return max(1.0, 1.0 + HALL_GAP_SLOPE * (hall_length - 1.0))
 
 
+#: How many halvings a scattered District's hall scale is found in
+#: (``LayoutGenerator._apply_district_halls``; district races task 5).
+HALL_K_BISECTIONS = 30
+#: A spring placement's District hall relaxations at most, and how near its target
+#: (a share) a District's median hall must come to stop early.
+HALL_RELAX_ROUNDS = 4
+HALL_RELAX_TOLERANCE = 0.05
+#: Moves a Threshold's far Districts make at most to reach its length.
+HALL_STRETCH_ROUNDS = 6
+
 #: How many halvings an Envelope build spends finding the widest gap that fits its hill
 #: (``LayoutGenerator._widest_fit``): (top - 1) / 8, a quarter at Hall length 3.
 HALL_GAP_BISECTIONS = 3
@@ -958,7 +968,7 @@ class LayoutGenerator:
             self.warnings.extend(notes)
             spec.districts = district_specs
             # A District with a race of its own takes that race's sizes (Req 4).
-            self._apply_district_races(rooms, district_specs)
+            self._apply_district_races(rooms, district_specs, edges, result)
         if themed:
             semantics.label_rooms(
                 spec, rooms, self.rng,
@@ -1118,8 +1128,9 @@ class LayoutGenerator:
     # Districts (districts spec Req 3)
     # ------------------------------------------------------------------
 
-    def _apply_district_races(self, rooms: List[RoomSpec],
-                              districts: list) -> None:
+    def _apply_district_races(self, rooms: List[RoomSpec], districts: list,
+                              edges: Optional[List[Tuple[int, int]]] = None,
+                              result=None) -> None:
         """District races (Req 4): a District with a race of its own is laid out
         at that race's scale. The engine laid every room out at the zone's race
         (the partition needs its graph first), and every size there is a multiple
@@ -1133,11 +1144,28 @@ class LayoutGenerator:
         if not any(d.race for d in districts):
             return
         race_of = {d.id: (d.race or self.race) for d in districts}
+        halls = (self._district_halls(districts)
+                 if edges is not None and self._envelope is None else None)
         self._room_race = {r.id: race_of.get(r.district, self.race) for r in rooms}
+        before = None
+        if halls is not None:
+            # A raced District's halls (Req 5): first the Thresholds as they would
+            # stand without them, then its own halls at the zone's sizes.
+            before = [dataclasses.replace(r) for r in rooms]
+            self._scale_district_races(before, race_of)
+            self._apply_district_halls(rooms, edges, result, halls)
+        self._scale_district_races(rooms, race_of)
+        if halls is not None:
+            # Then the Thresholds, at the Districts' own sizes.
+            self._stretch_thresholds(rooms, edges, halls, before)
+
+    def _scale_district_races(self, rooms: List[RoomSpec], race_of: Dict[int, str]) -> None:
+        """:meth:`_apply_district_races`'s scaling: each raced District's rooms by
+        ``H(race) / H(zone race)`` about its centre, then the Districts apart."""
         h0 = semantics.body_height(self.race)
-        for d in districts:
-            s = semantics.body_height(race_of[d.id]) / h0
-            mine = [r for r in rooms if r.district == d.id]
+        for d, race in race_of.items():
+            s = semantics.body_height(race) / h0
+            mine = [r for r in rooms if r.district == d]
             if s == 1.0 or not mine:
                 continue
             cx = sum(r.center_x for r in mine) / len(mine)
@@ -1149,6 +1177,222 @@ class LayoutGenerator:
                 r.depth *= s
                 r.height *= s
         self._separate_districts(rooms)
+
+    # District hall lengths (district races Req 5; archive decision 4). A District
+    # carrying a race of its own with a hall length default
+    # (``semantics.race_hall_length``: giants 3.0) has halls that much longer than
+    # the plan's Hall length gives the zone; a Threshold takes the mean of its two
+    # ends. Every length is set as a share of the one the layout drew (measured
+    # by :meth:`_hall_span`), so a District's halls at 1 are left as they stand
+    # and the zone's Hall length (step 30) carries through. An Envelope build (an
+    # outdoor dungeon) is left alone: the fit to the hill shrinks any run back
+    # (step 30 decision 2).
+
+    @staticmethod
+    def _district_halls(districts: list) -> Optional[Dict[int, float]]:
+        """Each District's hall length default (1 without a race of its own), or
+        None when every one is 1: then nothing is moved."""
+        halls = {d.id: semantics.race_hall_length(d.race) if d.race else 1.0
+                 for d in districts}
+        return None if all(v == 1.0 for v in halls.values()) else halls
+
+    @staticmethod
+    def _hall_span(a: RoomSpec, b: RoomSpec, k: float = 1.0) -> float:
+        """About how long the hall between *a* and *b* runs door to door, their
+        centres' offset scaled by *k*: the wall gap on the axis it leaves by (the
+        wider gap, as ``routing.exit_axis_x`` picks) and the jog across it
+        between the two walls' middles."""
+        cx, cy = k * abs(b.center_x - a.center_x), k * abs(b.center_y - a.center_y)
+        gx, gy = cx - (a.width + b.width) / 2, cy - (a.depth + b.depth) / 2
+        return max(0.0, gx) + cy if gx >= gy else max(0.0, gy) + cx
+
+    def _median_span(self, pairs, k: float = 1.0) -> float:
+        """The median :meth:`_hall_span` of *pairs* (room pairs) at offset scale *k*."""
+        g = sorted(self._hall_span(a, b, k) for a, b in pairs)
+        return g[len(g) // 2]
+
+    def _apply_district_halls(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                              result, halls: Dict[int, float]) -> None:
+        """The halls inside each District with a default ``f`` != 1: their median
+        :meth:`_hall_span` f times the drawn one.
+
+        - A spring placement (the graph engine, not jittered) is relaxed again from
+          where it stands (``embed.spring_relax``) with a run per edge (``runs``):
+          the edge's wall gap along its side, times f in such a District (its own
+          gap elsewhere, so it holds). Each edge keeps its wall side, so the
+          graph's drawing holds. Loops fight a uniform stretch (the rooms keep
+          their sizes), so the District's runs are scaled again by what it fell
+          short, up to ``HALL_RELAX_ROUNDS`` relaxations; then the rooms are
+          separated as the engine does.
+        - A scatter (classic) or a jittered placement (a cave's offsets and throats,
+          which a plain relax would pull back to centred) scales the District's
+          offsets from its centre, as a District race does (task 4), by the k that
+          gives it. Rooms a throat joins (step 29) move as one, so a throat keeps
+          its gap and is left out of the median."""
+        rec = getattr(result, "record", None) or {}
+        if (rec.get("engine") == "graph" and rec.get("placement") == "spring"
+                and not getattr(result, "jittered", False)):
+            self._relax_district_halls(rooms, edges, result, halls)
+            return
+        throats = self._throats
+        for d, f in halls.items():
+            mine = [k for k, r in enumerate(rooms) if r.district == d]
+            inside = set(mine)
+            joined = [(i, j) for i, j in edges if i in inside and j in inside]
+            pairs = [(rooms[i], rooms[j]) for i, j in joined
+                     if frozenset((rooms[i].id, rooms[j].id)) not in throats]
+            if f == 1.0 or not pairs:
+                continue
+            want = f * self._median_span(pairs)
+            lo, hi = 1.0, max(1.0, f)        # k = f makes every span at least f-fold
+            for _ in range(HALL_K_BISECTIONS):
+                mid = (lo + hi) / 2
+                lo, hi = (mid, hi) if self._median_span(pairs, mid) < want else (lo, mid)
+            k = (lo + hi) / 2
+            ox = sum(rooms[i].center_x for i in mine) / len(mine)
+            oy = sum(rooms[i].center_y for i in mine) / len(mine)
+            # Throat clumps (rooms a throat joins) move by their centroid's shift.
+            clump = {i: i for i in mine}
+
+            def root(x: int) -> int:
+                while clump[x] != x:
+                    x = clump[x]
+                return x
+            for i, j in joined:
+                if frozenset((rooms[i].id, rooms[j].id)) in throats:
+                    clump[root(i)] = root(j)
+            groups: Dict[int, List[int]] = {}
+            for i in mine:
+                groups.setdefault(root(i), []).append(i)
+            for g in groups.values():
+                gx = sum(rooms[i].center_x for i in g) / len(g)
+                gy = sum(rooms[i].center_y for i in g) / len(g)
+                dx, dy = (gx - ox) * (k - 1.0), (gy - oy) * (k - 1.0)
+                for i in g:
+                    rooms[i].center_x += dx
+                    rooms[i].center_y += dy
+        self._separate_districts(rooms)
+
+    def _relax_district_halls(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                              result, halls: Dict[int, float]) -> None:
+        """:meth:`_apply_district_halls` for a spring placement."""
+        from .topology.embed import RUN_FACTOR, Storey, spring_relax
+        ids = [r.id for r in rooms]
+        by_d: Dict[int, List[Tuple[int, int]]] = {}
+        gaps: Dict[frozenset, float] = {}
+        for i, j in edges:
+            a, b = rooms[i], rooms[j]
+            gx = abs(b.center_x - a.center_x) - (a.width + b.width) / 2
+            gy = abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2
+            gaps[frozenset((a.id, b.id))] = max(gx, gy, 1.0)
+            # A Threshold holds here; :meth:`_stretch_thresholds` lengthens it.
+            if a.district == b.district and halls[a.district] != 1.0:
+                by_d.setdefault(a.district, []).append((i, j))
+        if not by_d:
+            return
+        levels, lh = result.levels, result.level_height or 0.0
+        nodes = {r.id: Storey(levels[k] if levels else 0, (levels[k] * lh) if levels else 0.0,
+                              r.height) for k, r in enumerate(rooms)}
+        pos = {r.id: (r.center_x, r.center_y) for r in rooms}
+        half = {r.id: (r.width / 2, r.depth / 2) for r in rooms}
+        # The engine's run (``_layout_context``), which sets how far rooms repel.
+        run = ((RUN_FACTOR if self.run_factor is None else self.run_factor)
+               * hall_run_scale(self._hall_profile, self.hall_length) * self.corridor_width)
+        pairs = {d: [(rooms[i], rooms[j]) for i, j in es] for d, es in by_d.items()}
+        drawn = {d: self._median_span(ps) for d, ps in pairs.items()}
+        scale = {d: halls[d] for d in by_d}
+        best = None
+        for _round in range(HALL_RELAX_ROUNDS):
+            runs = dict(gaps)
+            for d, es in by_d.items():
+                for i, j in es:
+                    e = frozenset((ids[i], ids[j]))
+                    runs[e] = gaps[e] * scale[d]
+            out = spring_relax(ids, [(ids[i], ids[j]) for i, j in edges], pos, half, nodes,
+                               run, self.corridor_width + 1.0, runs=runs)
+            for r in rooms:
+                r.center_x, r.center_y = out[r.id]
+            got = {d: self._median_span(ps) / max(drawn[d], 1e-9) for d, ps in pairs.items()}
+            miss = max(abs(got[d] / halls[d] - 1.0) for d in got)
+            if best is None or miss < best[0]:
+                best = (miss, out)
+            if miss <= HALL_RELAX_TOLERANCE:
+                break
+            for d in scale:
+                scale[d] *= halls[d] / max(got[d], 1e-9)
+        for r in rooms:
+            r.center_x, r.center_y = best[1][r.id]
+        if not levels:
+            self._separate_rooms(rooms)
+        else:
+            for lv in sorted(set(levels)):
+                self._separate_rooms([r for k, r in enumerate(rooms) if levels[k] == lv])
+
+    def _district_span(self, rooms: List[RoomSpec], d: int, e: int) -> float:
+        """The :meth:`_hall_span` of the nearest pair (by centres) of a room of
+        District *d* and one of *e*: the pair ``_district_swap`` tries first."""
+        mine = [r for r in rooms if r.district == d]
+        a, b = min(((a, b) for a in mine for b in rooms if b.district == e),
+                   key=lambda p: (p[0].center_x - p[1].center_x) ** 2
+                   + (p[0].center_y - p[1].center_y) ** 2)
+        return self._hall_span(a, b)
+
+    def _stretch_thresholds(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                            halls: Dict[int, float], before: List[RoomSpec]) -> None:
+        """Each Threshold whose two Districts' defaults average ``f`` != 1, f times
+        as long as in *before* (the rooms as they would stand without District hall
+        lengths): the Districts beyond it (away from the entrance's, District 0)
+        move together along the axis it leaves by, so no hall inside a District
+        changes; then the Districts are pushed apart again. A Threshold is measured
+        by :meth:`_district_span`, not its own rooms: one crossing a room is
+        swapped for the nearest clear pair later (``_district_swap``), and after
+        the hall lengths it often does. One already that long is left alone."""
+        near: Dict[int, List[Tuple[int, int]]] = {}
+        for i, j in edges:
+            di, dj = rooms[i].district, rooms[j].district
+            if di != dj:
+                near.setdefault(di, []).append((i, j))
+                near.setdefault(dj, []).append((j, i))
+        seen, queue, moved = {0}, [0], False
+        while queue:
+            d = queue.pop(0)
+            for i, j in near.get(d, ()):
+                dj = rooms[j].district
+                if dj in seen:
+                    continue
+                seen.add(dj)
+                queue.append(dj)
+                f = (halls.get(d, 1.0) + halls.get(dj, 1.0)) / 2
+                if f == 1.0:
+                    continue
+                want = f * self._district_span(before, d, dj)
+                if self._district_span(rooms, d, dj) >= want:
+                    continue
+                # The Districts beyond the Threshold: those reached from dj not via d.
+                beyond, stack = {dj}, [dj]
+                while stack:
+                    x = stack.pop()
+                    for _p, q in near.get(x, ()):
+                        dq = rooms[q].district
+                        if dq != d and dq not in beyond:
+                            beyond.add(dq)
+                            stack.append(dq)
+                a, b = rooms[i], rooms[j]
+                gx = abs(b.center_x - a.center_x) - (a.width + b.width) / 2
+                gy = abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2
+                ux, uy = ((math.copysign(1.0, b.center_x - a.center_x), 0.0) if gx >= gy
+                          else (0.0, math.copysign(1.0, b.center_y - a.center_y)))
+                mine = [r for r in rooms if r.district in beyond]
+                for _ in range(HALL_STRETCH_ROUNDS):
+                    short = want - self._district_span(rooms, d, dj)
+                    if short <= 1e-6:
+                        break
+                    for r in mine:
+                        r.center_x += ux * short
+                        r.center_y += uy * short
+                moved = True
+        if moved:
+            self._separate_districts(rooms)
 
     def _separate_districts(self, rooms: List[RoomSpec], iterations: int = 400) -> None:
         """Push Districts apart whole until no room of one overlaps a room of
