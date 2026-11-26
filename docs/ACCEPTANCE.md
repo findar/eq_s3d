@@ -4085,3 +4085,159 @@ climbs 19.9 u. 632 vertices (456 at Y.4).
 - [ ] **[SHOULD] A city of unequal blocks** — Case c: walk every room. room_3 should read as the
       big central space and room_1 as a small side court. Check that `corr_2`'s 19.9 u climb is a
       walkable ramp that lands flush. Not looked at in the 3D viewer for this section.
+
+## Step 29 — Cave clumps
+
+> Roadmap step 29 (`zone-generator-cave-clumps`). At step 27's first look the user said "i would
+> expect the potential for rooms to clump". In stock caves about 0.30 of the edges join two
+> chambers directly, with no passage between them. Ours always had a corridor, and the closest
+> rooms stood 1.4–1.6 median sides apart (stock 0.63). Now about a quarter of a cave's edges are
+> **throats**: the two rooms stand 8 u wall to wall with their doors in line, so the corridor
+> between them is a straight 12 u door to door (archive decision 2). A throat is an ordinary
+> level corridor, never a stair or a Bridge. Caves only: built, hewn, warren, outdoor, classic,
+> city and wilderness builds keep their bytes. The step also made a 30-room cave draw faster
+> (3.94 s to 3.21 s, the same placements; decision 3), and fixed one decor case the throats
+> exposed (task 4).
+>
+> Restart the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and
+> check no stale-code banner shows. Then walk the cases in the viewer (http://localhost:5180/).
+
+Every "now" build ran through `/api/generate` (rule planner, no API key, `EQ_PATH` =
+`F:\everquest_rof2`, branch `agent/clumps-5` at `4b7154f`, task 4 merged). Each passed the gate
+and the Format_Checker on its first build (validated, 1 attempt, no warnings). The "before" column
+is step 27's Z.1 "Now" layout. Task 1 kept every placement float-equal, and task 3's "before" row
+for this seed matches Z.1's measures. It was not rebuilt for this section. The measures are
+`scripts/grid_score.py --shapes` (see Z.1 for what each one means). "thrt" is the share of edges
+whose corridor is no longer than its width door to door. The entry angle now reads only
+non-throat corridor ends, because a throat's doors face square by design (decision 4).
+
+| Case | Zone | Settings | Seed | Build (now) | Vertices |
+|---|---|---|---|---|---|
+| a | Dungeon | Layout **Graph**, Rooms **12**, Theme **Cave**, Verticality **Moderate**, Size **medium**, Decor **Normal** (step 27's case a, Z.1) | 731402518 | `gen_1795652894_48a5b1` (8.5 s) | 10,928 |
+| h1 | Dungeon | Layout **Graph**, Rooms **11**, Theme **Cave**, Verticality **Dramatic**, Size medium, Decor Normal | 154876844 | `gen_1795653000_be2ea2` | 16,490 |
+| h2 | Dungeon | Layout **Graph**, Rooms **17**, Theme **Cave**, Verticality **Dramatic**, Size medium, Decor Normal | 500150329 | `gen_1795653034_9985ae` | 22,740 |
+
+### C.1 — The first-look cave (case a)
+
+The same 12 rooms at the same sizes, and the same 13 corridors between the same rooms. room_0 is
+still the entrance and room_4 the climax. The stair `corr_10` (room_5 → room_8, 102 u up) is
+unchanged, and room_8 is still the one Level 1 room. The layout is redrawn around the throats, so
+every centre moves.
+
+| Room | Before (Z.1 "Now") | Now |
+|---|---|---|
+| room_0 (entrance) | (28.8, 1.2) | (−1.9, 7.0) |
+| room_1 | (173.8, −0.4) | (−66.0, 20.5) |
+| room_2 | (34.8, 93.0) | (54.1, 21.5) |
+| room_3 (cavern) | (−88.6, −118.8) | (79.4, −210.8) |
+| room_4 (climax) | (80.7, −198.1) | (−197.2, −172.1) |
+| room_5 | (389.8, 87.1) | (−154.5, 253.4) |
+| room_6 | (−272.1, −361.9) | (383.6, −420.9) |
+| room_7 | (−210.0, −179.5) | (117.1, −296.0) |
+| room_8 (Level 1) | (413.8, 87.1) | (−178.5, 253.4) |
+| room_9 | (−289.8, −629.5) | (583.2, −451.3) |
+| room_10 | (−24.2, −380.1) | (481.8, −173.8) |
+| room_11 | (−109.5, −527.1) | (713.9, −247.1) |
+
+**Three throats** (3 of 13 edges, 0.23), each level, 0 steps, no Bridge, 18 u wide:
+
+| Corridor | Rooms | Walls 8 u apart | Doors (door to door) | Floor | Bearing off axis |
+|---|---|---|---|---|---|
+| `corr_1` | room_1 → room_0 | room_1's E at x −33.9, room_0's W at x −25.9 | (−35.9, 18.5) → (−23.9, 18.5), **12.0 u** | 0.0 | 11.9° |
+| `corr_6` | room_2 → room_0 | room_2's W at x 30.1, room_0's E at x 22.1 | (32.1, 14.5) → (20.1, 14.5), **12.0 u** | 0.0 | 14.5° |
+| `corr_9` | room_3 → room_7 | room_3's S at y −260.1, room_7's N at y −268.1 | (117.1, −258.1) → (117.1, −270.1), **12.0 u** | 14.0 | 23.9° |
+
+So room_1, room_0 and room_2 make one clump of three round the entrance, room_0 opening W and E,
+and room_7 (a 48 × 55.8 collapsed gallery) opens off the S wall of room_3 (the 156 × 98.6
+cavern). The other ten corridors run 97.6–288.2 u door to door. The nearest pair is room_0 /
+room_2, **57.8 u** centre to centre (two 48 u wide rooms), 1.02 median sides (the median side is
+56.5 u). Next are room_0 / room_1 (65.5 u, 1.16) and room_3 / room_7 (93.2 u, 1.65). The farthest
+from its nearest is room_11, 244 u from room_10 (4.32).
+
+| Measure | Before (task 3's row, = Z.1) | Now | Bar (requirements 2, 3) |
+|---|---|---|---|
+| Grid score | 0.076 | **0.045** | ≤ 0.10 |
+| Edge bearings within 10° of an axis | 0.38 | **0.23** | ≤ 0.35 |
+| Nearest-neighbour CV | 0.27 | **0.51** | ≥ 0.30 |
+| Nearest neighbour min / med / max ÷ median side | 1.64 / 2.50 / 3.67 | **1.02** / 1.85 / 4.32 | min ≤ 1.0 |
+| Entry angle p50 (non-throat ends) / p90 / share over 20° | 30° / 40° / 0.69 | 25° / 40° / 0.80 | p50 ≥ 15° |
+| Throat share | 0 | **0.23** (3 of 13) | 0.20–0.35 |
+| Area CV, max/min; aspect p50 | 0.73, 5.9; 1.37 | 0.73, 5.9; 1.37 | |
+
+Over cave seeds 2000–2039 (task 3's commit 293d9cc, `plan_to_spec`, not built here):
+
+| Measure | Before | Now | Bar |
+|---|---|---|---|
+| Grid score | 0.044 | 0.053 | ≤ 0.10 |
+| Within 10° of an axis | 0.27 | 0.29 | ≤ 0.35 |
+| Nearest-neighbour CV | 0.30 | **0.46** | ≥ 0.30 |
+| Nearest neighbour min ÷ median side | 1.36 | **0.95** | ≤ 1.0 (stock 0.63) |
+| Entry p50, non-throat ends (all ends) | 18° | 21.1° (0°) | ≥ 15° |
+| Throat share | 0.00 | **0.24** | 0.20–0.35 (stock 0.30) |
+
+Entry p50 over all ends reads 0° over the 40 seeds: a quarter of the ends are throats (square by
+design), on top of the ~45% already square (stairs, bent and short corridors). Over the
+non-throat ends it is 21.1°.
+
+- [ ] **[MUST] Each throat flush and walkable** — Case a: walk room_1 → `corr_1` → room_0 →
+      `corr_6` → room_2, then room_3 → `corr_9` → room_7. Each throat should be a short, level
+      12 u step from one room into the next: the floor flush at both doors, no lip, no gap, and
+      the two doors in line (`corr_1` along y 18.5, `corr_6` along y 14.5, `corr_9` along x
+      117.1). Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] No wall sliver or seam between abutting rooms** — Case a: at each throat, look
+      along the 8 u of rock between the two rooms' walls (above, to the sides of the opening, and
+      from the far side of each room). It should read as one solid wall, with no thin sliver, no
+      crack you can see through, and no open seam between the two room shells. Not looked at in
+      the 3D viewer for this section.
+- [ ] **[MUST] Clumps read as one cave, not a grid** — Case a: look at the map, then fly over.
+      room_1, room_0 and room_2 sit almost in a row (y 20.5, 7.0, 21.5, bearings 12° and 14.5°
+      off the x axis). Say whether the clump reads as one cave opening on itself or as three
+      boxes in a line, and whether room_7 reads as a side chamber of room_3. Also say whether the
+      cave as a whole clumps enough now (stock's closest pairs are closer still). Not looked at in
+      the 3D viewer for this section.
+- [ ] **[MUST] Non-throat corridors still angled** — Case a: walk `corr_0` (room_1 → room_4),
+      `corr_3` (room_6 → room_3), `corr_7` (room_4 → room_3) and `corr_8` (room_0 → room_3). They
+      should still meet their walls at an angle (p50 25°, p90 40°), each opening cut where the
+      tunnel meets the rock, with no sliver across the doorway and a flush floor at both ends.
+      Also walk the three that wind (`corr_5`, `corr_11`, `corr_12`). Not looked at in the 3D
+      viewer for this section.
+- [ ] **[MUST] Stair and Level intact** — Case a: walk room_5 → `corr_10` → room_8 (102 u up).
+      The stair should land flush in both rooms. Not looked at in the 3D viewer for this section.
+
+### C.2 — A boulder by the middle of a room (task 4's fix, cases h1 and h2)
+
+Task 4's gate sweep found two cave rooms, neither of them on a throat, that failed the gate's
+`throat_narrow` at both doors on task 3's code (`acf6f59`): case h1's room_9 and case h2's
+room_13. Both now pass on their first build. The gate's clear-width check read the open shell of a boulder
+as floor. When a rock Prop (WKROCK8, RUJROCKS704) covered the free samples near the room's middle,
+the gate's core moved into the boulder's hollow, which no door reaches, and every door read shut.
+Decor now refuses that Prop (a8d84cf). Each room keeps two blocking Props.
+
+- **h1, room_9**: a collapsed gallery at (−483.8, −354.7), floor −190.0, 70.0 × 71.8 u, with three
+  boulders.
+- **h2, room_13**: a collapsed gallery at (−2.3, 374.2), floor −116.0, 61.0 × 53.8 u, with one
+  boulder.
+
+- [ ] **[MUST] Still walkable round the boulder** — Cases h1 and h2: walk into room_9 (h1) and
+      room_13 (h2) from each door and cross to the far side, round the boulders and the Props
+      near the middle. There should be a clear way everywhere, with no squeeze between a rock
+      Prop and a boulder. Also say whether you can see into a boulder's hollow. Not looked at in
+      the 3D viewer for this section.
+
+### C.3 — Known, not this step
+
+- **Built stairs moved over the 41 seeds, 135 → 143.** The grammar's edges, Levels and applied
+  rules are the same before and after, but where rooms moved, Job B splits edges differently
+  and builds more stairs. Case a has the same one stair.
+- **This seed's nearest pair is 1.02 median sides**, just over the ≤ 1.0 bar, accepted
+  (decision 4). The 40-seed median is 0.95.
+- **Cave Graph Flat quality fail share 3.8% → 5.0%** (240 draws per key; 3 more `max_degree`
+  Draws on task 3's layout). Every key is within the 5-point band; the other cave keys moved
+  0–0.4 points.
+- **The gate reads a solid Feature's hollow as floor** (archive follow-up). Decor now steers
+  round it (C.2), but the gate's own samples inside a boulder's plan should be skipped.
+- **Gate sweep 694/696**, as at step 27. The two failures were on master before step 29 (warren
+  graph dramatic 16 seed 565590263, cave classic dramatic 21 seed 1866540615).
+- **Cave draw time** is 1.8x pre-step-27 (decision 3); about 2 s of a 30-room draw is outside
+  `embed.py`, a follow-up.
+- **Nothing in this section was looked at in the 3D viewer.**
