@@ -39,7 +39,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/zone_spec.py, generators/districts.py, generators/layout.py (room and corridor sizing), tests/test_district_races.py (new), goldens it moves (named)
   - Reqs: 4
 
-- [ ] 5. Hall length per District
+- [x] 5. Hall length per District
   - Card: [cards/05-district-halls.md](cards/05-district-halls.md)
   - Type: agent · Size: M · Depends: 1, 4
   - Owns: generators/layout.py (placement run), generators/topology/embed.py, generators/semantics.py (defaults table), tests/test_district_races.py
