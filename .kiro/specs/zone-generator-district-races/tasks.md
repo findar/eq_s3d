@@ -21,7 +21,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: scripts/stock_room_shapes.py, scripts/stock_drops.py (new), .kiro/specs/zone-generator-district-races/archive.md (decisions only)
   - Reqs: 1
 
-- [ ] 2. One-way navigation in the gate
+- [x] 2. One-way navigation in the gate
   - Card: [cards/02-oneway-gate.md](cards/02-oneway-gate.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: analyzer/traverse.py, tests/test_traverse_directed.py (new)
