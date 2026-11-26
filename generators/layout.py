@@ -65,6 +65,11 @@ ENVELOPE_ATTEMPTS = 6
 # second link between two Districts (Req 3.3) before the error goes out.
 DISTRICT_ZONE_TYPES = {"dungeon"}
 DISTRICT_ATTEMPTS = 8
+# Rounds of new breaches an intrusion zone tries after the crossing and conflict
+# passes dropped some (``LayoutGenerator._add_breaches``; district races task 6).
+BREACH_ROUNDS = 8
+# A new breach's hall span at most, over the longest hall of its two Districts and their links.
+BREACH_SPAN = 2.0
 
 # A style profile's corridor run for the graph placement, in corridor widths
 # (``LayoutContext.run_factor``; ``embed.RUN_FACTOR`` otherwise). Winding
@@ -1189,11 +1194,25 @@ class LayoutGenerator:
         # against the OLD graph, so a split could otherwise leave a cliff. On a
         # flat zone every floor_z is 0 and the relax is a no-op.
         self._shapes = {}
+        # An intrusion pair the graph joins by fewer than its links gets new
+        # breaches on the final rooms (district races Req 6), as loop edges the
+        # crossing and conflict passes below judge like any other.
+        breach = part is not None and links > 1
+        tried: set = set()
+        added = breach and self._add_breaches(rooms, edges, part, links, tried)
         graph_changed = self._resolve_crossings(rooms, edges)
+        graph_changed = graph_changed or added
         # Drop a loop edge from any pair of corridors that would cross too close
         # in Z (the residual open-space conflict class the through-room split
         # can't reach). Only loop edges fall, so the graph stays connected.
         graph_changed = self._resolve_conflicts(rooms, edges) or graph_changed
+        # A breach those passes dropped gives way to the next candidate.
+        for _ in range(BREACH_ROUNDS if breach else 0):
+            self._shapes = {}
+            if not self._add_breaches(rooms, edges, part, links, tried):
+                break
+            self._resolve_crossings(rooms, edges)
+            self._resolve_conflicts(rooms, edges)
         if graph_changed and (elevation or themed):
             from collections import defaultdict
 
@@ -1638,6 +1657,82 @@ class LayoutGenerator:
                     or next((e for e in got if c in e), None) or got[0])
             out.append((i, j) if assign[i] == assign[p] else (j, i))
         return out
+
+    def _add_breaches(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                      part, links: int, tried: set) -> bool:
+        """New breaches for each Threshold pair joined by fewer than *links*
+        edges (district races Req 6, the lead's call at the task 6 review): a
+        host room and an intruder room not yet joined, nearest first by hall
+        span, rooms on no link of the pair (nor next to one in their District)
+        before the rest, so the breaches spread along the boundary. A pair is
+        taken only where its corridor could stand: a run no longer than the
+        longest hall of its two Districts or their links, its rooms on one
+        Level and within the run's grade, and no third room in its way.
+        Appended to *edges* (loop edges: the passes after may still drop them,
+        and the next round takes the next candidate; *tried* holds those already
+        added once); True when any was. Draws nothing."""
+        assign = part.assign
+        if self._stack is not None:
+            def blocked(i, j):
+                return self._shape(rooms, i, j).blocked is not None
+        else:
+            crossed = self._crossed_room if self.corridor_clearance else self._crossed_room_centreline
+
+            def blocked(i, j):
+                return crossed(rooms, i, j) is not None
+        have = {frozenset(e) for e in edges}
+        nbrs: Dict[int, set] = {i: set() for i in range(len(rooms))}
+        for i, j in edges:
+            if assign[i] == assign[j]:
+                nbrs[i].add(j)
+                nbrs[j].add(i)
+        added = False
+        for p, c in part.thresholds:
+            host, intruder = assign[p], assign[c]
+            pair = {host, intruder}
+            cross = [e for e in edges if {assign[e[0]], assign[e[1]]} == pair]
+            want = links - len(cross)
+            if want <= 0:
+                continue
+            spans = [self._hall_span(rooms[i], rooms[j]) for i, j in edges
+                     if assign[i] in pair and assign[j] in pair]
+            bound = BREACH_SPAN * max(spans) if spans else 0.0
+            used = {r for e in cross for r in e}
+            near = set(used) | {n for r in used for n in nbrs[r]}
+            cands = []
+            for h in (i for i in range(len(rooms)) if assign[i] == host):
+                for t in (j for j in range(len(rooms)) if assign[j] == intruder):
+                    if frozenset((h, t)) in have:
+                        continue
+                    span = self._hall_span(rooms[h], rooms[t])
+                    if span > bound:
+                        continue
+                    cands.append((span, h, t))
+            cands.sort()
+            for tier in (0, 1, 2):
+                for span, h, t in cands:
+                    if want <= 0:
+                        break
+                    if frozenset((h, t)) in have or frozenset((h, t)) in tried:
+                        continue
+                    if tier == 0 and (h in near or t in near):
+                        continue
+                    if tier == 1 and (h in used or t in used):
+                        continue
+                    if self._is_stair(h, t):
+                        continue
+                    if abs(rooms[h].floor_z - rooms[t].floor_z) > self._edge_cap(rooms, h, t) + 1e-6:
+                        continue
+                    if blocked(h, t):
+                        continue
+                    edges.append((h, t))
+                    have.add(frozenset((h, t)))
+                    tried.add(frozenset((h, t)))
+                    used |= {h, t}
+                    near |= {h, t} | nbrs[h] | nbrs[t]
+                    want -= 1
+                    added = True
+        return added
 
     @staticmethod
     def _district_breaches(part, edges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:

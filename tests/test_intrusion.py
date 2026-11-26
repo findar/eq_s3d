@@ -30,6 +30,33 @@ def test_intrusion_is_a_relationship():
     assert INTRUSION in RELATIONSHIPS and INTRUSION_LINKS == 3
 
 
+@pytest.mark.parametrize("layout", ["classic", "graph"])
+def test_new_breaches_fill_most_pairs(layout):
+    """Where the graph offers too few cross edges, new ones are added (the lead's call
+    at the task 6 review): most pairs end with 2-3 links, none longer than
+    BREACH_SPAN times the longest hall of its two Districts."""
+    from generators.layout import BREACH_SPAN
+    pairs = multi = 0
+    for seed in range(2000, 2006):
+        gen = LayoutGenerator("dungeon", seed=seed, engine=layout)
+        spec = gen.generate("t", room_count=16, districts=True, district_plan=PLAN,
+                            district_relationship=INTRUSION)
+        by = {r.id: r for r in spec.rooms}
+        per = Counter()
+        for c in spec.corridors:
+            a, b = by[c.from_room], by[c.to_room]
+            if a.district != b.district:
+                per[frozenset((a.district, b.district))] += 1
+                inner = [LayoutGenerator._hall_span(by[x.from_room], by[x.to_room])
+                         for x in spec.corridors
+                         if {by[x.from_room].district, by[x.to_room].district} <= {a.district, b.district}]
+                assert LayoutGenerator._hall_span(a, b) <= BREACH_SPAN * max(inner) * 1.5
+        pairs += len(per)
+        multi += sum(v >= 2 for v in per.values())
+        assert max(per.values()) <= INTRUSION_LINKS
+    assert multi >= 0.6 * pairs
+
+
 graphs = st.integers(8, 30).flatmap(
     lambda n: st.tuples(st.just(n), st.integers(0, 2**31), st.integers(0, n - 1),
                         st.integers(2, 3), st.integers(0, 2**31)))
@@ -144,16 +171,11 @@ def test_intrusion_layout(layout, seed):
                                                if by[c.from_room].district == 1 == by[c.to_room].district)}
 
 
-@pytest.mark.slow
 def test_breaches_are_rough_breaches(monkeypatch):
     """Through the plan (graph walls are drawn there): each breach asks for a breach
     at its host's door, and a plain one runs rough."""
     import ai.expand as ex
-    import ai.schema as sch
     from ai.schema import ZonePlan
-    # Task 9 puts intrusion in the plan's relationships; until then, patched here.
-    monkeypatch.setattr(sch, "VALID_DISTRICT_RELATIONSHIPS",
-                        sorted(set(sch.VALID_DISTRICT_RELATIONSHIPS) | {INTRUSION}))
     monkeypatch.setattr(ex, "layout_proposals", lambda plan, s: [dict(p) for p in PLAN])
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 24, "layout": "graph",
                                    "verticality": "flat", "districts": True,
