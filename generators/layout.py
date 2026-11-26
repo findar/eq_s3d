@@ -309,6 +309,42 @@ def _line_clear(line, cor: CorridorSpec, rooms: List[RoomSpec], step: float = 2.
     return True
 
 
+def _centre_span(wps, room: RoomSpec, eps: float = 2.0) -> float:
+    """The longest run of a route's centreline (``wps``) inside ``room``'s plan box shrunk by
+    ``eps``: the gate's measure of a room a corridor genuinely cuts through
+    (``analyzer.traverse._route_penetration_span``, the room shrunk by the agent's
+    ``adjacency_eps``), as ``_crossed_room_centreline`` measures it."""
+    hw_, hd_ = room.width / 2, room.depth / 2
+    rx0, ry0 = room.center_x - hw_ + eps, room.center_y - hd_ + eps
+    rx1, ry1 = room.center_x + hw_ - eps, room.center_y + hd_ - eps
+    if rx0 > rx1 or ry0 > ry1:
+        rx0, ry0, rx1, ry1 = rx0 - eps, ry0 - eps, rx1 + eps, ry1 + eps
+    best = 0.0
+    for (x0, y0), (x1, y1) in zip(wps, wps[1:]):
+        dx, dy = x1 - x0, y1 - y0
+        t0, t1, ok = 0.0, 1.0, True
+        for p, q in ((-dx, x0 - rx0), (dx, rx1 - x0), (-dy, y0 - ry0), (dy, ry1 - y0)):
+            if abs(p) < 1e-9:
+                if q < 0:
+                    ok = False
+                    break
+                continue
+            t = q / p
+            if p < 0:
+                if t > t1:
+                    ok = False
+                    break
+                t0 = max(t0, t)
+            else:
+                if t < t0:
+                    ok = False
+                    break
+                t1 = min(t1, t)
+        if ok and t1 > t0:
+            best = max(best, math.hypot(dx, dy) * (t1 - t0))
+    return best
+
+
 def _line_solids(line, cor: CorridorSpec) -> list:
     """An angled corridor's line as ``transitions`` solids: its strip's runs, floor to
     headroom (``_entry_clear``)."""
@@ -2986,14 +3022,27 @@ class LayoutGenerator:
                 continue
             rx0, ry0 = r.center_x - r.width / 2, r.center_y - r.depth / 2
             rx1, ry1 = r.center_x + r.width / 2, r.center_y + r.depth / 2
+            # A third room's band: the lowest floor and highest top of the legs over it.
+            band = [math.inf, -math.inf]
             for p, ((x0, y0, x1, y1), zlo, zhi, _pin) in enumerate(pieces):
                 if own and ((k == i and p == 0) or (k == j and p == n - 1)):
                     continue
                 ox, oy = min(x1, rx1) - max(x0, rx0), min(y1, ry1) - max(y0, ry0)
+                if not own and p < n and ox > _TOUCH and oy > _TOUCH:
+                    band = [min(band[0], zlo), max(band[1], zhi)]
                 gap = _TOUCH if own else -_ROOM_TOUCH
                 if ox > gap and oy > gap and not self._z_clear(zlo, zhi, r):
                     blocked = k
                     break
+            if (blocked is None and band[0] <= band[1] and not self._z_clear(*band, r)
+                    and _centre_span(wps, r) > hw):
+                # Legs over and under a room the centreline cuts through, each clear alone:
+                # the gate judges the band of all the legs over such a room
+                # (``analyzer.traverse.stacked_rooms``), so the route must clear that whole
+                # band (hall length step 30, task 8: cave graph dramatic 18 at Hall length
+                # 0.5, seed 1068169087, corr_10's U-route over room_11 at 116 and under it
+                # at -190).
+                blocked = k
             if blocked is not None:
                 break
         return _Shape(cor, route, pieces, blocked)

@@ -124,6 +124,21 @@ def test_angled_lines_keep_off_other_corridors(rooms, seed):
             assert _entry_clear(lines[c.id], c, spec.corridors, by, dict(taken)), c.id
 
 
+def test_a_stair_over_and_under_a_room_clears_its_whole_band():
+    """At HALL_MIN cave dramatic 18 (seed 1068169087) laid corr_10's U-route stair over room_11
+    on one leg and under it on another, each clear alone; the gate judges the band of all the
+    legs over a room the centreline cuts through. Every room a stair cuts through is now wholly
+    over or under it."""
+    from analyzer.traverse import AgentModel, _genuinely_crossed_rooms, stacked_rooms
+    spec = _cave_like("cave", 18, "dramatic", 1068169087, HALL_MIN)
+    by = {r.id: r for r in spec.rooms}
+    eps = AgentModel().adjacency_eps
+    for c in spec.corridors:
+        route = corridor_route(c, by)
+        crossed = set(_genuinely_crossed_rooms(route, c.width / 2, spec, c, eps))
+        assert crossed <= set(stacked_rooms(c, route, crossed, by, AgentModel())), c.id
+
+
 def test_a_corridor_keeps_off_a_third_rooms_wall():
     """At HALL_MIN warren moderate 28 (seed 625239587) ran corr_21 0.04 u off room_15's wall,
     within the gate's OUTLINE_TOL, an open seam in the room. No corridor on a room's Level now
