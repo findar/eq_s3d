@@ -33,7 +33,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/layout.py (gating and pacing only), generators/edits.py, tests/test_gating_directed.py (new)
   - Reqs: 3
 
-- [ ] 4. A race per District
+- [x] 4. A race per District
   - Card: [cards/04-race.md](cards/04-race.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: generators/zone_spec.py, generators/districts.py, generators/layout.py (room and corridor sizing), tests/test_district_races.py (new), goldens it moves (named)

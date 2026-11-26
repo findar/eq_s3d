@@ -17,3 +17,4 @@ A District can carry its own race: its rooms and corridors are sized by that rac
 - If decor or geometry needs a fix, stop and report.
 
 ## Result
+✔ 4f0daca · 4285 passed
