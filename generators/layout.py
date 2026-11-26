@@ -114,6 +114,12 @@ def profile_run_factor(profile: Optional[str], winding: float = 1.0) -> Optional
 HALL_RUN_SLOPE = {"cave": 1.25}
 HALL_RUN_SLOPE_BUILT = 1.4
 HALL_SPREAD_SLOPE = 0.65
+#: The least the classic scatter's spread is scaled to: about where the separation floor
+#: holds the halls (task 8: city halls 0.86-0.89 of L = 1's at 0.675 and at 0.75 alike).
+#: Scattered tighter, the separation only packs the rooms closer, and the crowded corridors
+#: clash (loops dropped, more dead ends) and run short jogs (rises capped by the run): city
+#: classic moderate failed its bands 7.0% at Hall length 0.5, 2.5% here, as at 1.
+HALL_SPREAD_FLOOR = 0.75
 HALL_GAP_SLOPE = 1.2
 
 
@@ -126,7 +132,7 @@ def hall_run_scale(profile: Optional[str], hall_length: float = 1.0) -> float:
 
 def hall_spread_scale(hall_length: float = 1.0) -> float:
     """What the classic scatter ellipse's spread is multiplied by at *hall_length*."""
-    return max(0.5, 1.0 + HALL_SPREAD_SLOPE * (hall_length - 1.0))
+    return max(HALL_SPREAD_FLOOR, 1.0 + HALL_SPREAD_SLOPE * (hall_length - 1.0))
 
 
 def hall_gap_scale(hall_length: float = 1.0) -> float:
