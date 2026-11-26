@@ -123,3 +123,23 @@ def test_angled_lines_keep_off_other_corridors(rooms, seed):
         if c.id in lines:
             assert _entry_clear(lines[c.id], c, spec.corridors, by, dict(taken)), c.id
 
+
+def test_a_corridor_keeps_off_a_third_rooms_wall():
+    """At HALL_MIN warren moderate 28 (seed 625239587) ran corr_21 0.04 u off room_15's wall,
+    within the gate's OUTLINE_TOL, an open seam in the room. No corridor on a room's Level now
+    runs within the gate's tolerance of a third room's wall."""
+    from analyzer.traverse import OUTLINE_TOL
+    from generators.topology.embed import SLAB
+    from generators.transitions import _corridor_boxes
+    spec = _cave_like("warren", 28, "moderate", 625239587, HALL_MIN)
+    by = {r.id: r for r in spec.rooms}
+    for c in spec.corridors:
+        for _k, (x0, y0, x1, y1, z0, z1) in _corridor_boxes(c, by):
+            for r in spec.rooms:
+                if r.id in (c.from_room, c.to_room):
+                    continue
+                (rx0, ry0, rz0), (rx1, ry1, rz1) = r.bounds
+                if z0 >= rz1 + SLAB - 1e-6 or z1 + SLAB <= rz0 + 1e-6:
+                    continue
+                ox, oy = min(x1, rx1) - max(x0, rx0), min(y1, ry1) - max(y0, ry0)
+                assert not (ox > -OUTLINE_TOL and oy > -OUTLINE_TOL), (c.id, r.id, ox, oy)

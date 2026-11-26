@@ -43,6 +43,12 @@ from .zone_types import STYLE_PROFILE
 
 # Overlap below this (u) is two faces touching, not one inside the other.
 _TOUCH = 1e-6
+#: A stacked build's corridor keeps this far (u) off a third room's walls on its Level: the
+#: gate reads faces within ``analyzer.traverse.OUTLINE_TOL`` (0.05 u) of a room's wall as the
+#: room's own, so a tube flush against one leaves its edges an open seam in that room (hall
+#: length step 30, task 8: warren graph moderate 28 at Hall length 0.5, seed 625239587, corr_21
+#: 0.04 u off room_15's east wall).
+_ROOM_TOUCH = 0.06
 #: The XY cell the gate compares two corridors' floors on (``analyzer.traverse.
 #: _corridor_floor_z``: ``max(4 * adjacency_eps, 16)``). Two tubes 3 u apart on one cell read
 #: as crossing there (random placement task 12: warren graph moderate 21, seed 1093450890,
@@ -2983,9 +2989,9 @@ class LayoutGenerator:
             for p, ((x0, y0, x1, y1), zlo, zhi, _pin) in enumerate(pieces):
                 if own and ((k == i and p == 0) or (k == j and p == n - 1)):
                     continue
-                if (min(x1, rx1) - max(x0, rx0) > _TOUCH
-                        and min(y1, ry1) - max(y0, ry0) > _TOUCH
-                        and not self._z_clear(zlo, zhi, r)):
+                ox, oy = min(x1, rx1) - max(x0, rx0), min(y1, ry1) - max(y0, ry0)
+                gap = _TOUCH if own else -_ROOM_TOUCH
+                if ox > gap and oy > gap and not self._z_clear(zlo, zhi, r):
                     blocked = k
                     break
             if blocked is not None:
