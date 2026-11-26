@@ -255,7 +255,9 @@ def test_map_line_runs_the_scaled_legs(seed, monkeypatch):
 #: Re-pinned from (6, 23, 55) by random placement task 11: room sizes vary, so seed 23's and
 #: 55's layouts moved and no straight Breach held a path (over cave seeds 0-79 the held share
 #: is 97 of 133 against master's 89 of 124).
-FRAMED_SEEDS = (3, 6, 19)
+#: Seed 8 added by hall-length task 8: seed 6's Z frame (corr_1) lost its angle, its line
+#: crossing corr_3's U-route stub at room_1.
+FRAMED_SEEDS = (3, 6, 8, 19)
 
 
 @functools.lru_cache(maxsize=None)

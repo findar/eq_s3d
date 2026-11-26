@@ -363,11 +363,13 @@ def _entry_clear(line, cor: CorridorSpec, every: List[CorridorSpec], by_id,
                  taken: Dict[str, list]) -> bool:
     """Does an angled corridor's line keep the player's half-width off every other corridor
     beside it in Z (``transitions.strip_clear``): one already angled by its line (``taken``),
-    any other by its legs, bends and Switchback stairwell? A corridor sharing a room with it
-    may meet its run-out at that room. The line cuts straight across its route's bends, so a
-    long Z or U route's line strays far from the legs the layout cleared: hall length step 30,
-    task 8, cave graph at Hall length 3 (seeds 473448209, 680460140, 839608415, 1855383429: a
-    line across another corridor's stairwell; 1704093923: two lines crossing)."""
+    any other by its legs, bends and Switchback stairwell? With a corridor sharing a room, the
+    line's run-out at that room may meet it, and the line may meet its doorway stub and first
+    bend there on a Z route (``_resolve_conflicts``' rule for two corridors from one room). The line cuts
+    straight across its route's bends, so a long Z or U route's line strays far from the legs
+    the layout cleared: hall length step 30, task 8, cave graph at Hall length 3 (seeds
+    473448209, 680460140, 839608415, 1855383429: a line across another corridor's stairwell;
+    1704093923: two lines crossing)."""
     from .transitions import _corridor_boxes, _solid, path_pieces, strip_clear
     pieces = path_pieces(line, cor.width / 2, cor.from_z, cor.to_z)
     if pieces is None:
@@ -378,12 +380,17 @@ def _entry_clear(line, cor: CorridorSpec, every: List[CorridorSpec], by_id,
             continue
         own = taken.get(other.id)
         if own is None:
+            boxes = _corridor_boxes(other, by_id)
+            n = sum(1 for k, _ in boxes if k >= 0)        # legs, then bends, then a stairwell
+            # A Z route's stub and bend at each end are pinned to that room (``floor_pieces``).
+            pins = {0: other.from_room, n: other.from_room, n - 1: other.to_room,
+                    2 * n - 2: other.to_room} if corridor_route(other, by_id).kind == "z" else {}
             own = taken[other.id] = [
-                _solid([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1)
-                for _, (x0, y0, x1, y1, z0, z1) in _corridor_boxes(other, by_id)]
+                _solid([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1, pins.get(p, ""))
+                for p, (_, (x0, y0, x1, y1, z0, z1)) in enumerate(boxes)]
         shared = ({other.from_room, other.to_room} & {cor.from_room, cor.to_room})
         tag = (cor.from_room if cor.from_room in shared else cor.to_room) if shared else ""
-        solids.extend(s[:4] + (tag,) for s in own)
+        solids.extend(s[:4] + (tag,) for s in own if not s[4] or s[4] not in shared)
     return strip_clear(cor, pieces, solids)
 
 
