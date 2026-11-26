@@ -280,6 +280,7 @@ def tunnel_wall(resolution: float) -> float:
 def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
                        room_count: int = DEFAULT_ROOMS, scale: float = 1.0,
                        engine=None, facing: int = 0, entrance_side: float = 0.0,
+                       hall_length: float = 1.0,
                        **kwargs) -> Tuple[ZoneSpec, List[str]]:
     """A box-dungeon layout inside ``envelope``.
 
@@ -294,9 +295,11 @@ def layout_in_envelope(name: str, seed: Optional[int], envelope: Envelope,
     and ``entrance_side`` (the entrance room's least side, not scaled);
     the engine's own values are restored afterwards. Every engine's entrance
     room keeps ``entrance_side`` on both sides (the layout sees to it).
+    ``hall_length`` (a plan's Hall length, step 30) spaces the rooms wider
+    after the fit to the hill (``layout.hall_gap_scale``); 1 is as before.
     Returns the layout and the generator's warnings (``rooms_reduced`` when
     rooms were dropped)."""
-    gen = LayoutGenerator("dungeon", seed=seed, engine=engine)
+    gen = LayoutGenerator("dungeon", seed=seed, engine=engine, hall_length=hall_length)
     lo, hi = semantics.ROOM_SIDE_BAND
     gen.size_shift = math.log(scale) / math.log(hi / lo)
     gen.entrance_side = entrance_side
@@ -351,15 +354,36 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     # Plans with a corridor through a third room (``crosses_room``), by try: the last resort.
     crossing = {}
 
+    # A plan's Hall length (step 30): each try plans at 1 first, as a Hall length of 1
+    # does; only a try that plans so is laid out again at the Hall length (then halfway
+    # to 1), and kept if that plans too, with as many rooms. So the try that plans, and
+    # its grown graph, Levels and rooms, is the one a Hall length of 1 plans.
+    hall_length = float(kwargs.pop("hall_length", 1.0))
+    records = (errors, no_tunnel, crossing)
+
     def plan(k: int, drop_rooms: bool):
         """Try ``k``: its layout and Entrance, or None (``errors`` /
         ``no_tunnel`` take why)."""
+        planned = plan_at(k, drop_rooms, 1.0)
+        if planned is None or hall_length <= 1.0:
+            return planned
+        seen = [dict(r) for r in records]
+        for length in (hall_length, 1.0 + (hall_length - 1.0) / 2):
+            longer = plan_at(k, drop_rooms, length)
+            if longer is not None and len(longer[0].rooms) == len(planned[0].rooms):
+                return longer
+            for r, before in zip(records, seen):    # a longer try's misses don't count
+                r.clear()
+                r.update(before)
+        return planned
+
+    def plan_at(k: int, drop_rooms: bool, length: float):
         shrink, facing = tries[k]
         try:
             layout, warnings = layout_in_envelope(
                 name, seed, envelope, room_count, scale=FIT_SHRINK ** shrink,
                 engine=engine, facing=facing, entrance_side=side, drop_rooms=drop_rooms,
-                **kwargs)
+                hall_length=length, **kwargs)
             # The Tunnel opens into the layout's entrance room, so the
             # pacing (depth, climax, keys) runs from the way in.
             first = next(r.id for r in layout.rooms if r.role == "entrance")

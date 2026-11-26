@@ -110,6 +110,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                 dungeon_theme=plan.dungeon_theme, dungeon_race=plan.dungeon_race,
                 elemental_tint=(plan.elemental_tint or None),
                 verticality=plan.verticality, rooms_seed=plan.rooms_seed,
+                hall_length=plan.hall_length,
                 engine=layout_engine(plan.layout, plan.rule_set, plan.verticality,
                                      outdoor=True))
             spec.layout = layout_block(spec.layout, spec)
@@ -143,7 +144,8 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
     district_args = _district_args(plan, rooms_seed, notes)
     profile = purpose_profile(plan, district_args)
     gen = LayoutGenerator(zone_type=plan.zone_type, seed=rooms_seed, engine=engine,
-                          profile=profile, winding=plan.winding)
+                          profile=profile, winding=plan.winding,
+                          hall_length=plan.hall_length)
 
     # Apply size as a shift within the race's room bands (generate() sizes
     # the rooms from the race; this persists), on top of the Purpose's
@@ -287,6 +289,9 @@ def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:
         spec.rooms_seed = plan.rooms_seed
     if plan.room_decor_seeds:
         spec.room_decor_seeds = dict(plan.room_decor_seeds)
+    # The Hall length its layout was spaced by (step 30); a wilderness has no halls.
+    if plan.hall_length != 1.0 and plan.zone_type != "wilderness":
+        spec.hall_length = plan.hall_length
     return spec
 
 

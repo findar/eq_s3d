@@ -21,7 +21,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: scripts/stock_room_shapes.py, scripts/grid_score.py, .kiro/specs/zone-generator-hall-length/archive.md (decisions only)
   - Reqs: 1, 2
 
-- [ ] 2. Hall length on the plan, the spec and every layout
+- [x] 2. Hall length on the plan, the spec and every layout
   - Card: [cards/02-field.md](cards/02-field.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: ai/schema.py, generators/zone_spec.py, generators/layout.py, generators/layout_engine.py, generators/topology/embed.py, generators/outdoor_dungeon.py, generators/pipeline.py, tests/test_hall_length.py (new), goldens it moves (named in the commit)

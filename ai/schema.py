@@ -172,6 +172,30 @@ def winding_value(value: Any) -> float:
     return max(0.0, min(WINDING_MAX, number))
 
 
+# Hall length (hall-length step 30, Req 1): how long the halls between joined rooms run, a
+# multiple of today's door-to-door length (``layout.hall_run_scale`` and friends turn it
+# into each layout's spacing). 1 is today's zones, byte for byte. The range is measured
+# (task 1, that spec's archive, decisions 2-3): stock's zone medians span about 0.5-3x ours;
+# below 1 a layout shortens only as far as its separation floor allows.
+HALL_MIN = 0.5
+HALL_MAX = 3.0
+DEFAULT_HALL_LENGTH = 1.0
+
+
+def hall_length_value(value: Any) -> float:
+    """A plan's hall length: a number clamped to ``[HALL_MIN, HALL_MAX]``; anything else
+    (None, a bool, text that isn't a number, NaN) falls back to 1.0, as ``winding`` does."""
+    if isinstance(value, bool):
+        return DEFAULT_HALL_LENGTH
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_HALL_LENGTH
+    if number != number:                    # NaN
+        return DEFAULT_HALL_LENGTH
+    return max(HALL_MIN, min(HALL_MAX, number))
+
+
 def district_switch(value: Any) -> bool:
     """The Districts switch: a bool, or a form-style string ("true"/"on"/"1")."""
     if isinstance(value, str):
@@ -319,6 +343,9 @@ class ZonePlan:
     # How far rough corridors stray (step 26): 0 straight .. WINDING_MAX; 1 the stock tunnel.
     # ``to_dict`` leaves it out at 1.
     winding: float = DEFAULT_WINDING
+    # How long the halls between rooms run (step 30): HALL_MIN .. HALL_MAX, a multiple of
+    # today's length; 1 today's zones. ``to_dict`` leaves it out at 1.
+    hall_length: float = DEFAULT_HALL_LENGTH
 
     # Named special regions to add (water pools, lava, etc.)
     regions: List[str] = field(default_factory=list)   # kinds from VALID_REGION_KINDS
@@ -400,6 +427,7 @@ class ZonePlan:
         if self.verticality not in ("flat", "moderate", "dramatic"):
             self.verticality = "moderate"
         self.winding = winding_value(self.winding)
+        self.hall_length = hall_length_value(self.hall_length)
         self.regions = [r for r in self.regions if r in VALID_REGION_KINDS]
         self.locks = max(0, min(5, int(self.locks)))
         if self.dungeon_theme and self.dungeon_theme not in VALID_DUNGEON_THEMES:
@@ -477,6 +505,8 @@ class ZonePlan:
         out = asdict(self)
         if out.get("winding") == DEFAULT_WINDING:
             out.pop("winding", None)
+        if out.get("hall_length") == DEFAULT_HALL_LENGTH:
+            out.pop("hall_length", None)
         layers = out.pop("decor_layers", ())
         if layers:
             out["decor_layers"] = list(layers)

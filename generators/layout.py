@@ -94,6 +94,46 @@ def profile_run_factor(profile: Optional[str], winding: float = 1.0) -> Optional
     return base + WINDING_RUN * (winding - 1.0)
 
 
+# Hall length (hall-length step 30; that spec's archive, decisions 2-3): a plan's
+# ``hall_length`` L scales each layout's own spacing knob, which is affine in the
+# door-to-door length it gives, not proportional (run x2 gives d2d x1.72 built, x1.81
+# cave). At L = 1 every knob is 1 and nothing is touched, so zones keep their bytes.
+# - The graph placement's run (built, warren, cave): ``hall_run_scale``, by profile.
+# - The classic scatter ellipse's spread (classic fortress, city): ``hall_spread_scale``.
+# - An Envelope build (an outdoor dungeon): the fit to the hill shrinks the run back, so
+#   the separation gap after it carries the length (``hall_gap_scale``), never below
+#   today's: rooms keep a full corridor width apart (Z-corridors need it).
+# A throat's gap (``embed.THROAT_GAP``) is drawn in units of the run and so never scales.
+# Below 1 each knob shortens as far as the separation floor lets it (decision 3).
+HALL_RUN_SLOPE = {"cave": 1.25}
+HALL_RUN_SLOPE_BUILT = 1.4
+HALL_SPREAD_SLOPE = 0.65
+HALL_GAP_SLOPE = 1.2
+
+
+def hall_run_scale(profile: Optional[str], hall_length: float = 1.0) -> float:
+    """What the graph placement's run is multiplied by at a plan's *hall_length*, for a
+    style *profile* (a cave's halls track the run more closely)."""
+    slope = HALL_RUN_SLOPE.get(profile or "", HALL_RUN_SLOPE_BUILT)
+    return max(0.25, 1.0 + slope * (hall_length - 1.0))
+
+
+def hall_spread_scale(hall_length: float = 1.0) -> float:
+    """What the classic scatter ellipse's spread is multiplied by at *hall_length*."""
+    return max(0.5, 1.0 + HALL_SPREAD_SLOPE * (hall_length - 1.0))
+
+
+def hall_gap_scale(hall_length: float = 1.0) -> float:
+    """What an Envelope build's separation gap is multiplied by at *hall_length*: never
+    under 1 (the gap is the separation floor)."""
+    return max(1.0, 1.0 + HALL_GAP_SLOPE * (hall_length - 1.0))
+
+
+#: How many halvings an Envelope build spends finding the widest gap that fits its hill
+#: (``LayoutGenerator._widest_fit``): (top - 1) / 8, a quarter at Hall length 3.
+HALL_GAP_BISECTIONS = 3
+
+
 class DistrictSplitError(ValueError):
     """A corridor split or swap left two Districts joined by more than their
     one Threshold (districts spec Req 3.3), or two corridors clashing that no
@@ -387,7 +427,8 @@ class LayoutGenerator:
 
     def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None,
                  engine: Union[LayoutEngine, str, None] = None,
-                 profile: Optional[str] = None, winding: float = 1.0):
+                 profile: Optional[str] = None, winding: float = 1.0,
+                 hall_length: float = 1.0):
         # The Layout_Engine that lays out the rooms and their graph (Job A);
         # ``None`` is the classic TinyKeep engine, a string names one in
         # ``layout_engine.ENGINES``.
@@ -425,6 +466,13 @@ class LayoutGenerator:
         # (``profile_run_factor``); None: ``embed.RUN_FACTOR``.
         self.run_factor = profile_run_factor(profile, winding)
         self.jitter = (profile or "") in JITTER_PROFILES
+        # The plan's Hall length (step 30): each layout's spacing knob scales by it
+        # (``hall_run_scale``, ``hall_spread_scale``, ``hall_gap_scale``); 1 leaves all alone.
+        self.hall_length = float(hall_length)
+        self._hall_profile = profile or ""
+        # An Envelope build's separation gap multiplier for the pass running (``generate``
+        # finds the widest up to ``hall_gap_scale`` that fits the hill: ``_widest_fit``).
+        self._hall_gap = 1.0
         # Set per generate from the engine (``EngineResult.jittered``, ``.bearing``).
         self._straight_doors = False
         self._bearing_doors = False
@@ -646,9 +694,13 @@ class LayoutGenerator:
                         raise
         floor = min(room_count, MIN_ENVELOPE_ROOMS) if drop_rooms else room_count
         self._apply_room_scale(room_count)
+        top = hall_gap_scale(self.hall_length)
         for count in range(room_count, floor - 1, -1):
             for _ in range(ENVELOPE_ATTEMPTS):
-                spec = self._generate_once(count, *args, envelope=envelope)
+                if top > 1.0:
+                    spec = self._widest_fit(top, count, args, envelope)
+                else:
+                    spec = self._generate_once(count, *args, envelope=envelope)
                 if self.fits(spec, envelope):
                     if count < room_count:
                         self.warnings.append(
@@ -658,6 +710,42 @@ class LayoutGenerator:
         raise EnvelopeFitError(
             f"{floor} rooms do not fit the envelope after "
             f"{ENVELOPE_ATTEMPTS} attempts")
+
+    def _widest_fit(self, top: float, count: int, args: tuple,
+                    envelope: Envelope) -> ZoneSpec:
+        """One Envelope attempt at a Hall length over 1 (step 30). First the attempt a Hall
+        length of 1 makes (today's gap): if it doesn't fit, that is the attempt, as at 1, so
+        the next draw is the one 1 makes too. If it fits, the widest separation gap
+        multiplier up to *top* whose layout still fits, found by bisection on the same draw
+        (the rng as it was before the attempt), then laid out once more at it, so the
+        generator's state is that layout's. Either way the draw, so the grown graph, Levels
+        and room count, is the one a Hall length of 1 keeps."""
+        state = self.rng.getstate()
+        kept = len(self.warnings)
+
+        def once(g: float) -> ZoneSpec:
+            self.rng.setstate(state)
+            del self.warnings[kept:]
+            self._hall_gap = g
+            try:
+                return self._generate_once(count, *args, envelope=envelope)
+            finally:
+                self._hall_gap = 1.0
+
+        spec = once(1.0)
+        if not self.fits(spec, envelope):
+            return spec
+        spec = once(top)
+        if self.fits(spec, envelope):
+            return spec
+        lo, hi = 1.0, top
+        for _ in range(HALL_GAP_BISECTIONS):
+            mid = (lo + hi) / 2
+            if self.fits(once(mid), envelope):
+                lo = mid
+            else:
+                hi = mid
+        return once(lo)
 
     def _generate_once(self, room_count: int, name: str, add_lights: bool,
                        elevation: bool, locks: int, dungeon_theme: str,
@@ -1010,6 +1098,15 @@ class LayoutGenerator:
                         race: str) -> LayoutContext:
         """The seam's one coupling to this generator (design "The seam")."""
         from .topology.rewrite import BuildContext   # see layout_engine.__getattr__
+        # Hall length (step 30): a longer or shorter run for the graph placement and a
+        # wider or narrower scatter for the classic one. An Envelope build lengthens its
+        # halls in the separation instead (``_separate_rooms``).
+        run_factor, spread = self.run_factor, 1.0
+        if self.hall_length != 1.0 and self._envelope is None:
+            from .topology.embed import RUN_FACTOR
+            base = RUN_FACTOR if run_factor is None else run_factor
+            run_factor = base * hall_run_scale(self._hall_profile, self.hall_length)
+            spread = hall_spread_scale(self.hall_length)
         return LayoutContext(
             rng=self.rng,
             room_min=self.room_min, room_max=self.room_max,
@@ -1021,8 +1118,8 @@ class LayoutGenerator:
                                room_count=room_count),
             size_shift=self.size_shift,
             height_shift=self.size_shift - self.profile_shift,
-            run_factor=self.run_factor, jitter=self.jitter, seed=self.seed,
-            bearing=self.jitter)
+            run_factor=run_factor, jitter=self.jitter, seed=self.seed,
+            bearing=self.jitter, hall_spread=spread)
 
     # ------------------------------------------------------------------
     # Gating — solvability-guaranteed lock & key placement
@@ -1273,6 +1370,10 @@ class LayoutGenerator:
             # (Before stock scale this read max(width, 30): corridors were at
             # least 40 u, so the 30 never applied. Stock corridors are 3 H.)
             gap = self.corridor_width + 1.0
+            # An Envelope build's halls lengthen here (hall length step 30): the fit to
+            # the hill shrinks any longer run back, so the gap after it carries them.
+            if self._envelope is not None and self._hall_gap != 1.0:
+                gap *= self._hall_gap
             iterations = iterations or 200
         else:
             gap = max(self.corridor_width * 0.5, 30.0)

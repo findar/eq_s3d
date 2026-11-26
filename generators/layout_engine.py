@@ -110,6 +110,9 @@ class LayoutContext:
     # random placement task 11). None (a heightfield zone): the gaussian
     # between ``room_min`` and ``room_max``.
     footprint_spread: Optional[Tuple[float, float, float]] = None
+    # The classic scatter ellipse's spread is multiplied by this (a plan's Hall length,
+    # ``layout.hall_spread_scale``; hall length step 30). 1: as before.
+    hall_spread: float = 1.0
 
 
 @dataclass
@@ -176,6 +179,9 @@ class ClassicEngine:
         std_side = (ctx.room_max - ctx.room_min) / 3
         # Ellipse radius grows with room count so rooms have space to separate.
         spread = mean_side * (0.8 + 0.5 * room_count)
+        if ctx.hall_spread != 1.0:
+            # A plan's Hall length (step 30): wider apart, longer halls.
+            spread *= ctx.hall_spread
         ox = oy = 0.0
         if envelope is not None:
             spread = min(spread, 2.0 * max(0.0, envelope.inradius - mean_side / 2))
