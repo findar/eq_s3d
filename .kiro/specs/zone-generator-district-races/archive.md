@@ -20,5 +20,8 @@
    Districts only (requirement 5), and the step 31 look decides whether it stays.
 4. **Classic takes a per-District hall length, by scaling the District's offsets from its centre** (task 5), as task 4
    does for race: the zone-wide spread would lengthen the goblins' halls too. Graph uses a run per edge in the springs.
+5. **The Graph giant hall misses its band on seeds 2000-2019 (x2.43, band 2.55-3.45); the lead accepted it** (task 5
+   review). The same layout with and without the default gives x2.96. The shortfall is retry selection: longer halls clash
+   more and the survivors run shorter. Seeds 2020-2059 give x2.68, inside the band. The default is provisional anyway (decision 3).
 
 ## Follow-ups
