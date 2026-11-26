@@ -40,3 +40,4 @@ city/classic/moderate 7.0% (1: 2.5%), 13 new Draws failing `dead_end_ratio` and
   generators/, stop and report.
 
 ## Result
+✔ 452bfea · 4279 passed

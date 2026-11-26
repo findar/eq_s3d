@@ -92,3 +92,69 @@ def test_halls_scale_and_the_graph_stays(kind):
             assert lg.layout["applied"] == b.layout["applied"]
             assert _graph(lg) == _graph(b)
             assert lg.layout.get("levels") == b.layout.get("levels")
+
+
+# --- Task 8: failures long and short halls exposed (hall-length archive decision 5) -------------
+
+@functools.lru_cache(maxsize=None)
+def _cave_like(theme, rooms, verticality, seed, hall_length):
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "dungeon_theme": theme, "layout": "graph",
+                                   "room_count": rooms, "verticality": verticality,
+                                   "hall_length": hall_length}, [])
+    plan.name = "halls"
+    return plan_to_spec(plan, seed=seed, warnings=[])
+
+
+@pytest.mark.parametrize("rooms,seed", [(4, 1704093923), (9, 473448209)])
+def test_angled_lines_keep_off_other_corridors(rooms, seed):
+    """At HALL_MAX an angled corridor's line cuts straight across its long Z route's bends,
+    far from the legs the layout cleared: it crossed another's line (seed 1704093923) or a
+    Switchback's stairwell (473448209, no headroom on the gate). Each line now keeps the
+    player's half-width off every other corridor beside it in Z, bar a shared room's run-out."""
+    from generators.layout import _entry_clear, _line_solids
+    from generators.routing import ENTRY_RUN, entry_line
+    spec = _cave_like("cave", rooms, "moderate", seed, HALL_MAX)
+    by = {r.id: r for r in spec.rooms}
+    lines = {c.id: entry_line(corridor_route(c, by), c.width / 2, ENTRY_RUN)
+             for c in spec.corridors if c.entry}
+    taken = {cid: _line_solids(line, next(c for c in spec.corridors if c.id == cid))
+             for cid, line in lines.items()}
+    for c in spec.corridors:
+        if c.id in lines:
+            assert _entry_clear(lines[c.id], c, spec.corridors, by, dict(taken)), c.id
+
+
+def test_a_stair_over_and_under_a_room_clears_its_whole_band():
+    """At HALL_MIN cave dramatic 18 (seed 1068169087) laid corr_10's U-route stair over room_11
+    on one leg and under it on another, each clear alone; the gate judges the band of all the
+    legs over a room the centreline cuts through. Every room a stair cuts through is now wholly
+    over or under it."""
+    from analyzer.traverse import AgentModel, _genuinely_crossed_rooms, stacked_rooms
+    spec = _cave_like("cave", 18, "dramatic", 1068169087, HALL_MIN)
+    by = {r.id: r for r in spec.rooms}
+    eps = AgentModel().adjacency_eps
+    for c in spec.corridors:
+        route = corridor_route(c, by)
+        crossed = set(_genuinely_crossed_rooms(route, c.width / 2, spec, c, eps))
+        assert crossed <= set(stacked_rooms(c, route, crossed, by, AgentModel())), c.id
+
+
+def test_a_corridor_keeps_off_a_third_rooms_wall():
+    """At HALL_MIN warren moderate 28 (seed 625239587) ran corr_21 0.04 u off room_15's wall,
+    within the gate's OUTLINE_TOL, an open seam in the room. No corridor on a room's Level now
+    runs within the gate's tolerance of a third room's wall."""
+    from analyzer.traverse import OUTLINE_TOL
+    from generators.topology.embed import SLAB
+    from generators.transitions import _corridor_boxes
+    spec = _cave_like("warren", 28, "moderate", 625239587, HALL_MIN)
+    by = {r.id: r for r in spec.rooms}
+    for c in spec.corridors:
+        for _k, (x0, y0, x1, y1, z0, z1) in _corridor_boxes(c, by):
+            for r in spec.rooms:
+                if r.id in (c.from_room, c.to_room):
+                    continue
+                (rx0, ry0, rz0), (rx1, ry1, rz1) = r.bounds
+                if z0 >= rz1 + SLAB - 1e-6 or z1 + SLAB <= rz0 + 1e-6:
+                    continue
+                ox, oy = min(x1, rx1) - max(x0, rx0), min(y1, ry1) - max(y0, ry0)
+                assert not (ox > -OUTLINE_TOL and oy > -OUTLINE_TOL), (c.id, r.id, ox, oy)

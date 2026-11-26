@@ -554,6 +554,14 @@ def route_clear(cor: CorridorSpec, line, solids: Sequence[_Solid]) -> bool:
     rise = abs(cor.to_z - cor.from_z)
     if rise > 0.01 and (middle <= 0 or rise / middle > ROUTE_MAX_GRADE):
         return False
+    return strip_clear(cor, pieces, solids)
+
+
+def strip_clear(cor: CorridorSpec, pieces, solids: Sequence[_Solid]) -> bool:
+    """``route_clear``'s clearance alone, on a line's ``path_pieces``: every piece keeps the
+    player's half-width from every one of ``solids`` beside it in Z, but a solid tagged with
+    the room at that end of ``cor`` (``_solid``'s ``room``), which its first and last runs may
+    reach."""
     last = len(pieces) - 1
     for j, (quad, za, zb) in enumerate(pieces):
         lo, hi = min(za, zb) - WIND_Z_SPARE, max(za, zb) + cor.height + WIND_Z_SPARE
@@ -746,4 +754,4 @@ def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:
 
 __all__ = ["BREACH", "FORMS", "FRAME", "NONE", "SAME", "SEAM", "TRANSITIONS_FILE", "TransitionRules",
            "draw_transition", "draw_transitions", "finish_transitions", "leg_clearance", "load_transitions",
-           "measure_routes", "measure_winds", "path_pieces", "poly_gap", "route_clear"]
+           "measure_routes", "measure_winds", "path_pieces", "poly_gap", "route_clear", "strip_clear"]

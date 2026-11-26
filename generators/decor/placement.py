@@ -786,7 +786,8 @@ class Room:
         self.faces = self._faces()
         self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
         self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
-        #: The gate's own samples, one by each cell (within 1 u of its middle), for the POIs:
+        #: The gate's own samples, one by each cell (within 1 u of its middle), for the POIs and
+        #: the floor a Prop cuts off (``_gate_cut``):
         #: the cells grow a Prop by half a cell for the gate's samples but read a wall line at
         #: the half-width alone, so a strip between a Prop and a wall under the gate's 2 u
         #: across can read open on them and shut on the gate's (random-placement task 4,
@@ -795,7 +796,7 @@ class Room:
         #: reached, the half-width from the wall lines, door stubs and solid Features; a
         #: Prop covers a sample within the half-width of its plan (``footprint``'s layer 4).
         self._gate = None
-        if ctx.source == "room" and ctx.pois and abs(self.cell - GATE_STEP) < 1e-9:
+        if ctx.source == "room" and abs(self.cell - GATE_STEP) < 1e-9:
             dx = (1.0 - self.xs[0]) % GATE_STEP
             dy = (1.0 - self.ys[0]) % GATE_STEP
             self.sx = self.gx + (dx - GATE_STEP if dx > 1.0 else dx)
@@ -1163,6 +1164,31 @@ class Room:
                 out |= piece & pocket
         return out
 
+    def _gate_cut(self, gate_blocked: np.ndarray) -> np.ndarray:
+        """The gate's own samples (``__init__``'s ``_gate``) joined to a door before and cut off
+        with ``gate_blocked`` covered, in pieces of ``WALLED_OFF`` or more on both its readings:
+        the gate's ``footprint_cut``. The cells read a neck between a Prop and a wall's corner
+        by their own middles, half a cell off the gate's, so a neck shut on its samples can
+        read open on them (hall length step 30, task 8: cave graph flat 25 at Hall length 3,
+        seed 1425713591, room_0, a rock 2 u from a spike of the cave wall shut a 136 u^2
+        alcove)."""
+        out = np.zeros(self.shape, bool)
+        for graph, starts, before in ((self._gate, self._gate_starts, self.gate_before),
+                                      (self._gate_loose, self._gate_loose_starts,
+                                       self.gate_loose_before)):
+            cut = before & ~gate_blocked & ~self._joined(gate_blocked, graph=graph, starts=starts)
+            if not cut.any():
+                return np.zeros(self.shape, bool)
+            _n, lab = self._components(~cut, *graph)
+            lab = lab.reshape(self.shape)
+            counts = np.bincount(lab[cut])
+            big = np.nonzero(counts * self.cell ** 2 >= WALLED_OFF)[0]
+            if not len(big):
+                return np.zeros(self.shape, bool)
+            if not out.any():
+                out = cut & np.isin(lab, big)
+        return out
+
     def problems(self, blocked: np.ndarray) -> List[str]:
         """What a blocked mask (``LAYERS`` layers, as ``self.blocked``) breaks: floor cut off, a
         door or a POI no longer reached, a door's way narrower than ``CLEAR_WIDTH``."""
@@ -1181,6 +1207,8 @@ class Room:
             cut = self.gentle_before & ~blocked & ~self._joined(blocked, graph=self._gentle)
         if not cut.any() and plans.any():
             cut = self._pockets(plans)
+        if not cut.any() and self._gate is not None and gate_blocked.any():
+            cut = self._gate_cut(gate_blocked)
         if cut.any():
             i, j = (int(v[0]) for v in np.nonzero(cut))
             out.append(f"cuts off {int(cut.sum())} floor cells at ({self.xs[i]:.0f}, {self.ys[j]:.0f})")

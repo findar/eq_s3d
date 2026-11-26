@@ -43,6 +43,12 @@ from .zone_types import STYLE_PROFILE
 
 # Overlap below this (u) is two faces touching, not one inside the other.
 _TOUCH = 1e-6
+#: A stacked build's corridor keeps this far (u) off a third room's walls on its Level: the
+#: gate reads faces within ``analyzer.traverse.OUTLINE_TOL`` (0.05 u) of a room's wall as the
+#: room's own, so a tube flush against one leaves its edges an open seam in that room (hall
+#: length step 30, task 8: warren graph moderate 28 at Hall length 0.5, seed 625239587, corr_21
+#: 0.04 u off room_15's east wall).
+_ROOM_TOUCH = 0.06
 #: The XY cell the gate compares two corridors' floors on (``analyzer.traverse.
 #: _corridor_floor_z``: ``max(4 * adjacency_eps, 16)``). Two tubes 3 u apart on one cell read
 #: as crossing there (random placement task 12: warren graph moderate 21, seed 1093450890,
@@ -108,6 +114,12 @@ def profile_run_factor(profile: Optional[str], winding: float = 1.0) -> Optional
 HALL_RUN_SLOPE = {"cave": 1.25}
 HALL_RUN_SLOPE_BUILT = 1.4
 HALL_SPREAD_SLOPE = 0.65
+#: The least the classic scatter's spread is scaled to: about where the separation floor
+#: holds the halls (task 8: city halls 0.86-0.89 of L = 1's at 0.675 and at 0.75 alike).
+#: Scattered tighter, the separation only packs the rooms closer, and the crowded corridors
+#: clash (loops dropped, more dead ends) and run short jogs (rises capped by the run): city
+#: classic moderate failed its bands 7.0% at Hall length 0.5, 2.5% here, as at 1.
+HALL_SPREAD_FLOOR = 0.75
 HALL_GAP_SLOPE = 1.2
 
 
@@ -120,7 +132,7 @@ def hall_run_scale(profile: Optional[str], hall_length: float = 1.0) -> float:
 
 def hall_spread_scale(hall_length: float = 1.0) -> float:
     """What the classic scatter ellipse's spread is multiplied by at *hall_length*."""
-    return max(0.5, 1.0 + HALL_SPREAD_SLOPE * (hall_length - 1.0))
+    return max(HALL_SPREAD_FLOOR, 1.0 + HALL_SPREAD_SLOPE * (hall_length - 1.0))
 
 
 def hall_gap_scale(hall_length: float = 1.0) -> float:
@@ -301,6 +313,85 @@ def _line_clear(line, cor: CorridorSpec, rooms: List[RoomSpec], step: float = 2.
             if any(_box_gap_xy(q, r) < hw - 1e-6 for q in pts) or                     any(_box_gap_xy(q, r) < ENTRY_SPARE - 1e-6 for q in edge):
                 return False
     return True
+
+
+def _centre_span(wps, room: RoomSpec, eps: float = 2.0) -> float:
+    """The longest run of a route's centreline (``wps``) inside ``room``'s plan box shrunk by
+    ``eps``: the gate's measure of a room a corridor genuinely cuts through
+    (``analyzer.traverse._route_penetration_span``, the room shrunk by the agent's
+    ``adjacency_eps``), as ``_crossed_room_centreline`` measures it."""
+    hw_, hd_ = room.width / 2, room.depth / 2
+    rx0, ry0 = room.center_x - hw_ + eps, room.center_y - hd_ + eps
+    rx1, ry1 = room.center_x + hw_ - eps, room.center_y + hd_ - eps
+    if rx0 > rx1 or ry0 > ry1:
+        rx0, ry0, rx1, ry1 = rx0 - eps, ry0 - eps, rx1 + eps, ry1 + eps
+    best = 0.0
+    for (x0, y0), (x1, y1) in zip(wps, wps[1:]):
+        dx, dy = x1 - x0, y1 - y0
+        t0, t1, ok = 0.0, 1.0, True
+        for p, q in ((-dx, x0 - rx0), (dx, rx1 - x0), (-dy, y0 - ry0), (dy, ry1 - y0)):
+            if abs(p) < 1e-9:
+                if q < 0:
+                    ok = False
+                    break
+                continue
+            t = q / p
+            if p < 0:
+                if t > t1:
+                    ok = False
+                    break
+                t0 = max(t0, t)
+            else:
+                if t < t0:
+                    ok = False
+                    break
+                t1 = min(t1, t)
+        if ok and t1 > t0:
+            best = max(best, math.hypot(dx, dy) * (t1 - t0))
+    return best
+
+
+def _line_solids(line, cor: CorridorSpec) -> list:
+    """An angled corridor's line as ``transitions`` solids: its strip's runs, floor to
+    headroom (``_entry_clear``)."""
+    from .transitions import _solid, path_pieces
+    return [_solid(quad, min(za, zb), max(za, zb) + cor.height)
+            for quad, za, zb in path_pieces(line, cor.width / 2, cor.from_z, cor.to_z) or ()]
+
+
+def _entry_clear(line, cor: CorridorSpec, every: List[CorridorSpec], by_id,
+                 taken: Dict[str, list]) -> bool:
+    """Does an angled corridor's line keep the player's half-width off every other corridor
+    beside it in Z (``transitions.strip_clear``): one already angled by its line (``taken``),
+    any other by its legs, bends and Switchback stairwell? With a corridor sharing a room, the
+    line's run-out at that room may meet it, and the line may meet its doorway stub and first
+    bend there on a Z route (``_resolve_conflicts``' rule for two corridors from one room). The line cuts
+    straight across its route's bends, so a long Z or U route's line strays far from the legs
+    the layout cleared: hall length step 30, task 8, cave graph at Hall length 3 (seeds
+    473448209, 680460140, 839608415, 1855383429: a line across another corridor's stairwell;
+    1704093923: two lines crossing)."""
+    from .transitions import _corridor_boxes, _solid, path_pieces, strip_clear
+    pieces = path_pieces(line, cor.width / 2, cor.from_z, cor.to_z)
+    if pieces is None:
+        return False
+    solids = []
+    for other in every:
+        if other.id == cor.id:
+            continue
+        own = taken.get(other.id)
+        if own is None:
+            boxes = _corridor_boxes(other, by_id)
+            n = sum(1 for k, _ in boxes if k >= 0)        # legs, then bends, then a stairwell
+            # A Z route's stub and bend at each end are pinned to that room (``floor_pieces``).
+            pins = {0: other.from_room, n: other.from_room, n - 1: other.to_room,
+                    2 * n - 2: other.to_room} if corridor_route(other, by_id).kind == "z" else {}
+            own = taken[other.id] = [
+                _solid([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1, pins.get(p, ""))
+                for p, (_, (x0, y0, x1, y1, z0, z1)) in enumerate(boxes)]
+        shared = ({other.from_room, other.to_room} & {cor.from_room, cor.to_room})
+        tag = (cor.from_room if cor.from_room in shared else cor.to_room) if shared else ""
+        solids.extend(s[:4] + (tag,) for s in own if not s[4] or s[4] not in shared)
+    return strip_clear(cor, pieces, solids)
 
 
 def gate_spec(gate_id: str, cor: CorridorSpec, key_room: RoomSpec,
@@ -2447,6 +2538,9 @@ class LayoutGenerator:
         from .routing import ENTRY_RUN, entry_line
         by_id = {r.id: r for r in rooms}
         cap = math.radians(ENTRY_MAX)
+        # What every corridor takes up, for ``_entry_clear``: its legs, bends and stairwell
+        # until it is angled, then its angled line's strip.
+        taken: Dict[str, list] = {}
         for cor in corridors:
             if cor.steps != 0 or cor.side or cor.bridge:
                 continue
@@ -2490,12 +2584,15 @@ class LayoutGenerator:
                         continue
                     seg = [math.dist(line[k], line[k + 1]) for k in range(len(line) - 1)]
                     carry = sum(seg) - seg[0] - seg[-1]
-                    if abs(cor.to_z - cor.from_z) <= max(carry, 0.0) * self.max_grade:
+                    if abs(cor.to_z - cor.from_z) <= max(carry, 0.0) * self.max_grade \
+                            and _entry_clear(line, cor, every, by_id, taken):
                         angles = tried
                         break
                 if angles:
                     break
             cor.entry = angles
+            if angles:
+                taken[cor.id] = _line_solids(line, cor)
         # A wider, shifted opening must keep a pier to the doors beside it.
         from types import SimpleNamespace
         from .geometry import _door_openings
@@ -2938,14 +3035,27 @@ class LayoutGenerator:
                 continue
             rx0, ry0 = r.center_x - r.width / 2, r.center_y - r.depth / 2
             rx1, ry1 = r.center_x + r.width / 2, r.center_y + r.depth / 2
+            # A third room's band: the lowest floor and highest top of the legs over it.
+            band = [math.inf, -math.inf]
             for p, ((x0, y0, x1, y1), zlo, zhi, _pin) in enumerate(pieces):
                 if own and ((k == i and p == 0) or (k == j and p == n - 1)):
                     continue
-                if (min(x1, rx1) - max(x0, rx0) > _TOUCH
-                        and min(y1, ry1) - max(y0, ry0) > _TOUCH
-                        and not self._z_clear(zlo, zhi, r)):
+                ox, oy = min(x1, rx1) - max(x0, rx0), min(y1, ry1) - max(y0, ry0)
+                if not own and p < n and ox > _TOUCH and oy > _TOUCH:
+                    band = [min(band[0], zlo), max(band[1], zhi)]
+                gap = _TOUCH if own else -_ROOM_TOUCH
+                if ox > gap and oy > gap and not self._z_clear(zlo, zhi, r):
                     blocked = k
                     break
+            if (blocked is None and band[0] <= band[1] and not self._z_clear(*band, r)
+                    and _centre_span(wps, r) > hw):
+                # Legs over and under a room the centreline cuts through, each clear alone:
+                # the gate judges the band of all the legs over such a room
+                # (``analyzer.traverse.stacked_rooms``), so the route must clear that whole
+                # band (hall length step 30, task 8: cave graph dramatic 18 at Hall length
+                # 0.5, seed 1068169087, corr_10's U-route over room_11 at 116 and under it
+                # at -190).
+                blocked = k
             if blocked is not None:
                 break
         return _Shape(cor, route, pieces, blocked)
