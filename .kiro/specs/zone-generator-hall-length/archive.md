@@ -33,5 +33,9 @@
    2 and 3 (1.28x at 30 rooms), no room dropped in 160 builds; accepted under the card's "as far
    as the hill allows". `plan_to_spec` in `ai/expand.py` is the plan's only way to the layouts, so
    its three-line pass-through is accepted outside task 2's Owns.
+5. **Task 4's first run failed; fix the causes, keep the range** (the lead, 2026-11-25). Gate
+   694 at 1 and 0.5, 690 at 3.0 (six cave graph seeds, three a long corridor with no headroom); 0.5
+   pushes city/classic/moderate bands to 7.0%. Stock built zones reach 2.96x, so `HALL_MAX` stays
+   3.0 and the failures are bugs long or short halls expose: task 8 fixes them, then task 4 re-runs.
 
 ## Follow-ups
