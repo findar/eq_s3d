@@ -47,6 +47,17 @@ chamber's edge sits about a cell past its room's wall, so each hall reads a few 
 short; a passage room under the width threshold is counted as hall, so a chain of
 small rooms reads as one long hall. Outdoor kinds are open areas, not rooms.
 
+``--halls --by-race`` (district races step 31, task 1): the same lengths grouped by the
+zone's inhabiting race (``BY_RACE``, a hand table; each name is checked against the install
+and the missing ones printed), each zone measured at that race's H (``RACE_HEIGHT``; races
+it lacks, orc, undead, dwarf and dark elf, at the default 6 u) and with the chamber width
+scaled to it. Per race group: pooled door-to-door p10/p50/p90 and the spread of the zone
+medians, in u and in H. A race has a **signal** if the median of its zone medians lies
+outside all-built's zone-median p10..p90 band (``KINDS["built"]`` less ``LEFT_OUT``), read
+both in H and in u (a giant's hall is long in u and short in H). LDoN adventure zones
+(``guk*``, ``ruj*``, ``mmc*``, ``mir*``) are instanced layouts of one theme each, so a
+race of them weighs four zones of one designer's kit.
+
 ``--eqg A.eqg ...`` runs the same method on built zones: the calibration, since a
 built room's true side, aspect and square doors are known from its spec.
 
@@ -124,6 +135,27 @@ SHORT_H = 3.0
 #: Races replaced here: Nagafen's lair is one dragon cave in a kobold warren; at a
 #: dragon's width (140 u) the whole of soldungb is one chamber.
 OVERRIDE_RACE = {"soldungb": "kobold"}
+
+
+#: ``--by-race``: race group -> stock zones it inhabits (or built them). Asked for but not
+#: in the RoF2 install: nurga (goblins), grobb (trolls), chardokb (sarnaks), gukta (frogloks).
+#: No troll dungeon is left, so trolls have no row. Iksar-built zones count as lizardman.
+BY_RACE = {
+    "giant": ("kael",),
+    "dragon": ("sleeper", "veeshan", "skyshrine"),
+    "froglok": ("guktop", "gukbottom", "sebilis", "guka", "gukb", "gukc", "gukd"),
+    "sarnak": ("chardok",),
+    "goblin": ("runnyeye", "droga"),
+    "orc": ("crushbone", "ruja", "rujb", "rujc", "rujd"),
+    "kobold": ("soldunga", "soldungb", "warrens"),
+    "gnoll": ("blackburrow", "paw"),
+    "ogre": ("oggok",),
+    "lizardman": ("karnor", "kaesora", "charasis", "cazicthule"),
+    "undead": ("befallen", "kurn", "codecay", "unrest", "mistmoore", "frozenshadow",
+               "mmca", "mmcb", "mmcc", "mmcd", "mira", "mirb"),
+    "dwarf": ("kaladima", "kaladimb", "thurgadina", "thurgadinb"),
+    "dark elf": ("neriaka", "neriakb", "neriakc"),
+}
 
 
 def _race(zone: str) -> str:
@@ -260,9 +292,9 @@ def hall_lengths(floor: Floor, chamber: np.ndarray) -> list:
 
 
 def measure_zone(eq_path: Path, zone: str, agent: AgentModel, cache: Path = None,
-                 plots: Path = None) -> dict:
+                 plots: Path = None, race: str = None) -> dict:
     t0 = time.time()
-    race = _race(zone)
+    race = race or _race(zone)
     h = RACE_HEIGHT.get(race, RACE_HEIGHT["default"])
     width = WIDTH * h / RACE_HEIGHT["default"]
     floor = Floor(floor_tris(eq_path, zone, agent, cache), agent)
@@ -304,7 +336,11 @@ def main(argv=None) -> int:
                          "our rooms' true sizes and square doors are known)")
     ap.add_argument("--halls", action="store_true",
                     help="print passage length door to door per zone and per kind instead")
+    ap.add_argument("--by-race", action="store_true",
+                    help="with --halls: group the lengths by the zone's race (BY_RACE)")
     a = ap.parse_args(argv)
+    if a.halls and a.by_race:
+        return _halls_by_race(a, AgentModel())
     agent = AgentModel()
     rows = []
     if a.eqg:
@@ -376,6 +412,77 @@ def _halls(a, agent) -> int:
         a.json.write_text(json.dumps([{k: r[k] for k in ("zone", "kind", "race", "h", "nch",
                                                             "direct", "short", "d2d")} for r in rows],
                                      indent=1))
+    return 0
+
+
+def _halls_by_race(a, agent) -> int:
+    """``--halls --by-race``: door-to-door length per race group, against all-built."""
+    missing = [z for zs in BY_RACE.values() for z in zs
+               if not ((a.eq_path / f"{z}.s3d").exists() or (a.eq_path / f"{z}.eqg").exists())]
+    print("not in the install: " + (", ".join(missing) or "none")
+          + " (asked for, not found: nurga, grobb, chardokb, gukta)")
+    measured: dict = {}
+
+    def run(zone, race):
+        key = (zone, race)
+        if key not in measured:
+            h_race = race if race in RACE_HEIGHT else "default"
+            try:
+                measured[key] = measure_zone(a.eq_path, zone, agent, a.cache, None, race=h_race)
+            except Exception as e:  # noqa: BLE001 - a zone this install lacks or can't read
+                print(f"{zone:12s} error: {type(e).__name__}: {e}")
+                measured[key] = None
+        return measured[key]
+
+    print(f"{'zone':12s} {'race':9s} {'H':>4s} {'N':>3s} {'halls':>5s} {'d2d 10/50/90 u':>16s} "
+          f"{'p50 H':>6s} {'secs':>5s}")
+    rows = []
+    for group, zones in BY_RACE.items():
+        for zone in zones:
+            if zone in missing or (a.zones and zone not in a.zones):
+                continue
+            m = run(zone, group)
+            if m is None:
+                continue
+            r = dict(m, kind=group)
+            rows.append(r)
+            d = sorted(r["d2d"])
+            q = [float(np.percentile(d, k)) if d else float("nan") for k in (10, 50, 90)]
+            print(f"{zone:12s} {group:9s} {r['h']:4.0f} {r['nch']:3d} {len(d):5d} "
+                  f"{q[0]:5.0f}/{q[1]:4.0f}/{q[2]:5.0f} {q[1] / r['h']:6.1f} {r['secs']:5.0f}",
+                  flush=True)
+    base = []
+    for zone in KINDS["built"]:
+        if zone in LEFT_OUT or (a.zones and zone not in a.zones):
+            continue
+        m = run(zone, _race(zone))      # the kinds' own H, as ``--halls`` reads them
+        if m is not None and m["nch"] >= 3:
+            base.append(dict(m, kind="all-built"))
+    kept = [r for r in rows if r["nch"] >= 3]
+    s = hall_summary(base + kept)
+    print()
+    print("per race group (zones with >= 3 chambers), against all-built (KINDS built, "
+          "LEFT_OUT dropped):")
+    print(hall_table(s))
+    b = s.get("all-built")
+    if b:
+        print()
+        print("signal: the race's median zone median outside all-built's zone-median p10..p90 "
+              f"(H {b['zmedh_p10']:.1f}..{b['zmedh_p90']:.1f}, u {b['zmed_p10']:.0f}.."
+              f"{b['zmed_p90']:.0f}; all-built p50 {b['zmedh_p50']:.1f} H, {b['zmed_p50']:.0f} u)")
+        print(f"{'race':9s} {'n':>2s} {'zmed50 H':>8s} {'x built':>7s} {'H sig':>5s} "
+              f"{'zmed50 u':>8s} {'x built':>7s} {'u sig':>5s}")
+        for group, r in s.items():
+            if group == "all-built":
+                continue
+            sig_h = not b["zmedh_p10"] <= r["zmedh_p50"] <= b["zmedh_p90"]
+            sig_u = not b["zmed_p10"] <= r["zmed_p50"] <= b["zmed_p90"]
+            print(f"{group:9s} {r['n']:2d} {r['zmedh_p50']:8.1f} {r['zmedh_p50'] / b['zmedh_p50']:7.2f} "
+                  f"{'yes' if sig_h else 'no':>5s} {r['zmed_p50']:8.0f} "
+                  f"{r['zmed_p50'] / b['zmed_p50']:7.2f} {'yes' if sig_u else 'no':>5s}")
+    if a.json:
+        a.json.write_text(json.dumps([{k: r[k] for k in ("zone", "kind", "race", "h", "nch", "d2d")}
+                                      for r in base + rows], indent=1))
     return 0
 
 
