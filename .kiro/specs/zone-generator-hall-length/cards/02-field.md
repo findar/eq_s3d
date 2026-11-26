@@ -25,3 +25,4 @@ Index entry: `tasks.md` task 2. Requirements 1–3, design "The field".
 - If decor, outline, gate or geometry needs a fix, stop and report.
 
 ## Result
+✔ 613d384 · 4250 passed (gate 702)
