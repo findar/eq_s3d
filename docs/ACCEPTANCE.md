@@ -4241,3 +4241,196 @@ Decor now refuses that Prop (a8d84cf). Each room keeps two blocking Props.
 - **Cave draw time** is 1.8x pre-step-27 (decision 3); about 2 s of a 30-room draw is outside
   `embed.py`, a follow-up.
 - **Nothing in this section was looked at in the 3D viewer.**
+
+## Step 30 — Hall length
+
+> Roadmap step 30 (`zone-generator-hall-length`). At step 26's second look the user said a
+> future task should also adjust the length of halls. One scalar, **Hall length**, now scales
+> how far apart the rooms stand, and so how long the halls between them run, as a multiple of
+> today's: **0.5** (`HALL_MIN`) to **3.0** (`HALL_MAX`), with **1** today's zones. The rooms
+> themselves (count, sizes, kinds) never change. Graph layouts (built, warren, cave) stretch the
+> corridor run. Classic and city stretch the scatter. Outdoor dungeons stretch the gap between
+> rooms after the hill fit. Below 1, rooms still keep a full corridor width apart (Z-corridors
+> need it), so only caves shorten all the way: a built Graph reaches about 0.7, classic and city
+> about 0.87, and an outdoor dungeon does not shorten at all (archive decisions 2 and 3). Above
+> 1, the outdoor hill can't hold much longer halls with full-size rooms, so outdoor dungeons
+> stop at about 1.6x however high the slider goes (decision 4). Cave throats stay a 12 u
+> straight step at every length. The Controls get a Hall length slider, and the rule planner
+> reads words. Task 8 fixed the faults that long and short halls exposed. Two of them were real
+> at 1 too (see H.5).
+>
+> Restart the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and
+> check no stale-code banner shows. Then walk the cases in the viewer.
+
+Every build ran through `/api/generate` in Controls mode (rule planner, no API key, `EQ_PATH` =
+`F:\everquest_rof2`, branch `agent/halls-5` at master `56a30f7`, with tasks 2, 3, 4 and 8
+merged). All nine passed the gate and the Format_Checker on their first build (validated, 1
+attempt, no warnings). None needed a retry. Each case uses one seed, **731402518**, at all three
+lengths. The measures are `scripts/grid_score.py`'s `hall_lengths` and `throat_ids` on each
+build's `.spec.json`: each corridor's length door to door (its path, else its route's
+waypoints), throats left out. "Ratio" is the median over the same zone's median at 1.
+
+| Case | Zone | Settings | Seed |
+|---|---|---|---|
+| f | Dungeon | Layout **Graph**, Rooms **16**, Theme **Fortress**, Walls From theme, Verticality **Moderate**, Size **medium**, Decor **Normal**, Hall length **0.5 / 1 / 3.0** | 731402518 |
+| c | Dungeon | Layout **Graph**, Rooms **12**, Theme **Cave**, Verticality **Moderate**, Size **medium**, Decor **Normal**, Hall length **0.5 / 1 / 3.0** (step 29's case a at 1) | 731402518 |
+| o | Outdoor dungeon | Rooms **12**, Verticality **Moderate**, Size **medium**, Decor **Normal**, Hall length **0.5 / 1 / 3.0** | 731402518 |
+| p | Prompt | "a cave with long tunnels", "a fortress with short corridors", "an outdoor dungeon with long hallways" (rule planner, no API key) | 731402518 |
+
+| Case | Hall length | Build | Time | Vertices | Halls (throats) | Door to door p10 / p50 / p90 (u) | Ratio | Rooms span (u) |
+|---|---|---|---|---|---|---|---|---|
+| f | 0.5 | `gen_1795678452_a8afd2` | 13.5 s | 21,467 | 17 (0) | 23.0 / 42.9 / 159.3 | **0.72** | 805 × 535 |
+| f | 1 | `gen_1795678465_81738e` | 11.5 s | 21,422 | 17 (0) | 37.5 / 59.5 / 204.4 | 1 | 1,087 × 576 |
+| f | 3.0 | `gen_1795678477_5c2e67` | 11.2 s | 21,924 | 17 (0) | 123.2 / 190.4 / 227.3 | **3.20** | 1,312 × 950 |
+| c | 0.5 | `gen_1795678424_8e114f` | 7.9 s | 9,979 | 10 (3) | 64.9 / 81.2 / 97.7 | **0.45** | 683 × 481 |
+| c | 1 | `gen_1795678432_59b9cf` | 5.4 s | 10,928 | 10 (3) | 123.1 / 178.9 / 275.3 | 1 | 984 × 791 |
+| c | 3.0 | `gen_1795678437_d5cf92` | 9.0 s | 14,846 | 10 (3) | 451.0 / 618.9 / 806.7 | **3.46** | 1,942 × 2,818 |
+| o | 0.5 | `gen_1795678489_0cb1fd` | 8.7 s | 14,078 | 13 (0) | 47.7 / 56.7 / 114.2 | **1.00** | 593 × 508 |
+| o | 1 | `gen_1795678498_3a8919` | 7.4 s | 14,078 | 13 (0) | 47.7 / 56.7 / 114.2 | 1 | 593 × 508 |
+| o | 3.0 | `gen_1795678505_a8453c` | 9.0 s | 14,923 | 13 (0) | 68.6 / 68.8 / 118.6 | **1.21** | 634 × 527 |
+
+In every case each length builds the same rooms (same ids, kinds and sizes) and the same
+corridors between the same rooms. Only where the rooms stand moves, and some floor heights. The
+fortress's four U-stairs (`corr_6`, `corr_8`, `corr_9`, `corr_10`, each about 102 u of rise)
+set its p90 at 0.5 and 1. A stair's length follows its rise, so the stairs barely move while
+the plain halls scale (at 3.0 the plain halls catch up with them): the fortress's plain halls run 23.0–109.9 u at 0.5, 33.1–90.1 u at 1 and
+112.1–228.2 u at 3.0. The cave's stair `corr_10` (room_5 → room_8, 102 u up) is 97.6 u door to
+door at every length. The cave grows by more than 3x at 3.0 because its run scales affinely,
+not in proportion (decision 2). Case c at 1 is step 29's case a (10,928 vertices, the same
+three throats).
+
+### H.1 — Long halls at 3.0
+
+- [ ] **[MUST] Long cave tunnels walkable, ramps read as ramps** — Case c at 3.0: walk room_1 →
+      `corr_2` → room_5 (**841.2 u**, 186.4 u at 1, 11.5 u up), room_0 → `corr_8` → room_3
+      (525.1 u, 14.0 u up) and room_11 → `corr_12` → room_10 (490.2 u, 17.5 u up). Each rise is
+      the same as at 1, spread over a much longer run. It should read as a gentle ramp or barely
+      a slope, never a step, with flush floors at both doors and headroom all the way. Also walk
+      room_9 → `corr_11` → room_11 (800.0 u, 17.5 u down). Say whether tunnels this long read
+      as cave passages or as tedious walks. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] Long fortress halls and stairs** — Case f at 3.0: walk room_0 (the entrance) →
+      `corr_5` → room_1 (**140.8 u**, 40.0 u at 1, a 12.4 u ramp up), room_15 → `corr_14` →
+      room_14 (150.3 u, 6.5 u up, level at 1) and room_15 → `corr_15` → room_13 (112.2 u, 7.1 u
+      up, level at 1). Each ramp should read as one even slope and land flush at both doors.
+      Then walk the U-stairs room_3 → `corr_6` → room_2 (227.4 u, 102.0 u down) and room_10 →
+      `corr_9` → room_9 (227.2 u, 103.6 u down, 1.6 u more than at 1). Each stair should keep
+      every riser under 3 u and land flush. One U-stair got shorter: room_7 → `corr_8` → room_10
+      is 151.5 u (234.8 u at 1); check it still lands flush. Not looked at in the 3D viewer for
+      this section.
+- [ ] **[MUST] The zone still reads as one place** — Cases c and f at 3.0, from above: the cave
+      spans 1,942 × 2,818 u (984 × 791 u at 1), the fortress 1,312 × 950 u (1,087 × 576 u at 1).
+      Say whether long halls make the zone feel bigger in a good way, or like rooms strung far
+      apart with nothing between them. Not looked at in the 3D viewer for this section.
+
+### H.2 — Short halls at 0.5
+
+- [ ] **[MUST] Short fortress halls don't squeeze rooms or merge walls** — Case f at 0.5: the
+      closest rooms now stand **19.0 u** wall to wall (room_0 / room_1, room_1 / room_2,
+      room_12 / room_14, room_14 / room_15), one 18 u corridor width plus 1 u. At 1 only
+      room_14 / room_15 stood that close, and the next pair 28.9 u. Walk the 23.0 u halls:
+      room_5 → `corr_4` → room_3 (Level 1, floor 116), room_1 → `corr_7` → room_2 and room_2 →
+      `corr_11` → room_4. Each should be a short, clear hall with its own wall on both sides. The
+      two rooms' walls should stay separate: no shared sliver, no seam you can see through, no
+      doorway cut into a third room's wall. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] The steepest short ramp** — Case f at 0.5: room_0 → `corr_5` → room_1 is 23.0 u
+      door to door and rises 11.5 u (a 0.5 grade, 26.6°, the steepest the layout allows). It
+      should still walk as a ramp, flush at both doors, not a wall to jump. The floors move at
+      0.5 too: `corr_12` (room_9 → room_12, 96.1 u, 18.9 u down) and `corr_15` (room_15 →
+      room_13, 109.9 u, 18.9 u up) are ramps here and level at 1. Not looked at in the 3D viewer
+      for this section.
+- [ ] **[MUST] Short cave tunnels** — Case c at 0.5: walk room_6 → `corr_4` → room_9 (**49.8 u**,
+      125.9 u at 1), room_1 → `corr_2` → room_5 (69.4 u, 10.9 u up) and room_0 → `corr_8` →
+      room_3 (66.5 u, 11.6 u up). The closest pair not on a throat, room_1 / room_3, stands
+      34.2 u wall to wall. The tunnels should still read as tunnels, each room keeps its own
+      walls, and the ramps stay walkable. Say whether a cave at 0.5 reads as tight and clumped,
+      or as rooms jammed together. Not looked at in the 3D viewer for this section.
+
+### H.3 — Throats and outdoor dungeons
+
+- [ ] **[MUST] Cave throats still throats at every length** — Case c at 0.5, 1 and 3.0: the same
+      three throats each time, `corr_1` (room_1 → room_0), `corr_6` (room_2 → room_0) and `corr_9`
+      (room_3 → room_7). Each is **12.0 u** door to door and level, with the two rooms' walls
+      8.0 u apart. Hall length never stretches a throat. At each length walk all three: a short,
+      level step from one room into the next, doors in line, no lip. Not looked at in the 3D
+      viewer for this section.
+- [ ] **[MUST] Outdoor dungeons stop short of the slider** — Case o. At 0.5 the layout is the
+      same as at 1 (the spec is equal, name and `hall_length` aside; 14,078 vertices both), as
+      decisions 2 and 3 expect: the rooms already stand a corridor width apart. At 3.0 the halls
+      reach only **1.21x** on this seed (median 68.8 u against 56.7 u). Most plain halls are
+      68.6 u, held at the gap the hill fit allows, and the rooms span 634 × 527 u against
+      593 × 508 u. Decision 4 measured 1.6x at both 2 and 3 over many seeds (1.28x at 30 rooms).
+      The hill can't hold longer halls with full-size rooms, so outdoor dungeons stop at about
+      1.6x, and some seeds stop lower. At 3.0 walk room_8 → `corr_12` → room_11 (95.2 u, 49.1 u
+      at 1; its rise is 9.0 u, 14.0 u at 1) and room_5 → `corr_4` → room_2 (80.6 u, 58.0 u at 1).
+      Say whether the slider should say so, or stop at 1.6 for outdoor dungeons. Not looked at
+      in the 3D viewer for this section.
+
+### H.4 — The slider and the words
+
+- [ ] **[MUST] The slider** — In Controls, the **Hall length** slider (0.5 to 3, step 0.1,
+      default 1, its value shown beside it) shows for Dungeon, City and Outdoor dungeon and hides
+      for Wilderness. After a build, the plan readout shows a **Hall length** row (1 when the
+      plan leaves it out), and the browser console's `[input] controls:` line carries
+      `hall_length=<value>`. Build case f at 3.0 that way: the readout should show Hall length 3,
+      Quality passed and 21,924 vertices, the same build as through the API. Check that WASD
+      leaves the camera alone while the slider is focused, and moves it again once you click the
+      view. Not checked in the browser for this section. Not looked at in the 3D viewer for this
+      section.
+- [ ] **[MUST] The words** — Prompt mode with no API key (the rule planner). Short words plan
+      Hall length **0.6** and long words **2.0**. Anything else plans 1 and leaves the field out.
+      A prompt can't reach 0.5 or 3.0; use the slider for those. Checked with the rule planner:
+
+      | Prompt | Hall length | Also |
+      |---|---|---|
+      | "a fortress with long halls" | 2.0 | |
+      | "a cave with long tunnels" | 2.0 | |
+      | "an outdoor dungeon with long hallways" | 2.0 | |
+      | "a far-flung cave" | 2.0 | |
+      | "a sprawling fortress" | 2.0 | also Size huge, 25 rooms |
+      | "a fortress with short corridors" | 0.6 | |
+      | "a cave with short passages" | 0.6 | |
+      | "a compact cave" | 0.6 | also Size small, 3 rooms |
+      | "a cramped warren" | 0.6 | also Size small |
+      | "tight tunnels and long halls" | 0.6 | short wins a tie |
+      | "a fortress", "a long-forgotten crypt", "short on light, a cave" | 1 (left out) | bare "long" and "short" never fire |
+
+      "long" and "short" fire only before halls, hallways, corridors, passages, passageways or
+      tunnels. The words alone are compact, tight, cramped, close-set (short) and sprawling,
+      far-flung, spread out (long). "a cave spread out over the hills" plans 2.0 but reads as
+      Wilderness, which has no halls. Through the Server, seed 731402518: "a cave with long
+      tunnels" planned 2.0 (`gen_1795678572_a323b1`, a 5-room cave, 5,536 vertices), "a fortress
+      with short corridors" 0.6 (`gen_1795678576_e2c6d6`, 5,700) and "an outdoor dungeon with
+      long hallways" 2.0 (`gen_1795678580_5cbd2b`, 6,637). Each passed the gate on its first
+      build. Try them and check the plan readout's Hall length row each time. In Controls the
+      prompt is never read.
+
+### H.5 — Hall length 1, and what task 8 moved
+
+- [ ] **[MUST] 1 is today's zones, but for nine plans** — A plan at 1 leaves `hall_length` out
+      of the plan, and a zone at 1 builds as before the step, with one exception. Two of task
+      8's fixes were real faults at 1 too, so **9 of 942** plans at Hall length 1 (the gate
+      sweep's 696 draws plus every theme, layout and verticality) now differ from master before
+      the step. In seven (82be46c), an angled corridor's straight line ran through a sibling
+      corridor's legs or stair box in its Z band, a tube through a tube (by rooms: cave graph
+      moderate 6, 11 and 29, cave graph dramatic 17, 26 and 27, warren graph dramatic 18). In
+      two (0d890ad), a corridor stood 0.04 u (cave graph moderate 25) or 0.006 u (warren graph
+      moderate 29) off a third room's wall, the open seam a 0.5 build exposed. Every other plan
+      is byte-identical at 1. Case c at 1 is unchanged (10,928 vertices, step 29's case a). No
+      case here is one of the nine.
+
+### H.6 — Known, not this step
+
+- **Outdoor dungeons stop at about 1.6x** (decision 4) and do not shorten below 1 (decision 3).
+  This seed reached 1.21x at 3.0. The slider still runs 0.5 to 3 for them.
+- **Below 1 only caves shorten fully** (decision 3): the fortress reached 0.72 here, classic and
+  city reach about 0.87, outdoor 1.0.
+- **Stairs don't scale.** A U-stair's length follows its rise, so a fortress's longest halls
+  barely change.
+- **Gate sweep 696 / 695 / 696** at 0.5 / 1 / 3.0, and quality bands at most 3.5% per key (task
+  4, on task 8's code). The one failure at 1 (cave classic dramatic 21, seed 1866540615) fails
+  on master before the step too.
+- **Draw time at 3.0**: 30-room Graph caves 3.7 s median, 5.0 s max; outdoor dungeons 9.9 s
+  median, 17.3 s max (task 4).
+- **Follow-up**: check corridor headroom, risers and room crossings on the plan, before the mesh
+  is built, to catch what the gate finds earlier and cut retries.
+- **Nothing in this section was looked at in the 3D viewer.**
