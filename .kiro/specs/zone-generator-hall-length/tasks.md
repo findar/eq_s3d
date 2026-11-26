@@ -39,7 +39,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: fixes only where a failure is new (stop and report first)
   - Reqs: 5
 
-- [ ] 5. Acceptance section
+- [x] 5. Acceptance section
   - Card: [cards/05-acceptance.md](cards/05-acceptance.md)
   - Type: agent · Size: S · Depends: 3, 4
   - Owns: docs/ACCEPTANCE.md
