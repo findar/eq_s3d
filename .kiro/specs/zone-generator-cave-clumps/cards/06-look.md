@@ -7,3 +7,4 @@ The lead restarts the server on master. The user walks "Step 29 — Cave clumps"
 `docs/ACCEPTANCE.md`.
 
 ## Result
+Look skipped at the user's word (2026-11-25: "Skip the look"). Nothing looked at in 3D.

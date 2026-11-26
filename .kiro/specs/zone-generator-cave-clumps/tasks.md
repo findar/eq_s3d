@@ -44,11 +44,11 @@ specs" in `.kiro/steering/project.md`.
   - Type: agent · Size: S · Depends: 4
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 6. HUMAN: look
+- [x] 6. HUMAN: look (skipped at the user's word)
   - Card: [cards/06-look.md](cards/06-look.md)
   - Type: human · Depends: 5
 
-- [ ] 7. Close step 29
+- [x] 7. Close step 29
   - Card: [cards/07-close.md](cards/07-close.md)
   - Type: agent · Size: S · Depends: 6 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-cave-clumps/, .kiro/specs/zone-generator/

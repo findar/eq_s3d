@@ -1,6 +1,6 @@
 # Requirements — zone-generator-cave-clumps (roadmap step 29)
 
-> **STATUS: roadmap step 29, ready.** Drafted 2026-11-25 at master `056296a`. After closing
+> **STATUS: done (closed 2026-11-25; look skipped at the user's word: "Skip the look").** Drafted 2026-11-25 at master `056296a`. After closing
 > step 27 the user said "You pick step 27 followups". The lead picked the two that answer the
 > user's own first-look words ("i would expect the potential for rooms to clump"), plus the
 > draw time step 27 cost. Task index: `tasks.md` (card format). Decisions: `archive.md`.
