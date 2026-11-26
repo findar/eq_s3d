@@ -22,7 +22,7 @@ from .geometry import _bridge_slots, room_doors
 from .routing import TunnelRules, scaled_tunnel
 from .outline import (COMPLEXES, SHAPES as OUTLINE_SHAPES, Door, Outline, Rect, add_relief,
                       draw_outline)
-from .semantics import body_height
+from .semantics import body_height, room_race
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import (CheckError, RuleSetError, _Checker, _MISSING, _is_number, _one_of, _read_toml,
                                _type_name)
@@ -352,10 +352,10 @@ def _draw_rooms(spec: ZoneSpec, styles: Mapping[str, WallStyle], seed: int,
     and the sidecar record change, so a style can't move a layout. Each room draws from
     its own stream, so one room's shape can't shift another's. ``extra_doors`` is room id
     -> doors no corridor makes (an outdoor dungeon's Tunnel), as ``add_room`` takes them."""
-    height = body_height(spec.dungeon_race)
     records = spec.layout["rooms"]
     for room in spec.rooms:
         style = styles[room.id]
+        height = body_height(room_race(spec, room))     # its District's race, else the zone's
         rng = random.Random(f"{seed}:{room.id}")
         record = records.get(room.id, {})
         # What the rule asked for: applying a style again chooses afresh.

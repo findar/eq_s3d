@@ -131,3 +131,87 @@ def test_no_default_leaves_a_raced_zone_alone(monkeypatch):
     _gen("graph", 2003, [{"purpose": "fortress", "race": "ogre"},
                          {"purpose": "warren", "race": "goblin"}])
     assert not calls
+
+
+# --- Everything in a room by the room's race (Req 4, task 14) ----------------
+
+def test_room_race_is_the_districts_else_the_zones():
+    from generators.zone_spec import CorridorSpec, RoomSpec
+    spec = ZoneSpec(name="z")
+    spec.dungeon_race = "ogre"
+    spec.districts = [DistrictSpec(id=0, purpose="fortress", race="giant"),
+                      DistrictSpec(id=1, purpose="warren")]
+    spec.rooms = [RoomSpec(id=i, center_x=0.0, center_y=0.0, district=d)
+                  for i, d in (("a", 0), ("b", 1), ("c", 5))]
+    assert [semantics.room_race(spec, r) for r in spec.rooms] == ["giant", "ogre", "ogre"]
+    cor = CorridorSpec("k", 0.0, 0.0, 1.0, 0.0, from_room="a", to_room="b")
+    assert semantics.corridor_race(spec, cor) == "ogre"
+    spec.districts = []
+    assert semantics.room_race(spec, spec.rooms[0]) == "ogre"
+
+
+def _stub_ter():
+    """One triangle far below everything: ``room_context.contexts`` without a build."""
+    from types import SimpleNamespace as NS
+    v = NS(x=0.0, y=0.0, z=-9999.0, nx=0.0, ny=0.0, nz=1.0)
+    return NS(vertices=[v] * 3, polygons=[NS(v1=0, v2=1, v3=2, material=0, flags=0)],
+              materials=[NS(name="x")])
+
+
+def test_giant_rooms_size_walls_features_decor_and_forms_by_their_race(monkeypatch):
+    """Inside a giant District the outline, features, decor cells, transition forms and
+    floor sink take the giant's H; the goblin District (H as the zone's) keeps the zone's."""
+    import ai.expand as ex
+    from ai.schema import ZonePlan
+    from generators import room_layouts, transitions, wall_styles
+    from generators.room_context import contexts
+
+    seen = {"walls": {}, "features": {}, "shape": {}, "forms": {}}
+    draw, place = wall_styles.WallStyle.draw, room_layouts.place
+    shape, form = semantics._apply_shape, transitions.draw_transition
+
+    def spy_draw(self, box, doors, slots, shp, body_height, rng, **kw):
+        seen["walls"][box] = body_height
+        return draw(self, box, doors, slots, shp, body_height, rng, **kw)
+
+    def spy_place(room, doors, slots, asks, body_height, *a, **kw):
+        seen["features"][room.id] = body_height
+        return place(room, doors, slots, asks, body_height, *a, **kw)
+
+    def spy_shape(room, rt, race):
+        seen["shape"][room.id] = race
+        return shape(room, rt, race)
+
+    def spy_form(cor, rooms, a, b, ends, rules, seed, h):
+        seen["forms"][cor.id] = h
+        return form(cor, rooms, a, b, ends, rules, seed, h)
+
+    monkeypatch.setattr(wall_styles.WallStyle, "draw", spy_draw)
+    monkeypatch.setattr(room_layouts, "place", spy_place)
+    monkeypatch.setattr(semantics, "_apply_shape", spy_shape)
+    monkeypatch.setattr(transitions, "draw_transition", spy_form)
+    monkeypatch.setattr(ex, "layout_proposals", lambda plan, s: [dict(p) for p in GIANT_GOBLIN])
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 10, "layout": "graph",
+                                   "verticality": "moderate", "districts": True,
+                                   "district_plan": ["fortress", "warren"]}, [])
+    plan.name = "dr14"
+    spec = ex.plan_to_spec(plan, seed=2003, warnings=[])
+
+    giant, zone = semantics.body_height("giant"), semantics.body_height(spec.dungeon_race)
+    want = {r.id: giant if r.district == 0 else zone for r in spec.rooms}
+    assert {spec.districts[0].race, spec.districts[1].race} == {"giant", "goblin"}
+    assert {seen["shape"][r] for r in want if want[r] == giant} == {"giant"}
+    assert seen["features"] == want
+    assert {seen["walls"][(r.bounds[0][0], r.bounds[0][1], r.bounds[1][0], r.bounds[1][1])]
+            for r in spec.rooms if r.district == 0} == {giant}
+    for cid, h in seen["forms"].items():
+        cor = next(c for c in spec.corridors if c.id == cid)
+        assert h == min(want[cor.from_room], want[cor.to_room])
+    assert giant in seen["forms"].values()
+
+    ctx = {c.id: c for c in contexts(spec, _stub_ter())}
+    for r in spec.rooms:
+        assert ctx[r.id].body_height == pytest.approx(want[r.id])     # H(giant)/H(zone) in giant rooms
+    # A giant's decor cells: its door-clear zones run 2 H + 2 deep, not a human's.
+    big = [d for r in spec.rooms if r.district == 0 for d in ctx[r.id].doors]
+    assert big and max(min(d.clear[2] - d.clear[0], d.clear[3] - d.clear[1]) for d in big) > 2 * zone + 2

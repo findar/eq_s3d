@@ -19,7 +19,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, stair_layout
 from .routing import (ENTRY_RUN, Hold, corridor_route, entry_line, held_entry_line, hold_route, path_zs, route_footprint, route_seed, scaled_tunnel,
                       split_path, strip_corners, wind_leg, wind_route, wind_seed)
-from .semantics import ROOM_TYPES, body_height
+from .semantics import ROOM_TYPES, body_height, corridor_race
 from .topology.graph import ROOM_KINDS
 from .topology.ruleset import _Checker, _is_number, _one_of, _read_toml
 from .zone_spec import CorridorSpec, Transition, ZoneSpec
@@ -311,7 +311,6 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
     built. A corridor that changes at a line is its from_room's up to it and its to_room's past it;
     any other between two styles is the rougher room's."""
     rules = load_transitions()
-    h = body_height(spec.dungeon_race)
     rooms = {r.id: r for r in spec.rooms}
     records = spec.layout["rooms"]
     holders: List[Tuple[object, object]] = []
@@ -328,6 +327,8 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
         if a is not None and b is not None:
             ends = [(rooms[i].semantic_type, records.get(i, {}).get("kind", rooms[i].kind))
                     for i in (cor.from_room, cor.to_room)]
+            # Sized by its race (the smaller of its rooms', district races Req 4).
+            h = body_height(corridor_race(spec, cor, rooms))
             written.append(draw_transition(cor, rooms, a, b, ends, rules, seed, h))
         t = cor.transition
         if t is not None and t.form in (SEAM, FRAME) and plain and a.name != b.name:
@@ -639,10 +640,10 @@ def measure_routes(spec: ZoneSpec, tunnels: Mapping[str, object], rooms=None, bo
                 for quad, za, zb in path_pieces(line, cor.width / 2, cor.from_z, cor.to_z):
                     solids[cor.id].append(_solid(quad, min(za, zb), max(za, zb) + cor.height))
                 break
-    h = body_height(spec.dungeon_race)
     written = {w["corridor"]: w for w in spec.layout.get("transitions", ())}
     for cor in held:
         rules, sides = holds[cor.id]
+        h = body_height(corridor_race(spec, cor, rooms))
         t = cor.transition
         hw = cor.width / 2
         route = corridor_route(cor, rooms)

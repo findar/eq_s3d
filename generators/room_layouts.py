@@ -675,10 +675,9 @@ def apply_features(spec, complex_name: str, seed: int, density: str = DEFAULT_DE
     stream, so this moves nothing about the layout, and ``none`` adds nothing at all.
     ``layout.rooms`` records what each room took and what it dropped."""
     from .geometry import _bridge_slots, room_doors
-    from .semantics import body_height
+    from .semantics import body_height, room_race
 
     layouts = load_layouts()
-    height = body_height(spec.dungeon_race)
     records = spec.layout["rooms"]
     spec.layout["features"] = density
     if density == "none":
@@ -689,6 +688,7 @@ def apply_features(spec, complex_name: str, seed: int, density: str = DEFAULT_DE
         form = FORM_OF_COMPLEX[record.get("complex", complex_name)]
         name, asks = layouts.recipe_for(room.semantic_type, record.get("kind", room.kind))
         rng = random.Random(f"{seed}:{room.id}:features")
+        height = body_height(room_race(spec, room))     # its District's race, else the zone's
         doors = room_doors(room, spec, (extra_doors or {}).get(room.id))
         placed = place(room, doors, _bridge_slots(room, spec), _scaled(asks, density, record.get("scales")), height, form, rng)
         room.features, room.pois = placed.features, placed.pois
