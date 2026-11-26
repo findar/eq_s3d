@@ -295,6 +295,33 @@ def _purpose_name(value) -> str:
     return str(value or "").strip().lower()
 
 
+def _race_name(value) -> str:
+    """A proposal's race: a dict's ``race`` (a string proposal names none)."""
+    if isinstance(value, dict):
+        return str(value.get("race") or "").strip().lower()
+    return ""
+
+
+def district_races(proposals: Optional[Sequence], k: int) -> Tuple[List[str], List[str]]:
+    """Each District's own race from *proposals* (district races Req 4): a dict
+    proposal's ``race`` in District id order, the first *k* used; "" where none is
+    named (the zone's race). A race not in ``semantics.RACE_HEIGHT`` is ignored with
+    a ``district_race_unknown`` note, so that District takes the zone's race.
+    Returns ``(races, notes)``; nothing is drawn from any rng."""
+    races = [""] * k
+    notes: List[str] = []
+    for d, value in enumerate(list(proposals or [])[:k]):
+        name = _race_name(value)
+        if not name:
+            continue
+        if name in semantics.RACE_HEIGHT:
+            races[d] = name
+        else:
+            notes.append(f"district_race_unknown: '{name}' ignored (District {d}), "
+                         f"using the zone's race")
+    return races, notes
+
+
 def _parents(part: Partition) -> List[Optional[int]]:
     """District id -> the District on the parent side of its Threshold."""
     return [None] + [part.assign[p] for p, _ in part.thresholds]
@@ -330,6 +357,7 @@ def assign_district_purposes(part: Partition, purpose: str = "",
     id order, the first ``k`` used; *relationship* is ``sequential`` (default),
     ``factional`` or ``abandoned_vs_active``. *pinned* (with a known *purpose*)
     gives every District that Purpose. Unknown values are ignored with a note.
+    A dict proposal may also name the District's own ``race`` (:func:`district_races`).
 
     ``sequential``: pairwise-distinct Purposes, each compatible with the
     District across its Threshold. ``factional``: pairwise-distinct Purposes,
@@ -409,7 +437,10 @@ def assign_district_purposes(part: Partition, purpose: str = "",
                          f"{[p for p in fixed if p]}; Purposes only distinct")
         purposes = found[rng.randrange(len(found))]
 
-    districts = [DistrictSpec(id=d, purpose=purposes[d], relationship=rel) for d in range(k)]
+    races, race_notes = district_races(proposals, k)
+    notes.extend(race_notes)
+    districts = [DistrictSpec(id=d, purpose=purposes[d], relationship=rel, race=races[d])
+                 for d in range(k)]
     for d in range(k):
         semantics.set_district_palette(districts[d], levels[d])
     semantics.separate_threshold_palettes(

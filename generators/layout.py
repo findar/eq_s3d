@@ -515,6 +515,10 @@ class LayoutGenerator:
 
     # Room index -> District id during a districted pass (set per pass).
     _district_assign: Optional[List[int]] = None
+    # Room id -> its District's race when some District carries a race of its own
+    # (district races Req 4; set per pass), else None: every room and corridor is
+    # then sized by the zone's race (``self.race``), as before.
+    _room_race: Optional[Dict[str, str]] = None
 
     def __init__(self, zone_type: str = "dungeon", seed: Optional[int] = None,
                  engine: Union[LayoutEngine, str, None] = None,
@@ -865,6 +869,7 @@ class LayoutGenerator:
         # Room index -> District id while a districted pass runs Job B, else
         # None (the crossing and conflict passes keep Districts apart).
         self._district_assign = None
+        self._room_race = None
 
         # --- Job A: the rooms and their graph, from the Layout_Engine ----
         # (classic: scatter in an ellipse, separate, Delaunay, MST + a few
@@ -952,6 +957,8 @@ class LayoutGenerator:
                 part, dungeon_theme, districts[0], districts[1], self.rng)
             self.warnings.extend(notes)
             spec.districts = district_specs
+            # A District with a race of its own takes that race's sizes (Req 4).
+            self._apply_district_races(rooms, district_specs)
         if themed:
             semantics.label_rooms(
                 spec, rooms, self.rng,
@@ -962,7 +969,7 @@ class LayoutGenerator:
         # role and room-type biases can push one past either end.
         if self.corridor_clearance:
             for room in rooms:
-                semantics.fit_to_band(room, self.race)
+                semantics.fit_to_band(room, self._race_of(room))
         # An outdoor dungeon's entrance room must fit a Tunnel under the hill
         # (``outdoor_dungeon.plan_entrance``): its footprint is capped at the
         # medium class side (after the Size control's shift), aspect 1.5, so
@@ -1110,6 +1117,110 @@ class LayoutGenerator:
     # ------------------------------------------------------------------
     # Districts (districts spec Req 3)
     # ------------------------------------------------------------------
+
+    def _apply_district_races(self, rooms: List[RoomSpec],
+                              districts: list) -> None:
+        """District races (Req 4): a District with a race of its own is laid out
+        at that race's scale. The engine laid every room out at the zone's race
+        (the partition needs its graph first), and every size there is a multiple
+        of H, so each of the District's rooms grows by ``H(race) / H(zone race)``,
+        footprint, height and its offset from the District's centre alike: the
+        same band positions and the same spacing in its own H. Then the Districts
+        are pushed apart whole (:meth:`_separate_districts`), and from here every
+        room is fitted to its own race's bands and every corridor sized by the
+        smaller race of its two rooms (:meth:`_corridor_dims`). No District with
+        a race: nothing changes, and nothing is drawn."""
+        if not any(d.race for d in districts):
+            return
+        race_of = {d.id: (d.race or self.race) for d in districts}
+        self._room_race = {r.id: race_of.get(r.district, self.race) for r in rooms}
+        h0 = semantics.body_height(self.race)
+        for d in districts:
+            s = semantics.body_height(race_of[d.id]) / h0
+            mine = [r for r in rooms if r.district == d.id]
+            if s == 1.0 or not mine:
+                continue
+            cx = sum(r.center_x for r in mine) / len(mine)
+            cy = sum(r.center_y for r in mine) / len(mine)
+            for r in mine:
+                r.center_x = cx + (r.center_x - cx) * s
+                r.center_y = cy + (r.center_y - cy) * s
+                r.width *= s
+                r.depth *= s
+                r.height *= s
+        self._separate_districts(rooms)
+
+    def _separate_districts(self, rooms: List[RoomSpec], iterations: int = 400) -> None:
+        """Push Districts apart whole until no room of one overlaps a room of
+        another (with :meth:`_room_gap` between), each District moving as one so
+        its own layout keeps its shape; :meth:`_separate_rooms` settles the rest."""
+        groups: Dict[int, List[RoomSpec]] = {}
+        for r in rooms:
+            groups.setdefault(r.district, []).append(r)
+        for _ in range(iterations):
+            moved = False
+            for a in range(len(rooms)):
+                for b in range(a + 1, len(rooms)):
+                    ra, rb = rooms[a], rooms[b]
+                    if ra.district == rb.district:
+                        continue
+                    gap = self._room_gap(ra, rb)
+                    dx = rb.center_x - ra.center_x
+                    dy = rb.center_y - ra.center_y
+                    ox = (ra.width + rb.width) / 2 + gap - abs(dx)
+                    oy = (ra.depth + rb.depth) / 2 + gap - abs(dy)
+                    if ox > 1e-9 and oy > 1e-9:
+                        if ox < oy:
+                            push, attr = ox / 2 * (1 if dx >= 0 else -1), "center_x"
+                        else:
+                            push, attr = oy / 2 * (1 if dy >= 0 else -1), "center_y"
+                        for r in groups[ra.district]:
+                            setattr(r, attr, getattr(r, attr) - push)
+                        for r in groups[rb.district]:
+                            setattr(r, attr, getattr(r, attr) + push)
+                        moved = True
+            if not moved:
+                return
+
+    def _race_of(self, room: RoomSpec) -> str:
+        """The race that sizes *room*: its District's own, else the zone's."""
+        if self._room_race is None:
+            return self.race
+        return self._room_race.get(room.id, self.race)
+
+    def _pair_race(self, a: RoomSpec, b: RoomSpec) -> str:
+        """The race that sizes the corridor between *a* and *b*: the smaller (by
+        H) of their two races, so a Threshold between a giant and a goblin
+        District is the goblins' hole (Req 4)."""
+        ra, rb = self._race_of(a), self._race_of(b)
+        return ra if semantics.body_height(ra) <= semantics.body_height(rb) else rb
+
+    def _corridor_dims(self, a: RoomSpec, b: RoomSpec) -> Tuple[float, float]:
+        """``(width, height)`` of the corridor between *a* and *b*."""
+        if self._room_race is None:
+            return self.corridor_width, self.corridor_height
+        return semantics.corridor_size(self._pair_race(a, b))
+
+    def _cw(self, a: RoomSpec, b: RoomSpec) -> float:
+        """The width of the corridor between *a* and *b*."""
+        return self._corridor_dims(a, b)[0]
+
+    def _room_gap(self, a: RoomSpec, b: RoomSpec) -> float:
+        """The separation gap between *a* and *b*: a full corridor width plus 1
+        (:meth:`_separate_rooms`), the wider of their two races' corridors when
+        Districts carry races, so a corridor of either fits between them."""
+        if self._room_race is None:
+            return self.corridor_width + 1.0
+        return max(semantics.corridor_size(self._race_of(a))[0],
+                   semantics.corridor_size(self._race_of(b))[0]) + 1.0
+
+    def _rise_scale(self, a: RoomSpec, b: RoomSpec) -> float:
+        """The elevation rise's scale on the edge *a*-*b*: the corridor's race's H
+        over the zone race's (rises are drawn in H, ``rise_h``); 1 with no
+        District races."""
+        if self._room_race is None:
+            return 1.0
+        return semantics.body_height(self._pair_race(a, b)) / semantics.body_height(self.race)
 
     @staticmethod
     def _district_thresholds(part, edges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
@@ -1476,9 +1587,10 @@ class LayoutGenerator:
                     if stacked and (a, b) in stacked:
                         continue
                     ra, rb = rooms[a], rooms[b]
+                    g = gap if self._room_race is None else self._room_gap(ra, rb)
                     # Required half-separation on each axis (AABB + gap)
-                    min_dx = (ra.width + rb.width) / 2 + gap
-                    min_dy = (ra.depth + rb.depth) / 2 + gap
+                    min_dx = (ra.width + rb.width) / 2 + g
+                    min_dy = (ra.depth + rb.depth) / 2 + g
                     dx = rb.center_x - ra.center_x
                     dy = rb.center_y - ra.center_y
                     ox = min_dx - abs(dx)   # overlap on X
@@ -1876,8 +1988,8 @@ class LayoutGenerator:
         edge clips a room's corner still stacks its floor on (or, elevated,
         under) that room's and runs its walls through it (task 14).
         """
-        hw = self.corridor_width / 2
         a, b = rooms[i], rooms[j]
+        hw = self._cw(a, b) / 2
         fx, fy = self._wall_point(a, b)
         tx, ty = self._wall_point(b, a)
         route = plan_route((fx, fy), (tx, ty),
@@ -1917,7 +2029,9 @@ class LayoutGenerator:
         clear several conflicts at once, so it re-detects after each one.
         Returns True if any edge changed (the caller re-relaxes elevation).
         """
-        hw = self.corridor_width / 2
+        def hw_of(i: int, j: int) -> float:
+            """Half the width of edge i-j's corridor (its race's, with District races)."""
+            return self._cw(rooms[i], rooms[j]) / 2
 
         def route_for(i: int, j: int):
             a, b = rooms[i], rooms[j]
@@ -1925,9 +2039,9 @@ class LayoutGenerator:
             tx, ty = self._wall_point(b, a)
             return plan_route((fx, fy), (tx, ty),
                               self._exit_axis_x(a, b), self._exit_axis_x(b, a),
-                              hw, steps=0)
+                              hw_of(i, j), steps=0)
 
-        def leg_rects(route):
+        def leg_rects(route, hw):
             wps = route.waypoints
             rects = []
             for k in range(len(wps) - 1):
@@ -1948,6 +2062,7 @@ class LayoutGenerator:
             room whose floor a piece is pinned to (a Z-corridor's stub and bend
             square at each end stay flat at that room's height, whatever the
             later relax does), or None for floor that may slope."""
+            hw = hw_of(i, j)
             wps = route.waypoints
             if route.kind != "z":
                 return [(r, None) for r in route_footprint(route, hw)]
@@ -2002,7 +2117,7 @@ class LayoutGenerator:
             """(leg rects, floor pieces) of edge e's corridor, cached."""
             if e not in cache:
                 rt = route_for(*e)
-                cache[e] = (leg_rects(rt), floor_pieces(e[0], e[1], rt))
+                cache[e] = (leg_rects(rt, hw_of(*e)), floor_pieces(e[0], e[1], rt))
             return cache[e]
 
         # Heightfield zones keep the earlier rule: corridors sharing a room may
@@ -2203,6 +2318,8 @@ class LayoutGenerator:
                     pass
                 elif rel != "any" or self.rng.random() < self.elevation_chance:
                     rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
+                    if self._room_race is not None:
+                        rise *= self._rise_scale(rooms[cur], rooms[nxt])
                     # Bound the rise by what the corridor run can carry at a
                     # walkable grade. The geometry confines the rise to one leg;
                     # capping by the interior-jog length (the shortest leg a
@@ -2443,7 +2560,7 @@ class LayoutGenerator:
         exit_to_x = self._exit_axis_x(b, a)
         route = plan_route(
             (fx, fy), (tx, ty), exit_from_x, exit_to_x,
-            self.corridor_width / 2, steps=0)
+            self._cw(a, b) / 2, steps=0)
         wps, axes = route.waypoints, route.axes
         # Each leg runs along a single axis; measure only that axis's delta (a
         # straight leg carries a sub-slack cross offset we must not count, to
@@ -2465,7 +2582,7 @@ class LayoutGenerator:
         if len(legs) >= 3:
             if not self.corridor_clearance:
                 return legs[1]   # heightfield zones: the earlier whole-jog cap
-            return max(0.0, legs[1] - self.corridor_width)
+            return max(0.0, legs[1] - self._cw(a, b))
         return legs[0]
 
     def _build_corridors(self, spec: ZoneSpec, rooms: List[RoomSpec],
@@ -2507,13 +2624,14 @@ class LayoutGenerator:
             # already capped the grade to a walkable slope.
             fx, fy = self._wall_point(a, b)
             tx, ty = self._wall_point(b, a)
+            width, height = self._corridor_dims(a, b)
             spec.corridors.append(CorridorSpec(
                 id=f"corr_{k}",
                 from_x=fx, from_y=fy,
                 to_x=tx, to_y=ty,
                 from_z=a.floor_z, to_z=b.floor_z,
-                width=self.corridor_width,
-                height=self.corridor_height,
+                width=width,
+                height=height,
                 steps=0,
                 from_room=a.id, to_room=b.id,
             ))
@@ -2693,6 +2811,8 @@ class LayoutGenerator:
                     if not self._is_stair(cur, nxt) and rel != "level" and (
                             rel != "any" or self.rng.random() < self.elevation_chance):
                         rise = self.rng.uniform(self.step_rise_min, self.step_rise_max)
+                        if self._room_race is not None:
+                            rise *= self._rise_scale(rooms[cur], rooms[nxt])
                         rise = min(rise, self._elevation_run(rooms[cur], rooms[nxt])
                                    * self.max_grade)
                         if rise >= 1.0:
@@ -2920,9 +3040,10 @@ class LayoutGenerator:
         """The step 6 corridor between the facing walls of *a* and *b*."""
         fx, fy = self._wall_point(a, b)
         tx, ty = self._wall_point(b, a)
+        width, height = self._corridor_dims(a, b)
         return CorridorSpec(id="", from_x=fx, from_y=fy, to_x=tx, to_y=ty,
                             from_z=a.floor_z, to_z=b.floor_z,
-                            width=self.corridor_width, height=self.corridor_height,
+                            width=width, height=height,
                             steps=steps, from_room=a.id, to_room=b.id)
 
     def _u_cor(self, a: RoomSpec, b: RoomSpec, side: str, a_at: float = -1.0,
@@ -2934,7 +3055,8 @@ class LayoutGenerator:
         b's -1 the ends toward it (the middle leg stays clear of a corridor
         leaving the far part of that wall). None when a wall can't hold the
         door or the middle leg is too short to fold a Switchback."""
-        hw = self.corridor_width / 2
+        width, height = self._corridor_dims(a, b)
+        hw = width / 2
         inset = 2.0                      # as _wall_point
         exit_x = side in ("E", "W")
         sign = 1.0 if side in ("N", "E") else -1.0
@@ -2960,7 +3082,7 @@ class LayoutGenerator:
                               else ((da, wall(a)), (db, wall(b))))
         return CorridorSpec(id="", from_x=fx, from_y=fy, to_x=tx, to_y=ty,
                             from_z=a.floor_z, to_z=b.floor_z,
-                            width=self.corridor_width, height=self.corridor_height,
+                            width=width, height=height,
                             steps=AUTO_STAIRS, from_room=a.id, to_room=b.id,
                             side=side)
 
@@ -2979,7 +3101,7 @@ class LayoutGenerator:
         ex = self._exit_axis_x(a, b)
         sep = (abs(b.center_x - a.center_x) - (a.width + b.width) / 2 if ex
                else abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2)
-        if sep >= self.corridor_width:
+        if sep >= self._cw(a, b):
             out.append(self._facing_cor(a, b, AUTO_STAIRS))
         across_x = abs(b.center_x - a.center_x) >= abs(b.center_y - a.center_y)
         sides = ("N", "S", "E", "W") if across_x else ("E", "W", "N", "S")
@@ -3341,17 +3463,18 @@ class LayoutGenerator:
             a0, a1 = room.center_x - room.width / 2, room.center_x + room.width / 2
             b0, b1 = toward.center_x - toward.width / 2, toward.center_x + toward.width / 2
         lo, hi = max(a0, b0), min(a1, b1)
-        if hi - lo < STRAIGHT_NEED * self.corridor_width:
+        cw = self._cw(room, toward)
+        if hi - lo < STRAIGHT_NEED * cw:
             return None
         if self._bearing_doors:
             # A bearing placement's doors keep off the walls' ends as its
             # bearing doors do (``embed.door_span``), or the stubs of two
             # corridors round a corner meet.
             from .topology.embed import door_span
-            lo, hi = max(lo, door_span(a0, a1, self.corridor_width)[0],
-                         door_span(b0, b1, self.corridor_width)[0]), \
-                min(hi, door_span(a0, a1, self.corridor_width)[1],
-                    door_span(b0, b1, self.corridor_width)[1])
+            lo, hi = max(lo, door_span(a0, a1, cw)[0],
+                         door_span(b0, b1, cw)[0]), \
+                min(hi, door_span(a0, a1, cw)[1],
+                    door_span(b0, b1, cw)[1])
             if hi < lo:
                 return None
         return (lo + hi) / 2
@@ -3374,7 +3497,7 @@ class LayoutGenerator:
             return None
         from .topology.embed import bearing_door
         return bearing_door((room.center_x, room.center_y), (room.width / 2, room.depth / 2),
-                            (toward.center_x, toward.center_y), exit_x, self.corridor_width)
+                            (toward.center_x, toward.center_y), exit_x, self._cw(room, toward))
 
     def _open_facing_walls(self, room: RoomSpec, toward: RoomSpec) -> None:
         """Open the wall of *room* that faces *toward* so a corridor connects."""

@@ -431,10 +431,10 @@ def district_sidecar(spec: ZoneSpec, corridor_rows: Optional[List[dict]]) -> dic
     ``threshold`` flag, the decor block's row (``corridor_rows``, by id) where it has one."""
     if not spec.districts:
         return {}
-    from dataclasses import asdict
+    from .zone_spec import _district_dict
     rows = {r["id"]: r for r in corridor_rows or ()}
     return {
-        "districts": [asdict(d) for d in spec.districts],
+        "districts": [_district_dict(d) for d in spec.districts],
         "corridors": [{**rows.get(c.id, {"id": c.id, "from_room": c.from_room,
                                           "to_room": c.to_room}),
                        "threshold": bool(c.threshold)} for c in spec.corridors],

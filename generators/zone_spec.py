@@ -326,6 +326,19 @@ class DistrictSpec:
     relationship: str = ""                    # shared across the zone
     palette: str = ""
     light_mood: str = ""
+    # The District's own race (district races Req 4): its rooms and corridors are
+    # sized by its body height, a Threshold by the smaller of its two Districts'.
+    # "" is the zone's race (``ZoneSpec.dungeon_race``); written only when set.
+    race: str = ""
+
+
+def _district_dict(district: DistrictSpec) -> Dict[str, Any]:
+    """A District's JSON; ``race`` only when set (a District without a race of its
+    own is the JSON it always was)."""
+    d = asdict(district)
+    if not d.get("race"):
+        d.pop("race", None)
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +477,7 @@ class ZoneSpec:
             **({"room_decor_seeds": dict(self.room_decor_seeds)} if self.room_decor_seeds else {}),
             **({"winding": float(self.winding)} if self.winding != 1.0 else {}),
             **({"hall_length": float(self.hall_length)} if self.hall_length != 1.0 else {}),
-            **({"districts": [asdict(x) for x in self.districts]} if self.districts else {}),
+            **({"districts": [_district_dict(x) for x in self.districts]} if self.districts else {}),
             **({"notes": list(self.notes)} if self.notes else {}),
         }
 
