@@ -27,7 +27,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: analyzer/traverse.py, tests/test_traverse_directed.py (new)
   - Reqs: 2
 
-- [ ] 3. Advisory gates and pacing on the directed graph
+- [x] 3. Advisory gates and pacing on the directed graph
   - Card: [cards/03-oneway-gating.md](cards/03-oneway-gating.md)
   - Type: agent · Size: S · Depends: 2
   - Owns: generators/layout.py (gating and pacing only), generators/edits.py, tests/test_gating_directed.py (new)

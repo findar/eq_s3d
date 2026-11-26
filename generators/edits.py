@@ -133,12 +133,15 @@ class _Graph:
     entrance: int
     edges: List[Tuple[int, int]]         # one per corridor joining two rooms, in corridor order
     edge_corr: List[str]                 # the corridor id of each edge
+    #: edge index -> (upper, lower) for a corridor with a ``drop`` (``layout.drop_arc``)
+    oneway: Dict[int, Tuple[int, int]] = field(default_factory=dict)
 
 
 def gate_graph(doc: Mapping[str, Any]) -> _Graph:
     """The room graph the layout gated: rooms by index, the corridors joining two rooms as
     edges (in corridor order, as the layout made them), and the entrance (the room whose role is
-    ``entrance``, else the shallowest)."""
+    ``entrance``, else the shallowest). A corridor with a ``drop`` is one-way, from the room
+    whose ``floor_z`` is higher to the other (``layout.drop_arc``)."""
     rooms = _rooms(doc)
     ids = [str(r.get("id")) for r in rooms]
     index = {rid: i for i, rid in enumerate(ids)}
@@ -146,14 +149,34 @@ def gate_graph(doc: Mapping[str, Any]) -> _Graph:
     entrance = next((i for i, r in enumerate(rooms) if r.get("role") == "entrance"), None)
     if entrance is None:
         entrance = min(range(len(rooms)), key=lambda i: depths[i]) if rooms else 0
-    edges, corr = [], []
+    edges, corr, drops = [], [], []
     for c in doc.get("corridors") or ():
         a, b = index.get(c.get("from_room")), index.get(c.get("to_room"))
         if a is None or b is None or a == b:
             continue
         edges.append((a, b))
         corr.append(str(c.get("id")))
-    return _Graph(ids, depths, entrance, edges, corr)
+        drops.append(_layout.corridor_drop(c))
+    floors = [float(r.get("floor_z") or 0.0) for r in rooms]
+    return _Graph(ids, depths, entrance, edges, corr, _layout.gate_oneway(edges, drops, floors))
+
+
+def _directed_solvable(g: _Graph, gates: Sequence[Mapping[str, Any]]) -> bool:
+    """``solvable`` on a graph with one-way edges: ``layout.gate_solvable`` (no state the
+    player can reach is stranded short of a room)."""
+    edge_of = {cid: k for k, cid in enumerate(g.edge_corr)}
+    index = {rid: i for i, rid in enumerate(g.ids)}
+    locks: Dict[int, Set[str]] = {}
+    keys: Dict[int, Set[str]] = {}
+    for gt in gates:
+        gid = str(gt.get("id"))
+        k = edge_of.get(str(gt.get("corridor_id")))
+        if k is not None:
+            locks.setdefault(k, set()).add(gid)
+        r = index.get(gt.get("key_room_id"))
+        if r is not None:
+            keys.setdefault(r, set()).add(gid)
+    return _layout.gate_solvable(g.edges, g.entrance, locks, keys, g.oneway)
 
 
 def _reach(g: _Graph, gates: Sequence[Mapping[str, Any]], keyed: bool = True) -> Set[int]:
@@ -180,27 +203,32 @@ def _reach(g: _Graph, gates: Sequence[Mapping[str, Any]], keyed: bool = True) ->
 
 def solvable(doc: Mapping[str, Any], gates: Optional[Sequence[Mapping[str, Any]]] = None) -> bool:
     """Every key before its lock: with ``gates`` (default: the spec's), the player reaches every
-    room the entrance reaches with no gates at all."""
+    room the entrance reaches with no gates at all. With a drop corridor (one-way, step 31), every
+    state the player can reach (room, keys held) must still reach every such room: no key past a
+    drop with no way back to its lock."""
     g = gate_graph(doc)
     if not g.ids:
         return True
     gates = list(doc.get("gates") or ()) if gates is None else list(gates)
+    if g.oneway:
+        return _directed_solvable(g, gates)
     return _reach(g, gates) == _reach(g, gates, keyed=False)
 
 
 def _tree(g: _Graph):
-    return _layout.gate_tree(g.edges, g.entrance)
+    return _layout.gate_tree(g.edges, g.entrance, g.oneway)
 
 
 def _way_in(g: _Graph, parent: Mapping[int, Optional[int]], room: int) -> Optional[str]:
     """The corridor of ``room``'s tree edge in (the last one joining the pair, as the layout's
-    ``corr_by_pair`` keeps), or ``None`` for the entrance or a room it can't reach."""
+    ``corr_by_pair`` keeps; of those, one walkable from the parent into ``room``), or ``None``
+    for the entrance or a room it can't reach."""
     par = parent.get(room)
     if par is None:
         return None
     found = None
-    for (a, b), cid in zip(g.edges, g.edge_corr):
-        if {a, b} == {room, par}:
+    for k, ((a, b), cid) in enumerate(zip(g.edges, g.edge_corr)):
+        if {a, b} == {room, par} and g.oneway.get(k, (par, room)) == (par, room):
             found = cid
     return found
 
@@ -243,9 +271,20 @@ def _add_lock(doc: Dict[str, Any], op: Mapping[str, Any], rng: random.Random) ->
     while f"gate_{k}" in taken:
         k += 1
     cor = next(c for c in doc["corridors"] if str(c.get("id")) == corr_id)
-    key_room = _room(doc, g.ids[key])
-    gate = asdict(_layout.gate_spec(f"gate_{k}", SimpleNamespace(**cor),
-                                    SimpleNamespace(**key_room), tier))
+
+    def make(i: int) -> Dict[str, Any]:
+        return asdict(_layout.gate_spec(f"gate_{k}", SimpleNamespace(**cor),
+                                        SimpleNamespace(**_room(doc, g.ids[i])), tier))
+
+    gate = make(key)
+    if g.oneway:
+        # One-way edges: the first key room (the layout's order) that strands no one.
+        for cand in _layout.gate_key_rooms(key, g.depths, g.entrance, far, locked_far):
+            trial = make(cand)
+            if _directed_solvable(g, gates + [trial]):
+                gate = trial
+                break
+    key_room = _room(doc, gate["key_room_id"])
     if not solvable(doc, gates + [gate]):
         raise _Rejected(f"add_lock: no key room for a lock on the way into {target} keeps "
                         f"every key before its lock")
