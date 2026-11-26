@@ -420,6 +420,9 @@ class ZoneSpec:
     # The plan's Winding (winding-control Req 3): what every rough corridor's tunnel wander is
     # multiplied by (``wall_styles.tunnel_rules_for``). Left out of ``to_dict()`` at 1.0.
     winding: float = 1.0
+    # The plan's Hall length (hall-length Req 1): what its layout's room spacing was scaled
+    # by (``layout.LayoutGenerator``'s ``hall_length``). Left out of ``to_dict()`` at 1.0.
+    hall_length: float = 1.0
     # Districts (districts spec Req 1): empty for a one-District zone. Left out of
     # ``to_dict()`` while empty, so existing spec JSON is unchanged.
     districts: List[DistrictSpec] = field(default_factory=list)
@@ -460,6 +463,7 @@ class ZoneSpec:
             **({"rooms_seed": self.rooms_seed} if self.rooms_seed is not None else {}),
             **({"room_decor_seeds": dict(self.room_decor_seeds)} if self.room_decor_seeds else {}),
             **({"winding": float(self.winding)} if self.winding != 1.0 else {}),
+            **({"hall_length": float(self.hall_length)} if self.hall_length != 1.0 else {}),
             **({"districts": [asdict(x) for x in self.districts]} if self.districts else {}),
             **({"notes": list(self.notes)} if self.notes else {}),
         }
@@ -499,6 +503,7 @@ class ZoneSpec:
             room_decor_seeds={str(k): int(v) for k, v in (d.get("room_decor_seeds") or {}).items()},
             notes=[str(n) for n in d.get("notes") or []],
             winding=float(d.get("winding", 1.0)),
+            hall_length=float(d.get("hall_length", 1.0)),
         )
         for k, mv in d.get("materials", {}).items():
             mv = dict(mv)
