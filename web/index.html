@@ -94,6 +94,15 @@
             <output id="winding-value" for="winding" style="width: 2.5em; text-align: right;">1</output>
           </span>
         </label>
+        <!-- How long the halls between rooms run (hall-length step 30): HALL_MIN to
+             HALL_MAX (ai/schema.py), 1 today's halls. -->
+        <label class="field" title="Hall length: 0.5 short, 1 stock halls, 3 long halls between rooms"><span>Hall length</span>
+          <span style="display: flex; align-items: center; gap: 6px; min-width: 0;">
+            <input type="range" id="hall-length" min="0.5" max="3" step="0.1" value="1"
+                   style="flex: 1; min-width: 0; accent-color: var(--accent);" />
+            <output id="hall-length-value" for="hall-length" style="width: 2.5em; text-align: right;">1</output>
+          </span>
+        </label>
         <label class="field"><span>Locks</span>
           <input type="number" id="locks" min="0" max="5" step="1" value="0" />
         </label>

@@ -217,6 +217,8 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
         ? [["Verticality", p.verticality] as [string, string]] : []),
       ...(usesControl(p.zone_type, "winding")
         ? [["Winding", String(p.winding ?? 1)] as [string, string]] : []),
+      ...(usesControl(p.zone_type, "hall-length")
+        ? [["Hall length", String(p.hall_length ?? 1)] as [string, string]] : []),
       ...(p.walls ? [["Walls", p.walls] as [string, string]] : []),
       ...(p.features && p.layout === "graph" ? [["Features", p.features] as [string, string]] : []),
       ...SCALE_CONTROLS.flatMap((id) => p[id] != null && p[id] !== ""
@@ -436,6 +438,8 @@ const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   verticality: ["dungeon", "city", "outdoor_dungeon"],
   // Where a zone can have rough corridors (winding-control step 26).
   winding: ["dungeon", "city", "outdoor_dungeon"],
+  // Where a zone has halls between rooms (hall-length step 30).
+  "hall-length": ["dungeon", "city", "outdoor_dungeon"],
   edges: ["wilderness", "outdoor_dungeon"],
   layout: ["dungeon", "outdoor_dungeon"],
   "dungeon-theme": ["dungeon", "city", "outdoor_dungeon"],
@@ -566,6 +570,9 @@ async function doGenerate(mode: Mode) {
     const windingRaw = Number(($("winding") as HTMLInputElement).value);
     const winding = !on("winding") ? undefined
       : Number.isFinite(windingRaw) ? Math.min(2, Math.max(0, windingRaw)) : 1;
+    const hallRaw = Number(($("hall-length") as HTMLInputElement).value);
+    const hallLength = !on("hall-length") ? undefined
+      : Number.isFinite(hallRaw) ? Math.min(3, Math.max(0.5, hallRaw)) : 1;
     const edges = on("edge-n") ? readEdges() : undefined;
     const trees = on("trees") ? sel("trees") : undefined;
     // Sites and who builds them: landscape only; "" is the biome's mix. With
@@ -603,6 +610,7 @@ async function doGenerate(mode: Mode) {
         ...(size !== undefined ? { size } : {}),
         ...(verticality !== undefined ? { verticality } : {}),
         ...(winding !== undefined ? { winding } : {}),
+        ...(hallLength !== undefined ? { hall_length: hallLength } : {}),
         ...(locks !== undefined ? { locks } : {}),
         ...(edges ? { edges } : {}),
         ...(trees ? { trees } : {}),
@@ -627,6 +635,7 @@ async function doGenerate(mode: Mode) {
       (size !== undefined ? ` size=${size}` : "") +
       (verticality !== undefined ? ` verticality=${verticality}` : "") +
       (winding !== undefined ? ` winding=${winding}` : "") +
+      (hallLength !== undefined ? ` hall_length=${hallLength}` : "") +
       (locks !== undefined ? ` locks=${locks}` : "") +
       (edges ? ` edges=${JSON.stringify(edges)}` : "") +
       (trees ? ` trees=${trees}` : "") +
@@ -1200,8 +1209,12 @@ const windingInput = $("winding") as HTMLInputElement;
 windingInput.addEventListener("input", () => {
   $("winding-value").textContent = windingInput.value;
 });
+const hallInput = $("hall-length") as HTMLInputElement;
+hallInput.addEventListener("input", () => {
+  $("hall-length-value").textContent = hallInput.value;
+});
 
-for (const id of ["zone-type", "rooms", "size", "verticality", "winding", "locks",
+for (const id of ["zone-type", "rooms", "size", "verticality", "winding", "hall-length", "locks",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
                   "decor", "decor-layers", "decor-seed", "rooms-seed", "districts"]) {

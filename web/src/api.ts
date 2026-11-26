@@ -11,6 +11,9 @@ export interface GenerateControls {
   // Dungeon / city / outdoor dungeon only: how far rough corridors stray, 0
   // (straight) to 2; 1 is the stock tunnel (winding-control step 26).
   winding?: number;
+  // Dungeon / city / outdoor dungeon only: how long the halls between rooms run,
+  // 0.5 to 3, a multiple of today's; 1 is the default (hall-length step 30).
+  hall_length?: number;
   locks?: number;
   // Wilderness only: side (N/E/S/W) -> mountain | river | zoneline.
   edges?: Record<string, string>;
@@ -62,6 +65,7 @@ export interface ZonePlan {
   verticality: string;
   // Absent at the default, 1 (ZonePlan.to_dict leaves it out).
   winding?: number;
+  hall_length?: number;
   regions: string[];
   mood: string;
   prompt: string;
