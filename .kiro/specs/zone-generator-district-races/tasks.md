@@ -15,7 +15,7 @@ specs" in `.kiro/steering/project.md`.
 
 ## Tasks
 
-- [ ] 1. Measure stock: race hall lengths, drops, layered links
+- [x] 1. Measure stock: race hall lengths, drops, layered links
   - Card: [cards/01-measure.md](cards/01-measure.md)
   - Type: agent · Size: S · Depends: —
   - Owns: scripts/stock_room_shapes.py, scripts/stock_drops.py (new), .kiro/specs/zone-generator-district-races/archive.md (decisions only)
