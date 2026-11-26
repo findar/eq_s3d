@@ -23,4 +23,10 @@
    width, the Z-corridor rule): at 0.5 built Graph reaches ~0.7, classic/city ~0.82, outdoor
    1.0; only cave tracks down to 0.5.
 
+3. **Below 1, halls shorten as far as the separation floor allows** (the lead, 2026-11-25, at
+   task 1). Rooms keep a full corridor width apart (Z-corridors need it), so at `HALL_MIN` built
+   Graph reaches ~0.7, classic/city ~0.82, outdoor ~1.0; only caves track 0.5. Task 2's 15% bar
+   applies at 1 and above; below 1 it reports the ratio reached. `HALL_MAX` 3.0 stands if task 4's
+   draw time and the outdoor hill fit hold; else it comes down, by measurement.
+
 ## Follow-ups
