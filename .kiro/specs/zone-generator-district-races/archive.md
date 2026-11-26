@@ -24,4 +24,12 @@
    review). The same layout with and without the default gives x2.96. The shortfall is retry selection: longer halls clash
    more and the survivors run shorter. Seeds 2020-2059 give x2.68, inside the band. The default is provisional anyway (decision 3).
 
+6. **A raced District's rooms also pick that race's decor sets, not only its sizes** (task 14, `RoomContext.race`
+   per room; the lead kept it: a giant hall dressed as a giant's). One line to revert if the look says otherwise.
+
 ## Follow-ups
+- Cave throats in a raced cave District keep the zone's corridor width (set in `layout.py`); task 6, which owns
+  `layout.py` links, sizes them by the throat's race like corridors, or says why not.
+- Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
+- Same seed, different build: a race-less classic Districts zone differs in two decor entries and its `.zone.json` when
+  another zone was built earlier in the same process (master too, found at task 14). Not this step's.
