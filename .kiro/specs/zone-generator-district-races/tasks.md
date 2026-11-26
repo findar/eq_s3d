@@ -59,7 +59,7 @@ specs" in `.kiro/steering/project.md`.
 
 - [ ] 8. Mixed boundary rooms
   - Card: [cards/08-boundary-decor.md](cards/08-boundary-decor.md)
-  - Type: agent · Size: S · Depends: 6
+  - Type: agent · Size: S · Depends: 6, 14
   - Owns: generators/decor/, tests/test_decor_placement.py
   - Reqs: 9
 
@@ -71,7 +71,7 @@ specs" in `.kiro/steering/project.md`.
 
 - [ ] 10. Gate and bands
   - Card: [cards/10-gate.md](cards/10-gate.md)
-  - Type: agent · Size: S · Depends: 7, 8, 9
+  - Type: agent · Size: S · Depends: 7, 8, 9, 14
   - Owns: scripts/sweep_themed_navigability.py (an --intrusion option); fixes only where a failure is new (stop and report first)
   - Reqs: 11
 
@@ -88,3 +88,11 @@ specs" in `.kiro/steering/project.md`.
   - Card: [cards/13-close.md](cards/13-close.md)
   - Type: agent · Size: S · Depends: 12 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-district-races/, .kiro/specs/zone-generator/
+
+## Added at task 4
+
+- [ ] 14. Size everything in a room by the room's race
+  - Card: [cards/14-room-race.md](cards/14-room-race.md)
+  - Type: agent · Size: M · Depends: 4, 5
+  - Owns: generators/semantics.py (a per-room race helper, `_apply_shape`), generators/wall_styles.py, generators/room_layouts.py, generators/room_context.py, generators/transitions.py, tests/test_district_races.py
+  - Reqs: 4
