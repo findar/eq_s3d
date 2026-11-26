@@ -39,3 +39,6 @@
    3.0 and the failures are bugs long or short halls expose: task 8 fixes them, then task 4 re-runs.
 
 ## Follow-ups
+
+- Check corridor headroom, risers and room crossings on the plan, before the mesh is built
+  (the user's question at task 8: catch what the gate finds earlier, cut retries).

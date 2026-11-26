@@ -33,7 +33,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, ai/rule_planner.py, ai/llm_planner.py, tests/test_hall_length_words.py (new)
   - Reqs: 4
 
-- [ ] 4. Gate and bands (first run failed: decision 5; re-run after 8)
+- [x] 4. Gate and bands (first run failed: decision 5; re-run after 8)
   - Card: [cards/04-gate.md](cards/04-gate.md)
   - Type: agent · Size: S · Depends: 2, 8
   - Owns: fixes only where a failure is new (stop and report first)
