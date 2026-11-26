@@ -27,7 +27,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: ai/schema.py, generators/zone_spec.py, generators/layout.py, generators/layout_engine.py, generators/topology/embed.py, generators/outdoor_dungeon.py, generators/pipeline.py, tests/test_hall_length.py (new), goldens it moves (named in the commit)
   - Reqs: 1, 2, 3
 
-- [ ] 3. Controls, server and planner words
+- [x] 3. Controls, server and planner words
   - Card: [cards/03-controls.md](cards/03-controls.md)
   - Type: agent · Size: M · Depends: 2
   - Owns: server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, ai/rule_planner.py, ai/llm_planner.py, tests/test_hall_length_words.py (new)

@@ -627,6 +627,7 @@ _ALLOWED_WEB_INPUT_IDS = {
     "rooms-seed",  # rooms and Sites on the same World (world-sockets spec task 8)
     "districts",  # Districts on a dungeon (districts spec task 7)
     "winding",  # how far rough corridors stray (winding-control spec task 3)
+    "hall-length",  # how long halls run (hall-length spec task 3)
     # The Export row (export spec task 7): it exports a finished build and
     # never feeds a generate (umbrella Req 8.6).
     "export-filter", "export-shortname", "export-clear-spawns",

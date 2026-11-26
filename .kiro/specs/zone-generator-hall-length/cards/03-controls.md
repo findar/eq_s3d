@@ -18,3 +18,4 @@ Index entry: `tasks.md` task 3. Requirement 4, design "Controls and words".
   "long corridors", "long passages").
 
 ## Result
+✔ edb51da · 3071 passed (quick; the hygiene allowlist line added by the lead)
