@@ -84,9 +84,10 @@ def _room_counts(tokens):
 
 def build_one(job):
     """One build: plan, build, gate. Returns a CSV row."""
-    arch, layout, verticality, rooms, seed, out_dir, winding, *rest = job
+    arch, layout, verticality, rooms, seed, out_dir, winding, hall_length, *rest = job
     if rest and rest[0]:
-        return _build_outdoor(arch, layout, verticality, rooms, seed, out_dir, winding)
+        return _build_outdoor(arch, layout, verticality, rooms, seed, out_dir, winding,
+                              hall_length)
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from analyzer.rof2check import check_eqg
@@ -103,6 +104,8 @@ def build_one(job):
         c.update(districts=True, district_plan=dplan)
     if winding is not None:
         c["winding"] = winding
+    if hall_length is not None:
+        c["hall_length"] = hall_length
     plan = ZonePlan.from_controls(c, [])
     plan.name = f"nav_{arch.replace(':', '_')}_{layout[0]}{verticality[0]}{rooms}_{seed}"
     spec = _with_decor(plan_to_spec(plan, seed=seed, warnings=[]))
@@ -124,7 +127,7 @@ def build_one(job):
             "total": report.total_rooms, "reasons": " | ".join(reasons)}
 
 
-def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding):
+def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding, hall_length):
     """One outdoor-dungeon build (``--outdoor``): plan, build, the outdoor gate."""
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
@@ -139,6 +142,8 @@ def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding):
         c["dungeon_theme"] = theme
     if winding is not None:
         c["winding"] = winding
+    if hall_length is not None:
+        c["hall_length"] = hall_length
     plan = ZonePlan.from_controls(c, [])
     plan.name = (f"odnav_{verticality[0]}{rooms}_{seed}" if theme == "default"
                  else f"odnav_{theme}_{verticality[0]}{rooms}_{seed}")
@@ -180,7 +185,7 @@ def run(args) -> int:
                     for _ in range(max(args.seeds, 1)):
                         cell = f"{arch}:{rng.choice(BUILT)}" if arch in PAIRS else arch
                         job = (cell, layout, v, n, rng.randint(0, 2 ** 31 - 1),
-                               str(out_dir), args.winding)
+                               str(out_dir), args.winding, args.hall_length)
                         jobs.append(job + (True,) if args.outdoor else job)
 
     rows = []
@@ -250,6 +255,8 @@ if __name__ == "__main__":
                          "default: no theme pinned)")
     ap.add_argument("--winding", type=float, default=None,
                     help="the plan's Winding (0..WINDING_MAX; default unset, the plan's default)")
+    ap.add_argument("--hall-length", type=float, default=None,
+                    help="the plan's Hall length (HALL_MIN..HALL_MAX; default unset, the plan's default)")
     ap.add_argument("--jobs", type=int, default=1, help="worker processes")
     ap.add_argument("--csv", default="", help="CSV path (default output/themed_navigability.csv)")
     ap.add_argument("--keep", action="store_true", help="keep artifacts in output/ (default: temp dir, cleaned)")
