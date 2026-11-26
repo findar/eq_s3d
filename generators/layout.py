@@ -24,7 +24,7 @@ import math
 import random
 from functools import partial
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
 from .zone_spec import (
     ZoneSpec, RoomSpec, CorridorSpec, LightSpec, RegionSpec, MaterialSpec,
@@ -230,17 +230,134 @@ def relations_broken(rooms: List[RoomSpec],
 # each key in a room reachable before its lock.
 # ---------------------------------------------------------------------------
 
-def gate_tree(edges: List[Tuple[int, int]], entrance: int):
+def corridor_drop(cor) -> float:
+    """A corridor's drop in u (step 31: ``CorridorSpec.drop``, the corridor entering its lower
+    room that far up the wall), from a ``CorridorSpec`` or a saved spec's corridor dict; 0 when
+    the corridor has none (or the field doesn't exist yet)."""
+    d = cor.get("drop") if isinstance(cor, dict) else getattr(cor, "drop", 0)
+    try:
+        return float(d or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def drop_arc(drop: float, a: int, b: int, za: float, zb: float) -> Optional[Tuple[int, int]]:
+    """The one way a drop corridor between rooms ``a`` (floor ``za``) and ``b`` (``zb``) can be
+    walked, as ``(upper, lower)``: from the room whose floor is higher down to the other (the
+    floor-height rule; equal floors, from ``a`` to ``b``: the corridor's own order). ``None``
+    for a corridor with no drop: it goes both ways."""
+    if drop <= 0:
+        return None
+    return (a, b) if za >= zb else (b, a)
+
+
+def gate_oneway(edges: List[Tuple[int, int]], drops: Sequence[float],
+                floors: Sequence[float]) -> Dict[int, Tuple[int, int]]:
+    """The one-way edges of a room graph: edge index -> ``(upper, lower)`` (``drop_arc``) for
+    each edge whose corridor drops (``drops[k]``), ``floors`` by room index. Empty when no
+    corridor drops, and every gating helper then behaves as on the two-way graph."""
+    out: Dict[int, Tuple[int, int]] = {}
+    for k, (i, j) in enumerate(edges):
+        arc = drop_arc(drops[k] if k < len(drops) else 0.0, i, j, floors[i], floors[j])
+        if arc is not None:
+            out[k] = arc
+    return out
+
+
+def gate_adjacency(edges: List[Tuple[int, int]],
+                   oneway: Optional[Mapping[int, Tuple[int, int]]] = None):
+    """``room -> [(next room, edge index)]``: both ways along a two-way edge, only
+    ``upper -> lower`` along a one-way one (``oneway``)."""
+    from collections import defaultdict
+    out = defaultdict(list)
+    for k, (i, j) in enumerate(edges):
+        arc = oneway.get(k) if oneway else None
+        if arc is None:
+            out[i].append((j, k))
+            out[j].append((i, k))
+        else:
+            out[arc[0]].append((arc[1], k))
+    return out
+
+
+def gate_solvable(edges: List[Tuple[int, int]], entrance: int,
+                  locks: Mapping[int, Set[str]], keys: Mapping[int, Set[str]],
+                  oneway: Optional[Mapping[int, Tuple[int, int]]] = None) -> bool:
+    """Can the player never be stranded? ``locks``: edge index -> the gate ids locking it;
+    ``keys``: room index -> the gate ids whose key lies there (picked up on entering). A state
+    is (room, keys held); the zone is solvable when EVERY state the player can reach from the
+    entrance can still reach every room the entrance reaches with no gates. On a two-way graph
+    that is the usual "every key before its lock" (any step taken can be walked back); with a
+    one-way edge (a drop) it also refuses a key that the player can only fetch by dropping
+    somewhere with no way back to its lock."""
+    from collections import deque
+
+    out = gate_adjacency(edges, oneway)
+    target = {entrance}
+    q = deque([entrance])
+    while q:
+        cur = q.popleft()
+        for nxt, _k in out[cur]:
+            if nxt not in target:
+                target.add(nxt)
+                q.append(nxt)
+
+    def moves(state):
+        room, held = state
+        for nxt, k in out[room]:
+            if set(locks.get(k, ())) <= held:
+                yield nxt, held | frozenset(keys.get(nxt, ()))
+
+    start = (entrance, frozenset(keys.get(entrance, ())))
+    seen = {start}
+    q = deque([start])
+    while q:
+        for nxt in moves(q.popleft()):
+            if nxt not in seen:
+                seen.add(nxt)
+                q.append(nxt)
+
+    good: Set[tuple] = set()       # states known to reach every target room
+    for s in seen:
+        if s in good:
+            continue
+        rooms_hit, mine, hit_good = set(), {s}, False
+        q = deque([s])
+        while q:
+            cur = q.popleft()
+            rooms_hit.add(cur[0])
+            for nxt in moves(cur):
+                if nxt in good:
+                    hit_good = True       # more keys never hurt; it reaches all from there
+                    break
+                if nxt not in mine:
+                    mine.add(nxt)
+                    q.append(nxt)
+            if hit_good:
+                break
+        if not hit_good and not target <= rooms_hit:
+            return False
+        good.add(s)
+    return True
+
+
+def gate_tree(edges: List[Tuple[int, int]], entrance: int,
+              oneway: Optional[Mapping[int, Tuple[int, int]]] = None):
     """The BFS tree of the room graph from ``entrance``: ``(parent, order,
     children)``. ``parent[entrance]`` is None; ``order`` is the visit order;
     ``children[i]`` lists room i's tree children in that order. Rooms the
-    entrance can't reach are in none of them."""
+    entrance can't reach are in none of them. ``oneway`` (``gate_oneway``):
+    a drop edge is walked only from its upper room to its lower."""
     from collections import defaultdict, deque
 
     adj = defaultdict(list)
-    for i, j in edges:
-        adj[i].append(j)
-        adj[j].append(i)
+    for k, (i, j) in enumerate(edges):
+        arc = oneway.get(k) if oneway else None
+        if arc is None:
+            adj[i].append(j)
+            adj[j].append(i)
+        else:
+            adj[arc[0]].append(arc[1])
 
     parent: Dict[int, Optional[int]] = {entrance: None}
     order = [entrance]
@@ -289,6 +406,18 @@ def gate_key_room(depths: List[int], entrance: int, far: set,
     if not candidates:
         candidates = [i for i in range(n) if i not in far]
     return min(candidates, key=lambda i: depths[i])
+
+
+def gate_key_rooms(first: int, depths: List[int], entrance: int, far: set,
+                   locked_far: set) -> List[int]:
+    """The key rooms a lock may take on a graph with one-way edges, in the order to try them:
+    ``first`` (``gate_key_room``'s pick), then every other room outside ``far`` and
+    ``locked_far``, shallowest first (index on a tie), the entrance last. The caller keeps the
+    first that ``gate_solvable`` accepts."""
+    forbidden = set(far) | locked_far
+    rest = sorted((i for i in range(len(depths)) if i not in forbidden and i != first),
+                  key=lambda i: (i == entrance, depths[i], i))
+    return [first] + rest
 
 
 def _box_gap_xy(p: Tuple[float, float], room: RoomSpec) -> float:
@@ -1590,12 +1719,24 @@ class LayoutGenerator:
         usual. Each Threshold is a bridge, so it is a tree edge and its far
         side is its District and the Districts beyond; its key goes on the
         near side by the same rule.
+
+        A corridor with a ``drop`` (step 31) is one-way, from its upper room
+        to its lower (``drop_arc``). The tree then follows the one-way edges,
+        and each key is the first room (``gate_key_rooms``) that keeps the
+        player from ever being stranded (``gate_solvable``): never past a drop
+        with no way back to its lock. A lock no key room can serve is left
+        out. With no drop this is exactly the two-way rule above.
         """
         n = len(rooms)
         if n < 3 or not edges:
             return
 
-        parent, order, children = gate_tree(edges, entrance)
+        by_id = {c.id: c for c in spec.corridors}
+        drops = [corridor_drop(by_id[f"corr_{k}"]) if f"corr_{k}" in by_id else 0.0
+                 for k in range(len(edges))]
+        oneway = gate_oneway(edges, drops, [r.floor_z for r in rooms])
+
+        parent, order, children = gate_tree(edges, entrance, oneway)
         depths = [r.graph_depth for r in rooms]
 
         # Candidate lock edges: tree edges that gate a meaningful subtree.
@@ -1629,12 +1770,25 @@ class LayoutGenerator:
         # Place locks shallow→deep (tier 0 = outermost).
         chosen.sort(key=lambda c: rooms[c[0]].graph_depth)
         locked_far: set = set()
+        edge_of = {f"corr_{k}": k for k in range(len(edges))}
+        locks: Dict[int, Set[str]] = {}
+        keys: Dict[int, Set[str]] = {}
         for tier, (child, par, far) in enumerate(chosen):
             corr_id = corr_by_pair.get(frozenset((child, par)))
             if corr_id is None:
                 continue
 
             key_room = gate_key_room(depths, entrance, far, locked_far)
+            if oneway:
+                gid, k = f"gate_{tier}", edge_of[corr_id]
+                for cand in gate_key_rooms(key_room, depths, entrance, far, locked_far):
+                    trial_keys = {**keys, cand: keys.get(cand, set()) | {gid}}
+                    trial_locks = {**locks, k: locks.get(k, set()) | {gid}}
+                    if gate_solvable(edges, entrance, trial_locks, trial_keys, oneway):
+                        key_room, keys, locks = cand, trial_keys, trial_locks
+                        break
+                else:
+                    continue
 
             cor = next(c for c in spec.corridors if c.id == corr_id)
             spec.gates.append(gate_spec(f"gate_{tier}", cor, rooms[key_room], tier))
@@ -1650,7 +1804,8 @@ class LayoutGenerator:
                       size_bias: bool = True,
                       climax: Optional[int] = None,
                       climaxes: Optional[List[int]] = None,
-                      among: Optional[List[int]] = None) -> int:
+                      among: Optional[List[int]] = None,
+                      oneway: Optional[Mapping[int, Tuple[int, int]]] = None) -> int:
         """
         Analyse the room graph to assign each room a role and depth:
 
@@ -1676,6 +1831,10 @@ class LayoutGenerator:
         *climaxes* (a districted zone, one per District): those rooms are the
         climaxes and the single-climax rule above is skipped. Depth stays BFS
         from the zone entrance.
+
+        *oneway* (``gate_oneway``: edge index -> (upper, lower), the drop
+        corridors of step 31): depth is then hops walked from the entrance,
+        a drop only downward. Roles still count every corridor at a room.
         """
         n = len(rooms)
         if n == 0:
@@ -1687,6 +1846,11 @@ class LayoutGenerator:
         for i, j in edges:
             adj[i].append(j)
             adj[j].append(i)
+        walk = adj
+        if oneway:
+            walk = defaultdict(list)
+            for room, pairs in gate_adjacency(edges, oneway).items():
+                walk[room] = [m for m, _k in pairs]
 
         entrance = self._find_entrance(rooms, entry, among)
 
@@ -1695,7 +1859,7 @@ class LayoutGenerator:
         q = deque([entrance])
         while q:
             cur = q.popleft()
-            for nxt in adj[cur]:
+            for nxt in walk[cur]:
                 if nxt not in gdepth:
                     gdepth[nxt] = gdepth[cur] + 1
                     q.append(nxt)
