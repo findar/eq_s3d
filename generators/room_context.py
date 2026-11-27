@@ -632,20 +632,61 @@ def _strip_quad(line: Sequence[Tuple[float, float]], hw: float, j: int) -> List[
     return [left[j], left[j + 1], right[j + 1], right[j]]
 
 
-def _piece_in(px, py, piece, grow: float = 0.0) -> np.ndarray:
+#: How far past a strip piece's plan box (u) a point is surely outside it: past the box a
+#: point crosses no edge, or every one, by more than any rounding of ``_in_polygon``'s.
+BOX_SLACK = 1e-6
+
+
+def _piece_plan(piece, grow: float, cache: Optional[dict]):
+    """A strip piece's plan grown by ``grow`` (as ``_strip_plan`` / ``_strip_quad``) and its
+    box widened by ``BOX_SLACK``, kept in ``cache`` (one corridor's, by piece) when given: a
+    route line's run was its whole strip worked out again for every point tested (task 15:
+    a giant District's cave halls, 519,000 strips for one zone)."""
+    key = (id(piece), grow)
+    got = cache.get(key) if cache is not None else None
+    if got is None:
+        _rect, _lo, _hi, line, hw = piece[:5]
+        if len(piece) < 6:
+            plan = _strip_plan(line, hw + grow)
+        else:
+            whole = cache.get((id(line), hw + grow)) if cache is not None else None
+            if whole is None:
+                whole = _strip_plan(line, hw + grow)
+                if cache is not None:
+                    cache[(id(line), hw + grow)] = whole
+            n, j = len(line), piece[5]
+            left, right = whole[:n], whole[n:][::-1]
+            plan = [left[j], left[j + 1], right[j + 1], right[j]]
+        xs, ys = [q[0] for q in plan], [q[1] for q in plan]
+        got = (plan, min(xs) - BOX_SLACK, min(ys) - BOX_SLACK, max(xs) + BOX_SLACK, max(ys) + BOX_SLACK)
+        if cache is not None:
+            cache[key] = got
+    return got
+
+
+def _piece_in(px, py, piece, grow: float = 0.0, cache: Optional[dict] = None) -> np.ndarray:
     """Whether each point lies in a corridor piece (``corridor_contexts``): its rect, a
-    winding leg's strip, or one run of a route line's strip (step 25), grown by ``grow``."""
+    winding leg's strip, or one run of a route line's strip (step 25), grown by ``grow``.
+    A strip's points off its plan box are out without the polygon test (``BOX_SLACK``);
+    ``cache`` keeps each piece's plan (``_piece_plan``)."""
     rect, _lo, _hi, line, hw = piece[:5]
     if line is None:
         return _in_rects(px, py, [rect], grow)
-    plan = _strip_plan(line, hw + grow) if len(piece) < 6 else _strip_quad(line, hw + grow, piece[5])
-    return _in_polygon(np.asarray(px, float), np.asarray(py, float), plan)
+    plan, x0, y0, x1, y1 = _piece_plan(piece, grow, cache)
+    px, py = np.asarray(px, float), np.asarray(py, float)
+    sel = (px >= x0) & (px <= x1) & (py >= y0) & (py <= y1)
+    if sel.all():
+        return _in_polygon(px, py, plan)
+    out = np.zeros(px.shape, bool)
+    if sel.any():
+        out[sel] = _in_polygon(px[sel], py[sel], plan)
+    return out
 
 
-def _in_pieces(px, py, pieces, grow: float = 0.0) -> np.ndarray:
+def _in_pieces(px, py, pieces, grow: float = 0.0, cache: Optional[dict] = None) -> np.ndarray:
     out = np.zeros(np.shape(px), bool)
     for piece in pieces:
-        out |= _piece_in(px, py, piece, grow)
+        out |= _piece_in(px, py, piece, grow, cache)
     return out
 
 
@@ -756,7 +797,8 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
             continue
         gx, gy = np.meshgrid(xs, ys, indexing="ij")
         boxes = [b for b, lo, hi in spans if lo < z1 and hi > z0]
-        inside = _in_pieces(gx, gy, pieces) & ~_in_rects(gx, gy, boxes)
+        plans: dict = {}                    # each piece's plan, for ``_piece_in``
+        inside = _in_pieces(gx, gy, pieces, cache=plans) & ~_in_rects(gx, gy, boxes)
 
         t = cor.transition
         walls_mat = {cor.wall_material} | ({t.wall_material} if t is not None and t.wall_material else set())
@@ -771,7 +813,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
             (rx0, ry0, rx1, ry1), lo, hi = piece[:3]
             near = m.within(rx0 - 0.05, ry0 - 0.05, -1e9, rx1 + 0.05, ry1 + 0.05, 1e9)
             up = near & (m.normal[:, 2] > FLAT_NZ) & (m.lo[:, 2] >= lo - 0.5) & (m.hi[:, 2] <= hi + 0.5)
-            cell = _piece_in(gx, gy, piece)
+            cell = _piece_in(gx, gy, piece, cache=plans)
             got = _sample(m.tri[up], xs, ys, "max")
             floor = np.where(cell & ~np.isnan(got), np.fmax(floor, got), floor)
             down = near & is_ceil & (m.lo[:, 2] >= lo + 0.5) & (m.hi[:, 2] <= hi + height + 0.5)
@@ -790,7 +832,8 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
             ln = np.hypot(n[:, 0], n[:, 1])
             ln[ln < 1e-9] = 1.0
             fx, fy = cx + n[:, 0] / ln, cy + n[:, 1] / ln
-            mine = _in_pieces(cx, cy, pieces, 0.1) & _in_pieces(fx, fy, pieces) & ~_in_rects(fx, fy, boxes)
+            mine = _in_pieces(cx, cy, pieces, 0.1, plans) & _in_pieces(fx, fy, pieces, cache=plans) & \
+                ~_in_rects(fx, fy, boxes)
             level[:] = False
             level[k[mine]] = True
         walls = _wall_faces(m, level, lambda a, b: True)
@@ -801,7 +844,7 @@ def corridor_contexts(spec, mesh) -> List[RoomContext]:
         if runs is not None or any(line is not None for line in lines):
             # A winding corridor's wall faces stand on its strip: a piece leaning off it (one
             # end in, one out) is a wall the tunnel doesn't have there.
-            walls = [w for w in walls if _in_pieces(w.x, w.y, pieces, 0.1)]
+            walls = [w for w in walls if _in_pieces(w.x, w.y, pieces, 0.1, plans)]
 
         # Frames and breaches: each jamb (as far in as it reaches) a solid Feature, and the
         # walls beside them kept bare.
