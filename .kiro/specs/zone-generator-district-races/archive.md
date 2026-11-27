@@ -62,6 +62,10 @@
    mine_delve) when any is free: a fortress gets a warren or a cave. Only the plan path; the layout's own draw is unchanged.
 17. **Words set per-District races only when a phrase can place them** (task 9): an intrusion phrase's captured race
    holds the intruder and the zone race becomes the host's (blank if none named); other phrases need two races named.
+18. **No hall touching a raced District runs past 164 H** (task 10, the lead's call): stock's longest door-to-door
+   hall (cazicthule 163.6 H; gukbottom 162.8, txevu 159.3, so the max, not p99 101.9), at the larger race's H between
+   two Districts. `layout.HALL_CAP_H`, after the hall and race scaling for every layout; breaches keep to it too. A
+   throat between two Districts of different H is an ordinary corridor (squaring it up dragged rooms 4000 u).
 
 ## Follow-ups
 - The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it

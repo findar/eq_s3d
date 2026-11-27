@@ -183,6 +183,12 @@ HALL_RELAX_TOLERANCE = 0.05
 HALL_SCALE_CAP = 2.0
 #: Moves a Threshold's far Districts make at most to reach its length.
 HALL_STRETCH_ROUNDS = 6
+#: The longest hall a raced District keeps, in body heights H of its race (a link between
+#: two Districts: the larger race's): stock's longest door-to-door hall, rounded up
+#: (task 10, archive decision 18). Passes over the halls, and halvings per move.
+HALL_CAP_H = 164.0
+HALL_CAP_PASSES = 4
+HALL_CAP_BISECTIONS = 20
 
 #: How many halvings an Envelope build spends finding the widest gap that fits its hill
 #: (``LayoutGenerator._widest_fit``): (top - 1) / 8, a quarter at Hall length 3.
@@ -1058,6 +1064,8 @@ class LayoutGenerator:
         rooms = result.rooms
         throat_ix = list(getattr(result, "throats", None) or ())
         self._throats = {frozenset((rooms[i].id, rooms[j].id)) for i, j in throat_ix}
+        # A raced District's body heights, for its hall cap (``_cap_district_halls``).
+        self._hall_cap_h: Optional[Dict[int, float]] = None
         # Job B works on plain (i, j) pairs; the vertical relations go to the
         # elevation pass alone (only the ones that constrain anything).
         edges = [(e[0], e[1]) for e in result.edges]
@@ -1334,6 +1342,13 @@ class LayoutGenerator:
         if not any(d.race for d in districts):
             return
         race_of = {d.id: (d.race or self.race) for d in districts}
+        # A throat between two Districts of different H is an ordinary corridor:
+        # the scaling tears its rooms apart, and squaring it up again would drag
+        # one far out of its District (task 10: 4000 u halls on seed 445520960).
+        h_of = {d: semantics.body_height(r) for d, r in race_of.items()}
+        by_id = {r.id: r for r in rooms}
+        self._throats = {t for t in self._throats
+                         if len({h_of.get(by_id[x].district) for x in t}) == 1}
         halls = (self._district_halls(districts)
                  if edges is not None and self._envelope is None else None)
         self._room_race = {r.id: race_of.get(r.district, self.race) for r in rooms}
@@ -1348,6 +1363,98 @@ class LayoutGenerator:
         if halls is not None:
             # Then the Thresholds, at the Districts' own sizes.
             self._stretch_thresholds(rooms, edges, halls, before)
+        if edges is not None and self._envelope is None:
+            self._cap_district_halls(rooms, edges, race_of,
+                                     {d.id for d in districts if d.race})
+
+    def _cap_district_halls(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                            race_of: Dict[int, str], raced: set) -> None:
+        """No hall touching a raced District runs over ``HALL_CAP_H`` of its race's H
+        (between two Districts, the larger race's): a cave's few long tunnels, scaled
+        by the hall length and the race, otherwise run far past anything stock has.
+        The outlying end moves toward the other along their centres' line, just far
+        enough: inside a District, the end farther from its centre, with the rooms a
+        throat joins to it; between two, the whole District farther from the
+        entrance's. Throats are left alone. Crossings and overlaps are settled after,
+        as for every layout."""
+        self._hall_cap_h = ({d: semantics.body_height(r) for d, r in race_of.items() if d in raced}
+                            or None)
+        throats = self._throats
+        clump = list(range(len(rooms)))
+
+        def root(x: int) -> int:
+            while clump[x] != x:
+                x = clump[x]
+            return x
+        for i, j in edges:
+            if frozenset((rooms[i].id, rooms[j].id)) in throats:
+                clump[root(i)] = root(j)
+        # Each District's distance from the entrance's (District 0), in Thresholds.
+        near: Dict[int, set] = {}
+        for i, j in edges:
+            di, dj = rooms[i].district, rooms[j].district
+            if di != dj:
+                near.setdefault(di, set()).add(dj)
+                near.setdefault(dj, set()).add(di)
+        depth, queue = {0: 0}, [0]
+        while queue:
+            d = queue.pop(0)
+            for e in sorted(near.get(d, ())):
+                if e not in depth:
+                    depth[e] = depth[d] + 1
+                    queue.append(e)
+        moved = False
+        for _pass in range(HALL_CAP_PASSES):
+            over = False
+            for i, j in edges:
+                a, b = rooms[i], rooms[j]
+                di, dj = a.district, b.district
+                cap = self._hall_cap(a, b)
+                if (cap is None or frozenset((a.id, b.id)) in throats
+                        or self._hall_span(a, b) <= cap):
+                    continue
+                if di == dj:
+                    mine = [r for r in rooms if r.district == di]
+                    cx = sum(r.center_x for r in mine) / len(mine)
+                    cy = sum(r.center_y for r in mine) / len(mine)
+                    far, to = ((i, j) if math.hypot(a.center_x - cx, a.center_y - cy)
+                               >= math.hypot(b.center_x - cx, b.center_y - cy) else (j, i))
+                    if root(far) == root(to):
+                        continue
+                    group = [k for k in range(len(rooms)) if root(k) == root(far)]
+                else:
+                    far, to = ((j, i) if depth.get(dj, 1 << 30) >= depth.get(di, 1 << 30)
+                               else (i, j))
+                    group = [k for k, r in enumerate(rooms) if r.district == rooms[far].district]
+                over = True
+                vx = rooms[to].center_x - rooms[far].center_x
+                vy = rooms[to].center_y - rooms[far].center_y
+                start = [(rooms[k].center_x, rooms[k].center_y) for k in group]
+
+                def place(t: float) -> None:
+                    for k, (x, y) in zip(group, start):
+                        rooms[k].center_x, rooms[k].center_y = x + t * vx, y + t * vy
+                lo, hi = 0.0, 1.0
+                for _ in range(HALL_CAP_BISECTIONS):
+                    mid = (lo + hi) / 2
+                    place(mid)
+                    lo, hi = (mid, hi) if self._hall_span(a, b) > cap else (lo, mid)
+                place(hi)
+                moved = True
+            if not over:
+                break
+        if moved:
+            self._separate_districts(rooms)
+
+    def _hall_cap(self, a: RoomSpec, b: RoomSpec) -> Optional[float]:
+        """The longest :meth:`_hall_span` a hall between *a* and *b* may run
+        (:meth:`_cap_district_halls`; breaches keep to it too), or None when
+        neither is in a raced District."""
+        hs = self._hall_cap_h
+        if not hs or (a.district not in hs and b.district not in hs):
+            return None
+        h0 = semantics.body_height(self.race)
+        return HALL_CAP_H * max(hs.get(a.district, h0), hs.get(b.district, h0))
 
     def _scale_district_races(self, rooms: List[RoomSpec], race_of: Dict[int, str]) -> None:
         """:meth:`_apply_district_races`'s scaling: each raced District's rooms by
@@ -1749,7 +1856,8 @@ class LayoutGenerator:
                     if frozenset((h, t)) in have:
                         continue
                     span = self._hall_span(rooms[h], rooms[t])
-                    if span > bound:
+                    hall_cap = self._hall_cap(rooms[h], rooms[t])
+                    if span > bound or (hall_cap is not None and span > hall_cap):
                         continue
                     cands.append((span, h, t))
             cands.sort()
