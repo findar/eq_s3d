@@ -35,6 +35,10 @@
    have 2+ links, 93 have 3; gate 80/80.
 8. **Throats in a raced District take the pair's race corridor width** for their slack and separation gap (task 6, the
    follow-up). THROAT_GAP stays 8 u. Un-raced zones are byte-identical; giant cave Districts gate 40/40 (master 39/40).
+9. **A breached host room draws 1 in 3 of its non-light recipe lines from the intruder, at the intruder's race** (task 8,
+   the lead's call): the offset comes from a stream salted `spill/<seed>/<room>`. Spilled lines take the intruder's Sets and
+   weights at the host's Scales, so goblin props stand at goblin size. Walls, light lines, POI Dressing and the bare draw stay
+   the host's. Seeds 2000-2019: 159 of 208 host rooms spilled (49 drew bare), 29 % of their Props.
 
 ## Follow-ups
 - `ai.expand.layout_proposals` fills open proposals from CONTRASTS for `factional` only, not `intrusion` (task 9).
@@ -43,3 +47,6 @@
 - Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
 - Same seed, different build: a race-less classic Districts zone differs in two decor entries and its `.zone.json` when
   another zone was built earlier in the same process (master too, found at task 14). Not this step's.
+- A third District is breached too (`breach_hosts` takes every non-Threshold cross link), so some host rooms spill
+  from it (dark elf, undead Sets) and not from the goblins (task 8). On master these zones already run over stock's
+  p25-p75 decor band (per room about 11-15, light share about 0.6 against 2.9-6.8 and 0.21-0.45).

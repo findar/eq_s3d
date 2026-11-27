@@ -57,7 +57,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/zone_spec.py (CorridorSpec.drop), generators/layout.py, generators/geometry.py, generators/room_context.py, tests/test_drops.py (new)
   - Reqs: 7, 8
 
-- [ ] 8. Mixed boundary rooms
+- [x] 8. Mixed boundary rooms
   - Card: [cards/08-boundary-decor.md](cards/08-boundary-decor.md)
   - Type: agent · Size: S · Depends: 6, 14
   - Owns: generators/decor/, tests/test_decor_placement.py
