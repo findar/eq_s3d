@@ -426,7 +426,7 @@ def decor_stage(recipe, rooms, control: Optional[str] = None, decor_seed: Option
     from generators.decor.catalogue import load as load_catalogue
     from generators.builder import BareCap
     from generators.decor.placement import check
-    from generators.decor.room_view import district_rules
+    from generators.decor.room_view import district_rules, district_spill
     from generators.decor.rules import DEFAULT_CONTROL, layers_for, load_decor
 
     control = control or recipe.get("decor") or DEFAULT_CONTROL
@@ -440,10 +440,11 @@ def decor_stage(recipe, rooms, control: Optional[str] = None, decor_seed: Option
     layers = layers_for(zone.theme, zone.race) if zone is not None else ()
     rules, cat = load_decor(layers=layers), load_catalogue()
     rules_of = district_rules(rules, districts, lambda ls: load_decor(layers=ls))
+    spill_of = district_spill(districts, lambda ls: load_decor(layers=ls))   # breached host rooms
     cap = BareCap(rooms, rules, control, rules_of)    # the build's own cap, not a copy of it
     out = []
     for ctx in rooms:
-        d = cap.place(ctx, rules_of(ctx), cat, control, seed)
+        d = cap.place(ctx, rules_of(ctx), cat, control, seed, spill=spill_of(ctx))
         out.append((ctx, d, check(ctx, d)))
     return control, seed, out
 

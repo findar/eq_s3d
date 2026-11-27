@@ -632,6 +632,8 @@ class DecorBuild:
                            "decor_drops": [x.to_dict() for x in d.drops], "bare": d.bare}
             if ctx.id in self.room_seeds:
                 out[ctx.id]["decor_seed"] = self.room_seeds[ctx.id]
+            if d.spill:                     # a breached host room's lines from its intruder (task 8)
+                out[ctx.id]["spill"] = list(d.spill)
         return out
 
     def corridor_records(self, corridors) -> List[dict]:
@@ -732,22 +734,23 @@ class BareCap:
             of(c).weights_for(c.zone_type, c.race, c.theme, c.kind, c.room_type, control)[BARE]
             for c in todo if c.source == "room") - 1e-9)
 
-    def place(self, ctx, rules, catalogue, control: str, decor_seed, room_seed=None):
+    def place(self, ctx, rules, catalogue, control: str, decor_seed, room_seed=None, spill=None):
         """``placement.place`` under the cap. ``room_seed`` (partial-rebuild Req 3) is the
         room's own decor seed: whether it is bare is still drawn with the zone's
         ``decor_seed`` (and counted against the cap as always), so no other room's draw moves;
         a room the zone's draw leaves bare stays exactly as the zone drew it (its own seed
-        isn't used), and a room that isn't bare is placed in full with ``room_seed``."""
+        isn't used), and a room that isn't bare is placed in full with ``room_seed``. ``spill``
+        (``placement.Spill``, task 8) is a breached host room's share from its intruder."""
         from generators.decor.placement import place
-        d = place(ctx, rules, catalogue, control, decor_seed)
+        d = place(ctx, rules, catalogue, control, decor_seed, spill=spill)
         if d.bare and ctx.source == "room":
             if self.left > 0:
                 self.left -= 1
                 return d
             if room_seed is None:
-                return place(ctx, rules, catalogue, control, decor_seed, may_be_bare=False)
+                return place(ctx, rules, catalogue, control, decor_seed, may_be_bare=False, spill=spill)
         if room_seed is not None and ctx.source == "room":
-            d = place(ctx, rules, catalogue, control, room_seed, may_be_bare=False)
+            d = place(ctx, rules, catalogue, control, room_seed, may_be_bare=False, spill=spill)
         return d
 
 
@@ -787,6 +790,27 @@ def settle_room(ctx, d, catalogue, importer, mesh, imported: dict):
         props.append(q)
         used.append(f)
     return replace(d, props=props), problems, used
+
+
+def _spill_hosts(spec: ZoneSpec) -> Dict[int, Tuple[str, List[str]]]:
+    """Mixed boundary rooms (district races Req 9, task 8): each intruder District's id ->
+    (its race, the host rooms its breaches enter, sorted), from ``transitions.breach_hosts``. A
+    room two intruders breach spills from the lower id's. Empty for a zone without intrusion."""
+    from generators.semantics import room_race
+    from generators.transitions import breach_hosts
+    breaches = breach_hosts(spec)
+    if not breaches:
+        return {}
+    rooms = {r.id: r for r in spec.rooms}
+    cors = {c.id: c for c in spec.corridors}
+    out: Dict[int, Tuple[str, List[str]]] = {}
+    for cid, host in breaches.items():
+        c = cors[cid]
+        them = rooms[c.to_room if c.from_room == host else c.from_room]
+        race, hosts = out.setdefault(them.district, (room_race(spec, them) or "", []))
+        if host not in hosts:
+            hosts.append(host)
+    return {d: (race, sorted(hosts)) for d, (race, hosts) in out.items()}
 
 
 def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
@@ -832,9 +856,15 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
         return by_theme[ctx.theme]
 
     if spec.districts:
+        hosts = _spill_hosts(spec)
         for did, theme in district_themes(spec):
             layers = by_theme.setdefault(theme, _decor_data(decor_layers_of(spec, theme))[0]).layers
-            out.districts.append({"id": did, "theme": theme, "layers": list(layers)})
+            rec = {"id": did, "theme": theme, "layers": list(layers)}
+            if did in hosts:                # an intruder: the host rooms its breaches enter
+                rec.update(race=hosts[did][0], spill=hosts[did][1])
+            out.districts.append(rec)
+    from generators.decor.room_view import district_spill
+    spill_of = district_spill(out.districts, lambda ls: _decor_data(tuple(ls))[0])
 
     imported = {}                           # model file -> its import
     cap = BareCap(todo, rules, control, rules_of)
@@ -842,7 +872,7 @@ def decor_for(spec: ZoneSpec, ter: TerFile, warnings: list,
     out.room_seeds = {c.id: own[c.id] for c in todo if c.source == "room" and c.id in own}
     for ctx in todo:
         d = cap.place(ctx, rules_of(ctx), catalogue, control, spec.decor_seed,
-                      out.room_seeds.get(ctx.id))
+                      out.room_seeds.get(ctx.id), spill_of(ctx))
         d, problems, used = settle_room(ctx, d, catalogue, importer, mesh, imported)
         out.placed.extend(zip(used, d.props))
         out.rooms.append((ctx, d, problems))
