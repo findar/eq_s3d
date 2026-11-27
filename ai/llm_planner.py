@@ -18,8 +18,8 @@ from typing import Optional
 
 from core.env import env_value
 from .schema import (
-    ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_DISTRICT_RELATIONSHIPS, VALID_DUNGEON_THEMES,
-    VALID_ZONE_TYPES, WINDING_MAX, HALL_MIN, HALL_MAX,
+    ZonePlan, ZONE_PLAN_JSON_SCHEMA, VALID_DISTRICT_RELATIONSHIPS, VALID_DUNGEON_RACES,
+    VALID_DUNGEON_THEMES, VALID_ZONE_TYPES, WINDING_MAX, HALL_MIN, HALL_MAX,
 )
 
 
@@ -47,13 +47,19 @@ Rules:
 - mood: a short atmosphere note (e.g. "dark and damp").
 - districts: true only for a dungeon whose description names 2-3 contrasting
   areas ("the living and the dead", "two factions", "upper and lower halls",
-  "a temple fallen to the dead", "overrun by kobolds"); omit it otherwise.
+  "a temple fallen to the dead", "overrun by kobolds", "a fortress the goblins
+  tunnelled into"); omit it otherwise.
 - district_plan: with districts, one object per named area, the entrance's
   area first: {{"purpose": <one of {purposes}, or "" when the words name
   none>}}. The same purpose in every entry gives every area that purpose.
+  When the words give the areas different races, an entry also takes
+  "race": <one of {races}> (omit it for the zone's dungeon_race).
 - district_relationship: with districts, one of {relationships}
   (abandoned_vs_active: the areas past the entrance's have fallen or been
-  overrun). With districts, room_count is at least 8 (3 areas: 14).
+  overrun; intrusion: a later area tunnelled, burrowed or dug into the
+  entrance's, e.g. "a giant fortress the goblins tunnelled into" is
+  [{{"purpose": "fortress", "race": "giant"}}, {{"purpose": "warren", "race": "goblin"}}]
+  with intrusion). With districts, room_count is at least 8 (3 areas: 14).
 
 Respond with ONLY the JSON object, no prose.
 Honour real-EQ proportions provided in the style guidance.
@@ -65,6 +71,7 @@ def system_prompt() -> str:
     return _SYSTEM_PROMPT.format(
         zone_types=", ".join(VALID_ZONE_TYPES),
         purposes=", ".join(VALID_DUNGEON_THEMES),
+        races=", ".join(VALID_DUNGEON_RACES),
         relationships=", ".join(VALID_DISTRICT_RELATIONSHIPS),
         winding_max=f"{WINDING_MAX:g}",
         hall_min=f"{HALL_MIN:g}", hall_max=f"{HALL_MAX:g}")

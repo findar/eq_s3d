@@ -214,6 +214,42 @@
         </label>
       </fieldset>
 
+      <!-- Dungeon only, with Districts ticked: how the Districts relate, and each
+           District's theme and race in id order (District 1 holds the entrance;
+           district races step 31). The theme and race options are copied from
+           the Content group's selects on load (main.ts); "Any" leaves a theme
+           to the relationship, "Zone's race" a race to the Content race. They
+           are sent as district_relationship and district_plan. -->
+      <fieldset class="group" id="group-districts">
+        <legend>Districts</legend>
+        <label class="field" title="Sequential: one leads into the next. Factional: opposed sides. Abandoned: the later ones have fallen. Intrusion: a later one dug into the first and breaks in at several places"><span>Relationship</span>
+          <select id="district-relationship">
+            <option value="" selected>Sequential</option>
+            <option value="factional">Factional</option>
+            <option value="abandoned_vs_active">Abandoned vs active</option>
+            <option value="intrusion">Intrusion</option>
+          </select>
+        </label>
+        <label class="field"><span>District 1 theme</span>
+          <select id="district-theme-1" data-copy="dungeon-theme"><option value="" selected>Any</option></select>
+        </label>
+        <label class="field"><span>District 1 race</span>
+          <select id="district-race-1" data-copy="dungeon-race"><option value="" selected>Zone's race</option></select>
+        </label>
+        <label class="field"><span>District 2 theme</span>
+          <select id="district-theme-2" data-copy="dungeon-theme"><option value="" selected>Any</option></select>
+        </label>
+        <label class="field"><span>District 2 race</span>
+          <select id="district-race-2" data-copy="dungeon-race"><option value="" selected>Zone's race</option></select>
+        </label>
+        <label class="field"><span>District 3 theme</span>
+          <select id="district-theme-3" data-copy="dungeon-theme"><option value="" selected>Any</option></select>
+        </label>
+        <label class="field"><span>District 3 race</span>
+          <select id="district-race-3" data-copy="dungeon-race"><option value="" selected>Zone's race</option></select>
+        </label>
+      </fieldset>
+
       <!-- Landscape zone types (wilderness, outdoor dungeon) only: what each
            side of the map is (mountain and river sides are sealed; a zoneline
            is a walkable exit off the map), how wooded the plains are, and the

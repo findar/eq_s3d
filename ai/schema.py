@@ -209,7 +209,12 @@ def district_plan(value: Any, warnings: Optional[List[str]] = None) -> List[Dict
     order. Each comes back as ``{"purpose": name}``; "" leaves that District to the
     relationship. An unknown Purpose is ignored (its District left open) and anything past
     ``MAX_DISTRICT_PROPOSALS`` dropped, each with a note in *warnings*. A value that is not
-    a list raises ``ValueError``."""
+    a list raises ``ValueError``.
+
+    A mapping may also name the District's own ``race`` (district races Req 4, 10), one of
+    ``VALID_DUNGEON_RACES``; it comes back as ``{"purpose": name, "race": race}``, the key
+    only when a race is named ("" or none: the zone's race). An unknown race is ignored
+    with a ``district_race_unknown`` note."""
     if value is None or value == "":
         return []
     if not isinstance(value, (list, tuple)):
@@ -228,7 +233,16 @@ def district_plan(value: Any, warnings: Optional[List[str]] = None) -> List[Dict
             if warnings is not None:
                 warnings.append(f"district_purpose_unknown: {raw!r} ignored (District {d})")
             name = ""
-        out.append({"purpose": name})
+        entry = {"purpose": name}
+        race = item.get("race") if isinstance(item, Mapping) else None
+        race_name = race.strip().lower() if isinstance(race, str) else ""
+        if race_name in VALID_DUNGEON_RACES:
+            entry["race"] = race_name
+        elif race_name or not isinstance(race, (str, type(None))):
+            if warnings is not None:
+                warnings.append(f"district_race_unknown: {race!r} ignored (District {d}), "
+                                f"using the zone's race")
+        out.append(entry)
     return out
 
 
@@ -394,7 +408,8 @@ class ZonePlan:
 
     # Districts (districts spec Req 4.1; dungeons only, A2). Off by default (A1). The
     # proposals are ``{"purpose": name}`` in District id order ("" leaves one to the
-    # relationship); two or more naming one Purpose and nothing else pin it (23.10).
+    # relationship), with a ``race`` only where one is named (step 31); two or more
+    # naming one Purpose and nothing else pin it (23.10).
     # ``to_dict`` leaves all three out while they are at their defaults, so a plan
     # without them is the dict it always was, and a saved one loads with them off.
     districts: bool = False
@@ -636,6 +651,8 @@ ZONE_PLAN_JSON_SCHEMA = {
             "enum": ["flat", "moderate", "dramatic"],
             "description": "How much the floor height varies between rooms.",
         },
+        "winding": {"type": "number", "minimum": 0, "maximum": WINDING_MAX, "description": "How far rough corridors stray: 0 straight, 1 the stock tunnel (omit then), 2 twisty."},
+        "hall_length": {"type": "number", "minimum": HALL_MIN, "maximum": HALL_MAX, "description": "How long the halls between rooms run, a multiple of the stock hall (1, omit then)."},
         "regions": {
             "type": "array",
             "items": {"type": "string", "enum": VALID_REGION_KINDS},
@@ -707,22 +724,31 @@ ZONE_PLAN_JSON_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {"purpose": {"type": "string",
-                                           "enum": VALID_DUNGEON_THEMES + [""]}},
+                                           "enum": VALID_DUNGEON_THEMES + [""]},
+                               "race": {"type": "string",
+                                        "enum": VALID_DUNGEON_RACES + [""]}},
                 "required": ["purpose"],
             },
             "description": "With districts: one entry per named area (2-3), the "
                            "entrance's area first, each the dungeon_theme the "
                            "words name for that area, or an empty string when "
                            "they name none. The same purpose in every entry "
-                           "gives every area that purpose.",
+                           "gives every area that purpose. An entry's race is "
+                           "who built or holds that area, when the words give "
+                           "the areas different races (a giant fortress the "
+                           "goblins tunnelled into: giant, then goblin); omit "
+                           "it for the zone's dungeon_race.",
         },
         "district_relationship": {
             "type": "string",
             "enum": VALID_DISTRICT_RELATIONSHIPS,
             "description": "With districts: sequential (one area leads into the "
-                           "next), factional (opposed sides), or "
+                           "next), factional (opposed sides), "
                            "abandoned_vs_active (the areas past the entrance's "
-                           "have fallen, been overrun or abandoned).",
+                           "have fallen, been overrun or abandoned), or "
+                           "intrusion (a later area tunnelled, burrowed or dug "
+                           "into the entrance's and breaks into it at several "
+                           "places).",
         },
     },
     "required": ["zone_type", "room_count", "size"],

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import {
   generateZone, fetchControls, fetchSidecar, fetchVersion, fetchZoneTypes, rebuildZone,
   fetchZoneVersions, editZone,
-  type DecorLayerListing, type EditResult, type GenerateParams, type GenerateResult,
+  type DecorLayerListing, type DistrictProposal, type EditResult, type GenerateParams, type GenerateResult,
   type RebuildParams, type ZoneSidecar, type ZoneVersionEntry,
 } from "./api";
 import { ZoneScene } from "./scene";
@@ -230,9 +230,12 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     }
     if (usesControl(p.zone_type, "decor") && p.decor) rows.push(["Decor", p.decor]);
     if (p.regions.length) rows.push(["Regions", p.regions.join(", ")]);
-    // Districts: each one's theme, in id order (districts spec Req 6).
+    // Districts: each one's theme (and its own race, step 31), in id order
+    // (districts spec Req 6), and how they relate.
     if (sidecar.districts?.length) {
-      rows.push(["Districts", sidecar.districts.map((d) => d.purpose || "—").join(", ")]);
+      rows.push(["Districts", sidecar.districts.map((d) =>
+        (d.purpose || "—") + (d.race ? ` (${d.race})` : "")).join(", ")]);
+      rows.push(["Relationship", sidecar.districts[0].relationship || "sequential"]);
     }
     if (p.mood) rows.push(["Mood", p.mood]);
     for (const [k, v] of rows) {
@@ -406,6 +409,7 @@ const districtsBox = $("districts") as HTMLInputElement;
 function syncDistrictsBox(result: GenerateResult, sidecar: ZoneSidecar): void {
   if (result.zone_type !== "dungeon") return;
   districtsBox.checked = !!result.plan?.districts || (sidecar.districts?.length ?? 0) >= 2;
+  syncControlVisibility();          // the Districts group follows the box
 }
 
 // ---- Generate ----
@@ -462,11 +466,42 @@ let decorLayerCount = 0;
 
 // What the visibility rules read: the zone type and the controls that gate
 // others (Layout, Decor, Sites).
-interface ControlState { zoneType: string; layout: string; decor: string; sites: string }
+interface ControlState {
+  zoneType: string; layout: string; decor: string; sites: string; districts: boolean;
+}
 
 function readControlState(): ControlState {
   const v = (id: string) => ($(id) as HTMLSelectElement).value;
-  return { zoneType: v("zone-type"), layout: v("layout"), decor: v("decor"), sites: v("sites") };
+  return { zoneType: v("zone-type"), layout: v("layout"), decor: v("decor"), sites: v("sites"),
+           districts: districtsBox.checked };
+}
+
+// The Districts group (district races step 31): the relationship, and each
+// District's theme and race in id order. Shown (and sent) on a dungeon with
+// the Districts box ticked.
+const DISTRICT_SLOTS = [1, 2, 3];
+const DISTRICT_CONTROLS = ["district-relationship",
+  ...DISTRICT_SLOTS.flatMap((n) => [`district-theme-${n}`, `district-race-${n}`])];
+
+// Each District theme / race select copies the Content group's options past
+// its own blank one ("Any" / "Zone's race"), so the lists stay one.
+for (const sel of document.querySelectorAll<HTMLSelectElement>("#group-districts select[data-copy]")) {
+  const from = $(sel.dataset.copy!) as HTMLSelectElement;
+  for (const opt of Array.from(from.options)) {
+    if (opt.value) sel.add(new Option(opt.text, opt.value));
+  }
+}
+
+// The District proposals on screen: one per slot up to the last that names a
+// theme or a race ([] when none does). A blank race is left out (the zone's).
+function readDistrictPlan(): DistrictProposal[] {
+  const plan = DISTRICT_SLOTS.map((n) => {
+    const purpose = ($(`district-theme-${n}`) as HTMLSelectElement).value;
+    const race = ($(`district-race-${n}`) as HTMLSelectElement).value;
+    return race ? { purpose, race } : { purpose };
+  });
+  while (plan.length && !plan[plan.length - 1].purpose && !plan[plan.length - 1].race) plan.pop();
+  return plan;
 }
 
 // Map edges: one selector per side.
@@ -501,6 +536,8 @@ function applies(id: string, s: ControlState): boolean {
   if (id === "decor-layers") {
     return decorLayerCount > 0 && usesControl(s.zoneType, "decor") && s.decor !== "none";
   }
+  // The Districts group: only with Districts on.
+  if (DISTRICT_CONTROLS.includes(id)) return usesControl(s.zoneType, "districts") && s.districts;
   return usesControl(s.zoneType, id);
 }
 
@@ -602,6 +639,11 @@ async function doGenerate(mode: Mode) {
     const roomsSeed = on("rooms-seed") ? readStageSeed("rooms-seed") : undefined;
     // Districts: sent only ticked (left out, the server's default: off).
     const districts = on("districts") && districtsBox.checked;
+    // Their relationship and proposals: sent only with Districts on, and only
+    // when chosen (left out, the server's defaults: sequential, every theme
+    // the relationship's and every race the zone's).
+    const districtRel = districts ? sel("district-relationship") : "";
+    const districtPlan = districts ? readDistrictPlan() : [];
     params = {
       mode,
       controls: {
@@ -626,6 +668,8 @@ async function doGenerate(mode: Mode) {
         ...(decorLayer ? { decor_layers: [decorLayer] } : {}),
         ...(roomsSeed !== undefined ? { rooms_seed: roomsSeed } : {}),
         ...(districts ? { districts: true } : {}),
+        ...(districtRel ? { district_relationship: districtRel } : {}),
+        ...(districtPlan.length ? { district_plan: districtPlan } : {}),
       },
       ...(seed !== undefined ? { seed } : {}),
     };
@@ -650,7 +694,9 @@ async function doGenerate(mode: Mode) {
       (decorSeed !== undefined ? ` decor_seed=${decorSeed}` : "") +
       (decorLayer ? ` decor_layers=${decorLayer}` : "") +
       (roomsSeed !== undefined ? ` rooms_seed=${roomsSeed}` : "") +
-      (districts ? " districts=on" : "") + seedNote,
+      (districts ? " districts=on" : "") +
+      (districtRel ? ` district_relationship=${districtRel}` : "") +
+      (districtPlan.length ? ` district_plan=${JSON.stringify(districtPlan)}` : "") + seedNote,
     );
   }
   await runGenerate(params);
@@ -1103,7 +1149,7 @@ async function refreshZoneTypes(): Promise<void> {
 }
 
 // The controls that gate others: re-run the visibility rules on each change.
-for (const id of ["zone-type", "layout", "decor", "sites"]) {
+for (const id of ["zone-type", "layout", "decor", "sites", "districts"]) {
   $(id).addEventListener("change", syncControlVisibility);
 }
 
@@ -1217,7 +1263,8 @@ hallInput.addEventListener("input", () => {
 for (const id of ["zone-type", "rooms", "size", "verticality", "winding", "hall-length", "locks",
                   "edge-n", "edge-e", "edge-s", "edge-w", "trees", "sites", "inhabitant",
                   "layout", "rule-set", ...SCALE_CONTROLS, "dungeon-theme", "dungeon-race",
-                  "decor", "decor-layers", "decor-seed", "rooms-seed", "districts"]) {
+                  "decor", "decor-layers", "decor-seed", "rooms-seed", "districts",
+                  ...DISTRICT_CONTROLS]) {
   $(id).addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") doGenerate("controls");
   });

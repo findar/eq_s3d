@@ -628,6 +628,9 @@ _ALLOWED_WEB_INPUT_IDS = {
     "districts",  # Districts on a dungeon (districts spec task 7)
     "winding",  # how far rough corridors stray (winding-control spec task 3)
     "hall-length",  # how long halls run (hall-length spec task 3)
+    # The Districts group: relationship, each District's theme and race (district races task 9).
+    "district-relationship", "district-theme-1", "district-theme-2", "district-theme-3",
+    "district-race-1", "district-race-2", "district-race-3",
     # The Export row (export spec task 7): it exports a finished build and
     # never feeds a generate (umbrella Req 8.6).
     "export-filter", "export-shortname", "export-clear-spawns",

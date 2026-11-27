@@ -41,6 +41,17 @@ export interface GenerateControls {
   rooms_seed?: number;
   // Dungeon only: split the rooms into 2-3 Districts (left out: off).
   districts?: boolean;
+  // With Districts: each District's theme ("" for the relationship's choice) and
+  // race (left out for the zone's), in id order (district races step 31).
+  district_plan?: DistrictProposal[];
+  // With Districts: sequential (left out), factional, abandoned_vs_active or intrusion.
+  district_relationship?: string;
+}
+
+// One District proposal (ai/schema.py district_plan): a theme and, when named, a race.
+export interface DistrictProposal {
+  purpose: string;
+  race?: string;
 }
 
 // The /api/generate request body. The server resolves `mode` explicitly:
@@ -79,6 +90,9 @@ export interface ZonePlan {
   rooms_seed?: number | null;
   // Districts on (dungeon only; absent on a plan from before step 20).
   districts?: boolean;
+  // Absent while Districts are at their defaults (ZonePlan.to_dict leaves them out).
+  district_plan?: DistrictProposal[];
+  district_relationship?: string;
 }
 
 // One file of an accepted build (server/app.py ArtifactRef), in panel order:
@@ -245,6 +259,8 @@ export interface ZoneDistrict {
   room_ids: string[];
   threshold_corridor: string | null;
   relationship: string;
+  // The District's own race (step 31); absent when it takes the zone's.
+  race?: string;
   palette: string;
   light_mood: string;
 }

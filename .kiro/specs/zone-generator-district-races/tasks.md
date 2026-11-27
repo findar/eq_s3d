@@ -63,7 +63,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/decor/, tests/test_decor_placement.py
   - Reqs: 9
 
-- [ ] 9. Controls and words
+- [x] 9. Controls and words
   - Card: [cards/09-controls.md](cards/09-controls.md)
   - Type: agent · Size: M · Depends: 4, 5, 6, 7
   - Owns: ai/schema.py, ai/rule_planner.py, ai/llm_planner.py, server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, tests/test_district_races_words.py (new)
