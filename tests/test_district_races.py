@@ -290,3 +290,56 @@ def test_a_throat_between_districts_of_different_h_is_not_snapped_back():
         a, b = by[c.from_room], by[c.to_room]
         cap = HALL_CAP_H * max(h[a.district], h[b.district])
         assert LayoutGenerator._hall_span(a, b) <= 1.02 * cap, c.id
+
+
+# --- Links between Districts in their own race's H (task 17) -----------------
+
+def test_a_link_is_capped_in_the_race_that_sizes_it():
+    """A goblin hole into giants keeps to HALL_CAP_H goblin H (984 u), not giant (3608 u):
+    the cap reads the link's race, the smaller (archive decision 21)."""
+    from generators.layout import HALL_CAP_H
+    from generators.zone_spec import RoomSpec
+    gen = LayoutGenerator("dungeon", seed=1)
+    gen.race = ""
+    gen._room_race = {"g": "giant", "k": "goblin", "g2": "giant"}
+    gen._hall_cap_h = {0: semantics.body_height("giant"), 1: semantics.body_height("goblin")}
+    giant = RoomSpec(id="g", center_x=0, center_y=0, width=300, depth=300, district=0)
+    goblin = RoomSpec(id="k", center_x=600, center_y=0, width=60, depth=60, district=1)
+    other = RoomSpec(id="g2", center_x=0, center_y=900, width=300, depth=300, district=0)
+    assert gen._hall_cap(giant, goblin) == HALL_CAP_H * semantics.body_height("goblin")
+    assert gen._hall_cap(giant, other) == HALL_CAP_H * semantics.body_height("giant")
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("layout,rooms,seed", [("graph", 24, 2039), ("graph", 16, 2004),
+                                               ("classic", 16, 2097)])
+def test_goblin_links_keep_goblin_lengths(layout, rooms, seed):
+    """Task 17 (step 31 cases d, i, r): a link between a giant and a goblin District ran
+    up to 3,123 u (520 goblin H) for an 18 u tunnel. Its Threshold is laid as the engine
+    drew it in the goblins' H, breaches are bounded by goblin halls and cross straight
+    where the rooms face, and no link runs past HALL_CAP_H of its own race's H door to
+    door."""
+    import statistics
+
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from generators.layout import HALL_CAP_H
+    from scripts.grid_score import corridor_length
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": rooms, "layout": layout,
+                                   "verticality": "moderate", "size": "medium",
+                                   "districts": True, "district_relationship": "intrusion",
+                                   "district_plan": GIANT_GOBLIN}, [])
+    plan.name = f"links_{layout}_{seed}"
+    spec = plan_to_spec(plan, seed=seed, warnings=[])
+    by = {r.id: r for r in spec.rooms}
+    goblin = []
+    for c in spec.corridors:
+        a, b = by[c.from_room], by[c.to_room]
+        if a.district == b.district:
+            continue
+        race = semantics.corridor_race(spec, c, by)
+        length = corridor_length(c, by) / semantics.body_height(race)
+        assert length <= HALL_CAP_H, (c.id, race, length)
+        if race == "goblin":
+            goblin.append(length)
+    assert goblin and statistics.median(goblin) <= 60.0

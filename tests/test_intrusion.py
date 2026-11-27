@@ -33,8 +33,11 @@ def test_intrusion_is_a_relationship():
 @pytest.mark.parametrize("layout", ["classic", "graph"])
 def test_new_breaches_fill_most_pairs(layout):
     """Where the graph offers too few cross edges, new ones are added (the lead's call
-    at the task 6 review): most pairs end with 2-3 links, none longer than
-    BREACH_SPAN times the longest hall of its two Districts."""
+    at the task 6 review): many pairs end with 2-3 links, none longer than
+    BREACH_SPAN times the longest hall of its two Districts. Since task 17 a goblin
+    breach into giants is bounded by goblin halls (archive decision 21), which costs
+    breaches where the giant rooms stand far apart: a bare Graph build (no plan) keeps
+    5 of these 12 pairs at 2+ links; through the plan (the sweep), 68 % of pairs."""
     from generators.layout import BREACH_SPAN
     pairs = multi = 0
     for seed in range(2000, 2006):
@@ -54,7 +57,7 @@ def test_new_breaches_fill_most_pairs(layout):
         pairs += len(per)
         multi += sum(v >= 2 for v in per.values())
         assert max(per.values()) <= INTRUSION_LINKS
-    assert multi >= 0.6 * pairs
+    assert multi >= (0.6 if layout == "classic" else 0.35) * pairs
 
 
 def test_breaches_keep_to_the_degree_band(monkeypatch):
