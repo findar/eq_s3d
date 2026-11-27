@@ -407,3 +407,27 @@ def test_a_slot_keeps_off_a_door_on_the_bridged_rooms_wall():
             assert (min(s[2], p[2]) - max(s[0], p[0]) <= 1e-6
                     or min(s[3], p[3]) - max(s[1], p[1]) <= 1e-6), (cor.id, other.id, hall.id)
     assert checked
+
+
+def test_a_spring_layouts_slot_keeps_off_a_door_too():
+    """District races task 10 (fortress giant + goblin warren intrusion, Graph moderate 24,
+    seed 1773177717): breach corr_24 bridged room_13 with a slot reaching its east wall,
+    where corr_11's door runs 2 u into the room; that piece's side wall stood in the slot
+    ("wall across throat"). The rule held only for a jittered build; it holds for every
+    layout now."""
+    plan = ZonePlan.from_controls({
+        "zone_type": "dungeon", "room_count": 24, "verticality": "moderate", "layout": "graph",
+        "districts": True, "district_relationship": "intrusion",
+        "district_plan": [{"purpose": "fortress", "race": "giant"},
+                          {"purpose": "warren", "race": "goblin"}]}, [])
+    plan.name = "slots"
+    spec = plan_to_spec(plan, seed=1773177717, warnings=[])
+    rooms = {r.id: r for r in spec.rooms}
+    assert any(c.id == "corr_11" and (LayoutGenerator._door_on_wall(c, rooms["room_13"]) or ("",))[0] == "E"
+               for c in spec.corridors), "the layout moved: re-pin"
+    for cor in spec.corridors:
+        bl = bridge_layout(cor, rooms) if cor.bridge else None
+        if bl is None:
+            continue
+        assert not LayoutGenerator._slot_meets_door(bl.slot, rooms[cor.bridge], spec.corridors,
+                                                    spec.corridors.index(cor)), (cor.id, cor.bridge)

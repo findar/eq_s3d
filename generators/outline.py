@@ -534,6 +534,41 @@ def _close_holes(verts: list, cells: list, rects: Sequence[Rect] = ()) -> list:
     return out
 
 
+def _pinches(before: list, after: list, cells: List[List[int]]) -> bool:
+    """Does moving the walls from ``before`` to ``after`` (one Outline's vertices, its
+    Cells unchanged) close a way across the floor? A way is a wall vertex facing a wall
+    edge at least three edges away along its loop, the line between them over floor (its
+    middle on a Cell; a wall across an inlet faces none); closed is under ``PASS_MIN``
+    after and not before. Ways narrower to begin with are growth's (it judges them)."""
+    loops = Outline(verts=after, cells=cells, core=(0, 0, 0, 0)).wall_loops()
+    out = Outline(verts=after, cells=cells, core=(0, 0, 0, 0))
+    p0, p1 = np.asarray(before, dtype=np.float64), np.asarray(after, dtype=np.float64)
+
+    def dist(pts, loop, k):
+        a = pts[loop]
+        ab = pts[loop[1:] + loop[:1]] - a
+        p = pts[loop[k]]
+        t = np.clip(((p - a) * ab).sum(axis=1) / np.maximum((ab ** 2).sum(axis=1), 1e-12), 0.0, 1.0)
+        q = a + t[:, None] * ab
+        return np.hypot(*(q - p).T), q
+    for loop in loops:
+        n = len(loop)
+        if n < 6:
+            continue
+        for k in range(n):
+            d1, q = dist(p1, loop, k)
+            near = [(k + j) % n for j in (-3, -2, -1, 0, 1, 2)]
+            d1[near] = math.inf
+            hits = np.nonzero(d1 < PASS_MIN)[0]
+            if not len(hits):
+                continue
+            d0, _q = dist(p0, loop, k)
+            for e in hits:
+                if d0[e] >= PASS_MIN and out.contains(((p1[loop[k]] + q[e]) / 2)[None])[0]:
+                    return True
+    return False
+
+
 def _fans_sound(verts: list, cell: List[int]) -> bool:
     """Does every triangle of the Cell's fan, from the mean of its vertices, keep
     its winding? The mesh fans from there, so this is what must hold."""
@@ -776,11 +811,17 @@ def draw_outline(box: Rect, doors: List[Door], slots: List[Rect], *, complex: st
     wobble = min(wobble, WOBBLE_SHARE * min(x1 - x0, y1 - y0))
     keep = _close_holes([verts[i] for i in used], [[remap[i] for i in c] for c in keep], slots)
     verts = [verts[i] for i in used]
-    # Splitting edges moves a Cell's mean, so judge the fans again afterwards.
+    # Splitting edges moves a Cell's mean, so judge the fans again afterwards. Nor may the
+    # wander pinch the floor: walls moved in from both sides can close a neck growth judged
+    # passable (district races task 10: a 7.4 u neck wandered to 5.7 u, "floor walled off").
     for scale in (1.0, 0.5, 0.25, 0.0):
-        final, final_cells = _split_long_edges(_wander(verts, keep, forced_rects, wobble * scale, rng), keep)
-        if all(_fans_sound(final, c) for c in final_cells):
-            break
+        moved = _wander(verts, keep, forced_rects, wobble * scale, rng)
+        final, final_cells = _split_long_edges(moved, keep)
+        if not all(_fans_sound(final, c) for c in final_cells):
+            continue
+        if scale > 0.0 and _pinches(verts, moved, keep):
+            continue
+        break
     return Outline(verts=final, cells=final_cells, core=core, throats=throats)
 
 

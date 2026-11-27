@@ -3859,7 +3859,9 @@ class LayoutGenerator:
                     bl = cand and bridge_layout(cand, by_id)
                     if not bl:
                         continue
-                    if self._straight_doors and self._slot_meets_door(bl.slot, hall, corridors, k):
+                    # Every layout (task 10: a spring layout's door 2 u into a breach's
+                    # slot, seed 1773177717), not only a jittered one's (winding task 10).
+                    if self._slot_meets_door(bl.slot, hall, corridors, k):
                         continue
                     shaft = (bl.slot, bl.ceiling, bl.top)
                     if self._shaft_clear(rooms, edges, k, m, shaft, shafts):
