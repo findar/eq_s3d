@@ -63,7 +63,7 @@ from scipy.ndimage import binary_dilation, binary_erosion, label
 from generators.geometry import (MeshBuilder, _bridge_slots, _door_openings, bridge_layout,
                                  drop_end, is_auto_stair, stair_layout)
 from generators.routing import Rect, corridor_route, route_footprint
-from generators.semantics import body_height
+from generators.semantics import body_height, corridor_race
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
 
 if TYPE_CHECKING:
@@ -1879,7 +1879,9 @@ def check_transition(surf: WalkSurface, cor: CorridorSpec, spec: ZoneSpec, agent
     def fail(reason: str) -> OutlineResult:
         return OutlineResult(cor.id, False, reason)
 
-    h = body_height(spec.dungeon_race)
+    # Sized by the race the opening was cut for: the smaller of its two ends' (a goblin hole into a
+    # giant hall), the zone's when no District carries a race (district races task 16).
+    h = body_height(corridor_race(spec, cor))
     least_clear, least_head = TRANSITION_CLEAR_H * h, max(TRANSITION_HEAD_H * h, TRANSITION_HEAD)
     axis, across = (0, 1) if t.along_x else (1, 0)
     line = (t.x, t.y)[axis]
