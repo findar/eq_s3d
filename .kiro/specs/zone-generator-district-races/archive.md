@@ -57,11 +57,15 @@
 15. **The corridor check walks a drop one way** (task 7): it floods from the upper room only and passes when the
    flood reaches the corridor's lower end and `find_drops` links that end onto the lower room's floor; a flood that
    reaches the lower floor fails as "drop walks both ways". Flush corridors keep the two-way check.
+16. **An open intruder is dug into its host** (task 9): `ai.expand.layout_proposals` fills open `intrusion`
+   proposals from CONTRASTS, and an intruder (District 1 on) picks among its host's dug contrasts (warren, cave,
+   mine_delve) when any is free: a fortress gets a warren or a cave. Only the plan path; the layout's own draw is unchanged.
+17. **Words set per-District races only when a phrase can place them** (task 9): an intrusion phrase's captured race
+   holds the intruder and the zone race becomes the host's (blank if none named); other phrases need two races named.
 
 ## Follow-ups
 - The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it
   for drops); any geometry hugging a room's outside wall can read as joined through it.
-- `ai.expand.layout_proposals` fills open proposals from CONTRASTS for `factional` only, not `intrusion` (task 9).
 - A classic zone draws no wall styles, so its breaches are plain extra links (sized by the smaller race) with no
   `breach` form and no rough break; only grown (graph) zones show them.
 - Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
