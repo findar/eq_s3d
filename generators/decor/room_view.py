@@ -330,8 +330,27 @@ def district_rules(rules, districts: Optional[Sequence[Mapping[str, Any]]], load
     return rules_of
 
 
+def district_spill(districts: Optional[Sequence[Mapping[str, Any]]], load):
+    """Each context's ``placement.Spill`` as the build gives it (district races Req 9, task 8):
+    a room an intruder District's ``spill`` names (the host rooms its breaches enter) takes that
+    District's rules (its ``layers``, read with ``load(layers)``), ``race`` and ``theme``; every
+    other context, and a record with no ``spill`` (any zone without intrusion), None."""
+    from generators.decor.placement import Spill
+    by_room: Dict[str, Spill] = {}
+    for rec in districts or ():
+        if not rec.get("spill"):
+            continue
+        sp = Spill(load(tuple(rec.get("layers") or ())), rec.get("race") or "", rec.get("theme") or "")
+        for rid in rec["spill"]:
+            by_room.setdefault(str(rid), sp)
+
+    def spill_of(ctx):
+        return by_room.get(ctx.id) if ctx.source == "room" else None
+    return spill_of
+
+
 def _decorated(contexts: Sequence[RoomContext], k: int, rules, catalogue, control: str,
-               seed: Optional[int], room_seed: Optional[int] = None, rules_of=None):
+               seed: Optional[int], room_seed: Optional[int] = None, rules_of=None, spill_of=None):
     """Room ``k`` placed as ``builder.decor_for`` places it: on its own stream, under the
     zone's bare cap. The cap only matters when the room draws bare, so only then are the rooms
     before it replayed (each on its own stream with the same seed) to find what is left of it.
@@ -341,24 +360,26 @@ def _decorated(contexts: Sequence[RoomContext], k: int, rules, catalogue, contro
     (the replay above, which no room's own seed moves), a room left bare stays as the zone drew
     it, and one that isn't is placed in full with ``room_seed``. ``rules_of``
     (``district_rules``) gives each context its own District's rules; None: every context
-    takes ``rules``. Returns (the Decorated, the
+    takes ``rules``. ``spill_of`` (``district_spill``) gives a breached host room its intruder's
+    share (task 8); None: no room spills. Returns (the Decorated, the
     rooms replayed, the decor seed its Props came from: ``room_seed``, else ``seed``)."""
     from generators.builder import BareCap
     of = rules_of or (lambda _c: rules)
+    sp = spill_of or (lambda _c: None)
     ctx = contexts[k]
-    d = place(ctx, of(ctx), catalogue, control, seed)
+    d = place(ctx, of(ctx), catalogue, control, seed, spill=sp(ctx))
     own = room_seed if ctx.source == "room" else None
     if not (d.bare and ctx.source == "room"):
         if own is not None:
-            d = place(ctx, of(ctx), catalogue, control, own, may_be_bare=False)
+            d = place(ctx, of(ctx), catalogue, control, own, may_be_bare=False, spill=sp(ctx))
         return d, 0, (own if own is not None else seed)
     cap = BareCap(contexts, rules, control, rules_of)
     replayed = 0
     for c in contexts[:k]:
         if c.source == "room":
-            cap.place(c, of(c), catalogue, control, seed)
+            cap.place(c, of(c), catalogue, control, seed, spill=sp(c))
             replayed += 1
-    d = cap.place(ctx, of(ctx), catalogue, control, seed, own)
+    d = cap.place(ctx, of(ctx), catalogue, control, seed, own, spill=sp(ctx))
     return d, replayed, (seed if d.bare or own is None else own)
 
 
@@ -392,7 +413,9 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
     room and corridor takes its own District's layers (``district_rules``) and the bare cap
     reads each room's own, as the build does; ``layers`` stays the zone's (a Site's). None or
     empty: every context takes ``layers``, as before. The report's ``layers`` are the ones
-    this room was placed with."""
+    this room was placed with. An intruder District's record names the host rooms its breaches
+    enter (``spill``, task 8): those rooms take their share from it (``district_spill``) and the
+    report lists the lines spilled (``spill``)."""
     from ai import schema
     from generators.builder import settle_room
     from generators.decor.rules import load_decor
@@ -406,11 +429,12 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
     rdir = Path(rules_dir) if rules_dir is not None else schema.RULES_DECOR_DIR
     rules = load_decor(rdir, layers=tuple(layers))
     rules_of = district_rules(rules, districts, lambda ls: load_decor(rdir, layers=ls))
+    spill_of = district_spill(districts, lambda ls: load_decor(rdir, layers=ls))
     cat = catalogue if catalogue is not None else shipped_catalogue()
     if preview_any_use:
         cat = any_use(cat)
     own = room_seed if room_seed is not None else (room_seeds or {}).get(room_id)
-    d, replayed, used = _decorated(contexts, k, rules, cat, control, seed, own, rules_of)
+    d, replayed, used = _decorated(contexts, k, rules, cat, control, seed, own, rules_of, spill_of)
     notes: List[str] = []
     meshes = meshes_for(eq_path)
     if eq_path is not None:
@@ -449,6 +473,7 @@ def decorate_room(contexts: Sequence[RoomContext], room_id: str, *, seed: Option
         "layers": list(rules_of(ctx).layers),
         "sets": list(d.sets),
         "bare": d.bare,
+        **({"spill": list(d.spill)} if d.spill else {}),
         "props": [p.to_dict() for p in d.props],
         "pois": pois,
         "drops": [x.to_dict() for x in d.drops],
@@ -548,5 +573,5 @@ def load_build(build_dir: Path, name: str, with_mesh: bool = True) -> Build:
                  districts=[dict(d) for d in decor.get("districts") or ()])
 
 
-__all__ = ["Build", "CATEGORY_RGB", "Meshes", "NoRoom", "any_use", "decorate_room", "district_rules", "eq_path_of", "glb_bytes",
+__all__ = ["Build", "CATEGORY_RGB", "Meshes", "NoRoom", "any_use", "decorate_room", "district_rules", "district_spill", "eq_path_of", "glb_bytes",
            "load_build", "meshes_for", "prop_part", "prop_parts", "room_parts", "shipped_catalogue", "wall_mesh", "write_glb", "zone_theme_race"]

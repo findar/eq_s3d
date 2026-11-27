@@ -72,6 +72,15 @@ before it's kept (``check`` runs the same test on a finished result).
 
 **Corridors** get wall lights by spacing and nothing else (design "Placement"): a context with
 ``source = "corridor"`` takes a light every ``LIGHT_SPACING`` along its walls.
+
+**Spill** (district races Req 9, task 8): a host room a breach enters (``Spill``: the intruder
+District's rules, race and theme) draws ``SPILL_SHARE`` of its recipe lines from the intruder:
+every third of its non-light lines (groups, Props, debris in placing order), from an offset
+drawn on its own salted stream (``spill_offset``), so the room's stream makes the draws it
+always made for the rest. A spilled line takes its models from the intruder's Sets (goblin
+models at their own size: the intruder's race picks them) and its count from the intruder's
+weights, at the host room's Scales; the room's condition and its once-a-room kinds hold across
+both. The host keeps its walls, Scales, lights, POI Dressing and bare draw.
 """
 
 from __future__ import annotations
@@ -90,6 +99,26 @@ from generators.decor.catalogue import UNKNOWN, WALL_SIDES, Catalogue, Model
 from generators.decor.rules import (BARE, DEFAULT_CONTROL, MOUNTS_FILLING, NEUTRAL, DecorRules, Group, Line,
                                     draw_count)
 from generators.room_context import STEP_UP, RoomContext, WallFace
+
+#: The share of a breached host room's non-light recipe lines drawn from the intruder (task 8).
+SPILL_SHARE = 3                     # one line in every 3
+
+
+@dataclass(frozen=True)
+class Spill:
+    """What a host room a breach enters takes from its intruder (district races Req 9): the
+    intruder District's decor rules, its race and its theme (its Purpose's)."""
+    rules: DecorRules
+    race: str
+    theme: str
+
+
+def spill_offset(ctx: RoomContext, decor_seed: Optional[int] = None) -> int:
+    """Which of every ``SPILL_SHARE`` lines a host room spills: drawn on its own stream, salted
+    ``spill``, so the room's decor stream is untouched by it."""
+    seed = ctx.seed if decor_seed is None else decor_seed
+    return random.Random(f"spill/{int(seed)}/{ctx.id}").randrange(SPILL_SHARE)
+
 
 #: The gate's figures (archive decision 9 of step 10, ``analyzer/footprints.py``), mirrored.
 PLAYER_HALF_WIDTH = 1.5
@@ -253,13 +282,17 @@ class Decorated:
     drops: List[Drop] = field(default_factory=list)
     bare: bool = False
     sets: Tuple[str, ...] = ()          # the Sets the room drew from, best first
+    #: A breached host room's spilled lines (task 8), by label, and the intruder's Sets.
+    spill: Tuple[str, ...] = ()
+    spill_sets: Tuple[str, ...] = ()
 
     def cultures(self) -> Tuple[str, ...]:
         return tuple(sorted({p.set for p in self.props if p.set != NEUTRAL}))
 
     def to_dict(self) -> dict:
         return {"room": self.room, "bare": self.bare, "props": [p.to_dict() for p in self.props],
-                "drops": [d.to_dict() for d in self.drops]}
+                "drops": [d.to_dict() for d in self.drops],
+                **({"spill": list(self.spill)} if self.spill else {})}
 
 
 # ---------------------------------------------------------------------------
@@ -1843,6 +1876,18 @@ class _Placer:
             spots = self.row_spots(prev, sz) + spots
         return self._put_floor(model, sz, spots, step, line, line.at, allow), "no spot"
 
+    def spilled(self, line: Line, step: str, factor: float, spill: "_Spilling") -> None:
+        """``line`` drawn from the intruder (task 8): its chooser and rules stand in for the
+        room's while it is placed; condition and once-a-room kinds carry across both ways."""
+        own, rules = self.chooser, self.rules
+        spill.chooser.condition, spill.chooser.taken = own.condition, own.taken
+        self.chooser, self.rules = spill.chooser, spill.rules
+        try:
+            self.line(line, step, factor)
+        finally:
+            self.chooser, self.rules = own, rules
+            own.condition, own.taken = spill.chooser.condition, spill.chooser.taken
+
     def line(self, line: Line, step: str, factor: float) -> None:
         n = draw_count(line, factor, self.rng)
         if n <= 0:
@@ -2235,6 +2280,13 @@ class _Placer:
 # The entry points
 # ---------------------------------------------------------------------------
 
+@dataclass
+class _Spilling:
+    rules: DecorRules
+    chooser: _Chooser
+    weights: Mapping[str, float]
+
+
 def stream(ctx: RoomContext, decor_seed: Optional[int] = None) -> random.Random:
     """The room's own random stream: salted with ``decor``, so it draws nothing the room stage
     draws, and keyed by the room, so rooms don't share draws."""
@@ -2244,13 +2296,15 @@ def stream(ctx: RoomContext, decor_seed: Optional[int] = None) -> random.Random:
 
 def place(context: RoomContext, rules: Optional[DecorRules] = None, catalogue: Optional[Catalogue] = None,
           control: str = DEFAULT_CONTROL, decor_seed: Optional[int] = None,
-          may_be_bare: bool = True) -> Decorated:
+          may_be_bare: bool = True, spill: Optional[Spill] = None) -> Decorated:
     """Decorate one room (or Site, or corridor) from its context alone. ``rules`` and
     ``catalogue`` default to the shipped ones; ``control`` is the Decor control (``none``
     places nothing); ``decor_seed`` salts the stream (default: the context's seed).
     ``may_be_bare=False`` places the room in full even when it draws ``bare`` (the draw is
     still made, so the rest of the stream is the same): the build's cap on a zone's bare rooms
-    (``generators.builder.decor_for``)."""
+    (``generators.builder.decor_for``). ``spill`` (task 8): the room is a host a breach enters,
+    and one line in ``SPILL_SHARE`` of its non-light recipe lines comes from the intruder
+    (module doc, "Spill"); None, and for a corridor or Site, nothing changes."""
     if rules is None:
         from generators.decor.rules import load_decor
         rules = load_decor()
@@ -2275,9 +2329,26 @@ def place(context: RoomContext, rules: Optional[DecorRules] = None, catalogue: O
     groups = [ln for ln in lines if ln.group]
     debris = [ln for ln in lines if not ln.group and ln.category == "debris"]
     single = [ln for ln in lines if not ln.group and ln.category != "debris"]
+    sp = None
+    if spill is not None and context.source == "room":
+        from dataclasses import replace
+        them = replace(context, race=spill.race, theme=spill.theme)
+        sp = _Spilling(spill.rules, _Chooser(catalogue, spill.rules, them, rng),
+                       spill.rules.weights_for(context.zone_type, spill.race, spill.theme, context.kind,
+                                               context.room_type, control, context.source))
+        off, j, spilled = spill_offset(context, decor_seed), 0, []
     for step, todo in (("group", groups), ("prop", single), ("debris", debris)):
         for ln in todo:
+            # A light line stays the host's; so does a Group only the host's layers have.
+            if sp is not None and ln.category != "light" and not (ln.group and ln.group not in sp.rules.groups):
+                j += 1
+                if (j - 1) % SPILL_SHARE == off:
+                    spilled.append(f"{step} {_where(ln)} {_what(ln)}")
+                    p.spilled(ln, step, sp.rules.factor(ln, sp.weights, context.scales), sp)
+                    continue
             p.line(ln, step, rules.factor(ln, weights, context.scales))
+    if sp is not None:
+        p.out.spill, p.out.spill_sets = tuple(spilled), sp.chooser.sets
     return p.out
 
 
@@ -2298,4 +2369,5 @@ def check(context: RoomContext, decorated: Decorated) -> List[str]:
 
 
 __all__ = ["CORRIDOR", "Decorated", "Drop", "FRAME", "HEAD_HEIGHT", "LIGHT_SPACING", "PLAYER_HALF_WIDTH",
-           "POI_REACH", "Prop", "Room", "SITE_MARGIN", "STEPS", "Size", "check", "place", "size_of", "stream"]
+           "POI_REACH", "Prop", "Room", "SITE_MARGIN", "SPILL_SHARE", "STEPS", "Size", "Spill", "check", "place",
+           "size_of", "spill_offset", "stream"]

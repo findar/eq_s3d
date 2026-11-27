@@ -780,6 +780,73 @@ def test_the_control_moves_the_count(rules, fixture):
     assert total("sparse") < total("normal") < total("dense")
 
 
+# --- mixed boundary rooms (district races task 8) ------------------------------------------------------
+
+def _spilled(d):
+    """The Props a spill line placed: ``Decorated.spill`` labels are ``<step> <where> <what>``."""
+    heads = {" ".join(x.split(" ")[:-1]) for x in d.spill}
+    return [p for p in d.props if f"{p.step} {p.line}" in heads]
+
+
+def test_a_breached_host_room_takes_a_third_of_its_lines_from_its_intruder(rules, fixture):
+    """A giant fortress barracks a goblin warren breaks into: one non-light recipe line in
+    every ``SPILL_SHARE``, from the offset its own salted stream draws, comes from the goblins
+    (their Sets, so goblin models); every other line keeps the host's Sets, the room passes its
+    check and the context (walls, floor) is untouched."""
+    from generators.decor.placement import SPILL_SHARE, Spill, spill_offset
+    c = box_room(room_type="barracks", kind="chamber", race="giant", theme="fortress")
+    text = c.to_json()
+    sp = Spill(rules, "goblin", "warren")
+    lines = [ln for r in rules.recipe_for(c.room_type, c.kind, c.source, c.zone_type) for ln in r.lines]
+    ordered = ([ln for ln in lines if ln.group] + [ln for ln in lines if not ln.group and ln.category != "debris"]
+               + [ln for ln in lines if not ln.group and ln.category == "debris"])
+    eligible = [ln for ln in ordered if ln.category != "light"]
+    host = set(rules.sets.sets_for(c.zone_type, c.race, c.theme))
+    them = set(rules.sets.sets_for(c.zone_type, "goblin", "warren"))
+    seen = set()
+    for seed in range(12):
+        d = place(c, rules, fixture, "dense", decor_seed=seed, may_be_bare=False, spill=sp)
+        off = spill_offset(c, seed)
+        assert len(d.spill) == sum(1 for j in range(len(eligible)) if j % SPILL_SHARE == off)
+        assert d.spill_sets == rules.sets.sets_for(c.zone_type, "goblin", "warren")
+        mine = _spilled(d)
+        assert {p.set for p in mine} <= them
+        assert {p.set for p in d.props if p not in mine} <= host
+        assert not any(p.light and p.group is None for p in mine)     # the host keeps its light lines
+        assert check(c, d) == []
+        seen.update(p.set for p in mine)
+    assert "goblin" in seen
+    assert c.to_json() == text
+
+
+def test_no_spill_is_the_room_as_it_was(rules, fixture):
+    """``spill=None`` places exactly what a call without it does; a corridor ignores a spill."""
+    from generators.decor.placement import Spill
+    sp = Spill(rules, "goblin", "warren")
+    for c in CORPUS[::9]:
+        a, b = place(c, rules, fixture), place(c, rules, fixture, spill=None)
+        assert [p.to_dict() for p in a.props] == [p.to_dict() for p in b.props] and not b.spill
+    k = corridor()
+    assert [p.to_dict() for p in place(k, rules, fixture, spill=sp).props] ==         [p.to_dict() for p in place(k, rules, fixture).props]
+
+
+def test_the_sidecar_record_names_the_host_rooms_that_spill(rules):
+    """``room_view.district_spill`` (the build, the room view and staging read it alike): the
+    rooms an intruder District's ``spill`` names take its layers, race and theme; any other
+    room, a corridor, and a record without ``spill`` (every zone without intrusion) take none."""
+    from dataclasses import replace
+    from generators.decor.room_view import district_spill
+    recs = [{"id": 0, "theme": "fortress", "layers": []},
+            {"id": 1, "theme": "warren", "layers": ["cave"], "race": "goblin", "spill": ["hand"]}]
+    asked = []
+    of = district_spill(recs, lambda ls: asked.append(ls) or rules)
+    got = of(box_room())
+    assert (got.race, got.theme, got.rules) == ("goblin", "warren", rules) and asked == [("cave",)]
+    assert of(replace(box_room(), id="other")) is None and of(replace(corridor(), id="hand")) is None
+    assert district_spill(recs[:1], lambda ls: rules)(box_room()) is None
+    assert district_spill(None, lambda ls: rules)(box_room()) is None
+
+
 def test_a_corridor_gets_wall_lights_by_spacing(rules, fixture):
     from generators.decor.placement import DEFAULT_LIGHT_SPACING
     c = corridor()
@@ -838,7 +905,7 @@ def test_placement_imports_nothing_from_the_room_stage_but_room_context():
 def test_imports_place_takes_a_context_and_no_zone():
     import inspect
     assert list(inspect.signature(place).parameters) == ["context", "rules", "catalogue", "control", "decor_seed",
-                                                          "may_be_bare"]
+                                                          "may_be_bare", "spill"]
 
 
 def test_sizes_come_from_the_catalogue(fixture):
