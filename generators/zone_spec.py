@@ -200,6 +200,13 @@ class CorridorSpec:
     # only, never geometry; the JSON carries it only when set.
     threshold: bool = False
 
+    # A drop (district races step 31, Req 7): the corridor enters its LOWER room this many u
+    # up that room's wall, and the wall below the opening stays, so it is walked one way only,
+    # from the upper room (the higher ``floor_z``; equal floors, ``from_room``) down. Its end
+    # at the lower room is at that room's floor plus the drop (``from_z`` or ``to_z``); the
+    # upper end stays flush. 0 for every other corridor; the JSON carries it only when set.
+    drop: float = 0.0
+
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
     def floor_z(self) -> float:
@@ -297,10 +304,10 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
     """A corridor's JSON; ``side``, ``bridge``, ``rough``, ``wind``, ``path``, ``entry``,
-    ``transition`` and ``threshold`` only when set (step 6 corridors carry none of them;
-    ``wind`` only when a leg winds)."""
+    ``transition``, ``threshold`` and ``drop`` only when set (step 6 corridors carry none of
+    them; ``wind`` only when a leg winds)."""
     d = asdict(cor)
-    for key in ("side", "bridge", "rough", "path", "entry", "transition", "threshold"):
+    for key in ("side", "bridge", "rough", "path", "entry", "transition", "threshold", "drop"):
         if not d.get(key):
             d.pop(key, None)
     if not any(d.get("wind") or ()):

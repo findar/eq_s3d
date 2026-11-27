@@ -477,11 +477,36 @@ def _extra_doors(spec) -> Dict[str, Dict[str, list]]:
     return {}
 
 
+def _landing_clear(clear: Rect, side: str, box: Rect, h: float) -> Rect:
+    """A drop door's clear zone (district races step 31): the player falls in under it and
+    lands at the wall's foot, so the strip going in widens by a body (``h``) to either side
+    of the door, within the room's Box. Decor keeps floor Props off it, as off any door's."""
+    x0, y0, x1, y1 = clear
+    if side in "NS":
+        return (max(x0 - h, box[0]), y0, min(x1 + h, box[2]), y1)
+    return (x0, max(y0 - h, box[1]), x1, min(y1 + h, box[3]))
+
+
+def _under_drop(w: WallFace, sills: Mapping[str, Sequence[Tuple[float, float, float]]],
+                box: Rect) -> bool:
+    """Is the wall face ``w`` the wall kept under a drop's opening (``geometry.door_sills``)?
+    Those faces are left out of the context, so no wall Prop hangs where the player drops."""
+    planes = {"S": (1, box[1]), "N": (1, box[3]), "W": (0, box[0]), "E": (0, box[2])}
+    for side, spans in sills.items():
+        axis, plane = planes[side]
+        at, along = (w.x, w.y)[axis], (w.x, w.y)[1 - axis]
+        if abs(at - plane) > 0.5:
+            continue
+        if any(c0 < along < c1 and w.bottom < sill for c0, c1, sill in spans):
+            return True
+    return False
+
+
 def contexts(spec, mesh) -> List[RoomContext]:
     """Every room of a built dungeon, city or outdoor dungeon, then every corridor
     (``corridor_contexts``), from its spec and its built TER (``mesh``). Reads them; changes
     neither."""
-    from generators.geometry import _bridge_slots, _door_openings, _merge_openings
+    from generators.geometry import _bridge_slots, _door_openings, _merge_openings, door_sills
     from generators.outline import _core_rect, _door_throats
     from generators.room_layouts import CELL, RoomGrid
     from generators.semantics import body_height, room_race
@@ -527,11 +552,18 @@ def contexts(spec, mesh) -> List[RoomContext]:
             & (m.lo[:, 2] < z1 - 0.1) & (m.hi[:, 2] <= z1 + 0.5)
 
         ctx_doors = []
+        sills = door_sills(room, spec)
         for side, c0, c1, top in merged:
             throats = [(max(t[0], x0), max(t[1], y0), min(t[2], x1), min(t[3], y1))
                        for t in _door_throats(box, (side, c0, c1), core)]
+            clear = grid.door_clear((side, c0, c1))
+            if any(s0 < c1 and s1 > c0 for s0, s1, _sill in sills.get(side, ())):
+                clear = _landing_clear(clear, side, box, h)
             ctx_doors.append(Door(side, _r(c0), _r(c1), _r(top), [tuple(_rr(t)) for t in throats],
-                                  tuple(_rr(grid.door_clear((side, c0, c1))))))
+                                  tuple(_rr(clear))))
+        walls = _walls(m, room, level)
+        if sills:
+            walls = [w for w in walls if not _under_drop(w, sills, box)]
         out.append(RoomContext(
             id=room.id, source="room", zone_type=spec.zone_type,
             theme=room.room_theme or spec.dungeon_theme or "", race=race or "",
@@ -540,7 +572,7 @@ def contexts(spec, mesh) -> List[RoomContext]:
             scales=dict(record.get("scales") or {}), box=tuple(_rr((x0, y0, z0, x1, y1, z1))),
             cell=CELL, origin=(_r(grid.xs[0]), _r(grid.ys[0])),
             floor=floor, reached=reached, ceiling=ceiling, spine=grid.spine.copy(),
-            walls=_walls(m, room, level), doors=ctx_doors,
+            walls=walls, doors=ctx_doors,
             wall_lines=_wall_lines(room) if room.outline is not None else [],
             features=[_clean({"kind": f.kind, "plan": f.plan, "height": f.height, "steps_side": f.steps_side})
                       for f in room.features],

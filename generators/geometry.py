@@ -624,6 +624,12 @@ class MeshBuilder:
                 pos = c1
             if pos < hi:
                 self._add_room_wall(room, side, pos, hi, z0, z1, wall_mat)
+        # A drop's door keeps its wall from the floor up to the corridor's floor (step 31).
+        for side, sills in door_sills(room, spec).items():
+            lo, hi = extents[side]
+            for c0, c1, sill in sills:
+                if min(c1, hi) > max(c0, lo):
+                    self._add_room_wall(room, side, max(c0, lo), min(c1, hi), z0, sill, wall_mat)
 
     def _add_flood(self, room: RoomSpec, spec: ZoneSpec) -> None:
         """A flooded room's water: one flat surface at its water line over the whole floor
@@ -835,6 +841,19 @@ class MeshBuilder:
                         return top
             return None
 
+        sills = door_sills(room, spec)
+
+        def door_sill(a, b) -> Optional[float]:
+            """The corridor's floor if the wall edge a..b is in a drop's doorway (step 31)."""
+            for side, axis, plane in planes:
+                if abs(a[axis] - plane) > 0.01 or abs(b[axis] - plane) > 0.01:
+                    continue
+                lo, hi = sorted((a[1 - axis], b[1 - axis]))
+                for c0, c1, sill in sills.get(side, ()):
+                    if lo >= c0 - 0.01 and hi <= c1 + 0.01:
+                        return sill
+            return None
+
         scale = self._uv_scale[wall_mat]
         rows = max(1, math.ceil((z1 - z0) / WALL_ROW))
         for loop in outline.wall_loops():
@@ -848,6 +867,9 @@ class MeshBuilder:
                 top = door_top(a, b)
                 if top is not None:
                     bands = [(top, ha, top, hb)]
+                    sill = door_sill(a, b) if sills else None
+                    if sill is not None:
+                        bands.append((la, sill, lb, sill))
                 else:
                     # The top row ends exactly at the ceiling: a rounding hair here reads as an
                     # open seam to the gate (a hewn room, found drawing samples for step 9).
@@ -1985,9 +2007,45 @@ def _door_openings(room: RoomSpec, spec: ZoneSpec
     interpolated at the wall plane; a lintel from there up stays clear of it.
     Only sides listed in room.open_walls are reported.
     """
+    out: Dict[str, List[Tuple[float, float, float]]] = {}
+    for _cor, _end, side, c0, c1, top, _floor in _corridor_openings(room, spec):
+        out.setdefault(side, []).append((c0, c1, top))
+    return out
+
+
+def drop_end(cor: CorridorSpec, rooms) -> Optional[str]:
+    """The end (``"from"`` or ``"to"``) at which a drop corridor (``CorridorSpec.drop``,
+    district races step 31) enters its LOWER room partway up the wall: the room with the lower
+    ``floor_z``, the ``to`` end on equal floors (``layout.drop_arc``'s rule). None for a
+    corridor with no drop, or one whose rooms aren't in ``rooms`` (id -> room)."""
+    if not getattr(cor, "drop", 0) or cor.from_room not in rooms or cor.to_room not in rooms:
+        return None
+    return "to" if rooms[cor.from_room].floor_z >= rooms[cor.to_room].floor_z else "from"
+
+
+def door_sills(room: RoomSpec, spec: ZoneSpec) -> Dict[str, List[Tuple[float, float, float]]]:
+    """The doors on ``room``'s walls that a drop corridor enters it by (``drop_end``):
+    ``{side: [(c0, c1, sill)]}``, ``sill`` the corridor's floor at the wall plane. The wall
+    from the room's floor up to the sill stays (``add_room``, ``add_outline_room``), so the
+    opening is a ledge the player drops from and can't climb back to. Empty for every room no
+    drop enters."""
+    if not any(getattr(c, "drop", 0) for c in spec.corridors):
+        return {}
+    rooms = {r.id: r for r in spec.rooms}
+    out: Dict[str, List[Tuple[float, float, float]]] = {}
+    for cor, end, side, c0, c1, _top, floor in _corridor_openings(room, spec):
+        if drop_end(cor, rooms) == end and floor > room.floor_z:
+            out.setdefault(side, []).append((c0, c1, floor))
+    return out
+
+
+def _corridor_openings(room: RoomSpec, spec: ZoneSpec):
+    """Each corridor end on ``room``'s open walls, as ``_door_openings`` reads it:
+    ``(corridor, "from" or "to", side, c0, c1, top, floor)``, ``floor`` the corridor's floor
+    height at the wall plane."""
     rooms = {r.id: r for r in spec.rooms}
     (x0, y0, _), (x1, y1, _) = room.bounds
-    out: Dict[str, List[Tuple[float, float, float]]] = {}
+    out = []
     for cor in spec.corridors:
         ends = []
         if cor.from_room == room.id:
@@ -2028,7 +2086,8 @@ def _door_openings(room: RoomSpec, spec: ZoneSpec
                 t = min(1.0, max(0.0, (plane - pa) / (pb - pa)))
             else:
                 t = 0.0
-            top = za + (zb - za) * t + cor.height
+            floor = za + (zb - za) * t
+            top = floor + cor.height
             half = hw
             heading = route.heading[0 if end == "from" else 1]
             if heading:
@@ -2044,7 +2103,7 @@ def _door_openings(room: RoomSpec, spec: ZoneSpec
                 else:
                     cross = px + ux * (plane - py) / uy
                 half = hw / c
-            out.setdefault(side, []).append((cross - half, cross + half, top))
+            out.append((cor, end, side, cross - half, cross + half, top, floor))
     return out
 
 

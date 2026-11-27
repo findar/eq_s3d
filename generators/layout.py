@@ -71,6 +71,25 @@ BREACH_ROUNDS = 8
 # A new breach's hall span at most, over the longest hall of its two Districts and their links.
 BREACH_SPAN = 2.0
 
+# Drops (district races step 31, Req 7, 8; archive decisions 2, 3). A link between two
+# Districts of an intrusion zone is flush unless a salted draw under DROP_SHARE (1 - the
+# flush weight 0.9: stock's 11 % of passage ends drop) makes it a drop, entering its lower
+# room partway up the wall. The height is drawn from stock's site heights (pooled p50 24 u,
+# p90 84 u: a log-normal through those two, redrawn until it falls in MIN_DROP..MAX_DROP),
+# then fitted to the corridor (its grade and the lower room's headroom).
+DROP_SHARE = 0.1
+#: The gate's limit (``analyzer.traverse.AgentModel.max_drop``, decision 2).
+MAX_DROP = 80.0
+#: Two steps (the gate's ``max_step_up`` is 3 u): anything less barely reads as a drop.
+MIN_DROP = 6.0
+DROP_P50 = 24.0
+DROP_P90 = 84.0
+_Z90 = 1.2815515655446004          # the standard normal's 90th percentile
+#: Wall kept over a drop's opening, to the lower room's ceiling (u).
+DROP_LINTEL = 2.0
+#: Wall kept between a drop's opening and another door on that wall (u).
+DROP_PIER = 1.0
+
 # A style profile's corridor run for the graph placement, in corridor widths
 # (``LayoutContext.run_factor``; ``embed.RUN_FACTOR`` otherwise). Winding
 # tunnels task 9: a cave's legs come out near the stock tunnels' span
@@ -1247,6 +1266,11 @@ class LayoutGenerator:
             self._fit_floors(rooms, edges, entrance, envelope)
 
         self._shapes = {}
+        # An intrusion zone's links may drop (district races Req 7, 8): chosen as the
+        # corridors are built, with a flush return where an intruder is entered only so.
+        self._drop_part = part if part is not None and links > 1 else None
+        self._drop_links = links
+        self.drop_returns: List[dict] = []
         self._build_corridors(spec, rooms, edges)
         threshold_ids: List[str] = []
         if part is not None:
@@ -3142,50 +3166,299 @@ class LayoutGenerator:
         (``_shape``): an edge across Levels is a planned stair
         (``steps = AUTO_STAIRS``), on facing walls or a U-route.
         """
+        for k, (i, j) in enumerate(edges):
+            spec.corridors.append(self._corridor_for(rooms, k, i, j))
         if self._stack is not None:
-            for k, (i, j) in enumerate(edges):
-                cor = dataclasses.replace(self._shape(rooms, i, j).cor, id=f"corr_{k}")
-                spec.corridors.append(cor)
-                a, b = rooms[i], rooms[j]
-                if cor.side:
-                    for r in (a, b):
-                        if cor.side not in r.open_walls:
-                            r.open_walls.append(cor.side)
-                else:
-                    self._open_facing_walls(a, b)
-                    self._open_facing_walls(b, a)
             self._mark_bridges(spec.corridors[len(spec.corridors) - len(edges):],
                                rooms, edges)
-            self._set_entries(spec.corridors[len(spec.corridors) - len(edges):], rooms,
-                              spec.corridors)
-            return
-        for k, (i, j) in enumerate(edges):
-            a, b = rooms[i], rooms[j]
-            # Elevation is carried by a smooth ramp (steps=0). The geometry
-            # backend subdivides the slope finely, so it is both walkable to the
-            # per-triangle traversability agent (every face within a step of its
-            # neighbour) and flush at both openings (the ramp floor reaches each
-            # room's exact floor_z at its wall). A staircase would meet the
-            # per-mesh step-up limit only with sub-player-height steps and exact
-            # landings; the ramp is the robust choice and _assign_elevation has
-            # already capped the grade to a walkable slope.
-            fx, fy = self._wall_point(a, b)
-            tx, ty = self._wall_point(b, a)
-            width, height = self._corridor_dims(a, b)
-            spec.corridors.append(CorridorSpec(
-                id=f"corr_{k}",
-                from_x=fx, from_y=fy,
-                to_x=tx, to_y=ty,
-                from_z=a.floor_z, to_z=b.floor_z,
-                width=width,
-                height=height,
-                steps=0,
-                from_room=a.id, to_room=b.id,
-            ))
-            self._open_facing_walls(a, b)
-            self._open_facing_walls(b, a)
+        if getattr(self, "_drop_part", None) is not None:
+            self._place_drops(spec, rooms, edges)
         self._set_entries(spec.corridors[len(spec.corridors) - len(edges):], rooms,
                           spec.corridors)
+
+    def _corridor_for(self, rooms: List[RoomSpec], k: int, i: int, j: int) -> CorridorSpec:
+        """Edge ``k`` (rooms ``i``, ``j``)'s corridor, ``corr_k``, with its rooms' walls opened
+        for it. A stacked build takes it from its planned shape (``_shape``)."""
+        a, b = rooms[i], rooms[j]
+        if self._stack is not None:
+            cor = dataclasses.replace(self._shape(rooms, i, j).cor, id=f"corr_{k}")
+            if cor.side:
+                for r in (a, b):
+                    if cor.side not in r.open_walls:
+                        r.open_walls.append(cor.side)
+            else:
+                self._open_facing_walls(a, b)
+                self._open_facing_walls(b, a)
+            return cor
+        # Elevation is carried by a smooth ramp (steps=0). The geometry
+        # backend subdivides the slope finely, so it is both walkable to the
+        # per-triangle traversability agent (every face within a step of its
+        # neighbour) and flush at both openings (the ramp floor reaches each
+        # room's exact floor_z at its wall). A staircase would meet the
+        # per-mesh step-up limit only with sub-player-height steps and exact
+        # landings; the ramp is the robust choice and _assign_elevation has
+        # already capped the grade to a walkable slope.
+        fx, fy = self._wall_point(a, b)
+        tx, ty = self._wall_point(b, a)
+        width, height = self._corridor_dims(a, b)
+        cor = CorridorSpec(
+            id=f"corr_{k}",
+            from_x=fx, from_y=fy,
+            to_x=tx, to_y=ty,
+            from_z=a.floor_z, to_z=b.floor_z,
+            width=width,
+            height=height,
+            steps=0,
+            from_room=a.id, to_room=b.id,
+        )
+        self._open_facing_walls(a, b)
+        self._open_facing_walls(b, a)
+        return cor
+
+    # ------------------------------------------------------------------
+    # Drops and one-way loops (district races step 31, Req 7, 8)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _drop_height(rng: random.Random) -> float:
+        """A drop's height as stock spreads them: log-normal through stock's site p50 and
+        p90 (``DROP_P50``, ``DROP_P90``), redrawn until it lies in ``MIN_DROP``..``MAX_DROP``
+        (at most 64 tries; then the median)."""
+        mu, sigma = math.log(DROP_P50), math.log(DROP_P90 / DROP_P50) / _Z90
+        for _ in range(64):
+            h = rng.lognormvariate(mu, sigma)
+            if MIN_DROP <= h <= MAX_DROP:
+                return h
+        return DROP_P50
+
+    def _drop_fit(self, spec: ZoneSpec, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                  cor: CorridorSpec, k: int, h: float) -> Tuple[float, bool]:
+        """``(height, flip)``: the drop edge ``k``'s corridor can take nearest ``h`` (0 where
+        it can take none), and whether the corridor must run the other way for it.
+
+        The drop enters the lower room (``geometry.drop_end``) ``h`` u up its wall: the
+        corridor's end there is raised by ``h`` and the corridor runs from the upper room's
+        floor up or down to it, so ``h`` stays within the corridor's grade (``_edge_cap``) of
+        the floors' difference. The opening keeps ``DROP_LINTEL`` of wall under the lower
+        room's ceiling and ``DROP_PIER`` beside any other door on its wall (the wall below it
+        stays, so it can't share a doorway). On equal floors either room can be the lower:
+        the one that takes a height nearer ``h`` (the ``to`` room on a tie); ``flip`` when
+        that's the ``from`` room (``drop_end`` reads the ``to`` end as the lower on equal
+        floors, so the corridor is reversed). A stair, U-route or Bridge takes none: they meet
+        their floors as planned."""
+        from types import SimpleNamespace
+        from .geometry import _corridor_openings, drop_end
+        if cor.steps != 0 or cor.side or cor.bridge:
+            return 0.0, False
+        i, j = edges[k]
+        cap = self._edge_cap(rooms, i, j)
+        if not math.isfinite(cap):
+            return 0.0, False
+        by_id = {r.id: r for r in rooms}
+        first = drop_end(dataclasses.replace(cor, drop=1.0), by_id)
+        ends = [first] if rooms[i].floor_z != rooms[j].floor_z else ["to", "from"]
+        build = SimpleNamespace(rooms=rooms, corridors=spec.corridors)
+        best: Tuple[float, bool] = (0.0, False)
+        for end in ends:
+            lower, upper = (rooms[j], rooms[i]) if end == "to" else (rooms[i], rooms[j])
+            d0 = upper.floor_z - lower.floor_z
+            lo = max(MIN_DROP, d0 - cap)
+            hi = min(MAX_DROP, d0 + cap, lower.height - cor.height - DROP_LINTEL)
+            if lo > hi:
+                continue
+            openings = _corridor_openings(lower, build)
+            mine = [o for o in openings if o[0] is cor and o[1] == end]
+            if not mine:
+                continue
+            _c, _e, side, c0, c1, _top, _floor = mine[0]
+            if any(o[0] is not cor and o[2] == side and o[3] < c1 + DROP_PIER and o[4] > c0 - DROP_PIER
+                   for o in openings):
+                continue
+            got = min(max(h, lo), hi)
+            if best[0] <= 0 or abs(got - h) < abs(best[0] - h) - 1e-9:
+                best = (got, end != first)
+        return best
+
+    @staticmethod
+    def _strongly_connected(n: int, edges: List[Tuple[int, int]],
+                            oneway: Mapping[int, Tuple[int, int]]) -> bool:
+        """Is every room reachable from every other, a drop walked only downward?"""
+        from collections import deque
+        if n == 0:
+            return True
+        fwd = gate_adjacency(edges, oneway)
+        back: Dict[int, list] = {}
+        for u, outs in list(fwd.items()):
+            for v, _k in outs:
+                back.setdefault(v, []).append(u)
+        for adj in ({u: [v for v, _k in outs] for u, outs in fwd.items()}, back):
+            seen = {0}
+            q = deque([0])
+            while q:
+                for v in adj.get(q.popleft(), ()):
+                    if v not in seen:
+                        seen.add(v)
+                        q.append(v)
+            if len(seen) < n:
+                return False
+        return True
+
+    def _place_drops(self, spec: ZoneSpec, rooms: List[RoomSpec],
+                     edges: List[Tuple[int, int]]) -> None:
+        """Choose and set an intrusion zone's drops (district races Req 7, 8), its corridors
+        built (``corr_k`` is ``edges[k]``).
+
+        Each link between two Districts draws, from an rng salted off the zone seed (so
+        nothing else draws differently): a drop with chance ``DROP_SHARE`` and a height
+        (``_drop_height``). Each drop drawn goes to its own link if that link can take one,
+        else to the next of the zone's other cross links (in a salted shuffle) that can, so a
+        link that can't drop (a stair, no headroom, too short a run, a lone way back) doesn't
+        lower the share. A link can take a drop where it fits its corridor (``_drop_fit``,
+        which may reverse it) and the directed graph stays strongly connected with it. Where
+        every link of a pair would then drop, the intruder (the pair's higher District id) is
+        entered only by drops, so it first gets a flush return (``_add_return``) from its room
+        farthest from where the drops meet it, while the pair has fewer than its links; with
+        no return the link stays flush. A drop sets ``CorridorSpec.drop`` and raises the
+        corridor's lower end by it (``geometry.drop_end``); room floors don't move."""
+        from .geometry import drop_end
+        part = self._drop_part
+        assign = part.assign
+        cors = spec.corridors[len(spec.corridors) - len(edges):]
+        rng = random.Random(f"{self.seed}:drops")
+        cross = [k for k, (i, j) in enumerate(edges) if assign[i] != assign[j]]
+        picked: List[int] = []
+        heights: List[float] = []
+        for k in cross:
+            if rng.random() < DROP_SHARE:
+                picked.append(k)
+                heights.append(self._drop_height(rng))
+            else:
+                self._drop_height(rng)
+        rest = [k for k in cross if k not in picked]
+        rng.shuffle(rest)
+        order = picked + rest
+
+        def pair_of(e) -> Tuple[int, int]:
+            return tuple(sorted((assign[e[0]], assign[e[1]])))
+
+        by_id = {r.id: r for r in rooms}
+        floors = [r.floor_z for r in rooms]
+        accepted: Dict[int, float] = {}
+        self.drop_returns = []
+        returned: set = set()
+        for want in heights:
+            while order:
+                k = order.pop(0)
+                h, flip = self._drop_fit(spec, rooms, edges, cors[k], k, want)
+                if h <= 0:
+                    continue
+                pair = pair_of(edges[k])
+                ks = [m for m, e in enumerate(edges) if pair_of(e) == pair]
+                if pair not in returned and all(m in accepted for m in ks if m != k):
+                    # Every link of the pair would drop: the intruder needs its way back.
+                    host, intruder = pair
+                    landings = {edges[m][0] if assign[edges[m][0]] == intruder else edges[m][1]
+                                for m in ks}
+                    ret = (self._add_return(spec, rooms, edges, part, host, intruder, landings)
+                           if len(ks) < self._drop_links else None)
+                    if ret is None:
+                        continue
+                    returned.add(pair)
+                    self.drop_returns.append(ret)
+                trial = {**accepted, k: h}
+                drops = [trial.get(m, 0.0) for m in range(len(edges))]
+                tried = list(edges)
+                if flip:
+                    tried[k] = tried[k][::-1]
+                if self._strongly_connected(len(rooms), tried, gate_oneway(tried, drops, floors)):
+                    accepted = trial
+                    if flip:
+                        edges[k] = edges[k][::-1]
+                        self._reverse(cors[k])
+                    break
+        for k, h in accepted.items():
+            cor = cors[k]
+            cor.drop = round(h, 2)
+            if drop_end(cor, by_id) == "to":
+                cor.to_z = by_id[cor.to_room].floor_z + cor.drop
+            else:
+                cor.from_z = by_id[cor.from_room].floor_z + cor.drop
+
+    @staticmethod
+    def _reverse(cor: CorridorSpec) -> None:
+        """Run ``cor`` the other way: its ends, heights and rooms swapped (a drop between
+        equal floors landing in its ``from`` room, ``_drop_fit``). Routes plan the same either
+        way round (``routing.plan_route``: the Z's jog and the L's corner are symmetric)."""
+        cor.from_x, cor.to_x = cor.to_x, cor.from_x
+        cor.from_y, cor.to_y = cor.to_y, cor.from_y
+        cor.from_z, cor.to_z = cor.to_z, cor.from_z
+        cor.from_room, cor.to_room = cor.to_room, cor.from_room
+        cor.entry = cor.entry[::-1]
+
+    def _add_return(self, spec: ZoneSpec, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                    part, host: int, intruder: int, landings: set) -> Optional[dict]:
+        """A flush return for an intruder entered only by drops (district races Req 8, the
+        user's example): a new link from the intruder room farthest (hops inside the
+        intruder) from the drops' ``landings`` back to a host room, so the player crosses the
+        District to get out. Farthest rooms first (never a landing, unless the intruder is one
+        room), each to its host rooms nearest first by hall span, a pair taken where a breach
+        could be (``_add_breaches``: one Level, within grade, no room in the way) whose
+        corridor clashes with no other (``_resolve_conflicts`` on a copy keeps every edge).
+        Appended to ``edges`` and ``spec.corridors`` (``corr_k`` stays edge ``k``) and to
+        ``part.breaches``; returns ``{"edge", "from", "to", "hops"}``, or None."""
+        from collections import deque
+        assign = part.assign
+        inside: Dict[int, list] = {}
+        for i, j in edges:
+            if assign[i] == assign[j] == intruder:
+                inside.setdefault(i, []).append(j)
+                inside.setdefault(j, []).append(i)
+        hops = {r: 0 for r in landings}
+        q = deque(sorted(landings))
+        while q:
+            cur = q.popleft()
+            for nxt in inside.get(cur, ()):
+                if nxt not in hops:
+                    hops[nxt] = hops[cur] + 1
+                    q.append(nxt)
+        far = sorted((r for r in hops if hops[r] > 0 or len(hops) == 1), key=lambda r: (-hops[r], r))
+        hosts = [i for i in range(len(rooms)) if assign[i] == host]
+        if self._stack is not None:
+            def blocked(i, j):
+                return self._shape(rooms, i, j).blocked is not None
+        else:
+            crossed = self._crossed_room if self.corridor_clearance else self._crossed_room_centreline
+
+            def blocked(i, j):
+                return crossed(rooms, i, j) is not None
+        have = {frozenset(e) for e in edges}
+        spans = [self._hall_span(rooms[i], rooms[j]) for i, j in edges
+                 if assign[i] in (host, intruder) and assign[j] in (host, intruder)]
+        bound = BREACH_SPAN * max(spans) if spans else 0.0
+        for t in far:
+            for span, h in sorted((self._hall_span(rooms[h], rooms[t]), h) for h in hosts):
+                if span > bound or frozenset((h, t)) in have or self._is_stair(h, t):
+                    continue
+                if abs(rooms[h].floor_z - rooms[t].floor_z) > self._edge_cap(rooms, h, t) + 1e-6:
+                    continue
+                if blocked(h, t):
+                    continue
+                trial = list(edges) + [(h, t)]
+                kept = list(trial)
+                warned = len(self.warnings)
+                try:
+                    self._resolve_conflicts(rooms, kept)
+                except DistrictSplitError:
+                    kept = []
+                del self.warnings[warned:]
+                if {frozenset(e) for e in kept} != {frozenset(e) for e in trial}:
+                    continue
+                edges.append((h, t))
+                spec.corridors.append(self._corridor_for(rooms, len(edges) - 1, h, t))
+                part.breaches.append((h, t))
+                return {"edge": len(edges) - 1, "from": rooms[t].id, "to": rooms[h].id,
+                        "hops": hops[t]}
+        return None
 
     def _set_entries(self, corridors: List[CorridorSpec], rooms: List[RoomSpec],
                      every: List[CorridorSpec]) -> None:
