@@ -412,6 +412,22 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
                 f'font-size="13" font-family="sans-serif" text-anchor="end">&#9733;</text>'
             )
 
+    # ---- Drops (district races step 31): a down-pointing mark at each drop's lower end ----
+    drops = [c for c in spec.corridors if getattr(c, "drop", 0)]
+    if drops:
+        from .geometry import drop_end
+        rooms_by_id = {r.id: r for r in spec.rooms}
+        for c in drops:
+            end = drop_end(c, rooms_by_id)
+            if end is None:
+                continue
+            dx, dy = (px(c.to_x), py(c.to_y)) if end == "to" else (px(c.from_x), py(c.from_y))
+            parts.append(
+                f'<path class="drop" d="M {dx - 6:.1f} {dy - 5:.1f} L {dx + 6:.1f} {dy - 5:.1f} '
+                f'L {dx:.1f} {dy + 6:.1f} Z" fill="{_DROP_FILL}" stroke="#0f0f16" stroke-width="1">'
+                f'<title>drop {c.drop:.0f} u ({c.id})</title></path>'
+            )
+
     # ---- Gates (lock + key + connector) ----
     for g in spec.gates:
         lx, ly = px(g.lock_x), py(g.lock_y)
@@ -454,7 +470,7 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     districts = ([(_district_fill(d.id), district_label(d.id, d.purpose)) for d in spec.districts]
                  if has_districts else [])
     parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites),
-                         bool(props), districts))
+                         bool(props), districts, has_drops=bool(drops)))
 
     # ---- Scale bar (world units) ----
     parts.append(_scale_bar(scale, padding, h))
@@ -464,11 +480,12 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
 
 
 _DOOR_SPOT = "#e0a458"
+_DROP_FILL = "#ff7043"
 
 
 def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_doors: bool = False,
             has_sites: bool = False, has_props: bool = False,
-            districts: Optional[List[Tuple[str, str]]] = None) -> str:
+            districts: Optional[List[Tuple[str, str]]] = None, has_drops: bool = False) -> str:
     """The key, top right. *districts* ((colour, "District 1 — tomb") in id order, only for a
     zone of two or more Districts) adds a swatch per District and a ``threshold`` line, and
     widens the box to fit; without it the legend is unchanged."""
@@ -493,6 +510,8 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_
     if districts:
         items += list(districts)
         lines.append((_THRESHOLD_STROKE, 4, "", "threshold"))
+    if has_drops:
+        items.append((_DROP_FILL, "drop (one way)"))
 
     # 118 wide; District labels are longer (about 6 px a character at 10 px sans).
     bw = 118 if not districts else max(118, 30 + 6 * max(len(lab) for _, lab in items))

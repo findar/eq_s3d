@@ -188,3 +188,76 @@ def test_landing_is_clear_for_decor():
     assert not under
     plain = next(d for d in b.doors if d.c0 <= 25.0 <= d.c1)
     assert plain.clear[1] == pytest.approx(25.0 - 7.0) and plain.clear[3] == pytest.approx(25.0 + 7.0)
+
+
+# --- The corridor check (analyzer.traverse.corridor_continuity) -----------------------------
+
+def _corridors(spec):
+    from analyzer.traverse import corridor_continuity
+    agent = AgentModel()
+    surf = build_walk_surface(build_mesh(spec).to_ter("drop"), agent)
+    return {c.corridor_id: c for c in corridor_continuity(surf, spec, agent)}
+
+
+def test_corridor_check_walks_a_drop_one_way():
+    """A drop corridor passes from its upper room when its end falls onto the lower room's
+    floor; the flush one beside it keeps the two-way check."""
+    got = _corridors(_pair(back=True))
+    assert got["corr_0"].connected, got["corr_0"].reason
+    assert got["corr_1"].connected, got["corr_1"].reason
+
+
+def test_corridor_check_fails_a_walled_off_drop():
+    """(a) The same drop with its opening walled off (the lower room's wall left whole):
+    no fall onto the room, so it fails."""
+    spec = _pair(back=True)
+    spec.rooms[1].open_walls = []
+    spec.corridors = spec.corridors[:1]
+    got = _corridors(spec)
+    assert not got["corr_0"].connected
+    assert got["corr_0"].reason == "drop: no fall onto its lower room"
+
+
+def test_corridor_check_flush_unchanged():
+    """(b) A flush corridor raised at one end with no ``drop`` is the old two-way check: a
+    gap, as before."""
+    spec = _pair(back=False)
+    spec.corridors[0].drop = 0.0
+    got = _corridors(spec)
+    assert not got["corr_0"].connected and got["corr_0"].reason == "gap"
+
+
+def _alongside():
+    """A Z-corridor from ``a`` dropping 6 u into ``b`` whose jog runs down ``b``'s west wall
+    0.5 u off it, crossing ``b``'s floor height on the way (the seed 2035 classic 24 corr_20
+    shape)."""
+    a = RoomSpec("a", 50.0, 150.0, width=100.0, depth=100.0, height=60.0, floor_z=0.0)
+    b = RoomSpec("b", 165.0, 50.0, width=100.0, depth=100.0, height=60.0, floor_z=0.0)
+    a.role, b.role = "entrance", "normal"
+    a.open_walls, b.open_walls = ["E"], ["W"]
+    cor = CorridorSpec("corr_0", 98.0, 150.0, 117.0, 50.0, from_z=0.0, to_z=6.0, width=14.0,
+                       height=20.0, from_room="a", to_room="b", drop=6.0)
+    spec = ZoneSpec(name="along", zone_type="dungeon", rooms=[a, b], corridors=[cor])
+    spec.safe_point = (50.0, 150.0, 5.0)
+    return spec
+
+
+def test_a_drop_alongside_its_lower_room_is_refused():
+    """The gate's seam reach (2 u, no wall test) joins the jog to ``b``'s floor through the
+    wall: the corridor check says so rather than pass a way back the player hasn't, and the
+    layout never places such a drop (``_drop_seams_clear``)."""
+    spec = _alongside()
+    got = _corridors(spec)
+    assert not got["corr_0"].connected and got["corr_0"].reason == "drop walks both ways"
+    assert not LayoutGenerator._drop_seams_clear(spec.rooms, spec.corridors[0], spec.rooms[1])
+    assert LayoutGenerator._drop_seams_clear(_pair(False).rooms, _pair(False).corridors[0],
+                                             _pair(False).rooms[1])
+
+
+def test_map_marks_a_drop():
+    from generators.mapview import render_map_svg
+    svg = render_map_svg(_pair(back=True))
+    assert svg.count('class="drop"') == 1 and "drop (one way)" in svg
+    plain = _pair(back=True)
+    plain.corridors[0].drop = 0.0
+    assert 'class="drop"' not in render_map_svg(plain)

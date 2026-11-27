@@ -89,6 +89,11 @@ _Z90 = 1.2815515655446004          # the standard normal's 90th percentile
 DROP_LINTEL = 2.0
 #: Wall kept between a drop's opening and another door on that wall (u).
 DROP_PIER = 1.0
+#: The gate's step (``AgentModel.max_step_up``) and how far a drop corridor's floor within a
+#: step of the lower room's keeps off that room: past the gate's seam reach
+#: (``AgentModel.adjacency_eps``, 2 u) with 2 u to spare (``_drop_seams_clear``).
+DROP_STEP = 3.0
+DROP_SEAM_GAP = 4.0
 
 # A style profile's corridor run for the graph placement, in corridor widths
 # (``LayoutContext.run_factor``; ``embed.RUN_FACTOR`` otherwise). Winding
@@ -3275,9 +3280,52 @@ class LayoutGenerator:
                    for o in openings):
                 continue
             got = min(max(h, lo), hi)
+            trial = dataclasses.replace(cor, drop=got)
+            if end == "to":
+                trial.to_z = lower.floor_z + got
+            else:
+                trial.from_z = lower.floor_z + got
+            if not self._drop_seams_clear(rooms, trial, lower):
+                continue
             if best[0] <= 0 or abs(got - h) < abs(best[0] - h) - 1e-9:
                 best = (got, end != first)
         return best
+
+    @staticmethod
+    def _drop_seams_clear(rooms: List[RoomSpec], cor: CorridorSpec, lower: RoomSpec) -> bool:
+        """Does the drop corridor ``cor`` (its lower end raised) keep its floor clear of the
+        lower room wherever that floor is within a step of the room's? The gate joins two
+        floors that come within its seam reach (``AgentModel.adjacency_eps``, 2 u) at heights
+        a step apart, wall or no wall, so a Z-corridor's jog running along the lower room's
+        wall at its floor height reads as a way back up the drop (classic 24, seed 2035,
+        corr_20). Each leg is sampled every 1 u at its height as built (``_emit_route``'s
+        carry rule), the strip across it (a bend's whole square) kept ``DROP_SEAM_GAP`` off
+        the room's Box."""
+        from .geometry import MeshBuilder
+        by_id = {r.id: r for r in rooms}
+        route = corridor_route(cor, by_id)
+        wps = list(route.waypoints)
+        zs, _carry = MeshBuilder._waypoint_zs(wps, None if route.carry < 0 else route.carry,
+                                              cor.from_z, cor.to_z)
+        hw = cor.width / 2
+        (x0, y0, _), (x1, y1, _) = lower.bounds
+        top = lower.floor_z + DROP_STEP + 0.5
+        for k in range(len(wps) - 1):
+            (ax, ay), (bx, by) = wps[k], wps[k + 1]
+            n = max(1, int(math.ceil(math.hypot(bx - ax, by - ay))))
+            for s in range(n + 1):
+                t = s / n
+                z = zs[k] + (zs[k + 1] - zs[k]) * t
+                if z > top:
+                    continue
+                px, py = ax + (bx - ax) * t, ay + (by - ay) * t
+                bend = (s == 0 and k > 0) or (s == n and k < len(wps) - 2)
+                hx = hw if bend or not route.axes[k] else 0.0     # the strip across the leg
+                hy = hw if bend or route.axes[k] else 0.0
+                gap = max(x0 - (px + hx), (px - hx) - x1, y0 - (py + hy), (py - hy) - y1)
+                if gap < DROP_SEAM_GAP:
+                    return False
+        return True
 
     @staticmethod
     def _strongly_connected(n: int, edges: List[Tuple[int, int]],
