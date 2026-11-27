@@ -754,6 +754,36 @@ def test_pois_stay_on_reached_floor(decorated):
                 assert (near & after).any(), (c.id, poi)
 
 
+@pytest.mark.parametrize("seed", range(6))
+def test_components_are_the_step_graphs_own(seed):
+    """Task 15: ``Room._components`` labels the fine grid, not a sparse graph over every cell.
+    Its pieces are the graph's (steps between free side-by-side cells rising at most the
+    graph's rise), numbered in the order of their first cell, as ``connected_components``
+    numbers them, so ``_starts``' largest piece breaks a tie the same way."""
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import connected_components
+    rng = np.random.default_rng(seed)
+    c = box_room(w=60.0, d=44.0)
+    c.floor = rng.integers(0, 3, c.floor.shape) * 2.5       # steps of 2.5 u: some taken, some not
+    c.floor[rng.random(c.floor.shape) < 0.1] = np.nan
+    r = Room(c)
+    nx, ny = r.shape
+    graphs = [(r.walk, r._ea, r._eb), r._loose, r._gentle]
+    for k in range(4):
+        blocked = rng.random(r.shape) < 0.15 * k
+        for mask, ea, eb in graphs:
+            free = (mask & ~blocked).ravel()
+            keep = free[ea] & free[eb]
+            m = csr_matrix((np.ones(int(keep.sum()), np.int8), (ea[keep], eb[keep])), shape=(nx * ny, nx * ny))
+            want = connected_components(m, directed=False)[1][free]
+            n, got = r._components(blocked, mask, ea, eb)
+            got = got[free]
+            # Same pieces, numbered 1, 2, ... in the order of their first cell.
+            _u, first, inv = np.unique(want, return_index=True, return_inverse=True)
+            order = np.argsort(np.argsort(first))
+            assert np.array_equal(got, order[inv] + 1) and n == len(first)
+
+
 # --- the stream, the control, corridors, rough walls --------------------------------------------------
 
 def test_same_inputs_same_props_and_the_context_is_untouched(rules, fixture):
