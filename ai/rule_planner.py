@@ -207,6 +207,15 @@ _DECOR_WORDS = {
 # to the count the phrase's number word names (2 or 3). The first row that
 # matches wins. These words never feed the zone type or the archetype.
 THEME, TAKER, COUNT = "<theme>", "<taker>", "<count>"
+INTRUSION = "intrusion"
+# The intrusion verbs: tunnelled / tunneled, burrowed, dug, and their -ing forms, before
+# "into" or "through" ("their way" may stand between; a bare "in" never counts: "dwarves
+# digging in the mines" is a mine). A word that can't be the intruder ("it was tunnelled
+# into") never is.
+_DIG = r"(?:tunnell?ed|burrowed|dug)"
+_DIGGING = r"(?:tunnell?ing|burrowing|digging)"
+_INTO = r"(?:(?:their|its) way )?(?:into|through)\b"
+_NOT_TAKER = r"(?!(?:was|were|been|is|are|be|being|has|have|had|it|they|who|that|which)\b)"
 _DISTRICT_PHRASES: List[Tuple[str, str, Tuple[str, ...]]] = [
     (r"\b(?:the )?living and (?:the )?dead\b", "factional", (THEME, "tomb")),
     (r"\b(?:the )?dead and (?:the )?living\b", "factional", ("tomb", THEME)),
@@ -219,6 +228,15 @@ _DISTRICT_PHRASES: List[Tuple[str, str, Tuple[str, ...]]] = [
     (r"\b(?:overrun|overtaken|taken|seized|infested) (?:by|with) (?:the )?([a-z]+)",
      "abandoned_vs_active", (THEME, TAKER)),
     (r"\bold and new\b", "abandoned_vs_active", (THEME, THEME)),
+    # Intrusion (district races step 31, Req 10): what tunnelled, burrowed or dug into the
+    # place is a second District that breaks into it. Last, so every phrase above keeps
+    # its reading. The passive first: in "was tunnelled into by goblins" the word before
+    # the verb is "was". The verb phrase never feeds the zone type or the archetype
+    # (RulePlanner.plan reads them with it cut out): "tunnel", "burrow" and "dig" are
+    # cave, warren and mine words there.
+    (rf"\b{_DIG} (?:into|through) by (?:the )?([a-z]+)", INTRUSION, (THEME, TAKER)),
+    (rf"\b{_NOT_TAKER}([a-z]+) (?:have |had |has )?{_DIG} {_INTO}", INTRUSION, (THEME, TAKER)),
+    (rf"\b{_NOT_TAKER}([a-z]+) (?:are |were |is |was )?{_DIGGING} {_INTO}", INTRUSION, (THEME, TAKER)),
 ]
 
 # What took a fallen or overrun place: the word after "fallen to" / "overrun by"
@@ -253,8 +271,14 @@ class RulePlanner:
 
     def plan(self, prompt: str, name: str = "zone") -> ZonePlan:
         text = (prompt or "").lower()
+        # An intrusion phrase's verbs ("tunnelled", "burrowed", "digging") are cave,
+        # warren and mine words: the zone type and the archetype read the prompt
+        # without the phrase. Every other prompt reads as it always did.
+        phrase = _match_phrase(text)
+        shape = (text[:phrase[0].start()] + " " + text[phrase[0].end():]
+                 if phrase and phrase[1] == INTRUSION else text)
 
-        zone_type = self._match_zone_type(text)
+        zone_type = self._match_zone_type(shape)
         size = self._match_one(text, _SIZE_WORDS, default="medium")
         verticality = self._match_one(text, _VERTICALITY_WORDS, default="moderate")
         winding = match_winding(text)
@@ -266,7 +290,7 @@ class RulePlanner:
         locks = self._lock_count(text, room_count)
 
         # Content / semantic layer (only meaningful for the dungeon zone type).
-        dungeon_theme = (self._match_archetype(text)
+        dungeon_theme = (self._match_archetype(shape)
                          if zone_type in ("dungeon", "outdoor_dungeon") else "")
         dungeon_race = self._match_one(text, _RACE_WORDS, default="")
         elemental_tint = self._match_tint(regions)
@@ -283,6 +307,13 @@ class RulePlanner:
         if (districts is not None and zone_type in DISTRICT_ZONE_TYPES
                 and _explicit_count(text) is None):
             room_count = max(room_count, _DISTRICT_ROOMS[len(districts[0])])
+        # A District phrase naming two races gives each District its own (step 31);
+        # the zone's race is then the entrance District's.
+        if districts is not None:
+            proposals, zone_race = match_district_races(text, phrase, districts[0])
+            districts = (proposals, districts[1])
+            if zone_race is not None:
+                dungeon_race = zone_race
 
         return ZonePlan(
             name=name,
@@ -412,10 +443,9 @@ def match_districts(text: str, theme: str = "") -> Optional[Tuple[List[Dict[str,
     when it has none, else ``(proposals, relationship)``, the proposals one
     ``{"purpose": name}`` per named area (2-3), "" where the words name none. *theme* is
     the prompt's archetype (``THEME`` areas)."""
-    for pattern, relationship, areas in _DISTRICT_PHRASES:
-        m = re.search(pattern, text)
-        if m is None:
-            continue
+    found = _match_phrase(text)
+    if found is not None:
+        m, relationship, areas = found
         names: List[str] = []
         for area in areas:
             if area == COUNT:
@@ -434,6 +464,71 @@ def match_districts(text: str, theme: str = "") -> Optional[Tuple[List[Dict[str,
         names = [("" if a == THEME and n in named else n) for n, a in zip(names, areas)]
         return [{"purpose": n} for n in names], relationship
     return None
+
+
+def _match_phrase(text: str):
+    """The first ``_DISTRICT_PHRASES`` row matching *text*: ``(match, relationship,
+    areas)``, or ``None``."""
+    for pattern, relationship, areas in _DISTRICT_PHRASES:
+        m = re.search(pattern, text)
+        if m is not None:
+            return m, relationship, areas
+    return None
+
+
+def _race_of(word: str) -> str:
+    """The race *word* names on its own ("goblins" -> goblin), or ""."""
+    for race, words in _RACE_WORDS.items():
+        if word in words:
+            return race
+    return ""
+
+
+def _races_named(text: str) -> List[str]:
+    """The races *text* names, each once, in the order it first names them (the same
+    substring reading as the zone's race)."""
+    first: Dict[str, int] = {}
+    for race, words in _RACE_WORDS.items():
+        spots = [text.find(w) for w in words if w in text]
+        if spots:
+            first[race] = min(spots)
+    return sorted(first, key=lambda r: first[r])
+
+
+def match_district_races(text: str, phrase, proposals: List[Dict[str, str]]
+                         ) -> Tuple[List[Dict[str, str]], Optional[str]]:
+    """Each District's own race from a District phrase's words (district races Req 10):
+    ``(proposals, zone_race)``, the proposals with a ``race`` where one is set and the
+    zone's race (the entrance District's) when the words change it, else ``None``.
+
+    A phrase whose captured word is a race ("the goblins tunnelled into", "overrun by
+    kobolds") gives that race to the area it holds and the other race named (before or
+    after it) to the rest. An intrusion sets them even with one race named: "a fortress
+    the goblins dug into" is a goblin intruder in a fortress of the zone's default
+    race. The other phrases need two races named, to give each area the race named in
+    its order ("two warring clans, goblins and kobolds"). Otherwise nothing changes, so
+    a prompt naming one race (or none) plans as it always did. *phrase* is
+    ``_match_phrase``'s result for *text*."""
+    if phrase is None:
+        return proposals, None
+    m, relationship, areas = phrase
+    if TAKER in areas:
+        start, end = m.span(m.lastindex)
+        theirs = _race_of(m.group(m.lastindex))
+        rest = _races_named(text[:start] + " " + text[end:])
+        host = rest[0] if rest else ""
+        if theirs == host or not (theirs and host or relationship == INTRUSION):
+            return proposals, None
+        races = [theirs if a == TAKER else host for a in areas]
+        zone = host
+    else:
+        named = _races_named(text)
+        if len(named) < 2:
+            return proposals, None
+        races = (named + [""] * len(proposals))[:len(proposals)]
+        zone = named[0]
+    out = [dict(p, race=r) if r else dict(p) for p, r in zip(proposals, races)]
+    return out, zone
 
 
 def _taker(word: str) -> str:

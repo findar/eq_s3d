@@ -629,8 +629,12 @@ class GenerateRequest(BaseModel):
                     "decor_seed (dungeon, city and outdoor_dungeon only), decor_layers "
                     "(decor layers on top of the dungeon theme's, from /api/controls), rooms_seed "
                     "(the rooms and Sites; every zone type), districts (true for contrasting "
-                    "areas), district_plan (up to 3 Purposes) and district_relationship "
-                    "(dungeon only; on another zone type a districts_ignored warning), …",
+                    "areas), district_plan (up to 3 Purposes, each a name or "
+                    "{\"purpose\": name, \"race\": race}: a race sizes that District, left out "
+                    "for the zone's; an unknown one a district_race_unknown warning) and "
+                    "district_relationship (sequential, factional, abandoned_vs_active or "
+                    "intrusion) (dungeon only; on another zone type a districts_ignored "
+                    "warning), …",
     )
     # ``seed`` is StrictInt so a float/bool/string is a validation error (-> 400
     # via the RequestValidationError handler), never a silent coercion.

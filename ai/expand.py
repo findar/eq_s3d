@@ -249,17 +249,27 @@ def layout_proposals(plan: ZonePlan, seed: int) -> List[Dict[str, str]]:
     relationship (23.11). An open proposal before a named one is filled here: District 0
     by the plan's dungeon theme when no other proposal names it, else (and for any later
     one) a Purpose next to the one before it (District 0: the first named) in the relationship's table (the
-    contrast table for ``factional``, the compatibility table otherwise), drawn from a
-    generator salted off *seed* and unused by the other proposals."""
+    contrast table for ``factional`` and ``intrusion``, the compatibility table otherwise), drawn from a
+    generator salted off *seed* and unused by the other proposals. An ``intrusion``
+    intruder (District 1 on) draws from its host's contrasts that were dug rather than
+    built (``_DUG``: a warren or a cave into a fortress) when any is free.
+
+    A proposal naming a race (step 31) keeps it, and keeps its District: an open one
+    naming a race is filled like an open one before a named one, never dropped (under
+    ``abandoned_vs_active`` with District 0's Purpose, as the layout would fill it). A
+    plan with no race gives the list it always did."""
+    races = [p.get("race", "") for p in plan.district_plan]
     pinned = plan.pinned_purpose()
     if pinned:
-        return [{"purpose": pinned}] * MAX_DISTRICT_PROPOSALS
+        races += [""] * (MAX_DISTRICT_PROPOSALS - len(races))
+        return [_proposal(pinned, r) for r in races[:MAX_DISTRICT_PROPOSALS]]
     names = [p["purpose"] for p in plan.district_plan]
-    while names and not names[-1]:
+    while names and not names[-1] and not races[len(names) - 1]:
         names.pop()
     if "" in names:
         rng = random.Random(seed ^ 0xD157)
-        table = (_districts.CONTRASTS if plan.district_relationship == "factional"
+        intrusion = plan.district_relationship == _districts.INTRUSION
+        table = (_districts.CONTRASTS if plan.district_relationship in ("factional", _districts.INTRUSION)
                  else _districts.COMPATIBLE)
         for d, name in enumerate(names):
             if name:
@@ -268,11 +278,26 @@ def layout_proposals(plan: ZonePlan, seed: int) -> List[Dict[str, str]]:
             if d == 0 and plan.dungeon_theme and plan.dungeon_theme not in used:
                 names[0] = plan.dungeon_theme
                 continue
-            near = names[d - 1] if d else next(n for n in names if n)
-            pool = [p for p in table[near] if p not in used] or \
+            if d and races[d] and plan.district_relationship == "abandoned_vs_active":
+                names[d] = names[0]         # the layout's choice for it: District 0's
+                continue
+            near = (names[d - 1] if d else next((n for n in names if n), "")) or plan.dungeon_theme
+            pool = [p for p in table.get(near, ()) if p not in used] or \
                 [p for p in _districts.PURPOSES if p not in used]
+            if intrusion and d:
+                pool = [p for p in pool if p in _DUG] or pool
             names[d] = rng.choice(pool)
-    return [{"purpose": n} for n in names]
+    return [_proposal(n, r) for n, r in zip(names, races)]
+
+
+#: Purposes dug rather than built: what an ``intrusion`` intruder prefers to be when its
+#: proposal names no Purpose (the goblins' warren in a giant fortress; task 9 decision).
+_DUG = ("warren", "cave", "mine_delve")
+
+
+def _proposal(purpose: str, race: str) -> Dict[str, str]:
+    """One layout proposal: the Purpose, and the race only when one is named."""
+    return {"purpose": purpose, "race": race} if race else {"purpose": purpose}
 
 
 def _decor(spec: ZoneSpec, plan: ZonePlan) -> ZoneSpec:
