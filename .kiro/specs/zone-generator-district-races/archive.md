@@ -18,6 +18,7 @@
    2026-11-26, at task 1). `MAX_DROP` 80 u is the gate's limit, inflated by water and steep slopes; task 7 draws each drop's
    height from stock's (p50 24 u) under it, not uniformly. Giant 3.0 rests on one zone (kael, 7 halls): it applies to giant
    Districts only (requirement 5), and the step 31 look decides whether it stays.
+   Task 7's draw: log-normal through p50 24 u / p90 84 u, redrawn into 6-80 u, then clamped to what the pair can take.
 4. **Classic takes a per-District hall length, by scaling the District's offsets from its centre** (task 5), as task 4
    does for race: the zone-wide spread would lengthen the goblins' halls too. Graph uses a run per edge in the springs.
 5. **The Graph giant hall misses its band on seeds 2000-2019 (x2.43, band 2.55-3.45); the lead accepted it** (task 5
@@ -39,8 +40,27 @@
    the lead's call): the offset comes from a stream salted `spill/<seed>/<room>`. Spilled lines take the intruder's Sets and
    weights at the host's Scales, so goblin props stand at goblin size. Walls, light lines, POI Dressing and the bare draw stay
    the host's. Seeds 2000-2019: 159 of 208 host rooms spilled (49 drew bare), 29 % of their Props.
+10. **A drop lowers only the lower room's opening** (task 7): the corridor's lower end runs `CorridorSpec.drop` u above
+   that room's floor, the room keeps its wall below the sill (box and outline rooms), and the upper end stays flush.
+   Decor keeps a body's width clear each side of the landing, under the sill too. No stairs, U-routes or bridges drop.
+11. **Pacing stays two-way** (task 7): pacing roles read the room graph as undirected; a drop only changes the gate's
+   directed reach, as advisory data should.
+12. **A picked drop passes on** (task 7): each cross link draws at `DROP_SHARE` 0.1; a pick that can't take a drop
+   (too little headroom, a stair, a clash, or it would break strong connectivity) moves to the zone's next cross link
+   that can. Without it only 3.3 % of links dropped; with it 6.8 %.
+13. **On equal floors the drop may reverse the corridor** (task 7): the drop lands in whichever room has more headroom
+   under its ceiling; an all-drop intruder gets a flush return from its room farthest from the landings
+   (`drop_returns`, inside `BREACH_SPAN`).
+14. **A drop corridor's low legs keep 4 u (`DROP_SEAM_GAP`) off the lower room** (task 7): the gate's seam rule joins
+   floors within 2 u in XY with no wall test, so a Z-corridor's bend beside the lower room read as a way back up
+   (seed 2035 classic 24 `corr_20`). Layout skips such a fit rather than teaching the seam rule about walls.
+15. **The corridor check walks a drop one way** (task 7): it floods from the upper room only and passes when the
+   flood reaches the corridor's lower end and `find_drops` links that end onto the lower room's floor; a flood that
+   reaches the lower floor fails as "drop walks both ways". Flush corridors keep the two-way check.
 
 ## Follow-ups
+- The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it
+  for drops); any geometry hugging a room's outside wall can read as joined through it.
 - `ai.expand.layout_proposals` fills open proposals from CONTRASTS for `factional` only, not `intrusion` (task 9).
 - A classic zone draws no wall styles, so its breaches are plain extra links (sized by the smaller race) with no
   `breach` form and no rough break; only grown (graph) zones show them.

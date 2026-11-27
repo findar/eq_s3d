@@ -61,7 +61,7 @@ from core.ter import FLAG_PASSABLE, TerFile
 from scipy.ndimage import binary_dilation, binary_erosion, label
 
 from generators.geometry import (MeshBuilder, _bridge_slots, _door_openings, bridge_layout,
-                                 is_auto_stair, stair_layout)
+                                 drop_end, is_auto_stair, stair_layout)
 from generators.routing import Rect, corridor_route, route_footprint
 from generators.semantics import body_height
 from generators.zone_spec import CorridorSpec, RoomSpec, ZoneSpec
@@ -1248,14 +1248,17 @@ def _bary_pairs(P: np.ndarray, T: np.ndarray):
     return ok & (l1 >= -tol) & (l2 >= -tol) & (l3 >= -tol), l1 * az + l2 * bz + l3 * cz
 
 
-def find_drops(surf: WalkSurface, agent: AgentModel) -> Dict[int, List[int]]:
+def find_drops(surf: WalkSurface, agent: AgentModel,
+               component: Optional[np.ndarray] = None) -> Dict[int, List[int]]:
     """The walk surface's drops: ``{upper face: [lower faces]}``, each a one-way link
     the agent can fall down and not climb back (the module note above). Only links
     between different walk components; empty when ``agent.max_drop`` is at most the
-    step-up (the pass switched off) or the surface is one component."""
+    step-up (the pass switched off) or the surface is one component. ``component``
+    (one label per face) stands in for the walk's components: the corridor check labels
+    a drop corridor's upper flood apart from everything else (district races task 7)."""
     if agent.max_drop <= agent.max_step_up or not len(surf.faces):
         return {}
-    comp = surf.component
+    comp = surf.component if component is None else component
     std = np.nonzero(surf.standable)[0]
     if len(std) == 0 or len(np.unique(comp[std])) < 2:
         return {}
@@ -2376,7 +2379,41 @@ def corridor_continuity(surf: WalkSurface, spec: ZoneSpec,
 
         connected = False
         reason = ""
-        if not start:
+        end = drop_end(cor, rooms_by_id)
+        if end is not None:
+            # A drop (district races step 31): walked one way, from the upper room down.
+            # The flood starts there only; the corridor passes when the flood reaches its
+            # lower end and that end falls onto the lower room's floor (``find_drops``, the
+            # flood's faces against the rest). The lower room's floor is its faces more than
+            # a step under the sill, so the corridor's own lip inside its Box isn't counted.
+            # Floor that walks both ways from the upper room into the lower one fails: the
+            # player has no way back up a drop, so the gate mustn't see one.
+            upper, lower = (a, b) if end == "to" else (b, a)
+            sill = cor.to_z if end == "to" else cor.from_z
+            start = {int(f) for f in floors(upper)} & faces_set
+            low = [int(f) for f in floors(lower) if int(f) in faces_set]
+            if low:
+                lz = surf.verts[surf.faces[low]][:, :, 2].mean(axis=1)
+                low = [f for f, z in zip(low, lz) if z < sill - agent.max_step_up]
+            goal = set(low)
+            if not start:
+                reason = f"no floor in {'from_room' if end == 'to' else 'to_room'}"
+            elif not goal:
+                reason = f"no floor in {'to_room' if end == 'to' else 'from_room'}"
+            else:
+                adj = _local_adjacency(surf, agent, region_faces)
+                reached = _flood_subset(adj, start)
+                if reached & goal:
+                    reason = "drop walks both ways"
+                else:
+                    comp = np.ones(len(surf.faces), np.int64)
+                    comp[sorted(reached)] = 0
+                    falls = find_drops(surf, agent, component=comp)
+                    if any(u in reached and v in goal for u, vs in falls.items() for v in vs):
+                        connected = True
+                    else:
+                        reason = "drop: no fall onto its lower room"
+        elif not start:
             reason = "no floor in from_room"
         elif not goal:
             reason = "no floor in to_room"

@@ -51,7 +51,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/districts.py, generators/layout.py (Districts and links), generators/transitions.py, tests/test_intrusion.py (new)
   - Reqs: 6
 
-- [ ] 7. Flush or a drop, and one-way loops
+- [x] 7. Flush or a drop, and one-way loops
   - Card: [cards/07-drops.md](cards/07-drops.md)
   - Type: agent · Size: M · Depends: 2, 3, 6
   - Owns: generators/zone_spec.py (CorridorSpec.drop), generators/layout.py, generators/geometry.py, generators/room_context.py, tests/test_drops.py (new)
