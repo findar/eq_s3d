@@ -16,6 +16,17 @@ first (``cave_first``) or second (``cave_second``). Each build draws its built
 Purpose from every non-cave archetype; with 14 or more rooms the third District
 is left to the relationship. The CSV records the resolved District Purposes.
 
+``--intrusion`` (zone-generator-district-races task 10) sweeps districted dungeons
+whose Districts break into one another: the Districts switch on, ``district_relationship``
+``intrusion`` (``--relationship`` names another, to compare) and ``district_plan``
+pinning a host and an intruder, each ``purpose[/race]``, given as ``HOST+INTRUDER``
+(default ``fortress/giant+warren/goblin``; e.g. ``cave/giant+warren/goblin``). Each
+zone goes through the generate path itself, ``generate_validated`` with an unpinned
+seed drawn from the job's rng (the quality Draws, the gate and its retries), as a
+user's generate does. The CSV adds the attempts, the Draws (each timed and measured
+against the bands), the cross-District links, the breaches and the drops of the
+accepted build.
+
 ``--outdoor`` (zone-generator-random-placement task 4) sweeps outdoor dungeons
 (``zone_type`` ``outdoor_dungeon``) instead, judged with the outdoor gate
 (``generators.outdoor_dungeon.outdoor_dungeon_report``: the bowl, every room
@@ -30,6 +41,8 @@ Usage:
         --verticality flat moderate dramatic --rooms 2-30 --seeds 2 --jobs 3
     python -m scripts.sweep_themed_navigability --pair cave_first cave_second \\
         --layouts classic graph --verticality flat moderate dramatic --rooms 8-30 --jobs 3
+    python -m scripts.sweep_themed_navigability --intrusion fortress/giant+warren/goblin \\
+        cave/giant+warren/goblin --layouts classic graph --rooms 16 24 --jobs 6
     python -m scripts.sweep_themed_navigability --outdoor --layouts graph \\
         --verticality flat moderate dramatic --rooms 2-30 --seeds 2 --seed 23 --jobs 3
 
@@ -61,6 +74,7 @@ ARCHETYPES = [
 VERTICALITIES = ("flat", "moderate", "dramatic")
 PAIRS = ("cave_first", "cave_second")
 BUILT = [a for a in ARCHETYPES if a != "cave"]
+DEFAULT_INTRUSION = "fortress/giant+warren/goblin"
 
 
 def _district_plan(arch):
@@ -85,9 +99,12 @@ def _room_counts(tokens):
 def build_one(job):
     """One build: plan, build, gate. Returns a CSV row."""
     arch, layout, verticality, rooms, seed, out_dir, winding, hall_length, *rest = job
-    if rest and rest[0]:
+    if rest and rest[0] == "outdoor":
         return _build_outdoor(arch, layout, verticality, rooms, seed, out_dir, winding,
                               hall_length)
+    if rest and rest[0] == "intrusion":
+        return _build_intrusion(arch, layout, verticality, rooms, seed, out_dir, winding,
+                                hall_length, rest[1])
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from analyzer.rof2check import check_eqg
@@ -125,6 +142,82 @@ def build_one(job):
             "districts": "+".join(d.purpose for d in spec.districts),
             "passed": int(passed), "reachable": report.reachable_rooms,
             "total": report.total_rooms, "reasons": " | ".join(reasons)}
+
+
+def _intrusion_plan(cell):
+    """``"fortress/giant+warren/goblin"`` as a ``district_plan``: host first, then the
+    intruder, each ``{"purpose"[, "race"]}`` (no race: the zone's)."""
+    plan = []
+    for part in cell.split("+"):
+        purpose, _, race = part.partition("/")
+        plan.append({"purpose": purpose, **({"race": race} if race else {})})
+    return plan
+
+
+def _build_intrusion(cell, layout, verticality, rooms, seed, out_dir, winding, hall_length,
+                     relationship):
+    """One intrusion zone (``--intrusion``) through ``generate_validated``, as a generate
+    builds it: its Draws timed and measured, then the accepted build's links, breaches
+    and drops."""
+    import dataclasses
+    import time
+
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from generators import quality
+    from generators.builder import with_district_notes
+    from generators.pipeline import GenerationFailed, generate_validated
+    from generators.transitions import breach_hosts
+
+    c = {"zone_type": "dungeon", "room_count": rooms, "verticality": verticality,
+         "layout": layout, "districts": True, "district_plan": _intrusion_plan(cell)}
+    if relationship != "sequential":
+        c["district_relationship"] = relationship
+    if winding is not None:
+        c["winding"] = winding
+    if hall_length is not None:
+        c["hall_length"] = hall_length
+    plan = ZonePlan.from_controls(c, [])
+    plan.name = f"nav_intr_{layout[0]}{verticality[0]}{rooms}_{seed}"
+    draws = []
+
+    def factory(s, rooms_seed=None):
+        p = plan if rooms_seed is None else dataclasses.replace(plan, rooms_seed=rooms_seed)
+        notes: list = []
+        t0 = time.perf_counter()
+        spec = plan_to_spec(p, seed=s, warnings=notes)
+        dt = time.perf_counter() - t0
+        ok = quality.measure(spec, verticality=verticality).passed
+        draws.append(f"{dt:.2f}/{int(ok)}/{quality.spec_districts(spec)}")
+        return with_district_notes(spec, notes)
+
+    row = {"archetype": cell, "layout": layout, "verticality": verticality,
+           "room_count": rooms, "n_rooms": 0, "seed": seed, "relationship": relationship,
+           "districts": "", "passed": 0, "reachable": 0, "total": 0, "attempts": 0,
+           "draws": "", "links": 0, "breaches": 0, "drops": 0, "drop_u": "", "reasons": ""}
+    with tempfile.TemporaryDirectory(prefix="intr", dir=out_dir,
+                                     ignore_cleanup_errors=True) as tmp:
+        try:
+            vb = generate_validated(factory, zone_type="dungeon", zone_id=plan.name,
+                                    output_dir=Path(tmp), write_glb=False,
+                                    rng=random.Random(seed), failure_log=None,
+                                    verticality=verticality)
+        except GenerationFailed as e:
+            last = e.failures[-1] if e.failures else None
+            why = "; ".join(last.reasons) if last else str(e)
+            return dict(row, attempts=len(e.failures), draws=";".join(draws),
+                        reasons=f"failed: {why}"[:400])
+    spec = vb.spec
+    rid = {r.id: r.district for r in spec.rooms}
+    cross = [k for k in spec.corridors if rid.get(k.from_room) != rid.get(k.to_room)]
+    drops = [k.drop for k in cross if k.drop]
+    return dict(row, n_rooms=len(spec.rooms), seed=seed,
+                districts="+".join(f"{d.purpose}/{d.race}" if d.race else d.purpose
+                                   for d in spec.districts),
+                passed=int(vb.validated), reachable=vb.report.reachable_rooms,
+                total=vb.report.total_rooms, attempts=vb.attempts, draws=";".join(draws),
+                links=len(cross), breaches=len(breach_hosts(spec)), drops=len(drops),
+                drop_u=" ".join(f"{d:.0f}" for d in drops))
 
 
 def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding, hall_length):
@@ -174,6 +267,8 @@ def run(args) -> int:
     out_dir = Path(tempfile.mkdtemp(prefix="navsweep_")) if not args.keep else ROOT / "output"
     if args.outdoor:
         archetypes = list(args.only) or ["default"]
+    elif args.intrusion is not None:
+        archetypes = list(args.intrusion) or [DEFAULT_INTRUSION]
     else:
         archetypes = list(args.pair) or [a for a in ARCHETYPES if not args.only or a in args.only]
     rng = random.Random(args.seed)
@@ -186,7 +281,11 @@ def run(args) -> int:
                         cell = f"{arch}:{rng.choice(BUILT)}" if arch in PAIRS else arch
                         job = (cell, layout, v, n, rng.randint(0, 2 ** 31 - 1),
                                str(out_dir), args.winding, args.hall_length)
-                        jobs.append(job + (True,) if args.outdoor else job)
+                        if args.outdoor:
+                            job += ("outdoor",)
+                        elif args.intrusion is not None:
+                            job += ("intrusion", args.relationship)
+                        jobs.append(job)
 
     rows = []
     if args.jobs > 1:
@@ -216,6 +315,8 @@ def run(args) -> int:
     for key, (p, n) in sorted(tally.items()):
         print(f"  {'/'.join(key):<36} {p}/{n}")
     passed = sum(r["passed"] for r in rows)
+    if args.intrusion is not None:
+        _intrusion_summary(rows)
     if args.pair:
         cave = sum(1 for r in rows if "cave" in r["districts"].split("+"))
         print(f"\n{cave}/{len(rows)} builds resolved a cave District "
@@ -226,6 +327,43 @@ def run(args) -> int:
     if not args.keep:
         shutil.rmtree(out_dir, ignore_errors=True)
     return 0 if passed == len(rows) else 1
+
+
+def _median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    return (xs[n // 2] + xs[(n - 1) // 2]) / 2 if xs else float("nan")
+
+
+def _intrusion_summary(rows):
+    """Per pair / layout / rooms: links, breaches, drops; per band key (layout,
+    verticality, District count): the Draws failing the bands; per room count: Draw time."""
+    links = defaultdict(lambda: [0, 0, 0, 0])
+    bands = defaultdict(lambda: [0, 0])
+    times = defaultdict(list)
+    for r in rows:
+        t = links[(r["archetype"], r["layout"], r["room_count"])]
+        t[0] += 1
+        t[1] += r["links"]
+        t[2] += r["breaches"]
+        t[3] += r["drops"]
+        for d in filter(None, r["draws"].split(";")):
+            dt, ok, nd = d.split("/")
+            b = bands[(r["layout"], r["verticality"], nd)]
+            b[0] += 1
+            b[1] += 1 - int(ok)
+            times[r["room_count"]].append(float(dt))
+    print("\nper pair / layout / rooms: zones, cross links, breaches, drops (share of links):")
+    for key, (n, li, br, dr) in sorted(links.items()):
+        share = dr / li if li else 0.0
+        print(f"  {key[0]:<30} {key[1]:<8} {key[2]:<3} {n:>4} {li:>5} {br:>5} {dr:>4} "
+              f"({share:.1%})")
+    print("\nquality Draws per key (layout / verticality / Districts): draws, fail share:")
+    for key, (n, f) in sorted(bands.items()):
+        print(f"  {'/'.join(key):<24} {n:>5} {f / n:6.1%}")
+    print("\nDraw time (plan_to_spec, s) per room count: draws, median, max:")
+    for n, ts in sorted(times.items()):
+        print(f"  rooms {n:<3} {len(ts):>5} {_median(ts):7.2f} {max(ts):7.2f}")
 
 
 def _print(row):
@@ -250,6 +388,12 @@ if __name__ == "__main__":
     ap.add_argument("--pair", nargs="+", default=[], choices=PAIRS,
                     help="districted builds pinning a cave District and a built one, in "
                          "these orders (replaces the archetype axis)")
+    ap.add_argument("--intrusion", nargs="*", default=None, metavar="HOST+INTRUDER",
+                    help="districted builds through generate_validated pinning a host and an "
+                         "intruder District, each purpose[/race] (default "
+                         f"{DEFAULT_INTRUSION}; replaces the archetype axis)")
+    ap.add_argument("--relationship", default="intrusion",
+                    help="the --intrusion zones' District relationship (default intrusion)")
     ap.add_argument("--outdoor", action="store_true",
                     help="sweep outdoor dungeons with the outdoor gate (--only names themes; "
                          "default: no theme pinned)")
