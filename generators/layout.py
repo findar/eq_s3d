@@ -177,6 +177,10 @@ HALL_K_BISECTIONS = 30
 #: (a share) a District's median hall must come to stop early.
 HALL_RELAX_ROUNDS = 4
 HALL_RELAX_TOLERANCE = 0.05
+#: The most a spring placement's District runs are scaled, as a multiple of its default:
+#: the corrections for loops that fight the stretch stop there (task 10: seed 564762926
+#: ran a giant hall out to 27,000 u).
+HALL_SCALE_CAP = 2.0
 #: Moves a Threshold's far Districts make at most to reach its length.
 HALL_STRETCH_ROUNDS = 6
 
@@ -1464,6 +1468,7 @@ class LayoutGenerator:
         """:meth:`_apply_district_halls` for a spring placement."""
         from .topology.embed import RUN_FACTOR, Storey, spring_relax
         ids = [r.id for r in rooms]
+        levels, lh = result.levels, result.level_height or 0.0
         by_d: Dict[int, List[Tuple[int, int]]] = {}
         gaps: Dict[frozenset, float] = {}
         for i, j in edges:
@@ -1471,12 +1476,15 @@ class LayoutGenerator:
             gx = abs(b.center_x - a.center_x) - (a.width + b.width) / 2
             gy = abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2
             gaps[frozenset((a.id, b.id))] = max(gx, gy, 1.0)
-            # A Threshold holds here; :meth:`_stretch_thresholds` lengthens it.
-            if a.district == b.district and halls[a.district] != 1.0:
+            # A Threshold holds here; :meth:`_stretch_thresholds` lengthens it. So
+            # does an edge between two Levels: its rooms stand over each other (a gap
+            # of 1) and no run lengthens its span, which held the median back while
+            # the District's other runs were scaled on without end (task 10).
+            if (a.district == b.district and halls[a.district] != 1.0
+                    and (not levels or levels[i] == levels[j])):
                 by_d.setdefault(a.district, []).append((i, j))
         if not by_d:
             return
-        levels, lh = result.levels, result.level_height or 0.0
         nodes = {r.id: Storey(levels[k] if levels else 0, (levels[k] * lh) if levels else 0.0,
                               r.height) for k, r in enumerate(rooms)}
         pos = {r.id: (r.center_x, r.center_y) for r in rooms}
@@ -1505,7 +1513,8 @@ class LayoutGenerator:
             if miss <= HALL_RELAX_TOLERANCE:
                 break
             for d in scale:
-                scale[d] *= halls[d] / max(got[d], 1e-9)
+                scale[d] = min(scale[d] * halls[d] / max(got[d], 1e-9),
+                               HALL_SCALE_CAP * halls[d])
         for r in rooms:
             r.center_x, r.center_y = best[1][r.id]
         if not levels:

@@ -215,3 +215,26 @@ def test_giant_rooms_size_walls_features_decor_and_forms_by_their_race(monkeypat
     # A giant's decor cells: its door-clear zones run 2 H + 2 deep, not a human's.
     big = [d for r in spec.rooms if r.district == 0 for d in ctx[r.id].doors]
     assert big and max(min(d.clear[2] - d.clear[0], d.clear[3] - d.clear[1]) for d in big) > 2 * zone + 2
+
+
+def test_a_stacked_giant_district_keeps_its_halls_in_bounds():
+    """Task 10 (built seed 564762926, giant fortress + goblin warren intrusion, Graph
+    dramatic 16): the District's edges between Levels stand over each other and no run
+    lengthens them, so its median hall held back and the hall relax scaled the other runs
+    4x a round until two giant halls ran ~27,000 u. Edges between Levels hold, and a run
+    is never scaled past HALL_SCALE_CAP times its default."""
+    import math
+
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 16, "layout": "graph",
+                                   "verticality": "dramatic", "districts": True,
+                                   "district_relationship": "intrusion",
+                                   "district_plan": GIANT_GOBLIN}, [])
+    plan.name = "runaway"
+    spec = plan_to_spec(plan, seed=564762926, warnings=[])
+    by = {r.id: r for r in spec.rooms}
+    longest = max(math.hypot(by[c.from_room].center_x - by[c.to_room].center_x,
+                             by[c.from_room].center_y - by[c.to_room].center_y)
+                  for c in spec.corridors)
+    assert longest < 2000.0             # a giant hall runs ~500 u (task 5); it ran 27,488
