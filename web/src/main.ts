@@ -9,7 +9,10 @@ import {
 } from "./api";
 import { ZoneScene } from "./scene";
 import { FirstPersonControls } from "./controls";
-import { showArtifacts, loadMapSvg } from "./artifacts";
+import {
+  showArtifacts, loadMapSvg, mapLayers, hasEqView, applyMapLayers, mapLayerState,
+  setMapLayerState, shownMapSvgUrl,
+} from "./artifacts";
 import { setExportBuild } from "./exportrow";
 import { initFeedback, setFeedbackBuild, setFeedbackBusy } from "./feedback";
 import { drawSockets } from "./sockets";
@@ -1305,11 +1308,74 @@ async function openMap() {
       if (vb && vb.width > 0 && vb.height > 0) svg.style.setProperty("--map-aspect", String(vb.width / vb.height));
       roomView.wireMap(svg);
     }
+    buildLayerControls(svg);
     mapDownload.href = currentMapUrl;
+    await refreshMapDownload();
     mapModal.classList.remove("hidden");
   } catch (err) {
     console.error(err);
     statusEl.textContent = "map unavailable — see console";
+  }
+}
+
+// Map layers (district races task 18): a checkbox per layer the SVG draws (a zone
+// with no District race has no Races layer, so no Races box), and the EQ export
+// view, which shows only what the in-client map file carries. Toggling redraws
+// nothing: it shows and hides the layer groups, and the downloads follow.
+const mapLayersEl = $("map-layers");
+
+function buildLayerControls(svg: SVGSVGElement | null): void {
+  mapLayersEl.innerHTML = "";
+  const layers = svg ? mapLayers(svg) : [];
+  const eqView = svg ? hasEqView(svg) : false;
+  mapLayersEl.hidden = !svg || (!layers.length && !eqView);
+  if (!svg || mapLayersEl.hidden) return;
+  applyMapLayers(svg);
+  const state = mapLayerState();
+  for (const info of layers) {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = info.on;
+    box.disabled = state.eq && eqView;
+    box.dataset.layer = info.key;
+    box.addEventListener("change", () => {
+      const s = mapLayerState();
+      s.on[info.key] = box.checked;
+      setMapLayerState(s);
+      applyMapLayers(svg);
+      void refreshMapDownload();
+    });
+    label.append(box, ` ${info.label}`);
+    mapLayersEl.appendChild(label);
+  }
+  if (eqView) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.id = "map-eq-view";
+    btn.className = "secondary";
+    btn.textContent = "EQ map view";
+    btn.title = "Only what the in-game map file (maps/*.txt) carries: its lines by depth band and the Entrance/Boss labels";
+    btn.setAttribute("aria-pressed", String(state.eq));
+    btn.addEventListener("click", () => {
+      const s = mapLayerState();
+      s.eq = !s.eq;
+      setMapLayerState(s);
+      buildLayerControls(svg);
+      void refreshMapDownload();
+    });
+    mapLayersEl.appendChild(btn);
+  }
+}
+
+/** Point the dialog's Download SVG at the map as shown (its layers), not the server's file. */
+async function refreshMapDownload(): Promise<void> {
+  if (!currentMapUrl || mapLayersEl.hidden) return;
+  try {
+    mapDownload.href = await shownMapSvgUrl(currentMapUrl);
+  } catch (err) {
+    console.warn("[map] layered download unavailable, the full map instead", err);
+    mapDownload.href = currentMapUrl;
   }
 }
 

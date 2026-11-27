@@ -194,11 +194,13 @@ def _room_corners(r) -> List[Tuple[float, float]]:
             (r.center_x + hw, r.center_y + hd), (r.center_x - hw, r.center_y + hd)]
 
 
-def _districts_group(spec: ZoneSpec, px, py) -> str:
+def _districts_group(spec: ZoneSpec, px, py, labelled: bool = False) -> str:
     """One convex hull per District over its rooms' footprints, a light fill per District id
-    (districts spec Req 6.2). Only drawn for a zone of two or more Districts."""
+    (districts spec Req 6.2). Only drawn for a zone of two or more Districts. ``labelled`` (the
+    layered map) also names each District ("District 2 — tomb") over its hull's top edge."""
     rooms_by_id = {r.id: r for r in spec.rooms}
     parts = ['<g id="districts">']
+    labels: List[str] = []
     for d in spec.districts:
         pts: List[Tuple[float, float]] = []
         for rid in d.room_ids:
@@ -214,6 +216,14 @@ def _districts_group(spec: ZoneSpec, px, py) -> str:
                      f'fill="{colour}" fill-opacity="0.12" stroke="{colour}" stroke-opacity="0.6" '
                      f'stroke-width="1.5" stroke-dasharray="8 4" stroke-linejoin="round">'
                      f'<title>{_esc(district_label(d.id, d.purpose))}</title></polygon>')
+        if labelled:
+            lx = sum(px(x) for x, _ in hull) / len(hull)
+            ly = max(12.0, min(py(y) for _, y in hull) - 6)
+            labels.append(f'<text class="district-label" data-district="{d.id}" x="{lx:.1f}" y="{ly:.1f}" '
+                          f'fill="{colour}" font-size="13" font-weight="bold" font-family="sans-serif" '
+                          f'text-anchor="middle" stroke="#0f0f16" stroke-width="3" paint-order="stroke">'
+                          f'{_esc(district_label(d.id, d.purpose))}</text>')
+    parts += labels
     parts.append("</g>")
     return "".join(parts)
 
@@ -223,6 +233,124 @@ def frame_attrs(a: float, b: float, s: float) -> str:
     is drawn at ``u = a + s·x``, ``v = b − s·y``. Nothing drawn reads them; the page
     places Sockets by them (`web/src/sockets.ts`)."""
     return f' data-frame-a="{float(a)!r}" data-frame-b="{float(b)!r}" data-frame-s="{float(s)!r}"'
+
+
+# Map layers (district races task 18): what the viewer's map dialog shows and hides. Each is
+# one ``<g class="map-layer" data-layer=KEY>`` on the traced map (an outline given); the walls,
+# corridors and room fills are the base, always drawn. (key, checkbox label, on by default).
+MAP_LAYERS: Tuple[Tuple[str, str, bool], ...] = (
+    ("districts", "Districts", True),
+    ("races", "Races", True),
+    ("links", "Links and drops", True),
+    ("mixed", "Mixed rooms", False),
+    ("gates", "Gates and pacing", False),
+    ("types", "Room types", False),
+    ("ids", "Room IDs", True),
+    ("props", "Props and features", False),
+    ("sites", "Sites", True),
+)
+# The EQ export view: what the in-client ``maps/*.txt`` carries, drawn from the same
+# ``eqmap.build_map_file`` the pipeline writes, hidden until the dialog's preset shows it alone.
+EQ_LAYER = ("eq", "EQ export view")
+_EQ_PAPER = "#e8e1cc"
+
+# A race's colour on the Races layer (its rooms' rings and tags, its corridors' lines).
+_RACE_COLOUR = {
+    "default": "#cfd8dc", "giant": "#7986cb", "goblin": "#d4e157", "kobold": "#ff8a65",
+    "froglok": "#4db6ac", "lizardman": "#81c784", "gnoll": "#bcaaa4", "sarnak": "#ba68c8",
+    "troll": "#66bb6a", "ogre": "#e57373", "dragon": "#ef5350",
+}
+_MIXED_STROKE = "#f06292"
+_LINK_STROKE = {"threshold": _THRESHOLD_STROKE, "breach": "#4dd0e1", "return": "#81c784"}
+
+
+def race_colour(race: str) -> str:
+    return _RACE_COLOUR.get((race or "default").lower(), "#e0e0e0")
+
+
+def link_kinds(spec: ZoneSpec) -> dict:
+    """Each corridor joining two Districts: corridor id -> ``threshold``, ``breach`` or
+    ``return``. A return is a flush breach every other link of its District pair drops into
+    (``layout._add_return``'s case: the intruder's way back out)."""
+    rooms = {r.id: r for r in spec.rooms}
+    cross = {}
+    for c in spec.corridors:
+        a, b = rooms.get(c.from_room), rooms.get(c.to_room)
+        if a is not None and b is not None and a.district != b.district:
+            cross[c.id] = (c, tuple(sorted((a.district, b.district))))
+    out = {}
+    for cid, (c, pair) in cross.items():
+        if c.threshold:
+            out[cid] = "threshold"
+            continue
+        others = [o for o, p in cross.values() if p == pair and o.id != cid]
+        out[cid] = "return" if (not c.drop and others and all(o.drop for o in others)) else "breach"
+    return out
+
+
+def mixed_rooms(spec: ZoneSpec) -> dict:
+    """Host rooms an intruder's breaches enter (district races Req 9): room id -> the
+    intruder's race, the lower intruder id's for a room two intruders breach (as
+    ``builder._spill_hosts`` gives the decor its spill). Empty for a zone without intrusion."""
+    from .semantics import room_race
+    from .transitions import breach_hosts
+    rooms = {r.id: r for r in spec.rooms}
+    cors = {c.id: c for c in spec.corridors}
+    best = {}
+    for cid, host in breach_hosts(spec, rooms).items():
+        c = cors[cid]
+        them = rooms[c.to_room if c.from_room == host else c.from_room]
+        if host not in best or them.district < best[host][0]:
+            best[host] = (them.district, room_race(spec, them) or "default")
+    return {rid: race for rid, (_d, race) in best.items()}
+
+
+def _room_ring(r, px, py, scale, attrs: str) -> List[str]:
+    """``r``'s footprint again, unfilled, with ``attrs`` (a Races or Mixed rooms mark)."""
+    if r.outline is not None:
+        return ['<polygon points="'
+                + " ".join(f"{px(r.outline.verts[i][0]):.1f},{py(r.outline.verts[i][1]):.1f}" for i in loop)
+                + f'" fill="none" {attrs}/>' for loop in r.outline.wall_loops()]
+    rw, rh = r.width * scale, r.depth * scale
+    return [f'<rect x="{px(r.center_x) - rw / 2:.1f}" y="{py(r.center_y) - rh / 2:.1f}" '
+            f'width="{rw:.1f}" height="{rh:.1f}" rx="4" fill="none" {attrs}/>']
+
+
+def _layer_group(key: str, label: str, on: bool, body: str, hidden: bool = False) -> str:
+    return (f'<g id="layer-{key}" class="map-layer" data-layer="{key}" data-label="{_esc(label)}" '
+            f'data-default="{int(on)}"' + (' display="none"' if hidden else "") + f'>{body}</g>')
+
+
+def _eq_group(outline: "OutlineSet", spec: ZoneSpec, sites, props, px, py, w: float, h: float) -> str:
+    """The EQ export view: every ``L`` line and ``P`` label ``eqmap.build_map_file`` writes for
+    this outline, taken back to world (``map_to_world``) and drawn in its own colour on a light
+    sheet (the Main_Band's lines are black), one ``<path>`` per file layer and colour. Hidden
+    (``display="none"``) until the dialog shows it. Empty when the map file can't be built."""
+    from .eqmap import build_map_file, map_to_world
+    try:
+        mf = build_map_file(outline, spec, "map", sites=sites, props=props)
+    except Exception:
+        return ""
+    parts = [f'<rect class="eq-paper" x="0" y="0" width="{w:.0f}" height="{h:.0f}" fill="{_EQ_PAPER}"/>']
+    for layer in mf.layers:
+        by_colour: dict = {}
+        for ln in layer.lines:
+            x1, y1, _ = map_to_world(ln.x1, ln.y1, ln.z1)
+            x2, y2, _ = map_to_world(ln.x2, ln.y2, ln.z2)
+            by_colour.setdefault((ln.r, ln.g, ln.b), []).append(
+                f"M {px(x1):.1f} {py(y1):.1f} L {px(x2):.1f} {py(y2):.1f}")
+        for (r, g, b), segs in by_colour.items():
+            parts.append(f'<path class="eq-line" data-eq-layer="{layer.index}" d="{" ".join(segs)}" '
+                         f'fill="none" stroke="rgb({r},{g},{b})" stroke-width="1.5" stroke-linecap="round"/>')
+        for lab in layer.labels:
+            x, y, _ = map_to_world(lab.x, lab.y, lab.z)
+            rgb = f"rgb({lab.r},{lab.g},{lab.b})"
+            parts.append(f'<circle class="eq-mark" cx="{px(x):.1f}" cy="{py(y):.1f}" r="2" fill="{rgb}"/>')
+            parts.append(f'<text class="eq-label" data-eq-layer="{layer.index}" x="{px(x) + 4:.1f}" '
+                         f'y="{py(y) + 4:.1f}" fill="{rgb}" font-size="11" '
+                         f'font-family="sans-serif" font-weight="bold">{_esc(lab.text)}</text>')
+    key, label = EQ_LAYER
+    return _layer_group(key, label, False, "".join(parts), hidden=True)
 
 
 def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
@@ -238,6 +366,15 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     When given, it is drawn directly over the background, corridors follow
     their `corridor_route` waypoints, room fills are lightened, the legend
     gains `wall`/`ledge`, and the frame also covers `outline.bounds`.
+
+    With an outline the map is also LAYERED (district races task 18): the
+    walls, corridors and room fills are drawn at the top level, every other
+    mark in one ``<g class="map-layer" data-layer=KEY data-label=...
+    data-default=0|1>`` per ``MAP_LAYERS`` entry that has anything to draw,
+    then the EQ export view (``EQ_LAYER``, hidden). The viewer's map dialog
+    shows and hides them; each legend row is a ``<g class="legend-row"
+    data-layer=KEY>`` it restacks. Without an outline the map is the plain
+    schematic it always was (frozen in `tests/reference_mapview.py`).
 
     `sites` (optional, `generators.eqmap.SiteMarks`) draws each Structure's
     Footprint and a marker and label at each Site, over the outline; the
@@ -287,7 +424,15 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         # Flip Y so north (+Y) is up in the image.
         return padding + (max_y - y) * scale
 
+    # Layered (an outline given): each mark goes to its layer's list, drawn after the base.
+    # Plain: straight into ``parts``, in the order the frozen schematic draws it.
+    layered = outline is not None
+    lay = {key: [] for key, _label, _on in MAP_LAYERS}
     parts: List[str] = []
+
+    def put(layer: str, s: str) -> None:
+        (lay[layer] if layered else parts).append(s)
+
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
         f'viewBox="0 0 {w:.0f} {h:.0f}"{frame_attrs(padding - min_x * scale, padding + max_y * scale, scale)}>'
@@ -301,8 +446,12 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     # ---- District hulls (after the outline, under the corridors and rooms) ----
     has_districts = len(spec.districts) >= 2
     if has_districts:
-        parts.append(_districts_group(spec, px, py))
+        if layered:
+            lay["districts"].append(_districts_group(spec, px, py, labelled=True))
+        else:
+            parts.append(_districts_group(spec, px, py))
 
+    rooms_by_id = {r.id: r for r in spec.rooms}
     # ---- Corridors (drawn first, under the rooms) ----
     if outline is None:
         for c in spec.corridors:
@@ -324,23 +473,15 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     else:
         # Over a real outline, a corridor is a thin centreline along the route
         # the geometry builder actually cut (straight / Z / L / U, each winding
-        # leg along its tunnel), not a chord.
-        rooms_by_id = {r.id: r for r in spec.rooms}
+        # leg along its tunnel), not a chord. A Threshold keeps its class but is
+        # drawn as any corridor is: the Links layer marks it.
         for c in spec.corridors:
             line = corridor_path(c, rooms_by_id, tunnel_for(c, spec))
             pts = " ".join(f"{px(x):.1f},{py(y):.1f}" for x, y in line)
             cw = max(1.0, c.width * scale * 0.25)
-            if c.threshold:
-                # A Threshold: heavier and opaque, so the District boundary reads.
-                parts.append(
-                    f'<polyline class="threshold" points="{pts}" fill="none" '
-                    f'stroke="{_THRESHOLD_STROKE}" stroke-opacity="0.9" '
-                    f'stroke-width="{cw * 2.5 + 1:.1f}" '
-                    f'stroke-linecap="round" stroke-linejoin="round"/>'
-                )
-                continue
+            cls = 'class="threshold" ' if c.threshold else ""
             parts.append(
-                f'<polyline points="{pts}" fill="none" stroke="#5c6b73" '
+                f'<polyline {cls}points="{pts}" fill="none" stroke="#5c6b73" '
                 f'stroke-opacity="0.45" stroke-width="{cw:.1f}" '
                 f'stroke-linecap="round" stroke-linejoin="round"/>'
             )
@@ -374,20 +515,20 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         for f in sorted(r.features, key=lambda f: f.kind != "dais"):
             pts = " ".join(f"{px(p[0]):.1f},{py(p[1]):.1f}" for p in f.plan)
             colour = _FEATURE_FILL.get(f.kind, "#6d6d6d")
-            parts.append(f'<polygon class="feature" points="{pts}" fill="{colour}" fill-opacity="0.9"/>')
+            put("props", f'<polygon class="feature" points="{pts}" fill="{colour}" fill-opacity="0.9"/>')
         for poi in r.pois:
-            parts.append(f'<circle class="poi" cx="{px(poi.x):.1f}" cy="{py(poi.y):.1f}" r="4" fill="#4aa3ff" '
+            put("props", f'<circle class="poi" cx="{px(poi.x):.1f}" cy="{py(poi.y):.1f}" r="4" fill="#4aa3ff" '
                          f'stroke="#0f0f16"><title>{_esc(poi.purpose)}</title></circle>')
         # Depth number in the room centre
         cx, cy = px(r.center_x), py(r.center_y)
-        parts.append(
+        put("gates",
             f'<text x="{cx:.1f}" y="{cy + 4:.1f}" fill="#e8eef2" font-size="12" '
             f'font-family="monospace" text-anchor="middle">{r.graph_depth}</text>'
         )
         # Room id in the box's top-left corner so the map matches the 3D view —
         # a human can point at a room in either and know exactly which room_N it
         # is. Small monospace, slightly dimmed to sit under the depth number.
-        parts.append(
+        put("ids",
             f'<text x="{x + 3:.1f}" y="{y + 11:.1f}" fill="#9fb2bd" font-size="9" '
             f'font-family="monospace" text-anchor="start">{_esc(r.id)}</text>'
         )
@@ -395,56 +536,117 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
         # pacing role label for un-themed zones so existing behaviour is kept.
         sem = getattr(r, "semantic_type", "")
         if sem:
-            parts.append(
+            put("types",
                 f'<text x="{cx:.1f}" y="{y + rh + 11:.1f}" fill="#b0bec5" '
                 f'font-size="9" font-family="sans-serif" text-anchor="middle">'
                 f'{_esc(sem)}</text>'
             )
         if r.role in label_rooms:
-            parts.append(
+            put("gates",
                 f'<text x="{cx:.1f}" y="{y - 4:.1f}" fill="{stroke}" font-size="11" '
                 f'font-family="sans-serif" text-anchor="middle">{r.role}</text>'
             )
         # Boss marker (content layer): a small star glyph in the top-right.
         if getattr(r, "boss", False):
-            parts.append(
+            put("gates",
                 f'<text x="{x + rw - 3:.1f}" y="{y + 11:.1f}" fill="#ffd24a" '
                 f'font-size="13" font-family="sans-serif" text-anchor="end">&#9733;</text>'
             )
+
+    # ---- Races, links between Districts, mixed rooms (the layered map only) ----
+    races: List[str] = []
+    kinds: dict = {}
+    mixed: dict = {}
+    if layered:
+        if any(d.race for d in spec.districts or ()):
+            from .semantics import corridor_race, room_race
+            for r in spec.rooms:
+                race = room_race(spec, r) or "default"
+                races.append(race)
+                colour = race_colour(race)
+                lay["races"] += _room_ring(r, px, py, scale,
+                                           f'class="race-ring" data-race="{_esc(race)}" stroke="{colour}" '
+                                           f'stroke-width="2.5" stroke-opacity="0.9"')
+                lay["races"].append(
+                    f'<text class="race-tag" data-room="{_esc(r.id)}" '
+                    f'x="{px(r.center_x) - r.width * scale / 2 + 3:.1f}" '
+                    f'y="{py(r.center_y) + r.depth * scale / 2 - 4:.1f}" fill="{colour}" font-size="10" '
+                    f'font-family="sans-serif" font-weight="bold" text-anchor="start">{_esc(race)}</text>')
+            for c in spec.corridors:
+                race = corridor_race(spec, c, rooms_by_id) or "default"
+                races.append(race)
+                pts = " ".join(f"{px(x):.1f},{py(y):.1f}"
+                               for x, y in corridor_path(c, rooms_by_id, tunnel_for(c, spec)))
+                lay["races"].append(
+                    f'<polyline class="race-link" data-race="{_esc(race)}" points="{pts}" fill="none" '
+                    f'stroke="{race_colour(race)}" stroke-opacity="0.85" '
+                    f'stroke-width="{max(1.5, c.width * scale * 0.25):.1f}" stroke-linecap="round" '
+                    f'stroke-linejoin="round"><title>{_esc(c.id)}: {_esc(race)}</title></polyline>')
+        if has_districts:
+            kinds = link_kinds(spec)
+            for c in spec.corridors:
+                kind = kinds.get(c.id)
+                if kind is None:
+                    continue
+                pts = " ".join(f"{px(x):.1f},{py(y):.1f}"
+                               for x, y in corridor_path(c, rooms_by_id, tunnel_for(c, spec)))
+                cw = max(1.0, c.width * scale * 0.25)
+                dash = ' stroke-dasharray="6 4"' if kind == "return" else ""
+                lay["links"].append(
+                    f'<polyline class="link link-{kind}" points="{pts}" fill="none" '
+                    f'stroke="{_LINK_STROKE[kind]}" stroke-opacity="0.9" stroke-width="{cw * 2.5 + 1:.1f}" '
+                    f'stroke-linecap="round" stroke-linejoin="round"{dash}>'
+                    f'<title>{kind} ({_esc(c.id)})</title></polyline>')
+            mixed = mixed_rooms(spec)
+            for r in spec.rooms:
+                race = mixed.get(r.id)
+                if race is None:
+                    continue
+                lay["mixed"] += _room_ring(r, px, py, scale,
+                                           f'class="mixed-ring" stroke="{_MIXED_STROKE}" '
+                                           f'stroke-width="2" stroke-dasharray="5 4"')
+                lay["mixed"].append(
+                    f'<text class="mixed-tag" data-room="{_esc(r.id)}" '
+                    f'x="{px(r.center_x) + r.width * scale / 2 - 3:.1f}" '
+                    f'y="{py(r.center_y) + r.depth * scale / 2 - 4:.1f}" fill="{_MIXED_STROKE}" font-size="9" '
+                    f'font-family="sans-serif" text-anchor="end">mixed: {_esc(race)}</text>')
 
     # ---- Drops (district races step 31): a down-pointing mark at each drop's lower end ----
     drops = [c for c in spec.corridors if getattr(c, "drop", 0)]
     if drops:
         from .geometry import drop_end
-        rooms_by_id = {r.id: r for r in spec.rooms}
         for c in drops:
             end = drop_end(c, rooms_by_id)
             if end is None:
                 continue
             dx, dy = (px(c.to_x), py(c.to_y)) if end == "to" else (px(c.from_x), py(c.from_y))
-            parts.append(
+            put("links",
                 f'<path class="drop" d="M {dx - 6:.1f} {dy - 5:.1f} L {dx + 6:.1f} {dy - 5:.1f} '
                 f'L {dx:.1f} {dy + 6:.1f} Z" fill="{_DROP_FILL}" stroke="#0f0f16" stroke-width="1">'
                 f'<title>drop {c.drop:.0f} u ({c.id})</title></path>'
             )
+            if layered:
+                lay["links"].append(
+                    f'<text class="drop-height" x="{dx + 8:.1f}" y="{dy + 4:.1f}" fill="{_DROP_FILL}" '
+                    f'font-size="10" font-family="sans-serif" font-weight="bold">{c.drop:.0f} u</text>')
 
     # ---- Gates (lock + key + connector) ----
     for g in spec.gates:
         lx, ly = px(g.lock_x), py(g.lock_y)
         kx, ky = px(g.key_x), py(g.key_y)
         # Dashed connector from key to lock
-        parts.append(
+        put("gates",
             f'<line x1="{kx:.1f}" y1="{ky:.1f}" x2="{lx:.1f}" y2="{ly:.1f}" '
             f'stroke="#ffd24a" stroke-width="1.2" stroke-dasharray="6 4" '
             f'stroke-opacity="0.7"/>'
         )
         # Lock — red square
-        parts.append(
+        put("gates",
             f'<rect x="{lx - 6:.1f}" y="{ly - 6:.1f}" width="12" height="12" '
             f'rx="2" fill="#e53935" stroke="#ff8a80" stroke-width="1"/>'
         )
         # Key — gold diamond
-        parts.append(
+        put("gates",
             f'<path d="M {kx:.1f} {ky - 7:.1f} L {kx + 7:.1f} {ky:.1f} '
             f'L {kx:.1f} {ky + 7:.1f} L {kx - 7:.1f} {ky:.1f} Z" '
             f'fill="#ffd24a" stroke="#fff3c4" stroke-width="1"/>'
@@ -458,22 +660,34 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
             continue
         hw = cor.width / 2
         x0, y0, x1, y1 = (t.x, t.y - hw, t.x, t.y + hw) if t.along_x else (t.x - hw, t.y, t.x + hw, t.y)
-        parts.append(f'<line class="door-spot" x1="{px(x0):.1f}" y1="{py(y0):.1f}" x2="{px(x1):.1f}" '
+        put("gates", f'<line class="door-spot" x1="{px(x0):.1f}" y1="{py(y0):.1f}" x2="{px(x1):.1f}" '
                      f'y2="{py(y1):.1f}" stroke="{_DOOR_SPOT}" stroke-width="3"><title>door spot</title></line>')
 
     if props:
-        parts.append(_props_group(props, px, py))
+        put("props", _props_group(props, px, py))
     if sites:
-        parts.append(_sites_group(sites, px, py))
+        put("sites", _sites_group(sites, px, py))
 
     has_doors = any(c.transition is not None and c.transition.form == "frame" for c in spec.corridors)
     districts = ([(_district_fill(d.id), district_label(d.id, d.purpose)) for d in spec.districts]
                  if has_districts else [])
-    parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites),
-                         bool(props), districts, has_drops=bool(drops)))
+    if layered:
+        # In MAP_LAYERS order, so the later ones read over the earlier.
+        for key, label, on in MAP_LAYERS:
+            if lay[key]:
+                parts.append(_layer_group(key, label, on, "".join(lay[key])))
+        parts.append(_layered_legend(
+            w, has_gates=bool(spec.gates), has_doors=has_doors, has_sites=bool(sites),
+            has_props=bool(lay["props"]), districts=districts, has_drops=bool(drops),
+            races=sorted(set(races)), links=sorted(set(kinds.values())), has_mixed=bool(mixed)))
+    else:
+        parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites),
+                             bool(props), districts, has_drops=bool(drops)))
 
     # ---- Scale bar (world units) ----
     parts.append(_scale_bar(scale, padding, h))
+    if layered:
+        parts.append(_eq_group(outline, spec, sites, props, px, py, w, h))
 
     parts.append("</svg>")
     return "".join(parts)
@@ -536,6 +750,60 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_
             f'stroke="{stroke}" stroke-width="{sw}"{dash}/>'
         )
         parts.append(f'<text x="{lx + 16:.0f}" y="{yy + 9:.0f}">{label}</text>')
+    parts.append("</g>")
+    return "".join(parts)
+
+
+def _layered_legend(w: float, *, has_gates: bool, has_doors: bool, has_sites: bool, has_props: bool,
+                    districts: List[Tuple[str, str]], has_drops: bool, races: List[str],
+                    links: List[str], has_mixed: bool) -> str:
+    """The layered map's key, top right: one ``<g class="legend-row" data-layer=KEY>`` per row,
+    placed by ``transform`` (row ``i`` at ``16 i``), so the map dialog can drop the rows of a
+    hidden layer and restack the rest; ``base`` rows (room roles, walls) always show. The box
+    (``legend-box``) fits every row; the dialog resizes it to the rows it keeps."""
+    rows: List[Tuple[str, str, str]] = []           # (layer, swatch markup, label)
+
+    def box(colour: str) -> str:
+        return f'<rect x="0" y="0" width="10" height="10" rx="2" fill="{colour}"/>'
+
+    def line(stroke: str, sw: float, dash: str = "") -> str:
+        return f'<line x1="0" y1="5" x2="10" y2="5" stroke="{stroke}" stroke-width="{sw}"{dash}/>'
+
+    for colour, label in (("#2e7d32", "entrance"), ("#1565c0", "hub"), ("#8e24aa", "climax"),
+                          ("#8d6e63", "dead end")):
+        rows.append(("base", box(colour), label))
+    rows.append(("base", line(_BAND_STROKE[0], 2), "wall"))
+    rows.append(("base", line(_BAND_STROKE[0], 2, ' stroke-dasharray="4 3"'), "ledge"))
+    for colour, label in districts:
+        rows.append(("districts", box(colour), label))
+    for race in races:
+        rows.append(("races", line(race_colour(race), 3), race))
+    names = {"threshold": "threshold", "breach": "breach (District link)", "return": "return (way back)"}
+    for kind in ("threshold", "breach", "return"):
+        if kind in links:
+            dash = ' stroke-dasharray="4 3"' if kind == "return" else ""
+            rows.append(("links", line(_LINK_STROKE[kind], 4, dash), names[kind]))
+    if has_drops:
+        rows.append(("links", box(_DROP_FILL), "drop (one way, u)"))
+    if has_mixed:
+        rows.append(("mixed", line(_MIXED_STROKE, 2, ' stroke-dasharray="4 3"'), "mixed room"))
+    if has_gates:
+        rows += [("gates", box("#e53935"), "lock"), ("gates", box("#ffd24a"), "key")]
+    if has_doors:
+        rows.append(("gates", box(_DOOR_SPOT), "door spot"))
+    if has_props:
+        rows.append(("props", box(_PROP_FILL), "prop / feature"))
+    if has_sites:
+        rows.append(("sites", box(_SITE_STROKE), "site"))
+
+    bw = max(118, 30 + 6 * max(len(label) for _, _, label in rows))
+    lx, ly = w - bw, 14
+    parts = ['<g id="legend" font-family="sans-serif" font-size="10" fill="#cdd6db">',
+             f'<rect class="legend-box" x="{lx - 8:.0f}" y="{ly - 8:.0f}" width="{bw}" '
+             f'height="{len(rows) * 16 + 8:.0f}" rx="4" fill="#0a0a12" fill-opacity="0.75" stroke="#2a2a38"/>']
+    for i, (layer, swatch, label) in enumerate(rows):
+        parts.append(f'<g class="legend-row" data-layer="{layer}" transform="translate({lx:.0f} {ly + i * 16:.0f})">'
+                     f'{swatch}<text x="16" y="9">{_esc(label)}</text></g>')
     parts.append("</g>")
     return "".join(parts)
 

@@ -465,6 +465,9 @@
         <a id="map-download-png" href="#" download="layout.map.png" class="secondary">Download PNG</a>
         <button id="map-close" class="secondary">Close</button>
       </header>
+      <!-- Map layers: one checkbox per layer the map draws (main.ts fills it from
+           the SVG's g.map-layer groups), and the EQ export view preset. -->
+      <div id="map-layers" role="group" aria-label="Map layers" hidden></div>
       <div id="map-body"></div>
     </div>
   </div>

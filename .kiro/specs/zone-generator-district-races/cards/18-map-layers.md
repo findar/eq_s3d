@@ -30,3 +30,4 @@ The top-down map (`generators/mapview.py`, shown in the viewer's map modal) gets
 - Keep the map's legend readable as layers hide (only list what's shown).
 
 ## Result
+✔ 2c14077 · 3206 passed (quick tier); map tests and test_mapview_layers pass

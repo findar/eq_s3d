@@ -26,6 +26,7 @@ let svgUrl: string | null = null;      // the current build's map SVG
 let pngName = "map.png";
 let png: { url: string } | null = null;
 let pngPending: Promise<string> | null = null;
+let pngGen = 0;                        // bumped when the layer choices change
 
 /** The visible label of an entry: names the file type (Req 10.5). */
 function label(ref: ArtifactRef): string {
@@ -121,21 +122,154 @@ export async function svgToPng(svgText: string, scale = 2): Promise<Blob> {
   }
 }
 
+// ---- Map layers (district races task 18) ----
+// The traced map SVG (generators/mapview.py) puts each kind of mark in one
+// <g class="map-layer" data-layer=KEY data-label=... data-default=0|1>; walls,
+// corridors and room fills sit at the top level and always show. The "eq"
+// layer is the EQ export view: what the in-client maps/*.txt carries, shown
+// alone (everything else hidden) when `eq` is on. Choices persist per viewer.
+
+export interface MapLayerState {
+  on: Record<string, boolean>;   // a layer's key -> shown; absent = its data-default
+  eq: boolean;                   // the EQ export view preset
+}
+export interface MapLayerInfo { key: string; label: string; on: boolean }
+
+const LAYER_STORE = "eq_s3d.mapLayers.v1";
+const EQ_KEY = "eq";
+let layerState: MapLayerState = loadLayerState();
+
+function loadLayerState(): MapLayerState {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LAYER_STORE) ?? "null");
+    if (raw && typeof raw === "object") {
+      const on: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(raw.on ?? {})) if (typeof v === "boolean") on[k] = v;
+      return { on, eq: raw.eq === true };
+    }
+  } catch { /* no storage, or a bad value: the defaults */ }
+  return { on: {}, eq: false };
+}
+
+export function mapLayerState(): MapLayerState {
+  return { on: { ...layerState.on }, eq: layerState.eq };
+}
+
+/** Change the layer choices: saved for this viewer, and the PNG redrawn on its next click. */
+export function setMapLayerState(s: MapLayerState): void {
+  layerState = { on: { ...s.on }, eq: s.eq };
+  try { localStorage.setItem(LAYER_STORE, JSON.stringify(layerState)); } catch { /* not saved */ }
+  resetPng();
+}
+
+function layerGroups(svg: Element): Element[] {
+  return [...svg.querySelectorAll("g.map-layer[data-layer]")];
+}
+
+/** The SVG's toggleable layers (not the EQ view), in drawing order, each with whether it shows now. */
+export function mapLayers(svg: Element, s: MapLayerState = layerState): MapLayerInfo[] {
+  return layerGroups(svg)
+    .filter((g) => g.getAttribute("data-layer") !== EQ_KEY)
+    .map((g) => {
+      const key = g.getAttribute("data-layer")!;
+      return { key, label: g.getAttribute("data-label") ?? key, on: s.on[key] ?? g.getAttribute("data-default") === "1" };
+    });
+}
+
+export function hasEqView(svg: Element): boolean {
+  return svg.querySelector(`g.map-layer[data-layer="${EQ_KEY}"]`) !== null;
+}
+
+function show(el: Element, on: boolean): void {
+  if (on) el.removeAttribute("display");
+  else el.setAttribute("display", "none");
+}
+
+/** Show and hide `svg`'s layers by `s`, and restack its legend to the rows still shown. */
+export function applyMapLayers(svg: Element, s: MapLayerState = layerState): void {
+  const eq = s.eq && hasEqView(svg);
+  const shown = new Set<string>(["base"]);
+  for (const info of mapLayers(svg, s)) if (info.on && !eq) shown.add(info.key);
+  for (const g of layerGroups(svg)) {
+    const key = g.getAttribute("data-layer")!;
+    show(g, key === EQ_KEY ? eq : shown.has(key));
+  }
+  // The EQ view hides the base too (walls as traced, corridors, rooms, legend, the
+  // dialog's Sockets): only the background and what the .txt carries stay.
+  for (const el of [...svg.children]) {
+    if (el === svg.firstElementChild || el.classList.contains("map-layer")) continue;
+    if (eq) {
+      if (el.getAttribute("display") !== "none") {
+        el.setAttribute("display", "none");
+        el.setAttribute("data-eq-hidden", "1");
+      }
+    } else if (el.getAttribute("data-eq-hidden")) {
+      el.removeAttribute("display");
+      el.removeAttribute("data-eq-hidden");
+    }
+  }
+  // The legend lists only what is shown: a hidden layer's rows go, the rest close up.
+  const legend = svg.querySelector("#legend");
+  const box = legend?.querySelector("rect.legend-box");
+  if (legend && box) {
+    const top = parseFloat(box.getAttribute("y") ?? "0") + 8;
+    let i = 0;
+    for (const row of legend.querySelectorAll("g.legend-row")) {
+      const on = shown.has(row.getAttribute("data-layer") ?? "base");
+      show(row, on);
+      if (!on) continue;
+      const x = /translate\(\s*([-\d.]+)/.exec(row.getAttribute("transform") ?? "")?.[1] ?? "0";
+      row.setAttribute("transform", `translate(${x} ${top + 16 * i})`);
+      i += 1;
+    }
+    box.setAttribute("height", String(16 * i + 8));
+  }
+}
+
+/** The map SVG text with `s`'s layers applied: what the dialog shows, for the downloads. */
+export function shownMapSvg(text: string, s: MapLayerState = layerState): string {
+  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+  if (doc.querySelector("parsererror")) return text;
+  applyMapLayers(doc.documentElement, s);
+  return new XMLSerializer().serializeToString(doc);
+}
+
+let svgDownload: string | null = null;
+
+/** An object URL for the dialog's "Download SVG": the server's map (no Sockets) as shown. */
+export async function shownMapSvgUrl(url: string): Promise<string> {
+  const text = shownMapSvg(await loadMapSvg(url));
+  if (svgDownload) URL.revokeObjectURL(svgDownload);
+  svgDownload = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));
+  return svgDownload;
+}
+
+/** Forget the rendered PNG (new layer choices): every PNG link renders afresh on its next click. */
+function resetPng(): void {
+  if (png) URL.revokeObjectURL(png.url);
+  png = null;
+  pngPending = null;
+  pngGen += 1;
+  for (const a of pngLinks()) a.href = "#";
+}
+
 /** The PNG's object URL for this build, rendering it on first request. */
 function ensurePng(): Promise<string> {
   if (png) return Promise.resolve(png.url);
   if (!pngPending) {
     const mine = build;
+    const gen = pngGen;
     const url = svgUrl!;
+    const state = mapLayerState();
     pngPending = loadMapSvg(url)
-      .then((text) => svgToPng(text, 2))
+      .then((text) => svgToPng(shownMapSvg(text, state), 2))
       .then((blob) => {
         const obj = URL.createObjectURL(blob);
-        if (mine !== build) { URL.revokeObjectURL(obj); throw new Error("stale build"); }
+        if (mine !== build || gen !== pngGen) { URL.revokeObjectURL(obj); throw new Error("stale build"); }
         png = { url: obj };
         return obj;
       })
-      .finally(() => { if (mine === build) pngPending = null; });
+      .finally(() => { if (mine === build && gen === pngGen) pngPending = null; });
   }
   return pngPending;
 }
@@ -155,7 +289,7 @@ function onPngClick(e: MouseEvent): void {
       a.click();
     })
     .catch((err) => {
-      if (mine !== build) return;
+      if (mine !== build || String(err?.message) === "stale build") return;
       console.error("[artifacts] PNG", err);
       markUnavailable(PNG_KIND, pngName, String(err?.message ?? err));
       const mp = modalPng();

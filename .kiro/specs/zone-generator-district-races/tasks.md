@@ -121,7 +121,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/layout.py, generators/embed.py, generators/transitions.py, tests/test_district_races.py, tests/test_intrusion.py, docs/ACCEPTANCE.md (step 31 measures)
   - Reqs: 4, 5, 6, 11
 
-- [ ] 18. Map layers: show and hide Districts, races, links and the rest
+- [x] 18. Map layers: show and hide Districts, races, links and the rest
   - Card: [cards/18-map-layers.md](cards/18-map-layers.md)
   - Type: agent · Size: M · Depends: 16
   - Owns: generators/mapview.py, web/src/artifacts.ts, web/src/main.ts (the map modal only), web/index.html (the map modal only), web/src/style.css, tests/test_mapview*.py
