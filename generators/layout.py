@@ -65,6 +65,11 @@ ENVELOPE_ATTEMPTS = 6
 # second link between two Districts (Req 3.3) before the error goes out.
 DISTRICT_ZONE_TYPES = {"dungeon"}
 DISTRICT_ATTEMPTS = 8
+# Rounds of new breaches an intrusion zone tries after the crossing and conflict
+# passes dropped some (``LayoutGenerator._add_breaches``; district races task 6).
+BREACH_ROUNDS = 8
+# A new breach's hall span at most, over the longest hall of its two Districts and their links.
+BREACH_SPAN = 2.0
 
 # A style profile's corridor run for the graph placement, in corridor widths
 # (``LayoutContext.run_factor``; ``embed.RUN_FACTOR`` otherwise). Winding
@@ -1060,10 +1065,16 @@ class LayoutGenerator:
         # and leaves the edges alone, so the zone is as before (Req 3.4).
         part = None
         climaxes = None
+        links = 1
         k = _districts.district_count(len(rooms), districts is not None)
         if k >= 2:
             first = self._find_entrance(rooms, entry, among)
-            part = _districts.partition_districts(rooms, edges, first, k, self.rng)
+            # An intrusion zone keeps up to INTRUSION_LINKS links per Threshold pair
+            # (district races Req 6): the Threshold and its breaches.
+            links = (_districts.INTRUSION_LINKS
+                     if (districts[1] or "").strip().lower() == _districts.INTRUSION else 1)
+            part = _districts.partition_districts(rooms, edges, first, k, self.rng,
+                                                  links=links)
             if part.k < part.requested:
                 self.warnings.append(
                     f"districts_reduced: {part.requested} requested, {part.k} "
@@ -1183,11 +1194,25 @@ class LayoutGenerator:
         # against the OLD graph, so a split could otherwise leave a cliff. On a
         # flat zone every floor_z is 0 and the relax is a no-op.
         self._shapes = {}
+        # An intrusion pair the graph joins by fewer than its links gets new
+        # breaches on the final rooms (district races Req 6), as loop edges the
+        # crossing and conflict passes below judge like any other.
+        breach = part is not None and links > 1
+        tried: set = set()
+        added = breach and self._add_breaches(rooms, edges, part, links, tried)
         graph_changed = self._resolve_crossings(rooms, edges)
+        graph_changed = graph_changed or added
         # Drop a loop edge from any pair of corridors that would cross too close
         # in Z (the residual open-space conflict class the through-room split
         # can't reach). Only loop edges fall, so the graph stays connected.
         graph_changed = self._resolve_conflicts(rooms, edges) or graph_changed
+        # A breach those passes dropped gives way to the next candidate.
+        for _ in range(BREACH_ROUNDS if breach else 0):
+            self._shapes = {}
+            if not self._add_breaches(rooms, edges, part, links, tried):
+                break
+            self._resolve_crossings(rooms, edges)
+            self._resolve_conflicts(rooms, edges)
         if graph_changed and (elevation or themed):
             from collections import defaultdict
 
@@ -1209,10 +1234,13 @@ class LayoutGenerator:
                     relax()
 
         # Req 3.3: the splits and swaps above may have joined two Districts a
-        # second time; that Draw is rejected. Else the Thresholds are the
-        # cross-District edges as they now stand.
+        # second time (an intrusion pair: more than its links); that Draw is
+        # rejected. Else the Thresholds are the cross-District edges as they
+        # now stand, and an intrusion pair's others its breaches.
         if part is not None:
-            part.thresholds = self._district_thresholds(part, edges)
+            part.thresholds = self._district_thresholds(part, edges, links)
+            if links > 1:
+                part.breaches = self._district_breaches(part, edges)
             part.edges = list(edges)
 
         if envelope is not None:
@@ -1596,32 +1624,129 @@ class LayoutGenerator:
         return semantics.body_height(self._pair_race(a, b)) / semantics.body_height(self.race)
 
     @staticmethod
-    def _district_thresholds(part, edges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    def _district_thresholds(part, edges: List[Tuple[int, int]],
+                             links: int = 1) -> List[Tuple[int, int]]:
         """The Thresholds after the crossing and conflict passes, as
         ``(parent side, child side)`` in District order, or
         :class:`DistrictSplitError` when those passes joined two Districts by
-        anything but one edge per original Threshold (Req 3.3). A split of a
-        Threshold through a room of one of its own two Districts just moves
-        it to that room's other edge."""
+        anything but one edge per original Threshold (Req 3.3), or, with
+        *links* over 1 (an intrusion zone, district races Req 6), by more than
+        *links* edges per Threshold pair. A split of a Threshold through a room
+        of one of its own two Districts just moves it to that room's other
+        edge. Of an intrusion pair's edges the Threshold is the one it was,
+        else one still entering its child room, else the first."""
         assign = part.assign
         if len(set(LayoutGenerator._components(len(assign), edges))) > 1:
             raise DistrictSplitError()
-        cross: Dict[frozenset, Tuple[int, int]] = {}
+        cross: Dict[frozenset, List[Tuple[int, int]]] = {}
         for i, j in edges:
             a, b = assign[i], assign[j]
             if a == b:
                 continue
             pair = frozenset((a, b))
-            if pair in cross:
+            if len(cross.get(pair, ())) >= links:
                 raise DistrictSplitError()
-            cross[pair] = (i, j)
+            cross.setdefault(pair, []).append((i, j))
         wanted = [frozenset((assign[p], assign[c])) for p, c in part.thresholds]
         if set(cross) != set(wanted):
             raise DistrictSplitError()
         out = []
-        for (p, _), pair in zip(part.thresholds, wanted):
-            i, j = cross[pair]
+        for (p, c), pair in zip(part.thresholds, wanted):
+            got = cross[pair]
+            i, j = (next((e for e in got if frozenset(e) == frozenset((p, c))), None)
+                    or next((e for e in got if c in e), None) or got[0])
             out.append((i, j) if assign[i] == assign[p] else (j, i))
+        return out
+
+    def _add_breaches(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                      part, links: int, tried: set) -> bool:
+        """New breaches for each Threshold pair joined by fewer than *links*
+        edges (district races Req 6, the lead's call at the task 6 review): a
+        host room and an intruder room not yet joined, nearest first by hall
+        span, rooms on no link of the pair (nor next to one in their District)
+        before the rest, so the breaches spread along the boundary. A pair is
+        taken only where its corridor could stand: a run no longer than the
+        longest hall of its two Districts or their links, its rooms on one
+        Level and within the run's grade, and no third room in its way.
+        Appended to *edges* (loop edges: the passes after may still drop them,
+        and the next round takes the next candidate; *tried* holds those already
+        added once); True when any was. Draws nothing."""
+        assign = part.assign
+        if self._stack is not None:
+            def blocked(i, j):
+                return self._shape(rooms, i, j).blocked is not None
+        else:
+            crossed = self._crossed_room if self.corridor_clearance else self._crossed_room_centreline
+
+            def blocked(i, j):
+                return crossed(rooms, i, j) is not None
+        have = {frozenset(e) for e in edges}
+        nbrs: Dict[int, set] = {i: set() for i in range(len(rooms))}
+        for i, j in edges:
+            if assign[i] == assign[j]:
+                nbrs[i].add(j)
+                nbrs[j].add(i)
+        added = False
+        for p, c in part.thresholds:
+            host, intruder = assign[p], assign[c]
+            pair = {host, intruder}
+            cross = [e for e in edges if {assign[e[0]], assign[e[1]]} == pair]
+            want = links - len(cross)
+            if want <= 0:
+                continue
+            spans = [self._hall_span(rooms[i], rooms[j]) for i, j in edges
+                     if assign[i] in pair and assign[j] in pair]
+            bound = BREACH_SPAN * max(spans) if spans else 0.0
+            used = {r for e in cross for r in e}
+            near = set(used) | {n for r in used for n in nbrs[r]}
+            cands = []
+            for h in (i for i in range(len(rooms)) if assign[i] == host):
+                for t in (j for j in range(len(rooms)) if assign[j] == intruder):
+                    if frozenset((h, t)) in have:
+                        continue
+                    span = self._hall_span(rooms[h], rooms[t])
+                    if span > bound:
+                        continue
+                    cands.append((span, h, t))
+            cands.sort()
+            for tier in (0, 1, 2):
+                for span, h, t in cands:
+                    if want <= 0:
+                        break
+                    if frozenset((h, t)) in have or frozenset((h, t)) in tried:
+                        continue
+                    if tier == 0 and (h in near or t in near):
+                        continue
+                    if tier == 1 and (h in used or t in used):
+                        continue
+                    if self._is_stair(h, t):
+                        continue
+                    if abs(rooms[h].floor_z - rooms[t].floor_z) > self._edge_cap(rooms, h, t) + 1e-6:
+                        continue
+                    if blocked(h, t):
+                        continue
+                    edges.append((h, t))
+                    have.add(frozenset((h, t)))
+                    tried.add(frozenset((h, t)))
+                    used |= {h, t}
+                    near |= {h, t} | nbrs[h] | nbrs[t]
+                    want -= 1
+                    added = True
+        return added
+
+    @staticmethod
+    def _district_breaches(part, edges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        """An intrusion zone's breaches as the edges now stand: every edge
+        between two Districts but the Thresholds, as ``(host side, intruder
+        side)``, the host being the lower District id (the Threshold's parent
+        side: ids follow cut depth)."""
+        assign = part.assign
+        thresholds = {frozenset(t) for t in part.thresholds}
+        out = []
+        for i, j in edges:
+            if assign[i] == assign[j] or frozenset((i, j)) in thresholds:
+                continue
+            out.append((i, j) if assign[i] < assign[j] else (j, i))
         return out
 
     @staticmethod
@@ -1718,7 +1843,9 @@ class LayoutGenerator:
         to deep) are locked first (umbrella 23.7), then the tree edges as
         usual. Each Threshold is a bridge, so it is a tree edge and its far
         side is its District and the Districts beyond; its key goes on the
-        near side by the same rule.
+        near side by the same rule. (An intrusion pair's breaches make its
+        Threshold a loop edge: it is locked first only while the tree runs
+        through it.)
 
         A corridor with a ``drop`` (step 31) is one-way, from its upper room
         to its lower (``drop_arc``). The tree then follows the one-way edges,
@@ -1752,6 +1879,11 @@ class LayoutGenerator:
             first = []
             for cid in thresholds:
                 a, b = tuple(pair_by_corr[cid])
+                if parent.get(a) != b and parent.get(b) != a:
+                    # An intrusion pair's breaches (district races Req 6) can
+                    # carry the tree past its Threshold: no longer a bridge, it
+                    # is no tree edge to lock first.
+                    continue
                 child = a if parent.get(a) == b else b
                 first.append((child, parent[child]))
             first.sort(key=lambda e: rooms[e[0]].graph_depth)
@@ -2017,6 +2149,11 @@ class LayoutGenerator:
             if not moved:
                 break
 
+    def _pair_gap(self, a: RoomSpec, b: RoomSpec, gap: float) -> float:
+        """*gap* (the zone's corridor width plus 1), or with District races the
+        pair's own (:meth:`_room_gap`), as :meth:`_separate_rooms` takes it."""
+        return gap if self._room_race is None else self._room_gap(a, b)
+
     def _separate_with_throats(self, rooms: List[RoomSpec], throats: set,
                                stacked: Optional[set], iterations: int) -> None:
         """:meth:`_separate_rooms` for a cave's bearing placement with throats
@@ -2027,7 +2164,9 @@ class LayoutGenerator:
         (``embed.throat_slack``), so its short corridor runs straight. Then
         pairs are pushed apart as before, a throat's to THROAT_GAP, every
         other pair's to a corridor width plus 1; rooms joined by throats move
-        together when pushed by another, so the throats hold."""
+        together when pushed by another, so the throats hold. With District
+        races (district races Req 4) the corridor width is the pair's race's,
+        in the slack and the gap alike (THROAT_GAP stays: it never scales)."""
         from .topology.embed import THROAT_GAP
         gap = self.corridor_width + 1.0
         at = {r.id: k for k, r in enumerate(rooms)}
@@ -2074,7 +2213,7 @@ class LayoutGenerator:
                     if stacked and (a, b) in stacked:
                         continue
                     ra, rb = rooms[a], rooms[b]
-                    g = tgap if (a, b) in held else gap
+                    g = tgap if (a, b) in held else self._pair_gap(ra, rb, gap)
                     dx = rb.center_x - ra.center_x
                     dy = rb.center_y - ra.center_y
                     ox = (ra.width + rb.width) / 2 + g - abs(dx)
@@ -2139,7 +2278,7 @@ class LayoutGenerator:
                     was = (rb.center_x, rb.center_y)
                     self._square_throat(rooms[a], rb, tgap)
                     if any(box_gap(rb, rooms[c]) < (tgap if (min(b, c), max(b, c)) in is_pair
-                                                    else gap) - 1e-6
+                                                    else self._pair_gap(rb, rooms[c], gap)) - 1e-6
                            for c in tree if c != a):
                         rb.center_x, rb.center_y = was
                     else:
@@ -2155,12 +2294,12 @@ class LayoutGenerator:
         gx = abs(rb.center_x - ra.center_x) - (ra.width + rb.width) / 2
         gy = abs(rb.center_y - ra.center_y) - (ra.depth + rb.depth) / 2
         if gx >= gy:
-            lim = throat_slack((ra.depth + rb.depth) / 2, self.corridor_width)
+            lim = throat_slack((ra.depth + rb.depth) / 2, self._cw(ra, rb))
             sx = 1.0 if rb.center_x >= ra.center_x else -1.0
             rb.center_x = ra.center_x + sx * ((ra.width + rb.width) / 2 + tgap)
             rb.center_y = ra.center_y + max(-lim, min(lim, rb.center_y - ra.center_y))
         else:
-            lim = throat_slack((ra.width + rb.width) / 2, self.corridor_width)
+            lim = throat_slack((ra.width + rb.width) / 2, self._cw(ra, rb))
             sy = 1.0 if rb.center_y >= ra.center_y else -1.0
             rb.center_y = ra.center_y + sy * ((ra.depth + rb.depth) / 2 + tgap)
             rb.center_x = ra.center_x + max(-lim, min(lim, rb.center_x - ra.center_x))
@@ -2173,10 +2312,10 @@ class LayoutGenerator:
         gx = abs(rb.center_x - ra.center_x) - (ra.width + rb.width) / 2
         gy = abs(rb.center_y - ra.center_y) - (ra.depth + rb.depth) / 2
         if gx >= gy:
-            lim = throat_slack((ra.depth + rb.depth) / 2, self.corridor_width)
+            lim = throat_slack((ra.depth + rb.depth) / 2, self._cw(ra, rb))
             off = abs(rb.center_y - ra.center_y)
         else:
-            lim = throat_slack((ra.width + rb.width) / 2, self.corridor_width)
+            lim = throat_slack((ra.width + rb.width) / 2, self._cw(ra, rb))
             off = abs(rb.center_x - ra.center_x)
         return abs(max(gx, gy) - tgap) <= 1.0 and off <= lim + 1e-6
 

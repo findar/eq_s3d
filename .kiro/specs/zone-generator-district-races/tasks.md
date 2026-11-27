@@ -45,7 +45,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: generators/layout.py (placement run), generators/topology/embed.py, generators/semantics.py (defaults table), tests/test_district_races.py
   - Reqs: 5
 
-- [ ] 6. Intrusion: an intruder District breaks in at several places
+- [x] 6. Intrusion: an intruder District breaks in at several places
   - Card: [cards/06-intrusion.md](cards/06-intrusion.md)
   - Type: agent · Size: M · Depends: 3, 4
   - Owns: generators/districts.py, generators/layout.py (Districts and links), generators/transitions.py, tests/test_intrusion.py (new)

@@ -13,6 +13,12 @@ District is connected in the tree. Tree edges, plus any edge whose two ends
 share a District, are kept; every other cross-District edge is dropped, which
 leaves the cut edges as the only links between Districts: the Thresholds.
 
+An ``intrusion`` zone (district races Req 6) lifts that rule for each
+Threshold's pair of Districts: up to ``links`` of the graph's edges between the
+two are kept, the Threshold and the rest as **breaches**, where the intruder
+broke into its host. The intruder is the Threshold's child side (the District
+farther from the zone entrance, so the higher id): it came later and dug in.
+
 With ``k == 1`` (the switch off, fewer than 8 rooms, or no cut meeting the
 sizes) nothing is drawn from the rng and the edges come back unchanged, so a
 one-District zone is byte-identical to one built before Districts existed.
@@ -36,6 +42,10 @@ THREE_DISTRICT_ROOMS = 14
 # Cut score bonus, in rooms, when the cut corridor leaves a hub: a crossroads
 # makes a natural chokepoint between two areas.
 HUB_BONUS = 1.0
+#: An intrusion pair's links at most, its Threshold included (district races
+#: task 1, archive decision 2: 13 stock zones mixing built and cave parts join
+#: them by 3, the median).
+INTRUSION_LINKS = 3
 
 Edge = Tuple[int, int]
 
@@ -49,13 +59,16 @@ class Partition:
     ``assign[i]`` is room ``i``'s District id: 0 holds the zone entrance, the
     rest are numbered by how shallow their cut is. ``edges`` is the pruned
     edge list (input order and orientation kept). ``thresholds[d - 1]`` is
-    District ``d``'s Threshold as ``(parent side, child side)``.
+    District ``d``'s Threshold as ``(parent side, child side)``. ``breaches``
+    (an intrusion zone) are the other kept edges between a Threshold's two
+    Districts, as ``(host side, intruder side)``.
     """
     k: int
     requested: int
     assign: List[int]
     edges: List[Edge]
     thresholds: List[Edge] = field(default_factory=list)
+    breaches: List[Edge] = field(default_factory=list)
 
 
 def district_count(n: int, on: bool) -> int:
@@ -134,7 +147,7 @@ def _candidates(n, order, parent, cuts, remaining, min_size) -> List[int]:
 
 
 def partition_districts(rooms: Sequence, edges: Sequence[Edge], entrance: int,
-                        k: int, rng: random.Random) -> Partition:
+                        k: int, rng: random.Random, links: int = 1) -> Partition:
     """Split the room graph into ``k`` Districts by cutting its BFS tree from
     ``entrance`` (districts design "Partition").
 
@@ -143,6 +156,10 @@ def partition_districts(rooms: Sequence, edges: Sequence[Edge], entrance: int,
     ``rng.random()``. When no ``k``-way cut keeps every District at
     :func:`min_district_size` rooms, ``k`` drops until one does (``k = 1``
     always does); the rng is drawn from only once a ``k >= 2`` is settled.
+
+    *links* over 1 (an ``intrusion`` zone, :data:`INTRUSION_LINKS`) keeps up
+    to that many edges between each Threshold's two Districts
+    (:func:`pick_breaches`); nothing more is drawn from the rng.
     """
     n = len(rooms)
     requested = k
@@ -196,8 +213,63 @@ def partition_districts(rooms: Sequence, edges: Sequence[Edge], entrance: int,
             kept.append((a, b))
         elif assign[a] == assign[b]:
             kept.append((a, b))
+    breaches: List[Edge] = []
+    if links > 1:
+        breaches = pick_breaches(assign, edges, thresholds, links)
+        chosen = {frozenset(e) for e in breaches}
+        kept = [e for e in edges if frozenset(e) in cut_edges or frozenset(e) in chosen
+                or assign[e[0]] == assign[e[1]]]
+        # One copy of each cross edge (the first in input order).
+        seen_cross: set = set()
+        out: List[Edge] = []
+        for a, b in kept:
+            e = frozenset((a, b))
+            if assign[a] != assign[b]:
+                if e in seen_cross:
+                    continue
+                seen_cross.add(e)
+            out.append((a, b))
+        kept = out
     return Partition(k=k, requested=requested, assign=assign, edges=kept,
-                     thresholds=thresholds)
+                     thresholds=thresholds, breaches=breaches)
+
+
+def pick_breaches(assign: Sequence[int], edges: Sequence[Edge], thresholds: Sequence[Edge],
+                  links: int) -> List[Edge]:
+    """An intrusion zone's breaches: for each Threshold, up to ``links - 1`` more of
+    the graph's edges between its two Districts, as ``(host side, intruder side)``.
+    The host is the Threshold's parent side; the intruder its child side. Edges
+    whose two rooms are on no link of that pair yet come first (the intruder
+    breaks in at several places), then the rest; each group in input order.
+    Nothing is drawn from any rng."""
+    out: List[Edge] = []
+    cut = {frozenset(t) for t in thresholds}
+    for p, c in thresholds:
+        host, intruder = assign[p], assign[c]
+        cands: List[Edge] = []
+        seen = set()
+        for a, b in edges:
+            e = frozenset((a, b))
+            if e in cut or e in seen or a == b:
+                continue
+            if {assign[a], assign[b]} != {host, intruder}:
+                continue
+            seen.add(e)
+            cands.append((a, b) if assign[a] == host else (b, a))
+        used = {p, c}
+        mine: List[Edge] = []
+        for fresh in (True, False):
+            for h, t in cands:
+                if len(mine) >= links - 1:
+                    break
+                if (h, t) in mine:
+                    continue
+                if fresh and (h in used or t in used):
+                    continue
+                mine.append((h, t))
+                used |= {h, t}
+        out.extend(mine)
+    return out
 
 
 def district_entrances(part: Partition, entrance: int) -> List[int]:
@@ -234,7 +306,8 @@ def district_climaxes(part: Partition, edges: Sequence[Edge], entrance: int) -> 
 # Purposes (districts spec Requirement 2, umbrella 23.8, 23.10-23.12)
 # ---------------------------------------------------------------------------
 
-RELATIONSHIPS: Tuple[str, ...] = ("sequential", "factional", "abandoned_vs_active")
+RELATIONSHIPS: Tuple[str, ...] = ("sequential", "factional", "abandoned_vs_active", "intrusion")
+INTRUSION = "intrusion"
 DEFAULT_RELATIONSHIP = "sequential"
 
 #: The compatibility table, as symmetric pairs (the lead's first cut; the
@@ -355,7 +428,7 @@ def assign_district_purposes(part: Partition, purpose: str = "",
     *purpose* is the plan's archetype (District 0's when no proposal names
     one); *proposals* (strings or ``{"purpose": ...}`` dicts) fill Districts in
     id order, the first ``k`` used; *relationship* is ``sequential`` (default),
-    ``factional`` or ``abandoned_vs_active``. *pinned* (with a known *purpose*)
+    ``factional``, ``abandoned_vs_active`` or ``intrusion``. *pinned* (with a known *purpose*)
     gives every District that Purpose. Unknown values are ignored with a note.
     A dict proposal may also name the District's own ``race`` (:func:`district_races`).
 
@@ -364,6 +437,9 @@ def assign_district_purposes(part: Partition, purpose: str = "",
     every pair contrasting where the table allows it, else each contrasting
     with the District across its Threshold. ``abandoned_vs_active``: District
     0's Purpose everywhere, every other District at the ``abandoned`` variant.
+    ``intrusion``: pairwise-distinct Purposes, each intruder contrasting with
+    the host across its Threshold (a rival that dug in; the partition keeps its
+    breaches, :func:`partition_districts`).
     A Threshold whose two Districts would share a palette gives the child the
     next variant (23.5, 23.10).
 
@@ -421,7 +497,7 @@ def assign_district_purposes(part: Partition, purpose: str = "",
         def near(cur):
             return all(cur[a] in table[cur[b]] for a, b in threshold_pairs)
 
-        if rel == "sequential":
+        if rel in ("sequential", INTRUSION):
             tiers = [near]
         else:
             def every(cur):

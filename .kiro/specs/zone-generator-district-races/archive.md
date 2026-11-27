@@ -27,9 +27,19 @@
 6. **A raced District's rooms also pick that race's decor sets, not only its sizes** (task 14, `RoomContext.race`
    per room; the lead kept it: a giant hall dressed as a giant's). One line to revert if the look says otherwise.
 
+7. **The intruder is the Threshold's child side; a pair short of 3 links gets new breaches** (task 6, the lead's call at
+   review): the intruder is the District farther from the zone entrance (the higher id). The graph's own cross edges are
+   kept first, then new ones are added on the final rooms, just before the crossing passes: the nearest host/intruder pairs,
+   spread off rooms already on a link, on one Level, within grade and `BREACH_SPAN` (2x) the longest hall of the two
+   Districts, retried up to `BREACH_ROUNDS` (8) when those passes drop one. Seeds 2000-2019: 126 of 154 pairs (82 %)
+   have 2+ links, 93 have 3; gate 80/80.
+8. **Throats in a raced District take the pair's race corridor width** for their slack and separation gap (task 6, the
+   follow-up). THROAT_GAP stays 8 u. Un-raced zones are byte-identical; giant cave Districts gate 40/40 (master 39/40).
+
 ## Follow-ups
-- Cave throats in a raced cave District keep the zone's corridor width (set in `layout.py`); task 6, which owns
-  `layout.py` links, sizes them by the throat's race like corridors, or says why not.
+- `ai.expand.layout_proposals` fills open proposals from CONTRASTS for `factional` only, not `intrusion` (task 9).
+- A classic zone draws no wall styles, so its breaches are plain extra links (sized by the smaller race) with no
+  `breach` form and no rough break; only grown (graph) zones show them.
 - Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
 - Same seed, different build: a race-less classic Districts zone differs in two decor entries and its `.zone.json` when
   another zone was built earlier in the same process (master too, found at task 14). Not this step's.

@@ -6,6 +6,11 @@ of the finer style with a Door_Spot for the SQL export, or a **breach** broken i
 A corridor draws from its own stream, so one corridor's choice can't move another's. A form that
 can't stand gives way to a plainer one and says so in ``layout.transitions``: a build never fails
 for a Transition.
+
+An intrusion zone's breaches (district races Req 6: every link between two Districts but the
+Threshold) draw nothing: each asks for a **breach** at its host room's door, sized by the smaller
+race, and runs rough, in the rougher of its rooms' styles if that is the rough one, else in the
+rough style itself.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ TRANSITIONS_FILE = REPO_ROOT / "rules" / "rooms" / "transitions.toml"
 WALLS_DIR = REPO_ROOT / "rules" / "walls"
 
 NONE, SEAM, FRAME, BREACH = "none", "seam", "frame", "breach"
+ROUGH_STYLE = "rough"   # the wall style an intrusion's breach runs in when neither room is rough
 FORMS: Tuple[str, ...] = (NONE, SEAM, FRAME, BREACH)
 SAME = "same"
 
@@ -246,11 +252,16 @@ def _choose(weights: Mapping[str, float], rng: random.Random) -> str:
 
 
 def draw_transition(cor: CorridorSpec, rooms, from_style, to_style, ends: Sequence[Tuple[str, str]],
-                    rules: TransitionRules, seed: int, h: float) -> Dict[str, object]:
+                    rules: TransitionRules, seed: int, h: float,
+                    breach_host: Optional[str] = None) -> Dict[str, object]:
     """Choose this corridor's form and set ``cor.transition``. Returns its record, with ``asked``
-    when the form it stands as isn't the one the weights chose."""
+    when the form it stands as isn't the one the weights chose. *breach_host* (an intrusion
+    zone's breach, :func:`breach_hosts`) asks for a breach at that room's door, drawing nothing."""
     rng = random.Random(f"{seed}:{cor.id}:transition")
-    asked = _choose(rules.weights(from_style.name, to_style.name, ends), rng)
+    if breach_host is None:
+        asked = _choose(rules.weights(from_style.name, to_style.name, ends), rng)
+    else:
+        asked = BREACH
     form, line = asked, None
     legs = _legs(cor, rooms)
     plain = cor.steps == 0 and not cor.bridge
@@ -266,6 +277,8 @@ def draw_transition(cor: CorridorSpec, rooms, from_style, to_style, ends: Sequen
 
     depth = {FRAME: FRAME_DEPTH_H * h, BREACH: BREACH_DEPTH_H * h}.get(form, 0.5)
     finer_is_from = from_style.finish >= to_style.finish
+    if breach_host is not None:
+        finer_is_from = cor.from_room == breach_host     # the intruder broke into its host
     if form == BREACH:
         line = _door_line(legs, finer_is_from, depth)
     elif form == FRAME and (not plain or not differ):
@@ -285,6 +298,8 @@ def draw_transition(cor: CorridorSpec, rooms, from_style, to_style, ends: Sequen
             line = line if form == SEAM else None
 
     record: Dict[str, object] = {"corridor": cor.id, "form": form}
+    if breach_host is not None:
+        record["breach_into"] = breach_host
     if asked != form:
         record["asked"] = asked
     if form == NONE:
@@ -305,6 +320,24 @@ def _door_spot(cor: CorridorSpec, finishes) -> Dict[str, object]:
             "finishes": finishes}
 
 
+def breach_hosts(spec: ZoneSpec, rooms=None) -> Dict[str, str]:
+    """An intrusion zone's breaches (district races Req 6): corridor id -> its host room, for
+    every corridor between two Districts but a Threshold. The host is the end in the lower
+    District id: the Threshold's parent side, as the partition numbers Districts by cut depth,
+    so the intruder is the District farther from the zone entrance. Empty for any other zone."""
+    if not any(d.relationship == "intrusion" for d in (spec.districts or ())):
+        return {}
+    if rooms is None:
+        rooms = {r.id: r for r in spec.rooms}
+    out: Dict[str, str] = {}
+    for cor in spec.corridors:
+        a, b = rooms.get(cor.from_room), rooms.get(cor.to_room)
+        if a is None or b is None or a.district == b.district or cor.threshold:
+            continue
+        out[cor.id] = a.id if a.district < b.district else b.id
+    return out
+
+
 def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) -> List[Tuple[object, object]]:
     """Each corridor's form, look and break: returns (holder, style) for everything that has to
     take a style's look. Flat and ramp corridors take a style's break; stairs and bridges stay as
@@ -318,18 +351,26 @@ def draw_transitions(spec: ZoneSpec, styles: Mapping[str, object], seed: int) ->
     tunnels = {}
     holds = {}
     winding = float(getattr(spec, "winding", 1.0))
+    breaches = breach_hosts(spec, rooms)
+    rough = None
+    if breaches:
+        from .wall_styles import load_styles     # (wall_styles imports this module)
+        rough = load_styles()[ROUGH_STYLE]
     for cor in spec.corridors:
         cor.transition = None
         a, b = styles.get(cor.from_room), styles.get(cor.to_room)
         ends_styles = [s for s in (a, b) if s is not None] or list(styles.values())
         style = min(ends_styles, key=lambda s: s.finish)
+        if cor.id in breaches and style.name != ROUGH_STYLE:
+            style = rough                        # a breach is rough-cut whatever it joins
         plain = cor.steps == 0 and not cor.bridge
         if a is not None and b is not None:
             ends = [(rooms[i].semantic_type, records.get(i, {}).get("kind", rooms[i].kind))
                     for i in (cor.from_room, cor.to_room)]
             # Sized by its race (the smaller of its rooms', district races Req 4).
             h = body_height(corridor_race(spec, cor, rooms))
-            written.append(draw_transition(cor, rooms, a, b, ends, rules, seed, h))
+            kw = {"breach_host": breaches[cor.id]} if cor.id in breaches else {}
+            written.append(draw_transition(cor, rooms, a, b, ends, rules, seed, h, **kw))
         t = cor.transition
         if t is not None and t.form in (SEAM, FRAME) and plain and a.name != b.name:
             style = a
@@ -753,6 +794,7 @@ def finish_transitions(spec: ZoneSpec, styles: Mapping[str, object]) -> None:
         written[cor.id]["door_spot"] = _door_spot(cor, finishes)
 
 
-__all__ = ["BREACH", "FORMS", "FRAME", "NONE", "SAME", "SEAM", "TRANSITIONS_FILE", "TransitionRules",
-           "draw_transition", "draw_transitions", "finish_transitions", "leg_clearance", "load_transitions",
-           "measure_routes", "measure_winds", "path_pieces", "poly_gap", "route_clear", "strip_clear"]
+__all__ = ["BREACH", "FORMS", "FRAME", "NONE", "ROUGH_STYLE", "SAME", "SEAM", "TRANSITIONS_FILE",
+           "TransitionRules", "breach_hosts", "draw_transition", "draw_transitions", "finish_transitions",
+           "leg_clearance", "load_transitions", "measure_routes", "measure_winds", "path_pieces", "poly_gap",
+           "route_clear", "strip_clear"]

@@ -52,7 +52,7 @@ VALID_ELEMENTAL_TINTS = ["lava", "ice", "water"]
 # generators.districts.RELATIONSHIPS (written out, as the archetypes are; a
 # test keeps the two equal). Dungeons only (A2): ``plan_to_spec`` ignores them
 # on any other zone type with a note.
-VALID_DISTRICT_RELATIONSHIPS = ["sequential", "factional", "abandoned_vs_active"]
+VALID_DISTRICT_RELATIONSHIPS = ["sequential", "factional", "abandoned_vs_active", "intrusion"]
 MAX_DISTRICT_PROPOSALS = 3
 DISTRICT_ZONE_TYPES = ("dungeon",)
 
