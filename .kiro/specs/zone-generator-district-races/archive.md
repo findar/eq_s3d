@@ -66,6 +66,9 @@
    hall (cazicthule 163.6 H; gukbottom 162.8, txevu 159.3, so the max, not p99 101.9), at the larger race's H between
    two Districts. `layout.HALL_CAP_H`, after the hall and race scaling for every layout; breaches keep to it too. A
    throat between two Districts of different H is an ordinary corridor (squaring it up dragged rooms 4000 u).
+19. **A generate's time is one 240 s budget** (task 10, the lead's call): past the zone type's timeout
+   (dungeon 20 s) a failed attempt still retries while one more of the longest attempt so far fits in
+   `pipeline.DEFAULT_BUDGET_S`; a caller's own `timeout_s` stays its whole budget. Quick zones are unchanged.
 
 ## Follow-ups
 - The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it
@@ -75,10 +78,6 @@
 - Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
 - Same seed, different build: a race-less classic Districts zone differs in two decor entries and its `.zone.json` when
   another zone was built earlier in the same process (master too, found at task 14). Not this step's.
-- A districted generate whose first Draw and build take over 20 s gets one attempt (task 10): the
-  dungeon `DEFAULT_TIMEOUT_S` is 20 s and the CLI and Server pass none, so one gate reject ends it
-  (`GenerationFailed`, timed out). Districted builds take 30-100 s, giant Graph ones minutes
-  (task 15). Revisit after task 15.
 - Two `--pair` seeds fail on master and on `070126c` alike (task 10): cave_first:sunken_ruin graph
   moderate 24 s313486578 (room_10 floor walled off) and cave_second:ice_keep graph moderate 17
   s1985365888 (room_11 footprint_cut, decor_0079). Step 22 had 552/552; they came in between.
