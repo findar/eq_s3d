@@ -62,6 +62,13 @@
    mine_delve) when any is free: a fortress gets a warren or a cave. Only the plan path; the layout's own draw is unchanged.
 17. **Words set per-District races only when a phrase can place them** (task 9): an intrusion phrase's captured race
    holds the intruder and the zone race becomes the host's (blank if none named); other phrases need two races named.
+18. **No hall touching a raced District runs past 164 H** (task 10, the lead's call): stock's longest door-to-door
+   hall (cazicthule 163.6 H; gukbottom 162.8, txevu 159.3, so the max, not p99 101.9), at the larger race's H between
+   two Districts. `layout.HALL_CAP_H`, after the hall and race scaling for every layout; breaches keep to it too. A
+   throat between two Districts of different H is an ordinary corridor (squaring it up dragged rooms 4000 u).
+19. **A generate's time is one 240 s budget** (task 10, the lead's call): past the zone type's timeout
+   (dungeon 20 s) a failed attempt still retries while one more of the longest attempt so far fits in
+   `pipeline.DEFAULT_BUDGET_S`; a caller's own `timeout_s` stays its whole budget. Quick zones are unchanged.
 
 ## Follow-ups
 - The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it
@@ -71,6 +78,13 @@
 - Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
 - Same seed, different build: a race-less classic Districts zone differs in two decor entries and its `.zone.json` when
   another zone was built earlier in the same process (master too, found at task 14). Not this step's.
+- Two `--pair` seeds fail on master and on `070126c` alike (task 10): cave_first:sunken_ruin graph
+  moderate 24 s313486578 (room_10 floor walled off) and cave_second:ice_keep graph moderate 17
+  s1985365888 (room_11 footprint_cut, decor_0079). Step 22 had 552/552; they came in between.
+- Cave classic dramatic 21 s1866540615 (`--only cave warren ... --seed 23`) fails alone in a fresh
+  process on 070126c, a4ea982 and master alike (room_11 footprint_cut, decor_0074, 68 u^2). Task 2's
+  696/696 at a4ea982 was the in-process leak above (that sweep built it after other zones in its
+  worker), not a fix. A step 30 failure, not step 31's.
 - A third District is breached too (`breach_hosts` takes every non-Threshold cross link), so some host rooms spill
   from it (dark elf, undead Sets) and not from the goblins (task 8). On master these zones already run over stock's
   p25-p75 decor band (per room about 11-15, light share about 0.6 against 2.9-6.8 and 0.21-0.45).

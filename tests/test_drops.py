@@ -261,3 +261,38 @@ def test_map_marks_a_drop():
     plain = _pair(back=True)
     plain.corridors[0].drop = 0.0
     assert 'class="drop"' not in render_map_svg(plain)
+
+
+@pytest.mark.parametrize("form", ["breach", "frame"])
+def test_a_door_line_stands_at_the_flush_end(form):
+    """The gate walks a Transition's line through, a few u each way, so one at a drop's lower
+    door would step off the ledge: it stands at the flush end (seed 1968221380, corr_7, a
+    Threshold that drew both a drop and a breach: "no floor through the breach")."""
+    from generators.transitions import draw_transition
+    from generators.wall_styles import load_styles
+
+    class Only:
+        def weights(self, *_):
+            return {f: float(f == form) for f in ("none", "seam", "frame", "breach")}
+
+    # A breach into b (its host) asks for b's door; a frame between one style, a's door.
+    asks_b = form == "breach"
+
+    def line_x(drop):
+        low = -drop
+        a = RoomSpec("a", 0.0, 0.0, width=100.0, depth=60.0, height=60.0, open_walls=["E"],
+                     floor_z=0.0 if asks_b else low)
+        b = RoomSpec("b", 200.0, 0.0, width=100.0, depth=60.0, height=60.0, open_walls=["W"],
+                     floor_z=low if asks_b else 0.0)
+        cor = CorridorSpec("c", 50.0, 0.0, 150.0, 0.0, width=18.0, height=30.0,
+                           from_room="a", to_room="b", drop=drop)
+        styles = load_styles()
+        kw = {"breach_host": "b"} if asks_b else {}
+        rec = draw_transition(cor, {"a": a, "b": b}, styles["built"], styles["built"], [],
+                              Only(), 1, 6.0, **kw)
+        assert rec["form"] == form
+        return rec["x"]
+
+    flush, dropped = line_x(0.0), line_x(20.0)
+    assert (flush > 100.0) == asks_b            # at the door it asks for
+    assert (dropped > 100.0) != asks_b          # that door is the drop's: the other one

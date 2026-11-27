@@ -97,6 +97,13 @@ _FALLBACK_TIMEOUT_S = 20.0
 # pathological runs. Whichever cap hits first wins.
 DEFAULT_MAX_ATTEMPTS = 8
 
+# A whole generate's time budget (district races task 10, archive decision 19). Past the
+# zone type's timeout a slow build (a districted giant zone takes 30-170 s an attempt)
+# still retries while what has run leaves room for one more of its longest attempt
+# inside this, rather than stopping after one. Under the ~5 minute target. Only with
+# the default timeout: a caller's own ``timeout_s`` is its whole budget, as before.
+DEFAULT_BUDGET_S = 240.0
+
 # Append-only JSONL triage feed — one line per rejected attempt. The data a
 # future corridor/format triage pass consumes to measure and prioritise fixes.
 DEFAULT_FAILURE_LOG = Path("output") / "validation_failures.jsonl"
@@ -647,6 +654,7 @@ def generate_validated(
     ter_version: int = 2,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     timeout_s: Optional[float] = None,
+    budget_s: Optional[float] = None,
     gated_zone_types: Optional[Collection[str]] = None,
     validate_enabled: bool = True,
     agent: Optional[AgentModel] = None,
@@ -719,7 +727,10 @@ def generate_validated(
       retry storm).
     * **Gated, random seed**: build -> gate -> on failure pick a NEW fresh seed
       and retry, bounded by ``max_attempts`` AND ``timeout_s`` (whichever hits
-      first). At least one full attempt always completes. Returns the first
+      first), except that past ``timeout_s`` an attempt still follows while the time
+      run leaves room for one more of the longest attempt so far inside ``budget_s``
+      (``DEFAULT_BUDGET_S`` with the default timeout, else ``timeout_s``: no change).
+      At least one full attempt always completes. Returns the first
       passing build; raises :class:`GenerationFailed` when the budget is spent.
       A retry rerolls only the stage the gate blames (:func:`_blame`): Decor
       (a new ``decor_seed``) or, when ``spec_factory`` takes ``rooms_seed``,
@@ -739,6 +750,8 @@ def generate_validated(
     root = OutputRoot(output_dir)
     if gated_zone_types is None:
         gated_zone_types = enabled_zone_types()
+    if budget_s is None:
+        budget_s = DEFAULT_BUDGET_S if timeout_s is None else timeout_s
     if timeout_s is None:
         timeout_s = DEFAULT_TIMEOUT_S.get(zone_type, _FALLBACK_TIMEOUT_S)
 
@@ -813,6 +826,13 @@ def generate_validated(
     next_stage = STAGE_ZONE
     # Quality Draws: an unpinned generate's only (a rebuild or an edit measures, A4).
     draws = _DrawBudget(done=pinned or quality_reason is not None or stages is not None)
+    longest = 0.0               # the longest attempt so far (s)
+
+    def time_left() -> bool:
+        """Whether the time allows another attempt: inside the timeout, or past it with
+        room for one more of the longest attempt so far inside the whole budget."""
+        spent = time.monotonic() - start
+        return spent < timeout_s or spent + longest <= budget_s
 
     def plan_failed(draw_seeds: Dict[str, Optional[int]], error: BaseException) -> bool:
         """A Draw that can't be planned: a rejected attempt, logged as the ``PLAN_ERRORS``
@@ -825,12 +845,13 @@ def generate_validated(
             report=_plan_failure_report(zone_id, error), checks=["plan"],
             stage=STAGE_ZONE, seeds=draw_seeds,
         ))
-        go_on = attempt < max_attempts and (time.monotonic() - start) < timeout_s
+        go_on = attempt < max_attempts and time_left()
         attempt += 1
         return go_on
 
     while True:
         attempt += 1
+        began = time.monotonic()
         if next_stage == STAGE_ZONE:
             use_seed = seed if pinned else _fresh_seed(rng)
             rooms_draw = decor_draw = None
@@ -944,7 +965,8 @@ def generate_validated(
         # (never return "failed" without having actually tried once).
         if attempt >= max_attempts:
             raise GenerationFailed(zone_id, zone_type, failures)
-        if (time.monotonic() - start) >= timeout_s:
+        longest = max(longest, time.monotonic() - began)
+        if not time_left():
             raise GenerationFailed(zone_id, zone_type, failures, timed_out=True)
 
         # Retry the stage blamed on the same World, at most MAX_STAGE_REROLLS

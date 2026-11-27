@@ -207,3 +207,22 @@ def test_every_transition_built_passes_the_gate(kw):
             if cor.transition is not None:
                 v = check_transition(surf, cor, spec, AGENT)
                 assert v.ok, f"seed {seed} {cor.id}: {v.reason}"
+
+
+def test_a_piece_ending_in_a_rooms_wall_plane_touches_it():
+    """Seed 1855283842 (cave/giant + warren/goblin + fortress, graph flat 16): corr_1's last
+    leg ran exactly a reach (half its width + OPENING_INTO_WALL) off room_13's wall, so its
+    frame's lintel ended at x 20.810828400848273 against the wall's 20.81082840084828 and stood,
+    its end in the wall plane: an open seam. Within TOUCH_EPS counts as touching."""
+    from types import SimpleNamespace
+
+    from generators.transitions import _Line, _touches_a_room
+    cor = CorridorSpec("corr_1", 11.310828400848273, -40.0, 11.310828400848273, 10.0, width=18.0,
+                       height=15.0, from_room="room_10", to_room="room_13")
+    line = _Line(x=11.310828400848273, y=4.628649582519358, z=0.0, along_x=False, grade=0.0)
+    wall = SimpleNamespace(bounds=((20.81082840084828, -42.54178162116183, 0.0),
+                                   (126.32062459562012, 19.12031967962586, 20.15)))
+    assert line.x + cor.width / 2 + 0.5 < wall.bounds[0][0]          # the float shortfall
+    assert _touches_a_room(cor, line, 1.5, {"room_13": wall})
+    clear = SimpleNamespace(bounds=((20.81082840084828 + 1e-4, -42.5, 0.0), (126.3, 19.1, 20.15)))
+    assert not _touches_a_room(cor, line, 1.5, {"room_13": clear})

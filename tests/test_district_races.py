@@ -215,3 +215,78 @@ def test_giant_rooms_size_walls_features_decor_and_forms_by_their_race(monkeypat
     # A giant's decor cells: its door-clear zones run 2 H + 2 deep, not a human's.
     big = [d for r in spec.rooms if r.district == 0 for d in ctx[r.id].doors]
     assert big and max(min(d.clear[2] - d.clear[0], d.clear[3] - d.clear[1]) for d in big) > 2 * zone + 2
+
+
+def test_a_stacked_giant_district_keeps_its_halls_in_bounds():
+    """Task 10 (built seed 564762926, giant fortress + goblin warren intrusion, Graph
+    dramatic 16): the District's edges between Levels stand over each other and no run
+    lengthens them, so its median hall held back and the hall relax scaled the other runs
+    4x a round until two giant halls ran ~27,000 u. Edges between Levels hold, and a run
+    is never scaled past HALL_SCALE_CAP times its default."""
+    import math
+
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 16, "layout": "graph",
+                                   "verticality": "dramatic", "districts": True,
+                                   "district_relationship": "intrusion",
+                                   "district_plan": GIANT_GOBLIN}, [])
+    plan.name = "runaway"
+    spec = plan_to_spec(plan, seed=564762926, warnings=[])
+    by = {r.id: r for r in spec.rooms}
+    longest = max(math.hypot(by[c.from_room].center_x - by[c.to_room].center_x,
+                             by[c.from_room].center_y - by[c.to_room].center_y)
+                  for c in spec.corridors)
+    assert longest < 2000.0             # a giant hall runs ~500 u (task 5); it ran 27,488
+
+
+def test_a_cave_giant_districts_halls_keep_to_stocks_longest():
+    """Task 10 (seed 1096090184, cave giant + goblin warren intrusion, Graph dramatic 24):
+    the cave draws a few long tunnels, the hall length triples them and the giant's H
+    scales them 3.7x again, to 4465 u (203 H) where stock's longest hall is 164 H. No
+    hall touching a raced District runs past HALL_CAP_H of the larger race's H (the
+    rooms settle a little after the cap, hence the 2 %)."""
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from generators.layout import HALL_CAP_H
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 24, "layout": "graph",
+                                   "verticality": "dramatic", "districts": True,
+                                   "district_relationship": "intrusion",
+                                   "district_plan": [{"purpose": "cave", "race": "giant"},
+                                                     {"purpose": "warren", "race": "goblin"}]},
+                                  [])
+    plan.name = "tunnels"
+    spec = plan_to_spec(plan, seed=1096090184, warnings=[])
+    by = {r.id: r for r in spec.rooms}
+    h = {d.id: semantics.body_height(d.race) for d in spec.districts if d.race}
+    for c in spec.corridors:
+        a, b = by[c.from_room], by[c.to_room]
+        if a.district in h or b.district in h:
+            cap = HALL_CAP_H * max(h.get(a.district, 0.0), h.get(b.district, 0.0))
+            assert LayoutGenerator._hall_span(a, b) <= 1.02 * cap, c.id
+
+
+def test_a_throat_between_districts_of_different_h_is_not_snapped_back():
+    """Task 10 (seed 445520960, cave giant + goblin warren + a third District, Graph
+    moderate 24): a cave throat joined a temple room to a giant room; the giant scaling
+    moved the giant side and squaring the throat up dragged the temple room 4000 u out
+    of its District, leaving a 4298 u temple hall (716 H). Such a throat is an ordinary
+    corridor now, and no hall in the zone runs past HALL_CAP_H."""
+    from ai.expand import plan_to_spec
+    from ai.schema import ZonePlan
+    from generators.layout import HALL_CAP_H
+    plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 24, "layout": "graph",
+                                   "verticality": "moderate", "districts": True,
+                                   "district_relationship": "intrusion",
+                                   "district_plan": [{"purpose": "cave", "race": "giant"},
+                                                     {"purpose": "warren", "race": "goblin"}]},
+                                  [])
+    plan.name = "throats"
+    spec = plan_to_spec(plan, seed=445520960, warnings=[])
+    by = {r.id: r for r in spec.rooms}
+    h0 = semantics.body_height(spec.dungeon_race or None)
+    h = {d.id: semantics.body_height(d.race) if d.race else h0 for d in spec.districts}
+    for c in spec.corridors:
+        a, b = by[c.from_room], by[c.to_room]
+        cap = HALL_CAP_H * max(h[a.district], h[b.district])
+        assert LayoutGenerator._hall_span(a, b) <= 1.02 * cap, c.id

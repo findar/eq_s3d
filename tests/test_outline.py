@@ -300,3 +300,25 @@ def test_no_floor_hangs_off_the_core_by_a_sliver():
                 stack.append(n)
     cut_off = sum(_area([o.verts[i] for i in c]) for k, c in enumerate(o.cells) if k not in seen)
     assert cut_off < STRANDED_POCKET, cut_off
+
+@pytest.mark.parametrize("seed", [163, 283])
+def test_a_wander_never_closes_a_way_growth_left_open(seed, monkeypatch):
+    """District races task 10 (seed 1309416488, room_16, "floor walled off"): growth joined a
+    Cell by a 7.4 u neck, then the wall wander moved both sides in to 5.7 u, under PASS_MIN,
+    and the gate's body couldn't pass. The wander now backs off rather than close a way that
+    was open. Seeds 163 and 283 pinch the same room's box at full wander."""
+    import generators.outline as O
+    calls = []
+    real = O._wander
+
+    def wander(verts, cells, keep, wobble, rng):
+        out = real(verts, cells, keep, wobble, rng)
+        calls.append((list(verts), out, cells))
+        return out
+    monkeypatch.setattr(O, "_wander", wander)
+    box = (-281.09, 326.38, -205.40, 396.10)
+    draw_outline(box, [("N", -225.40, -207.40)], [], complex="voronoi", cell_size=24.0,
+                 shape="ell", fill=0.721, wobble=7.15, rng=random.Random(seed))
+    before, after, cells = calls[-1]
+    assert len(calls) > 1, "full wander pinches nothing here: re-pin"
+    assert not O._pinches(before, after, cells)

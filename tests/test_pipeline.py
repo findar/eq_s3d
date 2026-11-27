@@ -155,6 +155,25 @@ class TestExhaustion:
         assert err.timed_out
         assert err.attempts == 1            # at least one full attempt ran
 
+    @pytest.mark.parametrize("cost, attempts, timed_out", [(50.0, 4, True), (1.0, 8, False)])
+    def test_a_slow_attempt_retries_inside_the_whole_budget(self, tmp_path, monkeypatch,
+                                                            cost, attempts, timed_out):
+        """District races task 10: with the default timeout, an attempt past the dungeon's
+        20 s still retries while one more of the longest attempt fits in DEFAULT_BUDGET_S
+        (240 s): at 50 s an attempt, after 4 (200 s) a fifth would end at 250. A quick
+        zone never reaches 20 s and runs its attempt cap as before."""
+        import generators.pipeline as P
+        clock = {"t": 0.0}
+        monkeypatch.setattr(P.time, "monotonic", lambda: clock["t"])
+        bad = _bad_factory()
+
+        def slow(seed):
+            clock["t"] += cost
+            return bad(seed)
+        with pytest.raises(GenerationFailed) as ei:
+            _run(slow, tmp_path, rng=random.Random(3))
+        assert (ei.value.attempts, ei.value.timed_out) == (attempts, timed_out)
+
 
 class TestPinnedSeed:
     def test_pinned_failure_errors_without_retry(self, tmp_path):
