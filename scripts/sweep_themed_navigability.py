@@ -194,7 +194,9 @@ def _build_intrusion(cell, layout, verticality, rooms, seed, out_dir, winding, h
     row = {"archetype": cell, "layout": layout, "verticality": verticality,
            "room_count": rooms, "n_rooms": 0, "seed": seed, "relationship": relationship,
            "districts": "", "passed": 0, "reachable": 0, "total": 0, "attempts": 0,
+           "build_seed": "", "wall_s": 0.0, "timed_out": 0,
            "draws": "", "links": 0, "breaches": 0, "drops": 0, "drop_u": "", "reasons": ""}
+    t_zone = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="intr", dir=out_dir,
                                      ignore_cleanup_errors=True) as tmp:
         try:
@@ -206,6 +208,8 @@ def _build_intrusion(cell, layout, verticality, rooms, seed, out_dir, winding, h
             last = e.failures[-1] if e.failures else None
             why = "; ".join(last.reasons) if last else str(e)
             return dict(row, attempts=len(e.failures), draws=";".join(draws),
+                        build_seed=last.seed if last else "", timed_out=int(e.timed_out),
+                        wall_s=round(time.perf_counter() - t_zone, 1),
                         reasons=f"failed: {why}"[:400])
     spec = vb.spec
     rid = {r.id: r.district for r in spec.rooms}
@@ -216,6 +220,7 @@ def _build_intrusion(cell, layout, verticality, rooms, seed, out_dir, winding, h
                                    for d in spec.districts),
                 passed=int(vb.validated), reachable=vb.report.reachable_rooms,
                 total=vb.report.total_rooms, attempts=vb.attempts, draws=";".join(draws),
+                build_seed=vb.seed, wall_s=round(time.perf_counter() - t_zone, 1),
                 links=len(cross), breaches=len(breach_hosts(spec)), drops=len(drops),
                 drop_u=" ".join(f"{d:.0f}" for d in drops))
 
@@ -364,6 +369,12 @@ def _intrusion_summary(rows):
     print("\nDraw time (plan_to_spec, s) per room count: draws, median, max:")
     for n, ts in sorted(times.items()):
         print(f"  rooms {n:<3} {len(ts):>5} {_median(ts):7.2f} {max(ts):7.2f}")
+    walls = defaultdict(list)
+    for r in rows:
+        walls[r["room_count"]].append(r["wall_s"])
+    print("\nZone wall time (generate_validated, s) per room count: zones, median, max:")
+    for n, ws in sorted(walls.items()):
+        print(f"  rooms {n:<3} {len(ws):>5} {_median(ws):7.1f} {max(ws):7.1f}")
 
 
 def _print(row):
