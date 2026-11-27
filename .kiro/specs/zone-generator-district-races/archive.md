@@ -72,6 +72,13 @@
 20. **The gate's Transition clearance reads the opening's race (`corridor_race`), and breaches stay best-effort**
    (task 16, the lead's call): the step 31 prompt (Dramatic, giant zone race) passes on seeds 2020-2029 and 8 of 10
    get a goblin breach; 2023's goblin pairs sit on other Levels or past `BREACH_SPAN`, 2024's are all lost to `_resolve_conflicts`.
+21. **A link between Districts is laid, bounded and capped in the H of the race that sizes it** (task 17, replacing
+   decision 18's "at the larger race's H" for links): its Threshold stands off its near room as the engine drew it,
+   times `f · H(link) / H(zone)` (`f` the mean hall default of its ends at the link's race: 1 for a goblin hole into
+   giants, decision 4 between two giant Districts); the graph's own breaches past the breach bound are dropped;
+   `BREACH_SPAN` reads the longest hall of the breach's race; a link between rooms of two H runs straight across the
+   span they share; stand-ins and returns keep to the cap (and to the degree cap); a built link past the cap redraws.
+   `--intrusion` seed 31: links p50 89.0 → 20.4 H, max 1128 → 156.5 H; pairs with 2+ links 82 % → 68 %.
 
 ## Follow-ups
 - The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it
