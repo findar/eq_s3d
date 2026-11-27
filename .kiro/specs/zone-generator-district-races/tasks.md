@@ -75,7 +75,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: scripts/sweep_themed_navigability.py (an --intrusion option); fixes only where a failure is new (stop and report first)
   - Reqs: 11
 
-- [ ] 11. Acceptance section
+- [x] 11. Acceptance section
   - Card: [cards/11-acceptance.md](cards/11-acceptance.md)
   - Type: agent · Size: S · Depends: 10
   - Owns: docs/ACCEPTANCE.md
