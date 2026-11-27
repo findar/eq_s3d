@@ -177,3 +177,19 @@ def test_the_llm_schema_and_prompt_carry_the_fields():
     plan = ZonePlan.from_dict({"zone_type": "dungeon", "room_count": 10, "districts": True,
                                "district_plan": GIANT_GOBLIN, "district_relationship": "intrusion"})
     assert plan.district_plan == GIANT_GOBLIN
+
+
+# --- Water in a raced room (task 16) --------------------------------------------
+
+def test_water_in_a_goblin_room_of_a_giant_zone_is_goblin_deep():
+    """``flood_level`` reads the room's race: 0.6 goblin H (3.6 u), not 0.6 giant H (13.2 u)."""
+    from generators.semantics import FLOOD_DEPTH_H, body_height, flood_level
+    from generators.zone_spec import DistrictSpec, RoomSpec, ZoneSpec
+    spec = ZoneSpec(name="t", zone_type="dungeon", dungeon_race="giant")
+    host, warren = (RoomSpec(rid, 0.0, 0.0, floor_z=10.0, semantic_type="sump",
+                             district=i) for i, rid in enumerate("ab"))
+    spec.rooms = [host, warren]
+    assert flood_level(warren, spec) == pytest.approx(10.0 + FLOOD_DEPTH_H * body_height("giant"))
+    spec.districts = [DistrictSpec(0, room_ids=["a"]), DistrictSpec(1, room_ids=["b"], race="goblin")]
+    assert flood_level(host, spec) == pytest.approx(10.0 + FLOOD_DEPTH_H * body_height("giant"))
+    assert flood_level(warren, spec) == pytest.approx(10.0 + FLOOD_DEPTH_H * body_height("goblin"))

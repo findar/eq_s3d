@@ -4472,7 +4472,7 @@ of two Purposes gets a third District at the zone's race (human).
 | r | Layout **Classic**, Rooms **16**, relationship **intrusion** | 2097 | `gen_1795794344_401e52` | 21.1 s | 4,164 |
 | v | Layout **Graph**, Rooms **24**, relationship **intrusion** | 2013 | `gen_1795795018_b816c7` | 66.3 s | 78,582 |
 | f | Layout **Graph**, Rooms **12**, relationship **factional** | 2000 | `gen_1795794593_c6a20b` | 29.6 s | 35,560 |
-| p | Prompt "a towering giant fortress the goblins tunnelled into, with 16 rooms" | 276865925 (random; 3 attempts) | `gen_1795793442_6c096d` | 129 s | 45,669 |
+| p | Prompt "a towering giant fortress the goblins tunnelled into, with 16 rooms" | 2020 | `gen_1795797419_9bf894` | 54.9 s | 59,933 |
 
 | Case | Districts (Purpose, race, rooms) | Halls in District, p50 / max (H) |
 |---|---|---|
@@ -4481,10 +4481,10 @@ of two Purposes gets a third District at the zone's race (human).
 | r | D0 fortress giant 6 · D1 warren goblin 6 · D2 war_city human 4 | 79.4 / 118.5 · 8.1 / 16.5 · 6.0 / 10.3 |
 | v | D0 fortress giant 10 · D1 warren goblin 7 · D2 mine_delve human 7 | 45.2 / 59.9 · 9.1 / 18.6 · 7.8 / 18.6 |
 | f | D0 fortress giant 8 · D1 warren goblin 4 | 25.7 / 33.9 · 12.1 / 16.5 |
-| p | D0 fortress giant 5 · D1 warren goblin 5 · D2 cave giant 6 (zone race giant) | 20.9 / 24.3 · 7.5 / 26.9 · 8.1 / 29.0 |
+| p | D0 fortress giant 5 · D1 warren goblin 7 · D2 corrupted_sanctum giant 4 (zone race giant) | 23.2 / 26.5 · 10.7 / 32.9 · 11.1 / 14.0 |
 
 Every link between Districts in these builds is 18 × 15 u (goblin/human sized), except case
-p's two giant-to-giant links (66 × 55 u). Every hall is under the 164 H cap.
+p's three giant-to-giant links (66 × 55 u). Every hall is under the 164 H cap.
 
 ### R.1 — The goblins in the giant fortress (case i)
 
@@ -4546,23 +4546,33 @@ p's two giant-to-giant links (66 × 55 u). Every hall is under the 164 H cap.
 
 ### R.4 — The prompt (case p)
 
+> Case p was rebuilt at task 16 (branch `agent/races-16`, `beddf1b`) through the Server on its
+> pinned seed, first attempt. Before task 16 the gate measured every Transition against the zone
+> race, so pinned seeds 2020–2023 and 0 failed ("leaves 13–18 u clear, under 44 u") and no build
+> of the prompt had a goblin breach. It now measures each opening at the race it was cut for
+> (archive decision 20). Over seeds 2020–2029 every build passes, and 8 of 10 have a goblin
+> breach; 2023 and 2024 join the goblins by the Threshold alone (R.5).
+
 - [ ] **[MUST] The words** — The prompt plans Layout Graph, Theme fortress, zone race giant,
       Verticality Dramatic, District plan fortress/giant + warren/goblin, relationship
-      intrusion. Through the Server, pinned seeds 2020–2023 and 0 all failed the gate (503): every
-      goblin-sized Transition (`breach`, `seam`, `frame`) "leaves 13–18 u clear, under 44 u",
-      the clearance for the zone race (giant), not the goblins'. A random seed built on its third
-      attempt (seed 276865925): the goblins (D1) join by the Threshold `corr_14` alone (room_0 →
-      room_3, flush, 1,594 u = 72 H, no Transition); the giant cave D2 takes a 66 × 55 u breach
-      `corr_13` (room_8 → room_14) and the `frame` Threshold `corr_15`; host room_8 spilled cave
-      decor (2 lines, 9 Props). So the prompt builds, but never with a goblin breach. Try the
-      prompt; the Controls cases above are the ones with goblin breaches. Not looked at in the 3D
+      intrusion. A third District (corrupted_sanctum) takes the zone race, giant. Not looked at
+      in the 3D viewer for this section.
+- [ ] **[MUST] Goblin breaches into the giant fortress** — Case p, giants (D0) to goblins (D1):
+      the Threshold `corr_0` (room_3 → room_2, flush, 826 u = 38 H, no Transition), and two
+      `seam` breaches: `corr_17` (room_14 → room_1, 962 u = 44 H, a **19.2 u** drop) and
+      `corr_18` (room_5 → room_6, flush, 1,171 u = 53 H). Each is 18 × 15 u: a goblin hole in a
+      giant wall. Walk `corr_18` both ways, and `corr_17` from goblin room_14: you should drop
+      into giant room_1 and not be able to climb back to the sill. Host room_1 took goblin decor (3 spilled lines, 6 Props). Host room_5
+      drew none. D2 joins D0 by the `frame` Threshold `corr_6` and two giant `breach` links,
+      `corr_16` (flush) and `corr_19` (a 30.6 u drop), each 66 × 55 u. Not looked at in the 3D
       viewer for this section.
 
 ### R.5 — Known, not this step
 
-- **The gate's Transition check reads the zone's race** (case p): a goblin breach in a zone whose
-  race is giant always fails, so a prompt naming the giants as the zone race gets no goblin
-  breaches (archive follow-up: "the gate's doorway check still read the zone's race").
+- **An intrusion can get no breach** (case p's prompt, seeds 2023 and 2024): on Verticality
+  Dramatic the goblin and host rooms can sit on different Levels or lie too far apart (2023), or
+  every breach can be lost to the corridor-conflict pass (2024). The goblins then join by their
+  Threshold alone (archive follow-up).
 - **Drops mostly land in the giants' rooms.** A drop lands where the ceiling has more room
   (decision 13), so in a giant host they usually run out of the goblins. Over seeds 2000–2199
   (classic 16) and 2000–2119 (graph 16), only short drops (6–34 u) ran into the goblins, and

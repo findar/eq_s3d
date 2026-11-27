@@ -69,13 +69,17 @@
 19. **A generate's time is one 240 s budget** (task 10, the lead's call): past the zone type's timeout
    (dungeon 20 s) a failed attempt still retries while one more of the longest attempt so far fits in
    `pipeline.DEFAULT_BUDGET_S`; a caller's own `timeout_s` stays its whole budget. Quick zones are unchanged.
+20. **The gate's Transition clearance reads the opening's race (`corridor_race`), and breaches stay best-effort**
+   (task 16, the lead's call): the step 31 prompt (Dramatic, giant zone race) passes on seeds 2020-2029 and 8 of 10
+   get a goblin breach; 2023's goblin pairs sit on other Levels or past `BREACH_SPAN`, 2024's are all lost to `_resolve_conflicts`.
 
 ## Follow-ups
 - The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it
   for drops); any geometry hugging a room's outside wall can read as joined through it.
 - A classic zone draws no wall styles, so its breaches are plain extra links (sized by the smaller race) with no
   `breach` form and no rough break; only grown (graph) zones show them.
-- Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
+- Dramatic Levels and `_resolve_conflicts` can leave an intrusion with no breach (task 16: prompt seeds 2023 and
+  2024 join the goblins by their Threshold alone).
 - Same seed, different build: a race-less classic Districts zone differs in two decor entries and its `.zone.json` when
   another zone was built earlier in the same process (master too, found at task 14). Not this step's.
 - Two `--pair` seeds fail on master and on `070126c` alike (task 10): cave_first:sunken_ruin graph

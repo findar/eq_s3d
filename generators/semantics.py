@@ -963,7 +963,13 @@ def flood_level(room: RoomSpec, spec: ZoneSpec) -> Optional[float]:
     rt = ROOM_TYPES.get(room.semantic_type)
     if rt is None or rt.region != "water":
         return None
-    return room.floor_z + FLOOD_DEPTH_H * body_height(spec.dungeon_race)
+    return _water_line(room, spec)
+
+
+def _water_line(room: RoomSpec, spec: ZoneSpec) -> float:
+    """The room's water line at its own race's depth (``room_race``: water in a goblin room of a
+    giant zone is goblin deep; the zone's race when no District carries one)."""
+    return room.floor_z + FLOOD_DEPTH_H * body_height(room_race(spec, room))
 
 
 def _flood_region(region: RegionSpec, room: RoomSpec, level: float) -> None:
@@ -996,7 +1002,7 @@ def _add_room_region(spec: ZoneSpec, room: RoomSpec, kind: str, idx: int) -> Non
     over the room's floor by the mesh); other kinds keep a pool in the room's middle."""
     if kind == "water":
         region = RegionSpec(id=f"{kind}_{idx}", kind=kind, center_x=0.0, center_y=0.0, center_z=0.0)
-        _flood_region(region, room, room.floor_z + FLOOD_DEPTH_H * body_height(spec.dungeon_race))
+        _flood_region(region, room, _water_line(room, spec))
         spec.regions.append(region)
         if FLOOD_MATERIAL not in spec.materials:
             spec.add_material(FLOOD_MATERIAL, f"{FLOOD_MATERIAL}.dds", shader=SHADER_ALPHA,

@@ -211,3 +211,33 @@ def test_ramps_and_stairs_stay_two_way(steps, reverse):
         off = shell_report(build_mesh(spec).to_ter(spec.name), spec, OFF, True)
         assert _verdict(shell) == _verdict(off)
         assert shell.reachable == off.reachable
+
+
+# --- A Transition's clearance is the race it was cut for (task 16) ------------
+
+def _raced_frame(zone_race, races):
+    """test_gate_transitions' 14 u frame between rooms a (District 0) and b (District 1)."""
+    from generators.zone_spec import DistrictSpec
+    from tests.test_gate_transitions import JAMBS, _spec, _verdict as frame_verdict
+    spec = _spec()
+    spec.dungeon_race = zone_race
+    if races is not None:
+        spec.districts = [DistrictSpec(i, room_ids=[rid], race=race)
+                          for i, (rid, race) in enumerate(zip("ab", races))]
+        for d in spec.districts:
+            next(r for r in spec.rooms if r.id == d.room_ids[0]).district = d.id
+    return frame_verdict(*JAMBS, spec=spec)
+
+
+def test_a_goblin_breach_into_a_giant_zone_is_measured_at_goblin_size():
+    """The prompt's goblins in a giant zone: the 14 u hole is judged against 2 goblin H (12 u)."""
+    v = _raced_frame("giant", ("", "goblin"))
+    assert v.ok, v.reason
+
+
+@pytest.mark.parametrize("zone_race, races", [("giant", None), ("giant", ("", "")),
+                                              ("", ("giant", "giant")), ("goblin", ("giant", "giant"))])
+def test_the_bar_is_still_the_larger_race_where_both_ends_are(zone_race, races):
+    """No District race reads the zone's, as before; giant at both ends still needs 44 u."""
+    v = _raced_frame(zone_race, races)
+    assert not v.ok and "under 44.0 u" in v.reason, v.reason
