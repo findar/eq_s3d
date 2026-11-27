@@ -78,6 +78,10 @@
 - Two `--pair` seeds fail on master and on `070126c` alike (task 10): cave_first:sunken_ruin graph
   moderate 24 s313486578 (room_10 floor walled off) and cave_second:ice_keep graph moderate 17
   s1985365888 (room_11 footprint_cut, decor_0079). Step 22 had 552/552; they came in between.
+- Cave classic dramatic 21 s1866540615 (`--only cave warren ... --seed 23`) fails alone in a fresh
+  process on 070126c, a4ea982 and master alike (room_11 footprint_cut, decor_0074, 68 u^2). Task 2's
+  696/696 at a4ea982 was the in-process leak above (that sweep built it after other zones in its
+  worker), not a fix. A step 30 failure, not step 31's.
 - A third District is breached too (`breach_hosts` takes every non-Threshold cross link), so some host rooms spill
   from it (dark elf, undead Sets) and not from the goblins (task 8). On master these zones already run over stock's
   p25-p75 decor band (per room about 11-15, light share about 0.6 against 2.9-6.8 and 0.21-0.45).
