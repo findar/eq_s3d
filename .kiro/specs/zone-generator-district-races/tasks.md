@@ -82,7 +82,7 @@ specs" in `.kiro/steering/project.md`.
 
 - [ ] 12. HUMAN: look
   - Card: [cards/12-look.md](cards/12-look.md)
-  - Type: human · Depends: 11, 16
+  - Type: human · Depends: 11, 16, 17, 18
 
 - [ ] 13. Close step 31
   - Card: [cards/13-close.md](cards/13-close.md)
@@ -112,3 +112,17 @@ specs" in `.kiro/steering/project.md`.
   - Type: agent · Size: M · Depends: 11
   - Owns: analyzer/traverse.py (the Transition clearance check), generators/semantics.py (`flood_level`), ai/rule_planner.py, ai/expand.py, tests/test_district_races_words.py, tests/test_traverse_directed.py, docs/ACCEPTANCE.md (the step 31 prompt case)
   - Reqs: 4, 10, 11
+
+## Added at the look (task 12, first pass)
+
+- [ ] 17. Goblin-sized links between Districts keep goblin hall lengths
+  - Card: [cards/17-goblin-halls.md](cards/17-goblin-halls.md)
+  - Type: agent · Size: M · Depends: 16
+  - Owns: generators/layout.py, generators/embed.py, generators/transitions.py, tests/test_district_races.py, tests/test_intrusion.py, docs/ACCEPTANCE.md (step 31 measures)
+  - Reqs: 4, 5, 6, 11
+
+- [ ] 18. Map layers: show and hide Districts, races, links and the rest
+  - Card: [cards/18-map-layers.md](cards/18-map-layers.md)
+  - Type: agent · Size: M · Depends: 16
+  - Owns: generators/mapview.py, web/src/artifacts.ts, web/src/main.ts (the map modal only), web/index.html (the map modal only), web/src/style.css, tests/test_mapview*.py
+  - Reqs: 10
