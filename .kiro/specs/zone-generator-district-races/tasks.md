@@ -69,7 +69,7 @@ specs" in `.kiro/steering/project.md`.
   - Owns: ai/schema.py, ai/rule_planner.py, ai/llm_planner.py, server/app.py, web/index.html, web/src/main.ts, web/src/api.ts, tests/test_district_races_words.py (new)
   - Reqs: 10
 
-- [ ] 10. Gate and bands
+- [x] 10. Gate and bands
   - Card: [cards/10-gate.md](cards/10-gate.md)
   - Type: agent · Size: S · Depends: 7, 8, 9, 14, 15
   - Owns: scripts/sweep_themed_navigability.py (an --intrusion option); fixes only where a failure is new (stop and report first)
