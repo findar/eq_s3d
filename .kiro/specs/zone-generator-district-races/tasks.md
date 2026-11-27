@@ -99,8 +99,8 @@ specs" in `.kiro/steering/project.md`.
 
 ## Added at task 10
 
-- [ ] 15. Decor placement time in giant Districts
+- [x] 15. Decor placement time in giant Districts
   - Card: [cards/15-decor-time.md](cards/15-decor-time.md)
   - Type: agent · Size: S · Depends: 8
-  - Owns: generators/decor/placement.py, tests/test_decor_placement.py
+  - Owns: generators/decor/placement.py, tests/test_decor_placement.py, generators/room_context.py
   - Reqs: 11

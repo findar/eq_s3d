@@ -142,6 +142,15 @@ WALLED_OFF = 64.0
 DOOR_STUB = 2.0
 #: Layers of a blocked mask (``Room.footprint``).
 LAYERS = 6
+#: ``Room._joined`` (task 15): how far round the newly blocked cells (cells) the floor beside
+#: them must join up for the joined floor to be the old less them, and how many blocked masks
+#: it keeps the answer for, per graph.
+JOIN_NEAR = 8
+MEMO_STATES = 8
+#: ``Room._walls_near``: rooms with this many wall faces or fewer test them all; the slack (u,
+#: and on a normal's dot) past which no rounding tells a face in from out.
+WALLS_NEAR_MIN = 64
+NEAR_SLACK = 1e-6
 #: The gate's sample step (``analyzer.footprints.GATE_STEP``): its samples lie on odd world
 #: coordinates (``floor_samples`` anchors its grid at a multiple of the step).
 GATE_STEP = 2.0
@@ -540,6 +549,21 @@ def _door_stubs(ctx: RoomContext) -> List[Tuple[Tuple[float, float], Tuple[float
     return out
 
 
+def _fine_labels(free: np.ndarray, right: np.ndarray, up: np.ndarray) -> Tuple[np.ndarray, int]:
+    """The pieces of ``free`` joined by the steps ``right`` (cell (i, j) to (i + 1, j)) and
+    ``up`` ((i, j) to (i, j + 1)) with both ends free: (each cell's piece, 1 up in the order of
+    its first cell, 0 where not free; how many). Labelled side by side on a grid twice as fine,
+    each cell at an even place and each step at the odd place between its ends: a step's place
+    touches its two ends alone, so those pieces are the graph's own (task 15)."""
+    h, w = free.shape
+    fine = np.zeros((2 * h - 1, 2 * w - 1), bool)
+    fine[::2, ::2] = free
+    fine[1::2, ::2] = right & free[:-1, :] & free[1:, :]
+    fine[::2, 1::2] = up & free[:, :-1] & free[:, 1:]
+    lab, n = label(fine)
+    return lab[::2, ::2], int(n)
+
+
 def _segment_distance(gx, gy, ax: float, ay: float, bx: float, by: float) -> np.ndarray:
     """Each grid point's distance (u) to the segment a..b."""
     dx, dy = bx - ax, by - ay
@@ -750,6 +774,8 @@ class Room:
         self.ceiling_props: List[Tuple[float, float]] = []
         #: Blocking floor Props' plans (corners) and Groups, for ``BLOCKING_GAP``.
         self.plans: List[Tuple[np.ndarray, Optional[int]]] = []
+        #: ``_joined``'s answers, per (graph, starts): (blocked, labels, joined, starts per piece).
+        self._memo: Dict[Tuple[int, int], list] = {}
         self._ea, self._eb = self._graph(self.walk)
         self.starts = self._starts(door_cells, self.walk, self._ea, self._eb)
         #: Where the way in is, for aiming Props: the doors' reached floor (else the starts).
@@ -816,9 +842,17 @@ class Room:
             joined |= set(int(v) for v in np.unique(lab[door & (lab >= 0)]))
         self.wide_islands = (lab >= 0) & ~np.isin(lab, sorted(joined))
         self.hollow_core = self._hollow_core()
-        self.faces = self._faces()
         self.wall_xy = np.array([(w.x, w.y) for w in ctx.walls]).reshape(-1, 2)
         self.wall_n = np.array([(w.nx, w.ny) for w in ctx.walls]).reshape(-1, 2)
+        #: The wall faces in order along the axis they spread most on, for ``_walls_near``.
+        self._wall_axis = int(np.ptp(self.wall_xy, axis=0).argmax()) if len(self.wall_xy) else 0
+        self._wall_order = np.argsort(self.wall_xy[:, self._wall_axis], kind="stable")
+        self._wall_key = self.wall_xy[self._wall_order, self._wall_axis]
+        self.faces = self._faces()
+        #: Each door's clear zone's joined floor, for ``problems``.
+        self._door_before = [None if d.clear is None else _in_rect(self.gx, self.gy, d.clear) & self.before
+                             for d in ctx.doors]
+        self._prop_array = (None, 0, None)
         #: The gate's own samples, one by each cell (within 1 u of its middle), for the POIs and
         #: the floor a Prop cuts off (``_gate_cut``):
         #: the cells grow a Prop by half a cell for the gate's samples but read a wall line at
@@ -891,7 +925,14 @@ class Room:
             up = mask[:, :-1] & mask[:, 1:] & (np.abs(f[:, :-1] - f[:, 1:]) <= rise)
         a.append(idx[:-1, :][right]); b.append(idx[1:, :][right])
         a.append(idx[:, :-1][up]); b.append(idx[:, 1:][up])
-        return np.concatenate(a), np.concatenate(b)
+        ea, eb = np.concatenate(a), np.concatenate(b)
+        # The same steps as grids, over the box holding ``mask``, for ``_components``.
+        rows, cols = np.nonzero(mask.any(axis=1))[0], np.nonzero(mask.any(axis=0))[0]
+        box = (slice(rows[0], rows[-1] + 1), slice(cols[0], cols[-1] + 1)) if len(rows) else None
+        if not hasattr(self, "_steps"):
+            self._steps = {}
+        self._steps[id(ea)] = (ea, right, up, box)
+        return ea, eb
 
     def _starts(self, door_cells: np.ndarray, mask, ea, eb) -> np.ndarray:
         s = door_cells & mask
@@ -914,25 +955,109 @@ class Room:
         return mask & (lab == int(counts.argmax()))
 
     def _components(self, blocked: np.ndarray, mask, ea, eb):
+        """The pieces of ``mask`` not blocked, joined by the steps ``ea``-``eb`` (``_graph``)
+        with both ends free: (how many, each cell's piece, flat). A piece's label is 1 up, in
+        the order of its first cell (flat); a cell not free is 0.
+
+        Labelled on a grid twice as fine (``_fine_labels``) over the box holding ``mask``: a
+        sparse graph over every cell of the grid took most of a giant District's build (task
+        15: a hall 3x long, its box mostly wall)."""
         nx, ny = self.shape
-        free = (mask & ~blocked).ravel()
-        keep = free[ea] & free[eb]
-        m = csr_matrix((np.ones(int(keep.sum()), np.int8), (ea[keep], eb[keep])),
-                       shape=(nx * ny, nx * ny))
-        return connected_components(m, directed=False)
+        _ea, right, up, box = self._steps[id(ea)]
+        out = np.zeros(nx * ny, np.int32)
+        if box is None:
+            return 0, out
+        rs, cs = box
+        free = (mask & ~blocked)[rs, cs]
+        lab, n = _fine_labels(free, right[rs.start:rs.stop - 1, cs], up[rs, cs.start:cs.stop - 1])
+        out.reshape(nx, ny)[rs, cs] = lab
+        return n, out
 
     def _joined(self, blocked: np.ndarray, loose: bool = False, graph=None,
                 starts=None) -> np.ndarray:
         """Reached floor (``walk``; ``loose``: all of ``ok``; or ``graph``'s) not blocked and
-        joined to a door (or a Site's approach; ``starts``, when given)."""
+        joined to a door (or a Site's approach; ``starts``, when given).
+
+        Worked out from a blocked mask read before when this one only adds to it
+        (``_joined_after``), else in full; each answer is kept (``_memo``) for the next. A
+        candidate Prop's mask is the room's so far plus its own plan, so a long hall's checks
+        stay local to the Prop (task 15)."""
         mask, ea, eb = graph or (self._loose if loose else (self.walk, self._ea, self._eb))
         if starts is None:
             starts = self._loose_starts if loose else self.starts
-        _n, lab = self._components(blocked, mask, ea, eb)
-        lab = lab.reshape(self.shape)
-        free = mask & ~blocked
-        good = np.unique(lab[starts & free])
-        return free & np.isin(lab, good)
+        memo = self._memo.setdefault((id(ea), id(starts)), [])
+        best, fewest = None, None
+        for ent in memo:
+            if (ent[0] & ~blocked).any():
+                continue
+            k = int(np.count_nonzero(blocked & ~ent[0]))
+            if fewest is None or k < fewest:
+                best, fewest = ent, k
+        got = self._joined_after(best, blocked, mask, ea, starts) if best is not None else None
+        if got is None:
+            n, lab = self._components(blocked, mask, ea, eb)
+            lab = lab.reshape(self.shape)
+            free = mask & ~blocked
+            good = np.zeros(n + 1, bool)
+            good[lab[starts & free]] = True
+            good[0] = False
+            got = (lab, free & good[lab], np.bincount(lab[starts & free], minlength=n + 1))
+        lab, joined, nstart = got
+        if best is None or joined is not best[2]:
+            memo.append((blocked.copy(), lab, joined, nstart))
+            del memo[:-MEMO_STATES]
+        return joined.copy()
+
+    def _joined_after(self, ent, blocked: np.ndarray, mask, ea, starts):
+        """``_joined``'s (labels, joined, starts per piece) for ``blocked``, from ``ent``, those
+        for a blocked mask ``blocked`` only adds to; None when it can't tell here.
+
+        Every piece of reached floor the newly blocked cells ``d`` stand on loses them and
+        keeps the rest whole when the floor beside ``d`` in it is still joined within a few
+        cells of ``d`` (each piece left after taking ``d`` out holds a cell beside ``d``); a
+        piece joined to a door then stays joined while a start of its own is free. Floor not
+        beside ``d`` is as it was. So the joined floor is the old less ``d``, exactly; where
+        the floor beside ``d`` doesn't join up nearby, or a piece loses its last start, the
+        caller works it out in full."""
+        b0, lab0, j0, nst0 = ent
+        free0 = mask & ~b0
+        d = blocked & free0
+        if not d.any():
+            return lab0, j0, nst0
+        nx, ny = self.shape
+        ii = np.nonzero(d.any(axis=1))[0]
+        jj = np.nonzero(d.any(axis=0))[0]
+        r0, r1 = max(int(ii[0]) - JOIN_NEAR, 0), min(int(ii[-1]) + JOIN_NEAR + 1, nx)
+        c0, c1 = max(int(jj[0]) - JOIN_NEAR, 0), min(int(jj[-1]) + JOIN_NEAR + 1, ny)
+        if (r1 - r0) * (c1 - c0) * 4 > nx * ny:
+            return None                     # most of the grid: no saving
+        _ea, right, up, _box = self._steps[id(ea)]
+        f0, dw = free0[r0:r1, c0:c1], d[r0:r1, c0:c1]
+        rw = right[r0:r1 - 1, c0:c1] & f0[:-1, :] & f0[1:, :]
+        uw = up[r0:r1, c0:c1 - 1] & f0[:, :-1] & f0[:, 1:]
+        free = f0 & ~dw
+        beside = np.zeros(dw.shape, bool)       # free cells a step from a cell of d
+        beside[:-1, :] |= rw & dw[1:, :]
+        beside[1:, :] |= rw & dw[:-1, :]
+        beside[:, :-1] |= uw & dw[:, 1:]
+        beside[:, 1:] |= uw & dw[:, :-1]
+        beside &= free
+        lw0 = lab0[r0:r1, c0:c1]
+        if beside.any():
+            local, _n = _fine_labels(free, right[r0:r1 - 1, c0:c1], up[r0:r1, c0:c1 - 1])
+            pairs = np.unique(np.stack([lw0[beside], local[beside]]), axis=1)
+            if len(np.unique(pairs[0])) != pairs.shape[1]:
+                return None                 # a piece the cells beside d don't join nearby
+            pieces = pairs[0]
+        else:
+            pieces = np.zeros(0, lab0.dtype)
+        lost = np.bincount(lw0[dw & starts[r0:r1, c0:c1]], minlength=len(nst0))
+        nst = nst0 - lost
+        if ((nst0[pieces] > 0) & (nst[pieces] == 0)).any():
+            return None                     # a piece left without a start of its own
+        lab = lab0.copy()
+        lab[d] = 0
+        return lab, j0 & ~d, nst
 
     def _diag_steps(self, mask: np.ndarray):
         """The corner-to-corner steps between cells of ``mask`` rising at most ``STEP_UP``:
@@ -1248,7 +1373,7 @@ class Room:
         for k, d in enumerate(self.ctx.doors):
             if d.clear is None:
                 continue
-            c = _in_rect(self.gx, self.gy, d.clear) & self.before
+            c = self._door_before[k]
             if c.any() and not (c & after).any():
                 out.append(f"door {k} ({d.side}) no longer reached")
         for k, p in enumerate(self.ctx.pois):
@@ -1334,6 +1459,40 @@ class Room:
                 return float(self.floor[i, j])
         return None
 
+    def wall_prop_near(self, x: float, y: float, half: float, light: bool, spacing: float) -> bool:
+        """Is a wall Prop up nearer (x, y) than ``spacing`` (a light by a light), else than
+        their half-spans and ``GAP``? Read on the few within that each way (task 15: a giant
+        District's hall holds hundreds of lights, and every wall face was read against all)."""
+        props = self.wall_props
+        if len(props) <= WALLS_NEAR_MIN:
+            return any(math.hypot(x - px, y - py) < (spacing if light and plight else half + ph + GAP)
+                       for px, py, ph, plight in props)
+        if self._prop_array[0] is not props or self._prop_array[1] != len(props):
+            self._prop_array = (props, len(props), np.array(props, dtype=np.float64).reshape(-1, 4))
+        a = self._prop_array[2]
+        reach = np.where((a[:, 3] != 0) & light, spacing, half + a[:, 2] + GAP) + NEAR_SLACK
+        k = np.nonzero((np.abs(a[:, 0] - x) < reach) & (np.abs(a[:, 1] - y) < reach))[0]
+        return any(math.hypot(x - px, y - py) < (spacing if light and plight else half + ph + GAP)
+                   for px, py, ph, plight in (props[i] for i in k))
+
+    def _walls_near(self, x: float, y: float, reach: float, n: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """The wall faces' (middles, normals) a test of faces within ``reach`` of (x, y) whose
+        normal turns from ``n`` (``hypot <= reach``, ``normal @ n < 0.5``) reads the same on as
+        on all of them, in the same order (task 15: a giant District's hall has 13,000). All of
+        them when a face nearby is within a hair of either bound, so no rounding can tell."""
+        if len(self.wall_xy) <= WALLS_NEAR_MIN:
+            return self.wall_xy, self.wall_n
+        c = (x, y)[self._wall_axis]
+        lo, hi = np.searchsorted(self._wall_key, (c - reach - NEAR_SLACK, c + reach + NEAR_SLACK))
+        k = np.sort(self._wall_order[lo:hi])
+        other = 1 - self._wall_axis
+        k = k[np.abs(self.wall_xy[k, other] - (x, y)[other]) <= reach + NEAR_SLACK]
+        xy, wn = self.wall_xy[k], self.wall_n[k]
+        if (np.abs(np.hypot(xy[:, 0] - x, xy[:, 1] - y) - reach) <= NEAR_SLACK).any() or \
+                (np.abs(wn[:, 0] * n[0] + wn[:, 1] * n[1] - 0.5) <= NEAR_SLACK).any():
+            return self.wall_xy, self.wall_n
+        return xy, wn
+
     def into_a_wall(self, w: WallFace, across: float, half: float) -> bool:
         """A wall Prop's plan on face ``w`` (``across`` off it, ``half`` either way along it)
         crosses another wall turned from it: at an inside corner its side would stand in the
@@ -1350,10 +1509,11 @@ class Room:
         along = np.linspace(-half, half, max(2, int(math.ceil(2 * half / EDGE_STEP)) + 1))
         corners = np.array([o + n * a + t * s for a in (0.0, across) for s in along])
         reach = half + across + WALL_TURN_NEAR
-        near = (np.hypot(*(self.wall_xy - o).T) <= reach) & (self.wall_n @ n < 0.5)
+        xy, wn = self._walls_near(w.x, w.y, reach, n)
+        near = (np.hypot(*(xy - o).T) <= reach) & (wn @ n < 0.5)
         if not near.any():
             return False
-        q, m = self.wall_xy[near], self.wall_n[near]
+        q, m = xy[near], wn[near]
         # each corner against each turned face near it (within the samples' step of it)
         rel = corners[:, None, :] - q[None, :, :]
         close = np.hypot(rel[..., 0], rel[..., 1]) <= WALL_TURN_NEAR
@@ -1399,8 +1559,6 @@ class Room:
         walls = self.ctx.walls
         if not walls:
             return []
-        pts = np.array([(w.x, w.y) for w in walls])
-        nrm = np.array([(w.nx, w.ny) for w in walls])
         out = []
         for k, w in enumerate(walls):
             floor = self._floor_in_front(w)
@@ -1408,8 +1566,10 @@ class Room:
                 continue
             dist = [_rect_dist(w.x, w.y, d.clear) for d in self.ctx.doors if d.clear]
             near = min(dist, default=1e9)
-            d2 = np.hypot(pts[:, 0] - w.x, pts[:, 1] - w.y)
-            turn = (d2 <= 8.0) & (nrm @ np.array([w.nx, w.ny]) < 0.5)
+            n = np.array([w.nx, w.ny])
+            p, m = self._walls_near(w.x, w.y, 8.0, n)
+            d2 = np.hypot(p[:, 0] - w.x, p[:, 1] - w.y)
+            turn = (d2 <= 8.0) & (m @ n < 0.5)
             out.append(_Face(w, floor, near < FRAME, bool(turn.any()), FRAME <= near <= 16.0))
         return out
 
@@ -1791,8 +1951,7 @@ class _Placer:
             if r.into_a_wall(w, across, half):
                 continue
             x, y = w.x + w.nx * off, w.y + w.ny * off
-            if any(math.hypot(x - px, y - py) < (spacing if light and plight else half + ph + GAP)
-                   for px, py, ph, plight in r.wall_props):
+            if r.wall_prop_near(x, y, half, light, spacing):
                 continue
             yaw = math.atan2(w.ny, w.nx) + turn
             blocks = _blocking(model) and z - sz.below < f.floor + HEAD_HEIGHT and z + sz.h > f.floor + STEP_UP
