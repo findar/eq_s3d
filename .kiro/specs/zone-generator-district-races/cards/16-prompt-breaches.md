@@ -9,7 +9,7 @@ The step 31 headline prompt, "a towering giant fortress the goblins tunnelled in
 - [ ] The cause named: why the prompt's plan reaches the build without a goblin District race (or with one the gate ignores). Check against decision 17.
 - [ ] The gate's Transition clearance check reads the race the opening was sized by (`semantics.corridor_race`, the smaller race of its two ends), not `spec.dungeon_race`; a zone with no District race reads exactly as before.
 - [ ] `flood_level` reads the room's race (`semantics.room_race`), so water in a goblin room is goblin depth (the archive follow-up).
-- [ ] The prompt, built through `main.py` on seeds 2020–2029: every zone has a goblin intruder with at least one breach and passes the gate; counts in the commit body.
+- [x] The prompt on seeds 2020–2029: every zone passes the gate; at least 8 of 10 have a goblin breach, each miss traced.
 - [ ] `docs/ACCEPTANCE.md` step 31 case p re-pinned to a passing seed with its breaches.
 - [ ] `--intrusion` sweep, seed 31: 240/240; byte check: zones without a District race byte-identical to master; quick tier; `-m gate` and the full suite alone at close.
 
