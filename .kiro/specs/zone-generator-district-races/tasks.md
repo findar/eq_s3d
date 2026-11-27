@@ -82,7 +82,7 @@ specs" in `.kiro/steering/project.md`.
 
 - [ ] 12. HUMAN: look
   - Card: [cards/12-look.md](cards/12-look.md)
-  - Type: human · Depends: 11
+  - Type: human · Depends: 11, 16
 
 - [ ] 13. Close step 31
   - Card: [cards/13-close.md](cards/13-close.md)
@@ -104,3 +104,11 @@ specs" in `.kiro/steering/project.md`.
   - Type: agent · Size: S · Depends: 8
   - Owns: generators/decor/placement.py, tests/test_decor_placement.py, generators/room_context.py
   - Reqs: 11
+
+## Added at task 11
+
+- [ ] 16. The giant fortress prompt builds its goblin breaches
+  - Card: [cards/16-prompt-breaches.md](cards/16-prompt-breaches.md)
+  - Type: agent · Size: M · Depends: 11
+  - Owns: analyzer/traverse.py (the Transition clearance check), generators/semantics.py (`flood_level`), ai/rule_planner.py, ai/expand.py, tests/test_district_races_words.py, tests/test_traverse_directed.py, docs/ACCEPTANCE.md (the step 31 prompt case)
+  - Reqs: 4, 10, 11
