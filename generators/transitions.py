@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, stair_layout
+from .geometry import OPENING_INTO_WALL, SEAM_END, MeshBuilder, bridge_layout, drop_end, stair_layout
 from .routing import (ENTRY_RUN, Hold, corridor_route, entry_line, held_entry_line, hold_route, path_zs, route_footprint, route_seed, scaled_tunnel,
                       split_path, strip_corners, wind_leg, wind_route, wind_seed)
 from .semantics import ROOM_TYPES, body_height, corridor_race
@@ -279,12 +279,21 @@ def draw_transition(cor: CorridorSpec, rooms, from_style, to_style, ends: Sequen
     finer_is_from = from_style.finish >= to_style.finish
     if breach_host is not None:
         finer_is_from = cor.from_room == breach_host     # the intruder broke into its host
+    # A drop's lower end is a ledge (district races Req 7): the gate walks a line through,
+    # so a line at a door stands at the corridor's flush end.
+    low = drop_end(cor, rooms)
+
+    def door(at_from: bool) -> Optional[_Line]:
+        if low == ("from" if at_from else "to"):
+            at_from = not at_from
+        return _door_line(legs, at_from, depth)
+
     if form == BREACH:
-        line = _door_line(legs, finer_is_from, depth)
+        line = door(finer_is_from)
     elif form == FRAME and (not plain or not differ):
-        line = _door_line(legs, True, depth) or _door_line(legs, False, depth)
+        line = door(True) or door(False)
     elif form in (SEAM, FRAME):
-        line = _middle_line(legs, depth, rng) or _door_line(legs, finer_is_from, depth)
+        line = _middle_line(legs, depth, rng) or door(finer_is_from)
     if form != NONE and line is None:
         form = NONE
     if form in (FRAME, BREACH) and _touches_a_room(cor, line, depth, rooms):
