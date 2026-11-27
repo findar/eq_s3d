@@ -71,7 +71,7 @@ specs" in `.kiro/steering/project.md`.
 
 - [ ] 10. Gate and bands
   - Card: [cards/10-gate.md](cards/10-gate.md)
-  - Type: agent · Size: S · Depends: 7, 8, 9, 14
+  - Type: agent · Size: S · Depends: 7, 8, 9, 14, 15
   - Owns: scripts/sweep_themed_navigability.py (an --intrusion option); fixes only where a failure is new (stop and report first)
   - Reqs: 11
 
@@ -96,3 +96,11 @@ specs" in `.kiro/steering/project.md`.
   - Type: agent · Size: M · Depends: 4, 5
   - Owns: generators/semantics.py (a per-room race helper, `_apply_shape`), generators/wall_styles.py, generators/room_layouts.py, generators/room_context.py, generators/transitions.py, tests/test_district_races.py
   - Reqs: 4
+
+## Added at task 10
+
+- [ ] 15. Decor placement time in giant Districts
+  - Card: [cards/15-decor-time.md](cards/15-decor-time.md)
+  - Type: agent · Size: S · Depends: 8
+  - Owns: generators/decor/placement.py, tests/test_decor_placement.py
+  - Reqs: 11
