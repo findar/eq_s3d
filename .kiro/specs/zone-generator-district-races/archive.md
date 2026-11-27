@@ -71,6 +71,18 @@
 - Flood depth and the gate's doorway check still read the zone's race (water at giant H would be over the player's head).
 - Same seed, different build: a race-less classic Districts zone differs in two decor entries and its `.zone.json` when
   another zone was built earlier in the same process (master too, found at task 14). Not this step's.
+- A districted generate whose first Draw and build take over 20 s gets one attempt (task 10): the
+  dungeon `DEFAULT_TIMEOUT_S` is 20 s and the CLI and Server pass none, so one gate reject ends it
+  (`GenerationFailed`, timed out). Districted builds take 30-100 s, giant Graph ones minutes
+  (task 15). Revisit after task 15.
+- `transitions._touches_a_room` compares exactly: a corridor leg running exactly
+  width/2 + `OPENING_INTO_WALL` off a room's wall reads 7e-15 u clear, so a frame stands with its
+  lintel's end in the wall plane and the room's Outline check finds an open seam (task 10, seed
+  1855283842 cave/giant + warren/goblin + fortress, graph flat 16, `corr_1` into `room_13`; also
+  sequential; not without races). Older than step 31; races only made the leg land there.
+- Two `--pair` seeds fail on master and on `070126c` alike (task 10): cave_first:sunken_ruin graph
+  moderate 24 s313486578 (room_10 floor walled off) and cave_second:ice_keep graph moderate 17
+  s1985365888 (room_11 footprint_cut, decor_0079). Step 22 had 552/552; they came in between.
 - A third District is breached too (`breach_hosts` takes every non-Threshold cross link), so some host rooms spill
   from it (dark elf, undead Sets) and not from the goblins (task 8). On master these zones already run over stock's
   p25-p75 decor band (per room about 11-15, light share about 0.6 against 2.9-6.8 and 0.21-0.45).
