@@ -75,11 +75,6 @@
   dungeon `DEFAULT_TIMEOUT_S` is 20 s and the CLI and Server pass none, so one gate reject ends it
   (`GenerationFailed`, timed out). Districted builds take 30-100 s, giant Graph ones minutes
   (task 15). Revisit after task 15.
-- `transitions._touches_a_room` compares exactly: a corridor leg running exactly
-  width/2 + `OPENING_INTO_WALL` off a room's wall reads 7e-15 u clear, so a frame stands with its
-  lintel's end in the wall plane and the room's Outline check finds an open seam (task 10, seed
-  1855283842 cave/giant + warren/goblin + fortress, graph flat 16, `corr_1` into `room_13`; also
-  sequential; not without races). Older than step 31; races only made the leg land there.
 - Two `--pair` seeds fail on master and on `070126c` alike (task 10): cave_first:sunken_ruin graph
   moderate 24 s313486578 (room_10 floor walled off) and cave_second:ice_keep graph moderate 17
   s1985365888 (room_11 footprint_cut, decor_0079). Step 22 had 552/552; they came in between.

@@ -49,6 +49,7 @@ BREACH_DEPTH_H = 0.3
 LEAST_HEAD = 8.0        # the gate's least headroom in u, whatever the race
 HEAD_SPARE = 1.0        # a lintel leaves this much more than the gate asks (u)
 CLEAR_OF_END = 3.0      # a corridor's end can stand this far into its room, so a line keeps past that (u)
+TOUCH_EPS = 1e-6        # a piece this close to a room counts as touching it: a leg laid exactly a reach off a wall reads 1e-14 u clear (u)
 # Winding (step 23), in u.
 PLAYER_HALF_WIDTH = 1.5     # a winding strip keeps this far off anything else (decor.placement's)
 WIND_Z_SPARE = 2.0          # things nearer than this above or below a leg count as beside it
@@ -229,7 +230,9 @@ def _touches_a_room(cor: CorridorSpec, line: _Line, depth: float, rooms) -> bool
     for room in rooms.values():
         (x0, y0, _), (x1, y1, _) = room.bounds
         a0, a1, c0, c1 = (x0, x1, y0, y1) if line.along_x else (y0, y1, x0, x1)
-        if along - depth <= a1 and along + depth >= a0 and across - reach <= c1 and across + reach >= c0:
+        e = TOUCH_EPS
+        if (along - depth <= a1 + e and along + depth >= a0 - e
+                and across - reach <= c1 + e and across + reach >= c0 - e):
             return True
     return False
 
