@@ -1715,6 +1715,12 @@ class LayoutGenerator:
             if assign[i] == assign[j]:
                 nbrs[i].add(j)
                 nbrs[j].add(i)
+        # A breach never takes a room past the quality bands' max_degree.
+        cap = self._breach_degree_cap(len(rooms), len(set(assign)))
+        deg = [0] * len(rooms)
+        for e in have:
+            for r in e:
+                deg[r] += 1
         added = False
         for p, c in part.thresholds:
             host, intruder = assign[p], assign[c]
@@ -1748,6 +1754,8 @@ class LayoutGenerator:
                         continue
                     if tier == 1 and (h in used or t in used):
                         continue
+                    if cap is not None and max(deg[h], deg[t]) + 1 > cap:
+                        continue
                     if self._is_stair(h, t):
                         continue
                     if abs(rooms[h].floor_z - rooms[t].floor_z) > self._edge_cap(rooms, h, t) + 1e-6:
@@ -1755,6 +1763,8 @@ class LayoutGenerator:
                     if blocked(h, t):
                         continue
                     edges.append((h, t))
+                    deg[h] += 1
+                    deg[t] += 1
                     have.add(frozenset((h, t)))
                     tried.add(frozenset((h, t)))
                     used |= {h, t}
@@ -1762,6 +1772,17 @@ class LayoutGenerator:
                     want -= 1
                     added = True
         return added
+
+    def _breach_degree_cap(self, n_rooms: int, n_districts: int) -> Optional[float]:
+        """The most corridors a breach may leave on a room: the quality bands' max_degree
+        for this zone (``generators.quality.bands_for``), the strictest across
+        verticalities (the layout isn't told one); None when unbounded."""
+        from . import quality
+        highs = [quality.bands_for(self.zone_type, self.engine.name, n_rooms, v,
+                                   n_districts)["max_degree"][1]
+                 for v in ("flat", "moderate", "dramatic")]
+        highs = [h for h in highs if h is not None]
+        return min(highs) if highs else None
 
     @staticmethod
     def _district_breaches(part, edges: List[Tuple[int, int]]) -> List[Tuple[int, int]]:

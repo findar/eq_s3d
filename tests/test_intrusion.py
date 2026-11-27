@@ -57,6 +57,23 @@ def test_new_breaches_fill_most_pairs(layout):
     assert multi >= 0.6 * pairs
 
 
+def test_breaches_keep_to_the_degree_band(monkeypatch):
+    """A new breach never takes a room past the quality bands' max_degree (task 10: graph
+    intrusion zones failed max_degree on 5.6 % of Draws), read from the band table."""
+    from generators import quality
+    gen = LayoutGenerator("dungeon", seed=2000, engine="graph")
+    assert gen._breach_degree_cap(16, 3) == quality.bands_for("dungeon", "graph", 16, "moderate", 3)["max_degree"][1]
+    assert LayoutGenerator("dungeon", seed=2000, engine="classic")._breach_degree_cap(16, 3) is None
+
+    def links(cap):
+        monkeypatch.setattr(LayoutGenerator, "_breach_degree_cap", lambda self, n, k: cap)
+        spec = LayoutGenerator("dungeon", seed=2003, engine="graph").generate(
+            "t", room_count=16, districts=True, district_plan=PLAN, district_relationship=INTRUSION)
+        by = {r.id: r.district for r in spec.rooms}
+        return sum(by[c.from_room] != by[c.to_room] for c in spec.corridors)
+
+    assert links(0) < links(None)       # at cap 0 no room can take a new breach
+
 graphs = st.integers(8, 30).flatmap(
     lambda n: st.tuples(st.just(n), st.integers(0, 2**31), st.integers(0, n - 1),
                         st.integers(2, 3), st.integers(0, 2**31)))
