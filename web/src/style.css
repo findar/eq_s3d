@@ -413,15 +413,35 @@ body.quality-degraded #hint-overlay { bottom: 64px; }
 }
 #map-dialog header a.secondary:hover { border-color: var(--accent); color: var(--text); }
 
+/* Map layers: a wrapping row of checkboxes under the header, the EQ view preset at its end.
+   The map below takes 72vh, leaving them room. */
+#map-layers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #1e2230;
+  font-size: 12px;
+  color: var(--muted);
+}
+#map-layers[hidden] { display: none; }
+#map-layers label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
+#map-layers label:has(input:checked) { color: var(--text); }
+#map-layers label:has(input:disabled) { opacity: 0.5; cursor: default; }
+#map-layers input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#map-layers button { margin-left: auto; padding: 4px 10px; font-size: 12px; }
+#map-layers button[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--accent-dim); }
+
 #map-body {
   padding: 14px;
   overflow: auto;
 }
-/* The map fills the window, as wide as 86vw or as tall as 78vh, whichever it meets first, and keeps
+/* The map fills the window, as wide as 86vw or as tall as 72vh (under the layer row), whichever it meets first, and keeps
    its shape (--map-aspect, set by openMap). It used to stop at its drawn size (720 px across). */
 #map-body svg {
   display: block;
-  width: min(86vw, calc(78vh * var(--map-aspect, 1.7)));
+  width: min(86vw, calc(72vh * var(--map-aspect, 1.7)));
   height: auto;
 }
 
