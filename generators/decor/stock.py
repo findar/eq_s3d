@@ -299,14 +299,14 @@ def load_catalogue(path: Path = CATALOGUE) -> Dict[str, dict]:
 
 class Importer:
     """Imports catalogue entries from the install at ``eq_path``, caching each archive it
-    reads and each model by (mesh hash, source archive)."""
+    reads and each model by its source actor (archive, WLD, actor name)."""
 
     def __init__(self, eq_path: Path | str, catalogue: Optional[Mapping[str, dict]] = None):
         self.eq_path = Path(eq_path)
         self.catalogue = catalogue if catalogue is not None else load_catalogue()
         self._files: Dict[str, Dict[str, bytes]] = {}
         self._wlds: Dict[Tuple[str, str], _Wld] = {}
-        self._models: Dict[Tuple[str, str], StockModel] = {}
+        self._models: Dict[Tuple[str, str, str], StockModel] = {}
 
     def archive_files(self, archive: str) -> Dict[str, bytes]:
         if archive not in self._files:
@@ -330,7 +330,12 @@ class Importer:
         if entry.get("animation", "static") == "skeletal":
             raise NotImportable(f"{key}: animated (skeletal), static models only")
         archive, wld = entry["source"]["archive"], entry["source"]["wld"]
-        cache = (entry["mesh_hash"], archive)
+        # Keyed by the actor, not by its mesh: ``mesh_hash`` leaves out the mesh's material
+        # list, so 124 groups of entries share a mesh under other textures (CRATEH's apples,
+        # CRATEI's beans; the gfaydark signs). Keyed by mesh, whichever was imported first in
+        # the process lent the rest its textures, so a build depended on what the process
+        # built before it (races-followups task 2).
+        cache = (archive, wld, entry["name"])
         hit = self._models.get(cache)
         if hit is None:
             try:
@@ -340,7 +345,7 @@ class Importer:
             except Exception as e:  # noqa: BLE001 - named, as a refusal
                 raise NotImportable(f"{key}: {e}") from e
             self._models[cache] = hit
-        if hit.key != key:   # same mesh under another name
+        if hit.key != key:   # the same actor under another catalogue key
             hit = StockModel(key, model_file(key), _renamed(hit.ter, model_file(key)),
                              hit.textures, hit.archive, hit.wld, hit.mesh_hash)
         return hit
