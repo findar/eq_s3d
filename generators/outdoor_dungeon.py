@@ -144,6 +144,22 @@ MOUTH_RATIO_RANGE: Tuple[float, float] = (0.25, 1.97)
 #: Tunnel's height at a time, then at the Tunnel's height.
 MOUTH_HEIGHT_STEPS: Tuple[float, ...] = (1.0, 0.5)
 
+#: The kinds of way in (step 35 Req 6): the Mouth, and the cliff opening (task 12).
+KIND_MOUTH = "mouth"
+KIND_CLIFF = "cliff_opening"
+#: A cliff opening's height over its width (step 35 task 12): stock cliff openings 32-96 u
+#: wide (``scripts/stock_outdoor_area.py``, n=34) measure p10/p50/p90 0.48/1.65/4.43; drawn
+#: in that range with half the draws under the p50, as the Mouth's (:func:`draw_cliff_ratio`).
+#: Its width is drawn as the Mouth's (stock cliff openings p50 47 u, mouths 48 u).
+CLIFF_RATIO: float = 1.65
+CLIFF_RATIO_RANGE: Tuple[float, float] = (0.48, 4.43)
+#: A cliff opening opens straight onto the scarp's foot: its Apron may lower the ground in
+#: front by at most this (u), so it never digs an approach trench.
+CLIFF_DIG: float = 1.0
+#: A cliff opening the face can't cover all the way is tried at these shares of the way
+#: from the Tunnel's height to the tallest the portal's cover allows.
+CLIFF_HEIGHT_STEPS: Tuple[float, ...] = (1.0, 0.75, 0.5, 0.25, 0.0)
+
 _SIDE_STEP = {"N": (0.0, 1.0), "S": (0.0, -1.0), "E": (1.0, 0.0), "W": (-1.0, 0.0)}
 
 
@@ -252,6 +268,37 @@ def approach_foot(landform: Landform) -> Tuple[float, float]:
     dx, dy = _SIDE_STEP[landform.approach]
     reach = landform.radius + landform.flank
     return landform.centre[0] + dx * reach, landform.centre[1] + dy * reach
+
+
+def scarp_foot(land) -> Tuple[float, float]:
+    """Where a scarp host's face meets the level ground at its foot (step 35 task 12), on
+    the landscape's own grid: the first cell past the run of ``cliff`` cells met going out
+    from the hill's centre along its approach, on the centre's line. The synth tiles each
+    matrix cell into whole fine cells, so the face can stand a little past
+    :func:`approach_foot`; the Socket (the Envelope's entry, its ``z`` the floor the way in
+    opens onto) is the ground a cell in front of the face, not on top of it. Falls back to
+    :func:`approach_foot` when the line meets no cliff."""
+    landform = land.matrix.landform
+    dx, dy = (int(v) for v in _SIDE_STEP[landform.approach])
+    origin, res = land.synth.origin, float(land.synth.resolution)
+    node_type = land.synth.node_type
+    nx, ny = node_type.shape
+    i = int((landform.centre[0] - origin[0]) // res)
+    j = int((landform.centre[1] - origin[1]) // res)
+    seen = False
+    while 0 <= i < nx and 0 <= j < ny:
+        if node_type[i, j] == "cliff":
+            seen = True
+        elif seen:
+            # One cell out from the face, so the ground read there is the foot's alone.
+            x, y = landform.centre
+            if dx:
+                x = origin[0] + (i + 0.5 + 0.5 * dx) * res
+            else:
+                y = origin[1] + (j + 0.5 + 0.5 * dy) * res
+            return float(x), float(y)
+        i, j = i + dx, j + dy
+    return approach_foot(landform)
 
 
 def level_height(race: str = "") -> float:
@@ -428,6 +475,11 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     # The Mouth's width (step 35 task 5): None is the one-cell Mouth.
     mouth_width = kwargs.pop("mouth_width", None)
     mouth_ratio = kwargs.pop("mouth_ratio", None)
+    # A cliff opening's height to width (step 35 task 12), for a host with a scarp: the
+    # plan's, else drawn from the seed.
+    cliff_ratio = kwargs.pop("cliff_ratio", None)
+    if cliff_ratio is None:
+        cliff_ratio = draw_cliff_ratio(seed)
     records = (errors, no_tunnel, crossing)
 
     def plan(k: int, drop_rooms: bool):
@@ -464,7 +516,8 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
         try:
             planned = layout, warnings, plan_entrance(socket, grid, layout, room_id=first,
                                                               mouth_width=mouth_width,
-                                                              mouth_ratio=mouth_ratio)
+                                                              mouth_ratio=mouth_ratio,
+                                                              cliff_ratio=cliff_ratio)
         except EntranceError as e:
             errors[k] = e
             no_tunnel[k] = (layout, warnings, first)
@@ -687,7 +740,7 @@ def hillside_socket(land, heights: np.ndarray) -> Dict:
         raise ValueError("a hillside Socket needs a landscape with a Landform")
     origin = (float(land.synth.origin[0]), float(land.synth.origin[1]))
     res = float(land.synth.resolution)
-    foot = approach_foot(landform)
+    foot = scarp_foot(land) if landform.scarp else approach_foot(landform)
     dx, dy = _SIDE_STEP[landform.approach]
     keep = undiggable(land.synth.node_type, heights.shape)
     return {"x": foot[0], "y": foot[1],
@@ -728,12 +781,16 @@ class Entrance:
     mouth: Optional[Tuple[float, float]] = None
     tunnel_width: Optional[float] = None
     mouth_height: Optional[float] = None
+    kind: str = "mouth"
 
     def to_dict(self) -> Dict:
         d = {"room": self.room_id, "side": self.side, "axis": self.axis,
              "outward": self.outward, "cross": self.cross, "portal": self.portal,
              "wall": self.wall, "room_floor": self.room_floor,
              "floor": self.floor, "height": self.height}
+        # A Mouth's record is as it was before step 35 task 12 (its specs keep their bytes).
+        if self.kind != KIND_MOUTH:
+            d["kind"] = self.kind
         if self.mouth is not None:
             d["mouth"] = [float(self.mouth[0]), float(self.mouth[1])]
             d["tunnel_width"] = float(self.tunnel_width)
@@ -752,7 +809,8 @@ class Entrance:
                    mouth=None if mouth is None else (float(mouth[0]), float(mouth[1])),
                    tunnel_width=None if mouth is None else float(d["tunnel_width"]),
                    mouth_height=None if d.get("mouth_height") is None
-                   else float(d["mouth_height"]))
+                   else float(d["mouth_height"]),
+                   kind=str(d.get("kind", KIND_MOUTH)))
 
 
 class _Grid:
@@ -897,6 +955,24 @@ def draw_mouth_ratio(seed: Optional[int]) -> float:
     return math.exp(rng.uniform(math.log(a), math.log(b)))
 
 
+def draw_cliff_ratio(seed: Optional[int]) -> float:
+    """A cliff opening's height over its width for a dungeon laid out from ``seed`` (step 35
+    task 12): ``CLIFF_RATIO`` with no seed, else drawn in ``CLIFF_RATIO_RANGE`` with the p50
+    its median, log-uniform either side."""
+    if seed is None:
+        return CLIFF_RATIO
+    lo, hi = CLIFF_RATIO_RANGE
+    rng = random.Random(f"cliff-height:{int(seed)}")
+    a, b = (lo, CLIFF_RATIO) if rng.random() < 0.5 else (CLIFF_RATIO, hi)
+    return math.exp(rng.uniform(math.log(a), math.log(b)))
+
+
+def has_scarp(socket: Socket) -> bool:
+    """Does the ``hillside`` Socket's host hill end in a scarp (step 35 task 12,
+    ``matrix._place_scarp``)?"""
+    return bool(socket.ground.get("landform", {}).get("scarp"))
+
+
 def _mouth_heights(width: Optional[float], ratio: float, tunnel: float) -> List[Optional[float]]:
     """The portal heights ``plan_entrance`` tries at one Mouth ``width``, tallest first:
     ``ratio`` times the width (never under the Tunnel's ``tunnel`` height), then
@@ -1034,12 +1110,21 @@ def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
     (heights only fall; that edge's vertices sit at ``floor``). It stops at
     the first row whose notch vertices are already at or under the cone: the
     trench has met the ground. If it hasn't within ``APRON_REACH`` rows, the
-    second value is False and the Entrance is unusable."""
+    second value is False and the Entrance is unusable.
+
+    It is unusable too when the floor stands above the ground at that edge, or when the
+    ground falls away from the trench more steeply than ``MAX_GRADE`` from one row to the
+    next (step 35 task 12): a ledge over the ground in front. A hill's flank never does
+    this (seeds 1-30, three races: the steepest fall 18 u a cell against 20); a Mouth cut
+    into a scarp's face, over level ground, would."""
     ax, out = e.axis, e.outward
     lo, hi = mouth_geometry(grid, e).cols
     edge = grid.coord(ax, e.portal + out)
     c0, c1 = grid.coord(1 - ax, lo), grid.coord(1 - ax, hi)
     z = grid.z.copy()
+    if 0 <= e.portal + out < grid.size(ax) and any(
+            z[grid.ij(ax, e.portal + out, c)] < e.floor - 1e-6 for c in range(lo, hi + 1)):
+        return z, False
     for step in range(APRON_REACH + 1):
         k = e.portal + out * (1 + step)
         if not 0 <= k < grid.size(ax):
@@ -1047,7 +1132,7 @@ def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
         d = abs(grid.coord(ax, k) - edge)
         if step > 0 and all(z[grid.ij(ax, k, c)] <= e.floor + MAX_GRADE * d + 1e-6
                             for c in range(lo, hi + 1)):
-            return z, True
+            return z, not _apron_falls(grid, z, e, lo, hi, step)
         for c in range(lo - 1, hi + 2):
             if not 0 <= c < grid.size(1 - ax):
                 continue
@@ -1056,6 +1141,21 @@ def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
             ij = grid.ij(ax, k, c)
             z[ij] = e.floor if step == 0 and lo <= c <= hi else min(z[ij], cone)
     return z, False
+
+
+def _apron_falls(grid: _Grid, z: np.ndarray, e: Entrance, lo: int, hi: int,
+                 steps: int) -> bool:
+    """Whether the ground on the notch's columns ``lo..hi`` falls more than ``MAX_GRADE``
+    a cell between two rows, from the Apron's edge out to the row ``steps`` beyond it
+    where the trench met the ground (:func:`_apron`)."""
+    ax, out = e.axis, e.outward
+    fall = MAX_GRADE * grid.res + 1e-6
+    for step in range(steps):
+        k = e.portal + out * (1 + step)
+        if any(z[grid.ij(ax, k, c)] - z[grid.ij(ax, k + out, c)] > fall
+               for c in range(lo, hi + 1)):
+            return True
+    return False
 
 
 def _tunnel_covered(grid: _Grid, e: Entrance, cover: float) -> bool:
@@ -1108,7 +1208,8 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
                   rock_cover: Optional[float] = None,
                   room_id: Optional[str] = None,
                   mouth_width: Optional[float] = None,
-                  mouth_ratio: Optional[float] = None) -> Entrance:
+                  mouth_ratio: Optional[float] = None,
+                  cliff_ratio: Optional[float] = None) -> Entrance:
     """The Entrance with the least Apron digging, over every room wall facing
     the approach (only room ``room_id``'s when given), every strip that fits
     in its wall and every portal row.
@@ -1129,6 +1230,13 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
     flare; at each width, a portal that can't keep the Rock_Cover is tried lower
     (:func:`_mouth_heights`), down to the Tunnel's height.
 
+    A host hill with a scarp (:func:`has_scarp`, step 35 task 12) is tried for a cliff
+    opening first, at the same widths: ``cliff_ratio`` times its width tall
+    (``CLIFF_RATIO`` when None), or as tall as the face over it keeps the Rock_Cover (never
+    under the Tunnel's height), its portal in the scarp's face and its floor no higher than
+    the ground at the foot, which its Apron lowers by at most ``CLIFF_DIG``. Only when no
+    wall gives one is a Mouth planned.
+
     ``host`` and ``terrain`` are as :func:`plan_dungeon` takes them: the
     approach side, the undiggable cells and (unless ``rock_cover`` is given)
     the Rock_Cover are the Socket's."""
@@ -1141,6 +1249,14 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
     ratio = MOUTH_RATIO if mouth_ratio is None else float(mouth_ratio)
     tunnel_height = semantics.corridor_size(race)[1]
     error = None
+    if mouth_width is not None and has_scarp(socket):
+        tall = CLIFF_RATIO if cliff_ratio is None else float(cliff_ratio)
+        for width in _mouth_widths(mouth_width, race)[:-1]:
+            try:
+                return _plan_entrance_at(socket, grid, dungeon, rock_cover, room_id, width,
+                                         max(tunnel_height, tall * width), cliff=True)
+            except EntranceError as e:
+                error = e
     for width in _mouth_widths(mouth_width, race):
         for height in _mouth_heights(width, ratio, tunnel_height):
             try:
@@ -1153,9 +1269,10 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
 
 def _plan_entrance_at(socket: Socket, grid: _Grid, dungeon: ZoneSpec, rock_cover: float,
                       room_id: Optional[str], width: Optional[float],
-                      height: Optional[float] = None) -> Entrance:
+                      height: Optional[float] = None, cliff: bool = False) -> Entrance:
     """:func:`plan_entrance` at one Mouth ``width`` (None: the one-cell Mouth) and portal
-    ``height`` (None: the Tunnel's)."""
+    ``height`` (None: the Tunnel's); with ``cliff``, a cliff opening's (no higher than the
+    ground in front, digging at most ``CLIFF_DIG``)."""
     side = socket.side
     ax, out = _RUN[side]
     keep = undiggable_mask(socket, grid.z.shape)
@@ -1202,15 +1319,37 @@ def _plan_entrance_at(socket: Socket, grid: _Grid, dungeon: ZoneSpec, rock_cover
                 if run < MIN_TUNNEL:
                     continue
                 top = min(grid.z[grid.ij(ax, m, c)] for c in range(lo, hi + 1))
-                floor = min(float(top) - (height or h) - rock_cover,
-                            room.floor_z + MAX_GRADE * run)
-                if floor < room.floor_z - MAX_GRADE * run:
-                    continue
-                e = Entrance(room.id, side, ax, out, q, m, wall, room.floor_z, floor, h,
-                             mouth=mouth, tunnel_width=tunnel_width,
-                             mouth_height=height if mouth is not None and height
-                             and height > h + 1e-9 else None)
-                if not _tunnel_covered(grid, e, rock_cover):
+                if cliff:
+                    # Straight out onto the ground at the foot, never above it, and as tall
+                    # as asked or as the face over it keeps the Rock_Cover (the portal's,
+                    # then the Tunnel's all the way: tried lower in CLIFF_HEIGHT_STEPS),
+                    # never under the Tunnel's height.
+                    foot = min(float(grid.z[grid.ij(ax, m + out, c)]) for c in range(lo, hi + 1))
+                    most = min(float(height or h), float(top) - rock_cover - foot)
+                    if most < h - 1e-9:
+                        continue
+                    talls = [h + (most - h) * s for s in CLIFF_HEIGHT_STEPS]
+                else:
+                    talls = [height]
+                e = None
+                for tall in talls:
+                    if cliff:
+                        floor = min(foot, float(top) - tall - rock_cover,
+                                    room.floor_z + MAX_GRADE * run)
+                    else:
+                        floor = min(float(top) - (tall or h) - rock_cover,
+                                    room.floor_z + MAX_GRADE * run)
+                    if floor < room.floor_z - MAX_GRADE * run:
+                        continue
+                    e = Entrance(room.id, side, ax, out, q, m, wall, room.floor_z, floor, h,
+                                 mouth=mouth, tunnel_width=tunnel_width,
+                                 mouth_height=tall if mouth is not None and tall
+                                 and tall > h + 1e-9 else None,
+                                 kind=KIND_CLIFF if cliff else KIND_MOUTH)
+                    if _tunnel_covered(grid, e, rock_cover):
+                        break
+                    e = None
+                if e is None:
                     continue
                 g = mouth_geometry(grid, e)
                 strips = [_strip_rect(ax, wall, g.portal, c0, c1)]
@@ -1226,6 +1365,8 @@ def _plan_entrance_at(socket: Socket, grid: _Grid, dungeon: ZoneSpec, rock_cover
                     continue
                 dug = grid.z - apron
                 if (dug[keep] > 1e-6).any():
+                    continue
+                if cliff and float(dug.max()) > CLIFF_DIG:
                     continue
                 cost = float(np.sum(dug))
                 candidates.append((cost, len(candidates), e))
@@ -1693,6 +1834,7 @@ def sidecar_block(spec: ZoneSpec) -> Dict:
         "entrances": [{
             "tunnel_id": "tunnel_0",
             "room": e.room_id,
+            "kind": e.kind,
             "side": e.side,
             "apron_centre": point(coord(e.axis, e.portal + e.outward), mid, e.floor),
             "mouth": {"centre": point(coord(e.axis, e.portal), mid, e.floor + g.heights[1] / 2),

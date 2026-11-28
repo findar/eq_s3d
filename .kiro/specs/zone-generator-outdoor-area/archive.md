@@ -44,8 +44,18 @@
    40 u cell), flaring at most 45 degrees to the drawn width; the ceiling rises over the flare to height/width drawn
    0.25-1.97, p50 0.61 (stock rock mouths 32-96 u wide, n=74, `stock_outdoor_area.py`; cliff openings 1.65 p50, for
    task 12). Too tall to cover: halfway down, then the Tunnel's height; too wide: 0.8 narrower, then one cell.
+7. **The scarp is the area's, the cliff opening the dungeon's** (task 12, the lead's option 2). The host Landform
+   may carry a scarp (`Landform.scarp`), drawn on its own stream at `SCARP_SHARE` = 46/131 (decision 2's widest way
+   per interior, mouth against cliff opening). The scarp is a frozen ~110 u face on the approach side, over a frozen
+   level foot, with its top 10 u under the crown behind it. The dungeon cuts a cliff opening into it, else a Mouth:
+   - the floor is at the foot, and the Apron digs at most 1 u;
+   - height/width is drawn 0.48-4.43 (p50 1.65), capped by the face;
+   - no Apron may rise to its floor or fall more than `MAX_GRADE` a cell.
+   Synth tiles a 150 u matrix cell as 160 u, so the Socket reads the foot off the field (`scarp_foot`).
 
 ## Follow-ups
+- Giant and dragon cliff openings are squat (200-300 u wide, 65-86 u tall, height/width ~0.3 vs stock p10 0.48):
+  the scarp's ~110 u face caps them. A scarp scaled to the race's Mouth would fix it (task 12).
 - Steps 5 and 10's surveys (`outdoor_dungeon_survey.py`, `site_survey.py`) take a zone's main ground as the largest
   network by area, which in some zones is a flat sheet under the map (steamfont z -232, fieldofbone z -279);
   task 1's script picks by face count. Step 10's site densities may be off (task 1, not checked).

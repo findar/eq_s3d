@@ -20,7 +20,9 @@ See the design's "Component: the Design_Matrix IR" section for the exact shapes.
 
 from __future__ import annotations
 
+import copy
 import math
+import random
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -192,6 +194,11 @@ class Landform:
     is kept open (no cliff or lava). As a request, ``approach`` may be ``None``
     (the seed picks) and ``centre`` is ignored; the matrix stores the placed
     Landform with both resolved.
+
+    ``scarp`` (a hill only, step 35 task 12): the hill ends on its approach side in a
+    sheer face over level ground, the way a stock cliff opening's host does
+    (:func:`_place_scarp`). As a request, ``None`` lets the seed draw it
+    (``SCARP_SHARE``); the placed Landform says whether it was drawn and fitted.
     """
 
     kind: str
@@ -200,6 +207,7 @@ class Landform:
     flank: float
     approach: Optional[str] = None
     centre: Tuple[float, float] = (0.0, 0.0)
+    scarp: Optional[bool] = False
 
     def __post_init__(self):
         sign = LANDFORM_KINDS.get(self.kind)
@@ -224,16 +232,23 @@ class Landform:
         return self.relief * t * t * (3.0 - 2.0 * t)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"kind": self.kind, "radius": self.radius, "relief": self.relief,
-                "flank": self.flank, "approach": self.approach,
-                "centre": list(self.centre)}
+        d = {"kind": self.kind, "radius": self.radius, "relief": self.relief,
+             "flank": self.flank, "approach": self.approach,
+             "centre": list(self.centre)}
+        # Recorded only when not the default (no scarp), so records without one keep
+        # their bytes.
+        if self.scarp is not False:
+            d["scarp"] = self.scarp
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Landform":
+        scarp = data.get("scarp", False)
         return cls(kind=data["kind"], radius=float(data["radius"]),
                    relief=float(data["relief"]), flank=float(data["flank"]),
                    approach=data.get("approach"),
-                   centre=tuple(float(v) for v in data.get("centre", (0.0, 0.0))))
+                   centre=tuple(float(v) for v in data.get("centre", (0.0, 0.0))),
+                   scarp=None if scarp is None else bool(scarp))
 
 
 #: The outdoor dungeon's default Host_Hill (design finding 4): a footprint of
@@ -241,7 +256,27 @@ class Landform:
 #: zone that leaves an open approach on one side and runs into the rim on the
 #: other. A 200 u flank came within 0.3 u of the walkable step on the built
 #: field (41 seeds x 4 edge sets); 300 u leaves ~2 u of margin.
-DEFAULT_HOST_HILL = Landform(kind="hill", radius=250.0, relief=120.0, flank=300.0)
+#: Its scarp is the area's draw (step 35 task 12): ``None``, so each seed draws it.
+DEFAULT_HOST_HILL = Landform(kind="hill", radius=250.0, relief=120.0, flank=300.0,
+                             scarp=None)
+#: How often a host hill draws a scarp (step 35 task 12, archive decision 2): stock rock
+#: interiors whose widest way in is a cliff opening against those whose widest is a mouth,
+#: 46 / (85 + 46). The two kinds the outdoor dungeon builds; sinkholes and ravines (23, 9)
+#: would need ground the hill doesn't have, so they are left out of the share.
+SCARP_SHARE: float = 46.0 / (85.0 + 46.0)
+#: Synth's coarse height target for a ``cliff`` cell is this plus the cell's relief
+#: (``synth._coarse_height_targets``).
+SCARP_STEP: float = 120.0
+#: The scarp's target over the hill's relief: erosion wears its top down to about the
+#: crown behind it (default hill: 101-108 u against the crown's 101-108).
+SCARP_RISE: float = 20.0
+#: The scarp's frozen top under the crown behind it (each lane's own), so its top blends
+#: back into the hill at a walkable slope.
+SCARP_DROP: float = 10.0
+#: The most relief the foot's cells may keep: the face stands where the flank has run out.
+SCARP_FOOT: float = 2.0
+#: The least relief, as a share of the hill's, of the crown behind a lane of the face.
+SCARP_CROWN: float = 0.75
 #: The outdoor dungeon's zone size (Open question 2 answer).
 OUTDOOR_DUNGEON_ZONE_SIZE: float = 1200.0
 
@@ -1001,7 +1036,7 @@ def build_matrix(
     if landform is not None:
         landform, spawn, reserved = _place_landform(
             landform, rng, cells, interior, nx, ny, cell_size, origin,
-            resolved_edges)
+            resolved_edges, seed)
 
     # --- step 2: derive terrain regions WITHIN the plains interior -------
     # The interior stays plains-LED: each derived region is bounded to a small
@@ -1134,9 +1169,85 @@ _OPPOSITE: Dict[str, str] = {"N": "S", "S": "N", "E": "W", "W": "E"}
 _LANDFORM_CLEAR_TYPES = frozenset({"zoneline_gap", "water", "river"})
 
 
+def _place_scarp(placed: Landform, cells, interior, nx: int, ny: int, cell_size: float,
+                 origin: Tuple[float, float], spawn: Tuple[int, int], reserved: set) -> bool:
+    """Give a placed hill its scarp (step 35 task 12): a sheer face on its approach side
+    over level ground, as stock cliff openings' hosts have (``scripts/stock_outdoor_area.py``:
+    the ground 24-96 u out level with the opening's floor, p50 within 9 u; the rock 24 u in
+    p10/p50 90/177 u over it). Returns whether it was placed.
+
+    The scarp's cells are a row across the approach, as far as ``radius`` either side of
+    the centre and only where the hill behind is near its full relief (``SCARP_CROWN``).
+    They stand on the first matrix cell edge past ``radius + flank / 2`` from the centre
+    (the Envelope's footprint) whose cells in front (the foot) the flank has run out over
+    (relief at most ``SCARP_FOOT``); the row between the crown and them, if any, is raised
+    to the crown's relief (a spur of the crown). They become ``cliff`` cells (scenic, so
+    the walkability relax and smoothing leave them steep), frozen at the crown's relief
+    behind them less ``SCARP_DROP``, so no erosion slumps the face and its top meets the
+    crown. The foot is frozen flat at its own level, so the ground in front is level. Not
+    placed (nothing changed) unless every one of those cells is interior plains and every
+    playable cell stays reachable
+    from Spawn."""
+    if placed.kind != "hill":
+        return False
+    di, dj = _SIDE_STEP[placed.approach]
+    axis, sign = (0, di) if di else (1, dj)
+    across = 1 - axis
+    face = placed.centre[axis] + sign * (placed.radius + placed.flank / 2.0)
+    edge = int(math.ceil((face - origin[axis]) / cell_size - 1e-9)) if sign > 0 else \
+        int(math.floor((face - origin[axis]) / cell_size + 1e-9))
+    first = edge - 1 if sign > 0 else edge          # the first scarp row tried
+    lo = placed.centre[across] - placed.radius
+    hi = placed.centre[across] + placed.radius
+    inner = set(interior)
+
+    def at(run: int, lane: int) -> Tuple[int, int]:
+        return (run, lane) if axis == 0 else (lane, run)
+
+    def plains(c) -> bool:
+        return c in inner and cells[c].node_type == "plains" and c != spawn
+
+    # Behind the face, the hill at its full relief: there the scarp's top meets the crown.
+    behind = first - sign
+    lanes = [k for k in range((nx, ny)[across])
+             if lo <= origin[across] + (k + 0.5) * cell_size <= hi
+             and at(behind, k) in inner
+             and cells[at(behind, k)].relief >= SCARP_CROWN * placed.relief]
+    if not lanes:
+        return False
+    back = first
+    while not all(at(back + sign, k) in inner and cells[at(back + sign, k)].relief <= SCARP_FOOT
+                  for k in lanes):
+        back += sign
+        if not all(plains(at(back, k)) for k in lanes):
+            return False
+    spur = [at(r, k) for r in range(first, back, sign) for k in lanes]
+    cliff = [at(back, k) for k in lanes]
+    feet = [at(back + sign, k) for k in lanes]
+    if not all(plains(c) for c in spur + cliff) or \
+            not all(c in inner and cells[c].node_type == "plains" for c in feet):
+        return False
+    saved = {c: copy.copy(cells[c]) for c in spur + cliff + feet}
+    crown = {k: cells[at(behind, k)].relief for k in lanes}
+    for c in spur:
+        cells[c].relief = crown[c[across]]
+    for c in cliff:
+        cells[c].node_type, cells[c].intent = "cliff", "scenic"
+        cells[c].relief = placed.relief + SCARP_RISE - SCARP_STEP
+        cells[c].frozen, cells[c].frozen_z = True, crown[c[across]] - SCARP_DROP
+    for c in feet:
+        cells[c].frozen, cells[c].frozen_z = True, ZONELINE_GAP_Z + cells[c].relief
+    if _stranded_playable(cells, nx, ny, spawn):
+        for c, cell in saved.items():
+            cells[c] = cell
+        return False
+    reserved.update(spur + cliff + feet)
+    return True
+
+
 def _place_landform(landform: Landform, rng, cells, interior, nx: int, ny: int,
                     cell_size: float, origin: Tuple[float, float],
-                    edges: List[EdgeConnection]):
+                    edges: List[EdgeConnection], seed: int = 0):
     """Place ``landform`` on the matrix: pick the approach side (if unset),
     centre the Landform one cell beyond the middle away from it, put Spawn on
     the approach side's inner ring, and give interior plains cells their
@@ -1181,6 +1292,15 @@ def _place_landform(landform: Landform, rng, cells, interior, nx: int, ny: int,
         if r and cells[i, j].node_type == "plains" and (i, j) != spawn:
             cells[i, j].relief = r
             reserved.add((i, j))
+    # The scarp (step 35 task 12): drawn on its own stream, so the matrix's draws after
+    # this one are the same with or without it.
+    scarp = placed.scarp
+    if scarp is None:
+        scarp = random.Random(f"scarp:{int(seed)}").random() < SCARP_SHARE
+    if scarp:
+        scarp = _place_scarp(placed, cells, interior, nx, ny, cell_size, origin, spawn,
+                             reserved)
+    placed = replace(placed, scarp=bool(scarp))
     # The approach: Spawn's column (or row) from Spawn to the Landform, and
     # one cell either side of it.
     ci, cj = spawn
