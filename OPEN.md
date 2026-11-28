@@ -26,15 +26,15 @@ recorded; "step N archive" is that step's `archive.md` "Follow-ups".
 | Pillar | Open | In flight | Parked | Waiting | Total | Already fixed |
 |---|---|---|---|---|---|---|
 | [P-1 Web app and controls](docs/pillars/P-1-web-app/OPEN.md) | 12 | 0 | 4 | 1 | 17 | 3 |
-| [P-2 Traversable](docs/pillars/P-2-traversable/OPEN.md) | 10 | 2 | 1 | 1 | 14 | 6 |
+| [P-2 Traversable](docs/pillars/P-2-traversable/OPEN.md) | 9 | 2 | 1 | 1 | 13 | 6 |
 | [P-3 Usable in RoF2 and EQEmu](docs/pillars/P-3-rof2-eqemu/OPEN.md) | 4 | 0 | 1 | 7 | 12 | 3 |
 | [P-4 True-layout artifacts](docs/pillars/P-4-true-layout/OPEN.md) | 3 | 1 | 0 | 1 | 5 | 3 |
-| [P-5 EverQuest look and feel](docs/pillars/P-5-look-and-feel/OPEN.md) | 29 | 0 | 3 | 5 | 37 | 15 |
+| [P-5 EverQuest look and feel](docs/pillars/P-5-look-and-feel/OPEN.md) | 29 | 0 | 4 | 5 | 38 | 15 |
 | [P-6 Iterative feedback](docs/pillars/P-6-iterative-feedback/OPEN.md) | 7 | 0 | 0 | 1 | 8 | 4 |
 | [P-7 Engaging every time](docs/pillars/P-7-engaging/OPEN.md) | 27 | 1 | 2 | 7 | 37 | 10 |
 | [P-8 World](docs/pillars/P-8-world/OPEN.md) | 3 | 0 | 0 | 1 | 4 | 1 |
 | [P-9 Engineering](docs/pillars/P-9-engineering/OPEN.md) | 9 | 5 | 2 | 0 | 16 | 3 |
-| **All** | **104** | **9** | **13** | **24** | **150** | **48** |
+| **All** | **103** | **9** | **14** | **24** | **150** | **48** |
 
 ## Waiting on the user
 
@@ -102,7 +102,7 @@ These need a decision or a look; nothing else unblocks them.
 | [P-2-2](docs/pillars/P-2-traversable/OPEN.md#p-2-2) | Seam rule joins floors with no wall test | open | [step 31 archive](.kiro/specs/zone-generator-district-races/archive.md) |
 | [P-2-3](docs/pillars/P-2-traversable/OPEN.md#p-2-3) | A solid Feature's hollow reads as floor | open | [step 29 archive](.kiro/specs/zone-generator-cave-clumps/archive.md) |
 | [P-2-4](docs/pillars/P-2-traversable/OPEN.md#p-2-4) | Three gate residuals (footprint cuts, seeds named) | open | steps [23](.kiro/specs/zone-generator-winding-tunnels/archive.md) and [26](.kiro/specs/zone-generator-winding-control/archive.md) archives |
-| [P-2-5](docs/pillars/P-2-traversable/OPEN.md#p-2-5) | cave classic dramatic 21 s1866540615 fails in a fresh process | open | steps [30](.kiro/specs/zone-generator-hall-length/archive.md) and [31](.kiro/specs/zone-generator-district-races/archive.md) archives |
+| [P-5-38](docs/pillars/P-5-look-and-feel/OPEN.md#p-5-38) | Decor cuts into a room floor (cave classic dramatic 21 s1866540615; moved from P-2-5: decor generation, not cave generation) | parked | steps [30](.kiro/specs/zone-generator-hall-length/archive.md) and [31](.kiro/specs/zone-generator-district-races/archive.md) archives |
 | [P-2-6](docs/pillars/P-2-traversable/OPEN.md#p-2-6) | Two `--pair` seeds fail on master | open | [step 31 archive](.kiro/specs/zone-generator-district-races/archive.md) |
 | [P-2-7](docs/pillars/P-2-traversable/OPEN.md#p-2-7) | 16-room Graph seed 26 open seam with Decor none | open | [step 11 archive](.kiro/specs/zone-generator-room-decor/archive.md) |
 | [P-2-8](docs/pillars/P-2-traversable/OPEN.md#p-2-8) | Thorough-profile failures (`test_raw_navigable`, `test_room_placement` f4, the tent, the outline at 300 examples) | open | steps [15](.kiro/specs/zone-generator-decor-rules/archive.md), [18](.kiro/specs/zone-generator-edits/archive.md)–[21](.kiro/specs/zone-generator-cave/archive.md) and [28](.kiro/specs/test-speed/archive.md) archives |
