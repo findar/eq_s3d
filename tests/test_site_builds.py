@@ -21,27 +21,29 @@ from generators.world import world_of
 import generators.wilderness.build as wb
 
 # .eqg[:-4] sha256 of master before task 7 (step 9), with the default trees.
-# A Sites ``none`` build must still give exactly these (Req 4.4, 9.2).
+# A Sites ``none`` build must still give exactly these (Req 4.4, 9.2). All three recaptured by
+# step 35 task 2 (the lava patch is drawn only for a lava theme).
 STEP9 = {
-    ("wild", 1955208177): "8aaf8daf8112fbf2d5a6ce2a02c7de3ee60496c33ca82f6d877f8ef66e1f7aa0",
-    ("wild", 31337): "413bbd2c9b4268d5c5efe2435ddb8317cb9e78472cf50d5d7f6c52117bba619e",
+    ("wild", 1955208177): "931c6f030cbfe6b7d84e82a1023a3dffb0e6426636812a9997f0524c4194668c",
+    ("wild", 31337): "682474b5adb2aa0b827ef16eef193ca5939ee180d978012822f820790e682c26",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape),
     # and by random placement task 11 (room footprints in stock's proportions).
-    ("od", 3): "dbed8a45903355bc19a47277107632b0f69378ea9bf8c1557ed37cb21d4a6324",
+    ("od", 3): "8be3f8bb1a5b339ba7b051aabe8966ce9aa5c1adc8e892be7ba06ff1deb895d3",
 }
 
 
 # .eqg[:-4] sha256 of Sites builds at step 10 (room-decor task 11): Decor ``none``
 # (and Decor left unset, which the builder takes as none) must still give these, Site
 # Props or not (room-decor Req 12.2, P11). Recaptured by site-sockets task 6 (Sites stand
-# on the World's points) and task 16 (the kind first, then the point).
+# on the World's points) and task 16 (the kind first, then the point). All three recaptured by
+# step 35 task 2 (the lava patch is drawn only for a lava theme).
 STEP10 = {
-    ("wild", 1955208177, "normal"): "fe855e0543925b4f76db2af32601d59300ac2d73ce651b5e91288673e415f0de",
-    ("wild", 31337, "dense"): "f2d5eb7a5430a9a3f4dc2a5e8c4b28c6e3fb6df3396d8859c2064d8acebdda67",
+    ("wild", 1955208177, "normal"): "df95b438d8d3bb9841b0f5d07210c20a912d8c98450058a8a897b3f399b8cb1c",
+    ("wild", 31337, "dense"): "5fc0a57ad38e61fb4a36a16fce78fdd12a6ffc82217f07eaa7f52e7f1c3691f7",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape), and by
     # site-sockets task 7 (Sites keep off the dungeon's rooms, not the hill), and by
     # random placement task 11 (room footprints in stock's proportions).
-    ("od", 1001, "dense"): "5183c39cf2bac5d1c5bfc4ba51dcf09de2f0d0808a9a608e9beedb712db0537e",
+    ("od", 1001, "dense"): "75cd1b1e78a194ed08b271f10d2d47147122e3a50cea2667ca6fa5ecc0111ba3",
 }
 
 

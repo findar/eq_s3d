@@ -67,22 +67,24 @@ _GOLDENS = {
     # Recaptured once, deliberately, by wilderness POIs task 7: the default
     # (Sites normal) build now packs Site Structures. Moved by tasks 15 and 10
     # (Site recipes and weights), by site-sockets task 6 (Sites on points)
-    # and task 16 (the kind first, then the point).
+    # and task 16 (the kind first, then the point), and by step 35 task 2 (the lava patch
+    # is drawn only for a lava theme).
     "wilderness": (
         dict(zone_type="wilderness"), 4,
-        "a948f132378258b14e6606cc06faf248f712cca2b7317e627ce5dda6c56fcc62",
-        "ac09fbe8d07be5b586c978cdcbedab2a27d7d42d6528927ab9e8bcb95cf119e5"),
+        "290ff9c47da0acb17cc4475e19f2704b7fb76f749101694640a7c2a64c4420fb",
+        "f02fc97f6997a0c91fc2c5a168e4c4a4358ef1ab05e8d9b19fbe029651bf1468"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).
     # Recaptured once more by world-sockets task 20: the spec's Spawn,
     # regions and materials now come from the placed hill's landscape. And by site-sockets
-    # task 7 (Sites keep off the dungeon's rooms, not the hill; one at Normal and Dense).
+    # task 7 (Sites keep off the dungeon's rooms, not the hill; one at Normal and Dense), and by
+    # step 35 task 2 (the lava patch is drawn only for a lava theme).
     "outdoor_dungeon": (
         dict(zone_type="outdoor_dungeon", room_count=5, locks=1,
              layout="classic"), 3,
-        "92a80b10116cec966346fd1a535ea61189a8b14388182c9efd6eb46ec156313d",
-        "7b6658b3b6f86615f3b0a5a8b7f40bbe31d96ffca8e69463d96f44f6d10436af"),
+        "40b27bfdbff57a4ddb0da11019d79cd9226c0841dd950f45ae23396554f5425c",
+        "26585a84ecb95b30b80e1a204cb6795ff2bccd1e285c1ae0bbf549e71f49d65a"),
 }
 
 # The .eqg goldens above are the bytes with no install. With one (EQ_PATH), a
@@ -91,7 +93,7 @@ _GOLDENS = {
 # don't move.
 WITH_INSTALL = {
     "temple_locks": "6642a351b56a4d0e433b9c2d4a44fcb9f969823625f51a7a9e71721c8ed8b21f",
-    "outdoor_dungeon": "c6ddbc38975912dcc59e429bcdc6bf849cbbdd961224b6a82e46c7a2b38dd39e",
+    "outdoor_dungeon": "c031ff54f64c765420fb5bb7d99c50dcbb2d648a7b5575e49f030112e0dafcd1",
 }
 
 
