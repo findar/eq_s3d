@@ -207,6 +207,9 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
    no gate rejection, 0-0.05% to save; decor 44%, finish 28%, gate 16%, plan 6%)*
 34. **Decor off by default** — a generate builds no decor unless a level is chosen (decor was 44% of
    generate time at step 33). The user: "since decor placement takes so much of build time, can we disable it for now? it's not critical at the moment since we only worry about room generation and can decorate and optimize that part later as well" Spec: `.kiro/specs/zone-generator-decor-off/`. *(In progress)*
+35. **Outdoor area first** — the area layer of the user's working order: a wilderness's size from stock and
+   the plan, themed ground features, a host hill sized to the dungeon it holds, wide Mouths and other ways in,
+   the landscape read once. After steps 32 and 34. Spec: `.kiro/specs/zone-generator-outdoor-area/`. *(Planned)*
 - **Docs refactor (beside step 33)** — pillars (the umbrella's P-A to P-G, plus World and Engineering),
   each with a plan, a living design, decisions and open items; one `OPEN.md`; a one-page roadmap.
   The user: "i also still want to revist the documentation refactor at some point soon so if possible do that in parallel" Spec: `.kiro/specs/project-docs/`. *(In progress)*
