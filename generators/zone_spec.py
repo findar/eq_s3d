@@ -207,6 +207,12 @@ class CorridorSpec:
     # upper end stays flush. 0 for every other corridor; the JSON carries it only when set.
     drop: float = 0.0
 
+    # A drop's flush return (step 32 task 3): the link ``layout._add_return`` laid from an
+    # intruder entered only by drops back to its host, so the player crosses the District to
+    # get out. Recorded where the layout lays it (``LayoutGenerator.drop_returns``) and read
+    # by the map, not inferred. Label only, never geometry; the JSON carries it only when set.
+    drop_return: bool = False
+
     # Back-compat: `floor_z` as an alias that sets both ends flat
     @property
     def floor_z(self) -> float:
@@ -304,10 +310,11 @@ def _room_dict(room: RoomSpec) -> Dict[str, Any]:
 
 def _corridor_dict(cor: CorridorSpec) -> Dict[str, Any]:
     """A corridor's JSON; ``side``, ``bridge``, ``rough``, ``wind``, ``path``, ``entry``,
-    ``transition``, ``threshold`` and ``drop`` only when set (step 6 corridors carry none of
-    them; ``wind`` only when a leg winds)."""
+    ``transition``, ``threshold``, ``drop`` and ``drop_return`` only when set (step 6 corridors
+    carry none of them; ``wind`` only when a leg winds)."""
     d = asdict(cor)
-    for key in ("side", "bridge", "rough", "path", "entry", "transition", "threshold", "drop"):
+    for key in ("side", "bridge", "rough", "path", "entry", "transition", "threshold", "drop",
+                "drop_return"):
         if not d.get(key):
             d.pop(key, None)
     if not any(d.get("wind") or ()):

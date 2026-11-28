@@ -194,10 +194,44 @@ def _room_corners(r) -> List[Tuple[float, float]]:
             (r.center_x + hw, r.center_y + hd), (r.center_x - hw, r.center_y + hd)]
 
 
-def _districts_group(spec: ZoneSpec, px, py, labelled: bool = False) -> str:
+# A District label's box (13 px bold sans with a 3 px halo): about 8 px a character, 12 px
+# above its baseline and 4 below. The legend is kept clear of it by ``_place_label``.
+_LABEL_CHAR = 8.0
+_LABEL_UP, _LABEL_DOWN, _LABEL_GAP = 12.0, 4.0, 4.0
+
+
+def district_label_box(x: float, y: float, text: str) -> Tuple[float, float, float, float]:
+    """The box (x0, y0, x1, y1, pixels) a District label drawn at ``(x, y)`` (centred, its
+    baseline at ``y``) covers."""
+    half = _LABEL_CHAR * len(text) / 2 + 2
+    return (x - half, y - _LABEL_UP, x + half, y + _LABEL_DOWN)
+
+
+def _overlaps(a, b) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _place_label(x: float, y: float, text: str, hull_bottom: float, w: float,
+                 avoid: Optional[Tuple[float, float, float, float]]) -> Tuple[float, float]:
+    """Where a District label goes (step 32 task 3): over its hull's top edge, kept inside the
+    map's width; where that would cover the legend (``avoid``, its box), just under the legend
+    while that is still above the hull's bottom, else just left of the legend."""
+    half = district_label_box(0.0, 0.0, text)[2]
+    x = min(max(x, half + 2), w - half - 2)
+    if avoid is None or not _overlaps(district_label_box(x, y, text), avoid):
+        return x, y
+    below = avoid[3] + _LABEL_UP + _LABEL_GAP
+    if below <= hull_bottom:
+        return x, below
+    return max(half + 2, avoid[0] - _LABEL_GAP - half), y
+
+
+def _districts_group(spec: ZoneSpec, px, py, labelled: bool = False, w: float = 0.0,
+                     avoid: Optional[Tuple[float, float, float, float]] = None) -> str:
     """One convex hull per District over its rooms' footprints, a light fill per District id
     (districts spec Req 6.2). Only drawn for a zone of two or more Districts. ``labelled`` (the
-    layered map) also names each District ("District 2 — tomb") over its hull's top edge."""
+    layered map) also names each District ("District 2 — tomb") over its hull's top edge, kept
+    clear of the legend's box ``avoid`` in a map ``w`` wide (``_place_label``)."""
     rooms_by_id = {r.id: r for r in spec.rooms}
     parts = ['<g id="districts">']
     labels: List[str] = []
@@ -217,8 +251,10 @@ def _districts_group(spec: ZoneSpec, px, py, labelled: bool = False) -> str:
                      f'stroke-width="1.5" stroke-dasharray="8 4" stroke-linejoin="round">'
                      f'<title>{_esc(district_label(d.id, d.purpose))}</title></polygon>')
         if labelled:
+            text = district_label(d.id, d.purpose)
             lx = sum(px(x) for x, _ in hull) / len(hull)
             ly = max(12.0, min(py(y) for _, y in hull) - 6)
+            lx, ly = _place_label(lx, ly, text, max(py(y) for _, y in hull), w, avoid)
             labels.append(f'<text class="district-label" data-district="{d.id}" x="{lx:.1f}" y="{ly:.1f}" '
                           f'fill="{colour}" font-size="13" font-weight="bold" font-family="sans-serif" '
                           f'text-anchor="middle" stroke="#0f0f16" stroke-width="3" paint-order="stroke">'
@@ -270,21 +306,15 @@ def race_colour(race: str) -> str:
 
 def link_kinds(spec: ZoneSpec) -> dict:
     """Each corridor joining two Districts: corridor id -> ``threshold``, ``breach`` or
-    ``return``. A return is a flush breach every other link of its District pair drops into
-    (``layout._add_return``'s case: the intruder's way back out)."""
+    ``return``. A return is the corridor the layout recorded as a drop's flush way back
+    (``CorridorSpec.drop_return``, set by ``layout._add_return``), never inferred."""
     rooms = {r.id: r for r in spec.rooms}
-    cross = {}
+    out = {}
     for c in spec.corridors:
         a, b = rooms.get(c.from_room), rooms.get(c.to_room)
-        if a is not None and b is not None and a.district != b.district:
-            cross[c.id] = (c, tuple(sorted((a.district, b.district))))
-    out = {}
-    for cid, (c, pair) in cross.items():
-        if c.threshold:
-            out[cid] = "threshold"
+        if a is None or b is None or a.district == b.district:
             continue
-        others = [o for o, p in cross.values() if p == pair and o.id != cid]
-        out[cid] = "return" if (not c.drop and others and all(o.drop for o in others)) else "breach"
+        out[c.id] = "threshold" if c.threshold else "return" if c.drop_return else "breach"
     return out
 
 
@@ -445,11 +475,9 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
 
     # ---- District hulls (after the outline, under the corridors and rooms) ----
     has_districts = len(spec.districts) >= 2
-    if has_districts:
-        if layered:
-            lay["districts"].append(_districts_group(spec, px, py, labelled=True))
-        else:
-            parts.append(_districts_group(spec, px, py))
+    # (The layered map's are drawn with the legend, which their labels keep clear of.)
+    if has_districts and not layered:
+        parts.append(_districts_group(spec, px, py))
 
     rooms_by_id = {r.id: r for r in spec.rooms}
     # ---- Corridors (drawn first, under the rooms) ----
@@ -672,14 +700,18 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     districts = ([(_district_fill(d.id), district_label(d.id, d.purpose)) for d in spec.districts]
                  if has_districts else [])
     if layered:
+        legend, legend_box = _layered_legend(
+            w, has_gates=bool(spec.gates), has_doors=has_doors, has_sites=bool(sites),
+            has_props=bool(lay["props"]), districts=districts, has_drops=bool(drops),
+            races=sorted(set(races)), links=sorted(set(kinds.values())), has_mixed=bool(mixed))
+        if has_districts:
+            lay["districts"].append(_districts_group(spec, px, py, labelled=True, w=w,
+                                                     avoid=legend_box))
         # In MAP_LAYERS order, so the later ones read over the earlier.
         for key, label, on in MAP_LAYERS:
             if lay[key]:
                 parts.append(_layer_group(key, label, on, "".join(lay[key])))
-        parts.append(_layered_legend(
-            w, has_gates=bool(spec.gates), has_doors=has_doors, has_sites=bool(sites),
-            has_props=bool(lay["props"]), districts=districts, has_drops=bool(drops),
-            races=sorted(set(races)), links=sorted(set(kinds.values())), has_mixed=bool(mixed)))
+        parts.append(legend)
     else:
         parts.append(_legend(w, h, bool(spec.gates), outline is not None, has_doors, bool(sites),
                              bool(props), districts, has_drops=bool(drops)))
@@ -756,11 +788,12 @@ def _legend(w: float, h: float, has_gates: bool, has_outline: bool = False, has_
 
 def _layered_legend(w: float, *, has_gates: bool, has_doors: bool, has_sites: bool, has_props: bool,
                     districts: List[Tuple[str, str]], has_drops: bool, races: List[str],
-                    links: List[str], has_mixed: bool) -> str:
+                    links: List[str], has_mixed: bool) -> Tuple[str, Tuple[float, float, float, float]]:
     """The layered map's key, top right: one ``<g class="legend-row" data-layer=KEY>`` per row,
     placed by ``transform`` (row ``i`` at ``16 i``), so the map dialog can drop the rows of a
     hidden layer and restack the rest; ``base`` rows (room roles, walls) always show. The box
-    (``legend-box``) fits every row; the dialog resizes it to the rows it keeps."""
+    (``legend-box``) fits every row; the dialog resizes it to the rows it keeps (never larger).
+    Returns the markup and that box (x0, y0, x1, y1), which the District labels keep clear of."""
     rows: List[Tuple[str, str, str]] = []           # (layer, swatch markup, label)
 
     def box(colour: str) -> str:
@@ -798,6 +831,7 @@ def _layered_legend(w: float, *, has_gates: bool, has_doors: bool, has_sites: bo
 
     bw = max(118, 30 + 6 * max(len(label) for _, _, label in rows))
     lx, ly = w - bw, 14
+    bx, by, bh = float(f"{lx - 8:.0f}"), float(f"{ly - 8:.0f}"), float(f"{len(rows) * 16 + 8:.0f}")
     parts = ['<g id="legend" font-family="sans-serif" font-size="10" fill="#cdd6db">',
              f'<rect class="legend-box" x="{lx - 8:.0f}" y="{ly - 8:.0f}" width="{bw}" '
              f'height="{len(rows) * 16 + 8:.0f}" rx="4" fill="#0a0a12" fill-opacity="0.75" stroke="#2a2a38"/>']
@@ -805,7 +839,7 @@ def _layered_legend(w: float, *, has_gates: bool, has_doors: bool, has_sites: bo
         parts.append(f'<g class="legend-row" data-layer="{layer}" transform="translate({lx:.0f} {ly + i * 16:.0f})">'
                      f'{swatch}<text x="16" y="9">{_esc(label)}</text></g>')
     parts.append("</g>")
-    return "".join(parts)
+    return "".join(parts), (bx, by, bx + bw, by + bh)
 
 
 def _scale_bar(scale: float, padding: int, h: float) -> str:
