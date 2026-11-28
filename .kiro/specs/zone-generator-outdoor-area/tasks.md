@@ -37,7 +37,7 @@ land (both touch the layout or the defaults this builds on).
   - Owns: generators/outdoor_dungeon.py, generators/stages.py (the Apron edit), tests/test_outdoor_dungeon*.py, tests/test_attach_*.py, the outdoor goldens and recordings it moves
   - Reqs: 6, 7
 
-- [ ] 12. A second way in: the cliff opening
+- [x] 12. A second way in: the cliff opening
   - Card: [cards/12-cliff-opening.md](cards/12-cliff-opening.md)
   - Type: agent · Size: M · Depends: 5
   - Owns: generators/outdoor_dungeon.py, generators/stages.py (the Apron edit), generators/mapview.py (the entrance mark), tests/test_outdoor_dungeon*.py, the outdoor goldens and recordings it moves

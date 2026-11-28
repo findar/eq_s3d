@@ -12,3 +12,4 @@ An outdoor dungeon can be entered through a cliff opening, stock's second most c
 - [ ] Quick tier; the full suite alone at close.
 
 ## Result
+✔ f4cdf36 · 4515 passed, 11 skipped, 5 xfailed (gate 701 passed, 1 xfailed)
