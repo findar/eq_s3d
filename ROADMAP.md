@@ -197,6 +197,10 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
    the goblins tunnelled into reads as layered history (the user's ideas at the step 30 look).
    Spec: `.kiro/specs/zone-generator-district-races/`. *(DONE — closed 2026-11-27;
    the user's look: "just checked, it looks good"; see the Done table)*
+32. **Races follow-ups** — step 31's follow-ups, breach rate first: intruder Districts overlap their
+   host again (pairs at 2+ links back to 80%+ with goblin-length links), the map's return marks come
+   from the layout, and a zone builds the same whether built alone or after others (the lead's pick
+   on the user's "You pick"). Spec: `.kiro/specs/zone-generator-races-followups/`. *(In progress)*
 
 **Where the old `zone-generator-followup` runway goes (dispersed, not dropped).** Its three pieces are now prerequisites pulled into the steps that actually need them, rather than a milestone of their own: the **3D `Envelope` + gate-learns-connectors (staircase/bridge)** land with **step 5/7** (outdoor dungeon carved into terrain, and multi-level verticality); the pluggable **`LayoutEngine` seam** lands with **step 6** (graph-replacement dungeon gen). The existing specs are re-scoped to match: `.kiro/specs/zone-generator-wilderness/` is the basis for step 1 (expanded from its lean landmark-first v1 to Karanas with water/lava/cliffs/deformation); `.kiro/specs/zone-generator-followup/` is retired as a standalone milestone (its tasks survive as the step-5/6/7 prerequisite work). Each step gets its own spec authored when it starts.
 
