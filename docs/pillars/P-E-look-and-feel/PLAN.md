@@ -28,7 +28,7 @@ real zones, with conformance measured rather than claimed.
 | P-E.15 | Era fidelity and measured conformance against real zones of the same type | Half built: style profiles drive scale, and textures are graded toward each theme's measured Look_Stats (step 4). The per-zone **ConformanceReport** (`analyzer/conformance.py`, Property 38) was never built (OPEN E-2) |
 | P-E.16 | Procedural normal maps for every material | Not built: deferred at step 4 because Classic–PoP zones have none and the user chose the classic look (OPEN E-1) |
 | P-E.17 | Textured preview | Diffuse half built (step 3); the normal half waits on 16 |
-| P-E.33 | The `cave` Purpose of a dungeon | Built (step 21), but **the requirement's text was never written** into the umbrella requirements; it is cited by number only (OPEN X-18) |
+| P-E.33 | The `cave` Purpose of a dungeon | Built (step 21), but **the requirement's text was never written** into the umbrella requirements; it is cited by number only (Engineering OPEN X-14) |
 | P-B.7 | Natural geometry style (filed under P-B) | Served here by the `rough` wall style (step 8) |
 
 ## Slices
