@@ -40,7 +40,7 @@ and edit only `Owns`; trailer `Task: project-docs/<n>`; fill the card's Result a
 
 ## Added at the first review
 
-- [ ] 7. Numbered pillars, one requirement namespace, a technical writer's pass
+- [x] 7. Numbered pillars, one requirement namespace, a technical writer's pass
   - Card: [cards/07-writer-pass.md](cards/07-writer-pass.md)
   - Type: agent · Size: M · Depends: 1
   - Owns: docs/ARCHITECTURE.md, docs/pillars/, OPEN.md, docs/STYLE.md (new)
