@@ -238,7 +238,9 @@ PHRASES = [
 
 @pytest.mark.parametrize("text, ops", PHRASES, ids=[t for t, _ in PHRASES])
 def test_phrase_table(text, ops):
-    got, notes, name = RuleEditInterpreter().interpret(text, TOMB)
+    # The table's decor steps start from normal (an unset level is the default, none:
+    # test_decor_steps_from_the_spec_level).
+    got, notes, name = RuleEditInterpreter().interpret(text, dict(TOMB, decor="normal"))
     assert (got, notes, name) == (ops, [], RULE)
 
 
@@ -257,6 +259,10 @@ def test_decor_steps_from_the_spec_level():
         [{"op": "set_decor_level", "level": "none"}]
     assert interpret("more decor", dict(TOMB, decor="dense"))[0] == \
         [{"op": "set_decor_level", "level": "dense"}]
+    # A spec with no level is at the default, none (step 34).
+    unset = {k: v for k, v in TOMB.items() if k != "decor"}
+    assert interpret("more decor", unset)[0] == [{"op": "set_decor_level", "level": "sparse"}]
+    assert interpret("less decor", unset)[0] == [{"op": "set_decor_level", "level": "none"}]
 
 
 @pytest.mark.parametrize("text", ["", "   ", "\n\t", "hello", "paint it blue", "42", "\x00\x07"])
