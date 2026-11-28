@@ -1,6 +1,8 @@
-# P-F Iterative feedback — design (living)
+# P-6 Iterative feedback — design (living)
 
-Checked against the code at `c3d9b99`.
+Terms in capitals are defined in the [glossary](../../ARCHITECTURE.md#glossary).
+
+Checked against the code at master `c3d9b99` (2026-11-27, the commit that opened the project-docs spec).
 
 ## Versions are the history
 
@@ -13,7 +15,7 @@ Checked against the code at `c3d9b99`.
 - **Undo** opens the parent version and **redo** the newest child, on the page, with no server
   call. An edit typed against an older version branches from it.
 
-## Rebuilds (`generators/rebuild.py`, `POST /api/rebuild`)
+## Rebuilds ([`generators/rebuild.py`](../../../generators/rebuild.py), `POST /api/rebuild`)
 
 A rebuild starts from the parent's saved inputs: `<name>.spec.json`, `<name>.request.json`, the
 TER and textures inside its `.eqg` (`SavedStages`), and the sidecar's texture modes.
@@ -24,7 +26,7 @@ TER and textures inside its `.eqg` (`SavedStages`), and the sidecar's texture mo
 | New `rooms_seed` or `seed` | Full build |
 
 A partial rebuild must equal a full build of the same request and seeds byte for byte, footer
-aside (`tests/test_partial_rebuild.py` per zone type). A room's own decor seed changes only that
+aside ([`tests/test_partial_rebuild.py`](../../../tests/test_partial_rebuild.py) per zone type). A room's own decor seed changes only that
 room. A pinned decor seed that fails the gate is reported, never rerolled.
 
 ## Edits (`POST /api/edit`, `main.py --edit`)
@@ -40,17 +42,17 @@ room. A pinned decor seed that fails the gate is reported, never rerolled.
 |---|---|
 | `set_purpose`, `add_lock`, `remove_lock` | yes (locks through the layout's own gating rule, so the result stays solvable) |
 | `reroll_room`, `reroll_decor`, `set_decor_level`, `regenerate` | yes |
-| `widen_room`, `narrow_room`, `taller_room`, `lower_room` | yes (`generators/resize.py`, clamped, the share applied named); not on outdoor dungeons |
+| `widen_room`, `narrow_room`, `taller_room`, `lower_room` | yes ([`generators/resize.py`](../../../generators/resize.py), clamped, the share applied named); not on outdoor dungeons |
 | `add_room`, `remove_room`, `add_region`, `remove_region`, `set_verticality`, `set_topology` | recognised, answered "not yet supported" |
 
-An edit that can be built from the parent's stages is (partial); otherwise it builds in full.
-`applied: false` (HTTP 200) when nothing was built: no ops (with help text), invalid ops, every
-op rejected, or every candidate failing the gate; nothing on disk changes. One build per zone at
-a time (a second gets 429). An edit outside the quality bands is still built and marked
+An edit that can be built from the parent's stages is built that way (a partial rebuild); otherwise it builds in full.
+The answer is `applied: false` (with HTTP status 200) when nothing was built: no ops (with help text), invalid ops, every
+op rejected, or every candidate failing the gate; nothing on disk changes. One build per zone runs at
+a time; a second request gets HTTP 429 (too many requests). An edit outside the quality bands is still built and marked
 `edit_outside_bands`.
 
 ## On the page
 
-`web/src/feedback.ts`: the Feedback box, the ops it got, notes, and a tint over the affected
+[`web/src/feedback.ts`](../../../web/src/feedback.ts): the Feedback box, the ops it got, notes, and a tint over the affected
 rooms (graph rooms fill their outline; classic and city rooms get a disc; corridors aren't
 tinted).

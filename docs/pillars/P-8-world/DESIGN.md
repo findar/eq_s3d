@@ -1,8 +1,10 @@
-# P-H World — design (living)
+# P-8 World — design (living)
 
-How the World works now, inside one zone. Checked against the code at `c3d9b99`.
+Terms in capitals are defined in the [glossary](../../ARCHITECTURE.md#glossary).
 
-## The World (`generators/world.py`)
+How the World works now, inside one zone. Checked against the code at master `c3d9b99` (2026-11-27, the commit that opened the project-docs spec).
+
+## The World ([`generators/world.py`](../../../generators/world.py))
 
 `world_for(zone_type, seed, biome=...)` makes a `World`:
 
@@ -20,10 +22,10 @@ How the World works now, inside one zone. Checked against the code at `c3d9b99`.
 | `door` | reserved | read, but nothing makes one |
 
 The JSON form (`<name>.world.json`) is versioned (`VERSION = 2`; another version is refused,
-naming both) and stable: sorted keys, floats written exactly as `repr`, grids one row to a line.
+naming both) and stable: sorted keys, floats written exactly as Python's `repr` gives them, grids one row to a line.
 `world_of(spec)` remakes the World from a spec's own Landform.
 
-## The Attach stage (`generators/stages.py`)
+## The Attach stage ([`generators/stages.py`](../../../generators/stages.py))
 
 Sockets attach in a fixed order, `root`, `hillside`, `ground`, `site`, so the Apron digs the
 ground before Sites see it and Sites keep off the Tunnel and Apron.
@@ -39,11 +41,11 @@ ground before Sites see it and Sites keep off the Tunnel and Apron.
 ## Seeds and blame
 
 `seed` makes the World (and trees), `rooms_seed` the rooms and Sites, `decor_seed` the Props;
-each defaults to `seed`, so a build naming none is byte-identical to before step 12. On a gate
+each defaults to `seed`, so a build naming none is byte-identical to before [step 12](../../../.kiro/specs/zone-generator-world-sockets/tasks.md). On a gate
 failure with a random seed the pipeline rerolls only the stage it blames, at most twice per
-World (P-B).
+World (see P-2's design, "In the pipeline").
 
 ## Not yet
 
 One zone per World; one dungeon per World; no zone lines. `tunnel_doors` and `sidecar_block` in
-`generators/outdoor_dungeon.py` still call `landscape_for` instead of reading the World.
+[`generators/outdoor_dungeon.py`](../../../generators/outdoor_dungeon.py) still call `landscape_for` instead of reading the World.

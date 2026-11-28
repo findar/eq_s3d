@@ -1,14 +1,16 @@
-# P-D True-layout artifacts — design (living)
+# P-4 True-layout artifacts — design (living)
 
-Checked against the code at `c3d9b99`.
+Terms in capitals are defined in the [glossary](../../ARCHITECTURE.md#glossary).
+
+Checked against the code at master `c3d9b99` (2026-11-27, the commit that opened the project-docs spec).
 
 ## When maps are made
 
-Only for an accepted build, after both gates pass (`generators/pipeline.py`
+Only for an accepted build, after both gates pass ([`generators/pipeline.py`](../../../generators/pipeline.py)
 `_write_map_artifacts`). A rejected attempt never gets maps. If tracing fails the build still
 passes and the sidecar says `outline_unavailable` or `eqmap_unavailable`.
 
-## The outline (`generators/mapgeom.py`)
+## The outline ([`generators/mapgeom.py`](../../../generators/mapgeom.py))
 
 `extract_outline(ter, safe_point, ...)`:
 
@@ -24,26 +26,27 @@ passes and the sidecar says `outline_unavailable` or `eqmap_unavailable`.
 
 `with_solids` adds Features and placed models; `outline_summary` goes into the sidecar.
 
-## The EQ map file (`generators/eqmap.py`)
+## The EQ map file ([`generators/eqmap.py`](../../../generators/eqmap.py))
 
-- Convention **negate + swap**: map `(mx, my, mz) = (-y, -x, z)`, scored against stock maps
-  (all 8 sign/swap candidates within 5 u; the Grounding_Check test pins it). It is its own inverse.
+- The convention is **negate and swap**: map `(mx, my, mz) = (-y, -x, z)`. It was scored against
+  stock maps (all 8 sign and swap candidates, matched within 5 u), and a test pins it. It is its
+  own inverse.
 - Grammar `L x1, y1, z1, x2, y2, z2, r, g, b` and `P x, y, z, r, g, b, size, text`; we write the
-  single-space form, 4 decimals, CR LF. The parser accepts the looser stock forms.
+  single-space form, 4 decimals, Windows line endings. The parser accepts the looser stock forms.
 - One layer per depth band (`<name>.txt`, `_1`, `_2`, `_3`); `Entrance` and `Boss` labels in the
   band holding their room's floor; ledges take their band's colour. Lines and labels only.
-- `scripts/eqmap_preview.py` overlays a `.txt` on the mesh for a check without the client.
+- [`scripts/eqmap_preview.py`](../../../scripts/eqmap_preview.py) overlays a `.txt` on the mesh for a check without the client.
 
-## The SVG map (`generators/mapview.py`)
+## The SVG map ([`generators/mapview.py`](../../../generators/mapview.py))
 
 `render_map_svg(spec, outline=..., sites=..., props=...)`: the traced outline under the schematic annotations (room boxes
 and ids, corridors along their real path, pacing roles, Gates and keys, Districts' hulls and
 Thresholds, Sites, POIs, Props). The root carries `data-frame-a/-b/-s` (the world-to-pixel
-frame) so the page can place Socket markers. Annotations sit in named groups (`outline`, `sites`, `props`, `districts`, ...) that, since step 31,
+frame) so the page can place Socket markers. Annotations sit in named groups (`outline`, `sites`, `props`, `districts`, ...) that, since [step 31](../../../.kiro/specs/zone-generator-district-races/tasks.md),
 the page shows and hides as layers; the page can also draw the EQ-map view.
 
 ## On the page
 
-`web/src/artifacts.ts` Files panel: SVG, a 2× PNG drawn by the browser, the `.txt` layers, the
+[`web/src/artifacts.ts`](../../../web/src/artifacts.ts) Files panel: SVG, a 2× PNG drawn by the browser, the `.txt` layers, the
 `.eqg`, the sidecar and a bundle zip, from `/api/zones/{zone}/{version}/{file}` (versioned paths,
-segments checked with `fullmatch`, HEAD supported). `web/src/sockets.ts` reads the SVG frame.
+segments checked with `fullmatch`, HTTP HEAD requests supported). [`web/src/sockets.ts`](../../../web/src/sockets.ts) reads the SVG frame.

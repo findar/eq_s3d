@@ -1,13 +1,15 @@
-# P-C Usable in RoF2 and EQEmu — design (living)
+# P-3 Usable in RoF2 and EQEmu — design (living)
 
-Checked against the code at `c3d9b99`. Format gotchas (CRC, multi-chunk names, ZON radians,
-the footer timestamp) are in [lessons-learned](../../../.kiro/steering/lessons-learned.md)
-"File formats".
+Terms in capitals are defined in the [glossary](../../ARCHITECTURE.md#glossary).
+
+Checked against the code at master `c3d9b99` (2026-11-27, the commit that opened the project-docs spec). Format gotchas (the filename CRC, multi-chunk names, ZON
+radians, the footer timestamp) are in
+[lessons-learned "File formats"](../../../.kiro/steering/lessons-learned.md#file-formats).
 
 ## The archive a build writes
 
 Every build is named by its **Build_Name** (the zone id `gen_<ts>_<hex>`, or the CLI name;
-`[a-z0-9_]+`, checked before any write). `<name>.eqg` is a PFS archive holding:
+lowercase letters, digits and `_` only, checked before any write). `<name>.eqg` is a PFS archive holding:
 
 | Entry | From |
 |---|---|
@@ -16,12 +18,12 @@ Every build is named by its **Build_Name** (the zone id `gen_<ts>_<hex>`, or the
 | `*.dds` | textures: one per material, plus model textures |
 | `veg_*.mod`, `site_*.mod`, stock `.mod` models | generated trees and Structures; Props copied unchanged from the user's install |
 
-`core/pfs.py` computes EQ's own CRC (big-endian, poly `0x04C11DB7`, over the name with its null)
+[`core/pfs.py`](../../../core/pfs.py) computes EQ's own filename CRC (big-endian, polynomial `0x04C11DB7`, over the name with its closing null byte)
 and writes the time in the footer, so two writes differ in their last 4 bytes only.
 
 ## The format gate
 
-`analyzer/rof2check.py` `check_eqg` runs on every build attempt. It never raises: a fault becomes
+[`analyzer/rof2check.py`](../../../analyzer/rof2check.py) `check_eqg` runs on every build attempt. It never raises: a fault becomes
 a failed check naming its cause, and dependent checks are marked skipped. The checks:
 `pfs_reads`, `required_files`, `ter_roundtrip`, `zon_roundtrip`, `zon_model_ref`,
 `material_indices`, `diffuse_textures`, `collision_policy`, `safe_point`, `bounds_sane`,
@@ -29,9 +31,9 @@ a failed check naming its cause, and dependent checks are marked skipped. The ch
 
 ## Export
 
-`generators/export.py`, `POST /api/export`, `main.py export --shortname <short>`:
+[`generators/export.py`](../../../generators/export.py), `POST /api/export`, `main.py export --shortname <short>`:
 
-1. The short name must be in the Known_Zone_List (`analyzer/data/rof2_zones.json`: 496 zone short
+1. The short name must be in the Known_Zone_List ([`analyzer/data/rof2_zones.json`](../../../analyzer/data/rof2_zones.json): 496 zone short
    names from a RoF2 install, long names from the client's zone table; the run-time scan of
    `EQ_PATH` only marks `in_install`). Default `arena`.
 2. Rename, never rebuild: `<short>.eqg` with `ter_<short>.ter`, `<short>.zon` and the model
@@ -43,7 +45,7 @@ Everything lands in `<build dir>/export/<short>/`; the build's own files are onl
 
 ## The SQL
 
-`generators/sqlexport.py` addresses rows by short name (`zone.short_name`, `doors.zone`), pinned
+[`generators/sqlexport.py`](../../../generators/sqlexport.py) addresses rows by short name (`zone.short_name`, `doors.zone`), pinned
 to the EQEmu columns as of 2026-11-16:
 
 - `UPDATE zone` sets the safe point and `underworld` only; fog, clip planes, sky and `ztype` stay
