@@ -31,10 +31,16 @@ land (both touch the layout or the defaults this builds on).
   - Owns: generators/outdoor_dungeon.py, generators/wilderness/matrix.py (host Landform sizing), tests/test_outdoor_dungeon*.py
   - Reqs: 5, 7
 
-- [ ] 5. Ways in: a wide Mouth and a second kind
+- [ ] 5. A wide, flaring Mouth
   - Card: [cards/05-entrances.md](cards/05-entrances.md)
-  - Type: agent · Size: L→split after task 1 · Depends: 1, 4
-  - Owns: generators/outdoor_dungeon.py, tests/test_outdoor_dungeon*.py
+  - Type: agent · Size: M · Depends: 1, 4
+  - Owns: generators/outdoor_dungeon.py, generators/stages.py (the Apron edit), tests/test_outdoor_dungeon*.py, tests/test_attach_*.py, the outdoor goldens and recordings it moves
+  - Reqs: 6, 7
+
+- [ ] 12. A second way in: the cliff opening
+  - Card: [cards/12-cliff-opening.md](cards/12-cliff-opening.md)
+  - Type: agent · Size: M · Depends: 5
+  - Owns: generators/outdoor_dungeon.py, generators/stages.py (the Apron edit), generators/mapview.py (the entrance mark), tests/test_outdoor_dungeon*.py, the outdoor goldens and recordings it moves
   - Reqs: 6, 7
 
 - [ ] 6. Area size from the plan
@@ -50,7 +56,7 @@ land (both touch the layout or the defaults this builds on).
 
 - [ ] 7. Gate, bands and time
   - Card: [cards/07-gate.md](cards/07-gate.md)
-  - Type: agent · Size: S · Depends: 6, 11
+  - Type: agent · Size: S · Depends: 6, 11, 12
   - Owns: fixes only where a failure is new (stop and report first)
   - Reqs: 7
 
