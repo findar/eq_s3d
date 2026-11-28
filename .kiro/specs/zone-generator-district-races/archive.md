@@ -72,6 +72,13 @@
 20. **The gate's Transition clearance reads the opening's race (`corridor_race`), and breaches stay best-effort**
    (task 16, the lead's call): the step 31 prompt (Dramatic, giant zone race) passes on seeds 2020-2029 and 8 of 10
    get a goblin breach; 2023's goblin pairs sit on other Levels or past `BREACH_SPAN`, 2024's are all lost to `_resolve_conflicts`.
+21. **A link between Districts is laid, bounded and capped in the H of the race that sizes it** (task 17, replacing
+   decision 18's "at the larger race's H" for links): its Threshold stands off its near room as the engine drew it,
+   times `f · H(link) / H(zone)` (`f` the mean hall default of its ends at the link's race: 1 for a goblin hole into
+   giants, decision 4 between two giant Districts); the graph's own breaches past the breach bound are dropped;
+   `BREACH_SPAN` reads the longest hall of the breach's race; a link between rooms of two H runs straight across the
+   span they share; stand-ins and returns keep to the cap (and to the degree cap); a built link past the cap redraws.
+   `--intrusion` seed 31: links p50 89.0 → 20.4 H, max 1128 → 156.5 H; pairs with 2+ links 82 % → 68 %.
 
 ## Follow-ups
 - The gate's seam rule joins floors within 2 u in XY and 3 u in Z with no wall test (decision 14 works round it
@@ -92,3 +99,5 @@
 - A third District is breached too (`breach_hosts` takes every non-Threshold cross link), so some host rooms spill
   from it (dark elf, undead Sets) and not from the goblins (task 8). On master these zones already run over stock's
   p25-p75 decor band (per room about 11-15, light share about 0.6 against 2.9-6.8 and 0.21-0.45).
+- Pairs with 2+ links fell from 82% to 68% at task 17 (Graph 16 loses most); place intruder rooms nearer host walls so
+  short breaches fit.

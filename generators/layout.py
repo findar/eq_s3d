@@ -68,7 +68,8 @@ DISTRICT_ATTEMPTS = 8
 # Rounds of new breaches an intrusion zone tries after the crossing and conflict
 # passes dropped some (``LayoutGenerator._add_breaches``; district races task 6).
 BREACH_ROUNDS = 8
-# A new breach's hall span at most, over the longest hall of its two Districts and their links.
+# A new breach's hall span at most, over the longest hall of its two Districts and their links
+# sized by the breach's race (task 17: a goblin breach into giants against goblin halls).
 BREACH_SPAN = 2.0
 
 # Drops (district races step 31, Req 7, 8; archive decisions 2, 3). A link between two
@@ -181,11 +182,10 @@ HALL_RELAX_TOLERANCE = 0.05
 #: the corrections for loops that fight the stretch stop there (task 10: seed 564762926
 #: ran a giant hall out to 27,000 u).
 HALL_SCALE_CAP = 2.0
-#: Moves a Threshold's far Districts make at most to reach its length.
-HALL_STRETCH_ROUNDS = 6
 #: The longest hall a raced District keeps, in body heights H of its race (a link between
-#: two Districts: the larger race's): stock's longest door-to-door hall, rounded up
-#: (task 10, archive decision 18). Passes over the halls, and halvings per move.
+#: two Districts: the race that sizes it, the smaller; task 17, archive decision 21):
+#: stock's longest door-to-door hall, rounded up (task 10, archive decision 18). Passes
+#: over the halls, and halvings per move.
 HALL_CAP_H = 164.0
 HALL_CAP_PASSES = 4
 HALL_CAP_BISECTIONS = 20
@@ -198,7 +198,8 @@ HALL_GAP_BISECTIONS = 3
 class DistrictSplitError(ValueError):
     """A corridor split or swap left two Districts joined by more than their
     one Threshold (districts spec Req 3.3), or two corridors clashing that no
-    swap within their Districts could part: the Draw is rejected."""
+    swap within their Districts could part, or a link between two Districts
+    built past its race's HALL_CAP_H: the Draw is rejected."""
 
     def __init__(self) -> None:
         super().__init__("district threshold split")
@@ -1144,7 +1145,7 @@ class LayoutGenerator:
             self.warnings.extend(notes)
             spec.districts = district_specs
             # A District with a race of its own takes that race's sizes (Req 4).
-            self._apply_district_races(rooms, district_specs, edges, result)
+            self._apply_district_races(rooms, district_specs, edges, result, part=part)
         if themed:
             semantics.label_rooms(
                 spec, rooms, self.rng,
@@ -1289,6 +1290,8 @@ class LayoutGenerator:
         self._drop_links = links
         self.drop_returns: List[dict] = []
         self._build_corridors(spec, rooms, edges)
+        if part is not None:
+            self._check_link_caps(spec, rooms)
         threshold_ids: List[str] = []
         if part is not None:
             threshold_ids = self._record_districts(spec, part, rooms, edges, entrance)
@@ -1328,7 +1331,7 @@ class LayoutGenerator:
 
     def _apply_district_races(self, rooms: List[RoomSpec], districts: list,
                               edges: Optional[List[Tuple[int, int]]] = None,
-                              result=None) -> None:
+                              result=None, part=None) -> None:
         """District races (Req 4): a District with a race of its own is laid out
         at that race's scale. The engine laid every room out at the zone's race
         (the partition needs its graph first), and every size there is a multiple
@@ -1337,8 +1340,9 @@ class LayoutGenerator:
         same band positions and the same spacing in its own H. Then the Districts
         are pushed apart whole (:meth:`_separate_districts`), and from here every
         room is fitted to its own race's bands and every corridor sized by the
-        smaller race of its two rooms (:meth:`_corridor_dims`). No District with
-        a race: nothing changes, and nothing is drawn."""
+        smaller race of its two rooms (:meth:`_corridor_dims`). *part* (the
+        partition) names the Thresholds and an intrusion's breaches. No District
+        with a race: nothing changes, and nothing is drawn."""
         if not any(d.race for d in districts):
             return
         race_of = {d.id: (d.race or self.race) for d in districts}
@@ -1352,25 +1356,26 @@ class LayoutGenerator:
         halls = (self._district_halls(districts)
                  if edges is not None and self._envelope is None else None)
         self._room_race = {r.id: race_of.get(r.district, self.race) for r in rooms}
-        before = None
+        fit = edges is not None and self._envelope is None
+        # The Thresholds as the engine drew them, at the zone's sizes: each is laid
+        # again at that length in its own race's H (:meth:`_fit_thresholds`).
+        drawn = [dataclasses.replace(r) for r in rooms] if fit else None
         if halls is not None:
-            # A raced District's halls (Req 5): first the Thresholds as they would
-            # stand without them, then its own halls at the zone's sizes.
-            before = [dataclasses.replace(r) for r in rooms]
-            self._scale_district_races(before, race_of)
+            # A raced District's halls (Req 5), at the zone's sizes.
             self._apply_district_halls(rooms, edges, result, halls)
         self._scale_district_races(rooms, race_of)
-        if halls is not None:
+        if fit:
             # Then the Thresholds, at the Districts' own sizes.
-            self._stretch_thresholds(rooms, edges, halls, before)
-        if edges is not None and self._envelope is None:
+            self._fit_thresholds(rooms, edges, halls or {}, drawn, race_of, part)
             self._cap_district_halls(rooms, edges, race_of,
-                                     {d.id for d in districts if d.race})
+                                     {d.id for d in districts if d.race}, part)
 
     def _cap_district_halls(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
-                            race_of: Dict[int, str], raced: set) -> None:
+                            race_of: Dict[int, str], raced: set, part=None) -> None:
         """No hall touching a raced District runs over ``HALL_CAP_H`` of its race's H
-        (between two Districts, the larger race's): a cave's few long tunnels, scaled
+        (between two Districts, the race that sizes it, the smaller; task 17): first
+        the graph's own breaches past it are dropped (:meth:`_drop_far_breaches`).
+        A cave's few long tunnels, scaled
         by the hall length and the race, otherwise run far past anything stock has.
         The outlying end moves toward the other along their centres' line, just far
         enough: inside a District, the end farther from its centre, with the rooms a
@@ -1379,6 +1384,7 @@ class LayoutGenerator:
         as for every layout."""
         self._hall_cap_h = ({d: semantics.body_height(r) for d, r in race_of.items() if d in raced}
                             or None)
+        self._drop_far_breaches(rooms, edges, part)
         throats = self._throats
         clump = list(range(len(rooms)))
 
@@ -1446,6 +1452,51 @@ class LayoutGenerator:
         if moved:
             self._separate_districts(rooms)
 
+    def _check_link_caps(self, spec: ZoneSpec, rooms: List[RoomSpec]) -> None:
+        """A link between two Districts whose built route runs past :meth:`_hall_cap`
+        (its race's ``HALL_CAP_H``) redraws the Draw (:class:`DistrictSplitError`), as a
+        second link does: the cap is kept on the centres' span, and a route's bends can
+        run a third longer (task 17). Nothing without a raced District."""
+        if not self._hall_cap_h:
+            return
+        by = {r.id: r for r in rooms}
+        for cor in spec.corridors:
+            a, b = by.get(cor.from_room), by.get(cor.to_room)
+            if a is None or b is None or a.district == b.district:
+                continue
+            cap = self._hall_cap(a, b)
+            if cap is None:
+                continue
+            line = corridor_route(cor, by).waypoints
+            if sum(math.dist(p, q) for p, q in zip(line, line[1:])) > cap:
+                raise DistrictSplitError()
+
+    def _drop_far_breaches(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                           part) -> None:
+        """An intrusion's breaches the graph kept (``part.breaches``) that the race
+        scaling carried past what a new breach may run (:meth:`_breach_bound`, measured
+        without them, and :meth:`_hall_cap`) are dropped (task 17, archive decision
+        21): only the Threshold of a pair is laid where it was drawn, so the graph's
+        other links between the two Districts can end anywhere along a giant
+        District grown about its centre, and pulling each in drags the others out.
+        :meth:`_add_breaches` finds nearer ones on the final rooms."""
+        if part is None or not getattr(part, "breaches", None):
+            return
+        assign = part.assign
+        extra = {frozenset(e) for e in part.breaches}
+        base = [e for e in edges if frozenset(e) not in extra]
+        drop = set()
+        for h, t in part.breaches:
+            bound = self._breach_bound(rooms, base, assign, {assign[h], assign[t]})
+            cap = self._hall_cap(rooms[h], rooms[t])
+            if cap is not None:
+                bound = min(bound, cap)
+            if self._link_span(rooms[h], rooms[t]) > bound:
+                drop.add(frozenset((h, t)))
+        if drop:
+            edges[:] = [e for e in edges if frozenset(e) not in drop]
+            part.breaches = [e for e in part.breaches if frozenset(e) not in drop]
+
     def _hall_cap(self, a: RoomSpec, b: RoomSpec) -> Optional[float]:
         """The longest :meth:`_hall_span` a hall between *a* and *b* may run
         (:meth:`_cap_district_halls`; breaches keep to it too), or None when
@@ -1453,8 +1504,7 @@ class LayoutGenerator:
         hs = self._hall_cap_h
         if not hs or (a.district not in hs and b.district not in hs):
             return None
-        h0 = semantics.body_height(self.race)
-        return HALL_CAP_H * max(hs.get(a.district, h0), hs.get(b.district, h0))
+        return HALL_CAP_H * semantics.body_height(self._pair_race(a, b))
 
     def _scale_district_races(self, rooms: List[RoomSpec], race_of: Dict[int, str]) -> None:
         """:meth:`_apply_district_races`'s scaling: each raced District's rooms by
@@ -1502,6 +1552,18 @@ class LayoutGenerator:
         cx, cy = k * abs(b.center_x - a.center_x), k * abs(b.center_y - a.center_y)
         gx, gy = cx - (a.width + b.width) / 2, cy - (a.depth + b.depth) / 2
         return max(0.0, gx) + cy if gx >= gy else max(0.0, gy) + cx
+
+    def _link_span(self, a: RoomSpec, b: RoomSpec) -> float:
+        """:meth:`_hall_span`, but for a link between rooms of two races' H that runs
+        straight across the span they share (:meth:`_races_differ`), just the wall
+        gap: what a breach or stand-in between them would be built at (task 17)."""
+        if self._races_differ(a, b):
+            ex = self._exit_axis_x(a, b)
+            if self._straight_across(a, b, ex) is not None:
+                if ex:
+                    return max(0.0, abs(b.center_x - a.center_x) - (a.width + b.width) / 2)
+                return max(0.0, abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2)
+        return self._hall_span(a, b)
 
     def _median_span(self, pairs, k: float = 1.0) -> float:
         """The median :meth:`_hall_span` of *pairs* (room pairs) at offset scale *k*."""
@@ -1583,7 +1645,7 @@ class LayoutGenerator:
             gx = abs(b.center_x - a.center_x) - (a.width + b.width) / 2
             gy = abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2
             gaps[frozenset((a.id, b.id))] = max(gx, gy, 1.0)
-            # A Threshold holds here; :meth:`_stretch_thresholds` lengthens it. So
+            # A Threshold holds here; :meth:`_fit_thresholds` lays it. So
             # does an edge between two Levels: its rooms stand over each other (a gap
             # of 1) and no run lengthens its span, which held the median back while
             # the District's other runs were scaled on without end (task 10).
@@ -1630,31 +1692,31 @@ class LayoutGenerator:
             for lv in sorted(set(levels)):
                 self._separate_rooms([r for k, r in enumerate(rooms) if levels[k] == lv])
 
-    def _district_span(self, rooms: List[RoomSpec], d: int, e: int) -> float:
-        """The :meth:`_hall_span` of the nearest pair (by centres) of a room of
-        District *d* and one of *e*: the pair ``_district_swap`` tries first."""
-        mine = [r for r in rooms if r.district == d]
-        a, b = min(((a, b) for a in mine for b in rooms if b.district == e),
-                   key=lambda p: (p[0].center_x - p[1].center_x) ** 2
-                   + (p[0].center_y - p[1].center_y) ** 2)
-        return self._hall_span(a, b)
-
-    def _stretch_thresholds(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
-                            halls: Dict[int, float], before: List[RoomSpec]) -> None:
-        """Each Threshold whose two Districts' defaults average ``f`` != 1, f times
-        as long as in *before* (the rooms as they would stand without District hall
-        lengths): the Districts beyond it (away from the entrance's, District 0)
-        move together along the axis it leaves by, so no hall inside a District
-        changes; then the Districts are pushed apart again. A Threshold is measured
-        by :meth:`_district_span`, not its own rooms: one crossing a room is
-        swapped for the nearest clear pair later (``_district_swap``), and after
-        the hall lengths it often does. One already that long is left alone."""
+    def _fit_thresholds(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                        halls: Dict[int, float], drawn: List[RoomSpec],
+                        race_of: Dict[int, str], part=None) -> None:
+        """Each Threshold laid again as the engine drew it, in the H of the race that
+        sizes it (the smaller of its two Districts', :meth:`_pair_race`; task 17,
+        archive decision 21). The race scaling grows a District about its own centre,
+        which carries its Threshold room far out and leaves the Districts beyond it
+        wherever the push apart puts them. Here the Districts beyond (away from the
+        entrance's, District 0) move together until the Threshold's far room stands
+        off its near one as in *drawn* (the engine's rooms, at the zone's sizes): the
+        same side and the same wall gap and jog, times ``k = f * H(link race) /
+        H(zone race)``, ``f`` the mean hall default of its ends at that race (a goblin
+        hole into giants keeps a goblin hall's length; a Threshold between two giant
+        Districts takes their mean, decision 4). No hall inside a District changes;
+        then the Districts are pushed apart again. The Threshold is *part*'s, else
+        the first edge joining the two."""
         near: Dict[int, List[Tuple[int, int]]] = {}
         for i, j in edges:
             di, dj = rooms[i].district, rooms[j].district
             if di != dj:
                 near.setdefault(di, []).append((i, j))
                 near.setdefault(dj, []).append((j, i))
+        cut = {frozenset((rooms[p].district, rooms[c].district)): (p, c)
+               for p, c in (part.thresholds if part is not None else ())}
+        h0 = semantics.body_height(self.race)
         seen, queue, moved = {0}, [0], False
         while queue:
             d = queue.pop(0)
@@ -1664,12 +1726,14 @@ class LayoutGenerator:
                     continue
                 seen.add(dj)
                 queue.append(dj)
-                f = (halls.get(d, 1.0) + halls.get(dj, 1.0)) / 2
-                if f == 1.0:
-                    continue
-                want = f * self._district_span(before, d, dj)
-                if self._district_span(rooms, d, dj) >= want:
-                    continue
+                t = cut.get(frozenset((d, dj)))
+                if t is not None:
+                    i, j = t if rooms[t[0]].district == d else (t[1], t[0])
+                hd = semantics.body_height(race_of.get(d, self.race))
+                he = semantics.body_height(race_of.get(dj, self.race))
+                h = min(hd, he)
+                ends = [x for x, hx in ((d, hd), (dj, he)) if hx == h]
+                k = sum(halls.get(x, 1.0) for x in ends) / len(ends) * h / h0
                 # The Districts beyond the Threshold: those reached from dj not via d.
                 beyond, stack = {dj}, [dj]
                 while stack:
@@ -1679,19 +1743,25 @@ class LayoutGenerator:
                         if dq != d and dq not in beyond:
                             beyond.add(dq)
                             stack.append(dq)
+                p0, q0 = drawn[i], drawn[j]
                 a, b = rooms[i], rooms[j]
-                gx = abs(b.center_x - a.center_x) - (a.width + b.width) / 2
-                gy = abs(b.center_y - a.center_y) - (a.depth + b.depth) / 2
-                ux, uy = ((math.copysign(1.0, b.center_x - a.center_x), 0.0) if gx >= gy
-                          else (0.0, math.copysign(1.0, b.center_y - a.center_y)))
-                mine = [r for r in rooms if r.district in beyond]
-                for _ in range(HALL_STRETCH_ROUNDS):
-                    short = want - self._district_span(rooms, d, dj)
-                    if short <= 1e-6:
-                        break
-                    for r in mine:
-                        r.center_x += ux * short
-                        r.center_y += uy * short
+                ox, oy = q0.center_x - p0.center_x, q0.center_y - p0.center_y
+                gx = abs(ox) - (p0.width + q0.width) / 2
+                gy = abs(oy) - (p0.depth + q0.depth) / 2
+                if gx >= gy:
+                    tx = math.copysign((a.width + b.width) / 2 + k * max(gx, 0.0), ox)
+                    ty = k * oy
+                else:
+                    tx = k * ox
+                    ty = math.copysign((a.depth + b.depth) / 2 + k * max(gy, 0.0), oy)
+                sx = a.center_x + tx - b.center_x
+                sy = a.center_y + ty - b.center_y
+                if abs(sx) <= 1e-9 and abs(sy) <= 1e-9:
+                    continue
+                for r in rooms:
+                    if r.district in beyond:
+                        r.center_x += sx
+                        r.center_y += sy
                 moved = True
         if moved:
             self._separate_districts(rooms)
@@ -1810,8 +1880,8 @@ class LayoutGenerator:
         host room and an intruder room not yet joined, nearest first by hall
         span, rooms on no link of the pair (nor next to one in their District)
         before the rest, so the breaches spread along the boundary. A pair is
-        taken only where its corridor could stand: a run no longer than the
-        longest hall of its two Districts or their links, its rooms on one
+        taken only where its corridor could stand: a run within
+        :meth:`_breach_bound` and :meth:`_hall_cap`, its rooms on one
         Level and within the run's grade, and no third room in its way.
         Appended to *edges* (loop edges: the passes after may still drop them,
         and the next round takes the next candidate; *tried* holds those already
@@ -1845,9 +1915,7 @@ class LayoutGenerator:
             want = links - len(cross)
             if want <= 0:
                 continue
-            spans = [self._hall_span(rooms[i], rooms[j]) for i, j in edges
-                     if assign[i] in pair and assign[j] in pair]
-            bound = BREACH_SPAN * max(spans) if spans else 0.0
+            bound = self._breach_bound(rooms, edges, assign, pair)
             used = {r for e in cross for r in e}
             near = set(used) | {n for r in used for n in nbrs[r]}
             cands = []
@@ -1855,7 +1923,7 @@ class LayoutGenerator:
                 for t in (j for j in range(len(rooms)) if assign[j] == intruder):
                     if frozenset((h, t)) in have:
                         continue
-                    span = self._hall_span(rooms[h], rooms[t])
+                    span = self._link_span(rooms[h], rooms[t])
                     hall_cap = self._hall_cap(rooms[h], rooms[t])
                     if span > bound or (hall_cap is not None and span > hall_cap):
                         continue
@@ -1889,6 +1957,20 @@ class LayoutGenerator:
                     want -= 1
                     added = True
         return added
+
+    def _breach_bound(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                      assign, pair: set) -> float:
+        """The longest :meth:`_hall_span` a new breach between the two Districts of
+        *pair* may run: ``BREACH_SPAN`` times the longest hall of the two Districts or
+        their links sized by the breach's race (the smaller, :meth:`_pair_race`), so a
+        goblin breach into giants is measured against goblin halls, not giant ones
+        (task 17, archive decision 21). 0 when there is none."""
+        mine = [k for k in range(len(rooms)) if assign[k] in pair]
+        h = min(semantics.body_height(self._race_of(rooms[k])) for k in mine) if mine else 0.0
+        spans = [self._link_span(rooms[i], rooms[j]) for i, j in edges
+                 if assign[i] in pair and assign[j] in pair
+                 and semantics.body_height(self._pair_race(rooms[i], rooms[j])) == h]
+        return BREACH_SPAN * max(spans) if spans else 0.0
 
     def _breach_degree_cap(self, n_rooms: int, n_districts: int) -> Optional[float]:
         """The most corridors a breach may leave on a room: the quality bands' max_degree
@@ -2616,7 +2698,8 @@ class LayoutGenerator:
         it): the shortest edge joining its two halves on the same District
         pair (one District, or the Threshold's two) that crosses no room, or
         None. (One crossing a room of its own Districts would be split again,
-        and could be swapped back: no fixpoint.)"""
+        and could be swapped back: no fixpoint.) A link between two Districts
+        keeps to :meth:`_hall_cap` (task 17)."""
         da = self._district_assign
         roots = self._components(len(rooms), rest)
         pair = frozenset((da[i], da[j]))
@@ -2624,13 +2707,39 @@ class LayoutGenerator:
         cands = sorted(
             ((u, v) for u in range(len(rooms)) if roots[u] == near
              for v in range(len(rooms)) if roots[v] == far
-             if frozenset((da[u], da[v])) == pair),
+             if frozenset((da[u], da[v])) == pair and self._link_fits(rooms, u, v)),
             key=lambda e: (rooms[e[0]].center_x - rooms[e[1]].center_x) ** 2
             + (rooms[e[0]].center_y - rooms[e[1]].center_y) ** 2)
         for u, v in cands:
             if crossed_room(u, v) is None:
                 return (u, v)
         return None
+
+    def _over_degree(self, rooms: List[RoomSpec], es: List[Tuple[int, int]],
+                     u: int, v: int) -> bool:
+        """Whether a new link u-v in a raced zone would take a room past the breach
+        degree cap (:meth:`_breach_degree_cap`): a drop's flush return skips it (task
+        17: with the Thresholds laid as drawn, a giant hub room took both Thresholds, a
+        breach and a return, degree 5 over the bands' 4). Always False without a raced
+        District."""
+        if not self._hall_cap_h:
+            return False
+        cap = self._breach_degree_cap(len(rooms), len({r.district for r in rooms}))
+        if cap is None:
+            return False
+        deg = sum(1 for e in es if u in e), sum(1 for e in es if v in e)
+        return max(deg) + 1 > cap
+
+    def _link_fits(self, rooms: List[RoomSpec], u: int, v: int) -> bool:
+        """Whether a stand-in u-v keeps to :meth:`_hall_cap` when it joins two
+        Districts (task 17: a swap or substitute picked by centres alone ran a
+        goblin link to 359 H). Inside a District, and with no raced District,
+        always."""
+        a, b = rooms[u], rooms[v]
+        if a.district == b.district:
+            return True
+        cap = self._hall_cap(a, b)
+        return cap is None or self._link_span(a, b) <= cap
 
     def _crossed_room_centreline(self, rooms: List[RoomSpec], i: int, j: int
                                  ) -> Optional[int]:
@@ -2875,7 +2984,8 @@ class LayoutGenerator:
             cands = sorted(
                 ((u, v) for u in range(len(rooms)) if roots[u] == side
                  for v in range(len(rooms)) if roots[v] != side
-                 if pair is None or frozenset((da[u], da[v])) == pair),
+                 if pair is None or (frozenset((da[u], da[v])) == pair
+                                     and self._link_fits(rooms, u, v))),
                 key=lambda e: (rooms[e[0]].center_x - rooms[e[1]].center_x) ** 2
                 + (rooms[e[0]].center_y - rooms[e[1]].center_y) ** 2)
             # (Stacked: a stand-in must be clear of every room, its own
@@ -3618,12 +3728,14 @@ class LayoutGenerator:
             def blocked(i, j):
                 return crossed(rooms, i, j) is not None
         have = {frozenset(e) for e in edges}
-        spans = [self._hall_span(rooms[i], rooms[j]) for i, j in edges
-                 if assign[i] in (host, intruder) and assign[j] in (host, intruder)]
-        bound = BREACH_SPAN * max(spans) if spans else 0.0
+        bound = self._breach_bound(rooms, edges, assign, {host, intruder})
         for t in far:
-            for span, h in sorted((self._hall_span(rooms[h], rooms[t]), h) for h in hosts):
+            for span, h in sorted((self._link_span(rooms[h], rooms[t]), h) for h in hosts):
                 if span > bound or frozenset((h, t)) in have or self._is_stair(h, t):
+                    continue
+                # Raced: a return keeps its rooms inside the degree cap; with none, the
+                # drop passes on (task 17).
+                if self._over_degree(rooms, edges, h, t):
                     continue
                 if abs(rooms[h].floor_z - rooms[t].floor_z) > self._edge_cap(rooms, h, t) + 1e-6:
                     continue
@@ -4453,7 +4565,8 @@ class LayoutGenerator:
         (``embed.STRAIGHT_NEED``), so the corridor runs straight; None (the
         wall's midpoint) otherwise, and always without jitter. The same for
         both ends, so both doors land on one line."""
-        if not self._straight_doors or exit_x != self._exit_axis_x(toward, room):
+        if (not (self._straight_doors or self._races_differ(room, toward))
+                or exit_x != self._exit_axis_x(toward, room)):
             return None
         from .topology.embed import STRAIGHT_NEED
         # Only rooms apart across the wall (a stair's rooms overlap in plan:
@@ -4486,6 +4599,16 @@ class LayoutGenerator:
             if hi < lo:
                 return None
         return (lo + hi) / 2
+
+    def _races_differ(self, a: RoomSpec, b: RoomSpec) -> bool:
+        """Whether *a* and *b* are sized by races of different H (a goblin room and a
+        giant one): their link runs straight across the span they share
+        (:meth:`_straight_across`; task 17, archive decision 21), not to the big
+        room's wall middle, a jog of up to half a giant wall."""
+        if self._room_race is None:
+            return False
+        return (semantics.body_height(self._race_of(a))
+                != semantics.body_height(self._race_of(b)))
 
     def _bearing_across(self, room: RoomSpec, toward: RoomSpec,
                         exit_x: bool) -> Optional[float]:
