@@ -2170,8 +2170,9 @@ class LayoutGenerator:
         before the rest, so the breaches spread along the boundary. A pair is
         taken only where its corridor could stand: a run within
         :meth:`_breach_bound` and :meth:`_hall_cap`, its rooms within the run's
-        grade (on two Levels of a stacked build, a planned stair, as any edge
-        across Levels: step 32 task 1), and no third room in its way.
+        grade (on two Levels of a stacked build with a District race, a planned
+        stair, as any edge across Levels: step 32 task 1; a race-less zone keeps
+        its breaches on one Level), and no third room in its way.
         Appended to *edges* (loop edges: the passes after may still drop them,
         and the next round takes the next candidate; *tried* holds those already
         added once); True when any was. Draws nothing."""
@@ -2229,6 +2230,10 @@ class LayoutGenerator:
                     if tier == 1 and (h in used or t in used):
                         continue
                     if cap is not None and max(deg[h], deg[t]) + 1 > cap:
+                        continue
+                    # Across Levels only in a zone with a District race (step 32 task 1):
+                    # race-less zones keep their builds.
+                    if self._room_race is None and self._is_stair(h, t):
                         continue
                     if abs(rooms[h].floor_z - rooms[t].floor_z) > self._edge_cap(rooms, h, t) + 1e-6:
                         continue
