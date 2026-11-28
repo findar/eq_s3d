@@ -71,6 +71,12 @@ BREACH_ROUNDS = 8
 # A new breach's hall span at most, over the longest hall of its two Districts and their links
 # sized by the breach's race (task 17: a goblin breach into giants against goblin halls).
 BREACH_SPAN = 2.0
+# An intruder seated against its host (``LayoutGenerator._seat_intruders``; step 32
+# task 1): the turns tried (quarter turns, then mirrored), the grid step of the places
+# tried, in breach bounds, and how many of the best places are checked exactly.
+SEAT_TURNS = tuple((k, m) for m in (False, True) for k in range(4))
+SEAT_STEP = 1.0 / 3.0
+SEAT_VERIFY = 16
 
 # Drops (district races step 31, Req 7, 8; archive decisions 2, 3). A link between two
 # Districts of an intrusion zone is flush unless a salted draw under DROP_SHARE (1 - the
@@ -193,6 +199,22 @@ HALL_CAP_BISECTIONS = 20
 #: How many halvings an Envelope build spends finding the widest gap that fits its hill
 #: (``LayoutGenerator._widest_fit``): (top - 1) / 8, a quarter at Hall length 3.
 HALL_GAP_BISECTIONS = 3
+
+
+def _turn(x: float, y: float, k: int, mirror: bool) -> Tuple[float, float]:
+    """(*x*, *y*) mirrored across the y axis when *mirror*, then turned *k* quarter
+    turns anticlockwise (``SEAT_TURNS``)."""
+    if mirror:
+        x = -x
+    for _ in range(k):
+        x, y = -y, x
+    return x, y
+
+
+def _turn_rect(rect, k: int, mirror: bool) -> Tuple[float, float, float, float]:
+    """An axis-aligned rect ``(x0, y0, x1, y1)`` under :func:`_turn`."""
+    (ax, ay), (bx, by) = _turn(rect[0], rect[1], k, mirror), _turn(rect[2], rect[3], k, mirror)
+    return min(ax, bx), min(ay, by), max(ax, bx), max(ay, by)
 
 
 class DistrictSplitError(ValueError):
@@ -1145,7 +1167,8 @@ class LayoutGenerator:
             self.warnings.extend(notes)
             spec.districts = district_specs
             # A District with a race of its own takes that race's sizes (Req 4).
-            self._apply_district_races(rooms, district_specs, edges, result, part=part)
+            self._apply_district_races(rooms, district_specs, edges, result, part=part,
+                                       links=links)
         if themed:
             semantics.label_rooms(
                 spec, rooms, self.rng,
@@ -1331,7 +1354,7 @@ class LayoutGenerator:
 
     def _apply_district_races(self, rooms: List[RoomSpec], districts: list,
                               edges: Optional[List[Tuple[int, int]]] = None,
-                              result=None, part=None) -> None:
+                              result=None, part=None, links: int = 1) -> None:
         """District races (Req 4): a District with a race of its own is laid out
         at that race's scale. The engine laid every room out at the zone's race
         (the partition needs its graph first), and every size there is a multiple
@@ -1341,8 +1364,10 @@ class LayoutGenerator:
         are pushed apart whole (:meth:`_separate_districts`), and from here every
         room is fitted to its own race's bands and every corridor sized by the
         smaller race of its two rooms (:meth:`_corridor_dims`). *part* (the
-        partition) names the Thresholds and an intrusion's breaches. No District
-        with a race: nothing changes, and nothing is drawn."""
+        partition) names the Thresholds and an intrusion's breaches; with *links*
+        over 1 (an intrusion) each intruder is seated against its host
+        (:meth:`_seat_intruders`). No District with a race: nothing changes, and
+        nothing is drawn."""
         if not any(d.race for d in districts):
             return
         race_of = {d.id: (d.race or self.race) for d in districts}
@@ -1369,6 +1394,8 @@ class LayoutGenerator:
             self._fit_thresholds(rooms, edges, halls or {}, drawn, race_of, part)
             self._cap_district_halls(rooms, edges, race_of,
                                      {d.id for d in districts if d.race}, part)
+            if links > 1 and part is not None:
+                self._seat_intruders(rooms, edges, part, getattr(result, "levels", None))
 
     def _cap_district_halls(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
                             race_of: Dict[int, str], raced: set, part=None) -> None:
@@ -1766,6 +1793,265 @@ class LayoutGenerator:
         if moved:
             self._separate_districts(rooms)
 
+    # An intruder seated against its host (step 32 task 1). The race scaling grows a
+    # giant host about its own centre and :meth:`_fit_thresholds` lays the intruder off
+    # one host room by its Threshold, so its other rooms end far from every other host
+    # wall and no goblin-length breach fits. The intruder District (with the Districts
+    # beyond it) is moved whole, by a rigid motion, to where most of its rooms face
+    # host rooms within the breach bound: its own halls keep their lengths exactly.
+
+    def _seat_intruders(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                        part, levels: Optional[Sequence[int]] = None) -> None:
+        """Each intrusion Threshold pair in turn (District order): when fewer than
+        ``INTRUSION_LINKS`` of the intruder's rooms face a host room within
+        :meth:`_breach_bound` (and :meth:`_hall_cap`), the intruder and the Districts
+        beyond it are turned (a quarter turn or a mirror, ``SEAT_TURNS``) and moved to
+        the place, on a grid of ``SEAT_STEP`` bounds over the host, where most do,
+        then the most host rooms, then the Threshold's own two rooms still in reach,
+        then the least move. A place is taken only where no moved room comes within
+        :meth:`_room_gap` of another room, no hall of either side runs through a room
+        of the other, and a pair on one Level within the Threshold's reach is had (the
+        Threshold's own, else the nearest becomes the Threshold). A room's corridors
+        stay under the breach degree cap. Draws nothing; with nothing better, nothing
+        moves."""
+        near: Dict[int, set] = {}
+        for i, j in edges:
+            di, dj = rooms[i].district, rooms[j].district
+            if di != dj:
+                near.setdefault(di, set()).add(dj)
+                near.setdefault(dj, set()).add(di)
+        moved = False
+        for n in range(len(part.thresholds)):
+            moved = self._seat_intruder(rooms, edges, part, n, near, levels) or moved
+        if moved:
+            self._separate_districts(rooms)
+
+    def _route_rects(self, rooms: List[RoomSpec], i: int, j: int) -> list:
+        """The floor rects of the i-j corridor as :meth:`_crossed_room` plans it."""
+        a, b = rooms[i], rooms[j]
+        hw = self._cw(a, b) / 2
+        route = plan_route(self._wall_point(a, b), self._wall_point(b, a),
+                           self._exit_axis_x(a, b), self._exit_axis_x(b, a), hw, steps=0)
+        return route_footprint(route, hw)
+
+    def _seat_intruder(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]], part,
+                       n: int, near: Dict[int, set], levels) -> bool:
+        """:meth:`_seat_intruders` for Threshold *n*; True when the intruder moved."""
+        import numpy as np
+        p, c = part.thresholds[n]
+        host, intr = rooms[p].district, rooms[c].district
+        beyond, stack = {intr}, [intr]
+        while stack:
+            x = stack.pop()
+            for q in near.get(x, ()):
+                if q != host and q not in beyond:
+                    beyond.add(q)
+                    stack.append(q)
+        inb = [r.district in beyond for r in rooms]
+        blk = [k for k in range(len(rooms)) if inb[k]]
+        rest = [k for k in range(len(rooms)) if not inb[k]]
+        hs = [k for k in rest if rooms[k].district == host]
+        ts = [k for k in blk if rooms[k].district == intr]
+        bound = self._breach_bound(rooms, edges, part.assign, {host, intr})
+        if bound <= 0.0 or not hs or not ts:
+            return False
+        cap = self._hall_cap(rooms[p], rooms[c])
+        reach = max(self._link_span(rooms[p], rooms[c]), bound)
+        if cap is not None:
+            bound, reach = min(bound, cap), min(reach, cap)
+        want = _districts.INTRUSION_LINKS
+        deg_cap = self._breach_degree_cap(len(rooms), len(set(part.assign)))
+        deg = {k: 0 for k in hs}
+        for e in edges:
+            if frozenset(e) != frozenset((p, c)):
+                for q in e:
+                    if q in deg:
+                        deg[q] += 1
+        room_left = np.array([want if deg_cap is None else max(0, int(deg_cap) - deg[k])
+                              for k in hs])
+        same = np.array([[levels is None or levels[h] == levels[t] for h in hs] for t in ts])
+        crossed = self._crossed_room if self.corridor_clearance else self._crossed_room_centreline
+
+        def exact() -> Tuple[int, int, int]:
+            """(rooms of the intruder in reach, host rooms in reach, Threshold kept)."""
+            ok = np.array([[bool(same[a][b]) and self._link_span(rooms[h], rooms[t]) <= bound
+                            and (levels is not None or crossed(rooms, h, t) is None)
+                            for b, h in enumerate(hs)] for a, t in enumerate(ts)])
+            got = min(int(ok.any(axis=1).sum()),
+                      int(np.minimum(ok.sum(axis=0), room_left).sum()), want)
+            return got, min(int(ok.any(axis=0).sum()), want), int(
+                self._link_span(rooms[p], rooms[c]) <= reach)
+
+        base = exact()
+        if base[0] >= want:
+            return False
+        # The block about the intruder's centroid; the host and the rest stay.
+        px = sum(rooms[k].center_x for k in ts) / len(ts)
+        py = sum(rooms[k].center_y for k in ts) / len(ts)
+        start = {k: (rooms[k].center_x, rooms[k].center_y, rooms[k].width, rooms[k].depth)
+                 for k in blk}
+        rest_rects = np.array([r for i, j in edges if not inb[i] and not inb[j]
+                               for r in self._route_rects(rooms, i, j)] or np.zeros((0, 4)))
+        blk_rects = [(r[0] - px, r[1] - py, r[2] - px, r[3] - py) for i, j in edges
+                     if inb[i] and inb[j] for r in self._route_rects(rooms, i, j)]
+        R = np.array([[rooms[k].center_x, rooms[k].center_y, rooms[k].width, rooms[k].depth]
+                      for k in rest])
+        Hm = np.array([[rooms[k].center_x, rooms[k].center_y, rooms[k].width, rooms[k].depth]
+                       for k in hs])
+        gap = np.array([[self._room_gap(rooms[k], rooms[m]) for m in rest] for k in blk])
+        cw = np.array([[self._cw(rooms[h], rooms[t]) for h in hs] for t in ts])
+        differ = np.array([[self._races_differ(rooms[h], rooms[t]) for h in hs] for t in ts])
+        from .topology.embed import STRAIGHT_NEED
+        step = max(SEAT_STEP * bound, 2.0 * self._cw(rooms[p], rooms[c]))
+        gx = np.arange((Hm[:, 0] - Hm[:, 2] / 2).min() - bound,
+                       (Hm[:, 0] + Hm[:, 2] / 2).max() + bound + step, step)
+        gy = np.arange((Hm[:, 1] - Hm[:, 3] / 2).min() - bound,
+                       (Hm[:, 1] + Hm[:, 3] / 2).max() + bound + step, step)
+        GX, GY = (g.ravel() for g in np.meshgrid(gx, gy))
+        trow = [blk.index(t) for t in ts]
+        ci, pi = ts.index(c), hs.index(p)
+        cands = []
+        for turn, (k, mirror) in enumerate(SEAT_TURNS):
+            off = np.array([_turn(rooms[q].center_x - px, rooms[q].center_y - py, k, mirror)
+                            for q in blk])
+            wd = np.array([(rooms[q].depth, rooms[q].width) if k % 2 else
+                           (rooms[q].width, rooms[q].depth) for q in blk])
+            # Every intruder room to every host room: its link span at each place.
+            tx = GX[:, None, None] + off[trow, 0][None, :, None]
+            ty = GY[:, None, None] + off[trow, 1][None, :, None]
+            tw, td = wd[trow, 0][None, :, None], wd[trow, 1][None, :, None]
+            hx, hy, hw, hd = (Hm[:, z][None, None, :] for z in range(4))
+            dx, dy = np.abs(tx - hx), np.abs(ty - hy)
+            sx, sy = dx - (tw + hw) / 2, dy - (td + hd) / 2
+            share_y = np.minimum((td + hd) / 2 - dy, np.minimum(td, hd))
+            share_x = np.minimum((tw + hw) / 2 - dx, np.minimum(tw, hw))
+            flat_x = differ[None] & (sx > 0) & (share_y >= STRAIGHT_NEED * cw[None])
+            flat_y = differ[None] & (sy > 0) & (share_x >= STRAIGHT_NEED * cw[None])
+            span = np.where(sx >= sy, np.maximum(sx, 0) + np.where(flat_x, 0, dy),
+                            np.maximum(sy, 0) + np.where(flat_y, 0, dx))
+            span = np.where(same[None], span, np.inf)
+            ok = span <= bound
+            got = np.minimum(np.minimum(ok.any(axis=2).sum(axis=1),
+                                        np.minimum(ok.sum(axis=1), room_left[None]).sum(axis=1)),
+                             want)
+            spread = np.minimum(ok.any(axis=1).sum(axis=1), want)
+            keeps = span[:, ci, pi] <= reach
+            bad = span.min(axis=(1, 2)) > reach
+            # No moved room within the room gap of another, nor on a corridor of the rest.
+            ax = GX[:, None, None] + off[:, 0][None, :, None]
+            ay = GY[:, None, None] + off[:, 1][None, :, None]
+            bw, bd = wd[:, 0][None, :, None], wd[:, 1][None, :, None]
+            bad |= ((np.abs(ax - R[:, 0][None, None]) < (bw + R[:, 2][None, None]) / 2 + gap[None])
+                    & (np.abs(ay - R[:, 1][None, None]) < (bd + R[:, 3][None, None]) / 2 + gap[None])
+                    ).any(axis=(1, 2))
+            if len(rest_rects):
+                rr = rest_rects[None, None]
+                bad |= ((np.minimum(rr[..., 2], ax + bw / 2) - np.maximum(rr[..., 0], ax - bw / 2) > _TOUCH)
+                        & (np.minimum(rr[..., 3], ay + bd / 2) - np.maximum(rr[..., 1], ay - bd / 2) > _TOUCH)
+                        ).any(axis=(1, 2))
+            if blk_rects:
+                br = np.array([_turn_rect(r, k, mirror) for r in blk_rects])
+                x0 = GX[:, None, None] + br[:, 0][None, :, None]
+                x1 = GX[:, None, None] + br[:, 2][None, :, None]
+                y0 = GY[:, None, None] + br[:, 1][None, :, None]
+                y1 = GY[:, None, None] + br[:, 3][None, :, None]
+                rx0, rx1 = (R[:, 0] - R[:, 2] / 2)[None, None], (R[:, 0] + R[:, 2] / 2)[None, None]
+                ry0, ry1 = (R[:, 1] - R[:, 3] / 2)[None, None], (R[:, 1] + R[:, 3] / 2)[None, None]
+                bad |= ((np.minimum(x1, rx1) - np.maximum(x0, rx0) > _TOUCH)
+                        & (np.minimum(y1, ry1) - np.maximum(y0, ry0) > _TOUCH)).any(axis=(1, 2))
+            move = np.hypot(GX - px, GY - py)
+            for g in np.flatnonzero(~bad & (got > base[0])):
+                cands.append(((int(got[g]), int(spread[g]), int(keeps[g]), -float(move[g]),
+                               -turn), turn, float(GX[g]), float(GY[g])))
+        cands.sort(reverse=True)
+
+        def place(turn: int, nx: float, ny: float) -> None:
+            k, mirror = SEAT_TURNS[turn]
+            for q in blk:
+                x, y, w, d = start[q]
+                ox, oy = _turn(x - px, y - py, k, mirror)
+                r = rooms[q]
+                r.center_x, r.center_y = nx + ox, ny + oy
+                r.width, r.depth = (d, w) if k % 2 else (w, d)
+
+        # The grid's spans read a corridor as the layout will plan it but for a
+        # bearing door's margin: each pick is checked again exactly.
+        best = None
+        for key, turn, nx, ny in cands[:SEAT_VERIFY]:
+            place(turn, nx, ny)
+            got = exact()
+            if got[0] > base[0] and self._seat_clear(rooms, edges, inb) and (
+                    best is None or (got, key[3:]) > best[0]):
+                best = ((got, key[3:]), turn, nx, ny)
+        if best is None:
+            place(0, px, py)
+            return False
+        place(best[1], best[2], best[3])
+        self._seat_links(rooms, edges, part, n, inb, hs, ts, bound, reach, levels, deg_cap)
+        return True
+
+    def _seat_clear(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
+                    inb: List[bool]) -> bool:
+        """No moved room (*inb*) within :meth:`_room_gap` of another room, and no
+        corridor of either side over a room of the other."""
+        for k, rk in enumerate(rooms):
+            if not inb[k]:
+                continue
+            for m, rm in enumerate(rooms):
+                if inb[m]:
+                    continue
+                g = self._room_gap(rk, rm)
+                if (abs(rk.center_x - rm.center_x) < (rk.width + rm.width) / 2 + g
+                        and abs(rk.center_y - rm.center_y) < (rk.depth + rm.depth) / 2 + g):
+                    return False
+        for i, j in edges:
+            if inb[i] != inb[j]:
+                continue
+            for x0, y0, x1, y1 in self._route_rects(rooms, i, j):
+                for m, r in enumerate(rooms):
+                    if inb[m] == inb[i]:
+                        continue
+                    if (min(x1, r.center_x + r.width / 2) - max(x0, r.center_x - r.width / 2) > _TOUCH
+                            and min(y1, r.center_y + r.depth / 2)
+                            - max(y0, r.center_y - r.depth / 2) > _TOUCH):
+                        return False
+        return True
+
+    def _seat_links(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]], part, n: int,
+                    inb: List[bool], hs: List[int], ts: List[int], bound: float,
+                    reach: float, levels, deg_cap) -> None:
+        """After a seat: the Threshold stays where its two rooms are still in *reach*,
+        else the nearest pair on one Level (with room under the degree cap, if any has)
+        becomes it; the graph's own breaches the move carried past *bound* go."""
+        p, c = part.thresholds[n]
+        have = {frozenset(e) for e in edges}
+        if self._link_span(rooms[p], rooms[c]) > reach:
+            deg = [0] * len(rooms)
+            for e in have:
+                for q in e:
+                    deg[q] += 1
+            deg[p] -= 1
+            deg[c] -= 1
+            pairs = sorted((deg_cap is not None and max(deg[h], deg[t]) + 1 > deg_cap,
+                            self._link_span(rooms[h], rooms[t]), h, t)
+                           for h in hs for t in ts
+                           if levels is None or levels[h] == levels[t])
+            _, _, h, t = pairs[0]
+            k = next(x for x, e in enumerate(edges) if frozenset(e) == frozenset((p, c)))
+            if frozenset((h, t)) in have:
+                del edges[k]
+                part.breaches = [e for e in part.breaches if frozenset(e) != frozenset((h, t))]
+            else:
+                edges[k] = (h, t)
+            part.thresholds[n] = (h, t)
+        keep = {frozenset(t) for t in part.thresholds}
+        drop = {frozenset(e) for e in part.breaches
+                if inb[e[0]] != inb[e[1]] and frozenset(e) not in keep
+                and self._link_span(rooms[e[0]], rooms[e[1]]) > bound}
+        if drop:
+            edges[:] = [e for e in edges if frozenset(e) not in drop]
+            part.breaches = [e for e in part.breaches if frozenset(e) not in drop]
+
     def _separate_districts(self, rooms: List[RoomSpec], iterations: int = 400) -> None:
         """Push Districts apart whole until no room of one overlaps a room of
         another (with :meth:`_room_gap` between), each District moving as one so
@@ -1881,8 +2167,9 @@ class LayoutGenerator:
         span, rooms on no link of the pair (nor next to one in their District)
         before the rest, so the breaches spread along the boundary. A pair is
         taken only where its corridor could stand: a run within
-        :meth:`_breach_bound` and :meth:`_hall_cap`, its rooms on one
-        Level and within the run's grade, and no third room in its way.
+        :meth:`_breach_bound` and :meth:`_hall_cap`, its rooms within the run's
+        grade (on two Levels of a stacked build, a planned stair, as any edge
+        across Levels: step 32 task 1), and no third room in its way.
         Appended to *edges* (loop edges: the passes after may still drop them,
         and the next round takes the next candidate; *tried* holds those already
         added once); True when any was. Draws nothing."""
@@ -1940,8 +2227,6 @@ class LayoutGenerator:
                     if tier == 1 and (h in used or t in used):
                         continue
                     if cap is not None and max(deg[h], deg[t]) + 1 > cap:
-                        continue
-                    if self._is_stair(h, t):
                         continue
                     if abs(rooms[h].floor_z - rooms[t].floor_z) > self._edge_cap(rooms, h, t) + 1e-6:
                         continue
