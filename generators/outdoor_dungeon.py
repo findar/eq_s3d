@@ -66,7 +66,7 @@ from generators.routing import corridor_route, route_footprint
 from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,  # noqa: F401
                                          landscape_for, normalise_edges, wilderness_spec)
 from generators.wilderness.matrix import (DEFAULT_HOST_HILL, DEFAULT_ZONE_SIZE,
-                                          OUTDOOR_DUNGEON_ZONE_SIZE, Landform)
+                                          OUTDOOR_DUNGEON_ZONE_SIZE, Landform, wants_lava)
 from generators.wilderness.biome import load_biome_kit
 from generators.world import Socket, World, world_for
 from generators.zone_spec import MaterialSpec, ZoneSpec
@@ -705,11 +705,11 @@ class _Grid:
 AREA_ATTR = "area_world"
 
 
-def _area_inputs(seed, biome, edges, zone_size, landform) -> tuple:
+def _area_inputs(seed, biome, edges, zone_size, landform, lava=False) -> tuple:
     """What makes an area's landscape, compared as ``landscape_for`` keys it."""
     return (seed, biome or DEFAULT_BIOME, tuple(sorted(normalise_edges(edges).items())),
             float(zone_size or DEFAULT_ZONE_SIZE),
-            Landform.from_dict(landform) if landform else None)
+            Landform.from_dict(landform) if landform else None, bool(lava))
 
 
 def area_world(spec: ZoneSpec) -> World:
@@ -725,16 +725,16 @@ def area_world(spec: ZoneSpec) -> World:
         raise ValueError(f"wilderness spec {spec.name!r} has no seed")
     p = spec.wilderness
     want = _area_inputs(spec.seed, p.get("biome"), p.get("edges"), p.get("zone_size"),
-                        p.get("landform"))
+                        p.get("landform"), p.get("lava", False))
     world = getattr(spec, AREA_ATTR, None)
     if world is not None:
         r = world.recipe
         if _area_inputs(r.get("seed"), r.get("biome"), r.get("edges"), r.get("zone_size"),
-                        r.get("landform")) == want:
+                        r.get("landform"), r.get("lava", False)) == want:
             return world
     kind = "outdoor_dungeon" if p.get("landform") else "wilderness"
     world = world_for(kind, spec.seed, biome=want[1], edges=p.get("edges"),
-                      zone_size=want[3], landform=p.get("landform"))
+                      zone_size=want[3], landform=p.get("landform"), lava=want[5])
     setattr(spec, AREA_ATTR, world)
     return world
 
@@ -1132,11 +1132,14 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
 
     # The World places DEFAULT_HOST_HILL once; the spec is made on the Landform as placed,
     # so its Spawn, regions, water and materials are the landscape the TER is (task 20).
+    # The lava patch only when the plan's theme calls for it (step 35 task 2).
+    lava = wants_lava(layout_kwargs.get("elemental_tint"), layout_kwargs.get("dungeon_theme"))
     world = world_for("outdoor_dungeon", seed, biome=biome, edges=edges,
-                      landform=DEFAULT_HOST_HILL, zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
+                      landform=DEFAULT_HOST_HILL, zone_size=OUTDOOR_DUNGEON_ZONE_SIZE,
+                      lava=lava)
     spec = wilderness_spec(name, seed, edges, biome,
                            landform=Landform.from_dict(world.recipe["landform"]),
-                           zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
+                           zone_size=OUTDOOR_DUNGEON_ZONE_SIZE, lava=lava)
     spec.zone_type = "outdoor_dungeon"
     # The area as built rides beside the spec: the later steps read it (area_world).
     setattr(spec, AREA_ATTR, world)

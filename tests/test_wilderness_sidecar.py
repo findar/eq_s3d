@@ -28,8 +28,9 @@ def _build(tmp_path, plan, **kw):
 
 @pytest.fixture
 def karana(tmp_path):
+    # A lava element keeps the interior lava patch (step 35 task 2: off otherwise).
     plan = ZonePlan(name="karana", zone_type="wilderness",
-                    prompt="the rolling plains of the karanas")
+                    prompt="the rolling plains of the karanas", elemental_tint="lava")
     return _build(tmp_path, plan, edges={"N": "zoneline", "E": "river"})
 
 
@@ -56,6 +57,13 @@ def test_wilderness_sidecar_carries_the_advisory_data(karana):
     (spawn,) = [a for a in data["poi_anchors"] if a["is_spawn"]]
     assert spawn["name"] == "Spawn" and spawn["intent"] == "playable"
     assert [spawn["x"], spawn["y"], spawn["z"]] == pytest.approx(list(spec.safe_point))
+
+
+def test_a_plain_karana_has_no_lava(tmp_path):
+    plan = ZonePlan(name="karana", zone_type="wilderness",
+                    prompt="the rolling plains of the karanas")
+    _, _, data = _build(tmp_path, plan, edges={"N": "zoneline", "E": "river"})
+    assert data["lava"] == []
 
 
 def test_glb_sidecar_matches_and_the_binary_carries_none_of_it(karana):

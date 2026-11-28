@@ -78,8 +78,9 @@ RECORDINGS: List[Dict] = [
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "gnoll"}},
     {"name": "wilderness_centaur", "seed": 120,
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "centaur"}},
-    # Farmsteads are human only; seed 127 gives two, with a hut, a shrine and a ruin (task 11).
-    {"name": "wilderness_farmstead", "seed": 127,
+    # Farmsteads are human only; seed 139 gives three, with a hut and a ruin (127 did until the
+    # lava patch went themed, step 35 task 2).
+    {"name": "wilderness_farmstead", "seed": 139,
      "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "human"}},
     # The cave Purpose (step 21): graph layout, the only one that draws its rough walls; seed 125
     # holds a cave mouth, the cavern hub, a crystal grotto and grottos.

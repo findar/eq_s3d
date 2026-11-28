@@ -736,6 +736,18 @@ def _unify_water(
     # proves water ended up a single region regardless.
 
 
+#: The dungeon theme whose area carries the lava patch (archive decision 3).
+LAVA_THEMES = frozenset({"lava_forge"})
+
+
+def wants_lava(elemental_tint: Optional[str] = None,
+               dungeon_theme: Optional[str] = None) -> bool:
+    """Does a plan's theme call for the interior lava patch? Its element is
+    lava, or its dungeon theme is a lava one (step 35 Req 3, archive
+    decision 3)."""
+    return (elemental_tint or "") == "lava" or (dungeon_theme or "") in LAVA_THEMES
+
+
 def build_matrix(
     intent: Any,
     edges: Optional[List[EdgeConnection]] = None,
@@ -746,8 +758,13 @@ def build_matrix(
     water_level: float = DEFAULT_WATER_LEVEL,
     intent_overrides: Optional[Dict[Tuple[int, int], IntentTag]] = None,
     landform: Optional[Landform] = None,
+    lava: bool = False,
 ) -> DesignMatrix:
     """Construct a plains-Karana :class:`DesignMatrix`, terrain-first.
+
+    ``lava`` draws the interior lava patch (step 35 task 2): only a plan whose
+    theme calls for it (:func:`wants_lava`) asks; off, the patch's cell stays
+    plains and nothing else changes (the patch is the matrix stream's last draw).
 
     ``intent`` is the resolved wilderness intent (a
     ``generators.wilderness.biome_resolve.WildernessIntent``): its ``biome``
@@ -916,7 +933,8 @@ def build_matrix(
 
     # (b) A small interior lava hazard patch, offset from Spawn so it never
     #     strands the spawn ground. A compact 1-2 cell patch, not a barrier.
-    if len(interior) >= 9:
+    #     Only when the plan's theme calls for lava (``lava``).
+    if lava and len(interior) >= 9:
         # Pick an interior cell away from Spawn and not already special.
         candidates = [
             (i, j)
