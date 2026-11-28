@@ -1112,9 +1112,11 @@ def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
     trench has met the ground. If it hasn't within ``APRON_REACH`` rows, the
     second value is False and the Entrance is unusable.
 
-    It is unusable too when the floor stands above the ground at that edge (step 35
-    task 12): the edge's vertices would rise to it, a ledge over the ground in front. A
-    hill's flank never does this; a scarp's face, over level ground, would."""
+    It is unusable too when the floor stands above the ground at that edge, or when the
+    ground falls away from the trench more steeply than ``MAX_GRADE`` from one row to the
+    next (step 35 task 12): a ledge over the ground in front. A hill's flank never does
+    this (seeds 1-30, three races: the steepest fall 18 u a cell against 20); a Mouth cut
+    into a scarp's face, over level ground, would."""
     ax, out = e.axis, e.outward
     lo, hi = mouth_geometry(grid, e).cols
     edge = grid.coord(ax, e.portal + out)
@@ -1130,7 +1132,7 @@ def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
         d = abs(grid.coord(ax, k) - edge)
         if step > 0 and all(z[grid.ij(ax, k, c)] <= e.floor + MAX_GRADE * d + 1e-6
                             for c in range(lo, hi + 1)):
-            return z, True
+            return z, not _apron_falls(grid, z, e, lo, hi, step)
         for c in range(lo - 1, hi + 2):
             if not 0 <= c < grid.size(1 - ax):
                 continue
@@ -1139,6 +1141,21 @@ def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
             ij = grid.ij(ax, k, c)
             z[ij] = e.floor if step == 0 and lo <= c <= hi else min(z[ij], cone)
     return z, False
+
+
+def _apron_falls(grid: _Grid, z: np.ndarray, e: Entrance, lo: int, hi: int,
+                 steps: int) -> bool:
+    """Whether the ground on the notch's columns ``lo..hi`` falls more than ``MAX_GRADE``
+    a cell between two rows, from the Apron's edge out to the row ``steps`` beyond it
+    where the trench met the ground (:func:`_apron`)."""
+    ax, out = e.axis, e.outward
+    fall = MAX_GRADE * grid.res + 1e-6
+    for step in range(steps):
+        k = e.portal + out * (1 + step)
+        if any(z[grid.ij(ax, k, c)] - z[grid.ij(ax, k + out, c)] > fall
+               for c in range(lo, hi + 1)):
+            return True
+    return False
 
 
 def _tunnel_covered(grid: _Grid, e: Entrance, cover: float) -> bool:
