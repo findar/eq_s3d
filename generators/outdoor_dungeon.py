@@ -65,8 +65,9 @@ from generators.routing import corridor_route, route_footprint
 # :func:`area_world`); it stays importable because the Attach tests patch it.
 from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,  # noqa: F401
                                          landscape_for, normalise_edges, wilderness_spec)
-from generators.wilderness.matrix import (DEFAULT_HOST_HILL, DEFAULT_ZONE_SIZE,
-                                          OUTDOOR_DUNGEON_ZONE_SIZE, Landform, wants_lava)
+from generators.wilderness.matrix import (DEFAULT_HOST_HILL, DEFAULT_ZONE_SIZE,  # noqa: F401
+                                          OUTDOOR_DUNGEON_ZONE_SIZE, Landform, host_hill,
+                                          host_zone_size, wants_lava)
 from generators.wilderness.biome import load_biome_kit
 from generators.world import Socket, World, world_for
 from generators.zone_spec import MaterialSpec, ZoneSpec
@@ -236,6 +237,33 @@ def floor_depth(verticality: Optional[str] = None, race: str = "") -> float:
     ``rooms_reduced``."""
     extra = EXTRA_LEVELS.get(verticality or "flat", 0)
     return FLOOR_DEPTH + extra * level_height(race)
+
+
+#: A dungeon's footprint side over ``sqrt(rooms)`` medium room sides (step 35 task 4):
+#: graph layouts on a hill too big to squeeze them measured 31.5 H per sqrt(rooms) at the
+#: median (human, ogre, giant, dragon; 5, 12 and 30 rooms), 2.5 medium sides (12.65 H).
+#: Sized to it, the host is stock's 1.8 times the dungeon's side; at 1.5 rooms were all
+#: kept but squeezed to a host 1.35 times their side, and a 30-room plan took longer.
+HOST_PACKING: float = 2.5
+
+
+def interior_side(room_count: int = DEFAULT_ROOMS, race: str = "") -> float:
+    """The side of the footprint a dungeon of ``room_count`` rooms of ``race`` needs
+    under its hill, from the plan alone (step 35 Req 5): ``sqrt(room_count)`` medium rooms
+    of the race (``semantics.room_side`` at the middle of its band) a side, times
+    ``HOST_PACKING``. Read before anything is laid out, so the host is sized first and the
+    dungeon fitted after."""
+    return HOST_PACKING * math.sqrt(max(1, int(room_count))) * semantics.room_side(race, 0.5)
+
+
+def host_for(room_count: int = DEFAULT_ROOMS, race: str = "") -> Tuple[Landform, float]:
+    """The Host_Hill request and the zone size an outdoor dungeon of ``room_count`` rooms
+    of ``race`` is built on (step 35 task 4): the hill sized to :func:`interior_side`
+    (``matrix.host_hill``, never under ``DEFAULT_HOST_HILL``), the zone the least that
+    holds it as the default zone holds the default hill (``matrix.host_zone_size``). Its
+    depth is the Verticality's (:func:`floor_depth`)."""
+    hill = host_hill(interior_side(room_count, race))
+    return hill, host_zone_size(hill)
 
 
 def host_envelope(host, terrain, *,
@@ -1130,16 +1158,18 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     from generators import stages
     from generators.world import world_for
 
-    # The World places DEFAULT_HOST_HILL once; the spec is made on the Landform as placed,
-    # so its Spawn, regions, water and materials are the landscape the TER is (task 20).
+    # The host is sized from the plan first (step 35 task 4: its room count and race), and
+    # the World places it once; the spec is made on the Landform as placed, so its Spawn,
+    # regions, water and materials are the landscape the TER is (task 20). The payload
+    # records the placed Landform and the zone size, so ``area_world`` keys on both.
     # The lava patch only when the plan's theme calls for it (step 35 task 2).
     lava = wants_lava(layout_kwargs.get("elemental_tint"), layout_kwargs.get("dungeon_theme"))
+    request, zone_size = host_for(room_count, layout_kwargs.get("dungeon_race") or "")
     world = world_for("outdoor_dungeon", seed, biome=biome, edges=edges,
-                      landform=DEFAULT_HOST_HILL, zone_size=OUTDOOR_DUNGEON_ZONE_SIZE,
-                      lava=lava)
+                      landform=request, zone_size=zone_size, lava=lava)
     spec = wilderness_spec(name, seed, edges, biome,
                            landform=Landform.from_dict(world.recipe["landform"]),
-                           zone_size=OUTDOOR_DUNGEON_ZONE_SIZE, lava=lava)
+                           zone_size=zone_size, lava=lava)
     spec.zone_type = "outdoor_dungeon"
     # The area as built rides beside the spec: the later steps read it (area_world).
     setattr(spec, AREA_ATTR, world)

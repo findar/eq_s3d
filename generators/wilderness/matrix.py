@@ -245,6 +245,39 @@ DEFAULT_HOST_HILL = Landform(kind="hill", radius=250.0, relief=120.0, flank=300.
 #: The outdoor dungeon's zone size (Open question 2 answer).
 OUTDOOR_DUNGEON_ZONE_SIZE: float = 1200.0
 
+#: A host sized to what it holds (step 35 task 4, archive decision 2: stock rock
+#: interiors with a host of their own sit p50 48 u (never under 16) inside its edge, the
+#: host p50 1.8 times the interior's side).
+HOST_MARGIN: float = 48.0
+HOST_MARGIN_MIN: float = 16.0
+HOST_SIDE_RATIO: float = 1.8
+
+
+def host_hill(interior_side: float, base: Landform = DEFAULT_HOST_HILL) -> Landform:
+    """The Host_Hill for a dungeon whose footprint is ``interior_side`` across: the hill
+    region (its disc out to half relief, ``radius + flank / 2``, the Envelope's footprint)
+    is that side plus ``HOST_MARGIN`` each side and at least ``HOST_SIDE_RATIO`` times it.
+    Never smaller than ``base`` (the default hill, which the default zone holds); the
+    relief and flank are ``base``'s, so the flank stays as walkable as the default's."""
+    side = max(0.0, float(interior_side))
+    across = max(side + 2.0 * max(HOST_MARGIN, HOST_MARGIN_MIN), HOST_SIDE_RATIO * side)
+    radius = max(base.radius, across / 2.0 - base.flank / 2.0)
+    return base if radius == base.radius else replace(base, radius=radius)
+
+
+def host_zone_size(landform: Landform, cell_size: Optional[float] = None) -> float:
+    """The least outdoor-dungeon zone that holds ``landform`` as the default zone holds
+    the default hill: ``OUTDOOR_DUNGEON_ZONE_SIZE`` grown by what the hill's reach
+    (``radius + flank``) grew either side, so the open approach in front of it and the Rim
+    behind it are the default's; rounded up to an even number of matrix cells (the default
+    is 8), so the zone stays centred on a cell corner as the default's is."""
+    cell_size = DEFAULT_CELL_SIZE if cell_size is None else cell_size
+    base = DEFAULT_HOST_HILL.radius + DEFAULT_HOST_HILL.flank
+    grow = max(0.0, landform.radius + landform.flank - base)
+    size = OUTDOOR_DUNGEON_ZONE_SIZE + 2.0 * grow
+    cells = math.ceil(size / cell_size - 1e-9)
+    return float(cells + cells % 2) * cell_size
+
 
 # ---------------------------------------------------------------------------
 # The Design_Matrix
