@@ -188,6 +188,43 @@ def test_a_return_is_marked_from_the_layout_record(monkeypatch):
     assert "return (way back)" in rows
 
 
+def test_a_refused_drop_leaves_no_return_mark(monkeypatch):
+    """The same zone with the drop that called for ``corr_25`` refused (the strong-connection
+    test fails the one trial after it is laid): the corridor is still laid, now a plain flush
+    breach, so neither the record nor the spec nor the map calls it a return."""
+    from generators import layout as L
+    from generators.districts import INTRUSION
+    monkeypatch.setattr(L, "DROP_SHARE", 1.0)
+    laid, refused = [], []
+    add_return, connected = L.LayoutGenerator._add_return, L.LayoutGenerator._strongly_connected
+
+    def spy_return(self, *a, **k):
+        ret = add_return(self, *a, **k)
+        if ret is not None:
+            laid.append(ret)
+        return ret
+
+    def refuse_after_return(*a, **k):
+        if len(laid) > len(refused):
+            refused.append(True)
+            return False
+        return connected(*a, **k)
+
+    monkeypatch.setattr(L.LayoutGenerator, "_add_return", spy_return)
+    monkeypatch.setattr(L.LayoutGenerator, "_strongly_connected", staticmethod(refuse_after_return))
+    gen = L.LayoutGenerator("dungeon", seed=2085, engine="classic")
+    spec = gen.generate("t", room_count=24, districts=True, district_plan=_PLAN,
+                        district_relationship=INTRUSION, elevation=True)
+    assert [r["edge"] for r in laid] == [25] and refused
+    (cor,) = [c for c in spec.corridors if c.id == "corr_25"]
+    by = {r.id: r for r in spec.rooms}
+    assert not cor.drop and by[cor.from_room].district != by[cor.to_room].district
+    assert gen.drop_returns == [] and not any(c.drop_return for c in spec.corridors)
+    assert all("drop_return" not in c for c in spec.to_dict()["corridors"])
+    svg = render_map_svg(spec, outline=_outline(spec))
+    assert "link-return" not in svg and "return (way back)" not in svg
+
+
 def test_a_zone_without_a_return_writes_no_flag(case_p):
     assert not any(c.drop_return for c in case_p.corridors)
     assert all("drop_return" not in c for c in case_p.to_dict()["corridors"])

@@ -3933,6 +3933,7 @@ class LayoutGenerator:
         floors = [r.floor_z for r in rooms]
         accepted: Dict[int, float] = {}
         self.drop_returns = []
+        laid: List[dict] = []
         returned: set = set()
         for want in heights:
             while order:
@@ -3952,7 +3953,7 @@ class LayoutGenerator:
                     if ret is None:
                         continue
                     returned.add(pair)
-                    self.drop_returns.append(ret)
+                    laid.append(ret)
                 trial = {**accepted, k: h}
                 drops = [trial.get(m, 0.0) for m in range(len(edges))]
                 tried = list(edges)
@@ -3964,6 +3965,16 @@ class LayoutGenerator:
                         edges[k] = edges[k][::-1]
                         self._reverse(cors[k])
                     break
+        # A return laid is a return only once the drops it was laid for stand: every other
+        # link of its pair accepted. A drop refused after its return was laid leaves that
+        # corridor a plain flush breach, unmarked (step 32 task 3).
+        by_cor = {c.id: c for c in spec.corridors}
+        for ret in laid:
+            pair = pair_of(edges[ret["edge"]])
+            if all(m in accepted for m, e in enumerate(edges)
+                   if m != ret["edge"] and pair_of(e) == pair):
+                by_cor[f"corr_{ret['edge']}"].drop_return = True
+                self.drop_returns.append(ret)
         for k, h in accepted.items():
             cor = cors[k]
             cor.drop = round(h, 2)
@@ -3992,8 +4003,8 @@ class LayoutGenerator:
         room), each to its host rooms nearest first by hall span, a pair taken where a breach
         could be (``_add_breaches``: one Level, within grade, no room in the way) whose
         corridor clashes with no other (``_resolve_conflicts`` on a copy keeps every edge).
-        Appended to ``edges`` and ``spec.corridors`` (``corr_k`` stays edge ``k``, its
-        ``drop_return`` set) and to ``part.breaches``; returns ``{"edge", "from", "to", "hops"}``, or None."""
+        Appended to ``edges`` and ``spec.corridors`` (``corr_k`` stays edge ``k``) and to
+        ``part.breaches``; returns ``{"edge", "from", "to", "hops"}``, or None."""
         from collections import deque
         assign = part.assign
         inside: Dict[int, list] = {}
@@ -4044,9 +4055,7 @@ class LayoutGenerator:
                 if {frozenset(e) for e in kept} != {frozenset(e) for e in trial}:
                     continue
                 edges.append((h, t))
-                cor = self._corridor_for(rooms, len(edges) - 1, h, t)
-                cor.drop_return = True          # the map marks it from this (step 32 task 3)
-                spec.corridors.append(cor)
+                spec.corridors.append(self._corridor_for(rooms, len(edges) - 1, h, t))
                 part.breaches.append((h, t))
                 return {"edge": len(edges) - 1, "from": rooms[t].id, "to": rooms[h].id,
                         "hops": hops[t]}
