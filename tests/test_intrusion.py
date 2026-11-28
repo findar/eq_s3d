@@ -35,9 +35,10 @@ def test_new_breaches_fill_most_pairs(layout):
     """Where the graph offers too few cross edges, new ones are added (the lead's call
     at the task 6 review): many pairs end with 2-3 links, none longer than
     BREACH_SPAN times the longest hall of its two Districts. Since task 17 a goblin
-    breach into giants is bounded by goblin halls (archive decision 21), which costs
-    breaches where the giant rooms stand far apart: a bare Graph build (no plan) keeps
-    5 of these 12 pairs at 2+ links; through the plan (the sweep), 68 % of pairs."""
+    breach into giants is bounded by goblin halls (archive decision 21), which cost
+    breaches where the giant rooms stand far apart (a bare Graph build kept 5 of these
+    12 pairs at 2+ links); since step 32 the intruder is seated against its host
+    (``_seat_intruders``): Graph 12 of 12, classic 11 of 12."""
     from generators.layout import BREACH_SPAN
     pairs = multi = 0
     for seed in range(2000, 2006):
@@ -57,7 +58,63 @@ def test_new_breaches_fill_most_pairs(layout):
         pairs += len(per)
         multi += sum(v >= 2 for v in per.values())
         assert max(per.values()) <= INTRUSION_LINKS
-    assert multi >= (0.6 if layout == "classic" else 0.35) * pairs
+    assert multi >= 0.8 * pairs
+
+
+def test_a_seat_moves_the_intruder_whole(monkeypatch):
+    """Step 32 task 1 (bare Graph seed 2001: both pairs joined by their Threshold
+    alone): the intruder District is moved by a rigid motion to where its rooms face
+    host rooms within the breach bound. The host stays where it was, the intruder's own
+    halls keep their spans, and more of its rooms are in reach than before."""
+    seen = []
+    seat = LayoutGenerator._seat_intruder
+
+    def spy(self, rooms, edges, part, n, near, levels):
+        p, c = part.thresholds[n]
+        host, intr = rooms[p].district, rooms[c].district
+
+        def snap():
+            inner = sorted(self._hall_span(rooms[i], rooms[j]) for i, j in edges
+                           if rooms[i].district == rooms[j].district == intr)
+            bound = self._breach_bound(rooms, edges, part.assign, {host, intr})
+            reach = {r for r in range(len(rooms)) if rooms[r].district == intr
+                     and any(rooms[h].district == host
+                             and self._link_span(rooms[h], rooms[r]) <= bound
+                             for h in range(len(rooms)))}
+            return ({r.id: (r.center_x, r.center_y) for r in rooms if r.district == host},
+                    inner, len(reach))
+        before = snap()
+        moved = seat(self, rooms, edges, part, n, near, levels)
+        seen.append((moved, before, snap()))
+        return moved
+
+    monkeypatch.setattr(LayoutGenerator, "_seat_intruder", spy)
+    LayoutGenerator("dungeon", seed=2001, engine="graph").generate(
+        "t", room_count=16, districts=True, district_plan=PLAN, district_relationship=INTRUSION)
+    moves = [(b, a) for moved, b, a in seen if moved]
+    assert moves
+    for (host0, inner0, reach0), (host1, inner1, reach1) in moves:
+        assert host1 == host0
+        assert inner1 == pytest.approx(inner0)
+        assert reach1 > reach0
+
+
+def test_a_breach_may_climb_between_levels():
+    """Step 32 task 1 (step 31 decision 20: prompt seed 2023's goblin pairs sat on
+    other Levels, so it joined the goblins by its Threshold alone): on a stacked build
+    a breach between two Levels is a planned stair, as any edge across Levels."""
+    from ai.expand import plan_to_spec
+    from ai.planner import make_plan
+    plan = make_plan("a towering giant fortress the goblins tunnelled into, with 16 rooms",
+                     name="gf2023")
+    spec = plan_to_spec(plan, seed=2023, warnings=[])
+    by = {r.id: r for r in spec.rooms}
+    race = {d.id: d.race for d in spec.districts}
+    cors = {c.id: c for c in spec.corridors}
+    goblin = [cors[cid] for cid in breach_hosts(spec)
+              if "goblin" in (race[by[cors[cid].from_room].district],
+                              race[by[cors[cid].to_room].district])]
+    assert goblin and any(c.steps for c in goblin)
 
 
 def test_breaches_keep_to_the_degree_band(monkeypatch):

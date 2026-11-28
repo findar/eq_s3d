@@ -20,3 +20,4 @@ An intruder District overlaps its host again: short, goblin-length breaches fit 
 - Stacked Districts and the relax runaway (step 31 `7a9b90e`, `HALL_SCALE_CAP`).
 
 ## Result
+✔ 928db52 · quick 3211 passed · gate 702 passed · full 4417 passed (its one failure, the bridges slot case, re-pinned in 928db52: 67 passed)
