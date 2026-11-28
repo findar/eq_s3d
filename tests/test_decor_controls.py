@@ -179,7 +179,7 @@ def test_reroll_decor_changes_only_the_props_and_both_maps_show_them(client):
     svg = (build / f"{b['id']}.map.svg").read_text(encoding="utf-8")
     assert svg.count('class="prop-footprint"') == floor > 0
     assert svg.count('class="prop"') == len(props) - floor
-    assert ">prop</text>" in svg
+    assert ">prop / feature</text>" in svg
     layers = [parse_map_layer(p.read_text(encoding="utf-8")).layer for p in sorted(build.glob("maps/*.txt"))]
     lines = [l for layer in layers for l in layer.lines if (l.r, l.g, l.b) == PROP_COLOUR]
     assert len(lines) >= 3 * floor
