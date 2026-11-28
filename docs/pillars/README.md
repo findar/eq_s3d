@@ -14,6 +14,20 @@ are in [`docs/STYLE.md`](../STYLE.md). Each pillar has four files:
 Start with [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md) for the whole system, and the root
 [`OPEN.md`](../../OPEN.md) for every open item in one list.
 
+## Working order
+
+The user, 2026-11-27: "to be clear, we should be working top down. area map > dungeon > rooms > decor".
+Work is picked from the largest scale down; a finer layer waits until the one above it settles:
+
+| Order | Layer | Pillars |
+|---|---|---|
+| 1 | Area map: how zones and areas sit together | [P-8 World](P-8-world/PLAN.md), the outdoor side of [P-7](P-7-engaging/PLAN.md) |
+| 2 | Dungeon: layout, Districts, links, drops | [P-7 Engaging](P-7-engaging/PLAN.md), [P-2 Traversable](P-2-traversable/PLAN.md) |
+| 3 | Rooms: shapes, walls, floors | [P-5 Look and feel](P-5-look-and-feel/PLAN.md) (geometry) |
+| 4 | Decor | [P-5 Look and feel](P-5-look-and-feel/PLAN.md) (decor; off by default since [step 34](../../.kiro/specs/zone-generator-decor-off/tasks.md)) |
+
+[P-1](P-1-web-app/PLAN.md), [P-3](P-3-rof2-eqemu/PLAN.md), [P-4](P-4-true-layout/PLAN.md), [P-6](P-6-iterative-feedback/PLAN.md) and [P-9](P-9-engineering/PLAN.md) serve every layer.
+
 ## The pillars
 
 The "Requirements" column names each pillar's parent product requirements. All of them come
