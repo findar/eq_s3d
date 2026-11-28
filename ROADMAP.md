@@ -205,6 +205,8 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
    they are instead of redrawing the whole zone (ideas from Edgar's graph-based generator), measured
    first for build time. The user: "can we pause the step 32 work and focus on that if it should improve our build times?" Spec: `.kiro/specs/zone-generator-layout-repair/`. *(STOPPED after its measure, 2026-11-27: 210 generates,
    no gate rejection, 0-0.05% to save; decor 44%, finish 28%, gate 16%, plan 6%)*
+34. **Decor off by default** — a generate builds no decor unless a level is chosen (decor was 44% of
+   generate time at step 33). The user: "since decor placement takes so much of build time, can we disable it for now? it's not critical at the moment since we only worry about room generation and can decorate and optimize that part later as well" Spec: `.kiro/specs/zone-generator-decor-off/`. *(In progress)*
 - **Docs refactor (beside step 33)** — pillars (the umbrella's P-A to P-G, plus World and Engineering),
   each with a plan, a living design, decisions and open items; one `OPEN.md`; a one-page roadmap.
   The user: "i also still want to revist the documentation refactor at some point soon so if possible do that in parallel" Spec: `.kiro/specs/project-docs/`. *(In progress)*
