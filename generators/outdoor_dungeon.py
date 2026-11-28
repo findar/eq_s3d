@@ -33,22 +33,33 @@ the Entrance. The terrain backend builds it with
 room reached from the outdoor Spawn and every corridor continuous).
 
 The Mouth is built on the terrain grid so it stitches exactly. The Tunnel
-runs between two adjacent vertex columns and ends at vertex row ``m``. The
-one terrain cell between rows ``m`` and ``m + 1`` over the strip (the slope
-in front of the portal) is removed and replaced by a flat floor at the Apron
-height, two vertical jambs (from that floor up to the neighbouring cells'
-edges) and a headwall (from the Tunnel's ceiling up to the row-``m`` terrain
-edge). Every edge of those pieces is an edge of a terrain triangle or of the
-Tunnel's open end, so nothing can be fallen or seen through. The Apron is
-the terrain beyond row ``m`` lowered to a cone that climbs at ``MAX_GRADE``
-from the notch's outer edge until it meets the ground; nothing behind row
-``m`` changes.
+runs down the middle of the cell between two adjacent vertex columns, the
+race's corridor width (at most the cell), and ends at vertex row ``m``. Over
+its last stretch it flares (at most ``MOUTH_FLARE``, 45 degrees a side) to
+the Mouth's full width at the portal (step 35 task 5: drawn 32-96 u at the
+race's scale, :func:`draw_mouth_width`; the sidecar records it). The opening
+need not sit on vertex columns: the notch is the run of terrain cells between
+rows ``m`` and ``m + 1`` that the opening spans, removed and replaced by a
+flat floor at the Apron height, two vertical jambs on the notch's outer
+columns (from that floor up to the neighbouring cells' edges) and the
+portal's rock face on row ``m``: the cheeks either side of the opening and
+the headwall over it, from the floor (or the Tunnel's ceiling) up to the
+row-``m`` terrain edge. Every edge of those pieces is an edge of a terrain
+triangle, of another piece or of the flare's open end, so nothing can be
+fallen or seen through. The flare's floor ramps on with the Tunnel's,
+subdivided like any ramp. The Apron is the terrain beyond row ``m`` over the
+notch's columns and one either side, lowered to a cone that climbs at
+``MAX_GRADE`` from the notch's outer edge until it meets the ground; nothing
+behind row ``m`` changes. An Entrance with no Mouth recorded (``mouth`` None:
+legacy specs, and direct ``plan_entrance`` calls with no width) is the
+one-cell Mouth: Tunnel and opening both the cell.
 """
 
 from __future__ import annotations
 
 import copy
 import math
+import random
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -107,6 +118,18 @@ DOOR_MARGIN: float = 8.0
 #: Biome-kit materials for the Mouth's floor, and for its jambs and headwall.
 MOUTH_FLOOR_MATERIAL = "wild_dirt"
 MOUTH_WALL_MATERIAL = "wild_cliff"
+#: The Mouth's width at the portal (step 35 task 5, archive decision 2: stock rock mouths
+#: p10/p50/p90 16/48/159 u): 48 u when no seed draws it, else drawn in MOUTH_WIDTH_RANGE
+#: with half the draws under 48 (log-uniform either side of it), at the race's scale.
+MOUTH_WIDTH: float = 48.0
+MOUTH_WIDTH_RANGE: Tuple[float, float] = (32.0, 96.0)
+#: A Mouth that doesn't fit is tried again this much narrower, down to the range's floor,
+#: then as the one-cell Mouth (the Tunnel's own cell) so no plan is lost to the width.
+MOUTH_SHRINK: float = 0.8
+#: The flare's steepest spread: width gained each side per unit of run (1 = 45 degrees).
+MOUTH_FLARE: float = 1.0
+#: An opening edge nearer a vertex column than this is put on it (no sliver of rock).
+MIN_CHEEK: float = 2.0
 
 _SIDE_STEP = {"N": (0.0, 1.0), "S": (0.0, -1.0), "E": (1.0, 0.0), "W": (-1.0, 0.0)}
 
@@ -389,6 +412,8 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     # to 1), and kept if that plans too, with as many rooms. So the try that plans, and
     # its grown graph, Levels and rooms, is the one a Hall length of 1 plans.
     hall_length = float(kwargs.pop("hall_length", 1.0))
+    # The Mouth's width (step 35 task 5): None is the one-cell Mouth.
+    mouth_width = kwargs.pop("mouth_width", None)
     records = (errors, no_tunnel, crossing)
 
     def plan(k: int, drop_rooms: bool):
@@ -423,7 +448,8 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
             errors[k] = e
             return None
         try:
-            planned = layout, warnings, plan_entrance(socket, grid, layout, room_id=first)
+            planned = layout, warnings, plan_entrance(socket, grid, layout, room_id=first,
+                                                              mouth_width=mouth_width)
         except EntranceError as e:
             errors[k] = e
             no_tunnel[k] = (layout, warnings, first)
@@ -471,7 +497,7 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
     fallback = None
     for k in sorted(no_tunnel):
         layout, warnings, first = no_tunnel[k]
-        lowered = _lowered_for_tunnel(socket, grid, envelope, layout, first)
+        lowered = _lowered_for_tunnel(socket, grid, envelope, layout, first, mouth_width)
         if lowered is None:
             continue
         if len(lowered[0].rooms) == room_count:
@@ -483,7 +509,8 @@ def plan_dungeon(host, terrain, envelope: Envelope, name: str,
 
 
 def _lowered_for_tunnel(host, grid, envelope: Envelope, layout: ZoneSpec,
-                        room_id: str) -> Optional[Tuple[ZoneSpec, "Entrance"]]:
+                        room_id: str, mouth_width: Optional[float] = None
+                        ) -> Optional[Tuple[ZoneSpec, "Entrance"]]:
     """``layout`` lowered by ``ALIGN_DROP_STEP`` at a time (up to
     ``ALIGN_DROP``, staying in the Envelope) until room ``room_id``'s wall
     gives a Tunnel, with that Entrance; ``None`` when no drop does."""
@@ -494,7 +521,8 @@ def _lowered_for_tunnel(host, grid, envelope: Envelope, layout: ZoneSpec,
         if not LayoutGenerator.fits(moved, envelope):
             return None
         try:
-            return moved, plan_entrance(host, grid, moved, room_id=room_id)
+            return moved, plan_entrance(host, grid, moved, room_id=room_id,
+                                         mouth_width=mouth_width)
         except EntranceError:
             drop += ALIGN_DROP_STEP
     return None
@@ -660,10 +688,14 @@ class Entrance:
     """Where the Tunnel leaves a room and opens onto the Apron.
 
     The Tunnel runs along X (``axis`` 0) or Y (1), away from the room in
-    direction ``outward``, between terrain vertex columns ``cross`` and
-    ``cross + 1``, from the room's wall plane ``wall`` to vertex row
-    ``portal``. It ramps from ``room_floor`` at the wall to ``floor`` (the
-    Apron's height) at the portal, and is ``height`` tall."""
+    direction ``outward``, down the middle of the cell between terrain vertex
+    columns ``cross`` and ``cross + 1``, from the room's wall plane ``wall``
+    to vertex row ``portal``. It ramps from ``room_floor`` at the wall to
+    ``floor`` (the Apron's height) at the portal, and is ``height`` tall.
+
+    ``mouth`` is the opening at the portal, ``(lo, hi)`` across the run (step
+    35 task 5), and ``tunnel_width`` the Tunnel's width before it flares out
+    to it; both None is the one-cell Mouth (Tunnel and opening the cell)."""
     room_id: str
     side: str
     axis: int
@@ -674,20 +706,29 @@ class Entrance:
     room_floor: float
     floor: float
     height: float
+    mouth: Optional[Tuple[float, float]] = None
+    tunnel_width: Optional[float] = None
 
     def to_dict(self) -> Dict:
-        return {"room": self.room_id, "side": self.side, "axis": self.axis,
-                "outward": self.outward, "cross": self.cross, "portal": self.portal,
-                "wall": self.wall, "room_floor": self.room_floor,
-                "floor": self.floor, "height": self.height}
+        d = {"room": self.room_id, "side": self.side, "axis": self.axis,
+             "outward": self.outward, "cross": self.cross, "portal": self.portal,
+             "wall": self.wall, "room_floor": self.room_floor,
+             "floor": self.floor, "height": self.height}
+        if self.mouth is not None:
+            d["mouth"] = [float(self.mouth[0]), float(self.mouth[1])]
+            d["tunnel_width"] = float(self.tunnel_width)
+        return d
 
     @classmethod
     def from_dict(cls, d: Dict) -> "Entrance":
+        mouth = d.get("mouth")
         return cls(room_id=d["room"], side=d["side"], axis=int(d["axis"]),
                    outward=int(d["outward"]), cross=int(d["cross"]),
                    portal=int(d["portal"]), wall=float(d["wall"]),
                    room_floor=float(d["room_floor"]), floor=float(d["floor"]),
-                   height=float(d["height"]))
+                   height=float(d["height"]),
+                   mouth=None if mouth is None else (float(mouth[0]), float(mouth[1])),
+                   tunnel_width=None if mouth is None else float(d["tunnel_width"]))
 
 
 class _Grid:
@@ -725,6 +766,109 @@ class _Grid:
     def point(self, axis: int, run: int, cross: int, z: float) -> Tuple[float, float, float]:
         r, c = self.coord(axis, run), self.coord(1 - axis, cross)
         return (r, c, z) if axis == 0 else (c, r, z)
+
+    def columns(self, axis: int, lo: float, hi: float) -> Tuple[int, int]:
+        """The first and last vertex index along ``axis`` of the cells that ``(lo, hi)``
+        overlaps (a coordinate on a vertex counts as the cell's edge), clipped to the grid."""
+        def k(x):
+            return (x - self.origin[axis]) / self.res - 0.5
+        j0 = int(math.floor(k(lo) + 1e-9))
+        j1 = int(math.ceil(k(hi) - 1e-9))
+        return max(0, j0), min(self.size(axis) - 1, max(j1, j0 + 1))
+
+
+@dataclass(frozen=True)
+class MouthGeometry:
+    """An Entrance's Tunnel and Mouth on its grid (step 35 task 5): coordinates across the
+    run (``door``, ``opening``), vertex columns (``cols``) and run coordinates
+    (``portal``, ``throat``). The Tunnel is ``door`` wide from the room's wall to the
+    ``throat``, then flares to ``opening`` at the ``portal``; the notch spans vertex
+    columns ``cols``, with rock on row ``m`` either side of the opening where ``cheeks``
+    says so (an opening edge on a column has none)."""
+    outward: int
+    mid: float
+    door: Tuple[float, float]
+    opening: Tuple[float, float]
+    cols: Tuple[int, int]
+    cheeks: Tuple[bool, bool]
+    portal: float
+    throat: float
+
+    @property
+    def width(self) -> float:
+        return self.opening[1] - self.opening[0]
+
+    def span(self, t: float) -> Tuple[float, float]:
+        """The Tunnel's sides across the run at run coordinate ``t``."""
+        flare = abs(self.portal - self.throat)
+        s = 0.0 if flare < 1e-9 else min(1.0, max(0.0, (t - self.throat) * self.outward / flare))
+        return (self.door[0] + (self.opening[0] - self.door[0]) * s,
+                self.door[1] + (self.opening[1] - self.door[1]) * s)
+
+
+def mouth_geometry(grid: _Grid, e: Entrance) -> MouthGeometry:
+    """Where ``e``'s Tunnel and Mouth lie on ``grid`` (:class:`MouthGeometry`). The flare
+    spreads at most ``MOUTH_FLARE`` a side and starts no nearer the room than its wall."""
+    ax = e.axis
+    c0, c1 = grid.coord(1 - ax, e.cross), grid.coord(1 - ax, e.cross + 1)
+    mid = (c0 + c1) / 2.0
+    if e.mouth is None:
+        door = opening = (c0, c1)
+    else:
+        hw = float(e.tunnel_width) / 2.0
+        door, opening = (mid - hw, mid + hw), (float(e.mouth[0]), float(e.mouth[1]))
+    lo, hi = grid.columns(1 - ax, *opening)
+    cheeks = (opening[0] > grid.coord(1 - ax, lo) + 1e-6,
+              opening[1] < grid.coord(1 - ax, hi) - 1e-6)
+    portal = grid.coord(ax, e.portal)
+    spread = max(0.0, door[0] - opening[0], opening[1] - door[1])
+    flare = min(abs(portal - e.wall), spread / MOUTH_FLARE)
+    return MouthGeometry(e.outward, mid, door, opening, (lo, hi), cheeks, portal,
+                         portal - e.outward * flare)
+
+
+def mouth_scale(race: str = "") -> float:
+    """The race's scale for the Mouth: its Tunnel's height over the default race's, where
+    that is taller (a giant's 55 u Tunnel, 3.67), else 1."""
+    return max(1.0, semantics.corridor_size(race)[1] / semantics.corridor_size("")[1])
+
+
+def draw_mouth_width(seed: Optional[int], race: str = "") -> float:
+    """The Mouth's width for a dungeon laid out from ``seed`` (step 35 task 5, archive
+    decision 2): ``MOUTH_WIDTH`` (48 u) with no seed, else drawn in ``MOUTH_WIDTH_RANGE``
+    (32-96 u) with 48 its median, log-uniform either side; times :func:`mouth_scale`."""
+    lo, hi = MOUTH_WIDTH_RANGE
+    if seed is None:
+        width = MOUTH_WIDTH
+    else:
+        rng = random.Random(f"mouth:{int(seed)}")
+        a, b = (lo, MOUTH_WIDTH) if rng.random() < 0.5 else (MOUTH_WIDTH, hi)
+        width = math.exp(rng.uniform(math.log(a), math.log(b)))
+    return width * mouth_scale(race)
+
+
+def _mouth_widths(width: Optional[float], race: str) -> List[Optional[float]]:
+    """The Mouth widths ``plan_entrance`` tries, widest first: ``width``, then
+    ``MOUTH_SHRINK`` narrower while still in the race's range, then the one-cell Mouth
+    (None). No width asked for: only the one-cell Mouth."""
+    if width is None:
+        return [None]
+    out, floor = [float(width)], MOUTH_WIDTH_RANGE[0] * mouth_scale(race)
+    w = float(width) * MOUTH_SHRINK
+    while w >= floor - 1e-9:
+        out.append(w)
+        w *= MOUTH_SHRINK
+    return out + [None]
+
+
+def _opening(grid: _Grid, axis: int, mid: float, width: float) -> Tuple[float, float]:
+    """The opening ``width`` wide about ``mid`` across a run along ``axis``, each edge put
+    on a vertex column within ``MIN_CHEEK`` of it."""
+    def snap(x):
+        k = int(round((x - grid.origin[1 - axis]) / grid.res - 0.5))
+        c = grid.coord(1 - axis, k)
+        return c if abs(c - x) < MIN_CHEEK else x
+    return snap(mid - width / 2.0), snap(mid + width / 2.0)
 
 
 #: The attribute the area's World rides on beside a spec (:func:`area_world`): a plain
@@ -818,16 +962,17 @@ def _overlaps(r, s, eps: float = 1e-6) -> bool:
 def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
     """Terrain heights with the Apron dug, and whether it reaches the ground.
 
-    The Apron is a trench: the strip's columns and one either side, from
-    row ``portal + outward`` outward, lowered to a cone rising at
-    ``MAX_GRADE`` from the notch's outer edge (heights only fall; that edge's
-    two vertices sit at ``floor``). It stops at the first row whose strip
-    vertices are already at or under the cone: the trench has met the
-    ground. If it hasn't within ``APRON_REACH`` rows, the second value is
-    False and the Entrance is unusable."""
-    ax, out, q = e.axis, e.outward, e.cross
+    The Apron is a trench: the notch's columns (the strip's, for a one-cell
+    Mouth) and one either side, from row ``portal + outward`` outward,
+    lowered to a cone rising at ``MAX_GRADE`` from the notch's outer edge
+    (heights only fall; that edge's vertices sit at ``floor``). It stops at
+    the first row whose notch vertices are already at or under the cone: the
+    trench has met the ground. If it hasn't within ``APRON_REACH`` rows, the
+    second value is False and the Entrance is unusable."""
+    ax, out = e.axis, e.outward
+    lo, hi = mouth_geometry(grid, e).cols
     edge = grid.coord(ax, e.portal + out)
-    c0, c1 = grid.coord(1 - ax, q), grid.coord(1 - ax, q + 1)
+    c0, c1 = grid.coord(1 - ax, lo), grid.coord(1 - ax, hi)
     z = grid.z.copy()
     for step in range(APRON_REACH + 1):
         k = e.portal + out * (1 + step)
@@ -835,25 +980,28 @@ def _apron(grid: _Grid, e: Entrance) -> Tuple[np.ndarray, bool]:
             return z, False
         d = abs(grid.coord(ax, k) - edge)
         if step > 0 and all(z[grid.ij(ax, k, c)] <= e.floor + MAX_GRADE * d + 1e-6
-                            for c in (q, q + 1)):
+                            for c in range(lo, hi + 1)):
             return z, True
-        for c in range(q - 1, q + 3):
+        for c in range(lo - 1, hi + 2):
             if not 0 <= c < grid.size(1 - ax):
                 continue
             lateral = max(0.0, c0 - grid.coord(1 - ax, c), grid.coord(1 - ax, c) - c1)
             cone = e.floor + MAX_GRADE * math.hypot(d, lateral)
             ij = grid.ij(ax, k, c)
-            z[ij] = e.floor if step == 0 and c in (q, q + 1) else min(z[ij], cone)
+            z[ij] = e.floor if step == 0 and lo <= c <= hi else min(z[ij], cone)
     return z, False
 
 
 def _tunnel_covered(grid: _Grid, e: Entrance, cover: float) -> bool:
     """Does the terrain keep ``cover`` over the Tunnel's ceiling from the
     wall to the portal (the headwall's crest included)? Checked per terrain
-    cell over the strip: the cell's lowest vertex (a triangle's lowest
-    point is a vertex) against the highest the ceiling reaches inside it."""
-    ax, q = e.axis, e.cross
-    end = grid.coord(ax, e.portal)
+    cell under the Tunnel and its flare: the cell's lowest vertex (a
+    triangle's lowest point is a vertex) against the highest the ceiling
+    reaches inside it. Across the run, each row of cells is taken as wide as
+    the Tunnel is at its portal end, so the whole portal face is checked."""
+    ax = e.axis
+    g = mouth_geometry(grid, e)
+    end = g.portal
     lo_t, hi_t = min(e.wall, end), max(e.wall, end)
 
     def ceiling(t):
@@ -864,7 +1012,8 @@ def _tunnel_covered(grid: _Grid, e: Entrance, cover: float) -> bool:
         hi = min(grid.coord(ax, k + 1), hi_t)
         if hi <= lo:
             continue
-        lowest = min(grid.z[grid.ij(ax, r, c)] for r in (k, k + 1) for c in (q, q + 1))
+        j0, j1 = grid.columns(1 - ax, *g.span(hi if e.outward > 0 else lo))
+        lowest = min(grid.z[grid.ij(ax, r, c)] for r in (k, k + 1) for c in range(j0, j1 + 1))
         if lowest < max(ceiling(lo), ceiling(hi)) + cover - 1e-6:
             return False
     return True
@@ -891,7 +1040,8 @@ def _boxes_covered(dungeon: ZoneSpec, surface, cover: float, sample: float = 8.0
 
 def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
                   rock_cover: Optional[float] = None,
-                  room_id: Optional[str] = None) -> Entrance:
+                  room_id: Optional[str] = None,
+                  mouth_width: Optional[float] = None) -> Entrance:
     """The Entrance with the least Apron digging, over every room wall facing
     the approach (only room ``room_id``'s when given), every strip that fits
     in its wall and every portal row.
@@ -903,6 +1053,12 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
     dungeon. The portal's floor is as high as the headwall's cover allows,
     lowered if need be so the Tunnel's ramp keeps to the grade.
 
+    ``mouth_width`` is the Mouth's width at the portal (step 35 task 5,
+    :func:`draw_mouth_width`); the Tunnel is then the race's corridor width (at
+    most the cell) and flares out to it. When no Entrance has that width, each
+    of :func:`_mouth_widths` is tried in turn, the one-cell Mouth last. None is
+    the one-cell Mouth alone.
+
     ``host`` and ``terrain`` are as :func:`plan_dungeon` takes them: the
     approach side, the undiggable cells and (unless ``rock_cover`` is given)
     the Rock_Cover are the Socket's."""
@@ -911,6 +1067,18 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
         raise EntranceError(f"spec {host.name!r} has no Landform")
     if rock_cover is None:
         rock_cover = socket.ground["rock_cover"]
+    error = None
+    for width in _mouth_widths(mouth_width, dungeon.dungeon_race or ""):
+        try:
+            return _plan_entrance_at(socket, grid, dungeon, rock_cover, room_id, width)
+        except EntranceError as e:
+            error = e
+    raise error
+
+
+def _plan_entrance_at(socket: Socket, grid: _Grid, dungeon: ZoneSpec, rock_cover: float,
+                      room_id: Optional[str], width: Optional[float]) -> Entrance:
+    """:func:`plan_entrance` at one Mouth ``width`` (None: the one-cell Mouth)."""
     side = socket.side
     ax, out = _RUN[side]
     keep = undiggable_mask(socket, grid.z.shape)
@@ -926,8 +1094,10 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
                 for r in dungeon.rooms]
     blockers += [(None, rect, max(c.from_z, c.to_z) + c.height) for c in dungeon.corridors
                  for rect in route_footprint(corridor_route(c, rooms), c.width / 2)]
-    # The Tunnel is one of the dungeon's corridors: its race's height.
-    h = semantics.corridor_size(dungeon.dungeon_race)[1]
+    # The Tunnel is one of the dungeon's corridors: its race's height, and (with a
+    # Mouth to flare to) its width, at most the cell it runs down.
+    cw, h = semantics.corridor_size(dungeon.dungeon_race)
+    tunnel_width = None if width is None else min(float(cw), grid.res, float(width))
     candidates = []
     for room in dungeon.rooms:
         if h > room.height or room_id not in (None, room.id):
@@ -940,24 +1110,36 @@ def plan_entrance(host, terrain, dungeon: ZoneSpec, *,
             c0, c1 = grid.coord(1 - ax, q), grid.coord(1 - ax, q + 1)
             if c0 < mid - half + DOOR_MARGIN or c1 > mid + half - DOOR_MARGIN:
                 continue
+            mouth = None if width is None else _opening(grid, ax, (c0 + c1) / 2.0, width)
+            # The notch's vertex columns, and one either side for the Apron, on the grid.
+            span = (c0, c1) if mouth is None else mouth
+            k0 = (span[0] - grid.origin[1 - ax]) / grid.res - 0.5
+            k1 = (span[1] - grid.origin[1 - ax]) / grid.res - 0.5
+            if math.floor(k0 + 1e-9) < 0 or math.ceil(k1 - 1e-9) > grid.size(1 - ax) - 1:
+                continue
+            lo, hi = grid.columns(1 - ax, *span)
             for m in range(grid.size(ax)):
                 if not 0 <= m + 2 * out < grid.size(ax):
                     continue
                 run = (grid.coord(ax, m) - wall) * out
                 if run < MIN_TUNNEL:
                     continue
-                top = min(grid.z[grid.ij(ax, m, q)], grid.z[grid.ij(ax, m, q + 1)])
+                top = min(grid.z[grid.ij(ax, m, c)] for c in range(lo, hi + 1))
                 floor = min(float(top) - h - rock_cover, room.floor_z + MAX_GRADE * run)
                 if floor < room.floor_z - MAX_GRADE * run:
                     continue
-                e = Entrance(room.id, side, ax, out, q, m, wall, room.floor_z, floor, h)
+                e = Entrance(room.id, side, ax, out, q, m, wall, room.floor_z, floor, h,
+                             mouth=mouth, tunnel_width=tunnel_width)
                 if not _tunnel_covered(grid, e, rock_cover):
                     continue
-                strip = _strip_rect(ax, wall, grid.coord(ax, m), c0, c1)
+                g = mouth_geometry(grid, e)
+                strips = [_strip_rect(ax, wall, g.portal, c0, c1)]
+                if mouth is not None:
+                    strips.append(_strip_rect(ax, g.throat, g.portal, *mouth))
                 low = min(e.room_floor, e.floor)
                 if any(rid != room.id and _overlaps(strip, r)
                        and (not stacked or top + SLAB > low + 1e-6)
-                       for rid, r, top in blockers):
+                       for strip in strips for rid, r, top in blockers):
                     continue
                 apron, surfaced = _apron(grid, e)
                 if not surfaced:
@@ -1006,15 +1188,97 @@ def _material(ter: TerFile, name: str, host: ZoneSpec) -> int:
     return mat.index
 
 
-#: Triangles in the Mouth: floor 2, jambs 2 x 2, headwall 2.
+#: Triangles in the one-cell Mouth: floor 2, jambs 2 x 2, headwall 2.
 MOUTH_FACES = 8
 
 
-def mouth_faces(host_ter: TerFile) -> range:
+def _zip(top: list, bottom: list, key: int) -> List[tuple]:
+    """Triangles between two chains of points, each in order along coordinate ``key``,
+    that start and end level with each other: each step takes the chain whose next point
+    comes first (the ``bottom`` one on a tie), so each chain's every edge is one
+    triangle's. Two chains a horizontal line apart (or on two parallel lines) give
+    triangles that neither overlap nor leave a gap."""
+    i = j = 0
+    tris = []
+    while i < len(top) - 1 or j < len(bottom) - 1:
+        if j < len(bottom) - 1 and (i == len(top) - 1 or bottom[j + 1][key] <= top[i + 1][key]):
+            tris.append((top[i], bottom[j], bottom[j + 1]))
+            j += 1
+        else:
+            tris.append((top[i], bottom[j], top[i + 1]))
+            i += 1
+    return tris
+
+
+def _mouth_pieces(grid: _Grid, z: np.ndarray, e: Entrance) -> List[tuple]:
+    """The Mouth's triangles as ``(points, normal, "floor" | "wall")``, in the order
+    ``build_outdoor_ter`` adds them: the notch's floor, its two jambs (the low column's
+    first), then the portal's rock face (cheeks and headwall). ``z`` is the dug grid.
+
+    The floor spans rows ``m`` to ``m + outward`` over the notch's columns at the Apron
+    floor; on row ``m`` its edge holds the opening's two ends, so the flare's floor end is
+    one of its edges. A jamb stands on each outer column, from the floor to the terrain
+    edge beside it; split at the Tunnel's ceiling where the opening's edge is on that
+    column (the one-cell Mouth), whole where a cheek stands between. The face is the
+    row-``m`` plane between the terrain edge (top) and the floor, the opening's sides and
+    its lintel (bottom)."""
+    g = mouth_geometry(grid, e)
+    ax, out, m = e.axis, e.outward, e.portal
+    lo, hi = g.cols
+    a, b = g.opening
+    fl, ceil = e.floor, e.floor + e.height
+    run, run_out = grid.coord(ax, m), grid.coord(ax, m + out)
+    cross = 1 - ax
+
+    def pt(r, c, zz):
+        return (r, c, zz) if ax == 0 else (c, r, zz)
+
+    cols = [grid.coord(cross, c) for c in range(lo, hi + 1)]
+    up = (0.0, 0.0, 1.0)
+    outward = tuple(float(out) if k == ax else 0.0 for k in range(2)) + (0.0,)
+    across = tuple(1.0 if k == cross else 0.0 for k in range(2)) + (0.0,)
+    pieces = []
+    # The floor: row m (the opening's ends among the columns) against row m + outward.
+    near = [cols[0]] + ([a] if g.cheeks[0] else []) + ([b] if g.cheeks[1] else []) + [cols[-1]]
+    for tri in _zip([pt(run, c, fl) for c in near], [pt(run_out, c, fl) for c in cols], cross):
+        pieces.append((tri, up, "floor"))
+    # The jambs, each facing into the notch.
+    for c, cheek, sign in ((cols[0], g.cheeks[0], 1.0), (cols[-1], g.cheeks[1], -1.0)):
+        n = tuple(sign * k for k in across)
+        k = lo if c == cols[0] else hi
+        base, crest = pt(run, c, fl), pt(run, c, float(z[grid.ij(ax, m, k)]))
+        foot = pt(run_out, c, fl)
+        if cheek:
+            pieces.append(((base, crest, foot), n, "wall"))
+        else:
+            lintel = pt(run, c, ceil)
+            pieces.append(((base, lintel, foot), n, "wall"))
+            pieces.append(((lintel, crest, foot), n, "wall"))
+    # The face: the terrain edge against the cheeks and the opening's sides and lintel.
+    top = [pt(run, c, float(z[grid.ij(ax, m, k)])) for k, c in zip(range(lo, hi + 1), cols)]
+    bottom = []
+    if g.cheeks[0]:
+        bottom += [pt(run, cols[0], fl), pt(run, a, fl)]
+    bottom += [pt(run, a, ceil), pt(run, b, ceil)]
+    if g.cheeks[1]:
+        bottom += [pt(run, b, fl), pt(run, cols[-1], fl)]
+    for tri in _zip(top, bottom, cross):
+        pieces.append((tri, outward, "wall"))
+    return pieces
+
+
+def mouth_faces(host_ter: TerFile, entrance: Optional[Entrance] = None,
+                grid: Optional[_Grid] = None) -> range:
     """Indices of the Mouth's triangles in the TER ``build_outdoor_ter``
-    made from ``host_ter``: they follow the terrain's, less the two cut."""
-    start = len(host_ter.polygons) - 2
-    return range(start, start + MOUTH_FACES)
+    made from ``host_ter``: they follow the terrain's, less the notch's cut
+    (two per cell). With no ``entrance`` (and its ``grid``), the one-cell
+    Mouth's."""
+    if entrance is None or grid is None:
+        start = len(host_ter.polygons) - 2
+        return range(start, start + MOUTH_FACES)
+    lo, hi = mouth_geometry(grid, entrance).cols
+    start = len(host_ter.polygons) - 2 * (hi - lo)
+    return range(start, start + len(_mouth_pieces(grid, grid.z, entrance)))
 
 
 def build_outdoor_ter(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec,
@@ -1026,9 +1290,9 @@ def build_outdoor_ter(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec,
     grid = _host_grid(host, ter)
     nx, ny = grid.nx, grid.ny
     z, _ = _apron(grid, entrance)
-    ax, out, m, q = entrance.axis, entrance.outward, entrance.portal, entrance.cross
+    ax, out, m = entrance.axis, entrance.outward, entrance.portal
 
-    merged = TerFile(name=name, magic=MAGIC_TERRAIN, version=version)
+    merged =TerFile(name=name, magic=MAGIC_TERRAIN, version=version)
     merged.materials = [Material(index=k, name=mt.name, shader=mt.shader,
                                  properties=list(mt.properties))
                         for k, mt in enumerate(ter.materials)]
@@ -1043,35 +1307,23 @@ def build_outdoor_ter(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec,
         else:
             v = Vertex(x=v.x, y=v.y, z=v.z, nx=v.nx, ny=v.ny, nz=v.nz, u=v.u, v=v.v)
         merged.vertices.append(v)
-    # The notch cell: quad (qi, qj) is polygons 2 * (qi * (ny - 1) + qj) and
+    # The notch's cells: quad (qi, qj) is polygons 2 * (qi * (ny - 1) + qj) and
     # the next.
-    qi, qj = grid.ij(ax, min(m, m + out), q)
-    cut = 2 * (qi * (ny - 1) + qj)
+    lo, hi = mouth_geometry(grid, entrance).cols
+    cut = set()
+    for c in range(lo, hi):
+        qi, qj = grid.ij(ax, min(m, m + out), c)
+        cut |= {2 * (qi * (ny - 1) + qj), 2 * (qi * (ny - 1) + qj) + 1}
     merged.polygons = [Polygon(p.v1, p.v2, p.v3, p.material, p.flags)
-                       for k, p in enumerate(ter.polygons) if k not in (cut, cut + 1)]
+                       for k, p in enumerate(ter.polygons) if k not in cut]
 
-    # The Mouth: floor, two jambs, headwall. Corners are the terrain's own
-    # vertex positions, so every edge meets a terrain or Tunnel edge exactly.
-    fl, ceil = entrance.floor, entrance.floor + entrance.height
-    top = {c: float(z[grid.ij(ax, m, c)]) for c in (q, q + 1)}
-    up = (0.0, 0.0, 1.0)
-    outward = tuple(float(out) if a == ax else 0.0 for a in range(2)) + (0.0,)
-    across = tuple(1.0 if a == 1 - ax else 0.0 for a in range(2)) + (0.0,)
-    floor_mat = _material(merged, MOUTH_FLOOR_MATERIAL, host)
-    wall_mat = _material(merged, MOUTH_WALL_MATERIAL, host)
-    P = grid.point
-    _face(merged, (P(ax, m, q, fl), P(ax, m, q + 1, fl), P(ax, m + out, q + 1, fl)), up, floor_mat)
-    _face(merged, (P(ax, m, q, fl), P(ax, m + out, q + 1, fl), P(ax, m + out, q, fl)), up, floor_mat)
-    for c, sign in ((q, 1.0), (q + 1, -1.0)):
-        n = tuple(sign * a for a in across)
-        base, lintel = P(ax, m, c, fl), P(ax, m, c, ceil)
-        crest, foot = P(ax, m, c, top[c]), P(ax, m + out, c, fl)
-        _face(merged, (base, lintel, foot), n, wall_mat)
-        _face(merged, (lintel, crest, foot), n, wall_mat)
-    _face(merged, (P(ax, m, q, ceil), P(ax, m, q + 1, ceil), P(ax, m, q + 1, top[q + 1])),
-          outward, wall_mat)
-    _face(merged, (P(ax, m, q, ceil), P(ax, m, q + 1, top[q + 1]), P(ax, m, q, top[q])),
-          outward, wall_mat)
+    # The Mouth: floor, two jambs, the portal's face. Corners are the terrain's own
+    # vertex positions or the opening's, so every edge meets a terrain, Mouth or
+    # Tunnel edge exactly.
+    mats = {"floor": _material(merged, MOUTH_FLOOR_MATERIAL, host),
+            "wall": _material(merged, MOUTH_WALL_MATERIAL, host)}
+    for pts, normal, kind in _mouth_pieces(grid, z, entrance):
+        _face(merged, pts, normal, mats[kind])
 
     # The dungeon, with the Tunnel and its doorway.
     mesh = _dungeon_mesh(dungeon, entrance, grid)
@@ -1091,10 +1343,12 @@ def build_outdoor_ter(host: ZoneSpec, ter: TerFile, dungeon: ZoneSpec,
 def _dungeon_mesh(dungeon: ZoneSpec, e: Entrance, grid: _Grid) -> MeshBuilder:
     """The box-backend mesh of ``dungeon`` plus the Tunnel: a ramp from the
     room's floor at its wall to ``e.floor`` at the portal, through a doorway
-    cut in that wall."""
+    cut in that wall, flaring over its last stretch to the Mouth's opening
+    (:func:`_add_flare`)."""
     _ensure_materials(dungeon)
     mb = MeshBuilder()
-    c0, c1 = grid.coord(1 - e.axis, e.cross), grid.coord(1 - e.axis, e.cross + 1)
+    g = mouth_geometry(grid, e)
+    c0, c1 = g.door
     for room in dungeon.rooms:
         extra = None
         if room.id == e.room_id:
@@ -1108,12 +1362,74 @@ def _dungeon_mesh(dungeon: ZoneSpec, e: Entrance, grid: _Grid) -> MeshBuilder:
     floor_mat = mb.material_id(dungeon.materials[room.floor_material])
     wall_mat = mb.material_id(dungeon.materials[room.wall_material])
     ceil_mat = mb.material_id(dungeon.materials[room.ceiling_material])
-    portal, mid = grid.coord(e.axis, e.portal), (c0 + c1) / 2.0
-    (fx, fy), (tx, ty) = ((e.wall, mid), (portal, mid)) if e.axis == 0 else \
-        ((mid, e.wall), (mid, portal))
-    mb._add_straight_leg(fx, fy, e.room_floor, tx, ty, e.floor, e.axis == 0,
+    portal, mid = g.portal, g.mid
+    throat = g.throat
+    z_throat = e.room_floor + (e.floor - e.room_floor) * (throat - e.wall) / (portal - e.wall)
+    if abs(throat - portal) < 1e-9:
+        z_throat = e.floor
+    (fx, fy), (tx, ty) = ((e.wall, mid), (throat, mid)) if e.axis == 0 else \
+        ((mid, e.wall), (mid, throat))
+    mb._add_straight_leg(fx, fy, e.room_floor, tx, ty, z_throat, e.axis == 0,
                          (c1 - c0) / 2.0, e.height, 0, floor_mat, wall_mat, ceil_mat)
+    if abs(throat - portal) >= 1e-9:
+        _add_flare(mb, e, g, z_throat, floor_mat, wall_mat, ceil_mat)
     return mb
+
+
+def _quad(mb: MeshBuilder, pts, normal, material: int) -> None:
+    """``mb.add_quad`` of a planar quad given in either winding: reversed when
+    it isn't counter-clockwise seen from ``normal``'s side."""
+    p0, p1, p2 = (np.asarray(p, dtype=np.float64) for p in pts[:3])
+    if np.dot(np.cross(p1 - p0, p2 - p0), normal) < 0:
+        pts = [pts[0], pts[3], pts[2], pts[1]]
+    mb.add_quad(*[tuple(float(v) for v in p) for p in pts], normal=tuple(normal),
+                material=material)
+
+
+def _add_flare(mb: MeshBuilder, e: Entrance, g: MouthGeometry, z_throat: float,
+               floor_mat: int, wall_mat: int, ceil_mat: int) -> None:
+    """The Tunnel's flare, from its width at the throat (``z_throat`` high) to the
+    Mouth's opening at the portal (``e.floor`` high): floor, side walls and ceiling,
+    in segments that each rise at most ``MAX_SEG_RISE`` (lessons-learned "A ramp
+    must be SUBDIVIDED") and run at most a terrain cell's worth of the flare. Its
+    end at the portal is the opening exactly, the edges the Mouth's face and floor
+    meet."""
+    from generators.geometry import MAX_SEG_RISE
+
+    ax = e.axis
+    length = abs(g.portal - g.throat)
+    n = max(1, int(math.ceil(abs(e.floor - z_throat) / MAX_SEG_RISE)),
+            int(math.ceil(length / 20.0)))
+
+    def pt(r, c, zz):
+        return (r, c, zz) if ax == 0 else (c, r, zz)
+
+    rows = []
+    for i in range(n + 1):
+        s = i / n
+        if i == n:
+            rows.append((g.portal, g.opening[0], g.opening[1], e.floor))
+        else:
+            t = g.throat + (g.portal - g.throat) * s
+            lo, hi = g.span(t)
+            rows.append((t, lo, hi, z_throat + (e.floor - z_throat) * s))
+    rows[0] = (g.throat, g.door[0], g.door[1], z_throat)
+    h = e.height
+    for (t0, l0, r0, z0), (t1, l1, r1, z1) in zip(rows, rows[1:]):
+        _quad(mb, [pt(t0, l0, z0), pt(t0, r0, z0), pt(t1, r1, z1), pt(t1, l1, z1)],
+              (0.0, 0.0, 1.0), floor_mat)
+        _quad(mb, [pt(t0, l0, z0 + h), pt(t0, r0, z0 + h), pt(t1, r1, z1 + h), pt(t1, l1, z1 + h)],
+              (0.0, 0.0, -1.0), ceil_mat)
+        for c0, c1, sign in ((l0, l1, 1.0), (r0, r1, -1.0)):
+            # The wall's normal, level, facing into the flare.
+            dr, dc = t1 - t0, c1 - c0
+            norm = math.hypot(dr, dc)
+            nr, nc = -dc / norm * sign, dr / norm * sign
+            if nc * sign < 0:
+                nr, nc = -nr, -nc
+            normal = (nr, nc, 0.0) if ax == 0 else (nc, nr, 0.0)
+            _quad(mb, [pt(t0, c0, z0), pt(t1, c1, z1), pt(t1, c1, z1 + h), pt(t0, c0, z0 + h)],
+                  normal, wall_mat)
 
 
 # ---------------------------------------------------------------------------
@@ -1214,15 +1530,12 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
 def tunnel_doors(spec: ZoneSpec) -> Dict[str, Dict[str, list]]:
     """The Tunnel as a door, for the room it opens into: room id -> {side: [(c0, c1,
     top)]}, the form ``add_room`` and ``wall_styles.apply_walls`` take, on the area's
-    grid (:func:`area_world`)."""
+    grid (:func:`area_world`). It is the Tunnel's width before it flares
+    (:class:`MouthGeometry` ``door``): the cell, for a one-cell Mouth."""
     e = Entrance.from_dict(spec.wilderness[DUNGEON_KEY]["entrance"])
     t = area_world(spec).terrain
-    origin, res = t.origin, t.res
-
-    def coord(k):
-        return origin[1 - e.axis] + (k + 0.5) * res
-
-    return {e.room_id: {e.side: [(coord(e.cross), coord(e.cross + 1), e.room_floor + e.height)]}}
+    c0, c1 = mouth_geometry(_Grid.of(t.heights, t.origin, t.res), e).door
+    return {e.room_id: {e.side: [(c0, c1, e.room_floor + e.height)]}}
 
 
 def build_outdoor_dungeon_ter(spec: ZoneSpec, ter_name: str, ter_version: int) -> TerFile:
@@ -1282,8 +1595,10 @@ def sidecar_block(spec: ZoneSpec) -> Dict:
 
     foot = host_footprint(Landform.from_dict(world.recipe["landform"]))
     xs, ys = [p[0] for p in foot], [p[1] for p in foot]
-    c0, c1 = coord(1 - e.axis, e.cross), coord(1 - e.axis, e.cross + 1)
-    mid = (c0 + c1) / 2.0
+    t = world.terrain
+    g = mouth_geometry(_Grid.of(t.heights, t.origin, t.res), e)
+    a, b = g.opening
+    mid = (a + b) / 2.0
     return {
         "envelope": {"min_xy": [min(xs), min(ys)], "max_xy": [max(xs), max(ys)],
                      "floor_limit": data["floor_limit"]},
@@ -1294,7 +1609,8 @@ def sidecar_block(spec: ZoneSpec) -> Dict:
             "side": e.side,
             "apron_centre": point(coord(e.axis, e.portal + e.outward), mid, e.floor),
             "mouth": {"centre": point(coord(e.axis, e.portal), mid, e.floor + e.height / 2),
-                      "width": c1 - c0, "height": e.height, "floor": e.floor},
+                      "width": b - a, "height": e.height, "floor": e.floor,
+                      "tunnel_width": g.door[1] - g.door[0]},
         }],
         "outdoor_spawn": list(spec.safe_point),
         "rooms_requested": data["rooms_requested"],

@@ -27,8 +27,9 @@ STEP9 = {
     ("wild", 1955208177): "931c6f030cbfe6b7d84e82a1023a3dffb0e6426636812a9997f0524c4194668c",
     ("wild", 31337): "682474b5adb2aa0b827ef16eef193ca5939ee180d978012822f820790e682c26",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape),
-    # and by random placement task 11 (room footprints in stock's proportions).
-    ("od", 3): "8be3f8bb1a5b339ba7b051aabe8966ce9aa5c1adc8e892be7ba06ff1deb895d3",
+    # and by random placement task 11 (room footprints in stock's proportions), and by step 35
+    # task 5 (the wide, flaring Mouth).
+    ("od", 3): "62e35197d8b6b5d62c005bab850672616106596fe3cbebb8cd8b975388afaa37",
 }
 
 
@@ -42,8 +43,9 @@ STEP10 = {
     ("wild", 31337, "dense"): "5fc0a57ad38e61fb4a36a16fce78fdd12a6ffc82217f07eaa7f52e7f1c3691f7",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape), and by
     # site-sockets task 7 (Sites keep off the dungeon's rooms, not the hill), and by
-    # random placement task 11 (room footprints in stock's proportions).
-    ("od", 1001, "dense"): "75cd1b1e78a194ed08b271f10d2d47147122e3a50cea2667ca6fa5ecc0111ba3",
+    # random placement task 11 (room footprints in stock's proportions), and by step 35 task 5
+    # (the wide, flaring Mouth).
+    ("od", 1001, "dense"): "88756dd644d7737bd604aba19ea078be6c0b90c20717d4a356de119fc6f88d11",
 }
 
 

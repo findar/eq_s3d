@@ -79,12 +79,13 @@ _GOLDENS = {
     # Recaptured once more by world-sockets task 20: the spec's Spawn,
     # regions and materials now come from the placed hill's landscape. And by site-sockets
     # task 7 (Sites keep off the dungeon's rooms, not the hill; one at Normal and Dense), and by
-    # step 35 task 2 (the lava patch is drawn only for a lava theme).
+    # step 35 task 2 (the lava patch is drawn only for a lava theme), and by step 35 task 5 (the
+    # wide, flaring Mouth: the Entrance records it, its floor 2.8 u lower; rooms unchanged).
     "outdoor_dungeon": (
         dict(zone_type="outdoor_dungeon", room_count=5, locks=1,
              layout="classic"), 3,
-        "40b27bfdbff57a4ddb0da11019d79cd9226c0841dd950f45ae23396554f5425c",
-        "26585a84ecb95b30b80e1a204cb6795ff2bccd1e285c1ae0bbf549e71f49d65a"),
+        "5ac917c6043286147a14509790bf92edb68c1800916746a164825ad7d982b53d",
+        "7134534af726591539b7a7d6a85dcfd013d09324957c9801537a8b2a2f29058a"),
 }
 
 # The .eqg goldens above are the bytes with no install. With one (EQ_PATH), a
@@ -93,7 +94,7 @@ _GOLDENS = {
 # don't move.
 WITH_INSTALL = {
     "temple_locks": "6642a351b56a4d0e433b9c2d4a44fcb9f969823625f51a7a9e71721c8ed8b21f",
-    "outdoor_dungeon": "c031ff54f64c765420fb5bb7d99c50dcbb2d648a7b5575e49f030112e0dafcd1",
+    "outdoor_dungeon": "9f31325e533fdb07dbed582ff9846ed38a925026550b6390e156cc60d690288b",
 }
 
 

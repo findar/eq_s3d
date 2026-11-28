@@ -259,6 +259,10 @@ def attach_rooms(world: World, socket: Socket, fields: Mapping[str, Any],
     if getattr(engine, "stacking", False):
         depth = od.floor_depth(verticality, kwargs.get("dungeon_race") or "")
     grid = od.socket_grid(socket, world.terrain)
+    # The Mouth's width (step 35 task 5): the plan's, else drawn from the seed at the race's
+    # scale (``outdoor_dungeon.draw_mouth_width``).
+    if kwargs.get("mouth_width") is None:
+        kwargs["mouth_width"] = od.draw_mouth_width(seed, kwargs.get("dungeon_race") or "")
     try:
         envelope = od.host_envelope(socket, grid, depth=depth)
         layout, warnings, entrance = od.plan_dungeon(socket, grid, envelope, name, seed,
@@ -331,7 +335,7 @@ def entrance_keep_clear(world: World, socket: Socket, entrance, layout) -> Tuple
 
     The rows the Apron digs are found on the grid before the water bed sinks
     (``Terrain.undrowned``)."""
-    from generators.outdoor_dungeon import SITE_CLEAR, _apron, _Grid
+    from generators.outdoor_dungeon import SITE_CLEAR, _apron, _Grid, mouth_geometry
 
     g = socket.ground
     grid = _Grid.of(world.terrain.undrowned, g["origin"], g["res"])
@@ -348,12 +352,17 @@ def entrance_keep_clear(world: World, socket: Socket, entrance, layout) -> Tuple
     def pt(run: float, cross: float) -> Tuple[float, float]:
         return (run, cross) if e.axis == 0 else (cross, run)
 
+    mouth = mouth_geometry(grid, e)
+    lo, hi = mouth.cols
     mid = (coord(1 - e.axis, e.cross) + coord(1 - e.axis, e.cross + 1)) / 2.0
     portal = coord(e.axis, e.portal)
     far = coord(e.axis, e.portal + e.outward * (reach + 1))
-    tunnel = (*pt(e.wall, mid), *pt(portal, mid), res / 2.0 + SITE_CLEAR)
-    # The Apron's trench spans the strip's two columns and one either side.
-    apron = (*pt(portal, mid), *pt(far, mid), 2.0 * res + SITE_CLEAR)
+    # The Tunnel as wide as the cell or its Mouth, whichever is wider (step 35 task 5).
+    tunnel = (*pt(e.wall, mid), *pt(portal, mid), max(res, mouth.width) / 2.0 + SITE_CLEAR)
+    # The Apron's trench spans the notch's columns (the strip's two, for a one-cell Mouth)
+    # and one either side, on the Tunnel's line.
+    half = max(mid - coord(1 - e.axis, lo), coord(1 - e.axis, hi) - mid)
+    apron = (*pt(portal, mid), *pt(far, mid), half + 1.5 * res + SITE_CLEAR)
     return (tunnel, apron) + dungeon_keep_clear(layout)
 
 
