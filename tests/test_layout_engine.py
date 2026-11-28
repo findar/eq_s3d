@@ -72,8 +72,8 @@ _GOLDENS = {
     # Size: unset, seed 4 draws 9750 u square where it was 2400).
     "wilderness": (
         dict(zone_type="wilderness"), 4,
-        "5e27f2983f38e45395a079b86c9840707b7cda520780e109026f815949400a65",
-        "31725f904930aa81f2526d1f217bba2ae3b8770a643bd8a7eca9b2a564c863f6"),
+        "45dadcd746dd35d1e53c85fd95807d811936a5855da54fc3adf8d2ee49d51e5b",
+        "c86a4127c307d76cebf0516cf78a862270d503972b3f6bc28fcf7dc2bf922da1"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).

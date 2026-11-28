@@ -23,8 +23,8 @@ def test_zone_holds_the_host_on_even_cells(size):
             w, d = M.draw_outdoor_zone_extent(size, host, seed)
             assert min(w, d) >= host
             assert (w / M.DEFAULT_CELL_SIZE) % 2 == 0 and (d / M.DEFAULT_CELL_SIZE) % 2 == 0
-            if size:
-                assert max(w, d) >= M.OUTDOOR_DUNGEON_SIZES[size]
+            if size:   # the Size's side is the built terrain's (a cell builds as 160 u)
+                assert max(M.built_extent((w, d))) >= M.OUTDOOR_DUNGEON_SIZES[size]
             if host > M.OUTDOOR_DUNGEON_SIZES["huge"]:
                 assert w == d == host     # past stock's largest: square, no extra terrain
 

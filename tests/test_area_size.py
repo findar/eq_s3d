@@ -8,17 +8,20 @@ from ai.rule_planner import RulePlanner
 from ai.schema import ZonePlan
 from generators.wilderness.build import landscape_for
 from generators.wilderness.matrix import (ASPECT_RANGE, DEFAULT_CELL_SIZE, SIZES,
-                                          WILDERNESS_SIZE_BANDS, draw_zone_extent,
-                                          zone_extent, zone_size_value)
+                                          WILDERNESS_SIZE_BANDS, built_cell_size,
+                                          built_extent, draw_zone_extent, zone_extent,
+                                          zone_size_value)
 
 SEEDS = range(300)
 STOCK = (4000.0, 13900.0)
 
 
 def _within(size, w, d):
+    """The band holds the BUILT width (a 150 u matrix cell builds as 160 u)."""
     lo, hi = WILDERNESS_SIZE_BANDS[size] if size else STOCK
-    long_side, short_side = max(w, d), min(w, d)
-    return (lo - DEFAULT_CELL_SIZE < long_side <= hi
+    bw, bd = built_extent((w, d))
+    long_side, short_side = max(bw, bd), min(bw, bd)
+    return (lo - built_cell_size() < long_side <= hi
             and ASPECT_RANGE[0] <= long_side / short_side <= ASPECT_RANGE[1])
 
 
@@ -64,8 +67,15 @@ def test_the_wilderness_is_built_at_the_plan_extent(size):
     spec = plan_to_spec(plan, seed=11)
     w, d = draw_zone_extent(size, 11)
     assert zone_extent(spec.wilderness["zone_size"]) == (w, d)
-    matrix = landscape_for(spec).matrix
-    assert matrix.shape == (round(w / DEFAULT_CELL_SIZE), round(d / DEFAULT_CELL_SIZE))
+    land = landscape_for(spec)
+    assert land.matrix.shape == (round(w / DEFAULT_CELL_SIZE), round(d / DEFAULT_CELL_SIZE))
+    # The terrain is built at the drawn extent, and that keeps the Size's band.
+    nx, ny = land.synth.heights.shape
+    built = (nx * land.synth.resolution, ny * land.synth.resolution)
+    assert built == built_extent((w, d))
+    if size:
+        lo, hi = WILDERNESS_SIZE_BANDS[size]
+        assert lo <= max(built) <= hi
 
 
 def test_square_zones_keep_their_record():

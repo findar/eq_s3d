@@ -60,7 +60,9 @@
    - *Outdoor dungeon* (`draw_outdoor_zone_extent`): the Size's side (unset picks one of four evenly) at
      stock's 5-zone aspect. Neither side is under `host_zone_size`, and both are even cells. A host past huge
      stays square.
-   - Synth's 160 u cell builds each extent 6.7% wider than drawn: huge's 13800 u builds at 14720.
+   - Both draws count cells at the side a cell builds at (`built_cell_size`, 160 u: synth tiles a 150 u cell
+     as 4 x 40 u), so the band holds the built terrain's width (`built_extent`). The zone size handed on is
+     still in matrix units, so a World given an explicit size keeps its bytes.
    - The gate shares one walk surface between `check_bowl` and the Footprint checks.
 
 ## Follow-ups

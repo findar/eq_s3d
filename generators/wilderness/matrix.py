@@ -509,6 +509,25 @@ def _even_cells(size: float, cell_size: float) -> int:
     return cells + cells % 2
 
 
+def built_cell_size(cell_size: float = DEFAULT_CELL_SIZE) -> float:
+    """The side a matrix cell builds at: synth tiles a cell into ``factor x factor`` fine
+    cells of the TER resolution (``factor = round(cell_size / resolution)``), so a 150 u
+    cell builds as 4 x 40 = 160 u. The Size draws count cells in this, so the drawn width
+    and depth are the built terrain's."""
+    from generators.wilderness.synth import DEFAULT_TER_RESOLUTION  # synth imports matrix
+    factor = max(1, int(round(cell_size / DEFAULT_TER_RESOLUTION)))
+    return float(factor * DEFAULT_TER_RESOLUTION)
+
+
+def built_extent(zone_size: "ZoneSize" = None,
+                 cell_size: float = DEFAULT_CELL_SIZE) -> Tuple[float, float]:
+    """The ``(width, depth)`` a zone size builds at: ``build_matrix``'s cell counts times
+    ``built_cell_size``."""
+    built = built_cell_size(cell_size)
+    return tuple(float(max(3, int(round(v / cell_size))) * built)  # type: ignore[return-value]
+                 for v in zone_extent(zone_size))
+
+
 def draw_outdoor_zone_extent(size: str, host_size: float, seed: int,
                              cell_size: float = DEFAULT_CELL_SIZE) -> Tuple[float, float]:
     """An outdoor dungeon's zone ``(width, depth)`` (X, Y) for the plan's Size (step 35
@@ -521,16 +540,20 @@ def draw_outdoor_zone_extent(size: str, host_size: float, seed: int,
     bigger than that (a giant or dragon dungeon, past stock's largest) keeps its zone
     square rather than grow terrain for the aspect alone. Both
     are even numbers of matrix cells (the nearest, the shorter rounded up), so the zone stays
-    centred on a cell corner as the default's is. From its own stream of ``seed``."""
+    centred on a cell corner as the default's is. The Size's side is the built terrain's
+    (cells of ``built_cell_size``); ``host_size`` is in matrix cells, as the host is placed.
+    Returned in matrix units (cells times ``cell_size``), as ``build_matrix`` reads a zone
+    size; ``built_extent`` gives what it builds at. From its own stream of ``seed``."""
     rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, 357])
     if size not in OUTDOOR_DUNGEON_SIZES:
         size = SIZES[int(rng.integers(0, len(SIZES)))]
+    built = built_cell_size(cell_size)
     side = OUTDOOR_DUNGEON_SIZES[size]
     aspect = draw_aspect(rng, OUTDOOR_DUNGEON_ASPECT_QUANTILES)
-    n_short = _even_cells(max(side / aspect, host_size), cell_size)
+    n_short = max(_even_cells(side / aspect, built), _even_cells(host_size, cell_size))
     stretched = min(2 * int(round(n_short * aspect / 2.0)),
-                    _even_cells(OUTDOOR_DUNGEON_SIZES["huge"], cell_size))
-    n_long = max(_even_cells(side, cell_size), stretched, n_short)
+                    _even_cells(OUTDOOR_DUNGEON_SIZES["huge"], built))
+    n_long = max(_even_cells(side, built), stretched, n_short)
     sides = (n_long, n_short) if rng.random() < 0.5 else (n_short, n_long)
     return (float(sides[0] * cell_size), float(sides[1] * cell_size))
 
@@ -558,9 +581,13 @@ def draw_zone_extent(size: str, seed: int,
     """A wilderness's ``(width, depth)`` (X, Y) for the plan's Size (step 35 Req 2): the
     longer side drawn in the Size's band (``WILDERNESS_SIZE_BANDS``; an unset or unknown
     Size draws the band by ``WILDERNESS_SIZE_WEIGHTS``), the shorter that over an aspect
-    drawn from stock's (``WILDERNESS_ASPECT_QUANTILES``), either way round. Each side is snapped to whole matrix cells
-    that keep the band and the aspect range. From its own stream of ``seed``, so the
-    matrix's draws are untouched."""
+    drawn from stock's (``WILDERNESS_ASPECT_QUANTILES``), either way round. Each side is
+    snapped to whole matrix cells that keep the band and the aspect range, counted at the
+    side a cell builds at (``built_cell_size``, 160 u), so the band holds the built
+    terrain's width. Returned in matrix units (cells times ``cell_size``), as
+    ``build_matrix`` reads a zone size; ``built_extent`` gives what it builds at. From its
+    own stream of ``seed``, so the matrix's draws are untouched."""
+    built = built_cell_size(cell_size)
     rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, 356])
     if size not in WILDERNESS_SIZE_BANDS:
         w = np.array([WILDERNESS_SIZE_WEIGHTS[s] for s in SIZES])
@@ -568,8 +595,8 @@ def draw_zone_extent(size: str, seed: int,
     lo, hi = WILDERNESS_SIZE_BANDS[size]
     long_side = float(rng.uniform(lo, hi))
     aspect = draw_aspect(rng)
-    n_long = min(max(round(long_side / cell_size), math.ceil(lo / cell_size - 1e-9)),
-                 math.floor(hi / cell_size + 1e-9))
+    n_long = min(max(round(long_side / built), math.ceil(lo / built - 1e-9)),
+                 math.floor(hi / built + 1e-9))
     n_short = min(max(round(n_long / aspect), math.ceil(n_long / ASPECT_RANGE[1] - 1e-9)),
                   n_long)
     sides = (n_long, n_short) if rng.random() < 0.5 else (n_short, n_long)

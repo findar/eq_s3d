@@ -57,7 +57,7 @@ GOLDEN = {
     "dungeon_plain": "1b51d9699253d99741071ddf",
     "dungeon_temple_no_race": "74cea2de66ab813cc9af30be",
     # step 35 task 2: no lava patch; task 6: the plan's area, seed 7 unset 4650 x 4500 u
-    "wilderness": "dafe66cb550df78a41717032",
+    "wilderness": "e20e4665f30e082156e09f49",
 }
 
 
