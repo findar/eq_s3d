@@ -13,3 +13,5 @@ Everything the user needs to judge the structure before any file moves: the arch
 - [ ] Nothing moved or deleted; existing files untouched.
 
 ## Result
+
+✔ 394c6b4 · docs only
