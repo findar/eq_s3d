@@ -33,6 +33,13 @@
    patch is drawn only when the plan's element is `lava` (the rule planner's lava, magma, volcanic, molten,
    fire, volcano) or its dungeon theme is `lava_forge`; off otherwise. The spec's wilderness payload and the
    World's recipe carry `"lava": true` only when on, so themed zones keep their bytes.
+4. **The host is sized from the plan** (task 4). Interior side = 2.5 × √rooms medium room sides of the race
+   (graph layouts spread to ~31.5 H × √rooms on an unconstrained hill); host = side + 48 u each side, at least
+   1.8 × side, never under the default hill; the zone grows to hold it in even 150 u cells. Task 6's size bands
+   take the larger of the band and this. Giant 30 rooms reaches 7500 u, above stock's largest outdoor dungeon (3804 u).
+5. **Three Levels is the dungeon layer's, not the area's** (the lead, task 4 review). With no hill at all the
+   outdoor engine builds 2 Levels on 30 of 30 seeds at 5 rooms: `GraphEngine._descending` takes the first
+   one-way graph and sets every room above the entrance to Level 0. Moved to P-7-19.
 
 ## Follow-ups
 - Steps 5 and 10's surveys (`outdoor_dungeon_survey.py`, `site_survey.py`) take a zone's main ground as the largest
