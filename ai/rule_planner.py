@@ -66,6 +66,9 @@ _SIZE_WORDS = {
     "huge": ["huge", "massive", "enormous", "vast", "sprawling", "gigantic"],
     "large": ["large", "big", "grand", "expansive", "spacious"],
     "small": ["small", "tiny", "cramped", "cozy", "little", "compact"],
+    # Named, medium differs from unset on a wilderness or outdoor dungeon (whose area an
+    # unset Size draws from stock's whole range); on a dungeon both are medium.
+    "medium": ["medium", "mid-sized", "midsized", "modest"],
 }
 
 # Words implying a keyed / gated dungeon
@@ -279,7 +282,9 @@ class RulePlanner:
                  if phrase and phrase[1] == INTRUSION else text)
 
         zone_type = self._match_zone_type(shape)
-        size = self._match_one(text, _SIZE_WORDS, default="medium")
+        # No size word leaves Size unset: medium rooms, and on a wilderness or outdoor
+        # dungeon an area drawn from stock's range (ZonePlan.validate, step 35 task 6).
+        size = self._match_one(text, _SIZE_WORDS, default="")
         verticality = self._match_one(text, _VERTICALITY_WORDS, default="moderate")
         winding = match_winding(text)
         hall_length = match_hall_length(text)

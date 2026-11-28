@@ -215,7 +215,7 @@ function updatePanel(result: GenerateResult, sidecar: ZoneSidecar) {
     const p = result.plan;
     // Size and verticality only where the zone type reads them.
     const rows: [string, string][] = [
-      ...(usesControl(p.zone_type, "size") ? [["Size", p.size] as [string, string]] : []),
+      ...(usesControl(p.zone_type, "size") ? [["Size", p.size || "any"] as [string, string]] : []),
       ...(usesControl(p.zone_type, "verticality")
         ? [["Verticality", p.verticality] as [string, string]] : []),
       ...(usesControl(p.zone_type, "winding")
@@ -441,7 +441,8 @@ function readSeed(): number | undefined {
 const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   rooms: ["dungeon", "city", "outdoor_dungeon"],
   locks: ["dungeon", "city", "outdoor_dungeon"],
-  size: ["dungeon", "city"],
+  // A dungeon's rooms; a wilderness's whole area too (step 35 task 6).
+  size: ["dungeon", "city", "wilderness"],
   verticality: ["dungeon", "city", "outdoor_dungeon"],
   // Where a zone can have rough corridors (winding-control step 26).
   winding: ["dungeon", "city", "outdoor_dungeon"],
@@ -1252,6 +1253,16 @@ promptInput.addEventListener("keydown", (e) => {
 seedInput.addEventListener("keydown", (e) => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate(mode);
 });
+
+// Size starts unset ("any"): medium rooms on a dungeon or city, and on a wilderness an
+// area drawn from stock's whole range (server: ZonePlan.validate, step 35 task 6).
+{
+  const sizeSel = $("size") as HTMLSelectElement;
+  const any = new Option("any", "", true, true);
+  any.title = "Unset: medium rooms; a wilderness's area drawn from stock's range";
+  sizeSel.insertBefore(any, sizeSel.firstChild);
+  sizeSel.value = "";
+}
 
 // The Winding slider shows its value beside it.
 const windingInput = $("winding") as HTMLInputElement;

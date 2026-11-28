@@ -101,8 +101,11 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         intent = resolve_biome(plan)
         if plan.zone_type == "wilderness":
             from generators.wilderness.build import wilderness_spec
-            from generators.wilderness.matrix import wants_lava
+            from generators.wilderness.matrix import draw_zone_extent, wants_lava
+            # The area's extent from the plan's Size, drawn on the World's seed (step 35
+            # task 6): unset draws from stock's whole range.
             spec = wilderness_spec(plan.name, rng_seed, edges, biome=intent.biome,
+                                   zone_size=draw_zone_extent(plan.size, rng_seed),
                                    lava=wants_lava(plan.elemental_tint, plan.dungeon_theme))
         else:
             from generators.outdoor_dungeon import outdoor_dungeon_spec

@@ -56,7 +56,8 @@ GOLDEN = {
     "dungeon_kobold_tomb_lava": "53bf6d9180b9c824404b67e7",
     "dungeon_plain": "1b51d9699253d99741071ddf",
     "dungeon_temple_no_race": "74cea2de66ab813cc9af30be",
-    "wilderness": "14bcf97d7284d52ecdb2e3f8",  # step 35 task 2: no lava patch
+    # step 35 task 2: no lava patch; task 6: the plan's area, seed 7 unset 4650 x 4200 u
+    "wilderness": "04f0e3b49dba30a62739c2d0",
 }
 
 

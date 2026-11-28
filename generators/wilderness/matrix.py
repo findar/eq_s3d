@@ -426,6 +426,73 @@ class DesignMatrix:
 DEFAULT_ZONE_SIZE: float = 2400.0
 DEFAULT_CELL_SIZE: float = 150.0
 
+#: The plan's Size words, smallest first (``ai.schema.ZonePlan.size``).
+SIZES: Tuple[str, ...] = ("small", "medium", "large", "huge")
+
+#: A wilderness's width by Size (step 35 task 6, archive decision 2): stock open
+#: Classic-PoP outdoor zones' width p10-p25-p50-p75-p90, 4054/4803/7120/10451/13899 u.
+WILDERNESS_SIZE_BANDS: Dict[str, Tuple[float, float]] = {
+    "small": (4000.0, 4800.0),
+    "medium": (4800.0, 7100.0),
+    "large": (7100.0, 10500.0),
+    "huge": (10500.0, 13900.0),
+}
+#: How often stock falls in each band (15/25/25/15 of the 80% between p10 and p90): an
+#: unset Size draws its band by these, so unset widths spread as stock's do.
+WILDERNESS_SIZE_WEIGHTS: Dict[str, float] = {"small": 15.0, "medium": 25.0,
+                                             "large": 25.0, "huge": 15.0}
+#: Width over depth, drawn uniformly (stock p50 1.21, p90 1.96).
+ASPECT_RANGE: Tuple[float, float] = (1.0, 2.0)
+
+#: An outdoor dungeon's zone by Size (archive decision 2: 5 stock zones, 793-3804 u, p50
+#: 1234, aspect 1.03-1.60): medium keeps ``OUTDOOR_DUNGEON_ZONE_SIZE``. The zone is never
+#: smaller than the host it holds (``host_zone_size``, decision 4).
+OUTDOOR_DUNGEON_SIZES: Dict[str, float] = {"small": 800.0, "medium": 1200.0,
+                                           "large": 1700.0, "huge": 2500.0}
+
+ZoneSize = Any  # a float (square) or a (width, depth) pair, in world units
+
+
+def zone_extent(zone_size: ZoneSize = None) -> Tuple[float, float]:
+    """``(width, depth)`` of a zone size: a number is a square, a pair is (X, Y).
+    ``None`` / 0 is the wilderness default."""
+    if not zone_size:
+        return (DEFAULT_ZONE_SIZE, DEFAULT_ZONE_SIZE)
+    if isinstance(zone_size, (int, float)):
+        return (float(zone_size), float(zone_size))
+    w, d = zone_size
+    return (float(w), float(d))
+
+
+def zone_size_value(zone_size: ZoneSize) -> Any:
+    """The zone size as a spec payload or World recipe records it: a float when square
+    (so square zones keep their records), else ``[width, depth]``."""
+    w, d = zone_extent(zone_size)
+    return w if w == d else [w, d]
+
+
+def draw_zone_extent(size: str, seed: int,
+                     cell_size: float = DEFAULT_CELL_SIZE) -> Tuple[float, float]:
+    """A wilderness's ``(width, depth)`` (X, Y) for the plan's Size (step 35 Req 2): the
+    longer side drawn in the Size's band (``WILDERNESS_SIZE_BANDS``; an unset or unknown
+    Size draws the band by ``WILDERNESS_SIZE_WEIGHTS``), the shorter that over an aspect
+    drawn in ``ASPECT_RANGE``, either way round. Each side is snapped to whole matrix cells
+    that keep the band and the aspect range. From its own stream of ``seed``, so the
+    matrix's draws are untouched."""
+    rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, 356])
+    if size not in WILDERNESS_SIZE_BANDS:
+        w = np.array([WILDERNESS_SIZE_WEIGHTS[s] for s in SIZES])
+        size = SIZES[int(rng.choice(len(SIZES), p=w / w.sum()))]
+    lo, hi = WILDERNESS_SIZE_BANDS[size]
+    long_side = float(rng.uniform(lo, hi))
+    aspect = float(rng.uniform(*ASPECT_RANGE))
+    n_long = min(max(round(long_side / cell_size), math.ceil(lo / cell_size - 1e-9)),
+                 math.floor(hi / cell_size + 1e-9))
+    n_short = min(max(round(n_long / aspect), math.ceil(n_long / ASPECT_RANGE[1] - 1e-9)),
+                  n_long)
+    sides = (n_long, n_short) if rng.random() < 0.5 else (n_short, n_long)
+    return (float(sides[0] * cell_size), float(sides[1] * cell_size))
+
 #: Default visual Water_Level plane Z (R13). Water is visual-only in v1; this is
 #: only the plane height the shoreline/river read against, never a per-cell
 #: surface height on the matrix.
@@ -786,7 +853,7 @@ def build_matrix(
     edges: Optional[List[EdgeConnection]] = None,
     seed: int = 0,
     *,
-    zone_size: float = DEFAULT_ZONE_SIZE,
+    zone_size: ZoneSize = DEFAULT_ZONE_SIZE,
     cell_size: float = DEFAULT_CELL_SIZE,
     water_level: float = DEFAULT_WATER_LEVEL,
     intent_overrides: Optional[Dict[Tuple[int, int], IntentTag]] = None,
@@ -794,6 +861,9 @@ def build_matrix(
     lava: bool = False,
 ) -> DesignMatrix:
     """Construct a plains-Karana :class:`DesignMatrix`, terrain-first.
+
+    ``zone_size`` is a square's side or a ``(width, depth)`` pair (X, Y; step 35 task 6:
+    a wilderness's from the plan's Size, ``draw_zone_extent``).
 
     ``lava`` draws the interior lava patch (step 35 task 2): only a plan whose
     theme calls for it (:func:`wants_lava`) asks; off, the patch's cell stays
@@ -856,9 +926,10 @@ def build_matrix(
         biome = "plains"
 
     # --- grid shape ------------------------------------------------------
-    n = max(3, int(round(zone_size / cell_size)))  # cells per side (>=3 so an
-    #                                                 interior ring exists)
-    nx = ny = n
+    # Cells per side (>=3 so an interior ring exists); a (width, depth) pair is X by Y.
+    width, depth = zone_extent(zone_size)
+    nx = max(3, int(round(width / cell_size)))
+    ny = max(3, int(round(depth / cell_size)))
     # Centre the zone footprint on the world origin so Spawn lands near (0,0).
     origin = (-0.5 * nx * cell_size, -0.5 * ny * cell_size)
 

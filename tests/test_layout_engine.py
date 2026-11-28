@@ -68,11 +68,12 @@ _GOLDENS = {
     # (Sites normal) build now packs Site Structures. Moved by tasks 15 and 10
     # (Site recipes and weights), by site-sockets task 6 (Sites on points)
     # and task 16 (the kind first, then the point), and by step 35 task 2 (the lava patch
-    # is drawn only for a lava theme).
+    # is drawn only for a lava theme), and by step 35 task 6 (the area's extent from the plan's
+    # Size: unset, seed 4 draws 9750 x 9600 u where it was 2400 square).
     "wilderness": (
         dict(zone_type="wilderness"), 4,
-        "290ff9c47da0acb17cc4475e19f2704b7fb76f749101694640a7c2a64c4420fb",
-        "f02fc97f6997a0c91fc2c5a168e4c4a4358ef1ab05e8d9b19fbe029651bf1468"),
+        "395203879fe5c76839e5afb768795703bc14f1e6572b9a8308d69fed329460b8",
+        "32213f20feadff5432d6027210075e48223ef96a09bb58db23bd484b8420e364"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).

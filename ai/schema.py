@@ -89,6 +89,13 @@ SCALE_CONTROLS = ("finish", "structure", "clutter")
 VALID_SITES = ["none", "sparse", "normal", "dense"]
 DEFAULT_SITES = "normal"
 SITES_ZONE_TYPES = ("wilderness", "outdoor_dungeon")
+# The Size words, smallest first. On a room-graph zone Size sets the rooms (count and
+# footprint) and an unset one is medium; on the landscape zone types it is also the
+# area's extent (step 35 task 6, generators.wilderness.matrix), and unset it stays ""
+# so the extent is drawn from stock's whole range.
+VALID_SIZES = ("small", "medium", "large", "huge")
+DEFAULT_SIZE = "medium"
+AREA_SIZE_ZONE_TYPES = ("wilderness", "outdoor_dungeon")
 
 # Props in rooms (room-decor step 11, Req 10.1, 10.2): the Decor control
 # (generators.decor.rules.CONTROLS; that module imports this one, so the list
@@ -353,7 +360,7 @@ class ZonePlan:
     name: str = "zone"
     zone_type: str = "dungeon"       # one of VALID_ZONE_TYPES
     room_count: int = 5              # 1..30
-    size: str = "medium"             # small | medium | large | huge
+    size: str = ""                   # "" (unset) | small | medium | large | huge
     elevation: bool = True           # multi-level layout
     verticality: str = "moderate"    # flat | moderate | dramatic
     # How far rough corridors stray (step 26): 0 straight .. WINDING_MAX; 1 the stock tunnel.
@@ -439,8 +446,10 @@ class ZonePlan:
         # default (Req 11.2).
         self.zone_type = canonical_zone_type(self.zone_type) or DEFAULT_ZONE_TYPE
         self.room_count = max(1, min(30, int(self.room_count)))
-        if self.size not in ("small", "medium", "large", "huge"):
-            self.size = "medium"
+        # Unset is medium, except on a landscape zone, whose area is then drawn.
+        self.size = str(self.size or "").strip().lower()
+        if self.size not in VALID_SIZES and (self.size or self.zone_type not in AREA_SIZE_ZONE_TYPES):
+            self.size = DEFAULT_SIZE
         if self.verticality not in ("flat", "moderate", "dramatic"):
             self.verticality = "moderate"
         self.winding = winding_value(self.winding)
@@ -641,8 +650,11 @@ ZONE_PLAN_JSON_SCHEMA = {
         },
         "size": {
             "type": "string",
-            "enum": ["small", "medium", "large", "huge"],
-            "description": "Overall footprint of the zone.",
+            "enum": list(VALID_SIZES),
+            "description": "Overall footprint of the zone: a dungeon or city's rooms; a "
+                           "wilderness or outdoor dungeon's whole area too. Leave it out "
+                           "on a wilderness or outdoor dungeon the prompt gives no size "
+                           "for, and the area is drawn from stock's range.",
         },
         "elevation": {
             "type": "boolean",
@@ -753,5 +765,5 @@ ZONE_PLAN_JSON_SCHEMA = {
                            "places).",
         },
     },
-    "required": ["zone_type", "room_count", "size"],
+    "required": ["zone_type", "room_count"],
 }
