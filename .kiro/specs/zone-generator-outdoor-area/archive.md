@@ -52,6 +52,16 @@
    - height/width is drawn 0.48-4.43 (p50 1.65), capped by the face;
    - no Apron may rise to its floor or fall more than `MAX_GRADE` a cell.
    Synth tiles a 150 u matrix cell as 160 u, so the Socket reads the foot off the field (`scarp_foot`).
+8. **The area's extent from the plan's Size** (task 6, the lead). An unset Size stays `""` on a wilderness or
+   outdoor dungeon, and is medium on a dungeon or city.
+   - *Wilderness* (`matrix.draw_zone_extent`): the width is drawn in the Size's band, and unset picks the band
+     15/25/25/15. The aspect is drawn from stock's quantiles (`WILDERNESS_ASPECT_QUANTILES`, p10/p50/p90
+     1.02/1.21/1.96, max 2.6).
+   - *Outdoor dungeon* (`draw_outdoor_zone_extent`): the Size's side (unset picks one of four evenly) at
+     stock's 5-zone aspect. Neither side is under `host_zone_size`, and both are even cells. A host past huge
+     stays square.
+   - Synth's 160 u cell builds each extent 6.7% wider than drawn: huge's 13800 u builds at 14720.
+   - The gate shares one walk surface between `check_bowl` and the Footprint checks.
 
 ## Follow-ups
 - Giant and dragon cliff openings are squat (200-300 u wide, 65-86 u tall, height/width ~0.3 vs stock p10 0.48):
