@@ -30,7 +30,7 @@ task here. **Never tick a `Type: human` task.**
   - Owns: generators/zone_spec.py, generators/layout.py, generators/mapview.py, tests/test_mapview_layers.py
   - Reqs: 2
 
-- [ ] 4. Acceptance section
+- [x] 4. Acceptance section
   - Card: [cards/04-acceptance.md](cards/04-acceptance.md)
   - Type: agent · Size: S · Depends: 3
   - Owns: docs/ACCEPTANCE.md
