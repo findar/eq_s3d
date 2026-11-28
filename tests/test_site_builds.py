@@ -29,7 +29,7 @@ STEP9 = {
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape),
     # and by random placement task 11 (room footprints in stock's proportions), and by step 35
     # task 5 (the wide, flaring Mouth).
-    ("od", 3): "62e35197d8b6b5d62c005bab850672616106596fe3cbebb8cd8b975388afaa37",
+    ("od", 3): "f8d68ef9e2642e354cf9c5c4575fd4e7170f613730e857695885ac895efd70ed",
 }
 
 
@@ -45,7 +45,7 @@ STEP10 = {
     # site-sockets task 7 (Sites keep off the dungeon's rooms, not the hill), and by
     # random placement task 11 (room footprints in stock's proportions), and by step 35 task 5
     # (the wide, flaring Mouth).
-    ("od", 1001, "dense"): "88756dd644d7737bd604aba19ea078be6c0b90c20717d4a356de119fc6f88d11",
+    ("od", 1001, "dense"): "42b5fab2f1e39a810838871d12fc499edf5a6cf6e9870a62f06eb26f3132fddc",
 }
 
 

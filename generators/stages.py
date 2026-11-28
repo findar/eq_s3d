@@ -259,10 +259,13 @@ def attach_rooms(world: World, socket: Socket, fields: Mapping[str, Any],
     if getattr(engine, "stacking", False):
         depth = od.floor_depth(verticality, kwargs.get("dungeon_race") or "")
     grid = od.socket_grid(socket, world.terrain)
-    # The Mouth's width (step 35 task 5): the plan's, else drawn from the seed at the race's
-    # scale (``outdoor_dungeon.draw_mouth_width``).
+    # The Mouth's width and height to width (step 35 task 5): the plan's, else drawn from
+    # the seed, the width at the race's scale (``outdoor_dungeon.draw_mouth_width``,
+    # ``draw_mouth_ratio``).
     if kwargs.get("mouth_width") is None:
         kwargs["mouth_width"] = od.draw_mouth_width(seed, kwargs.get("dungeon_race") or "")
+    if kwargs.get("mouth_ratio") is None:
+        kwargs["mouth_ratio"] = od.draw_mouth_ratio(seed)
     try:
         envelope = od.host_envelope(socket, grid, depth=depth)
         layout, warnings, entrance = od.plan_dungeon(socket, grid, envelope, name, seed,

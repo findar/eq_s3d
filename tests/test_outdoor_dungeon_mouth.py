@@ -1,5 +1,6 @@
 """Step 35 task 5: the wide, flaring Mouth (Req 6). The width is drawn 32-96 u at the race's
-scale (archive decision 2), the Tunnel flares to it, and the Mouth is stitched to the terrain
+scale (archive decision 2), its height 0.25-1.97 times that (stock mouths), the Tunnel flares
+to both, and the Mouth is stitched to the terrain
 grid with the Rock_Cover kept and every flare ramp subdivided. The built gate (every room from
 the Spawn and back) runs in ``test_outdoor_dungeon_build.py`` and the gate sweeps."""
 
@@ -88,7 +89,7 @@ def test_the_mouth_is_stitched_and_covered(built):
         v = ter.vertices[np.ravel_multi_index(grid.ij(e.axis, e.portal + e.outward, c),
                                               (grid.nx, grid.ny))]
         assert v.z == e.floor
-        assert grid.z[grid.ij(e.axis, e.portal, c)] >= e.floor + e.height + od.ROCK_COVER - 1e-6
+        assert grid.z[grid.ij(e.axis, e.portal, c)] >= e.floor + g.heights[1] + od.ROCK_COVER - 1e-6
     assert od._tunnel_covered(grid, e, od.ROCK_COVER)
 
 
@@ -107,12 +108,8 @@ def test_the_flare_ramp_is_subdivided(built):
         if not (min(run) >= lo_t - 1e-6 and max(run) <= hi_t + 1e-6
                 and min(across) >= g.opening[0] - 1e-6 and max(across) <= g.opening[1] + 1e-6):
             continue
-        n = np.cross(np.subtract((vs[1].x, vs[1].y, vs[1].z), (vs[0].x, vs[0].y, vs[0].z)),
-                     np.subtract((vs[2].x, vs[2].y, vs[2].z), (vs[0].x, vs[0].y, vs[0].z)))
-        if abs(n[2]) < 0.7 * np.linalg.norm(n) or max(v.z for v in vs) > e.floor + e.height:
-            continue
-        if min(v.z for v in vs) > max(e.floor, e.room_floor) + 1e-6:
-            continue                                     # a ceiling
+        if not all(v.nz > 0.5 for v in vs):
+            continue                                     # a wall or a ceiling
         floors += 1
         assert max(v.z for v in vs) - min(v.z for v in vs) <= MAX_SEG_RISE + 1e-6
     assert floors
@@ -128,3 +125,63 @@ def test_walkable_both_ways(built):
     both, _forward = directed_reach(surf, seed, find_drops(surf, agent))
     for room in spec.rooms:
         assert set(_faces_in_room(surf, room).tolist()) & both, room.id
+
+
+def test_height_is_drawn_in_stocks_range():
+    """Stock rock mouths 32-96 u wide stand 0.25/0.61/1.97 of their width tall (p10/p50/p90):
+    0.61 with no seed, else drawn in that range with 0.61 the median."""
+    lo, hi = od.MOUTH_RATIO_RANGE
+    assert od.draw_mouth_ratio(None) == od.MOUTH_RATIO == 0.61
+    draws = [od.draw_mouth_ratio(s) for s in range(400)]
+    assert all(lo <= r <= hi for r in draws)
+    assert 0.55 <= statistics.median(draws) <= 0.67
+    # Tallest first, never under the Tunnel's height; the one-cell Mouth keeps the Tunnel's.
+    assert od._mouth_heights(48.0, 0.61, 15.0) == [pytest.approx(29.28),
+                                                     pytest.approx(22.14), None]
+    assert od._mouth_heights(48.0, 0.25, 15.0) == [None]
+    assert od._mouth_heights(None, 0.61, 15.0) == [None]
+
+
+def test_the_ceiling_flares_to_the_mouths_height(built):
+    """The Mouth stands its drawn height (or lower, where the hill can't cover it), never
+    under the Tunnel's; the ceiling rises from the Tunnel's height at the throat to it at the
+    portal, at most MOUTH_FLARE a unit of run; the sidecar records both."""
+    spec, _host, ter, grid, e = built
+    g = od.mouth_geometry(grid, e)
+    tunnel, portal = g.heights
+    assert tunnel == e.height and portal >= tunnel
+    mouth = od.sidecar_block(spec)["entrances"][0]["mouth"]
+    assert mouth["height"] == pytest.approx(portal) and mouth["tunnel_height"] == e.height
+    assert portal - tunnel <= od.MOUTH_FLARE * abs(g.portal - g.throat) + 1e-6
+    assert g.height(g.throat) == pytest.approx(tunnel) and g.height(g.portal) == portal
+    # The flare's ceiling meets the portal's lintel: a ceiling vertex at the opening's height.
+    lintel = e.floor + portal
+    assert any(abs((v.x, v.y)[e.axis] - g.portal) < 1e-6 and abs(v.z - lintel) < 1e-6
+               and v.nz < -0.5 for v in ter.vertices)
+
+
+def test_a_portal_the_hill_cant_cover_is_lowered():
+    """The cover fallback: asked for a Mouth five times its width tall (no hill covers that),
+    the planner lowers it until the Rock_Cover holds, never under the Tunnel's height."""
+    import importlib.util
+    from pathlib import Path
+
+    from generators import stages
+
+    root = Path(__file__).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("record_worlds", root / "scripts" / "record_worlds.py")
+    rw = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rw)
+    world = rw.load_world("outdoor_w")
+    hill = world.socket("hill0")
+    fields = {"name": "d", "room_count": od.DEFAULT_ROOMS, "mouth_width": 48.0,
+              "mouth_ratio": 5.0}
+    att = stages.attach_rooms(world, hill, fields, world.recipe["seed"])
+    e = att.entrance
+    grid = od.socket_grid(hill, world.terrain)
+    g = od.mouth_geometry(grid, e)
+    assert e.height <= g.heights[1] < 5.0 * g.width
+    assert od._tunnel_covered(grid, e, hill.ground["rock_cover"])
+    lo, hi = g.cols
+    assert all(grid.z[grid.ij(e.axis, e.portal, c)] >= e.floor + g.heights[1] + od.ROCK_COVER - 1e-6
+               for c in range(lo, hi + 1))
