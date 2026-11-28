@@ -1,6 +1,6 @@
 # Requirements — zone-generator-layout-repair (roadmap step 33)
 
-> **STATUS: roadmap step 33, ready.** Drafted 2026-11-27 at master `0eeec16`. The user, after the
+> **STATUS: stopped after task 1 (2026-11-27): the measure found no time to save (decision 3).** Drafted 2026-11-27 at master `0eeec16`. The user, after the
 > lead compared Edgar's graph-based generator with ours: "can we pause the step 32 work and focus on that if it should improve our build times?"
 > Step 32 is paused (its task 1 parked on `agent/followups-1`). Task index: `tasks.md` (card
 > format). Decisions: `archive.md`.

@@ -4,6 +4,7 @@
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | `scripts/generate_profile.py`: per-phase time and refusal reasons per generate; 210 generates, 0 gate failures, decor 44% / finish 28% / gate 16% / plan 6% | 2 |
 
 ## Decisions
 
@@ -24,5 +25,12 @@
    loop edges, so fold them into step 32 if the seat leaves gaps. A speed step should profile decor
    placement and RoomContexts, and `_write_map_artifacts`. The lead decides.
 
+3. **Step 33 stops after its measure** (the lead, 2026-11-27, on the user's condition "if it should improve our
+   build times"): 210 generates on a quiet machine all passed first attempt with no gate rejection; the projected
+   saving is 0-0.05%. Generate time is decor 44% (RoomContexts 12%), finish 28% (map files ~a quarter of it), gate
+   16%, plan 6%. `scripts/generate_profile.py` stays for later speed work. Step 32 resumes.
+
 ## Follow-ups
 - Loops-first planning (designed one-way loops) and corridors as placed blocks: later slices, after task 3.
+- A speed step, if wanted: decor placement and RoomContexts (44%), `_write_map_artifacts` (about 7% of all time), the gate (16%).
+- Plan check as a guard naming the gate reason (card 2), and local repair / contact scoring as a quality lever (266 loop edges dropped by `_resolve_conflicts` over 210 generates).
