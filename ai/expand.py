@@ -115,7 +115,7 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
                 dungeon_theme=plan.dungeon_theme, dungeon_race=plan.dungeon_race,
                 elemental_tint=(plan.elemental_tint or None),
                 verticality=plan.verticality, rooms_seed=plan.rooms_seed,
-                hall_length=plan.hall_length,
+                hall_length=plan.hall_length, size=plan.size,
                 engine=layout_engine(plan.layout, plan.rule_set, plan.verticality,
                                      outdoor=True))
             spec.layout = layout_block(spec.layout, spec)

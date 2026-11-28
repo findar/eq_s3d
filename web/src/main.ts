@@ -441,8 +441,8 @@ function readSeed(): number | undefined {
 const CONTROL_ZONE_TYPES: Record<string, readonly string[]> = {
   rooms: ["dungeon", "city", "outdoor_dungeon"],
   locks: ["dungeon", "city", "outdoor_dungeon"],
-  // A dungeon's rooms; a wilderness's whole area too (step 35 task 6).
-  size: ["dungeon", "city", "wilderness"],
+  // A dungeon's rooms; a wilderness's or outdoor dungeon's whole area too (step 35 task 6).
+  size: ["dungeon", "city", "wilderness", "outdoor_dungeon"],
   verticality: ["dungeon", "city", "outdoor_dungeon"],
   // Where a zone can have rough corridors (winding-control step 26).
   winding: ["dungeon", "city", "outdoor_dungeon"],
@@ -1254,12 +1254,13 @@ seedInput.addEventListener("keydown", (e) => {
   if ((e as KeyboardEvent).key === "Enter") doGenerate(mode);
 });
 
-// Size starts unset ("any"): medium rooms on a dungeon or city, and on a wilderness an
-// area drawn from stock's whole range (server: ZonePlan.validate, step 35 task 6).
+// Size starts unset ("any"): medium rooms on a dungeon or city, and on a wilderness or
+// outdoor dungeon an area drawn from stock's whole range (server: ZonePlan.validate, step
+// 35 task 6).
 {
   const sizeSel = $("size") as HTMLSelectElement;
   const any = new Option("any", "", true, true);
-  any.title = "Unset: medium rooms; a wilderness's area drawn from stock's range";
+  any.title = "Unset: medium rooms; an outdoor zone's area drawn from stock's range";
   sizeSel.insertBefore(any, sizeSel.firstChild);
   sizeSel.value = "";
 }

@@ -613,8 +613,9 @@ class GenerateRequest(BaseModel):
     controls: Optional[dict[str, Any]] = Field(
         default=None,
         description="Controls sub-object: zone_type, room_count, size (small/medium/"
-                    "large/huge, \"\" or left out unset: medium rooms; on a wilderness the "
-                    "area's extent too, drawn from stock's range when unset), "
+                    "large/huge, \"\" or left out unset: medium rooms; on a wilderness or "
+                    "outdoor_dungeon the area's extent too, drawn from stock's range when "
+                    "unset), "
                     "verticality, winding (how far rough corridors stray, 0 straight to 2, "
                     "1 the stock tunnel; anything else falls back to 1), hall_length (how long the "
                     "halls between rooms run, 0.5 to 3, a multiple of today's 1; anything else "

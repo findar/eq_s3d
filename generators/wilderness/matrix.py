@@ -497,8 +497,42 @@ def draw_aspect(rng, quantiles: Tuple[float, ...] = WILDERNESS_ASPECT_QUANTILES)
 #: smaller than the host it holds (``host_zone_size``, decision 4).
 OUTDOOR_DUNGEON_SIZES: Dict[str, float] = {"small": 800.0, "medium": 1200.0,
                                            "large": 1700.0, "huge": 2500.0}
+#: The 5 stock outdoor dungeons' aspect, sorted (``scripts/stock_outdoor_area.py``): read
+#: as p0, p25, ..., p100 of a quantile function, as ``WILDERNESS_ASPECT_QUANTILES`` is.
+OUTDOOR_DUNGEON_ASPECT_QUANTILES: Tuple[float, ...] = (1.028, 1.037, 1.428, 1.495, 1.6)
 
 ZoneSize = Any  # a float (square) or a (width, depth) pair, in world units
+
+
+def _even_cells(size: float, cell_size: float) -> int:
+    cells = math.ceil(size / cell_size - 1e-9)
+    return cells + cells % 2
+
+
+def draw_outdoor_zone_extent(size: str, host_size: float, seed: int,
+                             cell_size: float = DEFAULT_CELL_SIZE) -> Tuple[float, float]:
+    """An outdoor dungeon's zone ``(width, depth)`` (X, Y) for the plan's Size (step 35
+    Req 2), either way round. The Size's side (``OUTDOOR_DUNGEON_SIZES``; unset draws one
+    of the four evenly, as the 5 stock zones fall about one to a quartile) and an aspect
+    drawn from stock's (``OUTDOOR_DUNGEON_ASPECT_QUANTILES``) give the shorter side, the
+    side over the aspect but never under ``host_size`` (``host_zone_size``: the zone holds
+    its host, archive decision 4); the longer is that times the aspect, never under the
+    Size's side, and lengthened by the aspect only as far as the huge Size's side: a host
+    bigger than that (a giant or dragon dungeon, past stock's largest) keeps its zone
+    square rather than grow terrain for the aspect alone. Both
+    are even numbers of matrix cells (the nearest, the shorter rounded up), so the zone stays
+    centred on a cell corner as the default's is. From its own stream of ``seed``."""
+    rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, 357])
+    if size not in OUTDOOR_DUNGEON_SIZES:
+        size = SIZES[int(rng.integers(0, len(SIZES)))]
+    side = OUTDOOR_DUNGEON_SIZES[size]
+    aspect = draw_aspect(rng, OUTDOOR_DUNGEON_ASPECT_QUANTILES)
+    n_short = _even_cells(max(side / aspect, host_size), cell_size)
+    stretched = min(2 * int(round(n_short * aspect / 2.0)),
+                    _even_cells(OUTDOOR_DUNGEON_SIZES["huge"], cell_size))
+    n_long = max(_even_cells(side, cell_size), stretched, n_short)
+    sides = (n_long, n_short) if rng.random() < 0.5 else (n_short, n_long)
+    return (float(sides[0] * cell_size), float(sides[1] * cell_size))
 
 
 def zone_extent(zone_size: ZoneSize = None) -> Tuple[float, float]:

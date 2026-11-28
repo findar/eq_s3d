@@ -145,9 +145,10 @@ def test_flat_is_the_step5_dungeon(case):
     stacking off, the vertical rules as ramp hints, step 5's floor limit."""
     spec = _spec(case, "flat")
     _p, counts, edges, seed = CASES[case]
+    # On the plan's zone (step 35 task 6: the zone is drawn from the plan's Size).
     before = od.outdoor_dungeon_spec(
         "odl" + case + "f", seed, edges, room_count=counts[0], locks=counts[1],
-        engine=GraphEngine(None, vertical_weight=1.0))
+        engine=GraphEngine(None, vertical_weight=1.0), size=_plan(case, "flat").size)
     assert _boxes(spec) == _boxes(before), "the layout is step 5's; only its walls differ"
     assert spec.wilderness[od.DUNGEON_KEY] == before.wilderness[od.DUNGEON_KEY]
     assert "levels" not in spec.layout

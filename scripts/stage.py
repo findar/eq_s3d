@@ -474,6 +474,13 @@ def _zone_size(args):
     if args.zone_type == "wilderness":
         from generators.wilderness.matrix import draw_zone_extent
         return list(draw_zone_extent(args.size or "", args.seed))
+    if args.zone_type == "outdoor_dungeon":
+        # The default hill's (the World stage's request; a plan's default 5 rooms of a
+        # human ask for no more), so the zone is the one such a plan builds on.
+        from generators.wilderness.matrix import (DEFAULT_HOST_HILL, draw_outdoor_zone_extent,
+                                                  host_zone_size)
+        return list(draw_outdoor_zone_extent(args.size or "", host_zone_size(DEFAULT_HOST_HILL),
+                                             args.seed))
     return None
 
 
@@ -595,10 +602,11 @@ def parser() -> argparse.ArgumentParser:
     w.add_argument("--seed", type=int, required=True)
     w.add_argument("--biome")
     w.add_argument("--edges", help="the Rim's declared sides, e.g. N=zoneline,E=zoneline")
-    w.add_argument("--zone-size", help="the zone's side, or W,D (default: a wilderness's "
-                   "extent drawn from --size on the seed, as the build draws it)")
+    w.add_argument("--zone-size", help="the zone's side, or W,D (default: a wilderness's or "
+                   "outdoor dungeon's extent drawn from --size on the seed, as the build draws it)")
     w.add_argument("--size", choices=["small", "medium", "large", "huge"],
-                   help="a wilderness's Size (default unset: drawn from stock's range)")
+                   help="a wilderness's or outdoor dungeon's Size (default unset: drawn from "
+                        "stock's range)")
     w.set_defaults(run=cmd_world)
 
     def plan_args(p):

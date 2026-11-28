@@ -81,7 +81,8 @@ from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,  #
                                          landscape_for, normalise_edges, wilderness_spec)
 from generators.wilderness.matrix import (DEFAULT_HOST_HILL, DEFAULT_ZONE_SIZE,  # noqa: F401
                                           OUTDOOR_DUNGEON_ZONE_SIZE, Landform, host_hill,
-                                          host_zone_size, wants_lava)
+                                          draw_outdoor_zone_extent, host_zone_size,
+                                          wants_lava, zone_extent)
 from generators.wilderness.biome import load_biome_kit
 from generators.world import Socket, World, world_for
 from generators.zone_spec import MaterialSpec, ZoneSpec
@@ -1022,7 +1023,7 @@ AREA_ATTR = "area_world"
 def _area_inputs(seed, biome, edges, zone_size, landform, lava=False) -> tuple:
     """What makes an area's landscape, compared as ``landscape_for`` keys it."""
     return (seed, biome or DEFAULT_BIOME, tuple(sorted(normalise_edges(edges).items())),
-            float(zone_size or DEFAULT_ZONE_SIZE),
+            zone_extent(zone_size or DEFAULT_ZONE_SIZE),
             Landform.from_dict(landform) if landform else None, bool(lava))
 
 
@@ -1675,11 +1676,16 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
                          room_count: int = DEFAULT_ROOMS, engine=None,
                          verticality: Optional[str] = None,
                          rooms_seed: Optional[int] = None,
+                         size: Optional[str] = None,
                          **layout_kwargs) -> ZoneSpec:
     """One spec for an outdoor dungeon: the host wilderness spec (Host_Hill
     terrain at the outdoor-dungeon size) with the dungeon laid out inside its
     Envelope and an Entrance planned to it. ``engine`` is the dungeon's
     Layout_Engine (``None`` is classic); its record rides on ``spec.layout``.
+
+    ``size`` is the plan's Size (step 35 task 6): the zone is drawn from it on the seed
+    (``matrix.draw_outdoor_zone_extent``; "" draws one), never smaller than the host. Left
+    ``None``, the zone is the least that holds the host, square (``host_for``).
 
     ``verticality`` deepens the Envelope's floor limit (:func:`floor_depth`)
     when the engine stacks (the graph engine at ``moderate`` / ``dramatic``,
@@ -1704,6 +1710,8 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
     # The lava patch only when the plan's theme calls for it (step 35 task 2).
     lava = wants_lava(layout_kwargs.get("elemental_tint"), layout_kwargs.get("dungeon_theme"))
     request, zone_size = host_for(room_count, layout_kwargs.get("dungeon_race") or "")
+    if size is not None:
+        zone_size = draw_outdoor_zone_extent(size, zone_size, seed)
     world = world_for("outdoor_dungeon", seed, biome=biome, edges=edges,
                       landform=request, zone_size=zone_size, lava=lava)
     spec = wilderness_spec(name, seed, edges, biome,
