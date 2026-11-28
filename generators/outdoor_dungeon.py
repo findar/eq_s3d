@@ -61,12 +61,14 @@ from generators.geometry import MeshBuilder, _ensure_materials
 from generators import semantics
 from generators.layout import LayoutGenerator
 from generators.routing import corridor_route, route_footprint
-from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,
-                                         landscape_for, wilderness_spec)
-from generators.wilderness.matrix import (DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE,
-                                          Landform)
+# ``landscape_for`` is not called here (P-8-4: the area's World is read instead,
+# :func:`area_world`); it stays importable because the Attach tests patch it.
+from generators.wilderness.build import (DEFAULT_BIOME, build_wilderness_ter,  # noqa: F401
+                                         landscape_for, normalise_edges, wilderness_spec)
+from generators.wilderness.matrix import (DEFAULT_HOST_HILL, DEFAULT_ZONE_SIZE,
+                                          OUTDOOR_DUNGEON_ZONE_SIZE, Landform)
 from generators.wilderness.biome import load_biome_kit
-from generators.world import Socket
+from generators.world import Socket, World, world_for
 from generators.zone_spec import MaterialSpec, ZoneSpec
 from generators.topology.embed import SLAB
 
@@ -697,9 +699,49 @@ class _Grid:
         return (r, c, z) if axis == 0 else (c, r, z)
 
 
+#: The attribute the area's World rides on beside a spec (:func:`area_world`): a plain
+#: attribute, not a ZoneSpec field, so never in ``to_dict``, the spec JSON or any hash of
+#: it (as ``builder.with_decor_layers``).
+AREA_ATTR = "area_world"
+
+
+def _area_inputs(seed, biome, edges, zone_size, landform) -> tuple:
+    """What makes an area's landscape, compared as ``landscape_for`` keys it."""
+    return (seed, biome or DEFAULT_BIOME, tuple(sorted(normalise_edges(edges).items())),
+            float(zone_size or DEFAULT_ZONE_SIZE),
+            Landform.from_dict(landform) if landform else None)
+
+
+def area_world(spec: ZoneSpec) -> World:
+    """The World the spec's area was built as (step 35 Req 4, P-8-4): the one
+    :func:`outdoor_dungeon_spec` made, riding beside the spec (``AREA_ATTR``) while it
+    still describes the spec's landscape. Otherwise (a spec read from JSON, or a host
+    spec made with ``wilderness_spec``) it is made once from the spec's payload and kept
+    there: the outdoor-dungeon World when the payload records a Landform (its ``hill0``
+    is the Socket the planner reads), else the wilderness one. Never mutate it."""
+    if spec.wilderness is None:
+        raise ValueError(f"spec {spec.name!r} carries no wilderness payload")
+    if spec.seed is None:
+        raise ValueError(f"wilderness spec {spec.name!r} has no seed")
+    p = spec.wilderness
+    want = _area_inputs(spec.seed, p.get("biome"), p.get("edges"), p.get("zone_size"),
+                        p.get("landform"))
+    world = getattr(spec, AREA_ATTR, None)
+    if world is not None:
+        r = world.recipe
+        if _area_inputs(r.get("seed"), r.get("biome"), r.get("edges"), r.get("zone_size"),
+                        r.get("landform")) == want:
+            return world
+    kind = "outdoor_dungeon" if p.get("landform") else "wilderness"
+    world = world_for(kind, spec.seed, biome=want[1], edges=p.get("edges"),
+                      zone_size=want[3], landform=p.get("landform"))
+    setattr(spec, AREA_ATTR, world)
+    return world
+
+
 def _host_grid(host: ZoneSpec, ter: TerFile) -> _Grid:
-    land = landscape_for(host)
-    return _Grid(ter, land.synth.origin, land.synth.resolution, land.bowl.heights.shape)
+    t = area_world(host).terrain
+    return _Grid(ter, t.origin, t.res, t.heights.shape)
 
 
 def socket_grid(socket: Socket, heights) -> _Grid:
@@ -713,18 +755,17 @@ def _hill(host, terrain) -> Tuple[Optional[Socket], _Grid]:
     """``(socket, grid)`` for the planner: from a ``hillside`` Socket and the
     World's heights (or its ``Terrain``, or a ``_Grid``); or, legacy, from a
     host spec and its built TER, reading the Socket the World would offer off
-    them (``(None, grid)`` when the spec has no Landform)."""
+    them (``(None, grid)`` when the spec has no Landform): its World's ``hillside``
+    Socket (:func:`area_world`), made on the same grid heights as the host TER's."""
     if isinstance(host, Socket):
         if host.kind != "hillside":
             raise ValueError(f"Socket {host.id!r} is a {host.kind} Socket, not a hillside")
         if isinstance(terrain, _Grid):
             return host, terrain
         return host, socket_grid(host, terrain)
-    land = landscape_for(host)
+    world = area_world(host)
     grid = terrain if isinstance(terrain, _Grid) else _host_grid(host, terrain)
-    if land.matrix.landform is None:
-        return None, grid
-    return Socket("hill0", "hillside", **hillside_socket(land, grid.z)), grid
+    return next((s for s in world.sockets if s.kind == "hillside"), None), grid
 
 
 def undiggable_mask(socket: Socket, shape: Tuple[int, int]) -> np.ndarray:
@@ -1097,6 +1138,8 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
                            landform=Landform.from_dict(world.recipe["landform"]),
                            zone_size=OUTDOOR_DUNGEON_ZONE_SIZE)
     spec.zone_type = "outdoor_dungeon"
+    # The area as built rides beside the spec: the later steps read it (area_world).
+    setattr(spec, AREA_ATTR, world)
     hill = next(s for s in world.sockets if s.kind == "hillside")
     fields = dict(layout_kwargs, name=name, room_count=room_count, verticality=verticality)
     att = stages.attach_rooms(world, hill, fields, stages.rooms_seed(seed, rooms_seed), engine)
@@ -1137,9 +1180,11 @@ def outdoor_dungeon_spec(name: str, seed: int, edges=None, biome: str = DEFAULT_
 
 def tunnel_doors(spec: ZoneSpec) -> Dict[str, Dict[str, list]]:
     """The Tunnel as a door, for the room it opens into: room id -> {side: [(c0, c1,
-    top)]}, the form ``add_room`` and ``wall_styles.apply_walls`` take."""
+    top)]}, the form ``add_room`` and ``wall_styles.apply_walls`` take, on the area's
+    grid (:func:`area_world`)."""
     e = Entrance.from_dict(spec.wilderness[DUNGEON_KEY]["entrance"])
-    origin, res = landscape_for(spec).synth.origin, float(landscape_for(spec).synth.resolution)
+    t = area_world(spec).terrain
+    origin, res = t.origin, t.res
 
     def coord(k):
         return origin[1 - e.axis] + (k + 0.5) * res
@@ -1188,12 +1233,13 @@ def outdoor_dungeon_report(eqg_path, spec: ZoneSpec, agent=None, *, rooms=None):
 def sidecar_block(spec: ZoneSpec) -> Dict:
     """The ``outdoor_dungeon`` block of the ``.zone.json`` sidecar (Req 6.3):
     the Envelope's bounds and Rock_Cover, each Entrance (Apron centre, Mouth,
-    Tunnel id) and the Outdoor_Spawn. Advisory only."""
+    Tunnel id) and the Outdoor_Spawn, on the area's grid and placed Landform
+    (:func:`area_world`). Advisory only."""
     data = spec.wilderness[DUNGEON_KEY]
-    land = landscape_for(spec)
+    world = area_world(spec)
     e = Entrance.from_dict(data["entrance"])
-    ox, oy = land.synth.origin
-    res = float(land.synth.resolution)
+    ox, oy = world.terrain.origin
+    res = world.terrain.res
 
     def coord(axis, k):
         return (ox, oy)[axis] + (k + 0.5) * res
@@ -1201,7 +1247,7 @@ def sidecar_block(spec: ZoneSpec) -> Dict:
     def point(run, cross, z):
         return [run, cross, z] if e.axis == 0 else [cross, run, z]
 
-    foot = host_footprint(land.matrix.landform)
+    foot = host_footprint(Landform.from_dict(world.recipe["landform"]))
     xs, ys = [p[0] for p in foot], [p[1] for p in foot]
     c0, c1 = coord(1 - e.axis, e.cross), coord(1 - e.axis, e.cross + 1)
     mid = (c0 + c1) / 2.0
