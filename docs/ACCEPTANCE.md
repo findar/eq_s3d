@@ -4591,3 +4591,155 @@ Every link between Districts in these builds is 18 × 15 u (goblin/human sized) 
 - **Classic zones draw no wall styles,** so a classic breach (case r) is a plain extra link with
   no rough break.
 - **Nothing in this section was looked at in the 3D viewer.**
+
+## Step 32 — Races follow-ups
+
+> Roadmap step 32 (`zone-generator-races-followups`), step 31's follow-ups. An intruder
+> District is now **seated** against its host: moved by a rigid motion (its halls keep their
+> lengths) to where most of its rooms face host rooms in reach, so its breaches fit (archive
+> decision 2). In a zone with a District race a breach may also **climb Levels** as a planned
+> stair (decision 3). A drop's flush **return** is now recorded on its corridor
+> (`CorridorSpec.drop_return`) and the map marks it from that record, not by guessing; the
+> District labels keep clear of the map's legend. The same seed builds the same zone whether
+> built alone or after other zones (task 2). Since step 34, Decor defaults to none, so no host
+> room in this section carries Props: a host room a breach enters shows only as a **mixed
+> room** on the map.
+>
+> Restart the Server on the merged code first (with `EQ_PATH` pointing at the RoF2 install) and
+> check no stale-code banner shows. Then walk the cases in the viewer.
+
+Every build ran through `/api/generate` (rule planner, no API key, `EQ_PATH` =
+`F:\everquest_rof2`, branch `agent/followups-4` at `690badf`, Decor left at its default, none).
+Controls cases send `zone_type` dungeon, Verticality **Moderate**, Size medium, `districts`
+true and relationship **intrusion**; cases g and c also send `district_plan`
+`[{"purpose": "fortress", "race": "giant"}, {"purpose": "warren", "race": "goblin"}]` and no
+zone race, as the task 10 intrusion sweep does. Each passed the gate and the Format_Checker on
+its first build with no warnings and no quality fault. Measures are from each build's
+`.spec.json`: halls and links door to door in plan (`scripts/grid_score.py`
+`corridor_length`, throats left out), in the H of the race that sizes them (a District's
+halls in its own race's H; a link in the smaller race's, `semantics.corridor_race`): giant
+22 u, goblin and human 6 u. A stair's length is its run in plan, not its climb. The map names
+Districts from 1 (District 1 is D0 here).
+
+| Case | Settings | Seed | Build | Time | Vertices |
+|---|---|---|---|---|---|
+| p | Prompt "a towering giant fortress the goblins tunnelled into, with 16 rooms" | 2023 | `gen_1795851880_57bfea` | 32.0 s | 68,941 |
+| q | The same prompt | 2020 | `gen_1795851937_125699` | 21.7 s | 57,533 |
+| g | Layout **Graph**, Rooms **16**, District plan fortress/giant + warren/goblin | 2004 | `gen_1795851959_d0e9e4` | 13.0 s | 31,764 |
+| c | Layout **Classic**, Rooms **16**, District plan fortress/giant + warren/goblin | 2001 | `gen_1795851972_c92158` | 1.7 s | 2,600 |
+| r | Layout **Classic**, Rooms **16**, no District plan (no race) | 2044 | `gen_1795851997_40e0d2` | 1.4 s | 2,292 |
+
+| Case | Districts (Purpose, race, rooms) | Halls in District, p50 / max (H) |
+|---|---|---|
+| p | D0 fortress giant 5 · D1 warren goblin 6 · D2 cave giant 5 (zone race giant) | 18.2 / 18.2 · 8.9 / 13.1 · 15.6 / 26.5 |
+| q | D0 fortress giant 5 · D1 warren goblin 7 · D2 corrupted_sanctum giant 4 (zone race giant) | 23.2 / 29.1 · 10.7 / 32.9 · 11.1 / 13.2 |
+| g | D0 fortress giant 6 · D1 warren goblin 6 · D2 corrupted_sanctum human 4 | 32.9 / 41.2 · 6.9 / 24.2 · 6.7 / 20.5 |
+| c | D0 fortress giant 6 · D1 warren goblin 5 · D2 corrupted_sanctum human 5 | 28.3 / 50.5 · 4.3 / 22.3 · 8.0 / 12.5 |
+| r | D0 war_city 6 · D1 tomb 5 · D2 warren 5 (all human) | 7.2 / 22.2 · 10.9 / 12.9 · 9.5 / 15.8 |
+
+Every link between Districts here is under the 164 H cap of its race (longest: g's stair
+breach `corr_16`, 111.5 H of goblin; q's giant stair `corr_19`, 106.0 H of giant).
+
+### F.1 — The prompt: goblin breaches climb into the giant fortress (cases p and q)
+
+- [ ] **[MUST] Two stair breaches** — Case p (seed 2023; archive decision 3's seed: its goblin
+      pairs all sat on other Levels, so before task 1 it had no goblin breach). The giants (D0)
+      span three Levels (floors 0, −262, −524); the goblins (D1) sit at the bottom (−510 to
+      −524). Giants to goblins, all 18 × 15 u, flush, each a **stair** (a stairwell between
+      Levels): the Threshold `corr_3` (room_2 at −262 → room_4 at −524, 225 u = 37.5 H), and
+      breaches `corr_13` (room_3 at 0 → room_8 at −510, 221 u = 36.8 H) and `corr_14` (room_1 at
+      0 → room_7 at −524, `breach` form, 415 u = 69.1 H). Walk both breaches down from the
+      giants' top Level into the warren and back up: each should read as a goblin tunnel bored
+      down out of a giant room, small against the giant wall, climbable both ways. Not looked
+      at in the 3D viewer for this section.
+- [ ] **[MUST] The giant District beside it** — Case p, D0 to D2 (cave, giant): the Threshold
+      `corr_16` (room_1 → room_15, `frame`, flush, 581 u = 26.4 H), the breach `corr_15`
+      (room_2 → room_11, `breach`, a **20.4 u drop**, 352 u = 16.0 H) and the stair breach
+      `corr_18` (room_6 at −14 → room_12 at −524, `breach`, 1,731 u = 78.7 H), all 66 × 55 u.
+      Walk `corr_15` and drop; check you can't climb back. Not looked at in the 3D viewer for
+      this section.
+- [ ] **[MUST] Drops into the giants** — Case q (seed 2020, no goblin breach at step 31): the
+      Threshold `corr_0` (goblin room_3 at −248 → giant room_2 at −262, flush, 102 u = 17.0 H) and
+      two breaches that **drop** into giant rooms: `corr_15` (goblin room_14 at 14 → giant room_1
+      at 0, `seam`, enters room_1 **19.2 u** up its wall, 174 u = 28.9 H) and `corr_18` (goblin
+      room_8 at −248 → giant room_2 at −262, `breach`, **30.6 u** up, 73 u = 12.1 H). Walk each
+      goblin → giant and drop; from below, the goblin hole should sit high in the giant wall with
+      nothing to climb. The Threshold is the flush way back, so no return is laid. D2
+      (corrupted_sanctum, giant) joins D0 by the Threshold `corr_16` (958 u = 43.5 H), the
+      breach `corr_17` (`breach`, 582 u = 26.4 H) and the stair breach `corr_19` (room_5 at −524
+      → room_9 at 0, 2,331 u = 106.0 H), all flush and 66 × 55 u. Not looked at in the 3D viewer
+      for this section.
+- [ ] **[MUST] The map** — Cases p and q, map dialog, layers Districts, Races, Links and drops,
+      Mixed rooms: each link above is drawn as `threshold` or `breach (District link)`, the
+      drops tagged "drop 20 u (corr_15)" (p) and "drop 19 u (corr_15)", "drop 31 u (corr_18)"
+      (q); no return. Mixed rooms (host rooms a breach enters): p room_1 and room_3 (goblin),
+      room_2 and room_6 (giant, D2's breaches); q room_1 and room_2 (goblin), room_5 (giant).
+      The "District 1/2/3" labels sit clear of the legend box. Not looked at in the browser's
+      map dialog.
+
+### F.2 — Three links each way (cases g and c)
+
+- [ ] **[MUST] Graph: a level breach and a stair breach** — Case g, giants (D0) to goblins (D1),
+      three links, all flush, 18 × 15 u: the Threshold `corr_6` (goblin room_3 → giant room_1,
+      `seam`, 196 u = 32.7 H), the breach `corr_17` (giant room_0 → goblin room_8, `breach`,
+      279 u = 46.5 H) on the same Level, and the stair breach `corr_16` (giant room_0 at 0 →
+      goblin room_13 at 189.8, the goblins' upper Level, 669 u = 111.5 H). Walk all three both
+      ways; `corr_16` is the longest link in this section, so say whether it reads as a goblin
+      tunnel or as too long. D2 (human) also joins D0 three ways: the Threshold `corr_8` (room_1
+      → room_4, 211 u = 35.2 H) and breaches `corr_18` (room_2 → room_9, `breach`, 361 u =
+      60.2 H) and `corr_19` (room_1 → room_9, `breach`, 172 u = 28.7 H). Not looked at in the
+      3D viewer for this section.
+- [ ] **[MUST] Classic: two breaches, one a small drop** — Case c, giants (D0) to goblins (D1):
+      the Threshold `corr_8` (goblin room_6 → giant room_7, both at 70.4, flush, 362 u =
+      60.4 H), the breach `corr_14` (giant room_3 at 0 → goblin room_10 at 41.6, flush, a ramp,
+      86 u = 14.4 H), and the breach `corr_15` (goblin room_8 at 41.6 → giant room_3 at 0, a ramp
+      down that enters room_3 **6.0 u** up its wall, 136 u = 22.6 H). 6 u is the draw's smallest
+      drop, one goblin H: check it reads as a ledge you drop off, not a step you climb. D1 to D2
+      (human): the Threshold `corr_6` (35 u = 5.9 H) and the breach `corr_16` (human room_2 at 68.5 →
+      goblin room_0 at 58.9, entering room_0 **7.0 u** up its wall, 108 u = 17.9 H). Classic draws no wall styles, so these
+      breaches have no rough break (step 31 R.5). Not looked at in the 3D viewer for this
+      section.
+- [ ] **[MUST] The map** — Cases g and c, layers Links and drops and Mixed rooms: g shows two
+      thresholds and four breaches, no drop; mixed rooms room_0 (goblin), room_1 and room_2
+      (default, D2's breaches). c shows two thresholds, three breaches, "drop 6 u (corr_15)"
+      and "drop 7 u (corr_16)"; mixed rooms room_3 (goblin) and room_0 (default). Not looked at
+      in the browser's map dialog.
+
+### F.3 — Drop in, flush return (case r)
+
+- [ ] **[MUST] The only way in is a drop** — Case r (Classic 16, Districts on, relationship
+      intrusion, no District plan: every District human). The tomb (D1, map "District 2 —
+      tomb") is entered from the war_city (D0) only by its Threshold `corr_3`, which runs from
+      room_3 (floor 0.0) down to room_9 (floor −22.6) and enters room_9 **11.9 u** up its wall
+      (139 u = 23.2 H). Walk room_3 → `corr_3` and drop into room_9; check you can't climb back
+      to the sill. Not looked at in the 3D viewer for this section.
+- [ ] **[MUST] The return** — Case r: `_add_return` laid the flush **return** `corr_15` from
+      tomb room_1 (floor −11.3, 2 hops from the landing room_9, by room_5) back to war_city
+      room_3 (floor 0.0), a ramp, 242 u = 40.3 H, 18 × 15 u. It is the spec's one corridor with
+      `drop_return` set. From room_9 cross the tomb (room_9 → room_5 → room_1) and walk out
+      through `corr_15` to room_3: it should be level at both ends and the only way back. Not
+      looked at in the 3D viewer for this section.
+- [ ] **[MUST] The map marks it** — Case r, layer Links and drops: `corr_15` is drawn dashed
+      green with the title "return (corr_15)", the legend lists "return (way back)", and
+      `corr_3` is a threshold tagged "drop 12 u (corr_3)". The other Threshold `corr_9` (D0 →
+      the warren D2, flush) is not a return. Mixed rooms: room_3 ("mixed: default", the host
+      room the return enters). Not looked at in the browser's map dialog.
+
+### F.4 — Known, not this step
+
+- **No raced zone at the default drop chance drew a return.** Layout only (`plan_to_spec`, no
+  build), with the fortress/giant + warren/goblin plan: classic 24 seeds 2000–2149, classic 12
+  2000–2099, classic 16 Dramatic 2000–2099, graph 24 2000–2119, graph 12 2000–2099, and the
+  prompt on seeds 2000–2059, 630 zones and none with a return (task 3 found none over classic 16
+  2000–2099 and graph 16 2000–2079 either). Race-less, the same way: classic 24 2000–2149,
+  classic 16 2000–2149, classic 12 2000–2099, graph 24 and graph 16 2000–2099, 3 of 650. Seating gives most intruders 2–3 links, so being entered only by drops
+  needs every link to drop (each 1 in 10). Race-less intrusion zones are not seated and more
+  often keep a lone Threshold: classic 16 seeds 2012 and 2044 and classic 24 seed 2090
+  (`gen_1795851999_05fad7`: drop `corr_23`, 19 u, return `corr_24`, 495 u = 82.5 H) drew one.
+  So case r has no District race; with every cross link drawn to drop, classic 24 seed 2085
+  shows a raced return (`test_a_return_is_marked_from_the_layout_record`), but the page can't
+  set that.
+- **Prompt seed 2024** still joins the goblins by its Threshold alone (archive follow-up).
+- **Stair breaches are held to zones with a District race** (archive decision 3), so race-less
+  zones such as case r keep one-Level breaches.
+- **Nothing in this section was looked at in the 3D viewer or the browser's map dialog.**
