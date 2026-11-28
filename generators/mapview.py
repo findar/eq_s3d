@@ -284,6 +284,7 @@ MAP_LAYERS: Tuple[Tuple[str, str, bool], ...] = (
     ("ids", "Room IDs", True),
     ("props", "Props and features", False),
     ("sites", "Sites", True),
+    ("entrance", "Way in", True),
 )
 # The EQ export view: what the in-client ``maps/*.txt`` carries, drawn from the same
 # ``eqmap.build_map_file`` the pipeline writes, hidden until the dialog's preset shows it alone.
@@ -423,6 +424,10 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
     for c in spec.corridors:
         xs += [c.from_x, c.to_x]
         ys += [c.from_y, c.to_y]
+    ways_in = _ways_in(spec)
+    for way in ways_in:
+        xs += [way["apron_centre"][0], way["mouth"]["centre"][0]]
+        ys += [way["apron_centre"][1], way["mouth"]["centre"][1]]
     if outline is not None:
         bx0, by0, _, bx1, by1, _ = outline.bounds
         xs += [bx0, bx1]
@@ -658,6 +663,10 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
                     f'<text class="drop-height" x="{dx + 8:.1f}" y="{dy + 4:.1f}" fill="{_DROP_FILL}" '
                     f'font-size="10" font-family="sans-serif" font-weight="bold">{c.drop:.0f} u</text>')
 
+    # ---- An outdoor dungeon's way in (step 35 task 12): an arrow through it, and its kind ----
+    for way in ways_in:
+        put("entrance", _way_in_mark(way, px, py))
+
     # ---- Gates (lock + key + connector) ----
     for g in spec.gates:
         lx, ly = px(g.lock_x), py(g.lock_y)
@@ -723,6 +732,43 @@ def render_map_svg(spec: ZoneSpec, size: int = 720, padding: int = 40,
 
     parts.append("</svg>")
     return "".join(parts)
+
+
+_WAY_IN = "#7cfc9a"
+#: How each kind of way in reads on the map.
+WAY_IN_LABEL = {"mouth": "Mouth", "cliff_opening": "Cliff opening"}
+
+
+def _ways_in(spec: ZoneSpec) -> List[dict]:
+    """An outdoor dungeon's ways in, as its sidecar block records them (none for any other
+    zone)."""
+    from .outdoor_dungeon import is_outdoor_dungeon, sidecar_block
+    if not is_outdoor_dungeon(spec):
+        return []
+    return sidecar_block(spec)["entrances"]
+
+
+def _way_in_mark(way: dict, px, py) -> str:
+    """A way in: an arrow from the ground in front of it (its Apron centre) to its opening,
+    as wide as the opening, labelled with its kind."""
+    ax, ay = way["apron_centre"][:2]
+    mx, my = way["mouth"]["centre"][:2]
+    x0, y0, x1, y1 = px(ax), py(ay), px(mx), py(my)
+    dx, dy = x1 - x0, y1 - y0
+    n = max((dx * dx + dy * dy) ** 0.5, 1e-9)
+    ux, uy = dx / n, dy / n
+    half = min(16.0, max(4.0, abs(px(way["mouth"]["width"]) - px(0.0)) / 2.0))
+    head = (f"{x1:.1f},{y1:.1f} {x1 - ux * 9 - uy * half:.1f},{y1 - uy * 9 + ux * half:.1f} "
+            f"{x1 - ux * 9 + uy * half:.1f},{y1 - uy * 9 - ux * half:.1f}")
+    kind = way.get("kind", "mouth")
+    label = WAY_IN_LABEL.get(kind, kind)
+    return (f'<g class="way-in" data-kind="{_esc(kind)}">'
+            f'<line x1="{x0:.1f}" y1="{y0:.1f}" x2="{x1:.1f}" y2="{y1:.1f}" stroke="{_WAY_IN}" '
+            f'stroke-width="2"/><polygon points="{head}" fill="{_WAY_IN}" stroke="#0f0f16"/>'
+            f'<text x="{x0 - ux * 6:.1f}" y="{y0 - uy * 6 + 4:.1f}" fill="{_WAY_IN}" font-size="11" '
+            f'font-family="sans-serif" font-weight="bold" text-anchor="middle">{_esc(label)}</text>'
+            f'<title>{_esc(label)}, {way["mouth"]["width"]:.0f} u wide, '
+            f'{way["mouth"]["height"]:.0f} u tall</title></g>')
 
 
 _DOOR_SPOT = "#e0a458"
