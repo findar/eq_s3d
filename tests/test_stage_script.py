@@ -29,7 +29,10 @@ ZONE_TYPES = ("dungeon", "outdoor_dungeon")
 def build(request, tmp_path_factory):
     zt = request.param
     out = tmp_path_factory.mktemp(f"stage_{zt}")
-    plan = lambda s: plan_to_spec(ZonePlan(name=f"st_{zt}", zone_type=zt), seed=s)  # noqa: E731
+    # Decor normal, chosen (off by default since decor-off step 34): the rooms stage hands decor
+    # its RoomContexts, and the decor stage places from them.
+    plan = lambda s: plan_to_spec(ZonePlan(name=f"st_{zt}", zone_type=zt, decor="normal"),  # noqa: E731
+                                  seed=s)
     vb = generate_validated(plan, zone_type=zt, zone_id=f"z_{zt}", seed=SEED, output_dir=out / "build",
                             write_glb=False, validate_enabled=False, failure_log=None)
     return zt, vb.build_dir, out / "stage"
@@ -49,7 +52,8 @@ def test_each_stage_reruns_from_the_last_and_matches_the_build(build):
     assert stage.main(["attach", str(out / f"{name}.world.json"), "--out", str(out)]) == 0
     assert _text(out / f"{name}.attach.json") == _text(built / f"{name}.attach.json")
 
-    assert stage.main(["rooms", str(out / f"{name}.attach.json"), "--out", str(out)]) == 0
+    assert stage.main(["rooms", str(out / f"{name}.attach.json"), "--decor", "normal",
+                       "--out", str(out)]) == 0
     assert _text(out / f"{name}.rooms.json") == _text(built / f"{name}.rooms.json")
     assert (out / f"ter_{name}.ter").stat().st_size > 0
 

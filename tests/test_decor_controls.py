@@ -4,7 +4,8 @@ tests/test_decor_controls.py
 Decor controls, the decor seed, and Props on the maps (room-decor spec task 10;
 Reqs 10.1-10.4).
 
-- The Decor control (none, sparse, normal, dense; unchosen builds normal) and the
+- The Decor control (none, sparse, normal, dense; unchosen builds none since decor-off
+  step 34) and the
   decor seed through the plan, the CLI, the server (``/api/controls`` lists the
   values) and prompt words.
 - P10: a decor seed changes only Props: the ZON's ``decor_*`` objects and
@@ -58,8 +59,11 @@ def client(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_the_lists_are_decors_own():
+    """The levels are decor's own; a plan's default is none (decor-off step 34) while the
+    rules keep normal as their own default level."""
     from generators.decor.rules import CONTROLS, DEFAULT_CONTROL
-    assert VALID_DECOR == list(CONTROLS) and DEFAULT_DECOR == DEFAULT_CONTROL
+    assert VALID_DECOR == list(CONTROLS)
+    assert DEFAULT_DECOR == "none" and DEFAULT_CONTROL == "normal"
 
 
 def test_the_plan_carries_them_to_the_spec_only_when_chosen():
@@ -67,7 +71,7 @@ def test_the_plan_carries_them_to_the_spec_only_when_chosen():
     assert (plan.decor, plan.decor_seed) == ("dense", 42)
     spec = plan_to_spec(plan, seed=4)
     assert (spec.decor, spec.decor_seed) == ("dense", 42)
-    # Unchosen: the spec is the one it always was (the pipeline builds normal).
+    # Unchosen: the spec is the one it always was (the pipeline builds none).
     bare = plan_to_spec(ZonePlan.from_controls({"zone_type": "dungeon"}), seed=4)
     assert (bare.decor, bare.decor_seed) == (None, None)
     assert "decor" not in bare.to_dict() and "decor_seed" not in bare.to_dict()
@@ -114,6 +118,15 @@ def test_cli_options_reach_the_spec(monkeypatch, tmp_path):
     (path,) = tmp_path.glob("d10_*/v1/d10.json")
     spec = json.loads(path.read_text(encoding="utf-8"))
     assert (spec["decor"], spec["decor_seed"]) == ("sparse", 5)
+
+
+def test_cli_unchosen_decor_builds_none(monkeypatch, tmp_path):
+    """Decor-off step 34: a generate that doesn't choose a level builds no Props."""
+    monkeypatch.setattr(tempfile, "tempdir", tempfile.tempdir)
+    main.main(["generate", "d10", "--zone-type", "dungeon", "--seed", "4", "--rooms", "3",
+               "--output", str(tmp_path)])
+    (path,) = tmp_path.glob("d10_*/v1/d10.json")
+    assert json.loads(path.read_text(encoding="utf-8"))["decor"] == "none"
 
 
 @pytest.mark.parametrize("argv", [["--zone-type", "dungeon", "--decor", "lots"],

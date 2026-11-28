@@ -156,8 +156,8 @@ def test_a_build_without_room_contexts_is_a_404(out, client):
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
-    """The decor goldens' builds, made as the Server makes them (the pipeline writes the rooms
-    file for the accepted build)."""
+    """The decor goldens' builds at Decor normal, made as the Server makes them (the pipeline
+    writes the rooms file for the accepted build)."""
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from generators.pipeline import generate_validated
@@ -167,7 +167,7 @@ def built(tmp_path_factory):
     names = []
     builds = sorted(DECORATED.items()) + [("tomb", TOMB[:2])]
     for label, (fields, seed) in builds:
-        plan = ZonePlan(name=f"rv_{label}", **fields).validate()
+        plan = ZonePlan(name=f"rv_{label}", decor="normal", **fields).validate()
         vb = generate_validated(lambda s, rs=None, plan=plan: plan_to_spec(plan, seed=s),
                                 zone_type=fields["zone_type"], zone_id=plan.name, seed=seed,
                                 output_dir=root, write_glb=False, failure_log=None)
@@ -247,7 +247,8 @@ def test_a_theme_mapped_layer_gives_the_builds_props(tmp_path, client, monkeypat
     (rules / "themes.toml").write_text(f'fortress = {{ layers = ["{THEMED_LAYER}"] }}\n', encoding="utf-8")
     monkeypatch.setattr(schema, "RULES_DECOR_DIR", rules)
     root = tmp_path / "web"
-    plan = ZonePlan(name="rv_fortress", zone_type="dungeon", dungeon_theme="fortress").validate()
+    plan = ZonePlan(name="rv_fortress", zone_type="dungeon", dungeon_theme="fortress",
+                     decor="normal").validate()
     vb = generate_validated(lambda s, rs=None: plan_to_spec(plan, seed=s), zone_type="dungeon",
                             zone_id=plan.name, seed=4, output_dir=root, write_glb=False, failure_log=None)
     monkeypatch.setattr(app_module, "OUTPUT_DIR", root)

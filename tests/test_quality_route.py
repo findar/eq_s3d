@@ -32,7 +32,7 @@ from generators.decor.stock import eq_path_from_env
 pytestmark = pytest.mark.skipif(eq_path_from_env() is None,
                                 reason="EQ_PATH is not set (no EQ install to read)")
 
-CONTROLS = {"zone_type": "dungeon", "room_count": 5}
+CONTROLS = {"zone_type": "dungeon", "room_count": 5, "decor": "normal"}
 SEED = 4
 PASS: dict = {}
 FAIL = {"cyclomatic": (1000.0, None)}

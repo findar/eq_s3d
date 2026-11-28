@@ -35,8 +35,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CRATES = {"CRATEH": "apples", "CRATEI": "beans"}
 
 #: (ZonePlan fields, seed). Built after A, B's decor took CRATEH's apples for CRATEI's beans.
-ZONE_A = (dict(zone_type="dungeon", room_count=12, dungeon_theme="fortress", layout="classic"), 5)
-ZONE_B = (dict(zone_type="dungeon", room_count=12, dungeon_theme="fortress", layout="graph"), 5)
+ZONE_A = (dict(zone_type="dungeon", room_count=12, dungeon_theme="fortress", layout="classic",
+               decor="normal"), 5)
+ZONE_B = (dict(zone_type="dungeon", room_count=12, dungeon_theme="fortress", layout="graph",
+               decor="normal"), 5)
 
 #: B built alone: run in a fresh interpreter, so nothing earlier is left in its process.
 _ALONE = """

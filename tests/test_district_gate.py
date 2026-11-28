@@ -76,7 +76,9 @@ def test_props_see_a_slit_in_the_wall(tmp_path):
     from analyzer.traverse import validate
     from generators.builder import ZoneBuilder
     from generators.pipeline import _with_decor
-    spec = _with_decor(_spec(14, "moderate", ["warren", "cave"], 1146655999))
+    spec = _spec(14, "moderate", ["warren", "cave"], 1146655999)
+    spec.decor = "normal"
+    spec = _with_decor(spec)
     res = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
     report = validate(res.eqg_path, spec=spec)
     assert all(o.ok for o in report.outlines), [o.reason for o in report.outlines if not o.ok]
