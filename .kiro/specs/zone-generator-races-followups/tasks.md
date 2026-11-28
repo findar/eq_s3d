@@ -24,7 +24,7 @@ task here. **Never tick a `Type: human` task.**
   - Owns: generators/decor/, generators/room_context.py, generators/semantics.py, tests/test_build_order.py (new)
   - Reqs: 3, 4
 
-- [ ] 3. The map's returns are real
+- [x] 3. The map's returns are real
   - Card: [cards/03-map-returns.md](cards/03-map-returns.md)
   - Type: agent · Size: S · Depends: 1, 2
   - Owns: generators/zone_spec.py, generators/layout.py, generators/mapview.py, tests/test_mapview_layers.py
