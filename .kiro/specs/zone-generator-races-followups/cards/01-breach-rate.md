@@ -20,4 +20,4 @@ An intruder District overlaps its host again: short, goblin-length breaches fit 
 - Stacked Districts and the relax runaway (step 31 `7a9b90e`, `HALL_SCALE_CAP`).
 
 ## Result
-⏸ paused at 8a4eb5a: seat + stair breaches in (sweep 240/240, 2+ links 68.2 → 91.7 %, prompt 9/10, bands ≤ 3.3 %); left: master bands, 24-room timing, byte check vs 0eeec16, quick/gate/full, archive decision
+⏳ 861ffd3 · gate 702 passed · full 4417 passed, 1 failed (test_bridges slot case needs a re-pin to seed 10, outside Owns)
