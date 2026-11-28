@@ -5,6 +5,8 @@ import math
 
 import pytest
 
+from generators.builder import ZoneBuilder
+
 from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators import outdoor_dungeon as od
@@ -39,6 +41,31 @@ def test_host_grows_with_race_and_room_count():
     assert od.host_for(5, "giant")[0].radius > od.host_for(5, "ogre")[0].radius
     assert od.host_for(12, "giant")[0].radius > od.host_for(5, "giant")[0].radius
     assert math.isclose(od.interior_side(20, "dragon") / od.interior_side(5, "dragon"), 2.0)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("race,rooms,verticality,seed,zone", [
+    ("", 5, "moderate", 8, 1200.0), ("troll", 8, "flat", 8, 1800.0),
+    ("", 30, "flat", 4, 2400.0), ("giant", 5, "moderate", 2, 3300.0)])
+def test_spawn_on_open_ground_walks_to_the_apron(tmp_path, race, rooms, verticality, seed, zone):
+    """The outdoor-dungeon requirement at every host size: the Outdoor_Spawn is on open
+    ground (off the hill, out past its half-relief disc) with a walkable path to the Apron:
+    on the built mesh the gate walks from the Spawn through the Apron and Tunnel into the
+    entrance room, and the bowl and every room pass."""
+    plan = ZonePlan(name="odwalk", zone_type="outdoor_dungeon", room_count=rooms,
+                    dungeon_race=race, dungeon_theme="fortress", layout="graph",
+                    verticality=verticality, decor="none").validate()
+    spec = plan_to_spec(plan, seed=seed)
+    assert spec.wilderness["zone_size"] == zone
+    hill = spec.wilderness["landform"]
+    sx, sy, _sz = spec.safe_point
+    cx, cy = hill["centre"]
+    assert math.hypot(sx - cx, sy - cy) > hill["radius"] + hill["flank"] / 2
+    result = ZoneBuilder(spec).build(output_dir=tmp_path, write_glb=False)
+    report = od.outdoor_dungeon_report(result.eqg_path, spec)
+    assert report.passed, report.summary()
+    first = od.Entrance.from_dict(spec.wilderness[od.DUNGEON_KEY]["entrance"]).room_id
+    assert next(r for r in report.rooms if r.room_id == first).reachable
 
 
 @pytest.mark.parametrize("race,seed", [("giant", 1), ("giant", 5), ("dragon", 6)])
