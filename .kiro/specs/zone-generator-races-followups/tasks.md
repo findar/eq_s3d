@@ -18,7 +18,7 @@ task here. **Never tick a `Type: human` task.**
   - Owns: generators/layout.py, generators/embed.py, tests/test_intrusion.py, tests/test_district_races.py
   - Reqs: 1, 4
 
-- [ ] 2. Same seed, same build
+- [x] 2. Same seed, same build
   - Card: [cards/02-build-leak.md](cards/02-build-leak.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/decor/, generators/room_context.py, generators/semantics.py, tests/test_build_order.py (new)
