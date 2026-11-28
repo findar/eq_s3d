@@ -13,7 +13,7 @@ before they start.
 
 ## Tasks
 
-- [ ] 1. Measure where a generate's time goes
+- [x] 1. Measure where a generate's time goes
   - Card: [cards/01-measure.md](cards/01-measure.md)
   - Type: agent · Size: M · Depends: —
   - Owns: scripts/generate_profile.py (new), generators/pipeline.py (timers and reasons only, no behaviour change), generators/layout.py (the same)
