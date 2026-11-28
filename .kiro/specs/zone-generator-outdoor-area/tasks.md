@@ -15,8 +15,8 @@ land (both touch the layout or the defaults this builds on).
 
 - [ ] 2. Area features by theme (the lava patch)
   - Card: [cards/02-features.md](cards/02-features.md)
-  - Type: agent · Size: S · Depends: —
-  - Owns: generators/wilderness/matrix.py (the lava patch only), tests/test_wilderness*.py
+  - Type: agent · Size: S · Depends: 3
+  - Owns: generators/wilderness/matrix.py (the lava patch only), ai/expand.py, generators/world.py, generators/wilderness/build.py and generators/outdoor_dungeon.py (passing the lava flag through only), tests/test_wilderness*.py
   - Reqs: 3
 
 - [ ] 3. The area is read once
