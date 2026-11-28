@@ -199,10 +199,12 @@ class DistrictSplitError(ValueError):
     """A corridor split or swap left two Districts joined by more than their
     one Threshold (districts spec Req 3.3), or two corridors clashing that no
     swap within their Districts could part, or a link between two Districts
-    built past its race's HALL_CAP_H: the Draw is rejected."""
+    built past its race's HALL_CAP_H: the Draw is rejected. ``reason`` names the check
+    that refused it (``scripts/generate_profile.py`` reads it; the message is the same)."""
 
-    def __init__(self) -> None:
+    def __init__(self, reason: str = "") -> None:
         super().__init__("district threshold split")
+        self.reason = reason
 
 # ---------------------------------------------------------------------------
 # Style profile loading
@@ -1469,7 +1471,7 @@ class LayoutGenerator:
                 continue
             line = corridor_route(cor, by).waypoints
             if sum(math.dist(p, q) for p, q in zip(line, line[1:])) > cap:
-                raise DistrictSplitError()
+                raise DistrictSplitError("link_over_cap")
 
     def _drop_far_breaches(self, rooms: List[RoomSpec], edges: List[Tuple[int, int]],
                            part) -> None:
@@ -1852,7 +1854,7 @@ class LayoutGenerator:
         else one still entering its child room, else the first."""
         assign = part.assign
         if len(set(LayoutGenerator._components(len(assign), edges))) > 1:
-            raise DistrictSplitError()
+            raise DistrictSplitError("disconnected")
         cross: Dict[frozenset, List[Tuple[int, int]]] = {}
         for i, j in edges:
             a, b = assign[i], assign[j]
@@ -1860,11 +1862,11 @@ class LayoutGenerator:
                 continue
             pair = frozenset((a, b))
             if len(cross.get(pair, ())) >= links:
-                raise DistrictSplitError()
+                raise DistrictSplitError("extra_link")
             cross.setdefault(pair, []).append((i, j))
         wanted = [frozenset((assign[p], assign[c])) for p, c in part.thresholds]
         if set(cross) != set(wanted):
-            raise DistrictSplitError()
+            raise DistrictSplitError("threshold_lost")
         out = []
         for (p, c), pair in zip(part.thresholds, wanted):
             got = cross[pair]
@@ -3094,7 +3096,7 @@ class LayoutGenerator:
         # That Draw is redrawn, as a second link between Districts is.
         if self._district_assign is not None and any(
                 a in edges and b in edges and clash(a, b) for a, b in stuck):
-            raise DistrictSplitError()
+            raise DistrictSplitError("tree_edges_clash")
 
         if self._stack is not None:
             restore_dropped(before)
