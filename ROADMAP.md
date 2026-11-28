@@ -200,7 +200,14 @@ wave 3. A parked backlog note (intersecting corridors on the elevated path, seed
 32. **Races follow-ups** — step 31's follow-ups, breach rate first: intruder Districts overlap their
    host again (pairs at 2+ links back to 80%+ with goblin-length links), the map's return marks come
    from the layout, and a zone builds the same whether built alone or after others (the lead's pick
-   on the user's "You pick"). Spec: `.kiro/specs/zone-generator-races-followups/`. *(In progress)*
+   on the user's "You pick"). Spec: `.kiro/specs/zone-generator-races-followups/`. *(In progress; resumed after step 33's measure)*
+33. **Layout check and repair** — check the laid-out plan before the mesh and repair failures where
+   they are instead of redrawing the whole zone (ideas from Edgar's graph-based generator), measured
+   first for build time. The user: "can we pause the step 32 work and focus on that if it should improve our build times?" Spec: `.kiro/specs/zone-generator-layout-repair/`. *(STOPPED after its measure, 2026-11-27: 210 generates,
+   no gate rejection, 0-0.05% to save; decor 44%, finish 28%, gate 16%, plan 6%)*
+- **Docs refactor (beside step 33)** — pillars (the umbrella's P-A to P-G, plus World and Engineering),
+  each with a plan, a living design, decisions and open items; one `OPEN.md`; a one-page roadmap.
+  The user: "i also still want to revist the documentation refactor at some point soon so if possible do that in parallel" Spec: `.kiro/specs/project-docs/`. *(In progress)*
 
 **Where the old `zone-generator-followup` runway goes (dispersed, not dropped).** Its three pieces are now prerequisites pulled into the steps that actually need them, rather than a milestone of their own: the **3D `Envelope` + gate-learns-connectors (staircase/bridge)** land with **step 5/7** (outdoor dungeon carved into terrain, and multi-level verticality); the pluggable **`LayoutEngine` seam** lands with **step 6** (graph-replacement dungeon gen). The existing specs are re-scoped to match: `.kiro/specs/zone-generator-wilderness/` is the basis for step 1 (expanded from its lean landmark-first v1 to Karanas with water/lava/cliffs/deformation); `.kiro/specs/zone-generator-followup/` is retired as a standalone milestone (its tasks survive as the step-5/6/7 prerequisite work). Each step gets its own spec authored when it starts.
 
