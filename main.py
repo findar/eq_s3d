@@ -425,9 +425,10 @@ def main(argv: list[str] | None = None) -> None:
     # exit 2 on an out-of-domain value before any build/write.
     g.add_argument("--rooms", type=_rooms_arg, default=5,
                    help="Number of rooms (1-30)")
-    g.add_argument("--size", default="medium",
+    g.add_argument("--size", default="",
                    choices=["small", "medium", "large", "huge"],
-                   help="Overall footprint")
+                   help="Overall footprint (default unset: medium rooms; a wilderness's "
+                        "area drawn from stock's range)")
     g.add_argument("--verticality", default="moderate",
                    choices=["flat", "moderate", "dramatic"],
                    help="How much floor height varies between rooms")

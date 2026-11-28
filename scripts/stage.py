@@ -273,7 +273,7 @@ def _stem(path: Path, suffix: str) -> str:
 # ---------------------------------------------------------------------------
 
 def world_stage(zone_type: str, seed: int, biome: Optional[str] = None,
-                edges: Optional[Dict[str, str]] = None, zone_size: Optional[float] = None):
+                edges: Optional[Dict[str, str]] = None, zone_size=None):
     return world_mod.world_for(zone_type, seed, biome=biome, edges=edges, zone_size=zone_size)
 
 
@@ -462,9 +462,24 @@ def _edges(text: Optional[str]) -> Optional[Dict[str, str]]:
     return out
 
 
+def _zone_size(args):
+    """The World's zone size: ``--zone-size`` as given (a side, or ``W,D``), else on a
+    wilderness the extent its plan's ``--size`` draws on the seed, as ``plan_to_spec`` draws
+    it (step 35 task 6; unset draws from stock's range). ``None`` elsewhere: the default."""
+    if args.zone_size:
+        parts = [float(v) for v in args.zone_size.split(",")]
+        if len(parts) not in (1, 2):
+            raise SystemExit(f"--zone-size {args.zone_size!r}: expected a side or W,D")
+        return parts[0] if len(parts) == 1 else parts
+    if args.zone_type == "wilderness":
+        from generators.wilderness.matrix import draw_zone_extent
+        return list(draw_zone_extent(args.size or "", args.seed))
+    return None
+
+
 def cmd_world(args) -> List[Path]:
     root = OutputRoot(Path(args.out))
-    world = world_stage(args.zone_type, args.seed, args.biome, _edges(args.edges), args.zone_size)
+    world = world_stage(args.zone_type, args.seed, args.biome, _edges(args.edges), _zone_size(args))
     meshes = {"sockets": sockets_part(world), "points": points_part(world)}
     if world.terrain is not None:
         meshes = {"terrain": terrain_part(world), **meshes}
@@ -580,7 +595,10 @@ def parser() -> argparse.ArgumentParser:
     w.add_argument("--seed", type=int, required=True)
     w.add_argument("--biome")
     w.add_argument("--edges", help="the Rim's declared sides, e.g. N=zoneline,E=zoneline")
-    w.add_argument("--zone-size", type=float)
+    w.add_argument("--zone-size", help="the zone's side, or W,D (default: a wilderness's "
+                   "extent drawn from --size on the seed, as the build draws it)")
+    w.add_argument("--size", choices=["small", "medium", "large", "huge"],
+                   help="a wilderness's Size (default unset: drawn from stock's range)")
     w.set_defaults(run=cmd_world)
 
     def plan_args(p):
