@@ -9,7 +9,7 @@ and edit only `Owns`; trailer `Task: project-docs/<n>`; fill the card's Result a
 
 ## Tasks
 
-- [ ] 1. Proposal: architecture, pillar map, open items
+- [x] 1. Proposal: architecture, pillar map, open items
   - Card: [cards/01-proposal.md](cards/01-proposal.md)
   - Type: agent · Size: M · Depends: —
   - Owns: docs/ARCHITECTURE.md (new), docs/pillars/ (new), OPEN.md (new)
