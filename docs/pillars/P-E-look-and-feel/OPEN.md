@@ -54,6 +54,16 @@ Status and Checked as in [P-A's OPEN](../P-A-web-app/OPEN.md). Roll-up: [OPEN.md
 | E-31 | The room view's first call in a fresh server is slow (re-measured 2026-11-17: 1.9–2.4 s plus 1.6 s import) | step 15 archive | parked (reopen if it recurs) | record |
 | E-32 | Boulders read as short pillars; a sunken court and rock columns wider at the foot | step 9 archive | parked (not asked for) | record |
 
+## Looks not taken
+
+| ID | Item | Source | Status | Checked |
+|---|---|---|---|---|
+| L-4 | The water's edge at a doorway (if it reads as a sheet hanging in the opening, carry the water into the corridor's run-out) | step 24 archive | waiting | — |
+| L-5 | Step 25 task 5's fixes: the boss off the wall (case g), the dais top (case h) | step 25 archive | waiting | — |
+| L-6 | Step 26 task 10: the dropped Bridges, the dais decor, a stalactite over s644918873 room_12's south door | step 26 archive | waiting | — |
+| L-8 | Step 29 (cave clumps): nothing looked at in 3D | ROADMAP carried from step 29 | waiting | — |
+| L-9 | Step 21 (caves): acceptance pass skipped at the user's word | ROADMAP | waiting | — |
+
 ## Fixed (dropped from the list)
 
 | Item | Fixed by |

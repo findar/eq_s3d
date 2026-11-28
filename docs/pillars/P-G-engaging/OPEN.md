@@ -55,6 +55,15 @@ Status and Checked as in [P-A's OPEN](../P-A-web-app/OPEN.md). Roll-up: [OPEN.md
 | G-32 | A farmstead often loses its barn (5 of 20 seeds at Normal); the survey splits a farmstead in two on seeds 1001 and 1004 | steps 10, 13 archives | open | record |
 | G-33 | `altar_stone` is built but no recipe places it | step 10 archive | open | code: only `[structures.altar_stone]` in `rules/sites/sites.toml` |
 
+## Looks not taken
+
+| ID | Item | Source | Status | Checked |
+|---|---|---|---|---|
+| L-1 | Step 19: the quality banner has not been looked at by the user | step 19 archive | waiting | — |
+| L-2 | Step 20: the palette and light change across a Threshold in 3D | step 20 archive | waiting | — |
+| L-3 | Step 22 (District looks): nothing looked at in 3D | ROADMAP carried from step 22 | waiting | — |
+| L-7 | Step 27 tasks 9–13: angled openings, long straight tunnels aimed at a room centre, held lines through frames | step 27 archive | waiting | — |
+
 ## Fixed (dropped from the list)
 
 | Item | Fixed by |
