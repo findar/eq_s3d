@@ -414,16 +414,17 @@ def test_a_spring_layouts_slot_keeps_off_a_door_too():
     seed 1773177717): breach corr_24 bridged room_13 with a slot reaching its east wall,
     where corr_11's door runs 2 u into the room; that piece's side wall stood in the slot
     ("wall across throat"). The rule held only for a jittered build; it holds for every
-    layout now."""
+    layout now. Re-pinned at task 17 to seed 7: without ``_slot_meets_door`` breach corr_24
+    bridges room_17 with a slot over corr_25's south door."""
     plan = ZonePlan.from_controls({
         "zone_type": "dungeon", "room_count": 24, "verticality": "moderate", "layout": "graph",
         "districts": True, "district_relationship": "intrusion",
         "district_plan": [{"purpose": "fortress", "race": "giant"},
                           {"purpose": "warren", "race": "goblin"}]}, [])
     plan.name = "slots"
-    spec = plan_to_spec(plan, seed=1773177717, warnings=[])
+    spec = plan_to_spec(plan, seed=7, warnings=[])
     rooms = {r.id: r for r in spec.rooms}
-    assert any(c.id == "corr_11" and (LayoutGenerator._door_on_wall(c, rooms["room_13"]) or ("",))[0] == "E"
+    assert any(c.id == "corr_25" and (LayoutGenerator._door_on_wall(c, rooms["room_17"]) or ("",))[0] == "S"
                for c in spec.corridors), "the layout moved: re-pin"
     for cor in spec.corridors:
         bl = bridge_layout(cor, rooms) if cor.bridge else None

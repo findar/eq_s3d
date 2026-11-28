@@ -99,3 +99,5 @@
 - A third District is breached too (`breach_hosts` takes every non-Threshold cross link), so some host rooms spill
   from it (dark elf, undead Sets) and not from the goblins (task 8). On master these zones already run over stock's
   p25-p75 decor band (per room about 11-15, light share about 0.6 against 2.9-6.8 and 0.21-0.45).
+- Pairs with 2+ links fell from 82% to 68% at task 17 (Graph 16 loses most); place intruder rooms nearer host walls so
+  short breaches fit.
