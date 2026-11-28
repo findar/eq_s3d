@@ -111,7 +111,8 @@ These need a decision or a look; nothing else unblocks them.
 | [P-2-11](docs/pillars/P-2-traversable/OPEN.md#p-2-11) | [M1](.kiro/specs/zone-generator-m1-controls-traversability/tasks.md) human acceptance walk (22.5) | waiting | M1 |
 | [P-2-12](docs/pillars/P-2-traversable/OPEN.md#p-2-12) | Elevation on drops the semantic sink/raise | open | [ROADMAP "Known issues"](ROADMAP.md#known-issues--smaller-fixes) |
 | [P-2-13](docs/pillars/P-2-traversable/OPEN.md#p-2-13) | `corridor_conflicts` measures the straight route, not the path | open | [step 25 archive](.kiro/specs/zone-generator-winding-routes/archive.md) |
-| [P-2-14](docs/pillars/P-2-traversable/OPEN.md#p-2-14) | Loops-first planning; corridors as placed blocks | in flight ([step 33](.kiro/specs/zone-generator-layout-repair/tasks.md)) | [step 33 archive](.kiro/specs/zone-generator-layout-repair/archive.md) |
+| [P-2-14](docs/pillars/P-2-traversable/OPEN.md#p-2-14) | Loops-first planning; corridors as placed blocks | parked (step 33 stopped) | [step 33 archive](.kiro/specs/zone-generator-layout-repair/archive.md) |
+| [P-2-15](docs/pillars/P-2-traversable/OPEN.md#p-2-15) | Outlines keep dead-end floor fingers narrower than the player | open | [step 35](.kiro/specs/zone-generator-outdoor-area/tasks.md) task 4 review |
 
 ### P-3 Usable in RoF2 and EQEmu
 
