@@ -11,5 +11,5 @@ OPEN.md (root roll-up)          ROADMAP.md (one page)
 ```
 
 The umbrella spec's requirements and design become the pillars' requirements (IDs kept, e.g.
-P-B.4 for Requirement 4) and the architecture doc; its 48 decisions split by pillar. Card-format
+`ZG-Req-4` for the umbrella's Requirement 4, with pillar and slice requirements as `P-<n>-Req-<k>` and `S-<step>-Req-<k>`: archive decision 2) and the architecture doc; its 48 decisions split by pillar. Card-format
 rules stay; a slice is today's step spec. Moves use `git mv` so `git log --follow` works.

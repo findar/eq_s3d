@@ -12,15 +12,15 @@ Docs today are organised by history: 37 step specs frozen at close, `ROADMAP.md`
 13,000-character "Pick up here" line, 25 chained "Carried from step N" lists), `docs/ACCEPTANCE.md`
 (4,593 lines), open items scattered over every spec's `archive.md` "Follow-ups", and always-on
 steering carrying removed-pipeline notes. The umbrella spec already groups its 33 requirements
-into outcome pillars P-A to P-G plus cross-cutting; steps 12-32 drifted almost entirely into P-G and
-P-E without anything tracking it.
+into outcome pillars (lettered A to G there, numbered P-1 to P-7 here) plus cross-cutting; steps 12-32
+drifted almost entirely into P-7 Engaging and P-5 Look and feel without anything tracking it.
 
 ## Requirements
 
-1. **Pillars.** The umbrella's outcome pillars (P-A Web app and controls, P-B Traversable, P-C
-   Usable in RoF2 and EQEmu, P-D True-layout artifacts, P-E EverQuest look and feel, P-F Iterative
-   feedback, P-G Engaging every time), plus P-H World (multi-zone, waiting on the user's design
-   review) and Engineering (tests, tooling, performance, docs). Each pillar has `PLAN.md` (goal,
+1. **Pillars.** The umbrella's outcome pillars (P-1 Web app and controls, P-2 Traversable, P-3
+   Usable in RoF2 and EQEmu, P-4 True-layout artifacts, P-5 EverQuest look and feel, P-6 Iterative
+   feedback, P-7 Engaging every time), plus P-8 World (multi-zone, waiting on the user's design
+   review) and P-9 Engineering (tests, tooling, performance, docs). Each pillar has `PLAN.md` (goal,
    scope and non-goals, requirements with stable IDs, slices with their tasks), `DESIGN.md` (how
    that part works NOW, living), `DECISIONS.md` and `OPEN.md`.
 2. **Architecture.** `docs/ARCHITECTURE.md`: the pipeline, the ZoneSpec IR, the module map, the

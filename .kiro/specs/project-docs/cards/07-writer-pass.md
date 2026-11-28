@@ -14,3 +14,5 @@ The user, reviewing task 1: "Can we use numbers instead of letters with the pill
 - [ ] `docs/STYLE.md`: the house rules the pass applied (reference and link rules, ID schemes, plain language), short, for later docs to follow.
 
 ## Result
+
+✔ ea09662 · docs only
