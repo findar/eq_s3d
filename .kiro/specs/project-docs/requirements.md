@@ -42,5 +42,12 @@ P-E without anything tracking it.
 6. **Tooling follows.** `scripts/task_status.py` reads the new layout and flags follow-ups missing
    from `OPEN.md` and slices not linked from a pillar. A heavy-run lock (`scripts/heavy.py`)
    serialises gate, full and sweep runs across agents.
+8. **No `.kiro/`.** The user: "another thing, i want to move away from the .kiro folder structure, so we should try and aim for an agnostic type". Nothing the project needs lives in a tool's folder:
+   specs move under their pillar (`docs/pillars/<P-n>/slices/S-<step>-<name>/`, new slices are
+   created there); the always-on rules move to a root `AGENTS.md` (the tool-agnostic convention
+   many coding agents read) with `CLAUDE.md` reduced to a pointer to it; the lessons move to
+   `docs/LESSONS.md` or the pillar DESIGN they guide; the dormant Kiro agent prompts and settings
+   move to the Engineering pillar's history. Code comments, tests and scripts that name `.kiro/`
+   paths follow. At the end `.kiro/` is gone.
 7. **Safe beside live work.** Specs of active steps (32, 33) move last, in the reconcile task, so
    agents working them keep their paths; nothing here changes code behaviour.

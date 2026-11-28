@@ -21,12 +21,12 @@ and edit only `Owns`; trailer `Task: project-docs/<n>`; fill the card's Result a
 - [ ] 3. Move the closed steps under their pillars
   - Card: [cards/03-move.md](cards/03-move.md)
   - Type: agent · Size: M · Depends: 2
-  - Owns: docs/pillars/, .kiro/specs/ (closed specs only), tasks/
+  - Owns: docs/pillars/, .kiro/specs/ (closed specs only), .kiro/agents/, .kiro/settings/, tasks/, code comments and test docstrings naming moved paths
 
 - [ ] 4. One-page roadmap, split acceptance, trimmed steering
   - Card: [cards/04-roadmap.md](cards/04-roadmap.md)
   - Type: agent · Size: M · Depends: 3
-  - Owns: ROADMAP.md, README.md, docs/ACCEPTANCE.md, docs/acceptance/, .kiro/steering/, CLAUDE.md
+  - Owns: ROADMAP.md, README.md, docs/ACCEPTANCE.md, docs/acceptance/, .kiro/steering/, AGENTS.md (new), docs/LESSONS.md (new), CLAUDE.md
 
 - [ ] 5. Tooling: task_status and the heavy-run lock
   - Card: [cards/05-tooling.md](cards/05-tooling.md)

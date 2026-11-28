@@ -4,6 +4,7 @@ Index entry: `tasks.md` task 3. Requirement 4.
 
 ## Done when
 - [ ] Every closed step spec `git mv`'d to its pillar's `slices/`; `tasks/` (legacy) moved under the Engineering pillar's history; every link in the repo to a moved file fixed (a link check script run, output in the commit body).
+- [ ] Target folders are `docs/pillars/<P-n>/slices/S-<step>-<name>/` (requirement 8); `.kiro/agents/` and `.kiro/settings/` moved to the Engineering pillar's `history/`.
 - [ ] Active specs (`zone-generator-races-followups`, `zone-generator-layout-repair`, `project-docs`) not moved.
 
 ## Result
