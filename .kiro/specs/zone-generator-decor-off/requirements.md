@@ -1,6 +1,6 @@
 # Requirements — zone-generator-decor-off (roadmap step 34)
 
-> **STATUS: roadmap step 34, ready.** Drafted 2026-11-27 at master `0745b9e`. The user, after step 33's
+> **STATUS: roadmap step 34, DONE 2026-11-28 (master `25866e4`).** Drafted 2026-11-27 at master `0745b9e`. The user, after step 33's
 > measure (decor placement 44% of generate time): "since decor placement takes so much of build time, can we disable it for now? it's not critical at the moment since we only worry about room generation and can decorate and optimize that part later as well"
 > Task index: `tasks.md` (card format). Decisions: `archive.md`. This spec moves under its pillar with the
 > others at the docs refactor's reconcile task.
