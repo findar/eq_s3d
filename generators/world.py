@@ -377,7 +377,7 @@ def _landform(value) -> Any:
 
 def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = None,
               edges: Optional[Mapping[str, str]] = None, zone_size: Optional[float] = None,
-              landform: Any = None) -> World:
+              landform: Any = None, lava: bool = False) -> World:
     """The World stage (design "The World"): the World of a zone of ``zone_type`` from its
     seed and the world controls alone (no room, Site or Decor input), the same text for the
     same inputs.
@@ -405,7 +405,8 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
     is made on the PLACED Landform: it is placed once, then asked for again as placed (a
     placed Landform places to itself), and everything here reads that one landscape. The
     ``recipe`` records the placed Landform, so asking with the request or with what it
-    places gives the same World."""
+    places gives the same World. ``lava`` (a lava theme) draws the area's lava patch and is
+    recorded in the ``recipe`` only when on."""
     from generators.zone_types import DEFINED_ZONE_TYPES, LANDSCAPE_ZONE_TYPES
 
     if zone_type not in DEFINED_ZONE_TYPES:
@@ -433,10 +434,12 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
     zone_size = float(zone_size) if zone_size else None
     placed = None
     if request is not None:
-        placed = synthesize_landscape(seed, edges, biome, request, zone_size).matrix.landform
+        placed = synthesize_landscape(seed, edges, biome, request, zone_size,
+                                      lava).matrix.landform
     # The spec's own fields (regions, Spawn, water) as plan_to_spec makes them, on the
     # placed Landform's landscape: the one the TER, planning and Sites read.
-    spec = wilderness_spec("world", seed, edges, biome, landform=placed, zone_size=zone_size)
+    spec = wilderness_spec("world", seed, edges, biome, landform=placed, zone_size=zone_size,
+                           lava=lava)
     land = landscape_for(spec)
     heights = grid_heights(land, load_biome_kit(biome))
     bowl = np.asarray(land.bowl.heights, dtype=np.float64)
@@ -462,13 +465,15 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
     recipe = {"zone_type": zone_type, "seed": seed, "biome": biome, "edges": edges,
               "zone_size": zone_size,
               "landform": None if placed is None else placed.to_dict()}
+    if lava:
+        recipe["lava"] = True
     return World(recipe=recipe, terrain=terrain, regions=[asdict(r) for r in spec.regions],
                  spawn=spawn, sockets=sockets)
 
 
 def world_of(spec) -> World:
     """The World a spec was made on, from its zone type, seed and ``wilderness`` payload
-    (``biome``, ``edges``, ``zone_size``, ``landform``); the spec is not changed.
+    (``biome``, ``edges``, ``zone_size``, ``landform``, ``lava``); the spec is not changed.
 
     The payload records the PLACED Landform, which places to itself, so it is asked for as
     it is: the World is the landscape ``landscape_for`` reads, whatever the request was."""
@@ -477,7 +482,7 @@ def world_of(spec) -> World:
         return world_for(spec.zone_type, spec.seed)
     return world_for(spec.zone_type, spec.seed, biome=payload.get("biome"),
                      edges=payload.get("edges"), zone_size=payload.get("zone_size"),
-                     landform=payload.get("landform"))
+                     landform=payload.get("landform"), lava=bool(payload.get("lava", False)))
 
 
 __all__ = ["KINDS", "NODE_CODES", "ROOT_ACCEPTS", "Socket", "Terrain", "VERSION", "World",

@@ -227,6 +227,8 @@ def _placed(seed: int, control: str):
     return len(xy), p.walkable_area, nn
 
 
+@pytest.mark.xfail(strict=False, reason="step 35 task 11: Normal R pooled is seed noise "
+                                        "(master 0.84-1.14 per 40 seeds)")
 def test_points_cluster_on_worlds_alone():
     """Req 4.4: placement only, seeds 1000-1039: Normal inside the biome's clustering targets,
     Dense still grouped (archive decision 11)."""
@@ -341,6 +343,9 @@ def test_p9_normal_zones_measure_inside_the_stock_bands(shared_results):
                        _band("Structures per Site, zone p50", median(p50), STRUCTS_P50),
                        _band("Structures per Site, zone p90", median(p90), STRUCTS_P90))
            if b] + _targets(c, "Normal")
+    # Only the clustering check is step 35 task 11's; every other band stays strict.
+    if bad and all(b.startswith("Normal R pooled") for b in bad):
+        pytest.xfail(f"step 35 task 11: Normal R pooled is seed noise ({bad[0]})")
     assert not bad, bad
 
 

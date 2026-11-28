@@ -170,7 +170,7 @@ def _grid_zs(ter, shape) -> np.ndarray:
 
 def test_world_stage_reads_only_world_inputs():
     params = list(inspect.signature(W.world_for).parameters)
-    assert params == ["zone_type", "seed", "biome", "edges", "zone_size", "landform"]
+    assert params == ["zone_type", "seed", "biome", "edges", "zone_size", "landform", "lava"]
 
 
 @pytest.mark.parametrize("zone_type", sorted(SOCKETS))

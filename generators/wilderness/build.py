@@ -118,10 +118,10 @@ class Landscape:
 @lru_cache(maxsize=8)
 def _landscape(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str,
                landform: Optional[Landform] = None,
-               zone_size: float = DEFAULT_ZONE_SIZE) -> Landscape:
+               zone_size: float = DEFAULT_ZONE_SIZE, lava: bool = False) -> Landscape:
     ecs = [EdgeConnection(side=s, edge_type=t) for s, t in edges]
     matrix = rewrite_matrix(build_matrix(biome, ecs, seed, zone_size=zone_size,
-                                         landform=landform)).matrix
+                                         landform=landform, lava=lava)).matrix
     synth = synthesize_heightfield(matrix, seed=seed)
     return Landscape(matrix=matrix, synth=synth, bowl=assemble_bowl(synth, matrix))
 
@@ -129,14 +129,16 @@ def _landscape(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str,
 def synthesize_landscape(seed: int, edges: Optional[Mapping[str, str]] = None,
                          biome: str = DEFAULT_BIOME,
                          landform: Optional[Landform] = None,
-                         zone_size: Optional[float] = None) -> Landscape:
+                         zone_size: Optional[float] = None,
+                         lava: bool = False) -> Landscape:
     """Deterministic landscape for ``(seed, edges, biome)``, optionally with a
     Landform (outdoor dungeons) and a zone size other than the wilderness
-    default. Size scales the matrix grid; the TER resolution is unchanged."""
+    default. Size scales the matrix grid; the TER resolution is unchanged.
+    ``lava`` draws the interior lava patch (a lava theme, ``matrix.wants_lava``)."""
     norm = normalise_edges(edges)
     return _landscape(int(seed) & 0x7FFFFFFF,
                       tuple((s, norm[s]) for s in DEFAULT_SIDES), biome,
-                      landform, float(zone_size or DEFAULT_ZONE_SIZE))
+                      landform, float(zone_size or DEFAULT_ZONE_SIZE), bool(lava))
 
 
 def _landform_args(payload: Mapping) -> Tuple[Optional[Landform], float]:
@@ -144,6 +146,11 @@ def _landform_args(payload: Mapping) -> Tuple[Optional[Landform], float]:
     lf = payload.get("landform")
     return (Landform.from_dict(lf) if lf else None,
             float(payload.get("zone_size") or DEFAULT_ZONE_SIZE))
+
+
+def lava_arg(payload: Optional[Mapping]) -> bool:
+    """Does a spec's wilderness payload ask for the lava patch? Recorded only when on."""
+    return bool((payload or {}).get("lava", False))
 
 
 def landscape_for(spec: ZoneSpec) -> Landscape:
@@ -155,7 +162,7 @@ def landscape_for(spec: ZoneSpec) -> Landscape:
     landform, zone_size = _landform_args(spec.wilderness)
     return synthesize_landscape(spec.seed, spec.wilderness.get("edges"),
                                 spec.wilderness.get("biome", DEFAULT_BIOME),
-                                landform, zone_size)
+                                landform, zone_size, lava_arg(spec.wilderness))
 
 
 def _quad_materials(land: Landscape, kit: BiomeKit) -> np.ndarray:
@@ -186,21 +193,25 @@ def grid_heights(land: Landscape, kit: BiomeKit) -> np.ndarray:
 def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = None,
                     biome: str = DEFAULT_BIOME,
                     landform: Optional[Landform] = None,
-                    zone_size: Optional[float] = None) -> ZoneSpec:
+                    zone_size: Optional[float] = None,
+                    lava: bool = False) -> ZoneSpec:
     """A ``ZoneSpec`` for an open wilderness: no rooms, the bowl's regions,
     one material per region kind present, Spawn as the safe point.
 
     ``landform`` and ``zone_size`` (outdoor dungeons) are recorded in the
     wilderness payload only when given, so plain wilderness specs are
-    unchanged; the payload records the PLACED Landform."""
+    unchanged; the payload records the PLACED Landform. ``lava`` (a lava
+    theme) is recorded only when on."""
     norm = normalise_edges(edges)
-    land = synthesize_landscape(seed, norm, biome, landform, zone_size)
+    land = synthesize_landscape(seed, norm, biome, landform, zone_size, lava)
     kit = load_biome_kit(biome)
     payload = {"biome": biome, "edges": norm}
     if zone_size:
         payload["zone_size"] = float(zone_size)
     if landform is not None:
         payload["landform"] = land.matrix.landform.to_dict()
+    if lava:
+        payload["lava"] = True
     spec = ZoneSpec(name=name, zone_type="wilderness", style_profile="outdoor",
                     seed=seed, wilderness=payload)
     spec.ambient_light = kit.ambient_light
@@ -401,7 +412,7 @@ def vegetation_for(spec: ZoneSpec, ter: TerFile) -> Vegetation:
                        payload.get("trees_source", "default"),
                        (float(spec.safe_point[0]), float(spec.safe_point[1])),
                        _ter_fingerprint(ter), _TerRef(ter), landform, zone_size,
-                       keep_clear)
+                       keep_clear, lava_arg(payload))
 
 
 @lru_cache(maxsize=8)
@@ -409,14 +420,15 @@ def _vegetation(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, level
                 source: str, spawn_xy: Tuple[float, float], _fp: int,
                 ter_ref: _TerRef, landform: Optional[Landform] = None,
                 zone_size: float = DEFAULT_ZONE_SIZE,
-                keep_clear: Tuple[Tuple[float, ...], ...] = ()) -> Vegetation:
+                keep_clear: Tuple[Tuple[float, ...], ...] = (),
+                lava: bool = False) -> Vegetation:
     from generators.vegetation.kit import load_vegetation_kit
     from generators.vegetation.models import model_name, tree_model
     from generators.vegetation.placement import grove_ratio, place_trees
     from generators.vegetation.textures import (
         bark_texture, bark_texture_name, leaf_texture, leaf_texture_name)
 
-    land = _landscape(seed, edges, biome, landform, zone_size)
+    land = _landscape(seed, edges, biome, landform, zone_size, lava)
     kit_id = load_biome_kit(biome).vegetation_kit
     kit = load_vegetation_kit(kit_id)
     warnings: List[str] = []
@@ -530,7 +542,7 @@ def sites_for(spec: ZoneSpec, ter: Optional[TerFile] = None) -> Sites:
                   getattr(spec, "inhabitant", "") or "",
                   getattr(spec, "sites_source", "default") or "default",
                   spec.zone_type, landform, zone_size, entrance, _SpecRef(spec),
-                  getattr(spec, "rooms_seed", None))
+                  getattr(spec, "rooms_seed", None), lava_arg(payload))
 
 
 def _ground_world(spec: ZoneSpec, entrance: Optional[str]):
@@ -554,7 +566,7 @@ def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: s
            inhabitant: str, source: str, zone_type: str,
            landform: Optional[Landform] = None, zone_size: float = DEFAULT_ZONE_SIZE,
            entrance: Optional[str] = None, spec_ref: Optional[_SpecRef] = None,
-           rooms: Optional[int] = None) -> Sites:
+           rooms: Optional[int] = None, lava: bool = False) -> Sites:
     from generators import stages
     from generators.sites.models import model_name, structure_model
     from generators.sites.placement import SitePlacement

@@ -101,7 +101,9 @@ def plan_to_spec(plan: ZonePlan, seed: Optional[int] = None,
         intent = resolve_biome(plan)
         if plan.zone_type == "wilderness":
             from generators.wilderness.build import wilderness_spec
-            spec = wilderness_spec(plan.name, rng_seed, edges, biome=intent.biome)
+            from generators.wilderness.matrix import wants_lava
+            spec = wilderness_spec(plan.name, rng_seed, edges, biome=intent.biome,
+                                   lava=wants_lava(plan.elemental_tint, plan.dungeon_theme))
         else:
             from generators.outdoor_dungeon import outdoor_dungeon_spec
             spec = outdoor_dungeon_spec(

@@ -29,6 +29,10 @@
      opening 101, sinkhole 59, ravine 21; widest way per interior 85/46/23/9), weight about 1 in 3. Ruin
      stairs (74 of 443 built ways in, doors 369) belongs to built interiors. Well: no signal (a shaft
      can't be walked, so the survey can't see one).
+3. **The lava patch is themed** (task 2, `matrix.wants_lava`). A wilderness or outdoor dungeon's interior lava
+   patch is drawn only when the plan's element is `lava` (the rule planner's lava, magma, volcanic, molten,
+   fire, volcano) or its dungeon theme is `lava_forge`; off otherwise. The spec's wilderness payload and the
+   World's recipe carry `"lava": true` only when on, so themed zones keep their bytes.
 
 ## Follow-ups
 - Steps 5 and 10's surveys (`outdoor_dungeon_survey.py`, `site_survey.py`) take a zone's main ground as the largest
