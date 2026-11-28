@@ -93,15 +93,7 @@ def test_a_corridor_under_a_room_on_another_level_keeps_its_floor():
     assert next(c for c in saved if c.id == "corr_2").to_json() == cor.to_json()
 
 
-#: outdoor_cave's room_4 has dead-end floor fingers 2-3 u wide (under a body), whose walls
-#: face no floor 3 u along their normal: 127 of 145 faces face floor (step 35 task 4).
-FINGERS = "P-2 open item: outline keeps dead-end fingers narrower than LINK_MIN (step 35 task 4)"
-
-
-@pytest.mark.parametrize("path", [pytest.param(p, marks=pytest.mark.xfail(strict=False,
-                                                                           reason=FINGERS))
-                                  if p.stem == "outdoor_cave" else p for p in FILES],
-                         ids=lambda p: p.stem)
+@pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)
 def test_contexts_are_consistent(path):
     """What every decor test leans on: the grid's parts agree, walls face into the room,
     doors and POIs sit in the room."""

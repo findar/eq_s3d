@@ -46,7 +46,10 @@ from generators.wilderness.matrix import (
     DesignMatrix,
     EdgeConnection,
     Landform,
+    ZoneSize,
     build_matrix,
+    zone_extent,
+    zone_size_value,
 )
 from generators.wilderness.rewrite import rewrite_matrix
 from generators.wilderness.synth import SynthResult, synthesize_heightfield
@@ -118,7 +121,8 @@ class Landscape:
 @lru_cache(maxsize=8)
 def _landscape(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str,
                landform: Optional[Landform] = None,
-               zone_size: float = DEFAULT_ZONE_SIZE, lava: bool = False) -> Landscape:
+               zone_size: Tuple[float, float] = (DEFAULT_ZONE_SIZE, DEFAULT_ZONE_SIZE),
+               lava: bool = False) -> Landscape:
     ecs = [EdgeConnection(side=s, edge_type=t) for s, t in edges]
     matrix = rewrite_matrix(build_matrix(biome, ecs, seed, zone_size=zone_size,
                                          landform=landform, lava=lava)).matrix
@@ -129,23 +133,23 @@ def _landscape(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str,
 def synthesize_landscape(seed: int, edges: Optional[Mapping[str, str]] = None,
                          biome: str = DEFAULT_BIOME,
                          landform: Optional[Landform] = None,
-                         zone_size: Optional[float] = None,
+                         zone_size: ZoneSize = None,
                          lava: bool = False) -> Landscape:
     """Deterministic landscape for ``(seed, edges, biome)``, optionally with a
     Landform (outdoor dungeons) and a zone size other than the wilderness
-    default. Size scales the matrix grid; the TER resolution is unchanged.
+    default: a square's side or a ``(width, depth)`` pair (``matrix.zone_extent``).
+    Size scales the matrix grid; the TER resolution is unchanged.
     ``lava`` draws the interior lava patch (a lava theme, ``matrix.wants_lava``)."""
     norm = normalise_edges(edges)
     return _landscape(int(seed) & 0x7FFFFFFF,
                       tuple((s, norm[s]) for s in DEFAULT_SIDES), biome,
-                      landform, float(zone_size or DEFAULT_ZONE_SIZE), bool(lava))
+                      landform, zone_extent(zone_size), bool(lava))
 
 
-def _landform_args(payload: Mapping) -> Tuple[Optional[Landform], float]:
-    """The Landform and zone size a spec's wilderness payload records."""
+def _landform_args(payload: Mapping) -> Tuple[Optional[Landform], Tuple[float, float]]:
+    """The Landform and zone ``(width, depth)`` a spec's wilderness payload records."""
     lf = payload.get("landform")
-    return (Landform.from_dict(lf) if lf else None,
-            float(payload.get("zone_size") or DEFAULT_ZONE_SIZE))
+    return (Landform.from_dict(lf) if lf else None, zone_extent(payload.get("zone_size")))
 
 
 def lava_arg(payload: Optional[Mapping]) -> bool:
@@ -193,12 +197,13 @@ def grid_heights(land: Landscape, kit: BiomeKit) -> np.ndarray:
 def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = None,
                     biome: str = DEFAULT_BIOME,
                     landform: Optional[Landform] = None,
-                    zone_size: Optional[float] = None,
+                    zone_size: ZoneSize = None,
                     lava: bool = False) -> ZoneSpec:
     """A ``ZoneSpec`` for an open wilderness: no rooms, the bowl's regions,
     one material per region kind present, Spawn as the safe point.
 
-    ``landform`` and ``zone_size`` (outdoor dungeons) are recorded in the
+    ``landform`` and ``zone_size`` (an outdoor dungeon's, or a wilderness's from the
+    plan's Size: a side or ``[width, depth]``) are recorded in the
     wilderness payload only when given, so plain wilderness specs are
     unchanged; the payload records the PLACED Landform. ``lava`` (a lava
     theme) is recorded only when on."""
@@ -207,7 +212,7 @@ def wilderness_spec(name: str, seed: int, edges: Optional[Mapping[str, str]] = N
     kit = load_biome_kit(biome)
     payload = {"biome": biome, "edges": norm}
     if zone_size:
-        payload["zone_size"] = float(zone_size)
+        payload["zone_size"] = zone_size_value(zone_size)
     if landform is not None:
         payload["landform"] = land.matrix.landform.to_dict()
     if lava:
@@ -314,6 +319,9 @@ def bowl_report(spec: ZoneSpec, ter: TerFile,
     agent = agent or AgentModel()
     land = landscape_for(spec)
     res = check_bowl(land.bowl, land.synth, land.matrix, agent=agent, ter=ter)
+    # The Footprint checks below read the same flood on the same TER: hand it on, so the
+    # walk surface (pure Python per triangle, growing with the area) is built once.
+    flood = (res.surface, res.reached)
     problems = [str(x) for x in (*res.leaks, *res.zoneline_failures)]
     if res.unreachable:
         problems.append(f"{len(res.unreachable)} playable cell(s) unreachable "
@@ -328,7 +336,8 @@ def bowl_report(spec: ZoneSpec, ter: TerFile,
             zon, models = _gate_zon(spec, ter)
             if pois is None:
                 pois = sites_for(spec, ter).pois()
-        for failure in structure_failures(spec, ter, zon, models or {}, pois or (), agent):
+        for failure in structure_failures(spec, ter, zon, models or {}, pois or (), agent,
+                                          flood=flood):
             passed = False
             problems.append(failure)
     room = RoomResult(room_id="bowl", role="bowl", reachable=passed,
@@ -419,7 +428,7 @@ def vegetation_for(spec: ZoneSpec, ter: TerFile) -> Vegetation:
 def _vegetation(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, level: str,
                 source: str, spawn_xy: Tuple[float, float], _fp: int,
                 ter_ref: _TerRef, landform: Optional[Landform] = None,
-                zone_size: float = DEFAULT_ZONE_SIZE,
+                zone_size: Tuple[float, float] = (DEFAULT_ZONE_SIZE, DEFAULT_ZONE_SIZE),
                 keep_clear: Tuple[Tuple[float, ...], ...] = (),
                 lava: bool = False) -> Vegetation:
     from generators.vegetation.kit import load_vegetation_kit
@@ -564,7 +573,8 @@ def _ground_world(spec: ZoneSpec, entrance: Optional[str]):
 @lru_cache(maxsize=8)
 def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: str,
            inhabitant: str, source: str, zone_type: str,
-           landform: Optional[Landform] = None, zone_size: float = DEFAULT_ZONE_SIZE,
+           landform: Optional[Landform] = None,
+           zone_size: Tuple[float, float] = (DEFAULT_ZONE_SIZE, DEFAULT_ZONE_SIZE),
            entrance: Optional[str] = None, spec_ref: Optional[_SpecRef] = None,
            rooms: Optional[int] = None, lava: bool = False) -> Sites:
     from generators import stages
@@ -613,9 +623,12 @@ def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: s
                  structures=tuple(structures), report=report)
 
 
-def _reached_faces(spec: ZoneSpec, ter: TerFile, agent: AgentModel):
+def _reached_faces(spec: ZoneSpec, ter: TerFile, agent: AgentModel, flood=None):
     """The walk surface and the faces reached from Spawn, flooded exactly as the
-    bowl gate floods them (Invisible_Walls honoured)."""
+    bowl gate floods them (Invisible_Walls honoured). ``flood`` is the bowl gate's own
+    ``(surface, reached)`` on this TER and agent (``check_bowl``), taken as it is."""
+    if flood is not None and flood[0] is not None:
+        return flood
     from analyzer.traverse import _nearest_standable_face, build_walk_surface
     from generators.wilderness.bowl import _flood_excluding, _invisible_wall_faces
 
@@ -660,7 +673,7 @@ def _is_grid_tri(p, g: int, ny: int) -> bool:
 
 
 def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
-                   step: float = TREE_CHECK_STEP):
+                   step: float = TREE_CHECK_STEP, flood=None):
     """The reached ground of the grid TER as a ``footprints.GroundRaster`` at
     ``step``, or ``None`` when Spawn reaches nothing. Pixel centres over the
     vertex grid, each mapped to its grid triangle (quad q holds triangles 2q
@@ -671,7 +684,7 @@ def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
     nx, ny = land.synth.heights.shape
     res = float(land.synth.resolution)
     ox, oy = land.synth.origin
-    surf, reached = _reached_faces(spec, ter, agent)
+    surf, reached = _reached_faces(spec, ter, agent, flood)
     if not reached:
         return None
     on = np.zeros(len(surf.faces), dtype=bool)
@@ -733,17 +746,19 @@ def _gate_zon(spec: ZoneSpec, ter: TerFile):
 
 
 def structure_failures(spec: ZoneSpec, ter: TerFile, zon, models: Mapping[str, TerFile],
-                       pois=(), agent: Optional[AgentModel] = None) -> List[str]:
+                       pois=(), agent: Optional[AgentModel] = None,
+                       flood=None) -> List[str]:
     """The Footprint gate's failures on this TER, phrased for the bowl report
     (empty when it passes). A cut made by trunks alone reads as step 2's
-    "tree trunks cut off ..."; everything else is ``footprints.GateFailure``."""
+    "tree trunks cut off ..."; everything else is ``footprints.GateFailure``.
+    ``flood`` is the bowl gate's ``(surface, reached)`` on this TER (``_reached_faces``)."""
     from analyzer.footprints import check_footprints, placed_from_zon
 
     placed = placed_from_zon(zon, models)
     if not placed and not pois:
         return []
     agent = agent or AgentModel()
-    ground = _ground_raster(spec, ter, agent)
+    ground = _ground_raster(spec, ter, agent, flood=flood)
     if ground is None:
         return []
     by_name = {p.name: p for p in placed}

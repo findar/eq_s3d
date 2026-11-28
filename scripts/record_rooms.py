@@ -69,19 +69,20 @@ RECORDINGS: List[Dict] = [
     {"name": "outdoor_tomb_goblin", "seed": 115,
      "plan": {"zone_type": "outdoor_dungeon", "dungeon_theme": "tomb", "dungeon_race": "goblin", "sites": "dense"}},
     {"name": "wilderness_sites", "seed": 116,
-     "plan": {"zone_type": "wilderness", "sites": "dense"}},
+     "plan": {"zone_type": "wilderness", "sites": "normal"}},
     {"name": "fortress_classic", "seed": 121,
      "plan": {"zone_type": "dungeon", "dungeon_theme": "fortress", "layout": "classic", "room_count": 10}},
     {"name": "wilderness_orc", "seed": 128,
-     "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "orc"}},
+     "plan": {"zone_type": "wilderness", "sites": "normal", "inhabitant": "orc"}},
     {"name": "wilderness_gnoll", "seed": 119,
-     "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "gnoll"}},
+     "plan": {"zone_type": "wilderness", "sites": "normal", "inhabitant": "gnoll"}},
     {"name": "wilderness_centaur", "seed": 120,
-     "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "centaur"}},
-    # Farmsteads are human only; seed 139 gives three, with a hut and a ruin (127 did until the
-    # lava patch went themed, step 35 task 2).
-    {"name": "wilderness_farmstead", "seed": 139,
-     "plan": {"zone_type": "wilderness", "sites": "dense", "inhabitant": "human"}},
+     "plan": {"zone_type": "wilderness", "sites": "normal", "inhabitant": "centaur"}},
+    # Farmsteads are human only; seed 176 gives three at Sites normal, with ruins and a hut (139
+    # did at dense until the Size drew bigger zones, step 35 task 6; 127 until the lava patch
+    # went themed, task 2). The wilderness recordings are at normal so the corpus stays small.
+    {"name": "wilderness_farmstead", "seed": 176,
+     "plan": {"zone_type": "wilderness", "sites": "normal", "inhabitant": "human"}},
     # The cave Purpose (step 21): graph layout, the only one that draws its rough walls; seed 125
     # holds a cave mouth, the cavern hub, a crystal grotto and grottos.
     {"name": "cave_graph", "seed": 125,

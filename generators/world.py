@@ -376,7 +376,7 @@ def _landform(value) -> Any:
 
 
 def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = None,
-              edges: Optional[Mapping[str, str]] = None, zone_size: Optional[float] = None,
+              edges: Optional[Mapping[str, str]] = None, zone_size: Any = None,
               landform: Any = None, lava: bool = False) -> World:
     """The World stage (design "The World"): the World of a zone of ``zone_type`` from its
     seed and the world controls alone (no room, Site or Decor input), the same text for the
@@ -398,6 +398,8 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
       Spawn, in rank order; ``ground`` holds the point's data). On an outdoor dungeon the
       points are handed the hillside Socket's footprint, so the ones over the hill come last.
 
+    ``zone_size`` is a square's side or a ``[width, depth]`` pair (a wilderness's from the
+    plan's Size, step 35 task 6), recorded in the ``recipe`` as a side when square.
     ``landform`` is the request (a ``Landform`` or its dict): an outdoor dungeon's defaults
     to ``DEFAULT_HOST_HILL`` and its ``zone_size`` to ``OUTDOOR_DUNGEON_ZONE_SIZE``. A
     request without an approach side draws one from the matrix's stream, which a placed
@@ -421,7 +423,8 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
     from generators.wilderness.build import (DEFAULT_BIOME, grid_heights, landscape_for,
                                              normalise_edges, synthesize_landscape,
                                              wilderness_spec)
-    from generators.wilderness.matrix import DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE
+    from generators.wilderness.matrix import (DEFAULT_HOST_HILL, OUTDOOR_DUNGEON_ZONE_SIZE,
+                                              zone_size_value)
 
     if seed is None:
         raise ValueError(f"a {zone_type} World needs a seed")
@@ -431,7 +434,7 @@ def world_for(zone_type: str, seed: Optional[int], *, biome: Optional[str] = Non
     if zone_type == "outdoor_dungeon":
         request = request if request is not None else DEFAULT_HOST_HILL
         zone_size = zone_size if zone_size else OUTDOOR_DUNGEON_ZONE_SIZE
-    zone_size = float(zone_size) if zone_size else None
+    zone_size = zone_size_value(zone_size) if zone_size else None
     placed = None
     if request is not None:
         placed = synthesize_landscape(seed, edges, biome, request, zone_size,

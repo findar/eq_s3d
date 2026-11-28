@@ -11,7 +11,8 @@ from ai.expand import plan_to_spec
 from ai.schema import ZonePlan
 from generators import outdoor_dungeon as od
 from generators.wilderness.matrix import (DEFAULT_CELL_SIZE, DEFAULT_HOST_HILL, HOST_MARGIN,
-                                          HOST_SIDE_RATIO, OUTDOOR_DUNGEON_ZONE_SIZE)
+                                          HOST_SIDE_RATIO, OUTDOOR_DUNGEON_ZONE_SIZE,
+                                          draw_outdoor_zone_extent, zone_extent)
 
 
 def test_default_plan_keeps_the_default_host():
@@ -56,7 +57,10 @@ def test_spawn_on_open_ground_walks_to_the_apron(tmp_path, race, rooms, vertical
                     dungeon_race=race, dungeon_theme="fortress", layout="graph",
                     verticality=verticality, decor="none").validate()
     spec = plan_to_spec(plan, seed=seed)
-    assert spec.wilderness["zone_size"] == zone
+    # ``zone`` is the host's; the zone is drawn from the plan's Size round it (step 35 task 6).
+    assert od.host_for(rooms, race)[1] == zone
+    drawn = draw_outdoor_zone_extent(plan.size, zone, seed)
+    assert zone_extent(spec.wilderness["zone_size"]) == drawn and min(drawn) >= zone
     hill = spec.wilderness["landform"]
     sx, sy, _sz = spec.safe_point
     cx, cy = hill["centre"]

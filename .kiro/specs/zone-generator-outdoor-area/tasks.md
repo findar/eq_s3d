@@ -43,7 +43,7 @@ land (both touch the layout or the defaults this builds on).
   - Owns: generators/outdoor_dungeon.py, generators/stages.py (the Apron edit), generators/mapview.py (the entrance mark), tests/test_outdoor_dungeon*.py, the outdoor goldens and recordings it moves
   - Reqs: 6, 7
 
-- [ ] 6. Area size from the plan
+- [x] 6. Area size from the plan
   - Card: [cards/06-area-size.md](cards/06-area-size.md)
   - Type: agent · Size: M · Depends: 1, 2, 5
   - Owns: generators/wilderness/matrix.py, ai/schema.py (wilderness size), ai/rule_planner.py (size words), server/app.py (pass-through), web/src/controls.ts or main.ts (the Size control for outdoor), tests/

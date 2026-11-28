@@ -68,11 +68,12 @@ _GOLDENS = {
     # (Sites normal) build now packs Site Structures. Moved by tasks 15 and 10
     # (Site recipes and weights), by site-sockets task 6 (Sites on points)
     # and task 16 (the kind first, then the point), and by step 35 task 2 (the lava patch
-    # is drawn only for a lava theme).
+    # is drawn only for a lava theme), and by step 35 task 6 (the area's extent from the plan's
+    # Size: unset, seed 4 draws 9750 u square where it was 2400).
     "wilderness": (
         dict(zone_type="wilderness"), 4,
-        "290ff9c47da0acb17cc4475e19f2704b7fb76f749101694640a7c2a64c4420fb",
-        "f02fc97f6997a0c91fc2c5a168e4c4a4358ef1ab05e8d9b19fbe029651bf1468"),
+        "45dadcd746dd35d1e53c85fd95807d811936a5855da54fc3adf8d2ee49d51e5b",
+        "c86a4127c307d76cebf0516cf78a862270d503972b3f6bc28fcf7dc2bf922da1"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).
@@ -82,12 +83,13 @@ _GOLDENS = {
     # step 35 task 2 (the lava patch is drawn only for a lava theme), and by step 35 task 5 (the
     # wide, flaring Mouth, in width and height: the Entrance records it, its floor 4.3 u lower;
     # rooms unchanged), and by step 35 task 12 (seed 3's host draws a scarp: the way in is
-    # a cliff opening).
+    # a cliff opening), and by step 35 task 6 (the zone from the plan's Size: unset, seed 3
+    # draws 1800 x 1200 u where it was 1200 square).
     "outdoor_dungeon": (
         dict(zone_type="outdoor_dungeon", room_count=5, locks=1,
              layout="classic"), 3,
-        "c3844b0c3078bacb99106d79bf24e9d92ecac26a617ef3ac67673d218d501c0b",
-        "31d7cb5fa760235e8bb916dcc0c66a0b1c88f2bf1028306de5785f809a3cee45"),
+        "98f205d9aceb1f98ad97e0134e0c7cea2aba9cddb183f8c5032f074cdef98a1b",
+        "b71581baae7fb0c2d22a832b01112856227caec7a764a27cdc01fcb5b99fdced"),
 }
 
 # The .eqg goldens above are the bytes with no install. With one (EQ_PATH), a
@@ -96,7 +98,7 @@ _GOLDENS = {
 # don't move.
 WITH_INSTALL = {
     "temple_locks": "6642a351b56a4d0e433b9c2d4a44fcb9f969823625f51a7a9e71721c8ed8b21f",
-    "outdoor_dungeon": "e2dbeb591f34bfb4859fa656371429f246a6bdf0b6c691ec65afd9da2d6cad04",
+    "outdoor_dungeon": "53bf65440a696c6372c547a23c7271049c337a2d70d2bf29435e82148d9dd7b9",
 }
 
 

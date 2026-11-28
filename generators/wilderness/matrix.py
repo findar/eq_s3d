@@ -461,6 +461,147 @@ class DesignMatrix:
 DEFAULT_ZONE_SIZE: float = 2400.0
 DEFAULT_CELL_SIZE: float = 150.0
 
+#: The plan's Size words, smallest first (``ai.schema.ZonePlan.size``).
+SIZES: Tuple[str, ...] = ("small", "medium", "large", "huge")
+
+#: A wilderness's width by Size (step 35 task 6, archive decision 2): stock open
+#: Classic-PoP outdoor zones' width p10-p25-p50-p75-p90, 4054/4803/7120/10451/13899 u.
+WILDERNESS_SIZE_BANDS: Dict[str, Tuple[float, float]] = {
+    "small": (4000.0, 4800.0),
+    "medium": (4800.0, 7100.0),
+    "large": (7100.0, 10500.0),
+    "huge": (10500.0, 13900.0),
+}
+#: How often stock falls in each band (15/25/25/15 of the 80% between p10 and p90): an
+#: unset Size draws its band by these, so unset widths spread as stock's do.
+WILDERNESS_SIZE_WEIGHTS: Dict[str, float] = {"small": 15.0, "medium": 25.0,
+                                             "large": 25.0, "huge": 15.0}
+#: Width over depth as stock has it: the 62 open zones' aspect at p0, p5, ..., p100
+#: (``scripts/stock_outdoor_area.py``; p10/p50/p90 1.02/1.21/1.96). A draw reads it as a
+#: quantile function, linear between the points.
+WILDERNESS_ASPECT_QUANTILES: Tuple[float, ...] = (
+    1.0, 1.01, 1.02, 1.03, 1.06, 1.08, 1.11, 1.13, 1.16, 1.19, 1.21,
+    1.24, 1.29, 1.32, 1.39, 1.51, 1.57, 1.68, 1.96, 2.23, 2.6)
+#: The aspects a drawn zone can have (stock's least and greatest).
+ASPECT_RANGE: Tuple[float, float] = (WILDERNESS_ASPECT_QUANTILES[0],
+                                     WILDERNESS_ASPECT_QUANTILES[-1])
+
+
+def draw_aspect(rng, quantiles: Tuple[float, ...] = WILDERNESS_ASPECT_QUANTILES) -> float:
+    """An aspect drawn from ``quantiles`` (evenly spaced, p0 to p100) as an inverse CDF."""
+    q = np.asarray(quantiles, dtype=np.float64)
+    return float(np.interp(rng.random(), np.linspace(0.0, 1.0, len(q)), q))
+
+#: An outdoor dungeon's zone by Size (archive decision 2: 5 stock zones, 793-3804 u, p50
+#: 1234, aspect 1.03-1.60): medium keeps ``OUTDOOR_DUNGEON_ZONE_SIZE``. The zone is never
+#: smaller than the host it holds (``host_zone_size``, decision 4).
+OUTDOOR_DUNGEON_SIZES: Dict[str, float] = {"small": 800.0, "medium": 1200.0,
+                                           "large": 1700.0, "huge": 2500.0}
+#: The 5 stock outdoor dungeons' aspect, sorted (``scripts/stock_outdoor_area.py``): read
+#: as p0, p25, ..., p100 of a quantile function, as ``WILDERNESS_ASPECT_QUANTILES`` is.
+OUTDOOR_DUNGEON_ASPECT_QUANTILES: Tuple[float, ...] = (1.028, 1.037, 1.428, 1.495, 1.6)
+
+ZoneSize = Any  # a float (square) or a (width, depth) pair, in world units
+
+
+def _even_cells(size: float, cell_size: float) -> int:
+    cells = math.ceil(size / cell_size - 1e-9)
+    return cells + cells % 2
+
+
+def built_cell_size(cell_size: float = DEFAULT_CELL_SIZE) -> float:
+    """The side a matrix cell builds at: synth tiles a cell into ``factor x factor`` fine
+    cells of the TER resolution (``factor = round(cell_size / resolution)``), so a 150 u
+    cell builds as 4 x 40 = 160 u. The Size draws count cells in this, so the drawn width
+    and depth are the built terrain's."""
+    from generators.wilderness.synth import DEFAULT_TER_RESOLUTION  # synth imports matrix
+    factor = max(1, int(round(cell_size / DEFAULT_TER_RESOLUTION)))
+    return float(factor * DEFAULT_TER_RESOLUTION)
+
+
+def built_extent(zone_size: "ZoneSize" = None,
+                 cell_size: float = DEFAULT_CELL_SIZE) -> Tuple[float, float]:
+    """The ``(width, depth)`` a zone size builds at: ``build_matrix``'s cell counts times
+    ``built_cell_size``."""
+    built = built_cell_size(cell_size)
+    return tuple(float(max(3, int(round(v / cell_size))) * built)  # type: ignore[return-value]
+                 for v in zone_extent(zone_size))
+
+
+def draw_outdoor_zone_extent(size: str, host_size: float, seed: int,
+                             cell_size: float = DEFAULT_CELL_SIZE) -> Tuple[float, float]:
+    """An outdoor dungeon's zone ``(width, depth)`` (X, Y) for the plan's Size (step 35
+    Req 2), either way round. The Size's side (``OUTDOOR_DUNGEON_SIZES``; unset draws one
+    of the four evenly, as the 5 stock zones fall about one to a quartile) and an aspect
+    drawn from stock's (``OUTDOOR_DUNGEON_ASPECT_QUANTILES``) give the shorter side, the
+    side over the aspect but never under ``host_size`` (``host_zone_size``: the zone holds
+    its host, archive decision 4); the longer is that times the aspect, never under the
+    Size's side, and lengthened by the aspect only as far as the huge Size's side: a host
+    bigger than that (a giant or dragon dungeon, past stock's largest) keeps its zone
+    square rather than grow terrain for the aspect alone. Both
+    are even numbers of matrix cells (the nearest, the shorter rounded up), so the zone stays
+    centred on a cell corner as the default's is. The Size's side is the built terrain's
+    (cells of ``built_cell_size``); ``host_size`` is in matrix cells, as the host is placed.
+    Returned in matrix units (cells times ``cell_size``), as ``build_matrix`` reads a zone
+    size; ``built_extent`` gives what it builds at. From its own stream of ``seed``."""
+    rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, 357])
+    if size not in OUTDOOR_DUNGEON_SIZES:
+        size = SIZES[int(rng.integers(0, len(SIZES)))]
+    built = built_cell_size(cell_size)
+    side = OUTDOOR_DUNGEON_SIZES[size]
+    aspect = draw_aspect(rng, OUTDOOR_DUNGEON_ASPECT_QUANTILES)
+    n_short = max(_even_cells(side / aspect, built), _even_cells(host_size, cell_size))
+    stretched = min(2 * int(round(n_short * aspect / 2.0)),
+                    _even_cells(OUTDOOR_DUNGEON_SIZES["huge"], built))
+    n_long = max(_even_cells(side, built), stretched, n_short)
+    sides = (n_long, n_short) if rng.random() < 0.5 else (n_short, n_long)
+    return (float(sides[0] * cell_size), float(sides[1] * cell_size))
+
+
+def zone_extent(zone_size: ZoneSize = None) -> Tuple[float, float]:
+    """``(width, depth)`` of a zone size: a number is a square, a pair is (X, Y).
+    ``None`` / 0 is the wilderness default."""
+    if not zone_size:
+        return (DEFAULT_ZONE_SIZE, DEFAULT_ZONE_SIZE)
+    if isinstance(zone_size, (int, float)):
+        return (float(zone_size), float(zone_size))
+    w, d = zone_size
+    return (float(w), float(d))
+
+
+def zone_size_value(zone_size: ZoneSize) -> Any:
+    """The zone size as a spec payload or World recipe records it: a float when square
+    (so square zones keep their records), else ``[width, depth]``."""
+    w, d = zone_extent(zone_size)
+    return w if w == d else [w, d]
+
+
+def draw_zone_extent(size: str, seed: int,
+                     cell_size: float = DEFAULT_CELL_SIZE) -> Tuple[float, float]:
+    """A wilderness's ``(width, depth)`` (X, Y) for the plan's Size (step 35 Req 2): the
+    longer side drawn in the Size's band (``WILDERNESS_SIZE_BANDS``; an unset or unknown
+    Size draws the band by ``WILDERNESS_SIZE_WEIGHTS``), the shorter that over an aspect
+    drawn from stock's (``WILDERNESS_ASPECT_QUANTILES``), either way round. Each side is
+    snapped to whole matrix cells that keep the band and the aspect range, counted at the
+    side a cell builds at (``built_cell_size``, 160 u), so the band holds the built
+    terrain's width. Returned in matrix units (cells times ``cell_size``), as
+    ``build_matrix`` reads a zone size; ``built_extent`` gives what it builds at. From its
+    own stream of ``seed``, so the matrix's draws are untouched."""
+    built = built_cell_size(cell_size)
+    rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, 356])
+    if size not in WILDERNESS_SIZE_BANDS:
+        w = np.array([WILDERNESS_SIZE_WEIGHTS[s] for s in SIZES])
+        size = SIZES[int(rng.choice(len(SIZES), p=w / w.sum()))]
+    lo, hi = WILDERNESS_SIZE_BANDS[size]
+    long_side = float(rng.uniform(lo, hi))
+    aspect = draw_aspect(rng)
+    n_long = min(max(round(long_side / built), math.ceil(lo / built - 1e-9)),
+                 math.floor(hi / built + 1e-9))
+    n_short = min(max(round(n_long / aspect), math.ceil(n_long / ASPECT_RANGE[1] - 1e-9)),
+                  n_long)
+    sides = (n_long, n_short) if rng.random() < 0.5 else (n_short, n_long)
+    return (float(sides[0] * cell_size), float(sides[1] * cell_size))
+
 #: Default visual Water_Level plane Z (R13). Water is visual-only in v1; this is
 #: only the plane height the shoreline/river read against, never a per-cell
 #: surface height on the matrix.
@@ -821,7 +962,7 @@ def build_matrix(
     edges: Optional[List[EdgeConnection]] = None,
     seed: int = 0,
     *,
-    zone_size: float = DEFAULT_ZONE_SIZE,
+    zone_size: ZoneSize = DEFAULT_ZONE_SIZE,
     cell_size: float = DEFAULT_CELL_SIZE,
     water_level: float = DEFAULT_WATER_LEVEL,
     intent_overrides: Optional[Dict[Tuple[int, int], IntentTag]] = None,
@@ -829,6 +970,9 @@ def build_matrix(
     lava: bool = False,
 ) -> DesignMatrix:
     """Construct a plains-Karana :class:`DesignMatrix`, terrain-first.
+
+    ``zone_size`` is a square's side or a ``(width, depth)`` pair (X, Y; step 35 task 6:
+    a wilderness's from the plan's Size, ``draw_zone_extent``).
 
     ``lava`` draws the interior lava patch (step 35 task 2): only a plan whose
     theme calls for it (:func:`wants_lava`) asks; off, the patch's cell stays
@@ -891,9 +1035,10 @@ def build_matrix(
         biome = "plains"
 
     # --- grid shape ------------------------------------------------------
-    n = max(3, int(round(zone_size / cell_size)))  # cells per side (>=3 so an
-    #                                                 interior ring exists)
-    nx = ny = n
+    # Cells per side (>=3 so an interior ring exists); a (width, depth) pair is X by Y.
+    width, depth = zone_extent(zone_size)
+    nx = max(3, int(round(width / cell_size)))
+    ny = max(3, int(round(depth / cell_size)))
     # Centre the zone footprint on the world origin so Spawn lands near (0,0).
     origin = (-0.5 * nx * cell_size, -0.5 * ny * cell_size)
 

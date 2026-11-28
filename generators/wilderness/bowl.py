@@ -51,7 +51,7 @@ NOT build the TER mesh (the backend does that downstream). It operates on the
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:
     import numpy as np
@@ -629,6 +629,11 @@ class BowlCheckResult:
     seed_face: Optional[int] = None
     segment_reached: Dict[str, bool] = field(default_factory=dict)
     notes: List[str] = field(default_factory=list)
+    # The flood itself, for the gate's later checks on the same TER (the placed models'
+    # Footprints read the reached ground), so the walk surface is built once: the
+    # ``build_walk_surface`` and the faces reached from Spawn (empty with no Spawn face).
+    surface: Any = field(default=None, repr=False, compare=False)
+    reached: Set[int] = field(default_factory=set, repr=False, compare=False)
 
     def summary(self) -> str:
         status = "PASS" if self.passed else "FAIL"
@@ -908,6 +913,7 @@ def check_bowl(
         passed=False,
         total_faces=len(surf.faces),
         standable_faces=int(surf.standable.sum()),
+        surface=surf,
     )
 
     # Seed the flood from the Spawn face (the floor under Spawn).
@@ -929,6 +935,7 @@ def check_bowl(
         result.notes.append(f"{len(walled)} face(s) behind Invisible_Wall(s) excluded from the flood")
     reached = _flood_excluding(surf, seed_face, walled)
     result.reachable_faces = len(reached)
+    result.reached = reached
 
     # --- (1) interior reachability among PLAYABLE faces only ---------------
     playable_faces = _playable_face_set(surf, synth, matrix)
