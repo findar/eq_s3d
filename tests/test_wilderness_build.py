@@ -53,7 +53,7 @@ def test_wilderness_plan_builds_an_open_landscape_spec():
         "biome": "plains",
         "edges": {"N": "zoneline", "E": "mountain", "S": "mountain", "W": "mountain"},
         # The area from the plan's Size (step 35 task 6): unset, seed 1337 draws this.
-        "zone_size": [9450.0, 4800.0],
+        "zone_size": [9450.0, 3750.0],
     }
     assert any(r.kind == "zoneline" for r in spec.regions)
     # Round-trips through JSON, payload included.

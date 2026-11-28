@@ -69,11 +69,11 @@ _GOLDENS = {
     # (Site recipes and weights), by site-sockets task 6 (Sites on points)
     # and task 16 (the kind first, then the point), and by step 35 task 2 (the lava patch
     # is drawn only for a lava theme), and by step 35 task 6 (the area's extent from the plan's
-    # Size: unset, seed 4 draws 9750 x 9600 u where it was 2400 square).
+    # Size: unset, seed 4 draws 9750 u square where it was 2400).
     "wilderness": (
         dict(zone_type="wilderness"), 4,
-        "395203879fe5c76839e5afb768795703bc14f1e6572b9a8308d69fed329460b8",
-        "32213f20feadff5432d6027210075e48223ef96a09bb58db23bd484b8420e364"),
+        "5e27f2983f38e45395a079b86c9840707b7cda520780e109026f815949400a65",
+        "31725f904930aa81f2526d1f217bba2ae3b8770a643bd8a7eca9b2a564c863f6"),
     # Envelope-confined dungeon under a hill, with a lock. Recaptured once,
     # deliberately, by graph-layout task 12: the Envelope is now the hill's
     # disc clipped to the bowl's interior (no room under the map's edge).

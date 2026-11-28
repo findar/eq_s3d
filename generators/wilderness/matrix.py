@@ -441,8 +441,21 @@ WILDERNESS_SIZE_BANDS: Dict[str, Tuple[float, float]] = {
 #: unset Size draws its band by these, so unset widths spread as stock's do.
 WILDERNESS_SIZE_WEIGHTS: Dict[str, float] = {"small": 15.0, "medium": 25.0,
                                              "large": 25.0, "huge": 15.0}
-#: Width over depth, drawn uniformly (stock p50 1.21, p90 1.96).
-ASPECT_RANGE: Tuple[float, float] = (1.0, 2.0)
+#: Width over depth as stock has it: the 62 open zones' aspect at p0, p5, ..., p100
+#: (``scripts/stock_outdoor_area.py``; p10/p50/p90 1.02/1.21/1.96). A draw reads it as a
+#: quantile function, linear between the points.
+WILDERNESS_ASPECT_QUANTILES: Tuple[float, ...] = (
+    1.0, 1.01, 1.02, 1.03, 1.06, 1.08, 1.11, 1.13, 1.16, 1.19, 1.21,
+    1.24, 1.29, 1.32, 1.39, 1.51, 1.57, 1.68, 1.96, 2.23, 2.6)
+#: The aspects a drawn zone can have (stock's least and greatest).
+ASPECT_RANGE: Tuple[float, float] = (WILDERNESS_ASPECT_QUANTILES[0],
+                                     WILDERNESS_ASPECT_QUANTILES[-1])
+
+
+def draw_aspect(rng, quantiles: Tuple[float, ...] = WILDERNESS_ASPECT_QUANTILES) -> float:
+    """An aspect drawn from ``quantiles`` (evenly spaced, p0 to p100) as an inverse CDF."""
+    q = np.asarray(quantiles, dtype=np.float64)
+    return float(np.interp(rng.random(), np.linspace(0.0, 1.0, len(q)), q))
 
 #: An outdoor dungeon's zone by Size (archive decision 2: 5 stock zones, 793-3804 u, p50
 #: 1234, aspect 1.03-1.60): medium keeps ``OUTDOOR_DUNGEON_ZONE_SIZE``. The zone is never
@@ -476,7 +489,7 @@ def draw_zone_extent(size: str, seed: int,
     """A wilderness's ``(width, depth)`` (X, Y) for the plan's Size (step 35 Req 2): the
     longer side drawn in the Size's band (``WILDERNESS_SIZE_BANDS``; an unset or unknown
     Size draws the band by ``WILDERNESS_SIZE_WEIGHTS``), the shorter that over an aspect
-    drawn in ``ASPECT_RANGE``, either way round. Each side is snapped to whole matrix cells
+    drawn from stock's (``WILDERNESS_ASPECT_QUANTILES``), either way round. Each side is snapped to whole matrix cells
     that keep the band and the aspect range. From its own stream of ``seed``, so the
     matrix's draws are untouched."""
     rng = np.random.default_rng([int(seed) & 0xFFFFFFFF, 356])
@@ -485,7 +498,7 @@ def draw_zone_extent(size: str, seed: int,
         size = SIZES[int(rng.choice(len(SIZES), p=w / w.sum()))]
     lo, hi = WILDERNESS_SIZE_BANDS[size]
     long_side = float(rng.uniform(lo, hi))
-    aspect = float(rng.uniform(*ASPECT_RANGE))
+    aspect = draw_aspect(rng)
     n_long = min(max(round(long_side / cell_size), math.ceil(lo / cell_size - 1e-9)),
                  math.floor(hi / cell_size + 1e-9))
     n_short = min(max(round(n_long / aspect), math.ceil(n_long / ASPECT_RANGE[1] - 1e-9)),

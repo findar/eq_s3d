@@ -72,3 +72,11 @@ def test_square_zones_keep_their_record():
     assert zone_size_value(1200.0) == 1200.0
     assert zone_size_value((1200.0, 1200.0)) == 1200.0
     assert zone_size_value((4800.0, 3000.0)) == [4800.0, 3000.0]
+
+
+def test_aspect_follows_stock():
+    """Archive decision 2's measure: stock open zones' aspect p10/p50/p90 1.02/1.21/1.96."""
+    import numpy as np
+    a = [max(e) / min(e) for e in (draw_zone_extent("", s) for s in range(2000))]
+    for q, stock in ((10, 1.02), (50, 1.21), (90, 1.96)):
+        assert abs(np.percentile(a, q) - stock) < 0.06, (q, np.percentile(a, q))
