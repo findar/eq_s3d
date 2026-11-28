@@ -25,7 +25,7 @@ NAMES = ("world", "attach", "rooms")
 
 
 def _plan(zone_type: str) -> ZonePlan:
-    plan = ZonePlan(name=f"ho_{zone_type}", zone_type=zone_type)
+    plan = ZonePlan(name=f"ho_{zone_type}", zone_type=zone_type, decor="normal")
     plan.validate()             # resolves the default layout, as plan_to_spec does
     return plan
 

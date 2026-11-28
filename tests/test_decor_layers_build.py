@@ -207,7 +207,8 @@ def test_a_build_naming_a_layer_gets_its_props(rules_dir, tmp_path):
 @needs_install
 def test_the_server_builds_with_the_layer(rules_dir, client):
     body = {"mode": "controls", "seed": 4,
-            "controls": {"zone_type": "dungeon", "room_count": 3, "decor_layers": [LAYER]}}
+            "controls": {"zone_type": "dungeon", "room_count": 3, "decor": "normal",
+                         "decor_layers": [LAYER]}}
     r = client.post("/api/generate", json=body)
     assert r.status_code == 200, r.text
     zone = r.json()["id"]
@@ -222,7 +223,7 @@ def test_the_server_builds_with_the_layer(rules_dir, client):
 def test_the_cli_builds_with_the_layer(rules_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(tempfile, "tempdir", tempfile.tempdir)
     main.main(["generate", "d15", "--zone-type", "dungeon", "--seed", "4", "--rooms", "3",
-               "--decor-layer", LAYER, "--no-validate", "--output", str(tmp_path)])
+               "--decor", "normal", "--decor-layer", LAYER, "--no-validate", "--output", str(tmp_path)])
     (path,) = tmp_path.glob("d15_*/v1/d15.zone.json")
     side = json.loads(path.read_text(encoding="utf-8"))
     assert side["decor"]["layers"] == [LAYER]

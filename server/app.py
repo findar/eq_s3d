@@ -451,9 +451,10 @@ def _require_decor(c: dict[str, Any], zone_type: Optional[str],
     """Validate ``controls.decor`` / ``controls.decor_seed`` (room-decor
     Req 10.1, 10.2) in place, before any build or write.
 
-    Absent, ``null`` or ``decor: ""`` -> the default (normal; the zone's seed
-    salts the Props). The request's top-level ``decor_seed`` (what "Reroll
-    decor" sends, in either mode) fills a ``controls.decor_seed`` that isn't
+    Absent, ``null`` or ``decor: ""`` -> the default (``DEFAULT_DECOR``, none; a
+    chosen level's Props are salted by the zone's seed). The request's top-level
+    ``decor_seed`` (what "Reroll decor" sends, in either mode) fills a
+    ``controls.decor_seed`` that isn't
     given. A value outside ``VALID_DECOR`` or a seed outside 0..2^31-1 is a 400
     naming the field; either on a zone type without rooms (wilderness) is a
     400, as ``sites`` is on a type without a landscape.
@@ -625,7 +626,7 @@ class GenerateRequest(BaseModel):
                     "structure and clutter (0-10, or \"\" for the rules alone) and overlay; dungeon and "
                     "outdoor_dungeon only), dungeon_theme and dungeon_race "
                     "(\"\" for none; dungeon, city and outdoor_dungeon "
-                    "only), decor (none/sparse/normal/dense, \"\" for normal) and "
+                    f"only), decor (none/sparse/normal/dense, \"\" for {DEFAULT_DECOR}) and "
                     "decor_seed (dungeon, city and outdoor_dungeon only), decor_layers "
                     "(decor layers on top of the dungeon theme's, from /api/controls), rooms_seed "
                     "(the rooms and Sites; every zone type), districts (true for contrasting "

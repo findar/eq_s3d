@@ -32,7 +32,7 @@ pytestmark = pytest.mark.skipif(eq_path_from_env() is None,
                                 reason="EQ_PATH is not set (no EQ install to read)")
 
 #: A small decorated dungeon that passes the gate on its pinned seed (as test_versions').
-CONTROLS = {"zone_type": "dungeon", "room_count": 5}
+CONTROLS = {"zone_type": "dungeon", "room_count": 5, "decor": "normal"}
 SEED = 4
 
 

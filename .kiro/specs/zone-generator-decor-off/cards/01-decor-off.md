@@ -13,3 +13,4 @@ Index entry: `tasks.md` task 1. Requirements 1, 2, 3.
 - Step 31 task 8's spill (intruder decor in host rooms) only shows with decor on; its tests choose a level.
 
 ## Result
+✔ 9ca118f · 4417 passed (gate 702)

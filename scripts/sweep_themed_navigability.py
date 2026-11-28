@@ -3,7 +3,7 @@
 Builds themed dungeon zones across archetypes x layouts x verticalities x room
 counts x seeds and runs each through the generate path's gate: the spec is drawn
 the way a controls generate draws it (``ZonePlan.from_controls`` then
-``plan_to_spec``, Decor at its default), built, and judged with
+``plan_to_spec``, Decor at ``--decor``, default none), built, and judged with
 ``analyzer.traverse.validate(check_corridors=True)`` (every room reachable, every
 corridor continuous) and the RoF2 Format_Checker. First written for the Step 1
 content-layer re-sweep; step 21 (zone-generator-cave task 6) added ``cave``, the
@@ -45,6 +45,9 @@ Usage:
         cave/giant+warren/goblin --layouts classic graph --rooms 16 24 --jobs 6
     python -m scripts.sweep_themed_navigability --outdoor --layouts graph \\
         --verticality flat moderate dramatic --rooms 2-30 --seeds 2 --seed 23 --jobs 3
+
+``--decor`` (decor-off step 34) sets every zone's Decor level: ``none`` (the default,
+as a generate that doesn't choose one builds), ``sparse``, ``normal`` or ``dense``.
 
 Prints a per-zone OK/FAIL line, a tally per (archetype, layout, verticality),
 writes one CSV row per build (``--csv``, default ``output/themed_navigability.csv``)
@@ -98,13 +101,13 @@ def _room_counts(tokens):
 
 def build_one(job):
     """One build: plan, build, gate. Returns a CSV row."""
-    arch, layout, verticality, rooms, seed, out_dir, winding, hall_length, *rest = job
+    arch, layout, verticality, rooms, seed, out_dir, winding, hall_length, decor, *rest = job
     if rest and rest[0] == "outdoor":
         return _build_outdoor(arch, layout, verticality, rooms, seed, out_dir, winding,
-                              hall_length)
+                              hall_length, decor)
     if rest and rest[0] == "intrusion":
         return _build_intrusion(arch, layout, verticality, rooms, seed, out_dir, winding,
-                                hall_length, rest[1])
+                                hall_length, rest[1], decor)
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
     from analyzer.rof2check import check_eqg
@@ -114,7 +117,7 @@ def build_one(job):
 
     theme, dplan = _district_plan(arch)
     c = {"zone_type": "dungeon", "room_count": rooms, "verticality": verticality,
-         "layout": layout}
+         "layout": layout, "decor": decor}
     if theme:
         c["dungeon_theme"] = theme
     if dplan:
@@ -155,7 +158,7 @@ def _intrusion_plan(cell):
 
 
 def _build_intrusion(cell, layout, verticality, rooms, seed, out_dir, winding, hall_length,
-                     relationship):
+                     relationship, decor):
     """One intrusion zone (``--intrusion``) through ``generate_validated``, as a generate
     builds it: its Draws timed and measured, then the accepted build's links, breaches
     and drops."""
@@ -170,7 +173,8 @@ def _build_intrusion(cell, layout, verticality, rooms, seed, out_dir, winding, h
     from generators.transitions import breach_hosts
 
     c = {"zone_type": "dungeon", "room_count": rooms, "verticality": verticality,
-         "layout": layout, "districts": True, "district_plan": _intrusion_plan(cell)}
+         "layout": layout, "districts": True, "district_plan": _intrusion_plan(cell),
+         "decor": decor}
     if relationship != "sequential":
         c["district_relationship"] = relationship
     if winding is not None:
@@ -225,7 +229,8 @@ def _build_intrusion(cell, layout, verticality, rooms, seed, out_dir, winding, h
                 drop_u=" ".join(f"{d:.0f}" for d in drops))
 
 
-def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding, hall_length):
+def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding, hall_length,
+                   decor):
     """One outdoor-dungeon build (``--outdoor``): plan, build, the outdoor gate."""
     from ai.expand import plan_to_spec
     from ai.schema import ZonePlan
@@ -235,7 +240,7 @@ def _build_outdoor(theme, layout, verticality, rooms, seed, out_dir, winding, ha
     from generators.pipeline import _with_decor
 
     c = {"zone_type": "outdoor_dungeon", "room_count": rooms, "verticality": verticality,
-         "layout": layout}
+         "layout": layout, "decor": decor}
     if theme != "default":
         c["dungeon_theme"] = theme
     if winding is not None:
@@ -285,7 +290,7 @@ def run(args) -> int:
                     for _ in range(max(args.seeds, 1)):
                         cell = f"{arch}:{rng.choice(BUILT)}" if arch in PAIRS else arch
                         job = (cell, layout, v, n, rng.randint(0, 2 ** 31 - 1),
-                               str(out_dir), args.winding, args.hall_length)
+                               str(out_dir), args.winding, args.hall_length, args.decor)
                         if args.outdoor:
                             job += ("outdoor",)
                         elif args.intrusion is not None:
@@ -327,7 +332,7 @@ def run(args) -> int:
         print(f"\n{cave}/{len(rows)} builds resolved a cave District "
               f"({sum(1 for r in rows if not r['districts'])} resolved one District)")
     print(f"\nTally: {passed}/{len(rows)} {'outdoor dungeons' if args.outdoor else 'themed zones'} pass the gate "
-          f"(rooms {args.rooms}, {args.seeds} seed(s) per cell). CSV: {path}")
+          f"(rooms {args.rooms}, {args.seeds} seed(s) per cell, decor {args.decor}). CSV: {path}")
 
     if not args.keep:
         shutil.rmtree(out_dir, ignore_errors=True)
@@ -412,6 +417,9 @@ if __name__ == "__main__":
                     help="the plan's Winding (0..WINDING_MAX; default unset, the plan's default)")
     ap.add_argument("--hall-length", type=float, default=None,
                     help="the plan's Hall length (HALL_MIN..HALL_MAX; default unset, the plan's default)")
+    ap.add_argument("--decor", default="none", choices=("none", "sparse", "normal", "dense"),
+                    help="every zone's Decor level (default none, as a generate that "
+                         "doesn't choose one)")
     ap.add_argument("--jobs", type=int, default=1, help="worker processes")
     ap.add_argument("--csv", default="", help="CSV path (default output/themed_navigability.csv)")
     ap.add_argument("--keep", action="store_true", help="keep artifacts in output/ (default: temp dir, cleaned)")

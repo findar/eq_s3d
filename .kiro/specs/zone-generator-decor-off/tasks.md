@@ -5,7 +5,7 @@ Index only; cards in `cards/`. Rules: "Card-format specs" in `.kiro/steering/pro
 
 ## Tasks
 
-- [ ] 1. Decor off by default
+- [x] 1. Decor off by default
   - Card: [cards/01-decor-off.md](cards/01-decor-off.md)
   - Type: agent · Size: M · Depends: —
   - Owns: ai/schema.py, generators/pipeline.py (`_with_decor`), server/app.py (the default only), main.py (the default only), web/src/main.ts or web/src/controls.ts (the default selection only), scripts/sweep_*.py (a decor option), tests/ (fixtures and tests that need decor ask for it)

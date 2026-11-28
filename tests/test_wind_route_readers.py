@@ -37,7 +37,7 @@ TOL = 0.05          # a cell this near a strip's edge may fall either side of it
 @functools.lru_cache(maxsize=None)
 def _cave(seed, rooms=12):
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "dungeon_theme": "cave", "layout": "graph",
-                                   "room_count": rooms}, [])
+                                   "room_count": rooms, "decor": "normal"}, [])
     plan.name = "router"
     spec = _with_decor(plan_to_spec(plan, seed=seed, warnings=[]))
     ter = backend_for(spec.zone_type).build(spec, "ter_router", 2)
@@ -162,8 +162,7 @@ def test_lights_placed_in_a_path_corridor_stand_on_its_strip():
 @pytest.mark.slow
 @pytest.mark.skipif(_install() is None, reason="EQ_PATH is not set (no EQ install to read)")
 def test_decor_places_no_path_corridor_prop_off_the_strip():
-    """Decor on 5 cave builds (the Decor control resolved as a sweep build resolves it,
-    ``pipeline._with_decor``): no Prop of a path corridor stands off its strip."""
+    """Decor on 5 cave builds (Decor normal, chosen; ``pipeline._with_decor`` keeps it): no Prop of a path corridor stands off its strip."""
     from generators.builder import decor_for
 
     for seed in SEEDS:

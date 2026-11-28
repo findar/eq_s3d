@@ -113,12 +113,16 @@ def test_decor_rides_in_the_spec_json():
 
 
 def test_pipeline_resolves_an_unset_control_to_the_default():
-    from generators.decor.rules import DEFAULT_CONTROL
+    """An unset control takes the schema's default, none (decor-off step 34), not the rules'
+    own default level; a chosen level is kept."""
+    from ai.schema import DEFAULT_DECOR
     from generators.pipeline import _with_decor
     from generators.zone_spec import ZoneSpec
 
-    assert _with_decor(ZoneSpec(name="x")).decor == DEFAULT_CONTROL
-    assert _with_decor(ZoneSpec(name="x", decor="none")).decor == "none"
+    assert DEFAULT_DECOR == "none"
+    assert _with_decor(ZoneSpec(name="x")).decor == DEFAULT_DECOR
+    for level in ("none", "sparse", "normal", "dense"):
+        assert _with_decor(ZoneSpec(name="x", decor=level)).decor == level
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +256,7 @@ def test_a_dais_tops_edge_is_no_way_through(tmp_path):
     from generators.pipeline import _traversal_report, _with_decor
 
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": 28, "verticality": "dramatic",
-                                   "layout": "graph", "dungeon_theme": "cave"}, [])
+                                   "layout": "graph", "dungeon_theme": "cave", "decor": "normal"}, [])
     plan.name = "dais"
     spec = _with_decor(plan_to_spec(plan, seed=1752055716, warnings=[]))
     room = next(r for r in spec.rooms if r.id == "room_11")
@@ -269,7 +273,8 @@ def _cave_graph(tmp_path, verticality, rooms, seed, room_id):
     from generators.pipeline import _traversal_report, _with_decor
 
     plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": rooms, "verticality": verticality,
-                                   "layout": "graph", "dungeon_theme": "cave", "winding": 2}, [])
+                                   "layout": "graph", "dungeon_theme": "cave", "winding": 2,
+                                   "decor": "normal"}, [])
     plan.name = "wind2"
     spec = _with_decor(plan_to_spec(plan, seed=seed, warnings=[]))
     room = next(r for r in spec.rooms if r.id == room_id)

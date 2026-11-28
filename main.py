@@ -468,7 +468,8 @@ def main(argv: list[str] | None = None) -> None:
                    help="Graph layout: what's happened to the place since, on top of its race and theme")
     g.add_argument("--decor", dest="decor", choices=VALID_DECOR, default=None,
                    help="Dungeon, city or outdoor dungeon: how many Props (furniture, lights, "
-                        f"clutter) stand in the rooms (default {DEFAULT_DECOR}; needs EQ_PATH)")
+                        f"clutter) stand in the rooms (default {DEFAULT_DECOR}: no Props unless "
+                        "the prompt or this asks; needs EQ_PATH)")
     g.add_argument("--decor-seed", dest="decor_seed", type=_decor_seed_arg, default=None,
                    help="Reroll the Props alone (0-2147483647); default: the zone's seed")
     g.add_argument("--decor-layer", dest="decor_layers", type=_decor_layer_arg, action="append",

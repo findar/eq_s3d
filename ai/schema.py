@@ -93,11 +93,13 @@ SITES_ZONE_TYPES = ("wilderness", "outdoor_dungeon")
 # Props in rooms (room-decor step 11, Req 10.1, 10.2): the Decor control
 # (generators.decor.rules.CONTROLS; that module imports this one, so the list
 # is written out here and a test keeps the two equal) and a decor seed. A plan
-# decor of "" is not chosen: the pipeline builds the default, normal
-# (generators.pipeline._with_decor). The room-graph zone types, and the
-# wilderness for its Sites' Props (room-decor task 20).
+# decor of "" is not chosen: the pipeline builds the default, none
+# (generators.pipeline._with_decor; decor-off step 34, archive decision 1: off
+# until decor placement is made faster). The rules' own default level,
+# generators.decor.rules.DEFAULT_CONTROL, stays normal. The room-graph zone
+# types, and the wilderness for its Sites' Props (room-decor task 20).
 VALID_DECOR = ["none", "sparse", "normal", "dense"]
-DEFAULT_DECOR = "normal"
+DEFAULT_DECOR = "none"
 DECOR_ZONE_TYPES = ("dungeon", "city", "wilderness", "outdoor_dungeon")
 SEED_MAX = 2_147_483_647
 
@@ -394,7 +396,7 @@ class ZonePlan:
     sites: str = DEFAULT_SITES       # one of VALID_SITES
     inhabitant: str = ""             # "" (the biome's mix) or one of available_inhabitants()
     # Props in rooms (dungeon, city, outdoor dungeon; wilderness ignores them).
-    decor: str = ""                  # "" (the default, normal) or one of VALID_DECOR
+    decor: str = ""                  # "" (the default, none) or one of VALID_DECOR
     decor_seed: Optional[int] = None # None: the zone's seed salts them; else rerolls the Props alone
     # Decor layers on top of the theme's (rules/decor/themes.toml). Only Decor reads them: they
     # never reach the Zone_Spec's fields (generators.builder.with_decor_layers carries them),
@@ -708,7 +710,7 @@ ZONE_PLAN_JSON_SCHEMA = {
             "description": "How much furniture, lights and clutter stand in the "
                            "rooms and at the Sites (bare rooms: "
                            "sparse; cluttered or richly furnished: dense); omit "
-                           "for normal.",
+                           "for none (no Props) unless the prompt asks for them.",
         },
         "districts": {
             "type": "boolean",

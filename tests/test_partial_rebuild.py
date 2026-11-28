@@ -39,17 +39,18 @@ pytestmark = [pytest.mark.slow,
               pytest.mark.skipif(eq_path_from_env() is None,
                                  reason="EQ_PATH is not set (no EQ install to read)")]
 
-#: label -> (controls, seed): pinned builds whose rebuilds below pass the gate.
+#: label -> (controls, seed): pinned builds whose rebuilds below pass the gate. Each chooses
+#: Decor normal (off by default since decor-off step 34): the rebuilds reroll its Props.
 CASES = {
-    "graph16": ({"zone_type": "dungeon", "room_count": 16, "layout": "graph"}, 2),
-    "city": ({"zone_type": "city"}, 5),
-    "outdoor_dungeon": ({"zone_type": "outdoor_dungeon", "room_count": 5}, 2),
-    "tomb": ({"zone_type": "dungeon", "dungeon_theme": "tomb"}, 4),
-    "wilderness": ({"zone_type": "wilderness", "sites": "normal"}, 4),
+    "graph16": ({"zone_type": "dungeon", "room_count": 16, "layout": "graph", "decor": "normal"}, 2),
+    "city": ({"zone_type": "city", "decor": "normal"}, 5),
+    "outdoor_dungeon": ({"zone_type": "outdoor_dungeon", "room_count": 5, "decor": "normal"}, 2),
+    "tomb": ({"zone_type": "dungeon", "dungeon_theme": "tomb", "decor": "normal"}, 4),
+    "wilderness": ({"zone_type": "wilderness", "sites": "normal", "decor": "normal"}, 4),
     # District looks (district-looks task 2): a cave District after a fortress District, each
     # dressed from its own layers.
     "districted": ({"zone_type": "dungeon", "room_count": 12, "districts": True,
-                    "district_plan": ["fortress", "cave"]}, 3),
+                    "district_plan": ["fortress", "cave"], "decor": "normal"}, 3),
 }
 DECOR_SEED = 11
 ROOM_SEED = 123457

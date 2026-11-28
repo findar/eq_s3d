@@ -23,7 +23,7 @@ from generators.zone_spec import ZoneSpec
 
 #: A small decorated dungeon that passes the gate on its pinned seed, with every decor
 #: and rooms seed tried here (a pinned rebuild that fails the gate is a 503).
-CONTROLS = {"zone_type": "dungeon", "room_count": 5}
+CONTROLS = {"zone_type": "dungeon", "room_count": 5, "decor": "normal"}
 SEED = 4
 PROMPT = "a dark dungeon with a few rooms"
 

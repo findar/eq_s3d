@@ -634,11 +634,12 @@ def _quality_draw(make: Callable[[int], ZoneSpec], first: int, rng: Optional[ran
 
 def _with_decor(spec: ZoneSpec) -> ZoneSpec:
     """The spec with its Decor control resolved: one nobody chose takes the
-    default (room-decor Req 10.1, ``generators.decor.rules.DEFAULT_CONTROL``).
+    default (room-decor Req 10.1), ``ai.schema.DEFAULT_DECOR``: none since decor-off
+    step 34, not the rules' own default (``generators.decor.rules.DEFAULT_CONTROL``).
     ``ZoneBuilder`` alone treats an unset control as ``none``."""
     if spec.decor is None:
-        from generators.decor.rules import DEFAULT_CONTROL
-        spec.decor = DEFAULT_CONTROL
+        from ai.schema import DEFAULT_DECOR
+        spec.decor = DEFAULT_DECOR
     return spec
 
 

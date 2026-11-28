@@ -43,6 +43,7 @@ Usage:
     python -m scripts.sweep_connectivity --rooms 12 30   # pick room counts
     python -m scripts.sweep_connectivity --zone-types dungeon
     python -m scripts.sweep_connectivity --keep          # keep .eqg/.glb/.json
+    python -m scripts.sweep_connectivity --decor normal  # Props in the rooms (default none)
 
 Prints a per-class table (overall and split by zone type / room count /
 verticality) plus a handful of representative seeds per class, and exits 0
@@ -127,9 +128,10 @@ def _classify(spec, report) -> Dict[str, bool]:
     return hit
 
 
-def _plan(zone_type: str, rooms: int, elevation: bool) -> ZonePlan:
+def _plan(zone_type: str, rooms: int, elevation: bool, decor: str = "none") -> ZonePlan:
     """A ZonePlan for one sweep cell. Flat = elevation off; the elevation half
-    uses verticality 'dramatic' so the fixes face the steepest routes."""
+    uses verticality 'dramatic' so the fixes face the steepest routes. ``decor``
+    is its Decor level (decor-off step 34; none, the default, builds no Props)."""
     return ZonePlan(
         name=f"sweep_{zone_type}_{rooms}",
         theme=zone_type,
@@ -137,11 +139,13 @@ def _plan(zone_type: str, rooms: int, elevation: bool) -> ZonePlan:
         size="medium",
         elevation=elevation,
         verticality="dramatic" if elevation else "flat",
+        decor=decor,
     )
 
 
 def run(zone_types: List[str], room_counts: List[int],
-        verticalities: List[Tuple[str, bool]], seeds: int, keep: bool) -> int:
+        verticalities: List[Tuple[str, bool]], seeds: int, keep: bool,
+        decor: str = "none") -> int:
     out_dir = Path("output") if keep else Path(tempfile.mkdtemp(prefix="connsweep_"))
     seed_list = list(range(1, seeds + 1))
 
@@ -158,7 +162,7 @@ def run(zone_types: List[str], room_counts: List[int],
             for vlabel, elevation in verticalities:
                 by_cell[(zt, rooms, vlabel)]  # ensure the cell shows up at 0
                 for seed in seed_list:
-                    plan = _plan(zt, rooms, elevation)
+                    plan = _plan(zt, rooms, elevation, decor)
                     try:
                         spec = plan_to_spec(plan, seed=seed)
                         res = ZoneBuilder(spec).build(output_dir=out_dir,
@@ -261,6 +265,8 @@ def _parse_args(argv):
                     help="elevation half only")
     ap.add_argument("--keep", action="store_true",
                     help="keep artifacts in output/ (default: temp dir, cleaned)")
+    ap.add_argument("--decor", default="none", choices=("none", "sparse", "normal", "dense"),
+                    help="every zone's Decor level (default none)")
     return ap.parse_args(argv)
 
 
@@ -271,7 +277,8 @@ def main(argv=None) -> int:
         verticalities = [("flat", False)]
     elif args.elevation and not args.flat:
         verticalities = [("elevation", True)]
-    return run(args.zone_types, args.rooms, verticalities, args.seeds, args.keep)
+    return run(args.zone_types, args.rooms, verticalities, args.seeds, args.keep,
+               args.decor)
 
 
 if __name__ == "__main__":
