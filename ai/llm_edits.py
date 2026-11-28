@@ -23,6 +23,7 @@ import json
 import threading
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
+from ai.schema import DEFAULT_DECOR
 from core.env import env_value
 from .edits import OPS, RuleEditInterpreter, _clean, validate
 
@@ -88,7 +89,7 @@ def system_prompt(spec_doc: Mapping[str, Any]) -> str:
     """The system prompt for one spec: the op vocabulary and the rooms it can target."""
     decor = spec_doc.get("decor") if isinstance(spec_doc, Mapping) else None
     return _SYSTEM_PROMPT.format(ops=_describe_ops(), rooms=_describe_rooms(spec_doc),
-                                 decor=decor or "normal")
+                                 decor=decor or DEFAULT_DECOR)
 
 
 def _parse(text: Any) -> Any:

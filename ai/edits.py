@@ -23,7 +23,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from ai.schema import SEED_MAX, VALID_DECOR
+from ai.schema import DEFAULT_DECOR, SEED_MAX, VALID_DECOR
 from generators.semantics import ROOM_TYPES
 
 #: The interpreter's name, recorded in the version's ``edit`` block.
@@ -360,7 +360,7 @@ def _amount(clause: str, op: str) -> Dict[str, float]:
 def _decor_step(spec_doc: Mapping[str, Any], step: int) -> str:
     now = spec_doc.get("decor") if isinstance(spec_doc, Mapping) else None
     levels = list(VALID_DECOR)
-    i = levels.index(now) if now in levels else levels.index("normal")
+    i = levels.index(now) if now in levels else levels.index(DEFAULT_DECOR)
     return levels[min(max(i + step, 0), len(levels) - 1)]
 
 

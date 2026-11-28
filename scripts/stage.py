@@ -341,12 +341,12 @@ def zone_spec(world, attachments, plan):
     the rooms' Attachment from the file (its layout, and an outdoor dungeon's Entrance,
     Envelope and Spawn) wherever the plan's own differs (another rooms seed)."""
     from ai.expand import plan_to_spec
-    from generators.decor.rules import DEFAULT_CONTROL
+    from ai.schema import DEFAULT_DECOR
     from generators.zone_spec import ZoneSpec
 
     spec = plan_to_spec(plan, seed=int(world.recipe["seed"]), edges=world.recipe.get("edges"))
     if spec.decor is None:              # the pipeline's default (_with_decor)
-        spec.decor = DEFAULT_CONTROL
+        spec.decor = DEFAULT_DECOR
     again = world_mod.world_of(spec)
     if again.to_json() != world.to_json():
         raise SystemExit("the plan doesn't make this World (another zone type, biome or "
