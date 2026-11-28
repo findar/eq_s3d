@@ -54,6 +54,8 @@
    Synth tiles a 150 u matrix cell as 160 u, so the Socket reads the foot off the field (`scarp_foot`).
 
 ## Follow-ups
+- Giant and dragon cliff openings are squat (200-300 u wide, 65-86 u tall, height/width ~0.3 vs stock p10 0.48):
+  the scarp's ~110 u face caps them. A scarp scaled to the race's Mouth would fix it (task 12).
 - Steps 5 and 10's surveys (`outdoor_dungeon_survey.py`, `site_survey.py`) take a zone's main ground as the largest
   network by area, which in some zones is a flat sheet under the map (steamfont z -232, fieldofbone z -279);
   task 1's script picks by face count. Step 10's site densities may be off (task 1, not checked).
