@@ -12,3 +12,4 @@ The map's "return" mark comes from the layout's record of a drop's flush return,
 - [ ] Map tests; quick tier; frontend build if web files change.
 
 ## Result
+✔ f571fb9 · quick 3220 passed · map tests 13 passed · 3 zones without a return byte-identical to master

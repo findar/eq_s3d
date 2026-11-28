@@ -3933,6 +3933,7 @@ class LayoutGenerator:
         floors = [r.floor_z for r in rooms]
         accepted: Dict[int, float] = {}
         self.drop_returns = []
+        laid: List[dict] = []
         returned: set = set()
         for want in heights:
             while order:
@@ -3952,7 +3953,7 @@ class LayoutGenerator:
                     if ret is None:
                         continue
                     returned.add(pair)
-                    self.drop_returns.append(ret)
+                    laid.append(ret)
                 trial = {**accepted, k: h}
                 drops = [trial.get(m, 0.0) for m in range(len(edges))]
                 tried = list(edges)
@@ -3964,6 +3965,16 @@ class LayoutGenerator:
                         edges[k] = edges[k][::-1]
                         self._reverse(cors[k])
                     break
+        # A return laid is a return only once the drops it was laid for stand: every other
+        # link of its pair accepted. A drop refused after its return was laid leaves that
+        # corridor a plain flush breach, unmarked (step 32 task 3).
+        by_cor = {c.id: c for c in spec.corridors}
+        for ret in laid:
+            pair = pair_of(edges[ret["edge"]])
+            if all(m in accepted for m, e in enumerate(edges)
+                   if m != ret["edge"] and pair_of(e) == pair):
+                by_cor[f"corr_{ret['edge']}"].drop_return = True
+                self.drop_returns.append(ret)
         for k, h in accepted.items():
             cor = cors[k]
             cor.drop = round(h, 2)
