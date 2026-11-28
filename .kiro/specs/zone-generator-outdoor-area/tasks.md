@@ -19,7 +19,7 @@ land (both touch the layout or the defaults this builds on).
   - Owns: generators/wilderness/matrix.py (the lava patch only), tests/test_wilderness*.py
   - Reqs: 3
 
-- [ ] 3. The area is read once
+- [x] 3. The area is read once
   - Card: [cards/03-read-once.md](cards/03-read-once.md)
   - Type: agent · Size: S · Depends: —
   - Owns: generators/outdoor_dungeon.py, generators/wilderness/build.py
