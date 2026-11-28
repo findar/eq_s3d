@@ -80,11 +80,11 @@ specs" in `.kiro/steering/project.md`.
   - Type: agent · Size: S · Depends: 10
   - Owns: docs/ACCEPTANCE.md
 
-- [ ] 12. HUMAN: look
+- [x] 12. HUMAN: look
   - Card: [cards/12-look.md](cards/12-look.md)
   - Type: human · Depends: 11, 16, 17, 18
 
-- [ ] 13. Close step 31
+- [x] 13. Close step 31
   - Card: [cards/13-close.md](cards/13-close.md)
   - Type: agent · Size: S · Depends: 12 · Where: MAIN checkout
   - Owns: ROADMAP.md, .kiro/specs/zone-generator-district-races/, .kiro/specs/zone-generator/

@@ -4,6 +4,16 @@
 
 | Tasks | What landed | Commits |
 |---|---|---|
+| 1 | Stock measures: drop p90 84 u, 11% of passage ends drop; only giants show a hall signal (kael 3.8x, used as 3.0); mixed zones join built and cave by 3 links (decisions 2, 3) | 2 |
+| 2, 3 | The gate reads a drop (3-80 u fall, open edge) as one-way and needs strong connectivity; gating and `solvable` follow drop direction | 6 |
+| 4, 5, 14 | `DistrictSpec.race` sizes a District's rooms, corridors, walls, layouts and decor; giant Districts' halls run 3x (per-edge spring runs, classic offsets) | 12 |
+| 6, 8 | `intrusion`: the intruder joins its host by up to 3 links (breaches, sized by the smaller race); a host room a breach enters takes 1 in 3 decor lines from the intruder | 6 |
+| 7 | 1 in 10 links between Districts a drop (log-normal heights, 6-80 u), accepted only if strongly connected; flush returns; the map marks drops | 5 |
+| 9 | Controls (relationship, per-District theme and race) and words ("the goblins tunnelled into" plans an intrusion); LLM schema fields | 3 |
+| 10, 15 | Gate and bands: 240/240 intrusion sweep, bands <= 2.7%, 24-room max 164 s; five root-cause fixes; halls capped at 164 H; a 240 s generate budget; decor placement time cut | 17 |
+| 11, 16 | `docs/ACCEPTANCE.md` "Step 31 — District races" (six cases); the gate's Transition clearance and flood depth read their own race, so the giant-fortress prompt builds its goblin breaches | 6 |
+| 17, 18 | From the first look: links keep their own race's hall lengths (p50 89 -> 20 H, max 1128 -> 157 H; pairs at 2+ links 82% -> 68%); map layers (Districts, races, links and drops, mixed rooms, gates...) and an EQ map view | 7 |
+| 12 | The user's look, first pass: "the goblin corridors end up very long"; asked for map toggles for districts and races, and noted the EQ map export carries only basic layouts; second pass: "just checked, it looks good" | — |
 
 ## Decisions
 
@@ -101,3 +111,5 @@
   p25-p75 decor band (per room about 11-15, light share about 0.6 against 2.9-6.8 and 0.21-0.45).
 - Pairs with 2+ links fell from 82% to 68% at task 17 (Graph 16 loses most); place intruder rooms nearer host walls so
   short breaches fit.
+- The map's "return" mark is inferred (`drop_returns` isn't saved in the spec), and a District label can sit under
+  the legend (case p, task 18). A map whose outline trace fails gets no layers.

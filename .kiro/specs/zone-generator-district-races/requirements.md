@@ -1,6 +1,6 @@
 # Requirements — zone-generator-district-races (roadmap step 31)
 
-> **STATUS: roadmap step 31, ready.** Drafted 2026-11-26 at master `070126c`. At the step 30
+> **STATUS: done (closed 2026-11-27; the user's look: "just checked, it looks good").** Drafted 2026-11-26 at master `070126c`. At the step 30
 > look the user said hall length "might be part of their look and feel" for races in
 > Districts, then: "if we originally had a giant fortress that goblins tunneled into, i would
 > expect there to be overlap"; "an entry into another district becoming one way if it does not

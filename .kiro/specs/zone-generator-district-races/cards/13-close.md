@@ -9,3 +9,4 @@ Index entry: `tasks.md` task 13.
 - [ ] Committed, and `master` pushed.
 
 ## Result
+✔ closed at the commit carrying this line · docs only
