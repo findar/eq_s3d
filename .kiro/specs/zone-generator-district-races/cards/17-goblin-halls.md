@@ -20,3 +20,4 @@ The user, at the step 31 look: "the goblin corridors end up very long". A Thresh
 - Stacked Districts and the relax runaway (7a9b90e): keep `HALL_SCALE_CAP` behaviour.
 
 ## Result
+✔ 66e9f96 · 4408 passed (1 failed: test_bridges pin guard, outside Owns)

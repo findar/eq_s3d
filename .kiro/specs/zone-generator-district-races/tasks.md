@@ -115,7 +115,7 @@ specs" in `.kiro/steering/project.md`.
 
 ## Added at the look (task 12, first pass)
 
-- [ ] 17. Goblin-sized links between Districts keep goblin hall lengths
+- [x] 17. Goblin-sized links between Districts keep goblin hall lengths
   - Card: [cards/17-goblin-halls.md](cards/17-goblin-halls.md)
   - Type: agent · Size: M · Depends: 16
   - Owns: generators/layout.py, generators/embed.py, generators/transitions.py, tests/test_district_races.py, tests/test_intrusion.py, docs/ACCEPTANCE.md (step 31 measures)
