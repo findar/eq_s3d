@@ -319,6 +319,9 @@ def bowl_report(spec: ZoneSpec, ter: TerFile,
     agent = agent or AgentModel()
     land = landscape_for(spec)
     res = check_bowl(land.bowl, land.synth, land.matrix, agent=agent, ter=ter)
+    # The Footprint checks below read the same flood on the same TER: hand it on, so the
+    # walk surface (pure Python per triangle, growing with the area) is built once.
+    flood = (res.surface, res.reached)
     problems = [str(x) for x in (*res.leaks, *res.zoneline_failures)]
     if res.unreachable:
         problems.append(f"{len(res.unreachable)} playable cell(s) unreachable "
@@ -333,7 +336,8 @@ def bowl_report(spec: ZoneSpec, ter: TerFile,
             zon, models = _gate_zon(spec, ter)
             if pois is None:
                 pois = sites_for(spec, ter).pois()
-        for failure in structure_failures(spec, ter, zon, models or {}, pois or (), agent):
+        for failure in structure_failures(spec, ter, zon, models or {}, pois or (), agent,
+                                          flood=flood):
             passed = False
             problems.append(failure)
     room = RoomResult(room_id="bowl", role="bowl", reachable=passed,
@@ -619,9 +623,12 @@ def _sites(seed: int, edges: Tuple[Tuple[str, str], ...], biome: str, control: s
                  structures=tuple(structures), report=report)
 
 
-def _reached_faces(spec: ZoneSpec, ter: TerFile, agent: AgentModel):
+def _reached_faces(spec: ZoneSpec, ter: TerFile, agent: AgentModel, flood=None):
     """The walk surface and the faces reached from Spawn, flooded exactly as the
-    bowl gate floods them (Invisible_Walls honoured)."""
+    bowl gate floods them (Invisible_Walls honoured). ``flood`` is the bowl gate's own
+    ``(surface, reached)`` on this TER and agent (``check_bowl``), taken as it is."""
+    if flood is not None and flood[0] is not None:
+        return flood
     from analyzer.traverse import _nearest_standable_face, build_walk_surface
     from generators.wilderness.bowl import _flood_excluding, _invisible_wall_faces
 
@@ -666,7 +673,7 @@ def _is_grid_tri(p, g: int, ny: int) -> bool:
 
 
 def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
-                   step: float = TREE_CHECK_STEP):
+                   step: float = TREE_CHECK_STEP, flood=None):
     """The reached ground of the grid TER as a ``footprints.GroundRaster`` at
     ``step``, or ``None`` when Spawn reaches nothing. Pixel centres over the
     vertex grid, each mapped to its grid triangle (quad q holds triangles 2q
@@ -677,7 +684,7 @@ def _ground_raster(spec: ZoneSpec, ter: TerFile, agent: AgentModel,
     nx, ny = land.synth.heights.shape
     res = float(land.synth.resolution)
     ox, oy = land.synth.origin
-    surf, reached = _reached_faces(spec, ter, agent)
+    surf, reached = _reached_faces(spec, ter, agent, flood)
     if not reached:
         return None
     on = np.zeros(len(surf.faces), dtype=bool)
@@ -739,17 +746,19 @@ def _gate_zon(spec: ZoneSpec, ter: TerFile):
 
 
 def structure_failures(spec: ZoneSpec, ter: TerFile, zon, models: Mapping[str, TerFile],
-                       pois=(), agent: Optional[AgentModel] = None) -> List[str]:
+                       pois=(), agent: Optional[AgentModel] = None,
+                       flood=None) -> List[str]:
     """The Footprint gate's failures on this TER, phrased for the bowl report
     (empty when it passes). A cut made by trunks alone reads as step 2's
-    "tree trunks cut off ..."; everything else is ``footprints.GateFailure``."""
+    "tree trunks cut off ..."; everything else is ``footprints.GateFailure``.
+    ``flood`` is the bowl gate's ``(surface, reached)`` on this TER (``_reached_faces``)."""
     from analyzer.footprints import check_footprints, placed_from_zon
 
     placed = placed_from_zon(zon, models)
     if not placed and not pois:
         return []
     agent = agent or AgentModel()
-    ground = _ground_raster(spec, ter, agent)
+    ground = _ground_raster(spec, ter, agent, flood=flood)
     if ground is None:
         return []
     by_name = {p.name: p for p in placed}
