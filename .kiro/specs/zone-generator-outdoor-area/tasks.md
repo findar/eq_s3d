@@ -7,7 +7,7 @@ land (both touch the layout or the defaults this builds on).
 
 ## Tasks
 
-- [ ] 1. Measure stock outdoor zones: extent, host features, ways in
+- [x] 1. Measure stock outdoor zones: extent, host features, ways in
   - Card: [cards/01-measure.md](cards/01-measure.md)
   - Type: agent · Size: M · Depends: —
   - Owns: scripts/stock_outdoor_area.py (new)
