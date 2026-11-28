@@ -16,7 +16,7 @@ and edit only `Owns`; trailer `Task: project-docs/<n>`; fill the card's Result a
 
 - [ ] 2. HUMAN: review the structure
   - Card: [cards/02-review.md](cards/02-review.md)
-  - Type: human · Depends: 1
+  - Type: human · Depends: 1, 7
 
 - [ ] 3. Move the closed steps under their pillars
   - Card: [cards/03-move.md](cards/03-move.md)
@@ -37,3 +37,10 @@ and edit only `Owns`; trailer `Task: project-docs/<n>`; fill the card's Result a
   - Card: [cards/06-reconcile.md](cards/06-reconcile.md)
   - Type: agent · Size: S · Depends: 4, 5 · Where: MAIN checkout
   - Owns: everything this spec touched
+
+## Added at the first review
+
+- [ ] 7. Numbered pillars, one requirement namespace, a technical writer's pass
+  - Card: [cards/07-writer-pass.md](cards/07-writer-pass.md)
+  - Type: agent · Size: M · Depends: 1
+  - Owns: docs/ARCHITECTURE.md, docs/pillars/, OPEN.md, docs/STYLE.md (new)
