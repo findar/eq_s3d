@@ -40,6 +40,10 @@
 5. **Three Levels is the dungeon layer's, not the area's** (the lead, task 4 review). With no hill at all the
    outdoor engine builds 2 Levels on 30 of 30 seeds at 5 rooms: `GraphEngine._descending` takes the first
    one-way graph and sets every room above the entrance to Level 0. Moved to P-7-19.
+6. **The Mouth flares in width and height** (task 5, the lead). Tunnel at the race's corridor width (at most the
+   40 u cell), flaring at most 45 degrees to the drawn width; the ceiling rises over the flare to height/width drawn
+   0.25-1.97, p50 0.61 (stock rock mouths 32-96 u wide, n=74, `stock_outdoor_area.py`; cliff openings 1.65 p50, for
+   task 12). Too tall to cover: halfway down, then the Tunnel's height; too wide: 0.8 narrower, then one cell.
 
 ## Follow-ups
 - Steps 5 and 10's surveys (`outdoor_dungeon_survey.py`, `site_survey.py`) take a zone's main ground as the largest
