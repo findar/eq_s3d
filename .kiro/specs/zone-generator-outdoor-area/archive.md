@@ -31,3 +31,7 @@
      can't be walked, so the survey can't see one).
 
 ## Follow-ups
+- Steps 5 and 10's surveys (`outdoor_dungeon_survey.py`, `site_survey.py`) take a zone's main ground as the largest
+  network by area, which in some zones is a flat sheet under the map (steamfont z -232, fieldofbone z -279);
+  task 1's script picks by face count. Step 10's site densities may be off (task 1, not checked).
+- Wells: no signal (a vertical shaft can't be walked, so the survey can't see one).
