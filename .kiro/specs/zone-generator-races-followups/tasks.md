@@ -12,7 +12,7 @@ task here. **Never tick a `Type: human` task.**
 
 ## Tasks
 
-- [ ] 1. Breaches fit again
+- [x] 1. Breaches fit again
   - Card: [cards/01-breach-rate.md](cards/01-breach-rate.md)
   - Type: agent · Size: M · Depends: —
   - Owns: generators/layout.py, generators/embed.py, tests/test_intrusion.py, tests/test_district_races.py
