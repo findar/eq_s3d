@@ -145,3 +145,83 @@ def test_eq_view_is_what_the_map_file_carries(case_p):
     # Order within a (layer, colour) is the file's: draw order is kept.
     same(segs, want_segs)
     same(labels, want_labels)
+
+
+# Step 32 task 3 (followups Req 2): the map's returns come from the layout's record, and the
+# District labels keep clear of the legend.
+_PLAN = [{"purpose": "fortress", "race": "giant"}, {"purpose": "warren", "race": "goblin"}]
+
+
+def test_a_return_is_marked_from_the_layout_record(monkeypatch):
+    """Classic 24 seed 2085 with every cross link drawn to drop: its goblins are entered by
+    drops alone, so ``_add_return`` lays ``corr_25`` back out. The map marks that one return
+    and no other; the old inference also took the flush ``corr_0`` (a pair whose one other
+    link drops) for one."""
+    from generators import layout as L
+    from generators.districts import INTRUSION
+    monkeypatch.setattr(L, "DROP_SHARE", 1.0)
+    gen = L.LayoutGenerator("dungeon", seed=2085, engine="classic")
+    spec = gen.generate("t", room_count=24, districts=True, district_plan=_PLAN,
+                        district_relationship=INTRUSION, elevation=True)
+    recorded = {f"corr_{r['edge']}" for r in gen.drop_returns}
+    assert recorded == {"corr_25"}
+    flagged = {c.id for c in spec.corridors if c.drop_return}
+    assert flagged == recorded
+    by = {r.id: r for r in spec.rooms}
+    (ret,) = [c for c in spec.corridors if c.drop_return]
+    assert not ret.drop and by[ret.from_room].district != by[ret.to_room].district
+    # Every other link of its pair drops: the intruder's only flush way out.
+    pair = {by[ret.from_room].district, by[ret.to_room].district}
+    assert all(c.drop for c in spec.corridors if c is not ret
+               and {by[c.from_room].district, by[c.to_room].district} == pair)
+    # Written only when set, and read back.
+    doc = spec.to_dict()
+    assert [c["id"] for c in doc["corridors"] if "drop_return" in c] == ["corr_25"]
+    from generators.zone_spec import ZoneSpec
+    assert {c.id for c in ZoneSpec.from_dict(doc).corridors if c.drop_return} == recorded
+    root = ET.fromstring(render_map_svg(spec, outline=_outline(spec)))
+    marked = [p.find(_NS + "title").text for p in _layers(root)["links"].iter(_NS + "polyline")
+              if p.get("class") == "link link-return"]
+    assert marked == ["return (corr_25)"]
+    rows = [t.text for g in root.iter(_NS + "g") if g.get("class") == "legend-row"
+            for t in g.iter(_NS + "text")]
+    assert "return (way back)" in rows
+
+
+def test_a_zone_without_a_return_writes_no_flag(case_p):
+    assert not any(c.drop_return for c in case_p.corridors)
+    assert all("drop_return" not in c for c in case_p.to_dict()["corridors"])
+    assert "link-return" not in render_map_svg(case_p, outline=_outline(case_p))
+
+
+# Step 31's acceptance cases (docs/ACCEPTANCE.md "Step 31 — District races"): Controls
+# cases (layout, rooms, relationship, seed), and the prompt case p.
+_STEP31 = {"i": ("graph", 16, "intrusion", 2008), "d": ("graph", 24, "intrusion", 2044),
+           "r": ("classic", 16, "intrusion", 2048), "v": ("graph", 24, "intrusion", 2013),
+           "f": ("graph", 12, "factional", 2000), "p": None}
+
+
+@pytest.mark.parametrize("case", sorted(_STEP31))
+def test_district_labels_keep_clear_of_the_legend(case):
+    from generators.mapview import district_label_box
+    if _STEP31[case] is None:
+        spec = plan_to_spec(RulePlanner().plan(CASE_P).validate(), seed=2027)
+    else:
+        layout, rooms, rel, seed = _STEP31[case]
+        plan = ZonePlan.from_controls({"zone_type": "dungeon", "room_count": rooms,
+                                       "verticality": "moderate", "layout": layout,
+                                       "districts": True, "district_plan": _PLAN,
+                                       "district_relationship": rel}, [])
+        spec = plan_to_spec(plan, seed=seed)
+    root = ET.fromstring(render_map_svg(spec, outline=_outline(spec)))
+    w = float(root.get("width"))
+    (box,) = [r for r in root.iter(_NS + "rect") if r.get("class") == "legend-box"]
+    x0, y0 = float(box.get("x")), float(box.get("y"))
+    legend = (x0, y0, x0 + float(box.get("width")), y0 + float(box.get("height")))
+    labels = [t for t in root.iter(_NS + "text") if t.get("class") == "district-label"]
+    assert len(labels) == len(spec.districts) >= 2
+    for t in labels:
+        b = district_label_box(float(t.get("x")), float(t.get("y")), t.text)
+        assert not (b[0] < legend[2] and legend[0] < b[2] and b[1] < legend[3] and legend[1] < b[3]), \
+            (t.text, b, legend)
+        assert 0 <= b[0] and b[2] <= w

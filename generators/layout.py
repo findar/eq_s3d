@@ -3992,8 +3992,8 @@ class LayoutGenerator:
         room), each to its host rooms nearest first by hall span, a pair taken where a breach
         could be (``_add_breaches``: one Level, within grade, no room in the way) whose
         corridor clashes with no other (``_resolve_conflicts`` on a copy keeps every edge).
-        Appended to ``edges`` and ``spec.corridors`` (``corr_k`` stays edge ``k``) and to
-        ``part.breaches``; returns ``{"edge", "from", "to", "hops"}``, or None."""
+        Appended to ``edges`` and ``spec.corridors`` (``corr_k`` stays edge ``k``, its
+        ``drop_return`` set) and to ``part.breaches``; returns ``{"edge", "from", "to", "hops"}``, or None."""
         from collections import deque
         assign = part.assign
         inside: Dict[int, list] = {}
@@ -4044,7 +4044,9 @@ class LayoutGenerator:
                 if {frozenset(e) for e in kept} != {frozenset(e) for e in trial}:
                     continue
                 edges.append((h, t))
-                spec.corridors.append(self._corridor_for(rooms, len(edges) - 1, h, t))
+                cor = self._corridor_for(rooms, len(edges) - 1, h, t)
+                cor.drop_return = True          # the map marks it from this (step 32 task 3)
+                spec.corridors.append(cor)
                 part.breaches.append((h, t))
                 return {"edge": len(edges) - 1, "from": rooms[t].id, "to": rooms[h].id,
                         "hops": hops[t]}
