@@ -101,7 +101,12 @@ def test_ground_attachment_keeps_its_rules_on_the_corpus(name, ground):
                                            att.layout)
         assert again.edits == att.edits and again.keep_clear == att.keep_clear
         assert [tuple(s) for s in gsock.ground["keep_clear"]] == list(att.keep_clear)
-        assert not np.array_equal(dug.terrain.heights, world.terrain.heights)
+        # A Mouth's Apron digs; a cliff opening's opens onto the scarp's foot, digging at
+        # most CLIFF_DIG (often nothing).
+        if att.entrance.kind == od.KIND_MOUTH:
+            assert not np.array_equal(dug.terrain.heights, world.terrain.heights)
+        else:
+            assert (world.terrain.heights - dug.terrain.heights).max() <= od.CLIFF_DIG + 1e-9
         assert tuple(gsock.ground["spawn"][:2]) == tuple(world.spawn[:2])
     else:
         assert dug is world and gsock.ground["keep_clear"] == []

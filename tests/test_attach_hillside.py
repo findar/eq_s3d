@@ -106,11 +106,14 @@ def test_hillside_attachment_holds_on_the_corpus(name, layout, verticality, race
     assert abs(e.floor - e.room_floor) <= od.MAX_GRADE * run + 1e-9
     assert od._tunnel_covered(grid, e, hill.ground["rock_cover"])
     (edit,) = att.edits
-    assert edit.socket == "hill0" and edit.cells
+    # A Mouth's Apron digs; a cliff opening's (step 35 task 12) digs at most CLIFF_DIG.
+    assert edit.socket == "hill0" and (edit.cells or e.kind == od.KIND_CLIFF)
     keep = {tuple(p) for p in hill.ground["undiggable"]}
     for i, j, z in edit.cells:
         assert (i, j) not in keep
         assert z <= world.terrain.heights[i, j]
+        if e.kind == od.KIND_CLIFF:
+            assert world.terrain.heights[i, j] - z <= od.CLIFF_DIG + 1e-9
     # The Tunnel, Apron, rooms and corridors as Kept_Clear, for the ground Socket (no hill
     # disc, site-sockets decision 3): the Tunnel runs wall to portal, the Apron out from the
     # portal, then one capsule per room and one per leg of each corridor's built route.
