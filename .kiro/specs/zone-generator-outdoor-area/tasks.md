@@ -25,7 +25,7 @@ land (both touch the layout or the defaults this builds on).
   - Owns: generators/outdoor_dungeon.py, generators/wilderness/build.py
   - Reqs: 4
 
-- [ ] 4. A host sized to what it holds
+- [x] 4. A host sized to what it holds
   - Card: [cards/04-host-size.md](cards/04-host-size.md)
   - Type: agent · Size: M · Depends: 1, 3
   - Owns: generators/outdoor_dungeon.py, generators/wilderness/matrix.py (host Landform sizing), tests/test_outdoor_dungeon*.py

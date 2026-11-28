@@ -162,32 +162,42 @@ def test_no_room_under_the_map_edge(tmp_path, seed):
     assert report.passed, report.summary()
 
 
-@pytest.mark.slow
-def test_spawn_stands_on_the_dug_apron(tmp_path):
-    """On this seed the Apron's trench runs under the Outdoor_Spawn (34 u
-    deep there; seed 8 since random placement task 3 moved the outdoor
-    layouts, seed 3 before); the safe point used to keep the undug ground's height and
-    float over the floor (``safe_point`` failed, first seen on temple seed
-    1097127993). It now takes the dug ground's height. Fortress, not temple:
-    it has no theme layer, so a layer retune can't move the case away (the
-    temple nave fix did once). A troll's: at stock room scale (step 7 task
-    17) a human's Tunnel is 15 u tall and its Apron rarely reaches the Spawn;
-    a troll's 20 u Tunnel digs a trench under it on this seed."""
-    # Flat: this test is about the trench under the Spawn, not Levels (step 7
-    # task 7 stacks the default moderate build and moves its Entrance).
-    spec, result = _outdoor(tmp_path, "fortress", 8, 8, race="troll", verticality="flat")
-    fmt = check_eqg(result.eqg_path, spec)
-    assert fmt.passed, fmt.failed_checks
-    # The spec is also the host terrain's: its undug TER, then the Apron.
-    grid = od._host_grid(spec, build_wilderness_ter(spec, "host", 1))
-    entrance = od.Entrance.from_dict(spec.wilderness[od.DUNGEON_KEY]["entrance"])
-    dug, _ = od._apron(grid, entrance)
-    sx, sy, sz = spec.safe_point
+def test_spawn_stands_on_the_dug_apron():
+    """When the Apron's trench runs under the Outdoor_Spawn, the safe point takes the dug
+    ground's height (as the 32-bit float at or above it, what the TER stores) instead of
+    floating over the floor (``safe_point`` failed, first seen on temple seed 1097127993;
+    fixed in 22a8e1c). The Spawn is placed on open ground (outdoor-dungeon requirement), so
+    whether the trench reaches it is the seed's: the case is made directly, the World's
+    Spawn put on the trench's centre line one row out from the Mouth. Its XY stays; only its
+    height drops. A troll's fortress, flat, seed 8 (the seed the case was first pinned on)."""
+    import dataclasses
+
+    import numpy as np
+
+    from generators import stages
+
+    plan = _plan("outdoor_dungeon", "graph", "classic_eq", "fortress", 8)
+    plan.dungeon_race, plan.verticality = "troll", "flat"
+    spec = plan_to_spec(plan.validate(), seed=8)
+    world = od.area_world(spec)
+    hill = world.socket("hill0")
+    grid = od.socket_grid(hill, world.terrain)
+    e = od.Entrance.from_dict(spec.wilderness[od.DUNGEON_KEY]["entrance"])
+    run = grid.coord(e.axis, e.portal + e.outward)
+    cross = (grid.coord(1 - e.axis, e.cross) + grid.coord(1 - e.axis, e.cross + 1)) / 2
+    sx, sy = (run, cross) if e.axis == 0 else (cross, run)
     undug = float(od._grid_surface(grid.z, grid.origin, grid.res)(sx, sy))
+    inside = dataclasses.replace(world, spawn=(sx, sy, undug))
+    dug, _ = od._apron(grid, e)
     ground = float(od._grid_surface(dug, grid.origin, grid.res)(sx, sy))
-    assert ground < undug - 1.0          # the trench does run under the Spawn
-    # (The bowl field and the TER grid differ by a few tenths on a trench this steep.)
-    assert sz == pytest.approx(ground, abs=0.5)
+    assert ground < undug - 1.0          # the trench does run under this Spawn
+    edit = stages.apron_edit(inside, hill, grid, e)
+    assert edit.spawn[:2] == (sx, sy)                    # it doesn't move
+    sz = edit.spawn[2]
+    assert float(np.float32(sz)) == sz and ground <= sz <= ground + 1e-4
+    after = stages.apply_edits(inside, [stages.Attachment(socket=hill.id, kind=hill.kind,
+                                                          edits=[edit])])
+    assert after.spawn == edit.spawn and after.socket("ground").z == sz
 
 
 def _timed_generate(tmp_path, layout, rooms, seed):
