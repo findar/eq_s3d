@@ -278,14 +278,11 @@ def world_stage(zone_type: str, seed: int, biome: Optional[str] = None,
 
 
 def _tunnel_doors(world, entrance) -> dict:
-    """``outdoor_dungeon.tunnel_doors`` from the World's grid instead of the landscape."""
-    e = entrance
-    origin, res = world.terrain.origin, float(world.terrain.res)
+    """``outdoor_dungeon.tunnel_doors`` from the World's grid instead of the landscape: the
+    same door (``outdoor_dungeon.entrance_doors``), so the two can't drift."""
+    from generators.outdoor_dungeon import entrance_doors
 
-    def coord(k):
-        return origin[1 - e.axis] + (k + 0.5) * res
-
-    return {e.room_id: {e.side: [(coord(e.cross), coord(e.cross + 1), e.room_floor + e.height)]}}
+    return entrance_doors(world.terrain, entrance)
 
 
 def attach_stage(world, plan, rooms_seed: Optional[int] = None):

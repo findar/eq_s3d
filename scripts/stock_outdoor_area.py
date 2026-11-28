@@ -451,11 +451,16 @@ def analyse(eq_path: Path, zone: str, cache: Path | None) -> dict:
             ring = cen[walked[~covered & (dd >= 100) & (dd <= 250)], 2]
             sunk = float(np.median(ring) - z0) if len(ring) else 0.0
             near = [f for f in comp if dist[int(f)] <= 120]
+            # The opening's height: the ceiling over the covered faces it opens onto, less
+            # their floor (p50; step 35 task 5). Read just inside the portal, where the roof
+            # raster sees the opening's top.
+            heights = [roof_of[int(f)] - cen[int(f), 2] for f in fin if int(f) in roof_of]
             ways.append({
                 "at": [float(c[0]), float(c[1]), z0],
                 "width": _extent(p[:, :2]),
                 "wall": wall, "sunk": sunk, "lip": lip,
                 "drop": float(z0 - cen[near, 2].min()) if near else 0.0,
+                "height": float(np.median(heights)) if heights else float("nan"),
             })
         main_way = max(ways, key=lambda w: w["width"])
         ways = [w for w in ways if w["width"] >= MIN_WAY] or [main_way]
@@ -611,7 +616,7 @@ def main(argv=None) -> int:
     print(f"\ninteriors in outdoor zones (plan >= {MIN_AREA:.0f} u^2, reach >= {MIN_REACH:.0f} u)")
     print(f"{'zone':14s} {'kind':5s} {'foot':>11s} {'area':>7s} {'reach':>5s} {'drop':>5s} "
           f"{'axis':>4s} {'flat':>4s} {'roof':>4s} {'zl':2s} {'host':>11s} {'h':>4s} {'margin':>8s} "
-          f" ways (kind width wall sunk lip drop)")
+          f" ways (kind width wall sunk lip drop height)")
     rows = []
     for r in results:
         if "error" in r or r["zone"] not in outdoor:
@@ -620,7 +625,8 @@ def main(argv=None) -> int:
             h = it["host"]
             hs = (f"{h['size'][0]:5.0f}x{h['size'][1]:<5.0f}" if h else "-")
             ways = "; ".join(f"{w['kind']} {w['width']:.0f} {w['wall']:.2f} {w['sunk']:.0f} "
-                             f"{w['lip']:.0f} {w['drop']:.0f}" for w in it["ways"])
+                             f"{w['lip']:.0f} {w['drop']:.0f} {w['height']:.0f}"
+                             for w in it["ways"])
             print(f"{r['zone']:14s} {'built' if it['built'] else 'rock':5s} "
                   f"{it['foot'][0]:5.0f}x{it['foot'][1]:<5.0f} {it['area']:7.0f} "
                   f"{it['reach']:5.0f} {it['drop']:5.0f} {it['axis']:4.2f} {it['flat']:4.2f} {it['thick']:4.0f} "
@@ -647,6 +653,25 @@ def main(argv=None) -> int:
         print("  ways in by kind: count, width p10/p50/p90/max; [interiors whose widest way is it]")
         for k, n in kinds.most_common():
             print(f"    {k:14s} {n:3d}  {_q(widths[k])}  [{mains[k]}]")
+        # The opening's height and height / width at the portal (step 35 task 5), per kind,
+        # over the ways in at least 16 u wide (narrower ones are seams more than openings),
+        # then over those in the generated Mouth's drawn range (32-96 u). A height within
+        # CELL of ROOF_MAX saw no roof inside the raster's window, not the opening's top:
+        # counted, then left out.
+        print("  opening height p10/p50/p90/max, height / width p10/p50/p90/max "
+              f"(ways >= 16 u; [32-96 u]; heights >= {ROOF_MAX - CELL:.0f} u left out)")
+        for k, _n in kinds.most_common():
+            hw = [(w["height"], w["width"]) for i in sel for w in i["ways"]
+                  if w["kind"] == k and w["width"] >= 16 and not math.isnan(w["height"])]
+            seen = [(h, wd) for h, wd in hw if h < ROOF_MAX - CELL]
+            band = [(h, wd) for h, wd in seen if 32 <= wd <= 96]
+            if seen:
+                print(f"    {k:14s} n={len(seen):3d} (+{len(hw) - len(seen)} roofless)  "
+                      f"height {_q([h for h, _ in seen])}  "
+                      f"ratio {_q([h / wd for h, wd in seen], fmt='{:.2f}')}")
+            if band:
+                print(f"    {'':14s} [32-96 u] n={len(band):3d}  height {_q([h for h, _ in band])}  "
+                      f"ratio {_q([h / wd for h, wd in band], fmt='{:.2f}')}")
         print(f"  ways per interior {_q([len(i['ways']) for i in sel])}")
         hosted = [i for i in inz if i["host"] and not i["host"]["edge"]]
         print(f"  in-zone: host is the edge massif {sum(1 for i in inz if i['host'] and i['host']['edge'])}, "

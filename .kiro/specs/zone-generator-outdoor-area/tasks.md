@@ -31,7 +31,7 @@ land (both touch the layout or the defaults this builds on).
   - Owns: generators/outdoor_dungeon.py, generators/wilderness/matrix.py (host Landform sizing), tests/test_outdoor_dungeon*.py
   - Reqs: 5, 7
 
-- [ ] 5. A wide, flaring Mouth
+- [x] 5. A wide, flaring Mouth
   - Card: [cards/05-entrances.md](cards/05-entrances.md)
   - Type: agent · Size: M · Depends: 1, 4
   - Owns: generators/outdoor_dungeon.py, generators/stages.py (the Apron edit), tests/test_outdoor_dungeon*.py, tests/test_attach_*.py, the outdoor goldens and recordings it moves
