@@ -43,9 +43,14 @@ land (both touch the layout or the defaults this builds on).
   - Owns: generators/wilderness/matrix.py, ai/schema.py (wilderness size), ai/rule_planner.py (size words), server/app.py (pass-through), web/src/controls.ts or main.ts (the Size control for outdoor), tests/
   - Reqs: 2, 7
 
+- [ ] 11. Sites pack and cluster like stock
+  - Card: [cards/11-sites.md](cards/11-sites.md)
+  - Type: agent · Size: M · Depends: 2, 6
+  - Owns: generators/sites/, tests/test_site_bands.py, tests/test_site_points.py, the Site and wilderness goldens and recordings it moves
+
 - [ ] 7. Gate, bands and time
   - Card: [cards/07-gate.md](cards/07-gate.md)
-  - Type: agent · Size: S · Depends: 6
+  - Type: agent · Size: S · Depends: 6, 11
   - Owns: fixes only where a failure is new (stop and report first)
   - Reqs: 7
 
