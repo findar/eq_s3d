@@ -135,6 +135,8 @@ WALL_RISE = 32.0
 SUNK = 30.0
 CLIFF_LIP = 80.0
 STAIR_DROP = 24.0
+#: Offsets along a way in (u; negative: out on the approach) the face's profile is read at.
+PROFILE = np.array([-96.0, -64.0, -40.0, -24.0, -8.0, 8.0, 24.0, 40.0, 64.0, 96.0, 160.0])
 
 
 
@@ -441,6 +443,9 @@ def analyse(eq_path: Path, zone: str, cache: Path | None) -> dict:
             into = cen[fin, :2].mean(0) - cen[fout, :2].mean(0)
             into = into / max(np.linalg.norm(into), 1e-9)
             lip = float(surf.top_at((c[:2] + 24 * into)[None])[0] - z0)
+            # The face's profile (step 35 task 12): the top surface over the way in's floor
+            # at PROFILE offsets along the way in (negative: out on the approach).
+            profile = (surf.top_at(c[:2] + np.outer(PROFILE, into)) - z0).tolist()
             # walls: 16 rays
             ang = np.linspace(0, 2 * np.pi, 16, endpoint=False)
             rad = np.arange(32, 241, 16)
@@ -458,7 +463,7 @@ def analyse(eq_path: Path, zone: str, cache: Path | None) -> dict:
             ways.append({
                 "at": [float(c[0]), float(c[1]), z0],
                 "width": _extent(p[:, :2]),
-                "wall": wall, "sunk": sunk, "lip": lip,
+                "wall": wall, "sunk": sunk, "lip": lip, "profile": profile,
                 "drop": float(z0 - cen[near, 2].min()) if near else 0.0,
                 "height": float(np.median(heights)) if heights else float("nan"),
             })
@@ -672,6 +677,16 @@ def main(argv=None) -> int:
             if band:
                 print(f"    {'':14s} [32-96 u] n={len(band):3d}  height {_q([h for h, _ in band])}  "
                       f"ratio {_q([h / wd for h, wd in band], fmt='{:.2f}')}")
+        # The face round each kind (step 35 task 12): the top surface over the way in's floor
+        # along the way in, p10/p50/p90 per offset (ways >= 16 u).
+        print("  face profile, top over floor p10/p50/p90 at offset (u; negative = approach)")
+        for k, _n in kinds.most_common():
+            prof = np.array([w["profile"] for i in sel for w in i["ways"]
+                             if w["kind"] == k and w["width"] >= 16 and "profile" in w], float)
+            if len(prof):
+                cells = "  ".join(f"{int(o):+d}:{_q(prof[:, n], (10, 50, 90))}"
+                                  for n, o in enumerate(PROFILE))
+                print(f"    {k:14s} n={len(prof):3d}  {cells}")
         print(f"  ways per interior {_q([len(i['ways']) for i in sel])}")
         hosted = [i for i in inz if i["host"] and not i["host"]["edge"]]
         print(f"  in-zone: host is the edge massif {sum(1 for i in inz if i['host'] and i['host']['edge'])}, "

@@ -101,7 +101,12 @@ def test_ground_attachment_keeps_its_rules_on_the_corpus(name, ground):
                                            att.layout)
         assert again.edits == att.edits and again.keep_clear == att.keep_clear
         assert [tuple(s) for s in gsock.ground["keep_clear"]] == list(att.keep_clear)
-        assert not np.array_equal(dug.terrain.heights, world.terrain.heights)
+        # A Mouth's Apron digs; a cliff opening's opens onto the scarp's foot, digging at
+        # most CLIFF_DIG (often nothing).
+        if att.entrance.kind == od.KIND_MOUTH:
+            assert not np.array_equal(dug.terrain.heights, world.terrain.heights)
+        else:
+            assert (world.terrain.heights - dug.terrain.heights).max() <= od.CLIFF_DIG + 1e-9
         assert tuple(gsock.ground["spawn"][:2]) == tuple(world.spawn[:2])
     else:
         assert dug is world and gsock.ground["keep_clear"] == []
@@ -191,7 +196,12 @@ def test_p6_the_build_applies_the_attach_stages_edits(seed, edges):
     dug = stages.apply_edits(world, [att])
     built = ter_heights(ter, world.terrain.heights.shape)
     assert np.array_equal(dug.terrain.heights, built)
-    assert not np.array_equal(world.terrain.heights, built)
+    # A Mouth's Apron digs; a cliff opening (step 35 task 12: seed 7's host has a scarp)
+    # opens onto the level foot and digs no more than CLIFF_DIG.
+    if entrance.kind == od.KIND_MOUTH:
+        assert not np.array_equal(world.terrain.heights, built)
+    else:
+        assert float(np.max(world.terrain.heights - built)) <= od.CLIFF_DIG
     shapes = stages.entrance_keep_clear(world, world.socket("hill0"), entrance, spec)
     assert [tuple(s) for s in dug.socket("ground").ground["keep_clear"]] == list(shapes)
     assert tuple(dug.socket("ground").ground["spawn"][:2]) == tuple(spec.safe_point[:2])

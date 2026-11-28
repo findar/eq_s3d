@@ -28,8 +28,9 @@ STEP9 = {
     ("wild", 31337): "682474b5adb2aa0b827ef16eef193ca5939ee180d978012822f820790e682c26",
     # Recaptured by world-sockets task 20 (the spec reads the placed hill's landscape),
     # and by random placement task 11 (room footprints in stock's proportions), and by step 35
-    # task 5 (the wide, flaring Mouth).
-    ("od", 3): "f8d68ef9e2642e354cf9c5c4575fd4e7170f613730e857695885ac895efd70ed",
+    # task 5 (the wide, flaring Mouth), and by step 35 task 12 (seed 3's host draws a scarp: a
+    # cliff opening).
+    ("od", 3): "10955f6ea2e85a7e1c1ef8fa7465d68830f41b27091031f3a9a6675e690ce049",
 }
 
 
